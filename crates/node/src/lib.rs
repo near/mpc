@@ -42,6 +42,7 @@ mod background;
 mod coordinator;
 mod db;
 mod foreign_chain_policy;
+mod foreign_chain_probe;
 mod foreign_chain_whitelist_verifier;
 mod home_paths;
 mod indexer;
@@ -57,4 +58,5 @@ mod storage;
 mod tee;
 #[cfg(test)]
 mod tests;
+mod tick;
 mod tracking;

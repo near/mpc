@@ -9,7 +9,6 @@ use crate::indexer::participants::ContractState;
 use crate::migration_service;
 use crate::p2p::testing::port_seed;
 use crate::tests::DEFAULT_BLOCK_TIME;
-use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup, get_keyshares,
     request_signature_and_await_response,
@@ -202,7 +201,7 @@ async fn test_onboarding() {
         else {
             panic!("expect running");
         };
-        keyset_to_dto(&running.keyset)
+        (&running.keyset).into()
     };
     let received_keyshares = {
         tracing::info!("Fetching keyshares from parting node.");

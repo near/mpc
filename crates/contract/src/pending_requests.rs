@@ -10,16 +10,14 @@
 //!   `resolve_yields_for` drains the full queue on a response, and
 //!   `pop_oldest_pending_yield` removes the head entry on a timeout.
 //!
-//! Callers in `lib.rs` go through these helpers rather than touching the maps
+//! Callers in [`crate::api`] go through these helpers rather than touching the maps
 //! directly, so the queue policy lives in one place.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_contract_interface::types::YieldIndex;
 use near_sdk::{CryptoHash, env, store::LookupMap};
 
-use crate::{
-    errors::{Error, InvalidParameters, RequestError},
-    primitives::signature::YieldIndex,
-};
+use crate::errors::{Error, InvalidParameters, RequestError};
 
 /// Maximum number of concurrent yield-resume promises that can be queued for a single
 /// request key (i.e. the number of duplicate submissions whose responses fan out from

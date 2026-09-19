@@ -95,6 +95,21 @@ BorshSchemaContainer {
                     "Sui",
                     "ForeignChain__Sui",
                 ),
+                (
+                    13,
+                    "Avalanche",
+                    "ForeignChain__Avalanche",
+                ),
+                (
+                    14,
+                    "Adi",
+                    "ForeignChain__Adi",
+                ),
+                (
+                    15,
+                    "Fogo",
+                    "ForeignChain__Fogo",
+                ),
             ],
         },
         "ForeignChainRpcWhitelist": Struct {
@@ -114,10 +129,16 @@ BorshSchemaContainer {
         "ForeignChain__Abstract": Struct {
             fields: Empty,
         },
+        "ForeignChain__Adi": Struct {
+            fields: Empty,
+        },
         "ForeignChain__Aptos": Struct {
             fields: Empty,
         },
         "ForeignChain__Arbitrum": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Avalanche": Struct {
             fields: Empty,
         },
         "ForeignChain__Base": Struct {
@@ -130,6 +151,9 @@ BorshSchemaContainer {
             fields: Empty,
         },
         "ForeignChain__Ethereum": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Fogo": Struct {
             fields: Empty,
         },
         "ForeignChain__HyperEvm": Struct {

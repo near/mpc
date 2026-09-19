@@ -24,17 +24,15 @@ use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, NodeImageHash,
-    ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-    ReconstructionThreshold, protocol_state_to_string,
+    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, ParticipantId,
+    ParticipantInfo, Participants, ProposeUpdateArgs, ProposedGovernanceThresholdParameters,
+    Protocol, ProtocolContractState, ReconstructionThreshold, UpdateId, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use node_types::http_server::StaticWebData;
 use rand::rngs::OsRng;
 use reqwest::Client;
-use serde::Serialize;
 use std::sync::Arc;
 
 impl ListMpcCmd {
@@ -366,7 +364,7 @@ impl MpcInitContractCmd {
             .clone()
             .expect("Require MPC network to have a contract deployed.");
 
-        let access_key = setup.accounts.account(&contract).any_access_key_handle();
+        let mpc_contract_handle = setup.accounts.account(&contract).call_mpc(&contract);
 
         let mut participant_entries = Vec::new();
         let mut next_id = ParticipantId::new(0);
@@ -387,34 +385,15 @@ impl MpcInitContractCmd {
             },
             threshold: GovernanceThreshold::new(self.threshold),
         };
-        let args = serde_json::to_vec(&InitV2Args {
-            parameters,
-            init_config: near_mpc_contract_interface::types::InitConfig::default(),
-        })
-        .unwrap();
-
-        access_key
-            .lock()
-            .await
-            .submit_tx_to_call_function(
-                &contract,
-                method_names::INIT,
-                &args,
-                300,
-                0,
-                near_primitives::views::TxExecutionStatus::Final,
-                true,
+        mpc_contract_handle
+            .init(
+                parameters,
+                Some(near_mpc_contract_interface::types::InitConfig::default()),
             )
             .await
             .into_return_value()
             .unwrap();
     }
-}
-
-#[derive(Serialize)]
-struct InitV2Args {
-    parameters: GovernanceThresholdParameters,
-    init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
@@ -514,11 +493,11 @@ impl MpcProposeUpdateContractCmd {
             .await
             .into_return_value()
             .expect("Failed to propose update");
-        let update_id: u64 = serde_json::from_slice(&result).expect(&format!(
+        let update_id: UpdateId = serde_json::from_slice(&result).expect(&format!(
             "Failed to deserialize result: {}",
             String::from_utf8_lossy(&result)
         ));
-        println!("Proposed update with ID {}", update_id);
+        println!("Proposed update with ID {}", update_id.0);
         println!("Run the following command to vote for the update:");
         let self_exe = std::env::current_exe()
             .expect("Failed to get current executable path")
@@ -527,7 +506,7 @@ impl MpcProposeUpdateContractCmd {
             .to_string();
         println!(
             "{} mpc {} vote-update --update-id={}",
-            self_exe, name, update_id
+            self_exe, name, update_id.0
         );
     }
 }
@@ -552,7 +531,7 @@ impl MpcVoteUpdateCmd {
         let mut futs = Vec::new();
         for account_id in from_accounts {
             let handle = setup.accounts.account(account_id).call_mpc(&contract);
-            futs.push(async move { handle.vote_update(self.update_id).await });
+            futs.push(async move { handle.vote_update(UpdateId(self.update_id)).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
@@ -793,22 +772,12 @@ impl MpcVoteApprovedHashCmd {
 
         for account_id in accounts.iter().take(threshold as usize) {
             let account = setup.accounts.account(account_id);
-            let key = account.any_access_key_handle();
-            let contract = contract.clone();
-            let code_hash = self.mpc_docker_image_hash.into();
+            let handle = account.call_mpc(&contract);
+            let mpc_node_manifest_digest = self.mpc_docker_image_hash.into();
 
             voting_futures.push(async move {
-                key.lock()
-                    .await
-                    .submit_tx_to_call_function(
-                        &contract,
-                        method_names::VOTE_CODE_HASH,
-                        &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
-                        300,
-                        0,
-                        near_primitives::views::TxExecutionStatus::Final,
-                        true,
-                    )
+                handle
+                    .vote_mpc_node_manifest_digest(mpc_node_manifest_digest)
                     .await
             });
         }
@@ -817,11 +786,14 @@ impl MpcVoteApprovedHashCmd {
         for (participant_index, voting_result) in voting_results.into_iter().enumerate() {
             match voting_result.into_return_value() {
                 Ok(_) => {
-                    println!("Participant {} vote_code_hash succeed", participant_index);
+                    println!(
+                        "Participant {} vote_mpc_node_manifest_digest succeed",
+                        participant_index
+                    );
                 }
                 Err(err) => {
                     println!(
-                        "Participant {} vote_code_hash failed: {:?}",
+                        "Participant {} vote_mpc_node_manifest_digest failed: {:?}",
                         participant_index, err
                     );
                 }
@@ -863,11 +835,6 @@ pub async fn read_contract_state(
             panic!("Unexpected error: {:?}", err);
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteCodeHashArgs {
-    code_hash: NodeImageHash,
 }
 
 impl MpcDescribeCmd {

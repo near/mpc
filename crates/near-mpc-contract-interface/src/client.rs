@@ -2,32 +2,43 @@
 //!
 //! [`MpcContractHandle`] is the single source of each method's wire format
 //! (method name, argument struct, gas, deposit), generic over a transport
-//! backend implementing [`CallContract`].
+//! backend implementing [`CallContract`]. Backends implementing
+//! [`ViewContract`] get the typed view methods.
 
-use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
+use near_contract_transport::{
+    CallContract, FunctionCallArgs, Json, NearGas, NearToken, ViewArgs, ViewCall, ViewContract,
+};
+use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs, SignArgs,
-    StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
-    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
-    VoteUpdateArgs,
+    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
+    RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
+    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
+    VoteCancelKeygenArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
     STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
-    REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
-    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
-    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES,
+    ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, INIT, LAUNCHER_HASH_VOTES,
+    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
+    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN,
+    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
+    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
+    VOTE_CANCEL_RESHARING, VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
-    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain, PayloadBytesError,
-    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
-    SupportedForeignChains, VerifyForeignTransactionRequestArgs,
+    AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, CKDAppPublicKey,
+    CKDRequestArgs, ChainEntry, CodeHashesVotes, DestinationNodeInfo, DomainConfig,
+    Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
+    GovernanceThresholdParameters, InitConfig, LauncherDockerComposeHash, LauncherHashVotes,
+    LauncherImageHash, MeasurementVotes, NodeImageHash, PayloadBytesError, ProposeUpdateArgs,
+    ProposedGovernanceThresholdParameters, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
+    VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -47,6 +58,9 @@ pub const VOTE_ADD_DOMAINS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_NEW_PARAMETERS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_CANCEL_KEYGEN_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
+pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
+// TODO(#166): not benchmarked, carried over from the callers.
+pub const VOTE_MPC_NODE_MANIFEST_DIGEST_GAS: NearGas = NearGas::from_tgas(300);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
@@ -78,6 +92,16 @@ impl<C> MpcContractHandle<C> {
 }
 
 impl<C: CallContract> MpcContractHandle<C> {
+    pub async fn init(
+        &self,
+        parameters: GovernanceThresholdParameters,
+        init_config: Option<InitConfig>,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&InitArgs::new(parameters, init_config))?;
+        self.call(FunctionCallArgs::no_deposit(INIT, args, MAX_GAS))
+            .await
+    }
+
     pub async fn sign(
         &self,
         request: SignRequestArgs,
@@ -145,13 +169,27 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn vote_update(
         &self,
-        id: u64,
+        id: UpdateId,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
         self.call(FunctionCallArgs::no_deposit(
             VOTE_UPDATE,
             args,
             VOTE_UPDATE_GAS,
+        ))
+        .await
+    }
+
+    pub async fn remove_update_proposal(
+        &self,
+        id: UpdateId,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&RemoveUpdateProposalArgs::new(id))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REMOVE_UPDATE_PROPOSAL,
+            args,
+            // Cost scales with the size of the removed proposal, which can be a full contract.
+            MAX_GAS,
         ))
         .await
     }
@@ -207,6 +245,38 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn vote_mpc_node_manifest_digest(
+        &self,
+        mpc_node_manifest_digest: NodeImageHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteMpcNodeManifestDigestArgs::new(
+            mpc_node_manifest_digest,
+        ))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_MPC_NODE_MANIFEST_DIGEST,
+            args,
+            VOTE_MPC_NODE_MANIFEST_DIGEST_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_tee_verifier_change(
+        &self,
+        candidate_account_id: AccountId,
+        expected_code_hash: TeeVerifierCodeHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteTeeVerifierChangeArgs::new(
+            candidate_account_id,
+            expected_code_hash,
+        ))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_TEE_VERIFIER_CHANGE,
+            args,
+            VOTE_TEE_VERIFIER_CHANGE_GAS,
+        ))
+        .await
+    }
+
     pub async fn update_participant_url(
         &self,
         url: String,
@@ -249,14 +319,26 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    pub async fn register_foreign_chain_support(
+    pub async fn cancel_node_migration(
         &self,
-        foreign_chain_support: SupportedForeignChains,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        self.call(FunctionCallArgs::new(
+            CANCEL_NODE_MIGRATION,
+            b"{}".to_vec(),
+            MAX_GAS,
+            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
+        ))
+        .await
+    }
+
+    pub async fn register_foreign_chains_config(
+        &self,
+        foreign_chains_config: ForeignChainsConfig,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args =
-            serde_json::to_vec(&RegisterForeignChainSupportArgs::new(foreign_chain_support))?;
+            serde_json::to_vec(&RegisterForeignChainsConfigArgs::new(foreign_chains_config))?;
         self.call(FunctionCallArgs::no_deposit(
-            REGISTER_FOREIGN_CHAIN_SUPPORT,
+            REGISTER_FOREIGN_CHAINS_CONFIG,
             args,
             MAX_GAS,
         ))
@@ -267,7 +349,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         batch: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = borsh::to_vec(&batch)?;
+        let args = serde_json::to_vec(&VoteUpdateForeignChainProvidersArgs::new(batch))?;
         self.call(FunctionCallArgs::no_deposit(
             VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
             args,
@@ -315,6 +397,40 @@ impl<C: CallContract> MpcContractHandle<C> {
     }
 }
 
+impl<C: ViewContract + Clone> MpcContractHandle<C> {
+    pub fn allowed_docker_image_hashes(&self) -> ViewCall<C, Vec<AllowedMpcDockerImageHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES))
+    }
+
+    pub fn allowed_launcher_image_hashes(&self) -> ViewCall<C, Vec<LauncherImageHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_LAUNCHER_IMAGE_HASHES))
+    }
+
+    pub fn allowed_launcher_compose_hashes(&self) -> ViewCall<C, Vec<LauncherDockerComposeHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_LAUNCHER_COMPOSE_HASHES))
+    }
+
+    pub fn allowed_os_measurements(&self) -> ViewCall<C, Vec<ExpectedMeasurements>> {
+        self.view(ViewArgs::no_args(ALLOWED_OS_MEASUREMENTS))
+    }
+
+    pub fn mpc_node_manifest_digest_votes(&self) -> ViewCall<C, CodeHashesVotes> {
+        self.view(ViewArgs::no_args(MPC_NODE_MANIFEST_DIGEST_VOTES))
+    }
+
+    pub fn launcher_hash_votes(&self) -> ViewCall<C, LauncherHashVotes> {
+        self.view(ViewArgs::no_args(LAUNCHER_HASH_VOTES))
+    }
+
+    pub fn os_measurement_votes(&self) -> ViewCall<C, MeasurementVotes> {
+        self.view(ViewArgs::no_args(OS_MEASUREMENT_VOTES))
+    }
+
+    fn view<T: DeserializeOwned>(&self, args: ViewArgs) -> ViewCall<C, T> {
+        self.caller.view::<T, Json>(self.contract_id.clone(), args)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MpcContractHandleError<E> {
     #[error("failed to serialize call arguments: {0}")]
@@ -345,15 +461,18 @@ mod tests {
         BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
         ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose,
         Ed25519PublicKey, EpochId, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-        GovernanceThreshold, GovernanceThresholdParameters, MockAttestation, ParticipantId,
-        ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
-        ReconstructionThreshold, SignRequestArgs, VerifyForeignTransactionRequestArgs,
+        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
+        VerifyForeignTransactionRequestArgs,
     };
-    use near_contract_transport::{CallContract, FunctionCallArgs};
+    use near_contract_transport::{
+        CallContract, FunctionCallArgs, ObservedState, mock::MockViewContract,
+    };
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
     use std::sync::Mutex;
 
     /// A [`CallContract`] that records the calls it is handed, so a test can
@@ -409,7 +528,28 @@ mod tests {
         let caller = RecordingCaller::default();
         let handle = MpcContractHandle::new(&caller, "mpc.near".parse().unwrap());
 
+        let governance_threshold_parameters = GovernanceThresholdParameters {
+            threshold: GovernanceThreshold(1),
+            participants: Participants {
+                next_id: ParticipantId(1),
+                participants: vec![(
+                    "alice.near".parse().unwrap(),
+                    ParticipantId(0),
+                    ParticipantInfo {
+                        url: "http://localhost:7".to_string(),
+                        tls_public_key: Ed25519PublicKey::from([7u8; 32]),
+                    },
+                )],
+            },
+        };
         // When: every handle method, once, in declaration order
+        handle
+            .init(
+                governance_threshold_parameters.clone(),
+                Some(InitConfig::default()),
+            )
+            .await
+            .unwrap();
         handle
             .sign(SignRequestArgs::new(
                 "test".to_string(),
@@ -442,7 +582,7 @@ mod tests {
                 request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                     tx_id: BitcoinTxId([7u8; 32]),
                     confirmations: BlockConfirmations(1),
-                    extractors: vec![BitcoinExtractor::BlockHash],
+                    extractors: [BitcoinExtractor::BlockHash].into(),
                 }),
                 domain_id: DomainId(0),
                 payload_version: ForeignTxPayloadVersion::V1,
@@ -457,7 +597,7 @@ mod tests {
                 request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                     tx_id: BitcoinTxId([7u8; 32]),
                     confirmations: BlockConfirmations(1),
-                    extractors: vec![BitcoinExtractor::BlockHash],
+                    extractors: [BitcoinExtractor::BlockHash].into(),
                 }),
                 domain_id: DomainId(0),
                 payload_version: ForeignTxPayloadVersion::V1,
@@ -472,7 +612,8 @@ mod tests {
             })
             .await
             .unwrap();
-        handle.vote_update(7).await.unwrap();
+        handle.vote_update(UpdateId(7)).await.unwrap();
+        handle.remove_update_proposal(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {
                 id: DomainId(0),
@@ -486,20 +627,7 @@ mod tests {
             .vote_new_parameters(
                 EpochId::new(7),
                 ProposedGovernanceThresholdParameters {
-                    parameters: GovernanceThresholdParameters {
-                        threshold: GovernanceThreshold(1),
-                        participants: Participants {
-                            next_id: ParticipantId(1),
-                            participants: vec![(
-                                "alice.near".parse().unwrap(),
-                                ParticipantId(0),
-                                ParticipantInfo {
-                                    url: "http://localhost:7".to_string(),
-                                    tls_public_key: Ed25519PublicKey::from([7u8; 32]),
-                                },
-                            )],
-                        },
-                    },
+                    parameters: governance_threshold_parameters,
                     per_domain_thresholds: BTreeMap::new(),
                 },
             )
@@ -507,6 +635,13 @@ mod tests {
             .unwrap();
         handle.vote_cancel_keygen(7).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
+        handle
+            .vote_tee_verifier_change(
+                "verifier.near".parse().unwrap(),
+                TeeVerifierCodeHash::new([7u8; 32]),
+            )
+            .await
+            .unwrap();
         handle
             .update_participant_url("http://localhost:7".to_string())
             .await
@@ -527,10 +662,7 @@ mod tests {
             })
             .await
             .unwrap();
-        handle
-            .register_foreign_chain_support(BTreeSet::from([ForeignChain::Bitcoin]).into())
-            .await
-            .unwrap();
+        handle.cancel_node_migration().await.unwrap();
         handle
             .vote_update_foreign_chain_providers(NonEmptyBTreeMap::new(
                 ForeignChain::Bitcoin,
@@ -559,10 +691,48 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 18);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        insta::assert_snapshot!(catalog);
+    }
+
+    /// One catalog snapshot for the handle's views: every view is called once
+    /// and its wire format becomes a section of the snapshot. New view
+    /// methods add a call here.
+    #[tokio::test]
+    async fn mpc_contract_handle__should_match_the_view_catalog() {
+        // Given
+        let viewer = MockViewContract::new(Ok(ObservedState {
+            observed_at: 0.into(),
+            value: Vec::new(),
+        }));
+        let handle = MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap());
+
+        // When: every view, once, in declaration order; only the recorded
+        // calls matter, so the empty mock response is left undecoded
+        let _ = handle.allowed_docker_image_hashes().await;
+        let _ = handle.allowed_launcher_image_hashes().await;
+        let _ = handle.allowed_launcher_compose_hashes().await;
+        let _ = handle.allowed_os_measurements().await;
+        let _ = handle.mpc_node_manifest_digest_votes().await;
+        let _ = handle.launcher_hash_votes().await;
+        let _ = handle.os_measurement_votes().await;
+
+        // Then
+        let catalog = viewer
+            .calls()
+            .iter()
+            .map(|call| {
+                format!(
+                    "contract: {}\nmethod:   {}\nargs:     {}",
+                    call.contract_id,
+                    call.method_name,
+                    String::from_utf8_lossy(&call.args)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n\n");
         insta::assert_snapshot!(catalog);

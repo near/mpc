@@ -24,20 +24,20 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: nextest@0.9.126
 
@@ -52,3 +52,7 @@ jobs:
       - name: Run tee-authority tests
         if: always()
         run: cargo nextest run -p tee-authority --features external-services-tests --cargo-profile test-release --locked -E 'test(test_fetch_collateral_from_pccs)'
+
+      - name: Run attestation-cli tests
+        if: always()
+        run: cargo nextest run -p attestation-cli --features external-services-tests --cargo-profile test-release --locked -E 'test(fetch_from_intel)'

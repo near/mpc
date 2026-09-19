@@ -6,7 +6,7 @@ use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use near_account_id::AccountId;
+use crate::primitives::participants::IdentifiesParticipant;
 use near_sdk::near;
 use std::collections::BTreeSet;
 
@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 /// revert back to the Running state but deleting the domains for which we have not yet successfully
 /// generated a key. This can be useful if the current set of participants are no longer all online
 /// and we wish to perform a resharing before adding domains again.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug)]
 #[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct InitializingContractState {
@@ -142,11 +142,11 @@ impl InitializingContractState {
         Ok(None)
     }
 
-    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
+    pub fn is_participant<K: IdentifiesParticipant>(&self, id: &K) -> bool {
         self.generating_key
             .proposed_parameters()
             .participants()
-            .is_participant_given_account_id(account_id)
+            .is_participant(id)
     }
 }
 

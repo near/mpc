@@ -7,6 +7,7 @@ use crate::sandbox::{
             CKDRequestTest, DomainResponseTest, gen_secp_256k1_sign_test,
             submit_ckd_response_measure_gas, submit_signature_response, verify_timeout,
         },
+        transactions::CallMpcContract,
     },
 };
 use anyhow::Context;
@@ -181,6 +182,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         keys,
@@ -246,6 +248,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         keys,
@@ -294,33 +297,31 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_initialization() -> anyhow::Result<()> {
-    let (_, contract) = init().await;
+    let (_worker, contract) = init().await;
 
     // Empty candidates should fail.
     let participants = Participants::new();
     let threshold = GovernanceThreshold::new(0);
-    let proposed_parameters =
-        GovernanceThresholdParameters::new_unvalidated(participants, threshold);
+    let proposed_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
+        GovernanceThresholdParameters::new_unvalidated(participants, threshold).into();
     let result = contract
-        .call(method_names::INIT)
-        .args_json(serde_json::json!({
-            "parameters": proposed_parameters,
-        }))
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(proposed_parameters, None)
         .await?;
     assert!(
         result.is_failure(),
         "initializing with zero candidates or less than threshold candidates should fail"
     );
 
-    let proposed_parameters =
-        GovernanceThresholdParameters::new(candidates(None), GovernanceThreshold::new(3)).unwrap();
+    let proposed_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
+        GovernanceThresholdParameters::new(candidates(None), GovernanceThreshold::new(3))
+            .unwrap()
+            .into();
     let result = contract
-        .call(method_names::INIT)
-        .args_json(serde_json::json!({
-            "parameters": proposed_parameters,
-        }))
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(proposed_parameters.clone(), None)
         .await?;
     assert!(
         result.is_success(),
@@ -329,12 +330,9 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
     // Reinitializing after the first successful initialization should fail.
     let result = contract
-        .call(method_names::INIT)
-        .args_json(serde_json::json!({
-            "parameters": proposed_parameters,
-            "config": "null",
-        }))
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(proposed_parameters.clone(), None)
         .await?;
     assert!(
         result.is_failure(),

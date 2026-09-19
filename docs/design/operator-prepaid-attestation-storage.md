@@ -53,7 +53,7 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 ### Fee
 
-0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/lib.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
+0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/api/attestation.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
 
 | Component | Charged bytes | Cost |
 |---|---|---|
@@ -106,7 +106,7 @@ Accepted deliberately: if such an entry is later swept, rule 3 hands its owner a
 
 ## Operator UX
 
-One new step in the [operator guide](../running-an-mpc-node-in-tdx-external-guide.md), right after [Create a NEAR Account for Your Node](../running-an-mpc-node-in-tdx-external-guide.md#create-a-near-account-for-your-node) — the operator already holds that account's full-access key there, and `prepay_attestation_storage` needs only the account id. That is well before the CVM is configured and started, before the node account key is retrieved, and before it is added, so the node never starts into an ungranted state. Every other step is unchanged, including the off-chain `attestation-cli` check, which this design does not touch.
+One new step in the [operator guide](../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md), right after [Create a NEAR Account for Your Node](../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#create-a-near-account-for-your-node) — the operator already holds that account's full-access key there, and `prepay_attestation_storage` needs only the account id. That is well before the CVM is configured and started, before the node account key is retrieved, and before it is added, so the node never starts into an ungranted state. Every other step is unchanged, including the off-chain `attestation-cli` check, which this design does not touch.
 
 First read the current fee — `attestation_storage_fee_millinear` in the config:
 

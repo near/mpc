@@ -1,5 +1,7 @@
 use std::{sync::LazyLock, time::Duration};
 
+use crate::providers::verify_foreign_tx::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
+
 pub(crate) mod networking_metrics;
 pub(crate) mod tokio_runtime_metrics;
 pub(crate) mod tokio_task_metrics;
@@ -126,6 +128,17 @@ pub static MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: LazyLock<prometheus::IntC
         .unwrap()
     });
 
+pub static MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_indexer_num_unconvertible_predecessor_ids",
+            "Number of requests dropped because the receipt's predecessor could not be \
+             converted between the two `near-account-id` versions in the dependency graph. \
+             Expected to stay at zero; a non-zero value means those versions have diverged"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_SIGN_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_requests_indexed",
@@ -161,6 +174,16 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
     )
     .unwrap()
 });
+
+pub static MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_presignature_waits",
+            "Number of verify foreign tx attempts that found no chain-compatible presignature \
+             immediately and had to wait for one"
+        )
+        .unwrap()
+    });
 
 pub static MPC_NUM_SIGN_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
@@ -467,5 +490,129 @@ pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVe
         .unwrap()
     });
 
+pub static MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_tee_attestation_submissions_total",
+            "Total number of TEE attestation submissions to the MPC contract",
+            &["outcome"],
+        )
+        .unwrap()
+    });
+
 pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
 pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
+
+pub static MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_tee_attestation_round_timeouts_total",
+            "Total number of TEE attestation submission rounds that timed out, by stage",
+            &["stage"],
+        )
+        .unwrap()
+    });
+
+pub const MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION: &str = "generate_attestation";
+pub const MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE: &str = "read_expiry_baseline";
+pub const MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION: &str = "submit_attestation";
+
+pub static FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_providers_configured",
+            "RPC providers configured for a foreign chain",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_attestation_expiry_timestamp_seconds",
+            "NEAR block time at which the attestation stored on chain for this node's TLS key \
+             expires. -1 if the stored attestation carries no expiry; 0 if none is stored. \
+             Subtract mpc_indexer_latest_block_timestamp_seconds, not wall clock, for the \
+             remaining time"
+        )
+        .unwrap()
+    });
+
+pub static FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_providers_healthy",
+            "RPC providers that served the expected network at the latest probe",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_attestation_last_landed_timestamp_seconds",
+            "Unix time, by this node's own clock, at which it last confirmed an attestation \
+             submission landed on chain"
+        )
+        .unwrap()
+    });
+
+/// An alert cannot fire on a series that does not exist yet.
+pub fn init_attestation_freshness_metrics() {
+    LazyLock::force(&MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS);
+    LazyLock::force(&MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS);
+}
+
+/// A call cannot outlive the inspection deadline by much, so the top bucket is the deadline.
+fn foreign_chain_provider_call_buckets() -> Vec<f64> {
+    vec![
+        0.025,
+        0.05,
+        0.1,
+        0.2,
+        0.35,
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.5,
+        FOREIGN_CHAIN_INSPECTION_TIMEOUT.as_secs_f64(),
+    ]
+}
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_foreign_chain_provider_inspection_seconds",
+            "Time one foreign chain RPC provider took to return on a verify request, whether it \
+             answered or failed. Calls the node abandoned are in \
+             mpc_foreign_chain_provider_dropped_seconds",
+            &["chain", "provider", "outcome"],
+            foreign_chain_provider_call_buckets(),
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_foreign_chain_provider_dropped_seconds",
+            "Time the node waited on a foreign chain RPC provider before abandoning the call, at \
+             its deadline or at shutdown. Whether the provider answered is unknown",
+            &["chain", "provider"],
+            foreign_chain_provider_call_buckets(),
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_foreign_chain_provider_errors_total",
+            "Number of times a foreign chain RPC provider failed transaction verification requests.",
+            &["chain", "provider", "kind"],
+        )
+        .unwrap()
+    });

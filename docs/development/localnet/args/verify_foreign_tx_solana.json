@@ -1,0 +1,19 @@
+{
+    "request": {
+        "request": {
+            "Solana": {
+                "tx_id": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                "finality": "Finalized",
+                "extractors": [
+                    {
+                        "AccountState": {
+                            "pubkey": "06a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a00000000"
+                        }
+                    }
+                ]
+            }
+        },
+        "domain_id": 3,
+        "payload_version": 1
+    }
+}

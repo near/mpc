@@ -60,6 +60,9 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         polygon: None,
         aptos: None,
         sui: None,
+        avalanche: None,
+        adi: None,
+        fogo: None,
     };
     for config in &mut setup.configs {
         config.config.foreign_chains = foreign_chains.clone();
@@ -119,20 +122,5 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         configs
             .values()
             .all(|node_config| **node_config == expected_node_config)
-    );
-
-    // The dual-write also feeds the legacy model the node still reads from.
-    assert_eq!(
-        **contract.supported_foreign_chains(),
-        expected_foreign_chains
-    );
-    let by_node = &contract
-        .supported_foreign_chains_by_node()
-        .foreign_chain_support_by_node;
-    assert_eq!(by_node.len(), setup.participants.participants.len());
-    assert!(
-        by_node
-            .values()
-            .all(|node_support| **node_support == expected_node_config)
     );
 }

@@ -1,7 +1,11 @@
 use crate::aptos::{AptosExtractedValue, AptosTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
+use crate::{
+    ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector, HexBytes,
+    NetworkFingerprint, NetworkFingerprintInspector, Verdict, is_retryable_status,
+};
 use foreign_chain_rpc_interfaces::aptos::{
-    AptosRpcClient, AptosRpcError, TransactionResponse, normalize_event_data,
+    AptosRpcClient, AptosRpcError, TransactionResponse, canonical_chain_id_text,
+    normalize_event_data,
 };
 use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
 use std::borrow::Cow;
@@ -28,6 +32,20 @@ pub enum AptosExtractor {
     Event { event_index: usize },
 }
 
+impl<Client> NetworkFingerprintInspector for AptosInspector<Client>
+where
+    Client: AptosRpcClient + Send + Sync,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let ledger_info = self.client.get_ledger_info().await.classified()?;
+        Ok(self.canonical_fingerprint(&ledger_info.chain_id.to_string()))
+    }
+
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(canonical_chain_id_text(fingerprint))
+    }
+}
+
 impl<Client> ForeignChainInspector for AptosInspector<Client>
 where
     Client: AptosRpcClient + Send + Sync,
@@ -42,37 +60,16 @@ where
         tx_id: AptosTransactionHash,
         finality: AptosFinality,
         extractors: Vec<AptosExtractor>,
-    ) -> Result<Vec<AptosExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<AptosExtractedValue>, ForeignChainInspectionError> {
         let tx_hash_hex = format!("0x{}", hex::encode(*tx_id));
 
-        let tx = self
-            .client
-            .get_transaction_by_hash(&tx_hash_hex)
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                match e {
-                    // 404 = definitively absent → a non-transient verdict.
-                    AptosRpcError::ApiError { status: 404, .. } => {
-                        ForeignChainInspectionError::TransactionNotFound
-                    }
-                    // Rate limits and server errors are provider hiccups → transient, so the
-                    // affected provider is dropped from the quorum instead of blocking it.
-                    AptosRpcError::ApiError {
-                        status: 408 | 429, ..
-                    } => ForeignChainInspectionError::RpcRequestFailed(msg),
-                    AptosRpcError::ApiError { status, .. } if status >= 500 => {
-                        ForeignChainInspectionError::RpcRequestFailed(msg)
-                    }
-                    // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
-                    // retrying cannot change them, so they count as substantive verdicts.
-                    AptosRpcError::ApiError { .. } => {
-                        ForeignChainInspectionError::RpcRequestRejected(msg)
-                    }
-                    // Transport failures, including timeouts.
-                    AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(msg),
-                }
-            })?;
+        // A 404 on the Aptos transaction lookup call means the transaction does not exist
+        let tx = match self.client.get_transaction_by_hash(&tx_hash_hex).await {
+            Err(AptosRpcError::ApiError { status: 404, .. }) => {
+                return Ok(Verdict::TransactionNotFound);
+            }
+            other => other.classified()?,
+        };
 
         ensure_hash_matches(&tx_id, &tx.hash)?;
 
@@ -89,17 +86,53 @@ where
                     ));
                 };
                 if !success {
-                    return Err(ForeignChainInspectionError::TransactionFailed);
+                    return Ok(Verdict::TransactionFailed);
                 }
             }
         }
 
-        let extracted_values = extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&tx))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut extracted_values = Vec::with_capacity(extractors.len());
+        for extractor in &extractors {
+            let Some(value) = extractor.extract_value(&tx)? else {
+                return Ok(Verdict::LogIndexOutOfBounds);
+            };
+            extracted_values.push(value);
+        }
+        Ok(Verdict::Extracted(extracted_values))
+    }
+}
 
-        Ok(extracted_values)
+impl<T> ClassifyRpcOutcome for Result<T, AptosRpcError> {
+    type Response = T;
+
+    fn classified(self) -> Result<T, ForeignChainInspectionError> {
+        let error = match self {
+            Ok(response) => return Ok(response),
+            Err(error) => error,
+        };
+
+        let message = error.to_string();
+        Err(match error {
+            // A 404 is classified as a rejection by default. A call site where it means
+            // something else, like the transaction lookup, must intercept it before classifying.
+            AptosRpcError::ApiError { status: 404, .. } => {
+                ForeignChainInspectionError::RpcRequestRejected(message)
+            }
+            AptosRpcError::ApiError { status, .. } if is_retryable_status(status) => {
+                ForeignChainInspectionError::RpcRequestFailed(message)
+            }
+            // Retrying cannot change a deterministic 4xx.
+            AptosRpcError::ApiError { .. } => {
+                ForeignChainInspectionError::RpcRequestRejected(message)
+            }
+            AptosRpcError::Http(error) if error.is_timeout() => {
+                ForeignChainInspectionError::Timeout
+            }
+            AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
+            AptosRpcError::MalformedBody(_) => {
+                ForeignChainInspectionError::MalformedRpcResponse(message)
+            }
+        })
     }
 }
 
@@ -128,16 +161,14 @@ impl AptosExtractor {
     fn extract_value(
         &self,
         tx: &TransactionResponse,
-    ) -> Result<AptosExtractedValue, ForeignChainInspectionError> {
+    ) -> Result<Option<AptosExtractedValue>, ForeignChainInspectionError> {
         match self {
             AptosExtractor::Event { event_index } => {
-                let event = tx
-                    .events
-                    .get(*event_index)
-                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+                let Some(event) = tx.events.get(*event_index) else {
+                    return Ok(None);
+                };
 
-                // An unparseable field is a deterministic property of the response, not a
-                // hiccup — a substantive (non-transient) verdict for the fan-out.
+                // An unparseable field is a deterministic property of the response, not a hiccup.
                 let account_address =
                     parse_aptos_address(&event.guid.account_address).map_err(|reason| {
                         ForeignChainInspectionError::MalformedRpcResponse(format!(
@@ -160,12 +191,12 @@ impl AptosExtractor {
                 let type_tag = normalize_type_tag(&event.event_type);
                 let data = normalize_event_data(&event.data);
 
-                Ok(AptosExtractedValue::Event(AptosEvent {
+                Ok(Some(AptosExtractedValue::Event(AptosEvent {
                     account_address,
                     sequence_number,
                     type_tag,
                     data,
-                }))
+                })))
             }
         }
     }
@@ -234,27 +265,46 @@ fn parse_aptos_address(s: &str) -> Result<AptosAddress, String> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::aptos::{MAINNET_CHAIN_ID, TESTNET_CHAIN_ID};
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::aptos::{
-        AptosEventResponse, AptosRpcError, EventGuid, TransactionResponse,
+        AptosEventResponse, AptosRpcError, EventGuid, LedgerInfoResponse, TransactionResponse,
     };
     use rstest::rstest;
 
     struct MockAptosClient {
         response: Result<TransactionResponse, AptosRpcError>,
+        ledger_info: Result<LedgerInfoResponse, AptosRpcError>,
     }
 
     impl MockAptosClient {
         fn success(tx: TransactionResponse) -> Self {
-            Self { response: Ok(tx) }
+            Self {
+                response: Ok(tx),
+                ledger_info: Ok(LedgerInfoResponse {
+                    chain_id: MAINNET_CHAIN_ID,
+                }),
+            }
         }
 
         fn api_error(status: u16) -> Self {
             Self {
-                response: Err(AptosRpcError::ApiError {
-                    status,
-                    body: format!("http {status}"),
-                }),
+                response: Err(Self::error(status)),
+                ledger_info: Err(Self::error(status)),
+            }
+        }
+
+        fn on_chain(chain_id: u64) -> Self {
+            Self {
+                ledger_info: Ok(LedgerInfoResponse { chain_id }),
+                ..Self::api_error(404)
+            }
+        }
+
+        fn error(status: u16) -> AptosRpcError {
+            AptosRpcError::ApiError {
+                status,
+                body: format!("http {status}"),
             }
         }
     }
@@ -270,10 +320,21 @@ mod tests {
                     status: *status,
                     body: body.clone(),
                 }),
-                Err(other) => Err(AptosRpcError::ApiError {
-                    status: 500,
-                    body: other.to_string(),
+                Err(other) => unreachable!("MockAptosClient models only ApiError, got {other}"),
+            };
+            std::future::ready(r)
+        }
+
+        fn get_ledger_info(
+            &self,
+        ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send {
+            let r = match &self.ledger_info {
+                Ok(info) => Ok(info.clone()),
+                Err(AptosRpcError::ApiError { status, body }) => Err(AptosRpcError::ApiError {
+                    status: *status,
+                    body: body.clone(),
                 }),
+                Err(other) => unreachable!("MockAptosClient models only ApiError, got {other}"),
             };
             std::future::ready(r)
         }
@@ -331,7 +392,7 @@ mod tests {
             .await;
 
         // Then
-        let values = result.unwrap();
+        let values = extracted(result);
         assert_eq!(values.len(), 1);
         match &values[0] {
             AptosExtractedValue::Event(event) => {
@@ -343,7 +404,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extract__should_fail_when_transaction_failed() {
+    async fn extract__should_return_the_transaction_failed_verdict() {
         // Given
         let tx = sample_tx(HASH, false);
         let inspector = AptosInspector::new(MockAptosClient::success(tx));
@@ -355,11 +416,11 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(result, Err(ForeignChainInspectionError::TransactionFailed));
+        assert_matches!(result, Ok(Verdict::TransactionFailed));
     }
 
     #[tokio::test]
-    async fn extract__should_fail_when_event_index_out_of_bounds() {
+    async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_event_index() {
         // Given
         let tx = sample_tx(HASH, true);
         let inspector = AptosInspector::new(MockAptosClient::success(tx));
@@ -375,10 +436,16 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-        );
+        assert_matches!(result, Ok(Verdict::LogIndexOutOfBounds));
+    }
+
+    fn extracted(
+        result: Result<Verdict<AptosExtractedValue>, ForeignChainInspectionError>,
+    ) -> Vec<AptosExtractedValue> {
+        match result.unwrap() {
+            Verdict::Extracted(values) => values,
+            failing => panic!("expected extracted values, got: {failing}"),
+        }
     }
 
     fn event_response(type_tag: &str, data: serde_json::Value) -> AptosEventResponse {
@@ -409,17 +476,18 @@ mod tests {
         let tx_id = tx_id_from_hex(HASH);
 
         // When — request both events out of order, exercising the extractor loop and indexing.
-        let values = inspector
-            .extract(
-                tx_id,
-                AptosFinality::Committed,
-                vec![
-                    AptosExtractor::Event { event_index: 1 },
-                    AptosExtractor::Event { event_index: 0 },
-                ],
-            )
-            .await
-            .unwrap();
+        let values = extracted(
+            inspector
+                .extract(
+                    tx_id,
+                    AptosFinality::Committed,
+                    vec![
+                        AptosExtractor::Event { event_index: 1 },
+                        AptosExtractor::Event { event_index: 0 },
+                    ],
+                )
+                .await,
+        );
 
         // Then
         assert_eq!(values.len(), 2);
@@ -432,7 +500,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extract__should_fail_when_committed_tx_has_no_events() {
+    async fn extract__should_return_the_out_of_bounds_verdict_when_committed_tx_has_no_events() {
         // Given a committed tx whose events array is empty.
         let tx = TransactionResponse {
             transaction_type: "user_transaction".to_string(),
@@ -453,10 +521,7 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-        );
+        assert_matches!(result, Ok(Verdict::LogIndexOutOfBounds));
     }
 
     #[tokio::test]
@@ -470,7 +535,7 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — transient, so the fan-out keeps retrying until it commits.
+        // Then: transient, worth retrying once the transaction commits.
         assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
         assert!(result.unwrap_err().is_transient());
     }
@@ -492,14 +557,15 @@ mod tests {
         let tx_id = tx_id_from_hex(HASH);
 
         // When
-        let values = inspector
-            .extract(
-                tx_id,
-                AptosFinality::Committed,
-                vec![AptosExtractor::Event { event_index: 0 }],
-            )
-            .await
-            .unwrap();
+        let values = extracted(
+            inspector
+                .extract(
+                    tx_id,
+                    AptosFinality::Committed,
+                    vec![AptosExtractor::Event { event_index: 0 }],
+                )
+                .await,
+        );
 
         // Then
         match &values[0] {
@@ -596,14 +662,15 @@ mod tests {
         let tx_id = tx_id_from_hex(HASH);
 
         // When
-        let values = inspector
-            .extract(
-                tx_id,
-                AptosFinality::Committed,
-                vec![AptosExtractor::Event { event_index: 0 }],
-            )
-            .await
-            .unwrap();
+        let values = extracted(
+            inspector
+                .extract(
+                    tx_id,
+                    AptosFinality::Committed,
+                    vec![AptosExtractor::Event { event_index: 0 }],
+                )
+                .await,
+        );
 
         // Then — the signed payload carries the canonical short form.
         match &values[0] {
@@ -624,12 +691,8 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — a substantive (non-transient) verdict.
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::TransactionNotFound)
-        );
-        assert!(!result.unwrap_err().is_transient());
+        // Then
+        assert_matches!(result, Ok(Verdict::TransactionNotFound));
     }
 
     #[rstest]
@@ -672,8 +735,8 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — non-transient: retrying cannot change a deterministic rejection, and the
-        // fan-out must not validate on the remaining providers alone.
+        // Then: not transient, since retrying cannot change a deterministic rejection. The
+        // fan out tolerates it as the provider's own fault rather than a verdict.
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::RpcRequestRejected(_))
@@ -731,5 +794,48 @@ mod tests {
             result,
             Err(ForeignChainInspectionError::MalformedRpcResponse(_))
         );
+    }
+
+    #[tokio::test]
+    async fn network_fingerprint__should_return_the_ledger_chain_id() {
+        // Given
+        let inspector = AptosInspector::new(MockAptosClient::on_chain(TESTNET_CHAIN_ID));
+
+        // When
+        let fingerprint = inspector
+            .network_fingerprint()
+            .await
+            .expect("network_fingerprint should succeed");
+
+        // Then
+        assert_eq!(fingerprint.to_string(), TESTNET_CHAIN_ID.to_string());
+    }
+
+    #[tokio::test]
+    async fn network_fingerprint__should_report_a_root_that_refuses_as_rejected() {
+        // Given
+        let inspector = AptosInspector::new(MockAptosClient::api_error(404));
+
+        // When
+        let fingerprint = inspector.network_fingerprint().await;
+
+        // Then
+        assert_matches!(
+            fingerprint,
+            Err(ForeignChainInspectionError::RpcRequestRejected(_))
+        );
+    }
+
+    #[test]
+    fn classified__should_read_a_404_as_a_refusal() {
+        // Given: the transaction lookup intercepts its own 404 before classifying, so here a
+        // 404 can only mean a path the provider does not route.
+        let answered: Result<LedgerInfoResponse, _> = Err(MockAptosClient::error(404));
+
+        // When
+        let error = answered.classified().unwrap_err();
+
+        // Then
+        assert_matches!(error, ForeignChainInspectionError::RpcRequestRejected(_));
     }
 }

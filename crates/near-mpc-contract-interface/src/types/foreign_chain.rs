@@ -1,15 +1,11 @@
-// allow deprecation for module, since macro decorators don't work
-// when applied directly on struct.
-#![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
-
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet, UpperBoundedVec};
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, UpperBoundedVec};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::types::primitives::{AccountId, DomainId};
+use crate::types::primitives::DomainId;
 use crate::types::{Ed25519PublicKey, SignatureResponse};
 
 /// Maximum number of significant data bits a TON Cell may hold.
@@ -36,6 +32,9 @@ pub type TonCellData = UpperBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
 
 /// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
 pub type TonCellRefs = UpperBoundedVec<Hash256, TON_CELL_MAX_REFS>;
+
+// Pending requests are stored in the contract. We need to cap the size of a request.
+pub const MAX_EXTRACTORS_PER_REQUEST: usize = 32;
 
 #[derive(
     Debug,
@@ -175,7 +174,7 @@ pub struct VerifyForeignTransactionResponse {
 pub enum ForeignChainRpcRequest {
     Abstract(EvmRpcRequest),
     Ethereum(EvmRpcRequest),
-    Solana(SolanaRpcRequest),
+    Solana(SvmRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     Starknet(StarknetRpcRequest),
     Bnb(EvmRpcRequest),
@@ -186,6 +185,9 @@ pub enum ForeignChainRpcRequest {
     Ton(TonRpcRequest),
     Aptos(AptosRpcRequest),
     Sui(SuiRpcRequest),
+    Avalanche(EvmRpcRequest),
+    Adi(EvmRpcRequest),
+    Fogo(SvmRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -204,6 +206,9 @@ impl ForeignChainRpcRequest {
             Self::Ton(_) => ForeignChain::Ton,
             Self::Aptos(_) => ForeignChain::Aptos,
             Self::Sui(_) => ForeignChain::Sui,
+            Self::Avalanche(_) => ForeignChain::Avalanche,
+            Self::Adi(_) => ForeignChain::Adi,
+            Self::Fogo(_) => ForeignChain::Fogo,
         }
     }
 }
@@ -227,7 +232,7 @@ impl ForeignChainRpcRequest {
 )]
 pub struct EvmRpcRequest {
     pub tx_id: EvmTxId,
-    pub extractors: Vec<EvmExtractor>,
+    pub extractors: UpperBoundedVec<EvmExtractor, MAX_EXTRACTORS_PER_REQUEST>,
     pub finality: EvmFinality,
 }
 
@@ -248,10 +253,10 @@ pub struct EvmRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct SolanaRpcRequest {
-    pub tx_id: SolanaTxId,
-    pub finality: SolanaFinality,
-    pub extractors: Vec<SolanaExtractor>,
+pub struct SvmRpcRequest {
+    pub tx_id: SvmTxId,
+    pub finality: SvmFinality,
+    pub extractors: UpperBoundedVec<SvmExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -274,7 +279,7 @@ pub struct SolanaRpcRequest {
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId,
     pub confirmations: BlockConfirmations,
-    pub extractors: Vec<BitcoinExtractor>,
+    pub extractors: UpperBoundedVec<BitcoinExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -298,7 +303,7 @@ pub struct TonRpcRequest {
     pub tx_id: TonTxId,
     pub account: TonAddress,
     pub finality: TonFinality,
-    pub extractors: Vec<TonExtractor>,
+    pub extractors: UpperBoundedVec<TonExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[serde_as]
@@ -636,7 +641,7 @@ pub struct AptosAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
 pub struct AptosRpcRequest {
     pub tx_id: AptosTxId,
     pub finality: AptosFinality,
-    pub extractors: Vec<AptosExtractor>,
+    pub extractors: UpperBoundedVec<AptosExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -799,7 +804,7 @@ pub struct SuiAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
 pub struct SuiRpcRequest {
     pub tx_id: SuiTxId,
     pub finality: SuiFinality,
-    pub extractors: Vec<SuiExtractor>,
+    pub extractors: UpperBoundedVec<SuiExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 /// Sui has no reorgs; a transaction is final once it is included in a
@@ -924,7 +929,7 @@ pub enum SuiExtractedValue {
 pub struct StarknetRpcRequest {
     pub tx_id: StarknetTxId,
     pub finality: StarknetFinality,
-    pub extractors: Vec<StarknetExtractor>,
+    pub extractors: UpperBoundedVec<StarknetExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -969,8 +974,7 @@ pub enum EvmFinality {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
-pub enum SolanaFinality {
-    Processed,
+pub enum SvmFinality {
     Confirmed,
     Finalized,
 }
@@ -1070,9 +1074,111 @@ pub struct EvmLog {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
-pub enum SolanaExtractor {
-    SolanaProgramIdIndex { ix_index: u32 },
-    SolanaDataHash { ix_index: u32 },
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum SvmExtractor {
+    InnerInstruction {
+        instruction_index: u64,
+        inner_instruction_index: u64,
+    } = 1,
+    AccountState {
+        pubkey: SvmAddress,
+    } = 2,
+}
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SvmAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SvmInnerInstruction {
+    pub program_id: SvmAddress,
+    pub accounts: Vec<SvmAddress>,
+    #[serde_as(as = "Hex")]
+    pub data: Vec<u8>,
+}
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SvmAccount {
+    pub owner: SvmAddress,
+    #[serde_as(as = "Hex")]
+    pub data: Vec<u8>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum SvmExtractedValue {
+    InnerInstruction(SvmInnerInstruction),
+    AccountState(SvmAccount),
 }
 
 #[derive(
@@ -1174,6 +1280,7 @@ pub enum ExtractedValue {
     TonExtractedValue(TonExtractedValue),
     AptosExtractedValue(AptosExtractedValue),
     SuiExtractedValue(SuiExtractedValue),
+    SvmExtractedValue(SvmExtractedValue),
 }
 
 #[derive(
@@ -1276,55 +1383,34 @@ pub enum ForeignChain {
     Ton,
     Aptos,
     Sui,
+    Avalanche,
+    Adi,
+    Fogo,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::Deref,
-    derive_more::DerefMut,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-#[deprecated(note = "https://github.com/near/mpc/issues/3079")]
-pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
-
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Deref,
-    derive_more::DerefMut,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
+impl ForeignChain {
+    /// The chain's key in an operator's `foreign_chains` config, also used as its metric label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Solana => "solana",
+            Self::Bitcoin => "bitcoin",
+            Self::Ethereum => "ethereum",
+            Self::Base => "base",
+            Self::Bnb => "bnb",
+            Self::Arbitrum => "arbitrum",
+            Self::Abstract => "abstract",
+            Self::Starknet => "starknet",
+            Self::Polygon => "polygon",
+            Self::HyperEvm => "hyper_evm",
+            Self::Ton => "ton",
+            Self::Aptos => "aptos",
+            Self::Sui => "sui",
+            Self::Avalanche => "avalanche",
+            Self::Adi => "adi",
+            Self::Fogo => "fogo",
+        }
+    }
+}
 
 /// Set of foreign chains a node reports it can serve; aggregated into [`AvailableForeignChains`] by the contract.
 #[derive(
@@ -1395,51 +1481,6 @@ pub struct ForeignChainsConfigs(BTreeMap<Ed25519PublicKey, ForeignChainsConfig>)
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct RpcProvider {
-    pub rpc_url: String,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Deref,
-    derive_more::From,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct ForeignChainSupportByNode {
-    pub foreign_chain_support_by_node: BTreeMap<AccountId, SupportedForeignChains>,
-}
 
 #[derive(
     Debug,
@@ -1555,14 +1596,42 @@ pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct SolanaTxId(
+pub struct SvmTxId(
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
+        schemars(with = "Hex64Schema")
     )]
     #[serde_as(as = "Hex")]
     pub [u8; 64],
 );
+
+/// Hex-string schema for a 64-byte array, which schemars has no
+/// [`JsonSchema`](schemars::JsonSchema) impl for.
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+struct Hex64Schema;
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for Hex64Schema {
+    fn schema_name() -> String {
+        "Hex64".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            string: Some(Box::new(schemars::schema::StringValidation {
+                pattern: Some(r"^(?:[0-9A-Fa-f]{2}){64}$".to_string()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+}
 
 #[serde_as]
 #[derive(
@@ -1711,11 +1780,12 @@ impl ForeignTxSignPayload {
     Ord,
     PartialOrd,
     Hash,
+    Serialize,
+    Deserialize,
     BorshSerialize,
     BorshDeserialize,
     derive_more::Display,
 )]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1725,8 +1795,7 @@ pub struct ProviderId(pub String);
 /// Where the operator's API key/token gets injected into the assembled RPC URL.
 /// Lives on the contract (not in operator yaml) so the operator can't pick a custom
 /// auth shape that lets them inject extra path or query components.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1748,8 +1817,7 @@ pub enum AuthScheme {
 
 /// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
 /// modelled as an enum so a vote can't accidentally produce an "all three" shape.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1773,8 +1841,7 @@ pub enum ChainRouting {
 /// One provider's per-chain configuration, stored as a value in `ChainEntry.providers`
 /// (keyed by [`ProviderId`]). Read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1783,28 +1850,32 @@ pub struct ProviderConfig {
     /// Provider's stable base. When `chain_routing == Embedded`, the chain identifier
     /// is already inside `base_url` (subdomain or path prefix). Otherwise `base_url`
     /// is chain-agnostic and `chain_routing` carries the chain marker.
+    ///
+    /// A single `{}` allows per-operator slug (e.g. QuickNode's
+    /// `https://{}.sui-testnet.quiknode.pro`); nodes match it against exactly one
+    /// label of the local URL, keeping the rest of the host pinned.
     pub base_url: String,
     pub auth_scheme: AuthScheme,
     pub chain_routing: ChainRouting,
 }
 
 /// Stored state for one chain in the on-chain whitelist: a non-empty map from
-/// [`ProviderId`] to that provider's per-chain configuration, plus the RPC response
-/// quorum nodes should use when querying. Returned by the
+/// [`ProviderId`] to that provider's per-chain configuration, plus the voted RPC
+/// response quorum. Returned by the
 /// `allowed_foreign_chain_providers` view fn. [`NonEmptyBTreeMap`] enforces a non-empty
-/// provider set and at-most-one entry per [`ProviderId`] at borsh-deserialize time,
+/// provider set and at-most-one entry per [`ProviderId`] at deserialize time,
 /// and the map iterates in [`ProviderId`] order — so the canonical hash matches across
 /// voters without an explicit sort step.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ChainEntry {
     pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
-    /// RPC response quorum: when a node queries the providers above, at least this
-    /// many must return the same value for the response to be accepted.
+    /// Voted RPC response quorum. Stored for a deferred quorum policy and not yet
+    /// consumed: nodes currently require every provider that reaches a verdict to
+    /// agree on it.
     pub quorum: u64,
 }
 
@@ -1812,7 +1883,9 @@ pub struct ChainEntry {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use rstest::rstest;
+    use serde_json::json;
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {
@@ -1820,7 +1893,7 @@ mod tests {
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
                 tx_id: EvmTxId([0xab; 32]),
-                extractors: vec![EvmExtractor::BlockHash],
+                extractors: [EvmExtractor::BlockHash].into(),
                 finality: EvmFinality::Finalized,
             }),
             values: vec![ExtractedValue::EvmExtractedValue(
@@ -1839,22 +1912,62 @@ mod tests {
     fn foreign_tx_sign_payload_v1_solana__should_have_consistent_hash() {
         // Given
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: ForeignChainRpcRequest::Solana(SolanaRpcRequest {
-                tx_id: SolanaTxId([0x11; 64]),
-                finality: SolanaFinality::Finalized,
-                extractors: vec![
-                    SolanaExtractor::SolanaProgramIdIndex { ix_index: 0 },
-                    SolanaExtractor::SolanaDataHash { ix_index: 1 },
-                ],
+            request: ForeignChainRpcRequest::Solana(SvmRpcRequest {
+                tx_id: SvmTxId([0x11; 64]),
+                finality: SvmFinality::Finalized,
+                extractors: [
+                    SvmExtractor::InnerInstruction {
+                        instruction_index: 2,
+                        inner_instruction_index: 0,
+                    },
+                    SvmExtractor::AccountState {
+                        pubkey: SvmAddress([0x22; 32]),
+                    },
+                ]
+                .into(),
             }),
             values: vec![
-                ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(Hash256(
-                    [0x33; 32],
-                ))),
-                ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(Hash256(
-                    [0x44; 32],
-                ))),
+                ExtractedValue::SvmExtractedValue(SvmExtractedValue::InnerInstruction(
+                    SvmInnerInstruction {
+                        program_id: SvmAddress([0x33; 32]),
+                        accounts: vec![SvmAddress([0x44; 32]), SvmAddress([0x55; 32])],
+                        data: vec![0xde, 0xad, 0xbe, 0xef],
+                    },
+                )),
+                ExtractedValue::SvmExtractedValue(SvmExtractedValue::AccountState(SvmAccount {
+                    owner: SvmAddress([0x66; 32]),
+                    data: vec![0xca, 0xfe],
+                })),
             ],
+        });
+
+        // When
+        let hash = payload.compute_msg_hash().unwrap();
+
+        // Then
+        insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    #[test]
+    fn foreign_tx_sign_payload_v1_fogo__should_have_consistent_hash() {
+        // Given
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Fogo(SvmRpcRequest {
+                tx_id: SvmTxId([0x77; 64]),
+                finality: SvmFinality::Confirmed,
+                extractors: [SvmExtractor::InnerInstruction {
+                    instruction_index: 0,
+                    inner_instruction_index: 1,
+                }]
+                .into(),
+            }),
+            values: vec![ExtractedValue::SvmExtractedValue(
+                SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
+                    program_id: SvmAddress([0x88; 32]),
+                    accounts: vec![SvmAddress([0x99; 32])],
+                    data: vec![0x01, 0x02, 0x03],
+                }),
+            )],
         });
 
         // When
@@ -1871,7 +1984,7 @@ mod tests {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: BitcoinTxId([0x55; 32]),
                 confirmations: BlockConfirmations(6),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
             values: vec![ExtractedValue::BitcoinExtractedValue(
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
@@ -1892,7 +2005,7 @@ mod tests {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id: StarknetTxId(StarknetFelt([0x77; 32])),
                 finality: StarknetFinality::AcceptedOnL1,
-                extractors: vec![StarknetExtractor::BlockHash],
+                extractors: [StarknetExtractor::BlockHash].into(),
             }),
             values: vec![ExtractedValue::StarknetExtractedValue(
                 StarknetExtractedValue::BlockHash(StarknetFelt([0x88; 32])),
@@ -1910,7 +2023,7 @@ mod tests {
     #[case::abstract_(
         ForeignChainRpcRequest::Abstract(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Abstract,
@@ -1918,16 +2031,16 @@ mod tests {
     #[case::ethereum(
         ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Ethereum,
     )]
     #[case::solana(
-        ForeignChainRpcRequest::Solana(SolanaRpcRequest {
-            tx_id: SolanaTxId([0; 64]),
-            finality: SolanaFinality::Finalized,
-            extractors: vec![],
+        ForeignChainRpcRequest::Solana(SvmRpcRequest {
+            tx_id: SvmTxId([0; 64]),
+            finality: SvmFinality::Finalized,
+            extractors: [].into(),
         }),
         ForeignChain::Solana,
     )]
@@ -1935,7 +2048,7 @@ mod tests {
         ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
             tx_id: BitcoinTxId([0; 32]),
             confirmations: BlockConfirmations(1),
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Bitcoin,
     )]
@@ -1943,14 +2056,14 @@ mod tests {
         ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
             tx_id: StarknetTxId(StarknetFelt([0; 32])),
             finality: StarknetFinality::AcceptedOnL1,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Starknet,
     )]
     #[case::bnb(
         ForeignChainRpcRequest::Bnb(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Bnb,
@@ -1958,7 +2071,7 @@ mod tests {
     #[case::base(
         ForeignChainRpcRequest::Base(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Base,
@@ -1966,7 +2079,7 @@ mod tests {
     #[case::arbitrum(
         ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Arbitrum,
@@ -1974,7 +2087,7 @@ mod tests {
     #[case::hyper_evm(
         ForeignChainRpcRequest::HyperEvm(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::HyperEvm,
@@ -1982,7 +2095,7 @@ mod tests {
     #[case::polygon(
         ForeignChainRpcRequest::Polygon(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Polygon,
@@ -1995,7 +2108,7 @@ mod tests {
                 hash: Hash256([0; 32]),
             },
             finality: TonFinality::MasterchainIncluded,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Ton,
     )]
@@ -2003,7 +2116,7 @@ mod tests {
         ForeignChainRpcRequest::Aptos(AptosRpcRequest {
             tx_id: AptosTxId([0; 32]),
             finality: AptosFinality::Committed,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Aptos,
     )]
@@ -2011,9 +2124,33 @@ mod tests {
         ForeignChainRpcRequest::Sui(SuiRpcRequest {
             tx_id: SuiTxId([0; 32]),
             finality: SuiFinality::Checkpointed,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Sui,
+    )]
+    #[case::avalanche(
+        ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
+            tx_id: EvmTxId([12; 32]),
+            extractors: [].into(),
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Avalanche,
+    )]
+    #[case::adi(
+        ForeignChainRpcRequest::Adi(EvmRpcRequest {
+            tx_id: EvmTxId([12; 32]),
+            extractors: [].into(),
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Adi,
+    )]
+    #[case::fogo(
+        ForeignChainRpcRequest::Fogo(SvmRpcRequest {
+            tx_id: SvmTxId([0; 64]),
+            finality: SvmFinality::Finalized,
+            extractors: [].into(),
+        }),
+        ForeignChain::Fogo,
     )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
@@ -2028,7 +2165,7 @@ mod tests {
         let payload_a = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
                 tx_id: EvmTxId([0x01; 32]),
-                extractors: vec![EvmExtractor::BlockHash],
+                extractors: [EvmExtractor::BlockHash].into(),
                 finality: EvmFinality::Finalized,
             }),
 
@@ -2039,7 +2176,7 @@ mod tests {
         let payload_b = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
                 tx_id: EvmTxId([0x02; 32]),
-                extractors: vec![EvmExtractor::BlockHash],
+                extractors: [EvmExtractor::BlockHash].into(),
                 finality: EvmFinality::Finalized,
             }),
             values: vec![ExtractedValue::EvmExtractedValue(
@@ -2100,7 +2237,7 @@ mod tests {
                     hash: Hash256([0xaa; 32]),
                 },
                 finality: TonFinality::MasterchainIncluded,
-                extractors: vec![TonExtractor::Log { message_index: 0 }],
+                extractors: [TonExtractor::Log { message_index: 0 }].into(),
             }),
             values: vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
                 TonLog {
@@ -2131,7 +2268,7 @@ mod tests {
             request: ForeignChainRpcRequest::Aptos(AptosRpcRequest {
                 tx_id: AptosTxId([0xcc; 32]),
                 finality: AptosFinality::Committed,
-                extractors: vec![AptosExtractor::Event { event_index: 0 }],
+                extractors: [AptosExtractor::Event { event_index: 0 }].into(),
             }),
             values: vec![ExtractedValue::AptosExtractedValue(
                 AptosExtractedValue::Event(AptosEvent {
@@ -2157,7 +2294,7 @@ mod tests {
             request: ForeignChainRpcRequest::Sui(SuiRpcRequest {
                 tx_id: SuiTxId([0xdd; 32]),
                 finality: SuiFinality::Checkpointed,
-                extractors: vec![SuiExtractor::Event { event_index: 0 }],
+                extractors: [SuiExtractor::Event { event_index: 0 }].into(),
             }),
             values: vec![ExtractedValue::SuiExtractedValue(SuiExtractedValue::Event(
                 SuiEvent {
@@ -2306,7 +2443,7 @@ mod tests {
                         hash: Hash256([0xaa; 32]),
                     },
                     finality: TonFinality::MasterchainIncluded,
-                    extractors: vec![TonExtractor::Log { message_index: 0 }],
+                    extractors: [TonExtractor::Log { message_index: 0 }].into(),
                 }),
                 // 0xfe (not 0xff) so the body stays canonical at 7 bits, where the final
                 // byte's low bit is unused padding and must be zero.
@@ -2322,5 +2459,92 @@ mod tests {
 
         // Then
         assert_ne!(hash_7_bits, hash_8_bits);
+    }
+
+    fn hex_bytes(len: usize) -> String {
+        "bb".repeat(len)
+    }
+
+    fn verify_foreign_transaction_args_json(
+        mut request: serde_json::Value,
+        extractor: serde_json::Value,
+        extractor_count: usize,
+    ) -> serde_json::Value {
+        let fields = request
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap();
+        fields["extractors"] = vec![extractor; extractor_count].into();
+        json!({
+            "request": request,
+            "domain_id": 0,
+            "payload_version": 1,
+        })
+    }
+
+    #[rstest]
+    #[case::evm(
+        json!({"Ethereum": {"tx_id": hex_bytes(32), "finality": "Finalized"}}),
+        json!("BlockHash")
+    )]
+    #[case::svm(
+        json!({"Solana": {"tx_id": hex_bytes(64), "finality": "Finalized"}}),
+        json!({"AccountState": {"pubkey": hex_bytes(32)}})
+    )]
+    #[case::bitcoin(
+        json!({"Bitcoin": {"tx_id": hex_bytes(32), "confirmations": 6}}),
+        json!("BlockHash")
+    )]
+    #[case::starknet(
+        json!({"Starknet": {"tx_id": hex_bytes(32), "finality": "AcceptedOnL1"}}),
+        json!("BlockHash")
+    )]
+    #[case::ton(
+        json!({
+            "Ton": {
+                "tx_id": hex_bytes(32),
+                "account": {"workchain": 0, "hash": hex_bytes(32)},
+                "finality": "MasterchainIncluded",
+            }
+        }),
+        json!({"Log": {"message_index": 0}})
+    )]
+    #[case::aptos(
+        json!({"Aptos": {"tx_id": hex_bytes(32), "finality": "Committed"}}),
+        json!({"Event": {"event_index": 0}})
+    )]
+    #[case::sui(
+        json!({"Sui": {"tx_id": hex_bytes(32), "finality": "Checkpointed"}}),
+        json!({"Event": {"event_index": 0}})
+    )]
+    fn verify_foreign_transaction_request_args__should_bound_extractors_at_the_cap(
+        #[case] request: serde_json::Value,
+        #[case] extractor: serde_json::Value,
+    ) {
+        // Given
+        let at_cap = verify_foreign_transaction_args_json(
+            request.clone(),
+            extractor.clone(),
+            MAX_EXTRACTORS_PER_REQUEST,
+        );
+        let above_cap = verify_foreign_transaction_args_json(
+            request,
+            extractor,
+            MAX_EXTRACTORS_PER_REQUEST + 1,
+        );
+
+        // When
+        let accepted =
+            serde_json::from_value::<VerifyForeignTransactionRequestArgs>(at_cap.clone()).unwrap();
+        let rejected = serde_json::from_value::<VerifyForeignTransactionRequestArgs>(above_cap);
+
+        // Then
+        assert_eq!(
+            serde_json::to_value(accepted.request).unwrap(),
+            at_cap["request"]
+        );
+        assert_matches!(rejected, Err(_));
     }
 }

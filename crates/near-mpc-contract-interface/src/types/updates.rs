@@ -8,6 +8,29 @@ type Sha256Digest = [u8; 32];
 
 #[derive(
     Debug,
+    Copy,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+    derive_more::From,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct UpdateId(pub u64);
+
+#[derive(
+    Debug,
     Clone,
     Eq,
     PartialEq,
@@ -24,8 +47,8 @@ type Sha256Digest = [u8; 32];
     derive(schemars::JsonSchema)
 )]
 pub struct ProposedUpdates {
-    pub votes: BTreeMap<AccountId, u64>,
-    pub updates: BTreeMap<u64, UpdateHash>,
+    pub votes: BTreeMap<AccountId, UpdateId>,
+    pub updates: BTreeMap<UpdateId, UpdateHash>,
 }
 
 /// An update hash

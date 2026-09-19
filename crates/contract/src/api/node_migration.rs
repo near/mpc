@@ -2,10 +2,9 @@
 //! migration to new hardware, and updating a participant's URL.
 
 use crate::api::common::require_deposit;
-use crate::dto_mapping::IntoContractType;
+use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{self, Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::Keyset;
-use crate::primitives::participants::ParticipantInfo;
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{NodeId, TeeQuoteStatus};
 use crate::{MpcContract, MpcContractExt};
@@ -76,6 +75,8 @@ impl MpcContract {
     /// # Errors
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
+    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong) if the destination node's url exceeds
+    ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).
     ///
     /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
@@ -97,7 +98,7 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        if !running_state.is_participant_given_account_id(&account_id) {
+        if !running_state.is_participant(&account_id) {
             return Err(InvalidState::NotParticipant {
                 account_id: account_id.clone(),
             }
@@ -105,8 +106,31 @@ impl MpcContract {
         }
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
+        // `ongoing_migrations` stores the unbounded interface type.
+        // TODO(#4456): drop this once the interface type carries the bound.
+        destination_node_info
+            .destination_node_info
+            .clone()
+            .try_into_contract_type()?;
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
+        Ok(())
+    }
+
+    /// Cancels a previously started node migration for the calling account.
+    ///
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
+    #[handle_result]
+    #[payable]
+    pub fn cancel_node_migration(&mut self) -> Result<(), Error> {
+        let account_id = Self::assert_caller_is_signer();
+        log!("cancel_node_migration: signer={:?}", account_id);
+        require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
+        if self.node_migrations.remove_migration(&account_id).is_none() {
+            return Err(errors::NodeMigrationError::MigrationNotFound.into());
+        }
         Ok(())
     }
 
@@ -133,13 +157,15 @@ impl MpcContract {
             return Err(InvalidState::NotParticipant { account_id }.into());
         };
 
-        let new_info = ParticipantInfo {
+        let new_info = dtos::ParticipantInfo {
             url,
             tls_public_key: existing_info.tls_public_key.clone(),
         };
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
-        running_state.parameters.update_info(account_id, new_info)
+        running_state
+            .parameters
+            .update_info(account_id, new_info.try_into_contract_type()?)
     }
 
     /// Finalizes a node migration for the calling account.
@@ -152,12 +178,15 @@ impl MpcContract {
     /// Returns the following errors:
     /// - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state
     /// - [`InvalidState::NotParticipant`]: if caller is not a current participant
+    /// - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key
     /// - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset
     /// - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller
     /// - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid
+    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong): if the destination node's url exceeds
+    ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).
     #[handle_result]
-    pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
+    pub fn conclude_node_migration(&mut self, keyset: dtos::Keyset) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
         let signer_pk = env::signer_account_pk();
         log!(
@@ -170,17 +199,19 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        if !running_state.is_participant_given_account_id(&account_id) {
+        if !running_state.is_participant(&account_id) {
             return Err(InvalidState::NotParticipant {
                 account_id: account_id.clone(),
             }
             .into());
         }
 
+        // Converted after the participant/state validation so those errors take precedence.
+        let keyset: Keyset = keyset.try_into_contract_type()?;
         let expected_keyset = &running_state.keyset;
-        if expected_keyset != keyset {
+        if *expected_keyset != keyset {
             return Err(errors::NodeMigrationError::KeysetMismatch {
-                found: keyset.clone(),
+                found: keyset,
                 expected: expected_keyset.clone(),
             }
             .into());
@@ -230,7 +261,7 @@ impl MpcContract {
 
         let contract_participant_info = expected_destination_node
             .destination_node_info
-            .into_contract_type();
+            .try_into_contract_type()?;
         log!(
             "Moving Account {:?} to {:?}",
             account_id,
@@ -279,7 +310,7 @@ impl MpcContract {
 }
 
 /// Minimum deposit required for the operator-authenticated node-management methods
-/// (`register_backup_service`, `start_node_migration`, `update_participant_url`).
+/// (`register_backup_service`, `start_node_migration`, `update_participant_url`, `cancel_node_migration`).
 ///
 /// A non-zero deposit forces the call to be signed by a full-access key: the node's own key
 /// is registered as a function-call access key, which cannot attach a deposit, so a leaked
@@ -293,7 +324,9 @@ pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
 mod tests {
     use super::*;
     use crate::api::test_utils::NUM_DOMAINS;
-    use crate::errors::NodeMigrationError;
+    use crate::dto_mapping::IntoInterfaceType;
+    use crate::errors::{InvalidCandidateSet, NodeMigrationError};
+    use crate::primitives::participants::{MAX_PARTICIPANT_URL_BYTES, ParticipantInfo};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key, gen_account_id, gen_participant,
@@ -409,6 +442,65 @@ mod tests {
         test_start_migration_node_failure_not_running(contract);
     }
 
+    #[test]
+    fn cancel_node_migration__should_reject_when_no_migration_info_is_found() {
+        let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
+        let participants = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().clone()
+        };
+        let (account_id, _, _) = participants
+            .participants()
+            .first()
+            .expect("expected at least one participant")
+            .clone();
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(NearToken::from_yoctonear(1));
+        assert!(contract.migration_info().is_empty());
+        assert_matches!(
+            contract.cancel_node_migration().unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::MigrationNotFound)
+        );
+    }
+
+    #[test]
+    fn cancel_node_migration__should_cancel_node_migration() {
+        let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
+        let participants = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().clone()
+        };
+        let (account_id, _, _) = participants
+            .participants()
+            .first()
+            .expect("expected at least one participant")
+            .clone();
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(NearToken::from_yoctonear(2));
+        let destination_node_info = gen_random_destination_info();
+        contract
+            .start_node_migration(destination_node_info.clone())
+            .expect("participant should be able to start node migration");
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, Some(destination_node_info))
+        );
+        contract
+            .cancel_node_migration()
+            .expect("caller should be able to cancel their pending migration");
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+        assert!(contract.migration_info().is_empty());
+    }
+
     fn test_register_backup_service_fail_non_participant(mut contract: MpcContract) {
         // sanity check
         assert!(contract.migration_info().is_empty());
@@ -515,6 +607,36 @@ mod tests {
     }
 
     #[test]
+    fn start_node_migration__should_reject_a_url_over_the_byte_limit() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let account_id = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.url = "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1);
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then the migration is rejected and nothing is stored
+        assert_matches!(
+            result,
+            Err(Error::InvalidCandidateSet(
+                InvalidCandidateSet::ParticipantUrlTooLong { .. }
+            ))
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "Attached deposit is lower than required")]
     fn start_node_migration__should_reject_when_no_deposit_attached() {
         // Given
@@ -530,6 +652,26 @@ mod tests {
         // panics via `require_deposit` before the migration is stored
         // When, Then
         let _ = contract.start_node_migration(gen_random_destination_info());
+    }
+
+    #[test]
+    #[should_panic(expected = "Attached deposit is lower than required")]
+    fn cancel_node_migration__should_reject_when_no_deposit_attached() {
+        let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
+        let participants = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().clone()
+        };
+        let (account_id, _, _) = participants
+            .participants()
+            .first()
+            .expect("expected at least one participant")
+            .clone();
+        let _ = Environment::new(None, Some(account_id.clone()), None);
+        let _ = contract.cancel_node_migration();
     }
 
     #[test]
@@ -578,7 +720,8 @@ mod tests {
                     destination_node_info
                         .destination_node_info
                         .clone()
-                        .into_contract_type(),
+                        .try_into_contract_type()
+                        .unwrap(),
                 )),
             };
             setup.run(&mut contract, &keyset);
@@ -833,7 +976,7 @@ mod tests {
             test_env.set_signer(&self.signer_account_id);
             test_env.set_pk(self.signer_account_pk.clone());
 
-            let res = contract.conclude_node_migration(keyset);
+            let res = contract.conclude_node_migration(keyset.into_dto_type());
 
             if let Some(check) = &self.expected_error_check {
                 let err = res.unwrap_err();

@@ -6,8 +6,8 @@ use near_sdk::{near, store::IterableMap};
 use crate::foreign_chain_rpc::ForeignChainRpcWhitelist;
 use crate::storage_keys::StorageKey;
 
-/// All foreign-chain state: the RPC provider whitelist, the per-node config reports, and the
-/// cached available-chain set derived from them.
+/// The TLS-key-keyed foreign-chain state: the RPC provider whitelist, the per-node chain
+/// configs, and the cached available-chain set derived from them.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub(crate) struct ForeignChainsMetadata {

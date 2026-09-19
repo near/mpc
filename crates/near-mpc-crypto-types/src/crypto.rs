@@ -77,7 +77,7 @@ impl borsh::BorshSchema for PublicKey {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub struct Ed25519PublicKey(pub [u8; ED25519_PUBLIC_KEY_SIZE]);
 
@@ -158,6 +158,21 @@ impl schemars::JsonSchema for Secp256k1PublicKey {
 
     fn schema_name() -> String {
         "Secp256k1PublicKey".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
+    }
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for Ed25519PublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
+    fn schema_name() -> String {
+        "Ed25519PublicKey".to_string()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {

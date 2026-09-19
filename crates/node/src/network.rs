@@ -5,6 +5,7 @@ pub mod handshake;
 pub mod indexer_heights;
 
 use crate::metrics::networking_metrics;
+use crate::network::indexer_heights::IndexerHeightTracker;
 use crate::primitives::{
     ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
     MpcTaskId, ParticipantId, PeerMessage, UniqueId,
@@ -13,7 +14,6 @@ use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
 use conn::{ConnectionVersion, NodeConnectivityInterface};
-use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
@@ -733,6 +733,10 @@ impl NetworkTaskChannel {
         self.sender.my_participant_id
     }
 
+    pub fn leader(&self) -> ParticipantId {
+        self.sender.leader
+    }
+
     /// Receives a single MPC message from any participant from the network, without processing it.
     /// This will return error early if any connection is broken.
     async fn receive_raw(&mut self) -> anyhow::Result<MpcPeerMessage> {
@@ -866,6 +870,7 @@ impl NetworkTaskChannel {
 #[cfg(test)]
 pub mod testing {
     use super::conn::{ConnectionVersion, NodeConnectivityInterface};
+    use super::indexer_heights::IndexerHeightTracker;
     use super::{
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
     };
@@ -1000,6 +1005,29 @@ pub mod testing {
         }
 
         transports
+    }
+
+    /// Synchronous [`MeshNetworkClient`] for unit tests. All participants are reported alive.
+    pub fn new_test_client(
+        participants: Vec<ParticipantId>,
+        my_participant_id: ParticipantId,
+    ) -> Arc<super::MeshNetworkClient> {
+        let transport = Arc::new(TestMeshTransportSender {
+            transport: Arc::new(TestMeshTransport {
+                participant_ids: participants.clone(),
+                senders: HashMap::new(),
+            }),
+            my_participant_id,
+        });
+        let channels = Arc::new(std::sync::Mutex::new(
+            super::NetworkTaskChannelManager::new(),
+        ));
+        let indexer_heights = Arc::new(IndexerHeightTracker::new(&participants));
+        Arc::new(super::MeshNetworkClient::new(
+            transport,
+            channels,
+            indexer_heights,
+        ))
     }
 
     /// Builds a channel over the given participant set, returning the raw inbound sender so

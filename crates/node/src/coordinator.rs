@@ -342,12 +342,14 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
+        let expected_participant_ids = mpc_config.participants.participant_id_set();
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
+                expected_participant_ids,
             )
             .await?;
         } else {
@@ -356,6 +358,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
+                expected_participant_ids,
             )
             .await?;
         }
@@ -703,8 +706,10 @@ where
                 // and remain after the reshare supports it. With no ForeignTx
                 // domain nothing can be available, so the resolver isn't
                 // spawned and the provider sees a constant empty map.
+                let foreign_tx_threshold =
+                    foreign_tx_reconstruction_threshold(&running_state.domains);
                 let (supporters_by_foreign_chain, _supporters_resolver_task) =
-                    match foreign_tx_reconstruction_threshold(&running_state.domains) {
+                    match foreign_tx_threshold {
                         Some(threshold) => {
                             let (receiver, task) = spawn_supporters_by_foreign_chain(
                                 foreign_chain_supporters_receiver,
@@ -725,6 +730,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     supporters_by_foreign_chain,
+                    foreign_tx_threshold,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);
@@ -829,6 +835,7 @@ where
             existing_keyshares,
             old_reconstruction_thresholds,
             old_participants: current_running_state.participants,
+            new_participant_ids: mpc_config.participants.participant_id_set(),
         });
 
         if mpc_config.is_leader_for_key_event() {
@@ -1069,22 +1076,11 @@ fn stop_initializing(
     }
 }
 
-/// Dual-writes the node's foreign-chain registration (legacy + new endpoint);
-/// an empty config still registers so that dropping every chain propagates.
-/// TODO(#3630): drop the legacy RegisterForeignChainConfig half.
+/// An empty config still registers so that dropping every chain propagates.
 async fn register_foreign_chains(
     chain_txn_sender: &impl tx_sender::TransactionSender,
     foreign_chains: &mpc_node_config::ForeignChainsConfig,
 ) {
-    let foreign_chain_configuration = foreign_chains.configured_chains();
-    if let Err(err) = chain_txn_sender
-        .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-            contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
-        ))
-        .await
-    {
-        tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
-    }
     let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
         .iter_chains()
         .map(|(chain, _)| chain)
@@ -1338,10 +1334,8 @@ mod tests {
         assert_eq!(joining_peer, Some("carol.example.com:7000".to_string()));
     }
 
-    /// Guards the upgrade-window dual-write: the legacy registration must keep
-    /// being emitted alongside the new one until #3630 drops it.
     #[tokio::test]
-    async fn register_foreign_chains__should_send_legacy_and_new_registrations() {
+    async fn register_foreign_chains__should_send_registration() {
         // Given: a node config covering Solana.
         let foreign_chains = ForeignChainsConfig {
             solana: Some(ForeignChainConfig {
@@ -1366,13 +1360,7 @@ mod tests {
         // When
         register_foreign_chains(&txn_sender, &foreign_chains).await;
 
-        // Then: the legacy registration is emitted first, then the new one.
-        let expected_legacy = foreign_chains.configured_chains();
-        assert_matches!(
-            receiver.try_recv(),
-            Ok(ChainSendTransactionRequest::RegisterForeignChainConfig(args))
-                if args.foreign_chain_configuration == expected_legacy
-        );
+        // Then
         let expected: dtos::ForeignChainsConfig =
             BTreeSet::from([dtos::ForeignChain::Solana]).into();
         assert_matches!(
