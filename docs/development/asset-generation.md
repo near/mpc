@@ -188,6 +188,9 @@ front/back access: it removes the first online asset also matching the
 caller's set from *any* position before `cold_available`, shifting the
 barriers past the removal point down by one.
 
+`take_owned_matching` force-refreshes the condition value on each loop
+iteration, so this classification is never read stale.
+
 ### take_owned() flow
 
 1. Force-refresh the condition value.
