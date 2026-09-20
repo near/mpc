@@ -1,3 +1,7 @@
+use near_mpc_contract_interface::types::{
+    AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
+};
+
 /// Generates a dummy [`near_mpc_contract_interface::types::Config`] with different values for each field.
 pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
     near_mpc_contract_interface::types::Config {
@@ -21,5 +25,20 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         attestation_storage_fee_millinear: value + 17,
         // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
         launcher_hash_unused_ttl_seconds: value + (14 * 24 * 60 * 60),
+    }
+}
+
+/// Generates a dummy single-provider [`near_mpc_contract_interface::types::ChainEntry`] with RPC quorum 1.
+pub fn dummy_chain_entry() -> near_mpc_contract_interface::types::ChainEntry {
+    ChainEntry {
+        providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
+            ProviderId("alchemy".to_string()),
+            ProviderConfig {
+                base_url: "https://provider.example.com".to_string(),
+                auth_scheme: AuthScheme::None,
+                chain_routing: ChainRouting::Embedded,
+            },
+        ),
+        quorum: 1,
     }
 }

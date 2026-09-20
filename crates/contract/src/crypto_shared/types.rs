@@ -11,67 +11,43 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serializable::SerializableEdwardsPoint;
 
-use crate::errors;
 use near_mpc_contract_interface::types as dtos;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum PublicKeyExtended {
     Secp256k1 {
-        near_public_key: near_sdk::PublicKey,
+        near_public_key: dtos::Secp256k1PublicKey,
     },
     // Invariant: `edwards_point` is always the decompressed representation of `near_public_key_compressed`.
     Ed25519 {
         /// Serialized compressed Edwards-y point.
-        near_public_key_compressed: near_sdk::PublicKey,
+        near_public_key_compressed: dtos::Ed25519PublicKey,
         /// Decompressed Edwards point used for curve arithmetic operations.
         edwards_point: SerializableEdwardsPoint,
     },
     Bls12381 {
-        public_key: dtos::PublicKey,
+        public_key: dtos::Bls12381G2PublicKey,
     },
 }
 
 #[derive(Clone, Debug)]
 pub enum PublicKeyExtendedConversionError {
-    PublicKeyLengthMalformed,
     FailedDecompressingToEdwardsPoint,
-    UnsupportedCurve,
 }
 
 impl Display for PublicKeyExtendedConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
-            Self::PublicKeyLengthMalformed => "Provided public key has malformed length.",
             Self::FailedDecompressingToEdwardsPoint => {
                 "The provided compressed key can not be decompressed to an edwards point."
             }
-            Self::UnsupportedCurve => "The provided curve is not supported.",
         };
 
         f.write_str(message)
-    }
-}
-
-impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
-    type Error = errors::Error;
-    fn try_from(public_key_extended: PublicKeyExtended) -> Result<Self, Self::Error> {
-        match public_key_extended {
-            PublicKeyExtended::Secp256k1 { near_public_key } => Ok(near_public_key),
-            PublicKeyExtended::Ed25519 {
-                near_public_key_compressed,
-                ..
-            } => Ok(near_public_key_compressed),
-            PublicKeyExtended::Bls12381 { public_key: _ } => {
-                Err(errors::ConversionError::DataConversion {
-                    reason: "Cannot convert Bls12381 key to near_sdk::PublicKey".into(),
-                })?
-            }
-        }
     }
 }
 
@@ -79,47 +55,14 @@ impl From<PublicKeyExtended> for dtos::PublicKey {
     fn from(public_key_extended: PublicKeyExtended) -> Self {
         match public_key_extended {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
-                dtos::PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key")
+                dtos::PublicKey::Secp256k1(near_public_key)
             }
             PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 ..
-            } => dtos::PublicKey::try_from(&near_public_key_compressed)
-                .expect("Ed25519 variant always has an ed25519 key"),
-            PublicKeyExtended::Bls12381 { public_key } => public_key,
+            } => dtos::PublicKey::Ed25519(near_public_key_compressed),
+            PublicKeyExtended::Bls12381 { public_key } => dtos::PublicKey::Bls12381(public_key),
         }
-    }
-}
-
-impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
-    type Error = PublicKeyExtendedConversionError;
-    fn try_from(near_public_key: near_sdk::PublicKey) -> Result<Self, Self::Error> {
-        let extended_key = match near_public_key.curve_type() {
-            near_sdk::CurveType::ED25519 => {
-                let public_key_bytes: &[u8; 32] = near_public_key
-                    .as_bytes()
-                    .get(1..)
-                    .map(TryInto::try_into)
-                    .ok_or(PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?
-                    .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
-
-                let edwards_point = SerializableEdwardsPoint::from_bytes(public_key_bytes)
-                    .into_option()
-                    .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
-
-                Self::Ed25519 {
-                    near_public_key_compressed: near_public_key,
-                    edwards_point,
-                }
-            }
-            near_sdk::CurveType::SECP256K1 => Self::Secp256k1 { near_public_key },
-            near_sdk::CurveType::MLDSA65 => {
-                return Err(PublicKeyExtendedConversionError::UnsupportedCurve);
-            }
-        };
-
-        Ok(extended_key)
     }
 }
 
@@ -127,31 +70,21 @@ impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
     type Error = PublicKeyExtendedConversionError;
     fn try_from(public_key: dtos::PublicKey) -> Result<Self, Self::Error> {
         let extended_key = match public_key {
-            dtos::PublicKey::Ed25519(inner_public_key) => {
-                let near_public_key: near_sdk::PublicKey = inner_public_key.into();
-                let public_key_bytes: &[u8; 32] = near_public_key
-                    .as_bytes()
-                    .get(1..)
-                    .map(TryInto::try_into)
-                    .ok_or(PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?
-                    .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
-
-                let edwards_point = SerializableEdwardsPoint::from_bytes(public_key_bytes)
-                    .into_option()
-                    .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
+            dtos::PublicKey::Ed25519(near_public_key_compressed) => {
+                let edwards_point =
+                    SerializableEdwardsPoint::from_bytes(&near_public_key_compressed)
+                        .into_option()
+                        .ok_or(
+                            PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint,
+                        )?;
 
                 Self::Ed25519 {
-                    near_public_key_compressed: near_public_key,
+                    near_public_key_compressed,
                     edwards_point,
                 }
             }
-            dtos::PublicKey::Secp256k1(inner_public_key) => {
-                let near_public_key: near_sdk::PublicKey = inner_public_key.into();
-                Self::Secp256k1 { near_public_key }
-            }
-            dtos::PublicKey::Bls12381(inner_public_key) => Self::Bls12381 {
-                public_key: dtos::PublicKey::from(inner_public_key),
-            },
+            dtos::PublicKey::Secp256k1(near_public_key) => Self::Secp256k1 { near_public_key },
+            dtos::PublicKey::Bls12381(public_key) => Self::Bls12381 { public_key },
         };
 
         Ok(extended_key)
@@ -164,16 +97,8 @@ pub mod k256_types {
 
     pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, Ord, PartialOrd)]
     pub struct SerializableScalar {
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "String"), // Scalar is a U256, which becomes a HEX-string after serialization.
-        )]
         pub scalar: Scalar,
     }
 
@@ -211,23 +136,11 @@ pub mod k256_types {
         }
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
     pub struct SerializableAffinePoint {
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>"), // Affine point may be compressed or decompressed.
-        )]
         pub affine_point: AffinePoint,
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
     pub struct Signature {
         pub big_r: SerializableAffinePoint,
@@ -302,22 +215,11 @@ pub mod ed25519_types {
         }
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[serde_as]
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    pub struct Signature(
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
-        )]
-        #[serde_as(as = "[_; 64]")]
-        [u8; 64],
-    );
+    pub struct Signature(#[serde_as(as = "[_; 64]")] [u8; 64]);
 
     impl Signature {
         pub fn as_bytes(&self) -> &[u8; 64] {
@@ -361,12 +263,19 @@ mod tests {
 
     /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     #[rstest]
-    #[case(
+    #[case::secp256k1(
         "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
+            .parse::<dtos::PublicKey>()
+            .unwrap()
     )]
-    #[case("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")]
-    fn test_serialization_of_public_key_extended(#[case] near_public_key: near_sdk::PublicKey) {
-        let public_key_extended = PublicKeyExtended::try_from(near_public_key).unwrap();
+    #[case::ed25519(
+        "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            .parse::<dtos::PublicKey>()
+            .unwrap()
+    )]
+    #[case::bls12381(dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey([7u8; 96])))]
+    fn test_serialization_of_public_key_extended(#[case] public_key: dtos::PublicKey) {
+        let public_key_extended = PublicKeyExtended::try_from(public_key).unwrap();
         let mut buffer: Vec<u8> = vec![];
         BorshSerialize::serialize(&public_key_extended, &mut buffer).unwrap();
 
@@ -378,22 +287,17 @@ mod tests {
     }
 
     #[test]
-    fn public_key_extended_try_from_near_public_key__should_reject_mldsa65() {
-        // Given
-        const MLDSA65_PUBLIC_KEY_SIZE: usize = 1952;
-        let near_public_key = near_sdk::PublicKey::from_parts(
-            near_sdk::CurveType::MLDSA65,
-            vec![0u8; MLDSA65_PUBLIC_KEY_SIZE],
-        )
-        .unwrap();
+    fn public_key_extended_try_from_public_key__should_reject_a_non_curve_ed25519_key() {
+        // Given a 32-byte value whose y-coordinate has no corresponding x on the curve.
+        let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey([2u8; 32]));
 
         // When
-        let result = PublicKeyExtended::try_from(near_public_key);
+        let result = PublicKeyExtended::try_from(public_key);
 
         // Then
         assert_matches!(
             result,
-            Err(PublicKeyExtendedConversionError::UnsupportedCurve)
+            Err(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)
         );
     }
 }

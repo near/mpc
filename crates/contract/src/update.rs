@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::{
+    config::Config,
     dto_mapping::IntoInterfaceType,
     errors::{ConversionError, Error},
     primitives::participants::Participants,
@@ -23,7 +24,6 @@ use near_sdk::{
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
 #[derive(
@@ -45,6 +45,8 @@ use near_sdk::{
 pub struct UpdateId(pub(crate) u64);
 
 impl UpdateId {
+    /// Nothing rewinds the counter, so a vote recorded against one proposal can never be
+    /// applied to another.
     pub fn generate(&mut self) -> Self {
         let id = self.0;
         self.0 += 1;
@@ -58,22 +60,14 @@ impl From<u64> for UpdateId {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
-)]
+#[derive(Clone, Debug, PartialEq, borsh::BorshSerialize, borsh::BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
-pub enum Update {
+pub(crate) enum Update {
     Contract(Vec<u8>),
-    Config(near_mpc_contract_interface::types::Config),
+    Config(Config),
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {
@@ -83,13 +77,7 @@ impl TryFrom<ProposeUpdateArgs> for Update {
         let ProposeUpdateArgs { code, config } = value;
         let update = match (code, config) {
             (Some(contract), None) => Update::Contract(contract),
-            (None, Some(config)) => {
-                // Reject unusable configs at proposal time: `update_config` runs in its own
-                // receipt, so a validation failure at apply time cannot roll back `do_update`
-                // (which has already cleared the pending proposals in the caller's receipt).
-                let _: crate::config::Config = config.clone().try_into()?;
-                Update::Config(config)
-            }
+            (None, Some(config)) => Update::Config(config.try_into()?),
             (Some(_), Some(_)) => {
                 return Err(ConversionError::DataConversion {
                     reason: "Code and config updates are not allowed at the same time".into(),
@@ -107,18 +95,10 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
-)]
+#[derive(Clone, Debug, PartialEq, borsh::BorshSerialize, borsh::BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub(crate) struct UpdateEntry {
     pub(super) update: Update,
@@ -134,7 +114,7 @@ pub(super) struct UpdateVotes {
 
 #[near(serializers=[borsh ])]
 #[derive(Debug)]
-pub struct ProposedUpdates {
+pub(crate) struct ProposedUpdates {
     pub(super) vote_by_participant: IterableMap<AccountId, UpdateId>,
     pub(super) entries: IterableMap<UpdateId, UpdateEntry>,
     pub(super) id: UpdateId,
@@ -188,6 +168,23 @@ impl ProposedUpdates {
         Some(())
     }
 
+    /// Removes the update with the given [`UpdateId`], together with every vote cast for it.
+    ///
+    /// Returns `None` if the [`UpdateId`] doesn't exist.
+    pub fn remove_proposal(&mut self, id: &UpdateId) -> Option<()> {
+        self.entries.remove(id)?;
+
+        let voters: Vec<AccountId> = self
+            .vote_by_participant
+            .iter()
+            .filter(|(_, voted_id)| *voted_id == id)
+            .map(|(account, _)| account.clone())
+            .collect();
+        self.remove_votes(&voters);
+
+        Some(())
+    }
+
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
         let entry = self.entries.remove(id)?;
 
@@ -211,9 +208,10 @@ impl ProposedUpdates {
                 // the value `contract_upgrade_deposit_tera_gas` from the config
                 // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
+                let dto_config = config.into_dto_type();
                 promise = promise.function_call(
                     method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&config,)).unwrap(),
+                    serde_json::to_vec(&(&dto_config,)).unwrap(),
                     NearToken::from_near(0),
                     new_config_gas_value,
                 );
@@ -241,7 +239,7 @@ impl ProposedUpdates {
         let non_participants: Vec<AccountId> = self
             .vote_by_participant
             .keys()
-            .filter(|voter| !participants.is_participant_given_account_id(voter))
+            .filter(|voter| !participants.is_participant(*voter))
             .cloned()
             .collect();
 
@@ -272,22 +270,23 @@ impl ProposedUpdates {
 }
 
 fn bytes_used(update: &Update) -> u128 {
-    let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
+    let mut n_bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
 
     // Assume a high max of 128 participant votes per update entry.
-    bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
+    n_bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
 
     match update {
         Update::Contract(code) => {
-            bytes_used += code.len() as u128;
+            n_bytes_used += code.len() as u128;
         }
         Update::Config(config) => {
-            let bytes = serde_json::to_vec(&config).unwrap();
-            bytes_used += bytes.len() as u128;
+            let bytes = serde_json::to_vec(&config.into_dto_type())
+                .expect("serde serialization must succeed");
+            n_bytes_used += bytes.len() as u128;
         }
     }
 
-    bytes_used
+    n_bytes_used
 }
 
 #[cfg(test)]
@@ -331,6 +330,79 @@ mod tests {
             format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
             "error should point at the invalid field, got: {err:?}"
         );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn remove_proposal__should_drop_the_entry_and_its_votes_and_leave_other_proposals_untouched() {
+        // Given
+        let mut proposed_updates = ProposedUpdates::default();
+        let removed_update = Update::Contract([0; 1000].into());
+        let kept_update = Update::Contract([1; 1000].into());
+        let kept_bytes_used = bytes_used(&kept_update);
+        let removed_id = proposed_updates.propose(removed_update);
+        let kept_id = proposed_updates.propose(kept_update.clone());
+        let (voter_0, voter_1, unaffected_voter) =
+            (gen_account_id(), gen_account_id(), gen_account_id());
+        proposed_updates.vote(&removed_id, voter_0.clone());
+        proposed_updates.vote(&removed_id, voter_1.clone());
+        proposed_updates.vote(&kept_id, unaffected_voter.clone());
+
+        // When
+        let result = proposed_updates.remove_proposal(&removed_id);
+
+        // Then
+        assert_eq!(result, Some(()));
+        let expected = TestUpdateVotes {
+            id: 2,
+            votes: BTreeMap::from([(unaffected_voter, kept_id.0)]),
+            entries: BTreeMap::from([(
+                kept_id.0,
+                UpdateEntry {
+                    update: kept_update,
+                    bytes_used: kept_bytes_used,
+                },
+            )]),
+        };
+        let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(found, expected);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn remove_proposal__should_return_none_for_an_unknown_id() {
+        // Given
+        let mut proposed_updates = ProposedUpdates::default();
+        let update_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+
+        // When
+        let result = proposed_updates.remove_proposal(&UpdateId(update_id.0 + 1));
+
+        // Then
+        assert_eq!(result, None);
+        let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(found.entries.len(), 1);
+    }
+
+    /// Votes must never carry over from a removed proposal to a later one: ids are generated
+    /// from a counter that a removal does not rewind.
+    #[test]
+    #[expect(non_snake_case)]
+    fn propose__should_not_reuse_the_id_of_a_removed_proposal() {
+        // Given
+        let mut proposed_updates = ProposedUpdates::default();
+        let removed_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+        let voter = gen_account_id();
+        proposed_updates.vote(&removed_id, voter.clone());
+        proposed_updates.remove_proposal(&removed_id).unwrap();
+
+        // When
+        let new_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+
+        // Then
+        assert_ne!(new_id, removed_id);
+        assert!(proposed_updates.voters().is_empty());
+        assert!(proposed_updates.vote(&removed_id, voter).is_none());
     }
 
     /// Ensure that the default [`ProposedUpdates`] struct is empty.
@@ -571,7 +643,7 @@ mod tests {
         let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
-        let update_2 = Update::Config(dummy_config(1));
+        let update_2 = Update::Config(dummy_config(1).try_into().unwrap());
         let update_id_2 = proposed_updates.propose(update_2.clone());
 
         let account_0 = gen_account_id();
@@ -665,7 +737,7 @@ mod tests {
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
-        let update_2 = Update::Config(dummy_config(2));
+        let update_2 = Update::Config(dummy_config(2).try_into().unwrap());
         let update_id_2 = proposed_updates.propose(update_2.clone());
         assert_eq!(update_id_2.0, 2);
 

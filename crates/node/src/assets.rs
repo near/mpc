@@ -37,7 +37,7 @@ use std::sync::{Arc, Mutex};
 /// NB: Assets may be reordered by these operations. No guarantees are made on the order in which
 /// assets are taken or discarded from the queue.
 ///
-struct ColdQueue<T, CondVal: Default + Eq> {
+struct ColdQueue<T, CondVal> {
     cold_ready: usize,
     cold_available: usize,
     cold_queue: VecDeque<(UniqueId, T)>,
@@ -227,10 +227,7 @@ enum ColdQueueAddIfNotSatisfiedResult<T> {
     Enqueued,
 }
 
-pub struct DoubleQueue<T, CondVal: Default + Eq>
-where
-    T: Send + 'static,
-{
+pub struct DoubleQueue<T, CondVal> {
     hot_sender: flume::Sender<(UniqueId, T)>,
     hot_receiver: flume::Receiver<(UniqueId, T)>,
     cold_queue: Arc<Mutex<ColdQueue<T, CondVal>>>,
@@ -432,10 +429,7 @@ where
 ///
 /// As a passive participant of a computation, unowned assets are taken using
 /// `take_unowned`.
-pub struct DistributedAssetStorage<T>
-where
-    T: Serialize + DeserializeOwned + Send + 'static,
-{
+pub struct DistributedAssetStorage<T> {
     db: Arc<SecretDB>,
     col: DBCol,
     /// Byte prefix prepended to every key written under `col`. Empty [`Vec`] means

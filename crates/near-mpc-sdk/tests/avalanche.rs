@@ -22,6 +22,6 @@ fn no_extractor_added() {
     let no_extractors = vec![];
 
     assert_matches!(built_sign_request_args.request, ForeignChainRpcRequest::Avalanche(avalanche_rpc_request) => {
-        assert_eq!(avalanche_rpc_request.extractors, no_extractors);
+        assert_eq!(avalanche_rpc_request.extractors.to_vec(), no_extractors);
     });
 }

@@ -6,6 +6,7 @@ use near_indexer_primitives::{
 };
 
 use crate::{
+    account_id_compat::from_near_internal,
     errors::ChainGatewayError,
     event_subscriber::{
         block_events::{
@@ -172,13 +173,27 @@ impl BlockEvents {
             return;
         };
 
+        let predecessor_id = match from_near_internal(&receipt.predecessor_id) {
+            Ok(predecessor_id) => predecessor_id,
+            Err(err) => {
+                tracing::error!(
+                    %err,
+                    receipt_id = %receipt.receipt_id,
+                    predecessor_id = %receipt.predecessor_id,
+                    "skipping executor event: predecessor is not a valid account ID for this \
+                     workspace's `near-account-id`",
+                );
+                return;
+            }
+        };
+
         for event_id in executor_event_ids {
             processed_events.push(MatchedEvent {
                 id: *event_id,
                 event_data: EventData::ExecutorFunctionCallSuccessWithPromise(
                     ExecutorFunctionCallSuccessWithPromiseData {
                         receipt_id: receipt.receipt_id,
-                        predecessor_id: receipt.predecessor_id.clone(),
+                        predecessor_id: predecessor_id.clone(),
                         next_receipt_id: *next_receipt_id,
                         args_raw: args.to_vec(),
                     },

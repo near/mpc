@@ -3,6 +3,7 @@ use crate::sandbox::{
     common::SandboxTestSetup, upgrade_from_current_contract::current_contract_proposal,
 };
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::UpdateId;
 
 #[tokio::test]
 async fn test_high_gas_deposit_config_value_passes_upgrades() {
@@ -33,6 +34,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
     };
 
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -49,7 +51,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .unwrap();
 
     assert!(execution.is_success());
-    let proposal_id: u64 = execution.json().unwrap();
+    let proposal_id: UpdateId = execution.json().unwrap();
 
     let mut saw_completion = false;
     let mut saw_failure = false;
@@ -104,7 +106,11 @@ async fn contract_configuration_can_be_set_on_initialization() {
         launcher_hash_unused_ttl_seconds: Some(14 * 24 * 60 * 60),
     };
 
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_init_config(init_config.clone())
         .with_number_of_participants(2)
         .build()

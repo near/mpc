@@ -32,9 +32,9 @@ pub struct TeeVerifier {}
 impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
-    /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp
-    /// and returns `VerificationResult::Verified(report)` on success. The
-    /// caller is responsible for any post-DCAP policy (RTMR3 replay,
+    /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp and
+    /// returns [`VerificationResult::Verified`] with the report on success.
+    /// The caller is responsible for any post-DCAP policy (RTMR3 replay,
     /// report-data binding, measurement allowlist matching, etc.).
     ///
     /// A rejected quote returns [`VerificationResult::Rejected`] as the
@@ -51,7 +51,7 @@ impl TeeVerifier {
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResult {
-        let now_seconds = env::block_timestamp_ms() / 1000;
+        let now_seconds = now_seconds();
         let quote_bytes: Vec<u8> = quote.into_dcap_type();
         let collateral = collateral.into_dcap_type();
         match dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds) {
@@ -61,4 +61,21 @@ impl TeeVerifier {
             }
         }
     }
+}
+
+/// The timestamp quotes are verified against: block time, unless the build both
+/// disables the default clock feature and sets `TEE_VERIFIER_PINNED_NOW_SECONDS`
+/// (Unix seconds); one without the other keeps block time. Sandbox tests pin the
+/// clock to keep the checked-in attestation fixture inside its collateral's
+/// validity window.
+// TODO(#4222): drop the pin once sandbox block time can be controlled from tests.
+// TODO(#4223): consider pinning the sandbox process clock from the test environment instead.
+fn now_seconds() -> u64 {
+    #[cfg(not(feature = "block-clock"))]
+    if let Some(pinned) = option_env!("TEE_VERIFIER_PINNED_NOW_SECONDS") {
+        return pinned
+            .parse()
+            .expect("TEE_VERIFIER_PINNED_NOW_SECONDS must be Unix seconds");
+    }
+    env::block_timestamp_ms() / 1000
 }

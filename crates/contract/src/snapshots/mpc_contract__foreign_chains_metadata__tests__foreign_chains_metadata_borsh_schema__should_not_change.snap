@@ -105,6 +105,11 @@ BorshSchemaContainer {
                     "Adi",
                     "ForeignChain__Adi",
                 ),
+                (
+                    15,
+                    "Fogo",
+                    "ForeignChain__Fogo",
+                ),
             ],
         },
         "ForeignChainRpcWhitelist": Struct {
@@ -146,6 +151,9 @@ BorshSchemaContainer {
             fields: Empty,
         },
         "ForeignChain__Ethereum": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Fogo": Struct {
             fields: Empty,
         },
         "ForeignChain__HyperEvm": Struct {

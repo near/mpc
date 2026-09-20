@@ -30,14 +30,15 @@ const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
 const BACKUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct BackupService {
-    home_dir: tempfile::TempDir,
+    home_dir: e2e_tests::TestDir,
     binary_path: PathBuf,
 }
 
 impl BackupService {
     fn must_get_new(binary_path: PathBuf) -> Self {
         Self {
-            home_dir: tempfile::tempdir().expect("failed to create backup service home dir"),
+            home_dir: e2e_tests::TestDir::new(None)
+                .expect("failed to create backup service home dir"),
             binary_path,
         }
     }

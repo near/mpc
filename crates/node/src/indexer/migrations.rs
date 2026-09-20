@@ -41,8 +41,9 @@ pub async fn monitor_migrations(
                 let response = fetch_migrations_once(indexer_state.clone()).await;
                 tracing::debug!(target: "indexer", "fetched mpc migration state at block {}: {:?}", response.0, response.1);
 
+                let mut migration_info_changed = false;
                 migration_state_sender.send_if_modified(|watched_state| {
-                    let migration_info_changed = watched_state.1 != response.1;
+                    migration_info_changed = watched_state.1 != response.1;
                     if *watched_state != response {
                         if migration_info_changed {
                             tracing::info!("contract migration state changed: {:?}", response);
@@ -53,6 +54,12 @@ pub async fn monitor_migrations(
                         false
                     }
                 });
+
+                // Re-deriving an unchanged view would repeat its diagnostics on every tick.
+                if !migration_info_changed {
+                    continue;
+                }
+
                 let my_migration_state = MigrationInfo::from_contract_state(
                     &my_near_account_id,
                     &my_p2p_public_key,

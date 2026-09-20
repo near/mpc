@@ -265,6 +265,7 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         );
+
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
@@ -273,6 +274,10 @@ impl MpcClient {
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
+        )
+        .with_eligible_leaders_refiner(
+            self.verify_foreign_tx_provider
+                .new_eligible_leaders_refiner(),
         );
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);

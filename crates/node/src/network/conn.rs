@@ -23,12 +23,12 @@ pub struct ConnectionVersion {
 /// and the weak ptr points to nothing. So version() returns 1, meaning that
 /// when to send or receive anything, we would wait until the first connection
 /// is established.
-pub struct ConnectionWithVersion<T: Send + Sync + 'static> {
+pub struct ConnectionWithVersion<T> {
     pub connection: Weak<T>,
     version: usize,
 }
 
-impl<T: Send + Sync + 'static> Clone for ConnectionWithVersion<T> {
+impl<T> Clone for ConnectionWithVersion<T> {
     fn clone(&self) -> Self {
         Self {
             connection: self.connection.clone(),
@@ -37,7 +37,7 @@ impl<T: Send + Sync + 'static> Clone for ConnectionWithVersion<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
+impl<T> ConnectionWithVersion<T> {
     pub fn version(&self) -> usize {
         if self.connection.upgrade().is_some() {
             self.version
@@ -68,7 +68,7 @@ where
 
 /// Struct to track bidirectional connectivity between two nodes.
 /// A node has one NodeConnectivity for each other node in the network.
-pub struct NodeConnectivity<I: Send + Sync + 'static, O: Send + Sync + 'static> {
+pub struct NodeConnectivity<I, O> {
     outgoing_sender: tokio::sync::watch::Sender<ConnectionWithVersion<I>>,
     outgoing_receiver: tokio::sync::watch::Receiver<ConnectionWithVersion<I>>,
     incoming_sender: tokio::sync::watch::Sender<ConnectionWithVersion<O>>,
@@ -284,7 +284,7 @@ where
 }
 
 /// Convenient collection of multiple NodeConnectivity objects.
-pub struct AllNodeConnectivities<I: Send + Sync + 'static, O: Send + Sync + 'static> {
+pub struct AllNodeConnectivities<I, O> {
     connectivities: HashMap<ParticipantId, Arc<NodeConnectivity<I, O>>>,
 }
 

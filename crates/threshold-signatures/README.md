@@ -77,6 +77,11 @@ signing parties produce a valid ECDSA signature using precomputed material.
 More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/signing.md).
 
+6) **Presigning and signing (online)**: runs presigning and signing as one
+protocol that consumes two Beaver triples directly once the message is known,
+so no presignature is stored. More details can be found in
+[docs](docs/ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
+
 #### Robust Threshold ECDSA
 
 The Robust ECDSA scheme improves efficiency and communication overhead

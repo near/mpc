@@ -1,28 +1,28 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::{AccountId, ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{CKDRequestArgs, InitConfig};
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
-        CKDAppPublicKey, ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId,
-        DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, GovernanceThreshold,
-        GovernanceThresholdParameters, MockAttestation, ParticipantId, ParticipantInfo,
-        Participants, Payload, ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol,
-        ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
-        SignRequestArgs,
+        CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
+        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
+        GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
     },
 };
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::{SeedableRng, rngs::StdRng};
 use serde_json::json;
 
 use crate::NearKitCaller;
@@ -30,6 +30,7 @@ use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::{CallMpc, WithWaitLevel};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
+use crate::test_dir::TestDir;
 use test_port_allocator::TestPorts;
 
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
@@ -73,6 +74,7 @@ const KEY_SEED_P2P: u64 = 100;
 const KEY_SEED_OPERATOR: u64 = 200;
 const KEY_SEED_MIGRATION_P2P: u64 = 300;
 const KEY_SEED_MIGRATION_NEAR_SIGNER: u64 = 400;
+const KEY_SEED_TEE_VERIFIER: u64 = 500;
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -86,6 +88,8 @@ pub struct MpcClusterConfig {
     pub binary_paths: Vec<PathBuf>,
     /// Compiled contract WASM bytes (pre-compiled by the test).
     pub contract_wasm: Vec<u8>,
+    /// Compiled tee-verifier WASM bytes (pre-compiled by the test).
+    pub tee_verifier_wasm: Vec<u8>,
     /// Port seed for the port allocator (must be unique across parallel tests).
     pub port_seed: u16,
     /// Triple buffer size per node.
@@ -94,7 +98,8 @@ pub struct MpcClusterConfig {
     pub presignatures_to_buffer: usize,
     /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
     pub sandbox_version: String,
-    /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
+    /// Parent of the directory holding all test artifacts (logs, configs, DB).
+    /// If `None`, `E2E_HOME_BASE` is used, else the system temp dir.
     pub home_base: Option<PathBuf>,
     /// Indices (into the node array) of nodes that are initial participants.
     /// An empty vec means all nodes are participants. Set to a subset to start
@@ -160,7 +165,11 @@ impl MpcClusterConfig {
     /// - 3 nodes, 2-of-3 threshold
     /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
     /// - 10 triples, 10 presignatures per node
-    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self {
+    pub fn default_for_test(
+        port_seed: u16,
+        contract_wasm: Vec<u8>,
+        tee_verifier_wasm: Vec<u8>,
+    ) -> Self {
         Self {
             num_nodes: 3,
             threshold: 2,
@@ -186,6 +195,7 @@ impl MpcClusterConfig {
             ],
             binary_paths: vec![default_mpc_binary_path()],
             contract_wasm,
+            tee_verifier_wasm,
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
@@ -242,8 +252,7 @@ pub struct MpcCluster {
     pub threshold: usize,
     pub user_accounts: HashMap<AccountId, SigningKey>,
     pub ports: TestPorts,
-    /// Held to keep the temp directory alive for the lifetime of the cluster.
-    pub test_dir: tempfile::TempDir,
+    pub test_dir: TestDir,
 }
 
 impl MpcCluster {
@@ -255,9 +264,19 @@ impl MpcCluster {
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
         config.validate()?;
+        let test_dir = TestDir::new(config.home_base.as_deref())?;
+        Self::start_in(&test_dir, config).await.map_err(|error| {
+            test_dir.keep();
+            error.context(format!(
+                "cluster artifacts preserved in {}",
+                test_dir.path().display()
+            ))
+        })
+    }
+
+    async fn start_in(test_dir: &TestDir, config: MpcClusterConfig) -> anyhow::Result<Self> {
         let threshold = config.threshold;
         let ports = TestPorts::e2e_tests(config.port_seed);
-        let test_dir = create_test_dir(&config.home_base)?;
 
         let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
         let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
@@ -315,6 +334,15 @@ impl MpcCluster {
         )
         .await?;
 
+        deploy_and_trust_tee_verifier(
+            &blockchain,
+            &contract,
+            &config.tee_verifier_wasm,
+            &operator_keys,
+            &participant_indices,
+        )
+        .await?;
+
         // Start MPC nodes BEFORE adding domains: key generation requires running nodes.
         let mut nodes = start_mpc_nodes(
             &config,
@@ -354,7 +382,7 @@ impl MpcCluster {
             threshold,
             user_accounts,
             ports,
-            test_dir,
+            test_dir: test_dir.clone(),
         })
     }
 
@@ -868,36 +896,6 @@ impl MpcCluster {
             .await
             .context("failed to register backup service")
     }
-    /// View the foreign chains the contract accepts requests for.
-    pub async fn view_foreign_chains_supported_by_contract(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
-        self.contract
-            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
-            .await
-    }
-
-    /// View the per-node foreign chain configurations registered with the contract.
-    pub async fn view_foreign_chain_configurations(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-            .await
-    }
-
-    /// Register foreign chain support on the contract for a specific node.
-    pub async fn register_foreign_chain_config(
-        &self,
-        node_index: usize,
-        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id())
-            .register_foreign_chain_support(foreign_chain_support.clone())
-            .await
-            .context("failed to register foreign chain support")
-    }
 
     pub async fn view_available_foreign_chains(
         &self,
@@ -919,7 +917,7 @@ impl MpcCluster {
         &self,
     ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
         self.contract
-            .view_borsh(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+            .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
             .await
     }
 
@@ -1063,7 +1061,7 @@ impl MpcCluster {
             "propose_update failed: {:?}",
             outcome.failure_message()
         );
-        let proposal_id: u64 = outcome
+        let proposal_id: UpdateId = outcome
             .json()
             .context("propose_update did not return a JSON update id")?;
 
@@ -1175,16 +1173,6 @@ impl MpcNodeState {
     }
 }
 
-fn create_test_dir(home_base: &Option<PathBuf>) -> anyhow::Result<tempfile::TempDir> {
-    match home_base {
-        Some(base) => {
-            std::fs::create_dir_all(base)?;
-            Ok(tempfile::tempdir_in(base)?)
-        }
-        None => Ok(tempfile::tempdir()?),
-    }
-}
-
 fn generate_signing_keys(
     num_nodes: u64,
 ) -> (
@@ -1254,10 +1242,7 @@ async fn prepay_attestation_grants(
     contract: &DeployedContract,
     near_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
-    let Some(fee) = attestation_storage_fee(contract).await? else {
-        tracing::info!("contract config has no attestation storage fee; skipping prepayment");
-        return Ok(());
-    };
+    let fee = attestation_storage_fee(contract).await?;
 
     // Granting the initial participants too is harmless: their attestations update the
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
@@ -1274,34 +1259,24 @@ async fn prepay_attestation_grants(
             )
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
-        if !outcome.is_success() {
-            let failure = format!("{:?}", outcome.failure_message());
-            // A contract binary predating grants, as run by the upgrade-compatibility tests:
-            // it has no `prepay_attestation_storage` and needs no prepayment. Delete this
-            // branch, and `attestation_storage_fee`'s `None` case, once
-            // `contract_history::current_{mainnet,testnet}` point past 3.14.0, the last
-            // release without grants.
-            anyhow::ensure!(
-                failure.contains("method not found"),
-                "prepay for node {i} failed: {failure}"
-            );
-            tracing::info!("contract has no prepay_attestation_storage; skipping grant prepayment");
-            break;
-        }
+        anyhow::ensure!(
+            outcome.is_success(),
+            "prepay for node {i} failed: {:?}",
+            outcome.failure_message()
+        );
     }
 
     Ok(())
 }
 
-/// `None` when `config()` carries no fee field: a contract binary older than grants (3.14.0 and
-/// earlier), which the upgrade-compatibility tests run and which needs no prepayment.
 async fn attestation_storage_fee(
     contract: &DeployedContract,
-) -> anyhow::Result<Option<near_kit::NearToken>> {
+) -> anyhow::Result<near_kit::NearToken> {
     let config: serde_json::Value = contract.view("config").await?;
-    Ok(config["attestation_storage_fee_millinear"]
+    let millinear = config["attestation_storage_fee_millinear"]
         .as_u64()
-        .map(|millinear| near_kit::NearToken::from_millinear(u128::from(millinear))))
+        .context("config() has no attestation_storage_fee_millinear")?;
+    Ok(near_kit::NearToken::from_millinear(u128::from(millinear)))
 }
 
 async fn init_contract(
@@ -1373,6 +1348,47 @@ async fn init_contract(
     .await
     .map(|_| ())
     .context("contract did not reach Running state after init")
+}
+
+/// Deploys the tee-verifier and votes it in from every participant. Nodes submit mock
+/// attestations, which the contract verifies without calling the verifier; the cross-contract
+/// flow is covered by the mpc-contract sandbox tests.
+async fn deploy_and_trust_tee_verifier(
+    blockchain: &NearBlockchain,
+    contract: &DeployedContract,
+    verifier_wasm: &[u8],
+    operator_keys: &[SigningKey],
+    participant_indices: &[usize],
+) -> anyhow::Result<()> {
+    let verifier_account = format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}");
+    let verifier_key = generate_deterministic_key(KEY_SEED_TEE_VERIFIER);
+    tracing::info!(account = %verifier_account, "deploying tee-verifier contract");
+    // The verifier is stateless, so there is no initializer to call on deploy.
+    blockchain
+        .create_account_and_deploy(&verifier_account, 100, &verifier_key, verifier_wasm)
+        .await?;
+
+    // expected_code_hash commits every voter to the same audited WASM; the
+    // contract only compares voters' hashes against each other, not against
+    // the deployed bytes.
+    let expected_code_hash =
+        TeeVerifierCodeHash::new(*near_kit::CryptoHash::hash(verifier_wasm).as_bytes());
+    let candidate: ContractAccountId = verifier_account.parse()?;
+    for &i in participant_indices {
+        let account = node_account(i);
+        let client = blockchain.client_for(&account, &operator_keys[i])?;
+        let outcome = client
+            .call_mpc(contract.account_id())
+            .vote_tee_verifier_change(candidate.clone(), expected_code_hash)
+            .await
+            .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "node {i}'s tee-verifier vote failed: {:?}",
+            outcome.failure_message()
+        );
+    }
+    Ok(())
 }
 
 async fn add_initial_domains(
@@ -1579,8 +1595,9 @@ async fn ensure_nodes_alive(nodes: &mut [MpcNodeState]) -> anyhow::Result<()> {
         if let MpcNodeState::Running(n) = node {
             anyhow::ensure!(
                 !n.has_exited(),
-                "mpc-node {i} exited early — check {}/{}",
+                "mpc-node {i} exited early, check {} ({} holds its logs, {} any panic)",
                 n.setup().home_dir().display(),
+                crate::mpc_node::STDOUT_LOG,
                 crate::mpc_node::STDERR_LOG
             );
         }
