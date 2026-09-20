@@ -6274,7 +6274,6 @@ dependencies = [
  "near-time 2.14.0-rc.2",
  "node-types",
  "num_enum",
- "parking_lot 0.12.5",
  "pprof",
  "pprof_util",
  "prometheus",
