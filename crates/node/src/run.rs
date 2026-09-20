@@ -1,9 +1,3 @@
-use crate::tee::{
-    AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{
-        AttestationSubmitter, monitor_attestation_removal, periodic_attestation_submission,
-    },
-};
 use crate::tracing::spawn_periodic_prune;
 use crate::{
     config::{
