@@ -1395,17 +1395,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bip39"
-version = "2.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90dbd31c98227229239363921e60fcf5e558e43ec69094d46fc4996f08d1d5bc"
-dependencies = [
- "bitcoin_hashes",
- "serde",
- "unicode-normalization",
-]
-
-[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2617,7 +2606,6 @@ checksum = "1a52aa3fcda4e6302a9f48734f234d35d4721b96f8fe07d073f07ce9df4f0271"
 dependencies = [
  "cpubits",
  "ctutils",
- "getrandom 0.4.2",
  "hybrid-array",
  "num-traits",
  "rand_core 0.10.1",
@@ -3334,7 +3322,7 @@ dependencies = [
  "digest 0.10.7",
  "elliptic-curve 0.13.8",
  "rfc6979 0.4.0",
- "serdect 0.2.0",
+ "serdect",
  "signature 2.2.0",
  "spki 0.7.3",
 ]
@@ -3350,7 +3338,6 @@ dependencies = [
  "elliptic-curve 0.14.1",
  "rfc6979 0.6.0",
  "signature 3.0.0",
- "spki 0.8.0",
  "zeroize",
 ]
 
@@ -3441,7 +3428,7 @@ dependencies = [
  "pkcs8 0.10.2",
  "rand_core 0.6.4",
  "sec1 0.7.3",
- "serdect 0.2.0",
+ "serdect",
  "subtle",
  "zeroize",
 ]
@@ -3459,7 +3446,6 @@ dependencies = [
  "ff 0.14.0",
  "group 0.14.0",
  "hybrid-array",
- "pkcs8 0.11.0",
  "rand_core 0.10.1",
  "sec1 0.8.1",
  "subtle",
@@ -4013,7 +3999,7 @@ dependencies = [
  "postcard",
  "rand_core 0.6.4",
  "serde",
- "serdect 0.2.0",
+ "serdect",
  "thiserror 2.0.20",
  "visibility",
  "zeroize",
@@ -5609,7 +5595,7 @@ dependencies = [
  "ecdsa 0.16.9",
  "elliptic-curve 0.13.8",
  "once_cell",
- "serdect 0.2.0",
+ "serdect",
  "sha2 0.10.9",
  "signature 2.2.0",
 ]
@@ -5625,7 +5611,6 @@ dependencies = [
  "elliptic-curve 0.14.1",
  "primeorder 0.14.0",
  "sha2 0.11.0",
- "signature 3.0.0",
  "wnaf",
 ]
 
@@ -6034,7 +6019,6 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "add6b9d92e496f16f4526d68ff29da1483aba4b119baeab8bed3b9e3544a6f3d"
 dependencies = [
- "const-oid 0.10.2",
  "crypto-common 0.2.2",
  "ctutils",
  "hybrid-array",
@@ -7061,29 +7045,24 @@ dependencies = [
 
 [[package]]
 name = "near-kit"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be50630b782cf7b2e2370a03b965e50253aaa3576205ee59e41b97b99c0ede8e"
+checksum = "3b54cc286df2ff31faf4555bde248e62fe773033d9d5446fabc3e6b561301c74"
 dependencies = [
  "base64 0.23.1",
- "bip39",
  "borsh",
  "bs58 0.5.1",
  "ed25519-dalek 3.0.0",
- "futures",
  "getrandom 0.4.2",
  "gloo-timers 0.4.0",
  "hex",
- "hmac 0.13.0",
  "js-sys",
  "k256 0.14.0",
  "ml-dsa",
  "near-account-id 2.6.0",
  "near-gas",
  "near-global-contracts",
- "near-kit-macros",
  "near-token",
- "rand 0.10.2",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
@@ -7092,17 +7071,6 @@ dependencies = [
  "sha3 0.12.0",
  "thiserror 2.0.20",
  "tokio",
-]
-
-[[package]]
-name = "near-kit-macros"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9421b6883fc9cdf59d95f97b37b183f0ac8864f26f3d7a53c288d06484542099"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.5",
 ]
 
 [[package]]
@@ -9081,9 +9049,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c9f42978c78a00e3d68f69fc03e57a234debae69da4020a4fb588fcdcd07b06"
 dependencies = [
  "elliptic-curve 0.14.1",
- "once_cell",
  "primefield",
- "serdect 0.4.3",
  "wnaf",
 ]
 
@@ -10500,7 +10466,7 @@ dependencies = [
  "der 0.7.10",
  "generic-array",
  "pkcs8 0.10.2",
- "serdect 0.2.0",
+ "serdect",
  "subtle",
  "zeroize",
 ]
@@ -10855,16 +10821,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a84f14a19e9a014bb9f4512488d9829a68e04ecabffb0f9904cd1ace94598177"
 dependencies = [
  "base16ct 0.2.0",
- "serde",
-]
-
-[[package]]
-name = "serdect"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66cf8fedced2fcf12406bcb34223dffb92eaf34908ede12fed414c82b7f00b3e"
-dependencies = [
- "base16ct 1.0.0",
  "serde",
 ]
 
@@ -12431,15 +12387,6 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
-
-[[package]]
-name = "unicode-normalization"
-version = "0.1.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
-dependencies = [
- "tinyvec",
-]
 
 [[package]]
 name = "unicode-segmentation"
