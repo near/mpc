@@ -1,6 +1,7 @@
 use crate::config::MpcConfig;
 use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
+    self, INCOMING_CONNECTION, INCOMING_CONNECTIONS_REJECTED, MPC_P2P_TCP_WRITE_SIZE_BYTES,
+    OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
@@ -69,7 +70,7 @@ const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 const TLS_ACCEPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Max concurrent incoming connections per authenticated participant with headroom for stale ones that haven't timed out yet.
-const MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT: usize = 8;
+const MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT: usize = 4;
 
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
@@ -108,15 +109,12 @@ impl IncomingConnectionLimits {
         Self { per_participant }
     }
 
-    fn try_reserve(
-        &self,
-        peer_id: ParticipantId,
-    ) -> anyhow::Result<Option<tokio::sync::OwnedSemaphorePermit>> {
-        let semaphore = self
-            .per_participant
-            .get(&peer_id)
-            .with_context(|| format!("no incoming connection limit for participant {peer_id}"))?;
-        Ok(semaphore.clone().try_acquire_owned().ok())
+    fn try_reserve(&self, peer_id: ParticipantId) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.per_participant
+            .get(&peer_id)?
+            .clone()
+            .try_acquire_owned()
+            .ok()
     }
 }
 
@@ -679,12 +677,10 @@ async fn incoming_connection_handler(
     let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
     tracking::set_progress(&format!("Authenticated as {}", peer_id));
 
-    let Some(_connection_slot) = incoming_connection_limits.try_reserve(peer_id)? else {
-        tracing::debug!(
-            peer_id = %peer_id,
-            max = MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
-            "dropping incoming connection: participant at concurrent connection limit"
-        );
+    let Some(_connection_slot) = incoming_connection_limits.try_reserve(peer_id) else {
+        INCOMING_CONNECTIONS_REJECTED
+            .with_label_values(&[peer_id.to_string().as_str()])
+            .inc();
         if let Err(err) = tls_stream.shutdown().await {
             error!(err = %err, "TLS shutdown failed");
         }
@@ -1126,15 +1122,17 @@ mod tests {
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::providers::EcdsaTaskId;
+    use crate::tracking;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng, random};
+    use rand::{Rng, SeedableRng};
     use rustls::ClientConfig;
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::io::AsyncReadExt;
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::mpsc;
     use tokio::task::JoinHandle;
@@ -1168,11 +1166,12 @@ mod tests {
             sender0.wait_for_ready(2, &all_participants).await.unwrap();
             sender1.wait_for_ready(2, &all_participants).await.unwrap();
 
+            let mut rng = StdRng::seed_from_u64(42);
             for _ in 0..100 {
-                // TODO: adjust test?
-                let domain_id = random();
-                let epoch_id = random();
-                let n_attempts = rand::thread_rng().r#gen::<usize>() % 100;
+                // TODO: adjust test
+                let domain_id = rng.r#gen();
+                let epoch_id = rng.r#gen();
+                let n_attempts = rng.r#gen::<usize>() % 100;
                 let mut attempt_id = AttemptId::new();
                 for _ in 0..n_attempts {
                     attempt_id = attempt_id.next();
@@ -1702,41 +1701,20 @@ mod tests {
     }
 
     #[test]
-    fn incoming_connection_limits__should_reject_connections_beyond_per_participant_cap() {
-        // Given
-        let peer = ParticipantId::from_raw(1);
-        let limits = IncomingConnectionLimits::new([peer]);
-        let _held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
-            .map(|_| {
-                limits
-                    .try_reserve(peer)
-                    .unwrap()
-                    .expect("slots should be available")
-            })
-            .collect();
-
-        // When
-        let over_cap = limits.try_reserve(peer).unwrap();
-
-        // Then
-        assert!(over_cap.is_none());
-    }
-
-    #[test]
     fn incoming_connection_limits__should_free_slot_when_permit_is_dropped() {
         // Given
         let peer = ParticipantId::from_raw(1);
         let limits = IncomingConnectionLimits::new([peer]);
         let mut held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
-            .map(|_| limits.try_reserve(peer).unwrap().unwrap())
+            .map(|_| limits.try_reserve(peer).unwrap())
             .collect();
-        assert!(limits.try_reserve(peer).unwrap().is_none());
+        assert!(limits.try_reserve(peer).is_none());
 
         // When
         held_slots.pop();
 
         // Then
-        assert!(limits.try_reserve(peer).unwrap().is_some());
+        assert!(limits.try_reserve(peer).is_some());
     }
 
     #[test]
@@ -1746,25 +1724,68 @@ mod tests {
         let other_peer = ParticipantId::from_raw(2);
         let limits = IncomingConnectionLimits::new([flooding_peer, other_peer]);
         let _held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
-            .map(|_| limits.try_reserve(flooding_peer).unwrap().unwrap())
+            .map(|_| limits.try_reserve(flooding_peer).unwrap())
             .collect();
 
         // When
-        let other_peer_slot = limits.try_reserve(other_peer).unwrap();
+        let other_peer_slot = limits.try_reserve(other_peer);
 
         // Then
         assert!(other_peer_slot.is_some());
     }
 
-    #[test]
-    fn incoming_connection_limits__should_error_for_unknown_participant() {
-        // Given
-        let limits = IncomingConnectionLimits::new([ParticipantId::from_raw(1)]);
+    #[tokio::test]
+    #[test_log::test]
+    async fn incoming_connection_handler__should_close_connection_when_peer_connection_limit_is_reached()
+     {
+        start_root_task_with_periodic_dump(async move {
+            // Given a known peer that already has its slots filled
+            let my_id = ParticipantId::from_raw(0);
+            let peer_id = ParticipantId::from_raw(1);
+            let mut participant_identities = ParticipantIdentities::default();
+            participant_identities
+                .key_to_participant_id
+                .insert(make_signing_key().verifying_key(), peer_id);
+            let limits = Arc::new(IncomingConnectionLimits::new([peer_id]));
+            let _held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
+                .map(|_| limits.try_reserve(peer_id).unwrap())
+                .collect();
+            let connectivities = Arc::new(AllNodeConnectivities::<
+                OutgoingConnection,
+                IncomingConnection,
+            >::new(my_id, &[my_id, peer_id]));
+            let (message_sender, _message_receiver) = mpsc::unbounded_channel();
+            let (server_tcp, client_tcp) = must_accept_silent_connection().await;
+            let _handler = tracking::spawn(
+                "incoming connection handler",
+                incoming_connection_handler(
+                    message_sender,
+                    connectivities,
+                    server_tcp,
+                    make_tls_acceptor(),
+                    Arc::new(participant_identities),
+                    my_id,
+                    limits,
+                ),
+            );
 
-        // When
-        let error = limits.try_reserve(ParticipantId::from_raw(2)).unwrap_err();
+            // When the peer connects over TLS
+            let mut client = tokio_rustls::TlsConnector::from(make_client_config())
+                .connect("dummy".try_into().unwrap(), client_tcp)
+                .await
+                .unwrap();
 
-        // Then
-        assert!(error.to_string().contains("no incoming connection limit"));
+            // Then the connection gets closed
+            let mut buf = [0u8; 1];
+            let bytes_read = timeout(
+                OutgoingConnection::HANDSHAKE_TIMEOUT / 2,
+                client.read(&mut buf),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(bytes_read, 0);
+        })
+        .await;
     }
 }
