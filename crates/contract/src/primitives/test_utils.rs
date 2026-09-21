@@ -96,6 +96,10 @@ pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
     .unwrap()
 }
 
+pub fn bogus_tee_verifier_account_id() -> AccountId {
+    "tee-verifier.near".parse().unwrap()
+}
+
 #[test]
 fn test_random_public_key() {
     let pk1 = bogus_ed25519_near_public_key();
