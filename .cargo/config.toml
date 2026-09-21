@@ -8,3 +8,15 @@
 # explicitly there. Keep both in sync.
 [target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+# The C/C++ half of that baseline, for the cc-crate dependencies (rocksdb,
+# snappy, zstd, jemalloc). rustc's `x86-64-v3` covers AVX2 but not PCLMUL or
+# AES, while rocksdb's `port/lang.h` infers `__PCLMUL__` from `__AVX__`; without
+# `-mpclmul` its CRC32C path fails to compile. See `flake.nix` (`prodCFlags`),
+# which sets the same values and must stay in sync.
+#
+# `force = false` so an exported value still wins: inside the Nix devshell and
+# in `nix/mpc-node.nix` these come from `prodCFlags` instead.
+[env]
+CFLAGS_x86_64_unknown_linux_gnu = { value = "-march=x86-64-v3 -mpclmul -maes", force = false }
+CXXFLAGS_x86_64_unknown_linux_gnu = { value = "-march=x86-64-v3 -mpclmul -maes", force = false }

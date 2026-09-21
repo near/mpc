@@ -173,11 +173,11 @@ let
       zstd
       bzip2
     ]
-    ++ lib.optionals stdenv.isLinux [
+    ++ lib.optionals stdenv.hostPlatform.isLinux [
       udev
       dbus
     ]
-    ++ lib.optionals stdenv.isDarwin [
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [
       # Modern apple-sdk_14 bundles Security / SystemConfiguration /
       # CoreFoundation and friends; no need to list them separately.
       apple-sdk_14
@@ -219,9 +219,10 @@ let
 
       # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
       # zstd, ...) and Rust itself. Without this, the cc crate defaults to
-      # the build host's CPU and output bytes vary by machine.
-      CFLAGS = marchFlag;
-      CXXFLAGS = "-include cstdint ${marchFlag}";
+      # the build host's CPU and output bytes vary by machine. Target-suffixed
+      # like in `.cargo/config.toml`, whose `[env]` then defers to these.
+      CFLAGS_x86_64_unknown_linux_gnu = marchFlag;
+      CXXFLAGS_x86_64_unknown_linux_gnu = marchFlag;
 
       RUSTFLAGS = lib.concatStringsSep " " (
         lib.optionals isX86 [ "-C target-cpu=x86-64-v3" ]
@@ -237,7 +238,7 @@ let
       # Extra bindgen flags — paths are already provided by bindgenHook.
       BINDGEN_EXTRA_CLANG_ARGS = marchFlag;
     }
-    // lib.optionalAttrs stdenv.isDarwin {
+    // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
       # Deployment target is independent of the SDK version; pin it so the
       # Mach-O LC_BUILD_VERSION load command is identical across builders.
       MACOSX_DEPLOYMENT_TARGET = "14.0";
