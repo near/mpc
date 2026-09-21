@@ -11,9 +11,10 @@ set -euo pipefail
 
 MPC_CONTRACT_PATH="./target/near/mpc_contract/mpc_contract.wasm"
 
-# TEE verifier contract, deployed to tee-verifier.test.near and named as the
-# trusted verifier at init. Build it with `cargo make build-tee-verifier-optimized`.
+# TEE verifier contract, deployed to its own account and named as the trusted
+# verifier at init. Build it with `cargo make build-tee-verifier-optimized`.
 TEE_VERIFIER_PATH="./target/near/tee_verifier/tee_verifier.wasm"
+TEE_VERIFIER_ACCOUNT="tee-verifier.test.near"
 
 # number of mpc-nodes in the network
 N=2
@@ -199,9 +200,9 @@ EOF
     wait "$pid"
   done
 
-  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" '
+  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" '
   {
-    tee_verifier_account_id: "tee-verifier.test.near",
+    tee_verifier_account_id: $tee_verifier_account,
     parameters: {
       threshold: ($threshold | tonumber),
       participants: {
@@ -252,11 +253,11 @@ EOF
   wait_for_success "$(mpc_view state) 2>&1 | grep Running"
 
   echo "Creating tee-verifier account"
-  run_quiet_on_success "near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+  run_quiet_on_success "near account create-account fund-myself $TEE_VERIFIER_ACCOUNT '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
 
   echo "Deploying tee-verifier"
   # The verifier is stateless, so it has no initializer to call on deploy.
-  run_quiet_on_success "near contract deploy tee-verifier.test.near use-file '$TEE_VERIFIER_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
+  run_quiet_on_success "near contract deploy $TEE_VERIFIER_ACCOUNT use-file '$TEE_VERIFIER_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
 
   signer_account="mpc-node-1.test.near"
 
