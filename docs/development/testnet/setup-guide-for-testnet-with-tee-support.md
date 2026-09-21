@@ -307,14 +307,14 @@ Example:
 
 ```json
 {
-  "tee_verifier_account_id": "barak_tee_test1_verifier.testnet",
+  "tee_verifier_account_id": "yourusername-test_verifier.testnet",
   "parameters": {
     "threshold": 2,
     "participants": {
       "next_id": 2,
       "participants": [
         [
-          "barak_tee_test1_frodo.testnet",
+          "yourusername-test_frodo.testnet",
           0,
           {
             "tls_public_key": "ed25519:6CeuXPt6qXtXRHVb5C4USZAyQcg65LXJvebPyCJewaN1",
@@ -322,7 +322,7 @@ Example:
           }
         ],
         [
-          "barak_tee_test1_sam.testnet",
+          "yourusername-test_sam.testnet",
           1,
           {
             "tls_public_key": "ed25519:B2pHHn9Kr2GZhDn85VP3vGUccJK7Haekcmy5JRBScUn3",
