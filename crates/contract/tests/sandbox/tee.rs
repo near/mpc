@@ -242,6 +242,7 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -542,6 +543,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 #[tokio::test]
 async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_attestation() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..

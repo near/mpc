@@ -26,14 +26,16 @@ use mpc_contract::primitives::{
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_mpc_contract_interface::{method_names, types as dtos};
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{Account, Contract};
 use rstest::rstest;
 use serde_json::json;
 use std::collections::BTreeMap;
+use test_utils::sandbox::SandboxWorker;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -140,6 +142,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_cancel_keygen() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -244,6 +247,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -282,6 +286,7 @@ async fn test_resharing() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -322,7 +327,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
 }
 
 struct ResharingTestContext {
-    _worker: Worker<Sandbox>,
+    _worker: SandboxWorker,
     contract: Contract,
     persistent_participants: Vec<Account>,
     new_participant_accounts: Vec<Account>,
@@ -415,6 +420,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -479,6 +485,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -526,6 +533,7 @@ async fn test_cancel_resharing_only_previous_participants_can_vote(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         new_participant_accounts,
         ..
@@ -550,6 +558,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -601,6 +610,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         new_participant_accounts,
@@ -685,6 +695,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
 async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id()
 -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         new_participant_accounts,
