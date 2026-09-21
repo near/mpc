@@ -94,6 +94,21 @@ Add the following to your project settings in `.vscode/settings.json`:
 }
 ```
 
+## Sandbox tests
+
+Sandbox and E2E tests normally let the `near-sandbox` crate download a prebuilt
+`neard`, which cannot run on NixOS (it expects an FHS dynamic loader). The dev
+shell instead exports `NEAR_SANDBOX_BIN_PATH` pointing at a nix-packaged,
+patchelf'ed copy of the same artifact ([nix/near-sandbox.nix](../../nix/near-sandbox.nix)),
+so sandbox tests work out of the box on any host. The pinned version is kept in
+sync with `DEFAULT_SANDBOX_VERSION` by `scripts/check-sandbox-image-version.sh`.
+
+## Reproducible builds
+
+`nix develop .#repro` provides the tooling for `deployment/build-images.sh` and
+the NEP-330 contract build, including a rootless docker daemon; see
+[reproducible-builds.md](../guide/reproducible-builds.md).
+
 ## Verifying the Nix shell is complete
 
 Because `nix develop` inherits the system `$PATH`, missing packages can go unnoticed
