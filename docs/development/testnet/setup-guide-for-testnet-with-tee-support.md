@@ -66,7 +66,7 @@ export ROOT_ACCOUNT=${MPC_NETWORK_NAME}.testnet
 export MPC_CONTRACT_ACCOUNT=${MPC_NETWORK_NAME}_mpc.testnet
 export FRODO_ACCOUNT=${MPC_NETWORK_NAME}_frodo.testnet
 export SAM_ACCOUNT=${MPC_NETWORK_NAME}_sam.testnet
-export TEE_VERIFIER_ACCOUNT=<tee-verifier-account>
+export TEE_VERIFIER_ACCOUNT=${MPC_NETWORK_NAME}_verifier.testnet
 ```
 
 `TEE_VERIFIER_ACCOUNT` is the TEE verifier contract the MPC contract calls to verify the

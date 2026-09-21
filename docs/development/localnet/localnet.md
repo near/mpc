@@ -259,8 +259,10 @@ export MPC_HOST=localhost
 ```
 
 With these set, we can prepare the arguments for the init call. Besides the
-participants, they name `tee-verifier.test.near` as the trusted TEE verifier,
-which only has to exist once nodes submit real Dstack attestations (step 6).
+participants, they name `tee-verifier.test.near` as the trusted TEE verifier.
+The nodes here submit mock attestations, which the contract verifies itself, so
+that account only has to exist once real Dstack attestations are in play. Step 6
+deploys it.
 
 ```shell
 envsubst < docs/development/localnet/args/init.json > /tmp/init_args.json
