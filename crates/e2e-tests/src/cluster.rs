@@ -50,6 +50,10 @@ fn node_account(i: usize) -> String {
     format!("node{i}.{SANDBOX_ROOT_ACCOUNT}")
 }
 
+fn tee_verifier_account() -> String {
+    format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}")
+}
+
 pub fn cluster_poll_retry() -> ConstantBuilder {
     ConstantBuilder::default()
         .with_delay(CLUSTER_POLL_INTERVAL)
@@ -331,6 +335,7 @@ impl MpcCluster {
                 threshold: config.threshold,
                 participant_indices: participant_indices.clone(),
                 init_format: config.init_format,
+                tee_verifier_account_id: tee_verifier_account().parse()?,
             },
         )
         .await?;
@@ -1231,6 +1236,7 @@ struct InitContractArgs {
     threshold: usize,
     participant_indices: Vec<usize>,
     init_format: ContractInitFormat,
+    tee_verifier_account_id: ContractAccountId,
 }
 
 /// Prepays one attestation-storage grant for every node in the cluster.
@@ -1292,6 +1298,7 @@ async fn init_contract(
         threshold,
         participant_indices,
         init_format,
+        tee_verifier_account_id,
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
@@ -1318,7 +1325,7 @@ async fn init_contract(
                 .client()
                 .call_mpc(contract.account_id())
                 .with_wait_level::<Final>()
-                .init(params, Some(init_config))
+                .init(params, tee_verifier_account_id, Some(init_config))
                 .await?
         }
     };
@@ -1351,9 +1358,11 @@ async fn init_contract(
     .context("contract did not reach Running state after init")
 }
 
-/// Deploys the tee-verifier and votes it in from every participant. Nodes submit mock
-/// attestations, which the contract verifies without calling the verifier; the cross-contract
-/// flow is covered by the mpc-contract sandbox tests.
+/// Deploys the tee-verifier and votes it in from every participant. The vote is a no-op on
+/// the current contract, which trusts the verifier from init, and configures it on production
+/// builds that predate the init argument. Nodes submit mock attestations, which the contract
+/// verifies without calling the verifier; the cross-contract flow is covered by the
+/// mpc-contract sandbox tests.
 async fn deploy_and_trust_tee_verifier(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
@@ -1361,7 +1370,7 @@ async fn deploy_and_trust_tee_verifier(
     operator_keys: &[SigningKey],
     participant_indices: &[usize],
 ) -> anyhow::Result<()> {
-    let verifier_account = format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}");
+    let verifier_account = tee_verifier_account();
     let verifier_key = generate_deterministic_key(KEY_SEED_TEE_VERIFIER);
     tracing::info!(account = %verifier_account, "deploying tee-verifier contract");
     // The verifier is stateless, so there is no initializer to call on deploy.

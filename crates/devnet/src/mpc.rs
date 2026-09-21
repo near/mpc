@@ -388,6 +388,7 @@ impl MpcInitContractCmd {
         mpc_contract_handle
             .init(
                 parameters,
+                self.tee_verifier_account_id.clone(),
                 Some(near_mpc_contract_interface::types::InitConfig::default()),
             )
             .await

@@ -238,6 +238,9 @@ pub struct MpcInitContractCmd {
     /// The threshold to initialize with.
     #[clap(long)]
     pub threshold: u64,
+    /// The TEE verifier contract account the MPC contract trusts.
+    #[clap(long)]
+    pub tee_verifier_account_id: AccountId,
 }
 
 #[derive(clap::Parser)]
