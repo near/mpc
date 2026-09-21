@@ -16,7 +16,7 @@ use crate::primitives::{
     IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, ParticipantId,
     PeerIndexerHeightMessage, PeerMessage,
 };
-use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
+use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
@@ -117,11 +117,11 @@ struct OutgoingConnection {
     /// This is cancelled when the connection is closed. Used to wait for the
     /// connection to close.
     closed: CancellationToken,
-    peer_protocol_version: CommunicationProtocols,
+    peer_protocol_version: NetworkProtocolVersion,
 }
 
 impl AdvertiseProtocolVersion for OutgoingConnection {
-    fn peer_protocol_version(&self) -> CommunicationProtocols {
+    fn peer_protocol_version(&self) -> NetworkProtocolVersion {
         self.peer_protocol_version
     }
 }
@@ -231,7 +231,7 @@ impl OutgoingConnection {
             HandshakeOutcome::Dec2025(_) => {
                 // a dialer concluding a successful handshake with a listening legacy node is
                 // always assumed to be accepted
-                CommunicationProtocols::Dec2025
+                NetworkProtocolVersion::Dec2025
             }
             HandshakeOutcome::Jan2026(handshake_data) => {
                 if !handshake_data.is_accepted() {
@@ -488,7 +488,7 @@ impl PersistentConnection {
 
 pub struct IncomingConnection {
     sender_connection_id: u32,
-    peer_protocol_version: CommunicationProtocols,
+    peer_protocol_version: NetworkProtocolVersion,
 }
 
 impl SenderConnectionId for IncomingConnection {
@@ -498,7 +498,7 @@ impl SenderConnectionId for IncomingConnection {
 }
 
 impl AdvertiseProtocolVersion for IncomingConnection {
-    fn peer_protocol_version(&self) -> CommunicationProtocols {
+    fn peer_protocol_version(&self) -> NetworkProtocolVersion {
         self.peer_protocol_version
     }
 }
@@ -694,7 +694,7 @@ async fn incoming_connection_handler(
                 tls_stream.shutdown().await?;
                 return Ok(());
             }
-            (1, CommunicationProtocols::Dec2025)
+            (1, NetworkProtocolVersion::Dec2025)
         }
         HandshakeOutcome::Jan2026(connection_info) => {
             if !connection_info.is_accepted() {

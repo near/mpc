@@ -1,5 +1,5 @@
 use crate::primitives::ParticipantId;
-use crate::protocol_version::CommunicationProtocols;
+use crate::protocol_version::NetworkProtocolVersion;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
@@ -220,7 +220,7 @@ pub trait SenderConnectionId {
 
 /// The protocol version the remote side of a connection advertised in the handshake.
 pub trait AdvertiseProtocolVersion {
-    fn peer_protocol_version(&self) -> CommunicationProtocols;
+    fn peer_protocol_version(&self) -> NetworkProtocolVersion;
 }
 
 impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
@@ -240,7 +240,7 @@ impl<
     /// The protocol version the peer advertised in the handshake of whichever connection is
     /// currently up; `None` while it is not connected. Both directions carry the peer's own
     /// version, so either answers.
-    pub fn peer_protocol_version(&self) -> Option<CommunicationProtocols> {
+    pub fn peer_protocol_version(&self) -> Option<NetworkProtocolVersion> {
         let outgoing = self
             .outgoing_receiver
             .borrow()
@@ -264,7 +264,7 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
     fn is_bidirectionally_connected(&self) -> bool;
     /// The protocol version the peer advertised in its handshake; `None` while not connected.
-    fn peer_protocol_version(&self) -> Option<CommunicationProtocols>;
+    fn peer_protocol_version(&self) -> Option<NetworkProtocolVersion>;
 }
 
 #[async_trait::async_trait]
@@ -315,7 +315,7 @@ where
         NodeConnectivity::is_bidirectionally_connected(self)
     }
 
-    fn peer_protocol_version(&self) -> Option<CommunicationProtocols> {
+    fn peer_protocol_version(&self) -> Option<NetworkProtocolVersion> {
         NodeConnectivity::peer_protocol_version(self)
     }
 }
@@ -400,7 +400,7 @@ mod tests {
         OptionSenderConnectionId,
     };
     use crate::primitives::ParticipantId;
-    use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
+    use crate::protocol_version::NetworkProtocolVersion;
     use futures::FutureExt;
     use rstest::rstest;
     use std::sync::{Arc, Weak};
@@ -413,13 +413,7 @@ mod tests {
         }
     }
 
-    impl AdvertiseProtocolVersion for usize {
-        fn peer_protocol_version(&self) -> CommunicationProtocols {
-            CURRENT_PROTOCOL_VERSION
-        }
-    }
-
-    struct VersionedConnection(CommunicationProtocols);
+    struct VersionedConnection(NetworkProtocolVersion);
 
     impl SenderConnectionId for VersionedConnection {
         fn sender_connection_id(&self) -> u32 {
@@ -428,26 +422,26 @@ mod tests {
     }
 
     impl AdvertiseProtocolVersion for VersionedConnection {
-        fn peer_protocol_version(&self) -> CommunicationProtocols {
+        fn peer_protocol_version(&self) -> NetworkProtocolVersion {
             self.0
         }
     }
 
     #[rstest]
-    #[case::both_up(true, true, Some(CommunicationProtocols::Dec2025))]
-    #[case::only_outgoing_up(true, false, Some(CommunicationProtocols::Dec2025))]
-    #[case::only_incoming_up(false, true, Some(CommunicationProtocols::Jan2026))]
+    #[case::both_up(true, true, Some(NetworkProtocolVersion::Dec2025))]
+    #[case::only_outgoing_up(true, false, Some(NetworkProtocolVersion::Dec2025))]
+    #[case::only_incoming_up(false, true, Some(NetworkProtocolVersion::Jan2026))]
     #[case::neither_up(false, false, None)]
     fn node_connectivity__should_report_the_protocol_version_of_a_live_connection_only(
         #[case] keep_outgoing: bool,
         #[case] keep_incoming: bool,
-        #[case] expected: Option<CommunicationProtocols>,
+        #[case] expected: Option<NetworkProtocolVersion>,
     ) {
         // Given
         let connectivity = NodeConnectivity::<VersionedConnection, VersionedConnection>::new();
-        let outgoing = Arc::new(VersionedConnection(CommunicationProtocols::Dec2025));
+        let outgoing = Arc::new(VersionedConnection(NetworkProtocolVersion::Dec2025));
         connectivity.set_outgoing_connection(&outgoing);
-        let incoming = Arc::new(VersionedConnection(CommunicationProtocols::Jan2026));
+        let incoming = Arc::new(VersionedConnection(NetworkProtocolVersion::Jan2026));
         connectivity.set_incoming_connection(&incoming).unwrap();
 
         // When
