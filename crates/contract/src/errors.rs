@@ -21,6 +21,11 @@ pub enum NodeMigrationError {
         "The submitted keyset differs from the expected keyset. Found: {found:?}, expected: {expected:?}"
     )]
     KeysetMismatch { found: Keyset, expected: Keyset },
+    #[error("TLS public key {tls_public_key:?} is already claimed by account {account_id}.")]
+    TlsKeyAlreadyClaimed {
+        tls_public_key: dtos::Ed25519PublicKey,
+        account_id: AccountId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -218,6 +223,8 @@ pub enum InvalidCandidateSet {
     DuplicateParticipantIds,
     #[error("Duplicate account IDs found.")]
     DuplicateAccountIds,
+    #[error("Duplicate TLS public keys found.")]
+    DuplicateTlsPublicKeys,
     #[error("New Participant ids need to be unique and contiguous.")]
     NewParticipantIdsNotContiguous,
     #[error("New Participant ids need to not skip any unused participant ids.")]
