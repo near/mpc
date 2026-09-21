@@ -7,7 +7,8 @@ use std::{
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_kit::{AccountId, ExecutedOptimistic, Final};
+use near_kit::AccountId;
+use near_kit::transaction::{ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
@@ -279,7 +280,7 @@ impl MpcCluster {
         let ports = TestPorts::e2e_tests(config.port_seed);
 
         let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
-        let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
+        let root_secret_key: near_kit::signer::SecretKey = SANDBOX_ROOT_SECRET_KEY
             .parse()
             .context("invalid sandbox root secret key")?;
         let chain_id = sandbox.chain_id()?;
@@ -586,7 +587,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
         next_domain_id: u64,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .vote_cancel_keygen(next_domain_id)
@@ -733,7 +734,7 @@ impl MpcCluster {
     pub async fn vote_cancel_resharing_from(
         &self,
         node_index: usize,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .vote_cancel_resharing()
@@ -843,7 +844,7 @@ impl MpcCluster {
         domain_id: DomainId,
         payload: Payload,
         account_id: &AccountId,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.contract_handle(account_id)
             .sign(SignRequestArgs::new("test".to_string(), payload, domain_id))
             .await
@@ -856,7 +857,7 @@ impl MpcCluster {
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
         account_id: &AccountId,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.contract_handle(account_id)
             .request_app_private_key(CKDRequestArgs::new(
                 "test".to_string(),
@@ -889,7 +890,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
         backup_service_info: BackupServiceInfo,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .register_backup_service(backup_service_info)
@@ -987,7 +988,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
         destination_node_info: DestinationNodeInfo,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .start_node_migration(destination_node_info)
@@ -999,7 +1000,7 @@ impl MpcCluster {
     pub async fn cancel_node_migration(
         &self,
         node_index: usize,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .cancel_node_migration()
@@ -1012,7 +1013,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
         url: String,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .update_participant_url(url)
@@ -1024,7 +1025,7 @@ impl MpcCluster {
     pub async fn send_verify_foreign_transaction(
         &self,
         request: &near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
         self.contract_handle(&user)
             .verify_foreign_transaction(request.clone())

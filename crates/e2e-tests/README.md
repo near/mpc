@@ -112,7 +112,7 @@ pub struct NearBlockchain { /* root_client + rpc_url */ }
 
 impl NearBlockchain {
     pub fn new(rpc_url: &str, chain_id: &str, root_account: &str,
-        root_secret: near_kit::SecretKey) -> anyhow::Result<Self>;
+        root_secret: near_kit::signer::SecretKey) -> anyhow::Result<Self>;
     pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
         keys: &[SigningKey]) -> anyhow::Result<()>;
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
