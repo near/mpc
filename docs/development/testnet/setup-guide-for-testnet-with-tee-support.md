@@ -66,7 +66,13 @@ export ROOT_ACCOUNT=${MPC_NETWORK_NAME}.testnet
 export MPC_CONTRACT_ACCOUNT=${MPC_NETWORK_NAME}_mpc.testnet
 export FRODO_ACCOUNT=${MPC_NETWORK_NAME}_frodo.testnet
 export SAM_ACCOUNT=${MPC_NETWORK_NAME}_sam.testnet
+export TEE_VERIFIER_ACCOUNT=<tee-verifier-account>
 ```
+
+`TEE_VERIFIER_ACCOUNT` is the TEE verifier contract the MPC contract calls to verify the
+nodes' Dstack attestations. Deploy and lock one following steps 1-5 of
+[Deploy the TEE verifier contract](../deploy-tee-verifier.md); no vote is needed, since the
+init call below names it.
 
 
 Since the faucet gives only **10 NEAR per account** (and the MPC contract storage costs **15 NEAR**),
@@ -301,6 +307,7 @@ Example:
 
 ```json
 {
+  "tee_verifier_account_id": "barak_tee_test1_verifier.testnet",
   "parameters": {
     "threshold": 2,
     "participants": {

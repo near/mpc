@@ -241,6 +241,11 @@ Prepare the arguments for the init call:
 envsubst < docs/development/localnet/args/init_tee.json > "/tmp/$USER/init_args.json"
 ```
 
+The args name `tee-verifier.test.near` as the trusted TEE verifier. Deploy it as described in
+[step 6 of the localnet guide](localnet.md#6-optional-deploy-the-tee-verifier) before the nodes
+attest: unlike the mock attestations used there, the Dstack attestations submitted here are
+forwarded to it.
+
 Now call the `init` function on the contract:
 
 ```bash

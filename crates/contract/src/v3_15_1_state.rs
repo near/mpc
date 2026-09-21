@@ -22,6 +22,7 @@ use std::collections::BTreeSet;
 
 use crate::{
     config::Config,
+    errors::TeeError,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{key_state::AuthenticatedParticipantId, votes::Votes},
@@ -100,14 +101,16 @@ pub struct MpcContract {
     available_attestation_grants: IterableMap<AccountId, u32>,
 }
 
-impl From<MpcContract> for crate::MpcContract {
-    fn from(old: MpcContract) -> Self {
+impl TryFrom<MpcContract> for crate::MpcContract {
+    type Error = TeeError;
+
+    fn try_from(old: MpcContract) -> Result<Self, Self::Error> {
         if !matches!(old.protocol_state, ProtocolContractState::Running(_)) {
             env::panic_str("Contract must be in running state when migrating.");
         }
         old.node_foreign_chain_support.clear_storage();
 
-        crate::MpcContract {
+        Ok(crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
@@ -118,10 +121,12 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
-            tee_verifier_account_id: old.tee_verifier_account_id,
+            tee_verifier_account_id: old
+                .tee_verifier_account_id
+                .ok_or(TeeError::VerifierNotConfigured)?,
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
-        }
+        })
     }
 }
 

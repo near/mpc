@@ -30,7 +30,7 @@ pub enum TeeError {
     )]
     TeeValidationFailed,
     #[error(
-        "No TEE verifier is configured yet. Participants must vote one in via vote_tee_verifier_change before Dstack attestations can be submitted."
+        "No TEE verifier is configured. Participants must vote one in via vote_tee_verifier_change before upgrading."
     )]
     VerifierNotConfigured,
     #[error("The TEE verifier rejected the quote: {reason}")]

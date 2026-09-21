@@ -14,18 +14,18 @@ use crate::sandbox::{
         mpc_contract::{
             available_attestation_grants, get_config, get_participant_attestation,
             get_tee_accounts, prepay_attestation_grants, submit_participant_info,
-            tee_verifier_account_id, total_gas_fee,
+            tee_verifier_account_id, total_gas_fee, vote_tee_verifier_change,
         },
-        transactions::execute_async_handle_calls,
     },
 };
 use attestation_types::Measurements;
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
 use mpc_contract::{
     errors::TeeError,
+    primitives::test_utils::bogus_tee_verifier_account_id,
     tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, TeeVerifierCodeHash};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_mpc_contract_interface::types as dtos;
 use near_workspaces::{
     Account, AccountId, Contract, Worker,
@@ -54,19 +54,9 @@ async fn setup() -> SandboxTestSetup {
 }
 
 async fn trust_verifier(setup: &SandboxTestSetup, verifier: &AccountId) {
-    // Arbitrary: the hash only buckets votes (voters must commit to the same
-    // value), the contract never compares it to the deployed verifier code.
-    let expected_code_hash = TeeVerifierCodeHash::new([7u8; 32]);
-    execute_async_handle_calls(&setup.mpc_signer_accounts, &setup.contract, |handle| {
-        let verifier = verifier.clone();
-        async move {
-            handle
-                .vote_tee_verifier_change(verifier, expected_code_hash)
-                .await
-        }
-    })
-    .await
-    .unwrap();
+    vote_tee_verifier_change(&setup.mpc_signer_accounts, &setup.contract, verifier)
+        .await
+        .unwrap();
 }
 
 async fn deploy_and_trust(setup: &SandboxTestSetup, wasm: &[u8]) -> Contract {
@@ -241,48 +231,20 @@ async fn assert_only_gas_spent(
 }
 
 #[tokio::test]
-async fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
+async fn tee_verifier_account_id__should_return_the_verifier_voted_in() {
     // Given
     let setup = setup().await;
-    let submitter = &setup.mpc_signer_accounts[0];
-    prepay_grant_from_separate_payer(&setup, submitter).await;
-
-    // When
-    let result = submit_dstack(submitter, &setup.contract).await;
-
-    // Then: it fails synchronously (before any cross-contract call), so the error
-    // is on the top-level tx result, not a later receipt.
-    let err = result
-        .into_result()
-        .expect_err("Dstack submit must fail when no verifier is configured")
-        .to_string();
-    let expected_panic = format!(
-        "Smart contract panicked: {}",
-        TeeError::VerifierNotConfigured
+    assert_eq!(
+        tee_verifier_account_id(&setup.contract).await,
+        bogus_tee_verifier_account_id()
     );
-    assert!(
-        err.contains(&expected_panic),
-        "expected {expected_panic:?}, got: {err}"
-    );
-    let stored = stored_fixture_attestation(&setup.contract).await;
-    assert!(stored.is_none(), "no attestation should be stored");
-}
-
-#[tokio::test]
-async fn tee_verifier_account_id__should_return_none_until_a_verifier_is_voted_in() {
-    // Given
-    let setup = setup().await;
-    assert_eq!(tee_verifier_account_id(&setup.contract).await, None);
 
     // When
     let verifier: AccountId = "verifier.near".parse().unwrap();
     trust_verifier(&setup, &verifier).await;
 
     // Then
-    assert_eq!(
-        tee_verifier_account_id(&setup.contract).await,
-        Some(verifier)
-    );
+    assert_eq!(tee_verifier_account_id(&setup.contract).await, verifier);
 }
 
 #[tokio::test]
