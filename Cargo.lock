@@ -1569,7 +1569,7 @@ version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "519bd3116aeeb42d5372c29d982d16d0170d3d4a5ed85fc7dd91642ffff3c67c"
 dependencies = [
- "darling 0.20.11",
+ "darling 0.21.3",
  "ident_case",
  "prettyplease 0.2.37",
  "proc-macro2",
@@ -3927,7 +3927,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "sui-sdk-types 0.4.0",
+ "sui-sdk-types",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -11241,9 +11241,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sui-rpc"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "617504d5c6b748af0494b73db80fb893840522329788c48c826d8298e7edb0aa"
+checksum = "eed3e2bef1c8236610fb0f32489d689c2c8ba7087917d5f2b8b842cb2a4b73ce"
 dependencies = [
  "base64 0.22.1",
  "bcs",
@@ -11256,7 +11256,7 @@ dependencies = [
  "prost-types",
  "serde",
  "serde_json",
- "sui-sdk-types 0.3.2",
+ "sui-sdk-types",
  "tap",
  "tokio",
  "tonic 0.14.6",
@@ -11266,9 +11266,9 @@ dependencies = [
 
 [[package]]
 name = "sui-sdk-types"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a22266119e43d3da1a8bc9945c8b569a513e7682f561265d70ef8b6e198dd664"
+checksum = "24c4cf4b8ba51ccb8c8f77405e6b50025ccfe174e06e09b0a542ccbc3f224af5"
 dependencies = [
  "base64ct",
  "bcs",
@@ -11283,21 +11283,6 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_with",
- "winnow 0.7.15",
-]
-
-[[package]]
-name = "sui-sdk-types"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24c4cf4b8ba51ccb8c8f77405e6b50025ccfe174e06e09b0a542ccbc3f224af5"
-dependencies = [
- "base64ct",
- "bnum",
- "bs58 0.5.1",
- "bytes",
- "bytestring",
- "roaring",
  "winnow 0.7.15",
 ]
 
