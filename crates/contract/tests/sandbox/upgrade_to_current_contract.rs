@@ -19,7 +19,6 @@ use crate::sandbox::{
     },
 };
 use anyhow::Context as _;
-use mpc_contract::errors::TeeError;
 use mpc_contract::primitives::{
     key_state::EpochId,
     participants::Participants,
@@ -218,8 +217,7 @@ async fn migrate__should_fail_when_no_tee_verifier_is_configured(
 
     // Then
     assert!(
-        err.to_string()
-            .contains(&TeeError::VerifierNotConfigured.to_string()),
+        err.to_string().contains("No TEE verifier is configured"),
         "unexpected migrate failure: {err}"
     );
     let contract = contract

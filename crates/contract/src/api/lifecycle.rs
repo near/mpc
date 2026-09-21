@@ -181,7 +181,7 @@ impl MpcContract {
         log!("migrating contract");
 
         match try_state_read::<v3_15_1_state::MpcContract>() {
-            Ok(Some(state)) => return Ok(state.try_into()?),
+            Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
                 log!("failed to deserialize state into 3.15.1 state: {:?}", err);
