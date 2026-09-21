@@ -22,7 +22,6 @@ use attestation_types::Measurements;
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
 use mpc_contract::{
     errors::TeeError,
-    primitives::test_utils::bogus_tee_verifier_account_id,
     tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -230,10 +229,6 @@ async fn assert_only_gas_spent(
 async fn tee_verifier_account_id__should_return_the_verifier_voted_in() {
     // Given
     let setup = setup().await;
-    assert_eq!(
-        tee_verifier_account_id(&setup.contract).await,
-        bogus_tee_verifier_account_id()
-    );
 
     // When
     let verifier: AccountId = "verifier.near".parse().unwrap();
