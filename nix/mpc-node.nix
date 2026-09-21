@@ -217,13 +217,9 @@ let
       # https://github.com/torvalds/linux/blob/v6.7/arch/x86/include/asm/pgtable_64_types.h#L91
       JEMALLOC_SYS_WITH_LG_HUGEPAGE = "21";
 
-      # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
-      # zstd, ...) and Rust itself. Without this, the cc crate defaults to
-      # the build host's CPU and output bytes vary by machine. Target-suffixed
-      # like in `.cargo/config.toml`, whose `[env]` then defers to these.
-      CFLAGS_x86_64_unknown_linux_gnu = marchFlag;
-      CXXFLAGS_x86_64_unknown_linux_gnu = marchFlag;
-
+      # The C/C++ ISA pin for cc-crate deps comes from `.cargo/config.toml`.
+      # Rust's half is below; without it the build host's CPU would leak into
+      # the output bytes.
       RUSTFLAGS = lib.concatStringsSep " " (
         lib.optionals isX86 [ "-C target-cpu=x86-64-v3" ]
         ++ [

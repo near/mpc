@@ -45,17 +45,9 @@
         in
         "${llvmPkgs.clang-unwrapped.lib}/lib/clang/${clangVersion}/include";
 
-      # Production ISA: x86-64-v3 plus PCLMUL and AES. The v3 micro-arch
-      # level (per System V psABI) covers AVX2/BMI2/F16C/FMA/LZCNT/MOVBE
-      # but NOT PCLMUL or AES — we add those explicitly so rocksdb's
-      # PCLMUL-accelerated CRC32C path is compiled in. Production node
-      # fleet is all v3-capable (Haswell / Excavator and newer).
-      #
-      # Shared between the reproducible mpc-node build (nix/mpc-node.nix)
-      # and the dev shell (devShells.default below) so feature-test macros
-      # in bindgen-parsed headers, cc-rs-compiled C/C++ deps, and the
-      # rustc target-cpu line up across all build paths.
-      prodCFlags = "-march=x86-64-v3 -mpclmul -maes";
+      # Production ISA, read from the single source of truth so bindgen sees
+      # the same feature-test macros the cc-rs deps are compiled with.
+      prodCFlags = (lib.importTOML ./.cargo/config.toml).env.CFLAGS_x86_64_unknown_linux_gnu;
 
     in
     {
