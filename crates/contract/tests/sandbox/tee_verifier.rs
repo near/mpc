@@ -53,15 +53,11 @@ async fn setup() -> SandboxTestSetup {
         .await
 }
 
-async fn trust_verifier(setup: &SandboxTestSetup, verifier: &AccountId) {
-    vote_tee_verifier_change(&setup.mpc_signer_accounts, &setup.contract, verifier)
-        .await
-        .unwrap();
-}
-
 async fn deploy_and_trust(setup: &SandboxTestSetup, wasm: &[u8]) -> Contract {
     let verifier = setup.worker.dev_deploy(wasm).await.unwrap();
-    trust_verifier(setup, verifier.id()).await;
+    vote_tee_verifier_change(&setup.mpc_signer_accounts, &setup.contract, verifier.id())
+        .await
+        .unwrap();
     verifier
 }
 
@@ -241,7 +237,9 @@ async fn tee_verifier_account_id__should_return_the_verifier_voted_in() {
 
     // When
     let verifier: AccountId = "verifier.near".parse().unwrap();
-    trust_verifier(&setup, &verifier).await;
+    vote_tee_verifier_change(&setup.mpc_signer_accounts, &setup.contract, &verifier)
+        .await
+        .unwrap();
 
     // Then
     assert_eq!(tee_verifier_account_id(&setup.contract).await, verifier);
@@ -289,7 +287,13 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
     // Given: a verifier account that was never deployed, so the verify_quote promise fails.
     let setup = setup().await;
     let missing_verifier: AccountId = "nonexistent-verifier.near".parse().unwrap();
-    trust_verifier(&setup, &missing_verifier).await;
+    vote_tee_verifier_change(
+        &setup.mpc_signer_accounts,
+        &setup.contract,
+        &missing_verifier,
+    )
+    .await
+    .unwrap();
     let submitter = &setup.mpc_signer_accounts[0];
     let balance_before = prepay_grant_from_separate_payer(&setup, submitter).await;
 
