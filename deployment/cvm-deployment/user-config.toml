@@ -13,8 +13,8 @@
 [launcher_config]
 image_reference = "nearone/mpc-node"
 # Matches the canonical port list in
-# docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#required-ports
-# (80 P2P, 8080 web/metrics, 8079 migration, 3030 debug, 24567 DSS).
+# docs/guide/node-requirements.md#ports
+# (80 P2P, 8080 web/metrics, 8079 migration, 3030 nearcore RPC, 24567 DSS).
 port_mappings = [
     { host = 80, container = 80 },       # MPC P2P (port_override convention)
     { host = 8080, container = 8080 },   # web_ui / metrics / /public_data

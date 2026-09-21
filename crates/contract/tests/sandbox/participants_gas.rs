@@ -25,6 +25,7 @@ use rstest::rstest;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
+use test_utils::sandbox::SandboxWorker;
 
 /// Path to gas thresholds configuration file.
 const GAS_THRESHOLDS_FILE: &str = "gas_thresholds.json";
@@ -102,6 +103,7 @@ struct TestEnv {
     account_ids: Vec<AccountId>,
     /// Total number of participants registered in the contract.
     n_participants: usize,
+    _worker: SandboxWorker,
 }
 
 impl TestEnv {
@@ -256,9 +258,7 @@ async fn setup_test_env_running(n_participants: usize) -> TestEnv {
 }
 
 async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -> TestEnv {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     let account_ids: Vec<AccountId> = (0..n_participants)
@@ -305,5 +305,6 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         caller,
         account_ids,
         n_participants,
+        _worker: worker,
     }
 }

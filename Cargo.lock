@@ -1053,7 +1053,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "attestation"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "attestation",
  "attestation-types",
@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "attestation-cli"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1099,7 +1099,7 @@ dependencies = [
 
 [[package]]
 name = "attestation-types"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -1301,7 +1301,7 @@ dependencies = [
 
 [[package]]
 name = "backup-cli"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1861,7 +1861,7 @@ dependencies = [
 
 [[package]]
 name = "chain-gateway"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "base64 0.23.1",
@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "chain-gateway-test-contract"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "borsh",
  "near-contract-transport",
@@ -1958,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "ckd-example-cli"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "blstrs",
@@ -2206,7 +2206,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "contract-history"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "bs58 0.5.1",
  "reqwest 0.13.4",
@@ -3268,7 +3268,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e-tests"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "backon",
@@ -3867,7 +3867,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-chain-config-tester"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3881,7 +3881,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-health-check"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3905,7 +3905,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-inspector"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3935,7 +3935,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-rpc-factory"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3950,7 +3950,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-rpc-interfaces"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "base64 0.23.1",
  "derive_more 2.1.1",
@@ -5065,7 +5065,7 @@ dependencies = [
 
 [[package]]
 name = "include-measurements"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "attestation-types",
@@ -5660,7 +5660,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-interface"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "derive_more 2.1.1",
@@ -6100,7 +6100,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-attestation"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "attestation",
@@ -6122,7 +6122,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -6175,7 +6175,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-devnet"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "blstrs",
@@ -6208,7 +6208,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -6311,7 +6311,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node-config"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6332,7 +6332,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-primitives"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "borsh",
@@ -6349,7 +6349,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-tls"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "ed25519-dalek 2.2.0",
@@ -6743,7 +6743,7 @@ dependencies = [
 
 [[package]]
 name = "near-contract-transport"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "borsh",
@@ -8039,7 +8039,7 @@ dependencies = [
 
 [[package]]
 name = "node-types"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "mpc-attestation",
  "near-mpc-crypto-types",
@@ -9177,7 +9177,7 @@ dependencies = [
 
 [[package]]
 name = "proposal-generator"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -11449,7 +11449,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tee-authority"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -11477,7 +11477,7 @@ dependencies = [
 
 [[package]]
 name = "tee-context"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "chain-gateway",
@@ -11495,7 +11495,7 @@ dependencies = [
 
 [[package]]
 name = "tee-launcher"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "backon",
@@ -11516,7 +11516,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "borsh",
  "dcap-qvl",
@@ -11531,7 +11531,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier-conversions"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "borsh",
  "dcap-qvl",
@@ -11541,7 +11541,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier-interface"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -11611,7 +11611,7 @@ dependencies = [
 
 [[package]]
 name = "test-migration-contract"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "borsh",
  "near-sdk",
@@ -11619,7 +11619,7 @@ dependencies = [
 
 [[package]]
 name = "test-parallel-contract"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "assert_matches",
  "blstrs",
@@ -11634,7 +11634,7 @@ dependencies = [
 
 [[package]]
 name = "test-port-allocator"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
  "named-lock",
  "rand 0.8.8",
@@ -11642,8 +11642,9 @@ dependencies = [
 
 [[package]]
 name = "test-utils"
-version = "3.15.0"
+version = "3.16.0"
 dependencies = [
+ "anyhow",
  "bs58 0.5.1",
  "cargo-near-build",
  "ed25519-dalek 2.2.0",
@@ -11652,7 +11653,9 @@ dependencies = [
  "mpc-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "near-sandbox",
  "near-sdk",
+ "near-workspaces",
  "serde_json",
  "serde_yaml",
  "sha2 0.10.9",

@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
 async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -143,6 +144,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
