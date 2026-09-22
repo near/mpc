@@ -259,8 +259,8 @@ impl MeshNetworkClient {
     /// a message for a task before its Start message, we'll still return a Sender that will
     /// buffer the messages and deliver them to the channel, once a Start message is received.
     ///
-    /// Fails with [`InvalidChannelId`] or [`InvalidStartMessage`] if `originator` may not open
-    /// this channel; no channel state is created in that case.
+    /// Fails with [`InvalidChannelId`] for a channel id `originator` may not open, or
+    /// [`InvalidStartMessage`] for a participant set we cannot join; no channel state is created.
     fn sender_for(
         &self,
         channel_id: ChannelId,
@@ -286,7 +286,7 @@ impl MeshNetworkClient {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
                 if owner == self.my_participant_id() && originator != self.my_participant_id() {
-                    return Err(InvalidChannelId::NotOpenedByUs(channel_id).into());
+                    return Err(InvalidChannelId::NoOpenChannel(channel_id).into());
                 }
                 let (sender, receiver) = mpsc::unbounded_channel();
                 entry.insert(sender.clone());
@@ -426,8 +426,8 @@ pub enum InvalidChannelId {
         owner: ParticipantId,
         originator: ParticipantId,
     },
-    #[error("channel {0:?} is ours, but we never opened it")]
-    NotOpenedByUs(ChannelId),
+    #[error("no open channel {0:?} under our participant id")]
+    NoOpenChannel(ChannelId),
 }
 
 /// Reason why the participant set of an [`MpcStartMessage`] was rejected.
@@ -1404,13 +1404,16 @@ mod tests {
         assert_eq!(received.data, vec![vec![2u8]]);
     }
 
+    #[rstest]
+    #[case::owned_by_a_third_party(THIRD_PARTY)]
+    #[case::owned_by_us(ME)]
     #[tokio::test]
-    async fn run_receive_message__should_reject_start_message_for_a_channel_id_of_another_participant()
-     {
+    async fn run_receive_message__should_reject_start_message_for_a_channel_id_the_originator_does_not_own(
+        #[case] owner: ParticipantId,
+    ) {
         // Given
-        let squatted = ChannelId(UniqueId::new(THIRD_PARTY, 1, 0));
         let start_message = MpcMessage {
-            channel_id: squatted,
+            channel_id: ChannelId(UniqueId::new(owner, 1, 0)),
             ..start_message_with(vec![ME, ORIGINATOR])
         };
         let mut node = ReceivingNode::new();
@@ -1423,7 +1426,7 @@ mod tests {
         assert_eq!(
             error.downcast_ref::<InvalidChannelId>(),
             Some(&InvalidChannelId::NotOwnedByOriginator {
-                owner: THIRD_PARTY,
+                owner,
                 originator: ORIGINATOR,
             })
         );
@@ -1444,7 +1447,7 @@ mod tests {
         let error = result.expect_err("the message should be rejected");
         assert_eq!(
             error.downcast_ref::<InvalidChannelId>(),
-            Some(&InvalidChannelId::NotOpenedByUs(ours))
+            Some(&InvalidChannelId::NoOpenChannel(ours))
         );
         assert!(node.channel_ids_in_use().is_empty());
     }
@@ -1479,7 +1482,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn new_channel_for_task__should_not_be_blocked_by_a_channel_id_a_peer_claimed() {
+    async fn sender_for__should_not_buffer_a_peer_message_under_a_channel_id_we_own() {
         // Given
         let mut node = ReceivingNode::new();
         let ours = ChannelId(UniqueId::new(ME, 1, 0));
@@ -1488,21 +1491,28 @@ mod tests {
         // When
         let opened = node
             .client
-            .sender_for(ours, Some(&start_of(vec![ME, ORIGINATOR])), ME);
+            .sender_for(ours, Some(&start_of(ME, vec![ME, ORIGINATOR])), ME);
 
         // Then
-        // assert_matches! requires Debug, which SenderOrNewChannel doesn't implement
-        assert!(matches!(opened.unwrap(), SenderOrNewChannel::NewChannel(_)));
+        let mut channel = match opened.unwrap() {
+            SenderOrNewChannel::NewChannel(channel) => channel,
+            SenderOrNewChannel::Sender(_) => panic!("a fresh channel should have been opened"),
+        };
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), channel.receive())
+                .await
+                .is_err()
+        );
     }
 
     const ME: ParticipantId = ParticipantId::from_raw(0);
     const ORIGINATOR: ParticipantId = ParticipantId::from_raw(1);
     const THIRD_PARTY: ParticipantId = ParticipantId::from_raw(2);
 
-    fn start_of(participants: Vec<ParticipantId>) -> MpcStartMessage {
+    fn start_of(leader: ParticipantId, participants: Vec<ParticipantId>) -> MpcStartMessage {
         MpcStartMessage {
             task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
-                start: UniqueId::new(ORIGINATOR, 1, 0),
+                start: UniqueId::new(leader, 1, 0),
                 count: 1,
             }),
             participants,
@@ -1512,7 +1522,7 @@ mod tests {
     fn start_message_with(participants: Vec<ParticipantId>) -> MpcMessage {
         MpcMessage {
             channel_id: ChannelId(UniqueId::new(ORIGINATOR, 1, 0)),
-            kind: MpcMessageKind::Start(start_of(participants)),
+            kind: MpcMessageKind::Start(start_of(ORIGINATOR, participants)),
         }
     }
 
