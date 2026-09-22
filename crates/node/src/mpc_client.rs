@@ -4,12 +4,11 @@ use crate::indexer::types::{
     ChainSendTransactionRequest, SignatureRespondArgsExt, VerifyForeignTransactionRespondArgsExt,
 };
 use crate::metrics;
+use crate::network::wire_format::{EcdsaTaskId, MpcTaskId, RobustEcdsaTaskId};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
-use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTaskId};
+use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
@@ -700,10 +699,8 @@ impl MpcClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::wire_format::{CKDTaskId, EddsaTaskId, VerifyForeignTxTaskId};
     use crate::primitives::{ParticipantId, UniqueId};
-    use crate::providers::ckd::CKDTaskId;
-    use crate::providers::eddsa::EddsaTaskId;
-    use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_indexer_primitives::CryptoHash;
 
