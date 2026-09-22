@@ -1,12 +1,8 @@
 //! Types whose Borsh encoding is part of the P2P wire format.
 //!
-//! Every enum here sets `#[borsh(use_discriminant = true)]` and spells its discriminants out, so
-//! peers agree on the numbers rather than on declaration order. A number, once assigned, is never
-//! reused or given to another variant. Appending is always safe. Reordering variants leaves the
-//! wire untouched, but makes the next free number harder to spot, so keep them in numeric order.
-//! Retiring a variant is allowed once no deployed node can still send it; the handshake's
-//! [`NetworkProtocolVersion`](crate::protocol_version::NetworkProtocolVersion) check is what
-//! rules those nodes out.
+//! A discriminant, once assigned, is never reused or given to another variant. Retiring one is
+//! only safe once no deployed node can still send it, which the handshake's
+//! [`NetworkProtocolVersion`](crate::protocol_version::NetworkProtocolVersion) check decides.
 
 use crate::primitives::{IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId};
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
@@ -66,10 +62,9 @@ impl Debug for MpcMessageKind {
     }
 }
 
-/// An encoded task id carries two discriminants: this one, then the provider's.
 #[expect(
     clippy::enum_variant_names,
-    reason = "each variant is named after the per-provider task id it wraps"
+    reason = "each variant is named after the task id type it wraps"
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 #[borsh(use_discriminant = true)]
