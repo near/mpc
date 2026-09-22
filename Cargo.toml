@@ -258,7 +258,7 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
-wycheproof = { version = "0.6", default-features = false, features = [
+wycheproof = { version = "0.7", default-features = false, features = [
     "ecdsa",
     "eddsa",
 ] }
