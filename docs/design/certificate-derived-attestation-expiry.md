@@ -125,8 +125,8 @@ verifier change needed, but it puts DER/X.509 parsing back into the contract was
 
 ## What else has to change
 
-Six existing behaviours rely on the expiry being `now + constant`, and break without it. Each is
-listed as the problem it causes, then the fix.
+Six things depend on the expiry being `now + constant`. Five have to change with it; item 3 is
+future work this design only has to keep possible. Each is listed as the problem, then the fix.
 
 **1. Confirming a submission landed.** The node checks whether the stored expiry went up
 ([`tx_sender.rs`](../../crates/node/src/indexer/tx_sender.rs)). That stops working when the value is
@@ -161,14 +161,16 @@ never empties stays.
 *Considered: dropping the TTL and evicting purely on references. Simpler config, but a newly
 voted-in hash has no references until nodes adopt it, so it would need its own grace period.*
 
-**3. Shortening after a verifier rotation.** [#3734](https://github.com/near/mpc/issues/3734) wants
-a short window after a rotation, so entries a rotated-away verifier may have wrongly accepted age
-out quickly. It was written as "lower the constant", which no longer exists.
+**3. Shortening after a verifier rotation — future work.** Nothing to build here. This design just
+has to leave it possible. [#3734](https://github.com/near/mpc/issues/3734) wants a short window
+after a rotation, so entries a rotated-away verifier may have wrongly accepted age out quickly. It
+was written as "lower the constant", and the constant is going away.
 
-Fix, using the timestamp from item 1: record `verifier_rotated_at` when `vote_tee_verifier_change`
-passes. In `re_verify`, any entry with `attested_at < verifier_rotated_at` expires at
-`min(expiry, verifier_rotated_at + 1 day)`. Entries submitted after the rotation are untouched, and
-every node gets a full day to re-attest. No sweep, no per-entry write.
+It stays possible, and gets cheaper, via the timestamp from item 1: record `verifier_rotated_at`
+when `vote_tee_verifier_change` passes, and in `re_verify` let any entry with
+`attested_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
+submitted after the rotation are untouched, every node gets a full day to re-attest, and there is no
+sweep or per-entry write.
 
 **4. Near-expiry collateral.** A node presenting nearly stale collateral now gets a nearly worthless
 attestation. And because `nextUpdate` is shared across the fleet, every node's expiry converges on
