@@ -7,7 +7,8 @@ use std::{
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_kit::{AccountId, ExecutedOptimistic, Final};
+use near_kit::AccountId;
+use near_kit::transaction::{ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
@@ -47,6 +48,10 @@ pub const CLUSTER_POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Account id for node `i`. Single source for the cluster's node naming.
 fn node_account(i: usize) -> String {
     format!("node{i}.{SANDBOX_ROOT_ACCOUNT}")
+}
+
+fn tee_verifier_account() -> String {
+    format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}")
 }
 
 pub fn cluster_poll_retry() -> ConstantBuilder {
@@ -279,7 +284,7 @@ impl MpcCluster {
         let ports = TestPorts::e2e_tests(config.port_seed);
 
         let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
-        let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
+        let root_secret_key: near_kit::signer::SecretKey = SANDBOX_ROOT_SECRET_KEY
             .parse()
             .context("invalid sandbox root secret key")?;
         let chain_id = sandbox.chain_id()?;
@@ -330,6 +335,7 @@ impl MpcCluster {
                 threshold: config.threshold,
                 participant_indices: participant_indices.clone(),
                 init_format: config.init_format,
+                tee_verifier_account_id: tee_verifier_account().parse()?,
             },
         )
         .await?;
@@ -586,7 +592,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
         next_domain_id: u64,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .vote_cancel_keygen(next_domain_id)
@@ -733,7 +739,7 @@ impl MpcCluster {
     pub async fn vote_cancel_resharing_from(
         &self,
         node_index: usize,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .vote_cancel_resharing()
@@ -843,7 +849,7 @@ impl MpcCluster {
         domain_id: DomainId,
         payload: Payload,
         account_id: &AccountId,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.contract_handle(account_id)
             .sign(SignRequestArgs::new("test".to_string(), payload, domain_id))
             .await
@@ -856,7 +862,7 @@ impl MpcCluster {
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
         account_id: &AccountId,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.contract_handle(account_id)
             .request_app_private_key(CKDRequestArgs::new(
                 "test".to_string(),
@@ -889,42 +895,12 @@ impl MpcCluster {
         &self,
         node_index: usize,
         backup_service_info: BackupServiceInfo,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .register_backup_service(backup_service_info)
             .await
             .context("failed to register backup service")
-    }
-    /// View the legacy supported-chains set; requests are gated on the available set instead.
-    pub async fn view_foreign_chains_supported_by_contract(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
-        self.contract
-            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
-            .await
-    }
-
-    /// View the per-node foreign chain configurations registered with the contract.
-    pub async fn view_foreign_chain_configurations(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-            .await
-    }
-
-    /// Registers on the legacy supported-chains pipeline, which no longer gates requests.
-    pub async fn register_legacy_foreign_chain_support(
-        &self,
-        node_index: usize,
-        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id())
-            .register_foreign_chain_support(foreign_chain_support.clone())
-            .await
-            .context("failed to register foreign chain support")
     }
 
     pub async fn view_available_foreign_chains(
@@ -947,7 +923,7 @@ impl MpcCluster {
         &self,
     ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
         self.contract
-            .view_borsh(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+            .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
             .await
     }
 
@@ -1017,7 +993,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
         destination_node_info: DestinationNodeInfo,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .start_node_migration(destination_node_info)
@@ -1029,7 +1005,7 @@ impl MpcCluster {
     pub async fn cancel_node_migration(
         &self,
         node_index: usize,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .cancel_node_migration()
@@ -1042,7 +1018,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
         url: String,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .update_participant_url(url)
@@ -1054,7 +1030,7 @@ impl MpcCluster {
     pub async fn send_verify_foreign_transaction(
         &self,
         request: &near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
         self.contract_handle(&user)
             .verify_foreign_transaction(request.clone())
@@ -1260,6 +1236,7 @@ struct InitContractArgs {
     threshold: usize,
     participant_indices: Vec<usize>,
     init_format: ContractInitFormat,
+    tee_verifier_account_id: ContractAccountId,
 }
 
 /// Prepays one attestation-storage grant for every node in the cluster.
@@ -1272,10 +1249,7 @@ async fn prepay_attestation_grants(
     contract: &DeployedContract,
     near_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
-    let Some(fee) = attestation_storage_fee(contract).await? else {
-        tracing::info!("contract config has no attestation storage fee; skipping prepayment");
-        return Ok(());
-    };
+    let fee = attestation_storage_fee(contract).await?;
 
     // Granting the initial participants too is harmless: their attestations update the
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
@@ -1292,34 +1266,24 @@ async fn prepay_attestation_grants(
             )
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
-        if !outcome.is_success() {
-            let failure = format!("{:?}", outcome.failure_message());
-            // A contract binary predating grants, as run by the upgrade-compatibility tests:
-            // it has no `prepay_attestation_storage` and needs no prepayment. Delete this
-            // branch, and `attestation_storage_fee`'s `None` case, once
-            // `contract_history::current_{mainnet,testnet}` point past 3.14.0, the last
-            // release without grants.
-            anyhow::ensure!(
-                failure.contains("method not found"),
-                "prepay for node {i} failed: {failure}"
-            );
-            tracing::info!("contract has no prepay_attestation_storage; skipping grant prepayment");
-            break;
-        }
+        anyhow::ensure!(
+            outcome.is_success(),
+            "prepay for node {i} failed: {:?}",
+            outcome.failure_message()
+        );
     }
 
     Ok(())
 }
 
-/// `None` when `config()` carries no fee field: a contract binary older than grants (3.14.0 and
-/// earlier), which the upgrade-compatibility tests run and which needs no prepayment.
 async fn attestation_storage_fee(
     contract: &DeployedContract,
-) -> anyhow::Result<Option<near_kit::NearToken>> {
+) -> anyhow::Result<near_kit::NearToken> {
     let config: serde_json::Value = contract.view("config").await?;
-    Ok(config["attestation_storage_fee_millinear"]
+    let millinear = config["attestation_storage_fee_millinear"]
         .as_u64()
-        .map(|millinear| near_kit::NearToken::from_millinear(u128::from(millinear))))
+        .context("config() has no attestation_storage_fee_millinear")?;
+    Ok(near_kit::NearToken::from_millinear(u128::from(millinear)))
 }
 
 async fn init_contract(
@@ -1334,6 +1298,7 @@ async fn init_contract(
         threshold,
         participant_indices,
         init_format,
+        tee_verifier_account_id,
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
@@ -1360,7 +1325,7 @@ async fn init_contract(
                 .client()
                 .call_mpc(contract.account_id())
                 .with_wait_level::<Final>()
-                .init(params, Some(init_config))
+                .init(params, tee_verifier_account_id, Some(init_config))
                 .await?
         }
     };
@@ -1393,9 +1358,11 @@ async fn init_contract(
     .context("contract did not reach Running state after init")
 }
 
-/// Deploys the tee-verifier and votes it in from every participant. Nodes submit mock
-/// attestations, which the contract verifies without calling the verifier; the cross-contract
-/// flow is covered by the mpc-contract sandbox tests.
+/// Deploys the tee-verifier and votes it in from every participant. The vote is a no-op on
+/// the current contract, which trusts the verifier from init, and configures it on production
+/// builds that predate the init argument. Nodes submit mock attestations, which the contract
+/// verifies without calling the verifier; the cross-contract flow is covered by the
+/// mpc-contract sandbox tests.
 async fn deploy_and_trust_tee_verifier(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
@@ -1403,7 +1370,7 @@ async fn deploy_and_trust_tee_verifier(
     operator_keys: &[SigningKey],
     participant_indices: &[usize],
 ) -> anyhow::Result<()> {
-    let verifier_account = format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}");
+    let verifier_account = tee_verifier_account();
     let verifier_key = generate_deterministic_key(KEY_SEED_TEE_VERIFIER);
     tracing::info!(account = %verifier_account, "deploying tee-verifier contract");
     // The verifier is stateless, so there is no initializer to call on deploy.

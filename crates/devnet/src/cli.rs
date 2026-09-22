@@ -158,7 +158,7 @@ pub enum MpcNetworkSubCmd {
     VoteAddDomains(MpcVoteAddDomainsCmd),
     /// Send vote_new_parameters() transactions to vote for new parameters.
     VoteNewParameters(MpcVoteNewParametersCmd),
-    /// Send `vote_code_hash()` transactions to vote for a new approved MPC image hash.
+    /// Send `vote_mpc_node_manifest_digest()` transactions to vote for a new approved MPC image hash.
     VoteCodeHash(MpcVoteApprovedHashCmd),
     /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
@@ -238,6 +238,9 @@ pub struct MpcInitContractCmd {
     /// The threshold to initialize with.
     #[clap(long)]
     pub threshold: u64,
+    /// The TEE verifier contract account the MPC contract trusts.
+    #[clap(long)]
+    pub tee_verifier_account_id: AccountId,
 }
 
 #[derive(clap::Parser)]

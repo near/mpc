@@ -4,11 +4,10 @@
 use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedParticipantId;
-use crate::primitives::votes::ProposalHash;
+use crate::primitives::proposal_hash::ProposalHash;
 use crate::state::ProtocolContractState;
 use crate::tee::verifier_votes::VerifierChangeProposal;
 use crate::{MpcContract, MpcContractExt};
-use mpc_primitives::hash::TeeVerifierCodeHash;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{AccountId, env, log, near};
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,7 +22,7 @@ impl MpcContract {
     pub fn vote_tee_verifier_change(
         &mut self,
         candidate_account_id: AccountId,
-        expected_code_hash: TeeVerifierCodeHash,
+        expected_code_hash: dtos::TeeVerifierCodeHash,
     ) -> Result<(), Error> {
         log!(
             "vote_tee_verifier_change: signer={}, candidate={}, expected_code_hash={}",
@@ -34,7 +33,7 @@ impl MpcContract {
         self.voter_or_panic();
 
         // Voting in the already-current verifier is a no-op
-        if self.tee_verifier_account_id.as_ref() == Some(&candidate_account_id) {
+        if self.tee_verifier_account_id == candidate_account_id {
             return Ok(());
         }
 
@@ -47,10 +46,10 @@ impl MpcContract {
         };
         if let Some(new_verifier) =
             self.tee_verifier_votes
-                .vote(proposal, participant, threshold_parameters)?
+                .vote(proposal, participant, threshold_parameters)
         {
             log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
-            self.tee_verifier_account_id = Some(new_verifier);
+            self.tee_verifier_account_id = new_verifier;
         }
         Ok(())
     }
@@ -110,9 +109,9 @@ impl MpcContract {
             .collect()
     }
 
-    /// Returns the trusted TEE verifier contract account, or [`None`] until
-    /// participants vote one in via [`Self::vote_tee_verifier_change`].
-    pub fn tee_verifier_account_id(&self) -> Option<AccountId> {
+    /// Returns the trusted TEE verifier contract account, set at init and
+    /// changed via [`Self::vote_tee_verifier_change`].
+    pub fn tee_verifier_account_id(&self) -> AccountId {
         self.tee_verifier_account_id.clone()
     }
 }
@@ -123,6 +122,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{participant_account_ids, setup_tee_test_contract};
+    use crate::primitives::proposal_hash::ToProposalHash;
+    use crate::primitives::test_utils::bogus_tee_verifier_account_id;
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::state::key_event::tests::Environment;
     use near_sdk::test_utils::VMContextBuilder;
@@ -131,17 +132,17 @@ mod tests {
 
     #[test]
     fn vote_tee_verifier_change__should_apply_candidate_when_threshold_reached() {
-        // Given a running contract with 3 participants, governance threshold 2,
-        // starting unconfigured.
+        // Given a running contract with 3 participants, governance threshold 2
         let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
-        assert_eq!(contract.tee_verifier_account_id, None);
+        let initial_verifier = bogus_tee_verifier_account_id();
+        assert_eq!(contract.tee_verifier_account_id, initial_verifier);
         let participant_account_ids: Vec<AccountId> = participants
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
             .collect();
         let candidate: AccountId = "verifier.near".parse().unwrap();
-        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+        let code_hash = dtos::TeeVerifierCodeHash::new([7u8; 32]);
 
         let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
             testing_env!(
@@ -157,21 +158,22 @@ mod tests {
 
         // When the first participant votes (below threshold), the verifier is unchanged.
         vote_as(&mut contract, &participant_account_ids[0]);
-        assert_eq!(contract.tee_verifier_account_id, None);
+        assert_eq!(contract.tee_verifier_account_id, initial_verifier);
 
         // When the second participant votes, threshold is reached and the
         // candidate becomes the trusted verifier.
         vote_as(&mut contract, &participant_account_ids[1]);
-        assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+        assert_eq!(contract.tee_verifier_account_id, candidate);
     }
 
     #[test]
-    fn tee_verifier_account_id__should_report_none_until_threshold_then_the_candidate() {
+    fn tee_verifier_account_id__should_report_the_candidate_once_threshold_reached() {
         // Given
         let (mut contract, _, _) = setup_tee_test_contract(3, 2);
+        let initial_verifier = bogus_tee_verifier_account_id();
         let voters = participant_account_ids(&contract);
         let candidate: AccountId = "verifier.near".parse().unwrap();
-        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+        let code_hash = dtos::TeeVerifierCodeHash::new([7u8; 32]);
 
         let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
             Environment::new(None, Some(account_id.clone()), None);
@@ -180,15 +182,15 @@ mod tests {
                 .expect("vote should succeed");
         };
 
-        assert_eq!(contract.tee_verifier_account_id(), None);
+        assert_eq!(contract.tee_verifier_account_id(), initial_verifier);
 
         // When
         vote_as(&mut contract, &voters[0]);
-        assert_eq!(contract.tee_verifier_account_id(), None);
+        assert_eq!(contract.tee_verifier_account_id(), initial_verifier);
         vote_as(&mut contract, &voters[1]);
 
         // Then
-        assert_eq!(contract.tee_verifier_account_id(), Some(candidate));
+        assert_eq!(contract.tee_verifier_account_id(), candidate);
     }
 
     #[test]
@@ -198,7 +200,7 @@ mod tests {
         // threshold, so both stay pending).
         let (mut contract, participants, _) = setup_tee_test_contract(3, 3);
         let voters = participant_account_ids(&contract);
-        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+        let code_hash = dtos::TeeVerifierCodeHash::new([7u8; 32]);
 
         // Vote as `account_id` for `candidate`, returning that voter's authenticated id.
         let vote_as =
@@ -217,7 +219,7 @@ mod tests {
                 expected_code_hash: code_hash,
             };
             (
-                ProposalHash::from(proposal),
+                proposal.to_proposal_hash(),
                 BTreeSet::from([voter.into_dto_type()]),
             )
         };

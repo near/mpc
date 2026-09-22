@@ -437,7 +437,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
                 tx_id: dtos::BitcoinTxId([3; 32]),
                 confirmations: 2.into(),
-                extractors: vec![dtos::BitcoinExtractor::BlockHash],
+                extractors: [dtos::BitcoinExtractor::BlockHash].into(),
             }),
             payload_version: dtos::ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,

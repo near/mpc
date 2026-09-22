@@ -248,12 +248,6 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
         .await
         .expect("timed out waiting for all chains to become available");
 
-    // TODO(#3630): drop the legacy view once deprecated API is dropped.
-    let supported = cluster
-        .view_foreign_chains_supported_by_contract()
-        .await
-        .expect("failed to view supported chains");
-    assert_eq!(*supported, expected_chains, "supported chains mismatch");
     let allowed = cluster
         .view_allowed_foreign_chain_providers()
         .await
@@ -286,7 +280,9 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
     }
 }
 
-fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) -> anyhow::Result<()> {
+fn verify_foreign_tx_response(
+    outcome: &near_kit::rpc::FinalExecutionOutcome,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
         outcome.is_success(),
         "verify_foreign_transaction failed: {:?}",
@@ -333,7 +329,7 @@ async fn verify_bitcoin(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
             tx_id: BitcoinTxId([0xbb; 32]),
             confirmations: BlockConfirmations(1),
-            extractors: vec![BitcoinExtractor::BlockHash],
+            extractors: [BitcoinExtractor::BlockHash].into(),
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
@@ -392,7 +388,7 @@ async fn verify_abstract(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -411,7 +407,7 @@ async fn verify_bnb(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Bnb(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -430,7 +426,7 @@ async fn verify_base(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Base(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -450,7 +446,7 @@ async fn verify_starknet(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
             tx_id: StarknetTxId(StarknetFelt([0xbb; 32])),
             finality: StarknetFinality::AcceptedOnL1,
-            extractors: vec![StarknetExtractor::BlockHash],
+            extractors: [StarknetExtractor::BlockHash].into(),
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
@@ -468,7 +464,7 @@ async fn verify_arbitrum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -487,7 +483,7 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::HyperEvm(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -506,7 +502,7 @@ async fn verify_avalanche(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -525,7 +521,7 @@ async fn verify_adi(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Adi(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -544,7 +540,7 @@ async fn verify_ethereum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -590,7 +586,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Polygon(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }].into(),
             finality: EvmFinality::Finalized,
         }),
         domain_id: env.foreign_tx_domain_id,
@@ -657,7 +653,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         request: ForeignChainRpcRequest::Solana(SvmRpcRequest {
             tx_id: SvmTxId([0xbb; 64]),
             finality: SvmFinality::Finalized,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
@@ -685,7 +681,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
             tx_id: BitcoinTxId([0xbb; 32]),
             confirmations: BlockConfirmations(1),
-            extractors: vec![BitcoinExtractor::BlockHash],
+            extractors: [BitcoinExtractor::BlockHash].into(),
         }),
         domain_id: DomainId(999),
         payload_version: ForeignTxPayloadVersion::V1,

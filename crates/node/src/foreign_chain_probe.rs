@@ -7,6 +7,7 @@ use std::future::Future;
 use foreign_chain_health_check::probe::{
     ProbeReport, ProviderHealth, ProviderStatus, probe_all_providers,
 };
+use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::types as dtos;
 use tracing::{info, warn};
@@ -22,7 +23,11 @@ pub async fn run_periodic_probe(foreign_chains: ForeignChainsConfig, ticker: imp
         return;
     }
 
-    probe_periodically(|| probe_all_providers(&foreign_chains), ticker).await;
+    probe_periodically(
+        || probe_all_providers(&foreign_chains, &InspectorFactory),
+        ticker,
+    )
+    .await;
 }
 
 async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
@@ -159,7 +164,7 @@ mod tests {
             row(dtos::ForeignChain::Base, "only", ProviderStatus::Healthy),
             row(dtos::ForeignChain::Bnb, "only", ProviderStatus::Unreachable),
             row(
-                dtos::ForeignChain::Solana,
+                dtos::ForeignChain::Ton,
                 "only",
                 ProviderStatus::ProbeNotImplemented,
             ),
@@ -182,7 +187,7 @@ mod tests {
     fn summarize__should_count_nothing_probed_when_no_chain_has_a_probe() {
         // Given
         let rows = [row(
-            dtos::ForeignChain::Solana,
+            dtos::ForeignChain::Ton,
             "only",
             ProviderStatus::ProbeNotImplemented,
         )];
@@ -246,7 +251,7 @@ mod tests {
         let report = ProbeReport::from(vec![
             row(dtos::ForeignChain::Bnb, "only", ProviderStatus::Healthy),
             row(
-                dtos::ForeignChain::Solana,
+                dtos::ForeignChain::Ton,
                 "only",
                 ProviderStatus::ProbeNotImplemented,
             ),
@@ -258,7 +263,7 @@ mod tests {
         // Then
         let chains = labelled_chains(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED);
         assert!(chains.contains("bnb"));
-        assert!(!chains.contains("solana"));
+        assert!(!chains.contains("ton"));
     }
 
     #[test]

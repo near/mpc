@@ -163,7 +163,7 @@ impl MpcContract {
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation)?,
+                self.submit_dstack_attestation(node_id, attestation),
             )),
         }
     }
@@ -233,12 +233,8 @@ impl MpcContract {
         &mut self,
         node_id: NodeId,
         attestation: DstackAttestation,
-    ) -> Result<Promise, Error> {
-        let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
-            return Err(TeeError::VerifierNotConfigured.into());
-        };
-
-        Ok(Promise::new(verifier_account_id)
+    ) -> Promise {
+        Promise::new(self.tee_verifier_account_id.clone())
             .function_call(
                 method_names::VERIFY_QUOTE.to_string(),
                 borsh::to_vec(&(&attestation.quote, &attestation.collateral))
@@ -251,9 +247,9 @@ impl MpcContract {
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
                     .resolve_verification(VerificationContext {
                         node_id,
-                        attestation,
+                        tcb_info: attestation.tcb_info,
                     }),
-            ))
+            )
     }
 
     #[handle_result]
@@ -435,13 +431,11 @@ impl MpcContract {
             Err(err) => {
                 // Fail the submitter's transaction from a separate receipt so any prior state
                 // commits (a panic here would roll it back)
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
-                    borsh::to_vec(&err.to_string())
-                        .expect("borsh serialization of reason must succeed"),
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.fail_attestation_submission_tera_gas),
-                );
+                let promise = Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(
+                        self.config.fail_attestation_submission_tera_gas,
+                    ))
+                    .fail_attestation_submission(err.to_string());
                 PromiseOrValue::Promise(promise.as_return())
             }
         }
@@ -477,7 +471,7 @@ impl MpcContract {
 
         let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
-            &context.attestation,
+            &context.tcb_info,
             report,
             tee_upgrade_deadline_duration,
         ) {
@@ -505,7 +499,7 @@ impl MpcContract {
     }
 
     #[private]
-    pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
+    pub fn fail_attestation_submission(reason: String) {
         log!("fail_attestation_submission: {reason}");
         env::panic_str(&reason);
     }
@@ -523,7 +517,8 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id, gen_participants,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
+        create_node_id, gen_participants,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
@@ -548,7 +543,7 @@ mod tests {
     use std::panic;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
     };
 
     #[test]
@@ -606,12 +601,11 @@ mod tests {
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
             account_public_key: Ed25519PublicKey(account_key()),
         };
-        let attestation = mock_dstack_attestation_inner();
         (
             contract,
             VerificationContext {
                 node_id,
-                attestation,
+                tcb_info: mock_tcb_info(),
             },
         )
     }
@@ -1030,6 +1024,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
@@ -1154,6 +1149,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

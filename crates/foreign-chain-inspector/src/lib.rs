@@ -4,13 +4,12 @@ use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
 use ethereum_types::H256;
-use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use jsonrpsee::core::http_helpers::HttpError;
 use jsonrpsee::http_client::transport::Error as HttpTransportError;
-use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use mpc_node_config::ForeignChainProviderConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
-use near_mpc_contract_interface::types::ProviderId;
+use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -27,9 +26,13 @@ pub mod contract_interface_conversions;
 pub mod ethereum;
 pub mod evm;
 pub mod hyperevm;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock;
 pub mod polygon;
+pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
+pub mod svm;
 
 pub trait ForeignChainInspector {
     type TransactionId;
@@ -41,7 +44,48 @@ pub trait ForeignChainInspector {
         tx_id: Self::TransactionId,
         finality: Self::Finality,
         extractors: Vec<Self::Extractor>,
-    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
+    ) -> impl Future<Output = Result<Verdict<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
+}
+
+/// The settled answer from a transaction inspection. Inspection producing a negative verdict is
+/// still a successful inspection. Failing to obtain any verdict is instead a
+/// [`ForeignChainInspectionError`]. [`ForeignChainInspector::extract`] must report every verdict
+/// given by a provider about a transaction under a variant defined here, not as an error.
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
+pub enum Verdict<V> {
+    #[display("extracted {} values", _0.len())]
+    Extracted(Vec<V>),
+    #[display("the transaction's status was not success")]
+    TransactionFailed,
+    /// Deliberately a verdict rather than a tolerated error. Honest providers cannot extract
+    /// anything from a transaction that does not exist. [`ForeignChainInspector::extract`] must
+    /// map a chain's signal for an unknown transaction here.
+    #[display("the transaction was not found")]
+    TransactionNotFound,
+    #[display(
+        "the transaction's block does not match the canonical chain at height {block_number}: \
+         receipt block {receipt_hash}, canonical block {canonical_hash}"
+    )]
+    NonCanonicalBlock {
+        block_number: u64,
+        receipt_hash: HexBytes,
+        canonical_hash: HexBytes,
+    },
+    #[display("a requested log index is out of bounds")]
+    LogIndexOutOfBounds,
+    /// Similar to [`Self::TransactionNotFound`], an absent account is the chain's answer, not a provider fault.
+    /// A mutable account may leave two honest providers with different answers.
+    #[display("a requested account was not found")]
+    AccountNotFound,
+}
+
+impl<V> Verdict<V> {
+    pub fn into_extracted(self) -> Result<Vec<V>, Verdict<V>> {
+        match self {
+            Self::Extracted(values) => Ok(values),
+            failing => Err(failing),
+        }
+    }
 }
 
 /// Parameters for an RPC that takes none. Sent as an explicit empty array.
@@ -86,43 +130,75 @@ pub trait NetworkFingerprintInspector {
 
     /// Normalizes any spec-legal spelling of this chain's fingerprint into the single form the trait
     /// compares. Idempotent.
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint;
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint;
 }
 
 /// Combines multiple inspectors that target the same chain into a single inspector.
 ///
-/// All inner inspectors are queried concurrently. The fan-out treats every
-/// non-transient outcome (success or non-transient error, see
-/// [`ForeignChainInspectionError::is_transient`]) as a substantive verdict that must
-/// agree across inspectors. Transient errors (network issues, finality not yet reached,
-/// etc.) are tolerated so that a single unavailable RPC does not take the whole node
-/// out of signing.
+/// All inner inspectors are queried concurrently. Every [`Verdict`] reached must be identical;
+/// any disagreement returns [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors
+/// are tolerated as long as any inspector reached a verdict, so a single unavailable RPC does
+/// not take the whole node out of signing. On the other hand, a provider that answers a
+/// different verdict or different values will cause a mismatch and fail the whole extraction.
+/// A hanging one still stalls the extraction: it waits for every inspector, up to the caller's
+/// deadline. When no inspector reached a verdict, the first error is propagated.
 ///
-/// Outcomes:
-/// * All substantive verdicts are `Ok` with the same extracted values → returns those values.
-/// * All substantive verdicts are non-transient errors of the same variant → returns one of
-///   them (e.g. all inspectors agree the transaction failed).
-/// * Substantive verdicts disagree (`Ok` vs. non-transient error, two different non-transient
-///   error variants, or two different success values) → returns
-///   [`ForeignChainInspectionError::InspectorResponseMismatch`].
-/// * Every inspector returned a transient error → the first such error is propagated.
-///
-/// Variant-level comparison is used for non-transient errors, so inspectors that all report
-/// the same failure mode (e.g. [`NonCanonicalBlock`](ForeignChainInspectionError::NonCanonicalBlock))
-/// are considered to agree even if the
-/// inner fields differ.
-#[derive(Clone, derive_more::Constructor)]
-pub struct FanOut<Inspector> {
+/// With a recorder set through [`FanOut::measuring`], every provider call is observed once the
+/// provider returns, or by dropping its timer if the future is dropped first.
+#[derive(Clone)]
+pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
+    recorder: Recorder,
 }
 
-impl<Inspector> ForeignChainInspector for FanOut<Inspector>
+impl<Inspector> FanOut<Inspector> {
+    pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
+        Self {
+            inspectors,
+            recorder: (),
+        }
+    }
+
+    pub fn measuring<Recorder>(self, recorder: Recorder) -> FanOut<Inspector, Recorder> {
+        FanOut {
+            inspectors: self.inspectors,
+            recorder,
+        }
+    }
+}
+
+/// Times calls to foreign chain RPC providers.
+///
+/// [`Self::start_timer`] begins one call and [`Self::observe`] ends it with the outcome once the
+/// provider returns. Implementations must not block or panic in either, because both can run
+/// while the task is being aborted.
+pub trait TimeProviderCall: Send + Sync {
+    /// A timer dropped without being observed means the call was abandoned before the provider
+    /// returned. Implementations must record that in the timer's destructor.
+    type Timer: Send + 'static;
+
+    fn start_timer(&self, provider: &ProviderId) -> Self::Timer;
+
+    fn observe(&self, timer: Self::Timer, provider: &ProviderId, failure: Option<ProviderFailure>);
+}
+
+/// Satisfies [`FanOut`]'s recorder bounds for the unmeasured default.
+impl TimeProviderCall for () {
+    type Timer = ();
+
+    fn start_timer(&self, _: &ProviderId) {}
+
+    fn observe(&self, _: (), _: &ProviderId, _: Option<ProviderFailure>) {}
+}
+
+impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
 where
     Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
     Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
+    Recorder: TimeProviderCall + Clone + 'static,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -134,7 +210,7 @@ where
         tx_id: Self::TransactionId,
         finality: Self::Finality,
         extractors: Vec<Self::Extractor>,
-    ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<Self::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
         for (provider, inspector) in self.inspectors.iter() {
             let tx_id = tx_id.clone();
@@ -142,90 +218,81 @@ where
             let extractors = extractors.clone();
             let inspector = inspector.clone();
             let provider = provider.clone();
+            let recorder = self.recorder.clone();
             join_set.spawn(async move {
-                (
-                    provider,
-                    inspector.extract(tx_id, finality, extractors).await,
-                )
+                // Started inside the task so the clock excludes scheduling delay. A task aborted
+                // before its first poll makes no call and reports nothing.
+                let timer = recorder.start_timer(&provider);
+                let result = inspector.extract(tx_id, finality, extractors).await;
+                let failure = result.as_ref().err().and_then(|err| err.provider_failure());
+                recorder.observe(timer, &provider, failure);
+                (provider, result)
             });
         }
 
-        let mut successes: Vec<(ProviderId, Vec<Self::ExtractedValue>)> = Vec::new();
-        let mut non_transient_errors: Vec<(ProviderId, ForeignChainInspectionError)> = Vec::new();
-        let mut first_transient_error: Option<ForeignChainInspectionError> = None;
+        let mut verdicts: Vec<(ProviderId, Verdict<Self::ExtractedValue>)> = Vec::new();
+        let mut first_error: Option<ForeignChainInspectionError> = None;
 
         for (provider, result) in join_set.join_all().await {
             match result {
-                Ok(values) => successes.push((provider, values)),
-                Err(err) if err.is_transient() => {
-                    tracing::warn!(
-                        %provider,
-                        error = %err,
-                        "fan-out inspector failed (transient)",
-                    );
-                    first_transient_error.get_or_insert(err);
-                }
+                Ok(verdict) => verdicts.push((provider, verdict)),
                 Err(err) => {
-                    tracing::error!(
-                        %provider,
-                        error = %err,
-                        "fan-out inspector failed (non-transient)",
-                    );
-                    non_transient_errors.push((provider, err));
+                    if err.provider_failure() == Some(ProviderFailure::Malformed) {
+                        tracing::error!(
+                            %provider,
+                            error = %err,
+                            "fan-out inspector answered with unusable data",
+                        );
+                    } else {
+                        tracing::warn!(
+                            %provider,
+                            error = %err,
+                            "fan-out inspector failed to reach a verdict",
+                        );
+                    }
+                    first_error.get_or_insert(err);
                 }
             }
         }
 
-        let inspectors_split_between_success_and_failure =
-            !successes.is_empty() && !non_transient_errors.is_empty();
+        let mut verdicts = verdicts.into_iter();
+        let Some((first_provider, first_verdict)) = verdicts.next() else {
+            return Err(first_error.expect(
+                "inspectors is a `NonEmptyVec`, so with no verdicts at least one error must \
+                 have been recorded",
+            ));
+        };
 
-        if inspectors_split_between_success_and_failure {
+        let (agreeing, disagreeing): (Vec<_>, Vec<_>) =
+            verdicts.partition(|(_, verdict)| *verdict == first_verdict);
+        if !disagreeing.is_empty() {
             tracing::error!(
-                ?successes,
-                ?non_transient_errors,
-                "fan-out: inspectors split between success and non-transient failure",
+                %first_provider,
+                ?first_verdict,
+                ?agreeing,
+                ?disagreeing,
+                "fan-out: inspectors returned mismatching verdicts",
             );
             return Err(ForeignChainInspectionError::InspectorResponseMismatch);
         }
 
-        if let Some(first_values) = successes.first() {
-            let all_successes_agree = successes.iter().all(|(_, v)| v == &first_values.1);
-            if !all_successes_agree {
-                tracing::error!(
-                    responses = ?successes,
-                    "fan-out: inspectors returned mismatching extracted values",
-                );
-                return Err(ForeignChainInspectionError::InspectorResponseMismatch);
-            }
-            let (_, first) = successes.into_iter().next().expect("checked non-empty");
-
-            return Ok(first);
-        }
-
-        if let Some(first_non_transient_error) = non_transient_errors.first() {
-            let first_variant = std::mem::discriminant(&first_non_transient_error.1);
-            let all_failures_have_same_variant = non_transient_errors
-                .iter()
-                .all(|(_, e)| std::mem::discriminant(e) == first_variant);
-            if !all_failures_have_same_variant {
-                tracing::error!(
-                    errors = ?non_transient_errors,
-                    "fan-out: inspectors disagreed on non-transient failure mode",
-                );
-                return Err(ForeignChainInspectionError::InspectorResponseMismatch);
-            }
-            let (_, first) = non_transient_errors
-                .into_iter()
-                .next()
-                .expect("checked non-empty");
-            return Err(first);
-        }
-
-        Err(first_transient_error.expect(
-            "inspectors is a `NonEmptyVec`, so with no successes and no non-transient errors, \
-             at least one transient error must have been recorded",
-        ))
+        Ok(first_verdict)
     }
+}
+
+pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
+
+impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
+
+pub trait BuildInspectors: Sync {
+    type Inspector: ChainInspector;
+
+    fn build(
+        &self,
+        chain: ForeignChain,
+        provider: &ForeignChainProviderConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<Self::Inspector>>;
 }
 
 /// Pause between two tries at the same provider.
@@ -233,7 +300,7 @@ pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
 impl<Inspector> FanOut<Inspector>
 where
-    Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+    Inspector: ChainInspector,
 {
     /// Ask every provider for the network it serves concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
@@ -272,24 +339,11 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum RpcAuthentication {
-    /// The key is in the URL (e.g., Alchemy, QuickNode).
-    /// Example: `https://eth-mainnet.alchemyapi.io/v2/your-api-key`
-    KeyInUrl,
-    /// Custom header for providers like NOWNodes or GetBlock.
-    /// Example: key="x-api-key", value="your-secret-token"
-    CustomHeader {
-        header_name: HeaderName,
-        header_value: HeaderValue,
-    },
-}
-
 #[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockConfirmations(u64);
 
 /// Chain-agnostic byte buffer that formats as `0x`-prefixed lowercase hex.
-/// Used in error messages to keep block-hash logs readable across chains
+/// Used in error messages and verdicts to keep block hash logs readable across chains
 /// whose hashes have different native types (EVM `H256`, Bitcoin's reversed
 /// 32-byte hash, Starknet felt, ...).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
@@ -315,10 +369,10 @@ pub enum EthereumFinality {
     Latest,
 }
 
+/// A failure to obtain a [`Verdict`]: the RPC request failed or the transaction's state
+/// has not settled yet.
 #[derive(Error, Debug)]
 pub enum ForeignChainInspectionError {
-    #[error("inner network client failed to fetch")]
-    ClientError(#[from] jsonrpsee::core::client::error::Error),
     /// Transient provider failure (transport error, timeout, rate limit, 5xx).
     #[error("RPC request failed: {0}")]
     RpcRequestFailed(String),
@@ -334,22 +388,12 @@ pub enum ForeignChainInspectionError {
     #[error(
         "transaction did not have enough block confirmations associated with it, expected: {expected} got: {got}"
     )]
-    // TODO: return specific error types ber inspector type.
-    // EVM errors
     NotEnoughBlockConfirmations {
         expected: BlockConfirmations,
         got: BlockConfirmations,
     },
     #[error("transaction has not reached expected finality level")]
     NotFinalized,
-    #[error(
-        "transaction receipt's block_hash does not match the canonical chain at block {block_number}: receipt_hash={receipt_hash}, canonical_hash={canonical_hash}"
-    )]
-    NonCanonicalBlock {
-        block_number: u64,
-        receipt_hash: HexBytes,
-        canonical_hash: HexBytes,
-    },
     #[error(
         "RPC backend response does not match the hash it was queried by: requested={requested_hash}, returned={returned_hash}"
     )]
@@ -369,15 +413,7 @@ pub enum ForeignChainInspectionError {
         receipt_block_hash: HexBytes,
         receipt_block_number: u64,
     },
-    #[error("The transaction's status was not success")]
-    TransactionFailed,
-    #[error("transaction not found")]
-    TransactionNotFound,
-    #[error("provided log index is out of bounds")]
-    LogIndexOutOfBounds,
-    #[error("failed to borsh serialize log event")]
-    EventLogFailedBorshSerialization(std::io::Error),
-    #[error("inspector clients returned mismatching extracted values")]
+    #[error("inspector clients returned mismatching verdicts")]
     InspectorResponseMismatch,
 }
 
@@ -385,8 +421,7 @@ impl ForeignChainInspectionError {
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
-            Self::ClientError(_)
-                | Self::RpcRequestFailed(_)
+            Self::RpcRequestFailed(_)
                 | Self::Timeout
                 | Self::NotFinalized
                 | Self::NotEnoughBlockConfirmations { .. }
@@ -435,29 +470,27 @@ impl ForeignChainInspectionError {
     }
 
     /// How the provider failed, or [`None`] when the provider did not: the remaining variants
-    /// report the transaction's own state, which is an answer rather than a fault.
+    /// report a transaction state the chain has not settled yet, which is an answer rather than
+    /// a fault.
     pub fn provider_failure(&self) -> Option<ProviderFailure> {
         match self {
-            Self::ClientError(_) | Self::RpcRequestFailed(_) => Some(ProviderFailure::Unreachable),
+            Self::RpcRequestFailed(_) => Some(ProviderFailure::Unreachable),
             Self::Timeout => Some(ProviderFailure::TimedOut),
             Self::RpcRequestRejected(_) => Some(ProviderFailure::Rejected),
             Self::MalformedRpcResponse(_)
             | Self::InconsistentRpcResponse { .. }
             | Self::LogNotBoundToReceipt { .. }
-            | Self::EventLogFailedBorshSerialization(_)
             | Self::InspectorResponseMismatch => Some(ProviderFailure::Malformed),
-            Self::NotFinalized
-            | Self::NotEnoughBlockConfirmations { .. }
-            | Self::NonCanonicalBlock { .. }
-            | Self::TransactionFailed
-            | Self::TransactionNotFound
-            | Self::LogIndexOutOfBounds => None,
+            Self::NotFinalized | Self::NotEnoughBlockConfirmations { .. } => None,
         }
     }
 }
 
 /// Some providers report throttling as a JSON-RPC error object over HTTP 200 rather than a 429, and
-/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`.
+/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`. SVM
+/// nodes reuse `-32005` for `NodeUnhealthy`, which is a different condition but equally worth a
+/// retry; codes that mean something else per chain are intercepted by that chain's inspector before
+/// they reach here.
 fn is_rate_limit_error_code(code: i32) -> bool {
     const LIMIT_EXCEEDED: i32 = -32005;
     const TOO_MANY_REQUESTS: i32 = -32029;
@@ -473,22 +506,21 @@ fn is_retryable_status(status_code: u16) -> bool {
     matches!(status_code, REQUEST_TIMEOUT | TOO_MANY_REQUESTS) || status_code >= SERVER_ERROR
 }
 
-/// A provider returning "not found" status on a path/method could have different meanings,
-/// depending on which method was called.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AbsenceMeaning {
-    TransactionIsAbsent,
-    ApiIsNotServed,
-}
-
-pub(crate) trait HasAbsenceMeaning {
-    const ABSENCE: AbsenceMeaning;
-}
-
+/// Classifies a raw client outcome into a [`ForeignChainInspectionError`], one implementation per
+/// client error type. Transaction inspection and the network fingerprint probe both go through
+/// this.
 pub(crate) trait ClassifyRpcOutcome {
-    type Response: HasAbsenceMeaning;
+    type Response;
 
     fn classified(self) -> Result<Self::Response, ForeignChainInspectionError>;
+}
+
+impl<T> ClassifyRpcOutcome for Result<T, RpcClientError> {
+    type Response = T;
+
+    fn classified(self) -> Result<T, ForeignChainInspectionError> {
+        self.map_err(ForeignChainInspectionError::classify_rpc_client_error)
+    }
 }
 
 /// Groups the ways a provider itself can fail, for callers that report an outcome rather than act
@@ -501,33 +533,17 @@ pub enum ProviderFailure {
     Rejected,
     /// The provider answered with something the caller could not use.
     Malformed,
+    /// The RPC client gave up waiting for an answer.
     TimedOut,
 }
 
-/// Builds an HTTP client with the specified authentication method.
-/// This client can be used to construct a [`ForeignChainInspector`] such
-/// as [`bitcoin::inspector::BitcoinInspector`].
-pub fn build_http_client(
-    base_url: String,
-    rpc_authentication: RpcAuthentication,
-) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
-    let mut headers = HeaderMap::new();
-
-    match rpc_authentication {
-        RpcAuthentication::KeyInUrl => {}
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => {
-            headers.insert(header_name, header_value);
-        }
-    }
-
-    let client = HttpClientBuilder::default()
-        .set_headers(headers)
-        .build(&base_url)?;
-
-    Ok(client)
+impl ProviderFailure {
+    pub const ALL: [Self; 4] = [
+        Self::Unreachable,
+        Self::Rejected,
+        Self::Malformed,
+        Self::TimedOut,
+    ];
 }
 
 #[cfg(test)]
@@ -661,9 +677,9 @@ mod tests {
     fn classify_rpc_client_error__should_keep_the_rpc_url_out_of_the_message() {
         // Given
         let url_carrying_a_key = "http://provider.example/v2/super-secret".to_string();
-        let error = transport(HttpTransportError::Url(url_carrying_a_key));
 
         // When
+        let error = transport(HttpTransportError::Url(url_carrying_a_key));
         let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
 
         // Then
@@ -717,8 +733,6 @@ mod tests {
         Some(ProviderFailure::Malformed)
     )]
     // The transaction's own state is an answer, not a fault of the provider that reported it.
-    #[case(ForeignChainInspectionError::TransactionNotFound, None)]
-    #[case(ForeignChainInspectionError::TransactionFailed, None)]
     #[case(ForeignChainInspectionError::NotFinalized, None)]
     #[case(ForeignChainInspectionError::NotEnoughBlockConfirmations {
         expected: BlockConfirmations::from(6),
@@ -733,6 +747,27 @@ mod tests {
 
         // Then
         assert_eq!(failure, expected);
+    }
+
+    #[rstest]
+    #[case::transaction_failed(Verdict::TransactionFailed)]
+    #[case::transaction_not_found(Verdict::TransactionNotFound)]
+    #[case::non_canonical_block(Verdict::NonCanonicalBlock {
+        block_number: 1,
+        receipt_hash: HexBytes(vec![1]),
+        canonical_hash: HexBytes(vec![2]),
+    })]
+    #[case::log_index_out_of_bounds(Verdict::LogIndexOutOfBounds)]
+    fn into_extracted__should_return_a_failing_verdict_as_the_error(#[case] verdict: Verdict<u8>) {
+        // When / Then
+        assert_eq!(verdict.clone().into_extracted(), Err(verdict));
+    }
+
+    #[test]
+    fn into_extracted__should_return_the_extracted_values() {
+        // When / Then
+        let extracted = Verdict::<u8>::Extracted(vec![1, 2]).into_extracted();
+        assert_eq!(extracted, Ok(vec![1, 2]));
     }
 
     #[test]

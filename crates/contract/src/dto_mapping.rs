@@ -6,12 +6,12 @@
 
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
+    EventLog, HexBytes, TcbInfo,
     attestation::{
         Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
         VerifiedAttestation,
     },
     collateral::Collateral,
-    tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
@@ -19,13 +19,14 @@ use near_sdk::env::sha256_array;
 use crate::{
     config::Config,
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
-    errors::{ConversionError, Error},
+    errors::{ConversionError, Error, InvalidCandidateSet},
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
+        votes::Votes,
     },
     state::{
         ProtocolContractState,
@@ -34,6 +35,7 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
+    tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
     update::{ProposedUpdates, Update, UpdateId},
 };
 
@@ -78,15 +80,8 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
-                expected_measurements: expected_measurements.map(|m| ExpectedMeasurements {
-                    rtmrs: Measurements {
-                        mrtd: m.mrtd.into(),
-                        rtmr0: m.rtmr0.into(),
-                        rtmr1: m.rtmr1.into(),
-                        rtmr2: m.rtmr2.into(),
-                    },
-                    key_provider_event_digest: m.key_provider_event_digest.into(),
-                }),
+                expected_measurements: expected_measurements
+                    .map(IntoContractType::into_contract_type),
             },
         }
     }
@@ -192,25 +187,35 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
     }
 }
 
-impl IntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
-    fn into_contract_type(self) -> ParticipantInfo {
-        ParticipantInfo {
-            url: self.url,
+impl TryIntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<ParticipantInfo, Self::Error> {
+        let len = self.url.len();
+        Ok(ParticipantInfo {
+            url: dtos::ParticipantUrl::new(self.url).map_err(|_| {
+                InvalidCandidateSet::ParticipantUrlTooLong {
+                    len,
+                    max: dtos::MAX_PARTICIPANT_URL_BYTES,
+                }
+            })?,
             tls_public_key: self.tls_public_key,
-        }
+        })
     }
 }
 
-impl IntoContractType<Participants> for dtos::Participants {
-    fn into_contract_type(self) -> Participants {
+impl TryIntoContractType<Participants> for dtos::Participants {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<Participants, Self::Error> {
         let participants = self
             .participants
             .into_iter()
             .map(|(account_id, participant_id, info)| {
-                (account_id, participant_id, info.into_contract_type())
+                Ok((account_id, participant_id, info.try_into_contract_type()?))
             })
-            .collect();
-        Participants::init(self.next_id, participants)
+            .collect::<Result<Vec<_>, Self::Error>>()?;
+        Ok(Participants::init(self.next_id, participants))
     }
 }
 
@@ -219,7 +224,10 @@ impl TryIntoContractType<GovernanceThresholdParameters> for dtos::GovernanceThre
 
     fn try_into_contract_type(self) -> Result<GovernanceThresholdParameters, Self::Error> {
         // Validate eagerly at the DTO boundary so invalid proposal parameters are rejected here.
-        GovernanceThresholdParameters::new(self.participants.into_contract_type(), self.threshold)
+        GovernanceThresholdParameters::new(
+            self.participants.try_into_contract_type()?,
+            self.threshold,
+        )
     }
 }
 
@@ -286,6 +294,32 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
     }
 }
 
+impl IntoContractType<ExpectedMeasurements> for dtos::ExpectedMeasurements {
+    fn into_contract_type(self) -> ExpectedMeasurements {
+        ExpectedMeasurements {
+            rtmrs: Measurements {
+                mrtd: self.mrtd.into(),
+                rtmr0: self.rtmr0.into(),
+                rtmr1: self.rtmr1.into(),
+                rtmr2: self.rtmr2.into(),
+            },
+            key_provider_event_digest: self.key_provider_event_digest.into(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ExpectedMeasurements> for ExpectedMeasurements {
+    fn into_dto_type(self) -> dtos::ExpectedMeasurements {
+        dtos::ExpectedMeasurements {
+            mrtd: self.rtmrs.mrtd.into(),
+            rtmr0: self.rtmrs.rtmr0.into(),
+            rtmr1: self.rtmrs.rtmr1.into(),
+            rtmr2: self.rtmrs.rtmr2.into(),
+            key_provider_event_digest: self.key_provider_event_digest.into(),
+        }
+    }
+}
+
 impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
     fn into_dto_type(self) -> dtos::MockAttestation {
         match self {
@@ -300,13 +334,7 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
-                expected_measurements: expected_measurements.map(|m| dtos::VerifiedMeasurements {
-                    mrtd: m.rtmrs.mrtd.into(),
-                    rtmr0: m.rtmrs.rtmr0.into(),
-                    rtmr1: m.rtmrs.rtmr1.into(),
-                    rtmr2: m.rtmrs.rtmr2.into(),
-                    key_provider_event_digest: m.key_provider_event_digest.into(),
-                }),
+                expected_measurements: expected_measurements.map(IntoInterfaceType::into_dto_type),
             },
         }
     }
@@ -660,6 +688,12 @@ mod test_conversions {
         }
     }
 
+    impl From<&Keyset> for dtos::Keyset {
+        fn from(keyset: &Keyset) -> Self {
+            keyset.into_dto_type()
+        }
+    }
+
     impl From<GovernanceThresholdParameters> for dtos::GovernanceThresholdParameters {
         fn from(params: GovernanceThresholdParameters) -> Self {
             (&params).into_dto_type()
@@ -675,7 +709,7 @@ mod test_conversions {
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
-                url: info.url,
+                url: info.url.into(),
                 tls_public_key: info.tls_public_key,
             }
         }
@@ -683,7 +717,8 @@ mod test_conversions {
 
     impl From<dtos::ParticipantInfo> for ParticipantInfo {
         fn from(info: dtos::ParticipantInfo) -> Self {
-            info.into_contract_type()
+            info.try_into_contract_type()
+                .expect("test fixture url must fit the bound")
         }
     }
 }
@@ -800,7 +835,7 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
                     account_id.clone(),
                     dtos::ParticipantId(participant_id.get()),
                     dtos::ParticipantInfo {
-                        url: info.url.clone(),
+                        url: info.url.to_string(),
                         tls_public_key: info.tls_public_key.clone(),
                     },
                 )
@@ -859,6 +894,46 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
                 .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
                 .collect(),
         }
+    }
+}
+
+impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
+    fn into_dto_type(self) -> dtos::MeasurementVotes {
+        dtos::MeasurementVotes {
+            vote_by_account: self
+                .vote_by_account
+                .iter()
+                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
+    fn into_dto_type(self) -> dtos::LauncherHashVotes {
+        dtos::LauncherHashVotes {
+            vote_by_account: self
+                .vote_by_account
+                .iter()
+                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::CodeHashesVotes> for &Votes<AuthenticatedAccountId> {
+    fn into_dto_type(self) -> dtos::CodeHashesVotes {
+        dtos::CodeHashesVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (
+                        dtos::NodeImageHash::new(*proposal),
+                        voters.iter().map(|v| v.into_dto_type()).collect(),
+                    )
+                })
+                .collect(),
+        )
     }
 }
 
@@ -1040,95 +1115,6 @@ mod tests {
     use rand::rngs::OsRng;
     use rstest::rstest;
 
-    const TEST_THRESHOLD: u64 = 2;
-
-    fn test_participants() -> Participants {
-        let mut participants = Participants::new();
-        participants
-            .insert(
-                "alice.near".parse().unwrap(),
-                crate::primitives::participants::ParticipantInfo {
-                    url: "https://alice.near.org".to_string(),
-                    tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
-                        .parse()
-                        .unwrap(),
-                },
-            )
-            .unwrap();
-        participants
-            .insert(
-                "bob.near".parse().unwrap(),
-                crate::primitives::participants::ParticipantInfo {
-                    url: "https://bob.near.org".to_string(),
-                    tls_public_key: "ed25519:HghFShDXwniWaV3CbMmPJsUjeLZBJ2jjCq6rM3AQYbx7"
-                        .parse()
-                        .unwrap(),
-                },
-            )
-            .unwrap();
-        participants
-    }
-
-    /// Ensures that the JSON produced by serializing the internal [`Participants`]
-    /// type can be deserialized into the DTO [`dtos::Participants`] type and
-    /// vice versa, producing identical JSON in both directions.
-    #[test]
-    fn participants_serde_is_compatible_with_dto() {
-        let internal = test_participants();
-        let json = serde_json::to_value(&internal).unwrap();
-
-        // Internal JSON → DTO type.
-        let dto: dtos::Participants = serde_json::from_value(json.clone()).unwrap();
-
-        // DTO → JSON must match the original.
-        let dto_json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
-
-        // Full round-trip back to the internal type.
-        let roundtrip: Participants = serde_json::from_value(dto_json).unwrap();
-        assert_eq!(internal, roundtrip);
-    }
-
-    /// Ensures that the JSON produced by serializing the internal
-    /// [`GovernanceThresholdParameters`] type can be deserialized into the DTO
-    /// [`dtos::GovernanceThresholdParameters`] type and vice versa, producing identical
-    /// JSON in both directions.
-    #[test]
-    fn threshold_parameters_serde_is_compatible_with_dto() {
-        let internal = GovernanceThresholdParameters::new(
-            test_participants(),
-            GovernanceThreshold::new(TEST_THRESHOLD),
-        )
-        .unwrap();
-        let json = serde_json::to_value(&internal).unwrap();
-
-        let dto: dtos::GovernanceThresholdParameters =
-            serde_json::from_value(json.clone()).unwrap();
-
-        let dto_json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
-
-        let roundtrip: GovernanceThresholdParameters = serde_json::from_value(dto_json).unwrap();
-        assert_eq!(internal, roundtrip);
-    }
-
-    /// Verify that [`IntoInterfaceType::into_dto_type`] produces a DTO whose
-    /// serialization matches the internal type's serialization.
-    #[test]
-    fn into_dto_type_preserves_serialization() {
-        let internal = GovernanceThresholdParameters::new(
-            test_participants(),
-            GovernanceThreshold::new(TEST_THRESHOLD),
-        )
-        .unwrap();
-        let internal_json = serde_json::to_value(&internal).unwrap();
-
-        let dto: dtos::GovernanceThresholdParameters = (&internal).into_dto_type();
-        let dto_json = serde_json::to_value(&dto).unwrap();
-
-        assert_eq!(internal_json, dto_json);
-    }
-
     #[rstest]
     #[case(dtos::Curve::Secp256k1)]
     #[case(dtos::Curve::Edwards25519)]
@@ -1151,10 +1137,6 @@ mod tests {
 
         // Then
         assert_eq!(internal, roundtrip);
-        assert_eq!(
-            serde_json::to_value(&internal).unwrap(),
-            serde_json::to_value(&dto).unwrap()
-        );
     }
 
     #[test]

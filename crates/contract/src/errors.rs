@@ -29,10 +29,6 @@ pub enum TeeError {
         "Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later."
     )]
     TeeValidationFailed,
-    #[error(
-        "No TEE verifier is configured yet. Participants must vote one in via vote_tee_verifier_change before Dstack attestations can be submitted."
-    )]
-    VerifierNotConfigured,
     #[error("The TEE verifier rejected the quote: {reason}")]
     QuoteRejected { reason: String },
     #[error("The TEE verifier did not answer the verify_quote call.")]
@@ -98,31 +94,6 @@ pub enum VoteError {
         "Candidates can only cast a vote after `threshold` participants casted one to admit them"
     )]
     VoterPending,
-}
-
-/// Reasons a [`ChainEntry`](crate::foreign_chain_rpc::ChainEntry) proposal fails
-/// validation. [`NonEmptyBTreeMap`](near_mpc_bounded_collections::NonEmptyBTreeMap)
-/// already enforces non-empty +
-/// unique-[`ProviderId`](near_mpc_contract_interface::types::ProviderId) at
-/// borsh-deserialize time, so those cases are absent here.
-#[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
-pub enum ChainEntryValidationError {
-    #[error("ChainEntry.quorum must be >= 1")]
-    ZeroQuorum,
-    #[error(
-        "ChainEntry.quorum ({quorum}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable"
-    )]
-    QuorumExceedsProviders { quorum: u64, providers_len: u64 },
-    #[error(
-        "ChainRouting::PathSegment.segment for provider_id {provider_id:?} must not contain '/'"
-    )]
-    PathSegmentContainsSlash { provider_id: String },
-    #[error(
-        "ChainRouting::QueryParam.name collides with AuthScheme::Query.name {name:?} for provider_id {provider_id:?}"
-    )]
-    QueryParamCollidesWithAuth { provider_id: String, name: String },
-    #[error("providers.len() {len} does not fit in u64: {reason}")]
-    ProvidersLenOverflow { len: usize, reason: String },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -247,6 +218,8 @@ pub enum InvalidCandidateSet {
     NewParticipantIdsNotContiguous,
     #[error("New Participant ids need to not skip any unused participant ids.")]
     NewParticipantIdsTooHigh,
+    #[error("Participant url is {len} bytes, exceeding the {max} byte limit.")]
+    ParticipantUrlTooLong { len: usize, max: usize },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

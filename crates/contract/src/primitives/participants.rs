@@ -5,21 +5,23 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::near;
 use std::collections::BTreeSet;
 
-pub use near_mpc_contract_interface::types::ParticipantId;
+pub use near_mpc_contract_interface::types::{
+    MAX_PARTICIPANT_URL_BYTES, ParticipantId, ParticipantUrl,
+};
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
 }
 
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
-    pub url: String,
+    pub url: ParticipantUrl,
     /// The Ed25519 public key used for P2P TLS.
     pub tls_public_key: Ed25519PublicKey,
 }
 
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Participants {
     next_id: ParticipantId,
@@ -105,16 +107,8 @@ impl Participants {
         Ok(())
     }
 
-    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
-        self.participants
-            .iter()
-            .any(|(a_id, _, _)| a_id == account_id)
-    }
-
-    pub fn is_participant_given_participant_id(&self, participant_id: &ParticipantId) -> bool {
-        self.participants
-            .iter()
-            .any(|(_, p_id, _)| p_id == participant_id)
+    pub fn is_participant<K: IdentifiesParticipant>(&self, id: &K) -> bool {
+        id.identifies_participant_in(self)
     }
 
     pub fn init(
@@ -203,6 +197,28 @@ impl Participants {
     }
 }
 
+pub trait IdentifiesParticipant {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool;
+}
+
+impl IdentifiesParticipant for AccountId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        participants
+            .participants
+            .iter()
+            .any(|(a_id, _, _)| a_id == self)
+    }
+}
+
+impl IdentifiesParticipant for ParticipantId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        participants
+            .participants
+            .iter()
+            .any(|(_, p_id, _)| p_id == self)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use crate::{
@@ -232,7 +248,7 @@ pub mod tests {
                 participants.id(account_id).unwrap(),
                 ParticipantId(idx as u32)
             );
-            assert!(participants.is_participant_given_account_id(account_id));
+            assert!(participants.is_participant(account_id));
         }
         assert_eq!(participants.len(), n);
         for i in 0..n {
