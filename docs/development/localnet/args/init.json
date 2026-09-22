@@ -1,4 +1,5 @@
 {
+  "tee_verifier_account_id": "tee-verifier.test.near",
   "parameters": {
     "threshold": 2,
     "participants": {

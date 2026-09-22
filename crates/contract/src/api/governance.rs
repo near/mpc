@@ -124,7 +124,7 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
     use crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES;
     use crate::primitives::participants::Participants;
-    use crate::primitives::test_utils::gen_participants;
+    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use assert_matches::assert_matches;
     use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
@@ -292,6 +292,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
