@@ -649,6 +649,36 @@ mod tests {
     }
 
     #[test]
+    fn validate_incoming_proposal__should_reject_a_new_participant_reusing_an_existing_tls_public_key()
+     {
+        // Given: a proposal adding one participant that carries an existing participant's TLS
+        // key. Ids and accounts stay unique, so only the TLS-key rule can reject it.
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(5))
+                .unwrap();
+        let existing_tls_key = params.participants.participants()[0]
+            .2
+            .tls_public_key
+            .clone();
+        let (new_account, mut new_info) = gen_participant(999);
+        new_info.tls_public_key = existing_tls_key;
+
+        let mut tampered_participants = params.participants.clone();
+        tampered_participants.insert(new_account, new_info).unwrap();
+        let tampered_params =
+            GovernanceThresholdParameters::new_unvalidated(tampered_participants, params.threshold);
+
+        // When
+        let result = params.validate_incoming_proposal(&tampered_params);
+
+        // Then
+        assert_eq!(
+            result.unwrap_err(),
+            Error::from(InvalidCandidateSet::DuplicateTlsPublicKeys)
+        );
+    }
+
+    #[test]
     fn test_remove_only() {
         let params =
             GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
