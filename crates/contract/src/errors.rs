@@ -26,6 +26,10 @@ pub enum NodeMigrationError {
         tls_public_key: dtos::Ed25519PublicKey,
         account_id: AccountId,
     },
+    #[error(
+        "The destination node carries the caller's current TLS public key. A migration must move the participant to a node with a different TLS key; use `update_participant_url` to change only the url."
+    )]
+    DestinationTlsKeyUnchanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
