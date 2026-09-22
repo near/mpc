@@ -2,13 +2,13 @@ use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::wire_format::RobustEcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::UniqueId;
 use crate::protocol::NamedProtocol;
 use crate::providers::ecdsa_common;
 use crate::providers::robust_ecdsa::{
-    EcdsaKeyshare, KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
-    compute_thresholds,
+    EcdsaKeyshare, KeygenOutput, RobustEcdsaSignatureProvider, compute_thresholds,
 };
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};

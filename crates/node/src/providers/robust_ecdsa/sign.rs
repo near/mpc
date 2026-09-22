@@ -1,11 +1,12 @@
 use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::wire_format::RobustEcdsaTaskId;
 use crate::primitives::UniqueId;
 use crate::protocol::NamedProtocol;
 use crate::providers::robust_ecdsa::{
     EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
-    RobustEcdsaTaskId, compute_thresholds,
+    compute_thresholds,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
