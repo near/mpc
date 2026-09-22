@@ -219,8 +219,8 @@ pub trait SenderConnectionId {
 }
 
 /// The protocol version the remote side of a connection advertised in the handshake.
-pub trait AdvertiseProtocolVersion {
-    fn peer_protocol_version(&self) -> NetworkProtocolVersion;
+pub trait HasPeerNetworkProtocolVersion {
+    fn peer_network_protocol_version(&self) -> NetworkProtocolVersion;
 }
 
 impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
@@ -233,26 +233,26 @@ impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
 }
 
 impl<
-    I: AdvertiseProtocolVersion + Send + Sync + 'static,
-    O: AdvertiseProtocolVersion + Send + Sync + 'static,
+    I: HasPeerNetworkProtocolVersion + Send + Sync + 'static,
+    O: HasPeerNetworkProtocolVersion + Send + Sync + 'static,
 > NodeConnectivity<I, O>
 {
     /// The protocol version the peer advertised in the handshake of whichever connection is
     /// currently up; `None` while it is not connected. Both directions carry the peer's own
     /// version, so either answers.
-    pub fn peer_protocol_version(&self) -> Option<NetworkProtocolVersion> {
+    pub fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
         let outgoing = self
             .outgoing_receiver
             .borrow()
             .connection
             .upgrade()
-            .map(|conn| conn.peer_protocol_version());
+            .map(|conn| conn.peer_network_protocol_version());
         outgoing.or_else(|| {
             self.incoming_receiver
                 .borrow()
                 .connection
                 .upgrade()
-                .map(|conn| conn.peer_protocol_version())
+                .map(|conn| conn.peer_network_protocol_version())
         })
     }
 }
@@ -264,14 +264,14 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
     fn is_bidirectionally_connected(&self) -> bool;
     /// The protocol version the peer advertised in its handshake; `None` while not connected.
-    fn peer_protocol_version(&self) -> Option<NetworkProtocolVersion>;
+    fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion>;
 }
 
 #[async_trait::async_trait]
 impl<I, O> NodeConnectivityInterface for NodeConnectivity<I, O>
 where
-    I: AdvertiseProtocolVersion + Send + Sync + 'static,
-    O: AdvertiseProtocolVersion + Send + Sync + 'static,
+    I: HasPeerNetworkProtocolVersion + Send + Sync + 'static,
+    O: HasPeerNetworkProtocolVersion + Send + Sync + 'static,
 {
     fn connection_version(&self) -> ConnectionVersion {
         NodeConnectivity::connection_version(self)
@@ -315,8 +315,8 @@ where
         NodeConnectivity::is_bidirectionally_connected(self)
     }
 
-    fn peer_protocol_version(&self) -> Option<NetworkProtocolVersion> {
-        NodeConnectivity::peer_protocol_version(self)
+    fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
+        NodeConnectivity::peer_network_protocol_version(self)
     }
 }
 
@@ -405,7 +405,7 @@ mod tests {
     use rstest::rstest;
     use std::sync::{Arc, Weak};
 
-    use super::{AdvertiseProtocolVersion, SenderConnectionId};
+    use super::{HasPeerNetworkProtocolVersion, SenderConnectionId};
 
     impl SenderConnectionId for usize {
         fn sender_connection_id(&self) -> u32 {
@@ -421,8 +421,8 @@ mod tests {
         }
     }
 
-    impl AdvertiseProtocolVersion for VersionedConnection {
-        fn peer_protocol_version(&self) -> NetworkProtocolVersion {
+    impl HasPeerNetworkProtocolVersion for VersionedConnection {
+        fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
             self.0
         }
     }
@@ -449,7 +449,7 @@ mod tests {
         let _incoming = keep_incoming.then_some(incoming);
 
         // Then
-        assert_eq!(connectivity.peer_protocol_version(), expected);
+        assert_eq!(connectivity.peer_network_protocol_version(), expected);
     }
 
     #[test]

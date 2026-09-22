@@ -185,9 +185,7 @@ impl MeshNetworkClient {
         self.transport_sender.all_participant_ids()
     }
 
-    /// The protocol version `participant` advertised in its handshake; `None` while it is not
-    /// connected. Our own version is always known.
-    pub fn peer_protocol_version(
+    pub fn peer_network_protocol_version(
         &self,
         participant: ParticipantId,
     ) -> Option<NetworkProtocolVersion> {
@@ -196,23 +194,19 @@ impl MeshNetworkClient {
         } else {
             self.transport_sender
                 .connectivity(participant)
-                .peer_protocol_version()
+                .peer_network_protocol_version()
         }
     }
 
-    /// Participants, ourselves included, known to run at least `required`. Intended to pick a
-    /// participant set before a task starts, so a peer is never chosen for work it cannot decode.
-    ///
-    /// This is a version filter only, and a peer connected in a single direction already
-    /// qualifies. Callers choosing a participant set must still intersect the result with
-    /// [`Self::all_alive_participant_ids`].
+    /// Not a liveness check: a peer connected in a single direction qualifies. Intersect with
+    /// [`Self::all_alive_participant_ids`] when picking a participant set.
     // TODO(#4399): drop the attribute, the online-presign leader selects participants with this.
     #[cfg_attr(not(test), expect(dead_code))]
     pub fn participants_supporting(&self, required: NetworkProtocolVersion) -> Vec<ParticipantId> {
         self.all_participant_ids()
             .into_iter()
             .filter(|participant| {
-                self.peer_protocol_version(*participant)
+                self.peer_network_protocol_version(*participant)
                     .is_some_and(|version| version.supports(required))
             })
             .collect()
@@ -951,7 +945,7 @@ pub mod testing {
             true
         }
 
-        fn peer_protocol_version(&self) -> Option<NetworkProtocolVersion> {
+        fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
             self.protocol_version
         }
 

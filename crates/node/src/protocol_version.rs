@@ -18,12 +18,10 @@ pub enum NetworkProtocolVersion {
 }
 
 impl NetworkProtocolVersion {
-    /// Whether a peer advertising `self` can be assumed to handle a feature introduced in
-    /// `required`. Comparison is by wire value, so a peer on a version newer than this binary
-    /// recognizes also passes; whether it is in fact still compatible is that peer's call to
-    /// make, not ours. This is not a general backwards-compatibility claim: support for old
-    /// versions is dropped by folding them into [`NetworkProtocolVersion::Unsupported`], which
-    /// fails every check.
+    /// Whether a peer advertising `self` supports a feature introduced in `required`.
+    /// Unknown higher versions pass: keeping up with `required` is the newer peer's
+    /// responsibility. For old versions,  we move them into
+    /// [`NetworkProtocolVersion::Unsupported`] and reject directly.
     pub fn supports(self, required: NetworkProtocolVersion) -> bool {
         u32::from(self) >= u32::from(required)
     }
@@ -53,7 +51,7 @@ mod tests {
         NetworkProtocolVersion::Dec2025,
         false
     )]
-    fn communication_protocols__should_compare_by_wire_value_including_unknown(
+    fn network_protocol_version__should_compare_by_wire_value_including_unknown(
         #[case] advertised: NetworkProtocolVersion,
         #[case] required: NetworkProtocolVersion,
         #[case] supported: bool,

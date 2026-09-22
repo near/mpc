@@ -37,7 +37,7 @@ pub(crate) struct ListenerData {
 /// 3. Compares `LISTENER_PROTOCOL_VERSION` against the known [`NetworkProtocolVersion`]s and engages in
 ///    *Version-specific* behavior:
 ///     - *Unsupported:*
-///       This function returns HandshakeOutcome::Unsupported(peer_protocol_version) in case the listener is running a deprecated
+///       This function returns HandshakeOutcome::Unsupported(peer_network_protocol_version) in case the listener is running a deprecated
 ///       protocol version.
 ///     - *Dec2025:*
 ///       Returns HandshakeOutcome::Dec2025(true), indicating that the listener is running Dec2025
@@ -64,16 +64,17 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
         sender_connection_id,
     } = dialer_data;
     write_magic_byte_and_protocol_version(conn).await?;
-    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
-    let peer_protocol_version: NetworkProtocolVersion = peer_protocol_version.into();
-    let outcome = match peer_protocol_version {
+    let peer_network_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
+    let peer_network_protocol_version: NetworkProtocolVersion =
+        peer_network_protocol_version.into();
+    let outcome = match peer_network_protocol_version {
         NetworkProtocolVersion::Unsupported => {
             tracing::warn!(
                 "peer is using a legacy protocol: their version: {}, ours: {:?}",
-                peer_protocol_version,
+                peer_network_protocol_version,
                 CURRENT_PROTOCOL_VERSION,
             );
-            HandshakeOutcome::Unsupported(peer_protocol_version)
+            HandshakeOutcome::Unsupported(peer_network_protocol_version)
         }
         NetworkProtocolVersion::Dec2025 => {
             // if we get here, the connection is always accepted
@@ -83,7 +84,7 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
             conn.write_u32(sender_connection_id).await?;
             let min_expected_connection_id = conn.read_u32().await?;
             HandshakeOutcome::Jan2026(ConnectionInfo {
-                peer_protocol_version,
+                peer_network_protocol_version,
                 sender_connection_id,
                 min_expected_connection_id,
             })
@@ -105,7 +106,7 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
 ///    *Version-specific* behavior:
 ///     - *Unsupported:*
 ///       The listener aborts the handshake, not writing anything to the byte stream.
-///       This function returns HandshakeOutcome::Unsupported(peer_protocol_version).
+///       This function returns HandshakeOutcome::Unsupported(peer_network_protocol_version).
 ///     - *Dec2025:*
 ///       If `min_expected_connection_id` is not 0, then this function aborts the handshake, not writing
 ///       anything to byte stream and returns HandshakeOutcome::Dec2025(false).
@@ -138,16 +139,17 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
     let ListenerData {
         min_expected_connection_id,
     } = listener_data;
-    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
-    let peer_protocol_version: NetworkProtocolVersion = peer_protocol_version.into();
-    let outcome = match peer_protocol_version {
+    let peer_network_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
+    let peer_network_protocol_version: NetworkProtocolVersion =
+        peer_network_protocol_version.into();
+    let outcome = match peer_network_protocol_version {
         NetworkProtocolVersion::Unsupported => {
             tracing::warn!(
                 "peer is using a legacy protocol: their version: {}, ours: {:?}",
-                peer_protocol_version,
+                peer_network_protocol_version,
                 CURRENT_PROTOCOL_VERSION,
             );
-            HandshakeOutcome::Unsupported(peer_protocol_version)
+            HandshakeOutcome::Unsupported(peer_network_protocol_version)
         }
         NetworkProtocolVersion::Dec2025 => {
             if min_expected_connection_id == MIN_EXPECTED_CONNECTION_ID {
@@ -171,7 +173,7 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
             .await?;
             let sender_connection_id = conn.read_u32().await?;
             HandshakeOutcome::Jan2026(ConnectionInfo {
-                peer_protocol_version,
+                peer_network_protocol_version,
                 sender_connection_id,
                 min_expected_connection_id,
             })
@@ -241,8 +243,8 @@ async fn read_magic_byte_and_protocol_version<T: AsyncRead + AsyncWrite + Unpin>
     if other_magic_byte != MAGIC_BYTE {
         anyhow::bail!("Invalid magic byte in handshake")
     }
-    let peer_protocol_version = conn.read_u32().await?;
-    Ok(peer_protocol_version)
+    let peer_network_protocol_version = conn.read_u32().await?;
+    Ok(peer_network_protocol_version)
 }
 
 #[derive(Debug, PartialEq)]
@@ -254,7 +256,7 @@ pub(crate) enum HandshakeOutcome {
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct ConnectionInfo {
-    pub peer_protocol_version: NetworkProtocolVersion,
+    pub peer_network_protocol_version: NetworkProtocolVersion,
     pub sender_connection_id: u32,
     pub min_expected_connection_id: u32,
 }
@@ -291,7 +293,7 @@ mod tests {
         #[case] outcome: bool,
     ) {
         let expected_res = ConnectionInfo {
-            peer_protocol_version: CURRENT_PROTOCOL_VERSION,
+            peer_network_protocol_version: CURRENT_PROTOCOL_VERSION,
             sender_connection_id,
             min_expected_connection_id,
         };
@@ -384,7 +386,7 @@ mod tests {
         let sender_result = sender_handle.await.unwrap();
         let receiver_result = receiver_handle.await.unwrap();
         let expected_res = HandshakeOutcome::Jan2026(ConnectionInfo {
-            peer_protocol_version: CURRENT_PROTOCOL_VERSION,
+            peer_network_protocol_version: CURRENT_PROTOCOL_VERSION,
             sender_connection_id,
             min_expected_connection_id,
         });
@@ -435,7 +437,7 @@ mod tests {
         assert_eq!(
             res,
             HandshakeOutcome::Jan2026(ConnectionInfo {
-                peer_protocol_version: future_version.into(),
+                peer_network_protocol_version: future_version.into(),
                 sender_connection_id: CONNECTION_ATTEMPT,
                 min_expected_connection_id: CONNECTION_ATTEMPT,
             })

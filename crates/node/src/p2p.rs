@@ -3,7 +3,7 @@ use crate::metrics::networking_metrics::{
     self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
-    AdvertiseProtocolVersion, AllNodeConnectivities, ConnectionVersion, NodeConnectivity,
+    AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
     NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
 };
 use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
@@ -117,12 +117,12 @@ struct OutgoingConnection {
     /// This is cancelled when the connection is closed. Used to wait for the
     /// connection to close.
     closed: CancellationToken,
-    peer_protocol_version: NetworkProtocolVersion,
+    peer_network_protocol_version: NetworkProtocolVersion,
 }
 
-impl AdvertiseProtocolVersion for OutgoingConnection {
-    fn peer_protocol_version(&self) -> NetworkProtocolVersion {
-        self.peer_protocol_version
+impl HasPeerNetworkProtocolVersion for OutgoingConnection {
+    fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
+        self.peer_network_protocol_version
     }
 }
 
@@ -217,7 +217,7 @@ impl OutgoingConnection {
             ),
         )
         .await??;
-        let peer_protocol_version = match connection_info {
+        let peer_network_protocol_version = match connection_info {
             HandshakeOutcome::Unsupported(peer_version) => {
                 if let Err(err) = tls_stream.shutdown().await {
                     tracing::error!(err = %err, "TLS shutdown failed");
@@ -244,7 +244,7 @@ impl OutgoingConnection {
                     }
                     anyhow::bail!("connection not accepted: {:?}", handshake_data);
                 }
-                handshake_data.peer_protocol_version
+                handshake_data.peer_network_protocol_version
             }
         };
 
@@ -373,7 +373,7 @@ impl OutgoingConnection {
             _sender_task: sender_task,
             _keepalive_task: keepalive_task,
             closed,
-            peer_protocol_version,
+            peer_network_protocol_version,
         })
     }
 
@@ -488,7 +488,7 @@ impl PersistentConnection {
 
 pub struct IncomingConnection {
     sender_connection_id: u32,
-    peer_protocol_version: NetworkProtocolVersion,
+    peer_network_protocol_version: NetworkProtocolVersion,
 }
 
 impl SenderConnectionId for IncomingConnection {
@@ -497,9 +497,9 @@ impl SenderConnectionId for IncomingConnection {
     }
 }
 
-impl AdvertiseProtocolVersion for IncomingConnection {
-    fn peer_protocol_version(&self) -> NetworkProtocolVersion {
-        self.peer_protocol_version
+impl HasPeerNetworkProtocolVersion for IncomingConnection {
+    fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
+        self.peer_network_protocol_version
     }
 }
 
@@ -677,7 +677,7 @@ async fn incoming_connection_handler(
         ),
     )
     .await??;
-    let (sender_connection_id, peer_protocol_version) = match connection_info {
+    let (sender_connection_id, peer_network_protocol_version) = match connection_info {
         HandshakeOutcome::Unsupported(peer_version) => {
             if let Err(err) = tls_stream.shutdown().await {
                 tracing::error!(err = %err, "TLS shutdown failed");
@@ -705,7 +705,7 @@ async fn incoming_connection_handler(
             } else {
                 (
                     connection_info.sender_connection_id,
-                    connection_info.peer_protocol_version,
+                    connection_info.peer_network_protocol_version,
                 )
             }
         }
@@ -713,7 +713,7 @@ async fn incoming_connection_handler(
     tracing::info!("Incoming {} <-- {} handshake succeeded", my_id, peer_id);
     let incoming_conn = Arc::new(IncomingConnection {
         sender_connection_id,
-        peer_protocol_version,
+        peer_network_protocol_version,
     });
     if let Err(err) = connectivities
         .get(peer_id)?
@@ -1224,7 +1224,9 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(
-                sender0.connectivity(participant1).peer_protocol_version(),
+                sender0
+                    .connectivity(participant1)
+                    .peer_network_protocol_version(),
                 None
             );
             let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
@@ -1237,11 +1239,15 @@ mod tests {
 
             // Then
             assert_eq!(
-                sender0.connectivity(participant1).peer_protocol_version(),
+                sender0
+                    .connectivity(participant1)
+                    .peer_network_protocol_version(),
                 Some(CURRENT_PROTOCOL_VERSION)
             );
             assert_eq!(
-                sender1.connectivity(participant0).peer_protocol_version(),
+                sender1
+                    .connectivity(participant0)
+                    .peer_network_protocol_version(),
                 Some(CURRENT_PROTOCOL_VERSION)
             );
         })
