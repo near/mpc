@@ -1,3 +1,4 @@
+use crate::indexer::SubmissionBaseline;
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
@@ -65,10 +66,10 @@ pub enum ChainSendTransactionRequest {
     SubmitParticipantInfo {
         #[serde(flatten)]
         args: Box<contract_args::SubmitParticipantInfoArgs>,
-        /// Pre-submit expiry baseline for the landing check. Skipped from serialization so it never
-        /// reaches the on-chain call args.
+        /// What was stored before submitting, for the landing check. Skipped from serialization
+        /// so it never reaches the on-chain call args.
         #[serde(skip)]
-        pre_submit_expiry: Option<u64>,
+        baseline: SubmissionBaseline,
     },
 
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
@@ -296,7 +297,7 @@ mod recovery_id_tests {
 
 #[cfg(test)]
 mod request_serialization_tests {
-    use super::{ChainSendTransactionRequest, contract_args, dtos};
+    use super::{ChainSendTransactionRequest, SubmissionBaseline, contract_args, dtos};
 
     fn mock_submit_args() -> contract_args::SubmitParticipantInfoArgs {
         contract_args::SubmitParticipantInfoArgs::new(
@@ -305,21 +306,24 @@ mod request_serialization_tests {
         )
     }
 
-    /// The request serializes as the on-chain call args, so the node-internal `pre_submit_expiry`
-    /// must not leak into the payload — it has to serialize exactly like the bare args. Guards the
+    /// The request serializes as the on-chain call args, so the node-internal baseline must not
+    /// leak into the payload — it has to serialize exactly like the bare args. Guards the
     /// `#[serde(flatten)]` + `#[serde(skip)]` on the [`SubmitParticipantInfo`] variant.
     #[test]
     #[expect(non_snake_case)]
     fn submit_participant_info__should_serialize_as_bare_args() {
         let request = ChainSendTransactionRequest::SubmitParticipantInfo {
             args: Box::new(mock_submit_args()),
-            pre_submit_expiry: Some(123),
+            baseline: SubmissionBaseline {
+                attested_at_seconds: Some(123),
+                expiry_timestamp_seconds: Some(456),
+            },
         };
 
         let request_json = serde_json::to_string(&request).unwrap();
         let args_json = serde_json::to_string(&mock_submit_args()).unwrap();
 
         assert_eq!(request_json, args_json);
-        assert!(!request_json.contains("pre_submit_expiry"));
+        assert!(!request_json.contains("baseline"));
     }
 }

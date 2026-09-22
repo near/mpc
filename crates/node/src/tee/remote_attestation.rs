@@ -2,7 +2,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use crate::{
     indexer::{
-        ReadAttestationExpiry,
+        ReadSubmissionBaseline, SubmissionBaseline,
         tx_sender::{TransactionSender, TransactionStatus},
         types::ChainSendTransactionRequest,
     },
@@ -10,7 +10,7 @@ use crate::{
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
         MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL,
         MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
-        MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE,
+        MPC_TEE_ATTESTATION_STAGE_READ_SUBMISSION_BASELINE,
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
@@ -61,7 +61,7 @@ pub struct AttestationSubmitter<T, A> {
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub attestation_reader: Arc<dyn ReadAttestationExpiry>,
+    pub attestation_reader: Arc<dyn ReadSubmissionBaseline>,
 }
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
@@ -73,7 +73,7 @@ async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
-    pre_submit_expiry: Option<u64>,
+    baseline: SubmissionBaseline,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
@@ -85,7 +85,7 @@ async fn submit_remote_attestation(
         let propose_join_args_clone = submit_participant_info_args.clone();
         let chain_args = ChainSendTransactionRequest::SubmitParticipantInfo {
             args: Box::new(propose_join_args_clone),
-            pre_submit_expiry,
+            baseline,
         };
 
         async move {
@@ -174,13 +174,14 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
         }
     }
 
-    async fn read_expiry_baseline(&self) -> Option<u64> {
+    async fn read_submission_baseline(&self) -> SubmissionBaseline {
         match self
             .attestation_reader
-            .read_stored_attestation_expiry(&self.tls_public_key)
+            .read_submission_baseline(&self.tls_public_key)
             .await
         {
-            Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
+            // An empty baseline just means nothing is stored yet (e.g. first submit)
+            Ok(baseline) => baseline,
             // Submit anyway on a read error: refreshing the attestation is the priority, and a
             // broken read must not block submission (the confirmation just can't use a baseline).
             Err(error) => {
@@ -188,12 +189,12 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
                     ?error,
                     "could not read pre-submit attestation baseline; submitting without it"
                 );
-                None
+                SubmissionBaseline::default()
             }
         }
     }
 
-    async fn submit_attestation(&self, attestation: Attestation, pre_submit_expiry: Option<u64>) {
+    async fn submit_attestation(&self, attestation: Attestation, baseline: SubmissionBaseline) {
         let allowed_image_hashes: Vec<_> = self
             .allowed_image_hashes
             .borrow()
@@ -216,7 +217,7 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             self.tx_sender.clone(),
             attestation,
             self.tls_public_key.clone(),
-            pre_submit_expiry,
+            baseline,
         )
         .await;
         MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
@@ -265,12 +266,15 @@ async fn periodic_attestation_submission<T: TransactionSender + Clone, A: Genera
         let Some(attestation) = generated else {
             continue;
         };
-        let Ok(pre_submit_expiry) = submitter.read_expiry_baseline().timeout_at(deadline).await
+        let Ok(baseline) = submitter
+            .read_submission_baseline()
+            .timeout_at(deadline)
+            .await
         else {
-            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE);
+            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_READ_SUBMISSION_BASELINE);
             continue;
         };
-        let submission = submitter.submit_attestation(attestation, pre_submit_expiry);
+        let submission = submitter.submit_attestation(attestation, baseline);
         if submission.timeout_at(deadline).await.is_err() {
             record_round_timeout(MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION);
         }
@@ -336,22 +340,22 @@ mod tests {
         }
     }
 
-    struct StubAttestationExpiryReader {
+    struct StubSubmissionBaselineReader {
         fail: bool,
     }
 
-    impl ReadAttestationExpiry for StubAttestationExpiryReader {
-        fn read_stored_attestation_expiry<'a>(
+    impl ReadSubmissionBaseline for StubSubmissionBaselineReader {
+        fn read_submission_baseline<'a>(
             &'a self,
             _tls_public_key: &'a Ed25519PublicKey,
         ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>,
+            Box<dyn std::future::Future<Output = anyhow::Result<SubmissionBaseline>> + Send + 'a>,
         > {
             Box::pin(async {
                 if self.fail {
                     Err(anyhow::anyhow!("simulated baseline read failure"))
                 } else {
-                    Ok(None)
+                    Ok(SubmissionBaseline::default())
                 }
             })
         }
@@ -435,7 +439,7 @@ mod tests {
             account_public_key,
             allowed_image_hashes,
             allowed_launcher_compose_hashes,
-            attestation_reader: Arc::new(StubAttestationExpiryReader { fail: false }),
+            attestation_reader: Arc::new(StubSubmissionBaselineReader { fail: false }),
         };
         TestSetup { submitter }
     }
@@ -475,7 +479,7 @@ mod tests {
         // landed) fails; the submission must still go out, otherwise a broken read path would
         // stop the node from refreshing its attestation until the contract evicts it
         let mut setup = test_setup();
-        setup.submitter.attestation_reader = Arc::new(StubAttestationExpiryReader { fail: true });
+        setup.submitter.attestation_reader = Arc::new(StubSubmissionBaselineReader { fail: true });
         let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When

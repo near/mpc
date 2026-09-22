@@ -1,10 +1,10 @@
 use super::IndexerAPI;
-use super::ReadAttestationExpiry;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
 use super::types::ChainSendTransactionRequest;
+use super::{ReadSubmissionBaseline, SubmissionBaseline};
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::migration_service::types::MigrationInfo;
@@ -54,15 +54,16 @@ pub struct FakeMpcContractState {
     pub migration_service: NodeMigrations,
 }
 
-struct FakeAttestationExpiryReader;
+struct FakeSubmissionBaselineReader;
 
-impl ReadAttestationExpiry for FakeAttestationExpiryReader {
-    fn read_stored_attestation_expiry<'a>(
+impl ReadSubmissionBaseline for FakeSubmissionBaselineReader {
+    fn read_submission_baseline<'a>(
         &'a self,
         _tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
-    {
-        Box::pin(async { Ok(None) })
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<SubmissionBaseline>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(SubmissionBaseline::default()) })
     }
 }
 
@@ -1126,7 +1127,7 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
+            attestation_reader: std::sync::Arc::new(FakeSubmissionBaselineReader),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

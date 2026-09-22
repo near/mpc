@@ -387,6 +387,7 @@ mod tests {
                     account_public_key: new_signer_pk.clone(),
                 },
                 verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
+                attested_at_seconds: None,
             },
         );
         let foreign_chains_config: dtos::ForeignChainsConfig =
@@ -1040,6 +1041,7 @@ mod tests {
                     account_public_key: signer_pk_b.clone(),
                 },
                 verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
+                attested_at_seconds: None,
             },
         );
 

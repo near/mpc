@@ -146,7 +146,7 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
 async fn submit_dstack_verified(
     submitter: &Account,
     contract: &Contract,
-) -> (ExecutionFinalResult, dtos::VerifiedAttestation) {
+) -> (ExecutionFinalResult, dtos::StoredAttestation) {
     let result = submit_dstack(submitter, contract).await;
     assert!(
         result.failures().is_empty(),
@@ -158,7 +158,7 @@ async fn submit_dstack_verified(
     (result, stored)
 }
 
-async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::VerifiedAttestation> {
+async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::StoredAttestation> {
     get_participant_attestation(contract, &p2p_tls_key().into())
         .await
         .unwrap()
@@ -387,8 +387,13 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let (result, stored) = submit_dstack_verified(&fx.submitter, &fx.setup.contract).await;
 
     // Then
-    let dtos::VerifiedAttestation::Dstack(stored) = stored else {
-        panic!("expected a stored Dstack attestation, got: {stored:?}");
+    assert_eq!(
+        stored.attested_at_seconds,
+        Some(VALID_ATTESTATION_TIMESTAMP),
+        "the acceptance time is the pinned block time"
+    );
+    let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation else {
+        panic!("expected a stored Dstack attestation");
     };
     // The stored measurements are the allowlist entry the fixture matched; select
     // the expected entry by the fixture report's rtmrs, so the expectation stays
