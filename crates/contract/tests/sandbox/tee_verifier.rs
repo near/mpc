@@ -140,7 +140,7 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
 async fn submit_dstack_verified(
     submitter: &Account,
     contract: &Contract,
-) -> (ExecutionFinalResult, dtos::VerifiedAttestation) {
+) -> (ExecutionFinalResult, dtos::StoredAttestation) {
     let result = submit_dstack(submitter, contract).await;
     assert!(
         result.failures().is_empty(),
@@ -152,7 +152,7 @@ async fn submit_dstack_verified(
     (result, stored)
 }
 
-async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::VerifiedAttestation> {
+async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::StoredAttestation> {
     get_participant_attestation(contract, &p2p_tls_key().into())
         .await
         .unwrap()
@@ -385,12 +385,19 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let (result, stored) = submit_dstack_verified(&fx.submitter, &fx.setup.contract).await;
 
     // Then
-    let dtos::VerifiedAttestation::Dstack(stored) = stored else {
-        panic!("expected a stored Dstack attestation, got: {stored:?}");
+    // The timestamps are stamped from sandbox block time, which drifts from `submitted_at`
+    const MAX_CLOCK_DRIFT_SECONDS: u64 = 600;
+    let attested_at = stored
+        .attested_at_seconds
+        .expect("an accepted submission stamps its acceptance time");
+    assert!(
+        attested_at.abs_diff(submitted_at) < MAX_CLOCK_DRIFT_SECONDS,
+        "attested_at {attested_at} should be about the submission time {submitted_at}",
+    );
+    let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation else {
+        panic!("expected a stored Dstack attestation");
     };
     let expected_expiry = submitted_at + DEFAULT_EXPIRATION_DURATION_SECONDS;
-    // The expiry is stamped from sandbox block time, which drifts from `submitted_at`
-    const MAX_CLOCK_DRIFT_SECONDS: u64 = 600;
     assert!(
         stored.expiry_timestamp_seconds.abs_diff(expected_expiry) < MAX_CLOCK_DRIFT_SECONDS,
         "expiry {} should be about {expected_expiry} (submission time + default expiration)",

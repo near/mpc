@@ -1800,7 +1800,7 @@ Example response (truncated):
 ]
 ```
 
-To inspect the stored `VerifiedAttestation` for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the Node Account Key and P2P Key](#retrieve-the-node-account-key-and-p2p-key)):
+To inspect the stored attestation for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the Node Account Key and P2P Key](#retrieve-the-node-account-key-and-p2p-key)):
 
 ```bash
 near contract call-function as-read-only \
@@ -1809,27 +1809,30 @@ near contract call-function as-read-only \
   network-config testnet now
 ```
 
-The response shape tells you what the contract accepted:
+The response wraps the stored attestation with `attested_at_seconds`, the block time at which the contract accepted it. The `attestation` shape tells you what it accepted:
 
 - `{ "Dstack": { ... } }` — a real TEE attestation. This is what a production operator should see.
 - `{ "Mock": "Valid" }` — a mock attestation. Acceptable on testnet during the [transition phase](#transition-phase), but means the node is **not** running in a TEE. Many existing testnet entries are in this state.
-- `null` — the node has not yet submitted, or the submission is failing — see [`submit_participant_info` failures](#submit_participant_info-failures) below.
+- `null` response — the node has not yet submitted, or the submission is failing — see [`submit_participant_info` failures](#submit_participant_info-failures) below.
 
 Example `Dstack` response from `v1.signer-prod.testnet` for an existing participant:
 
 ```json
 {
-  "Dstack": {
-    "expiry_timestamp_seconds": 1779618069,
-    "launcher_compose_hash": "efb095f3e9adfeb04d637813a838fa666778b9915d752cfd796ae2a254fe705f",
-    "measurements": {
-      "key_provider_event_digest": "61ce56b6be756a9e45af7715b13c15040a4e6090cc740be24e2cc02e33b4fb53ae4e3c945c9af83e2a26c6d5efa414a8",
-      "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
-      "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
-      "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
-      "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
-    },
-    "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
+  "attested_at_seconds": 1779013269,
+  "attestation": {
+    "Dstack": {
+      "expiry_timestamp_seconds": 1779618069,
+      "launcher_compose_hash": "efb095f3e9adfeb04d637813a838fa666778b9915d752cfd796ae2a254fe705f",
+      "measurements": {
+        "key_provider_event_digest": "61ce56b6be756a9e45af7715b13c15040a4e6090cc740be24e2cc02e33b4fb53ae4e3c945c9af83e2a26c6d5efa414a8",
+        "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+        "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
+        "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
+        "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
+      },
+      "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
+    }
   }
 }
 ```

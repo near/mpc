@@ -4,7 +4,7 @@ use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader};
+use super::{IndexerAPI, IndexerState, RealSubmissionBaselineReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
@@ -182,8 +182,8 @@ pub fn spawn_real_indexer(
                 tracing::error!("Failed to send txn_sender back to main thread.")
             };
 
-            let attestation_reader: std::sync::Arc<dyn super::ReadAttestationExpiry> =
-                std::sync::Arc::new(RealAttestationExpiryReader::new(indexer_state.clone()));
+            let attestation_reader: std::sync::Arc<dyn super::ReadSubmissionBaseline> =
+                std::sync::Arc::new(RealSubmissionBaselineReader::new(indexer_state.clone()));
             if attestation_reader_sender.send(attestation_reader).is_err() {
                 tracing::error!("failed to send attestation reader back to main thread")
             };

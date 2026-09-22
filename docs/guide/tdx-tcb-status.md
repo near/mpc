@@ -80,8 +80,8 @@ with no need to wait for it to sync. Then:
   changed. Check the `Intel early` row while you are there, or re-run with
   `--evaluation-data-set early` for a plain pass or fail: an update that clears
   only the current set leaves you doing this again at the next promotion.
-- Within the hour, `get_attestation` should show `expiry_timestamp_seconds` about
-  7 days out, meaning the contract accepted a submission.
+- Within the hour, `get_attestation` should show an `attested_at_seconds` later
+  than the restart, meaning the contract accepted a submission.
 
 If collateral fetches start failing instead, your PCCS may not have a PCK
 certificate for the platform's new TCB level yet. The node then starts with no
@@ -119,9 +119,9 @@ WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
   (QE: UpToDate, platform: OutOfDate, advisories: ["INTEL-SA-01192", "INTEL-SA-01245"])
 ```
 
-On chain, `expiry_timestamp_seconds` on the stored attestation stops advancing.
-A healthy node's is always about 7 days out and moves forward every hour, which
-makes it the cheapest health signal available:
+On chain, `attested_at_seconds` on the stored attestation stops advancing. A
+healthy node's moves forward every hour, which makes it the cheapest health
+signal available:
 
 ```bash
 near contract call-function as-read-only \

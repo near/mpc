@@ -640,7 +640,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         .unwrap();
 
     assert_eq!(
-        attestation_for_tls_key_2,
+        attestation_for_tls_key_2.map(|stored| stored.attestation),
         Some(VerifiedAttestation::Mock(participant_2_mock))
     );
 }
@@ -704,7 +704,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         .unwrap();
 
     assert_eq!(
-        attestation_for_tls_key,
+        attestation_for_tls_key.map(|stored| stored.attestation),
         Some(VerifiedAttestation::Mock(second_mock)),
         "Expected the second attestation to overwrite the first for the same TLS key"
     );

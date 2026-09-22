@@ -75,6 +75,10 @@ pub enum TeeValidationResult {
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
+    /// Block time at which this entry was accepted. Restamped by every accepted submission, so
+    /// a submitter can recognize its own on chain. `None` only for an entry stored before the
+    /// contract recorded this.
+    pub(crate) attested_at_seconds: Option<u64>,
 }
 
 #[near(serializers=[borsh])]
@@ -146,6 +150,7 @@ impl TeeState {
                     verified_attestation: VerifiedAttestation::Mock(
                         attestation::MockAttestation::Valid,
                     ),
+                    attested_at_seconds: Some(Self::current_time_seconds()),
                 },
             );
         }
@@ -242,6 +247,7 @@ impl TeeState {
             NodeAttestation {
                 node_id,
                 verified_attestation,
+                attested_at_seconds: Some(Self::current_time_seconds()),
             },
         );
 
@@ -1907,6 +1913,71 @@ mod tests {
         assert_matches!(
             tee_state.verify_and_store_mock(node_id, live_mock, Duration::from_secs(0)),
             Ok(_)
+        );
+    }
+
+    fn stamped_attested_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
+        tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("the attestation was stored")
+            .attested_at_seconds
+    }
+
+    #[test]
+    fn verify_and_store_mock__should_stamp_the_block_time() {
+        // Given
+        const ATTESTED_AT_SECONDS: u64 = 1_800_000_000;
+        set_block_timestamp(ATTESTED_AT_SECONDS * 1_000_000_000);
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+
+        // When
+        tee_state
+            .verify_and_store_mock(
+                node_id.clone(),
+                MockAttestation::Valid,
+                Duration::from_secs(0),
+            )
+            .unwrap();
+
+        // Then
+        assert_eq!(
+            stamped_attested_at(&tee_state, &node_id),
+            Some(ATTESTED_AT_SECONDS)
+        );
+    }
+
+    #[test]
+    fn verify_and_store_mock__should_restamp_a_resubmission() {
+        // Given: an entry stored earlier by the same node
+        const FIRST_SUBMISSION_SECONDS: u64 = 1_800_000_000;
+        const SECOND_SUBMISSION_SECONDS: u64 = FIRST_SUBMISSION_SECONDS + 3600;
+        set_block_timestamp(FIRST_SUBMISSION_SECONDS * 1_000_000_000);
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+        tee_state
+            .verify_and_store_mock(
+                node_id.clone(),
+                MockAttestation::Valid,
+                Duration::from_secs(0),
+            )
+            .unwrap();
+
+        // When: the node resubmits the very same attestation an hour later
+        set_block_timestamp(SECOND_SUBMISSION_SECONDS * 1_000_000_000);
+        tee_state
+            .verify_and_store_mock(
+                node_id.clone(),
+                MockAttestation::Valid,
+                Duration::from_secs(0),
+            )
+            .unwrap();
+
+        // Then
+        assert_eq!(
+            stamped_attested_at(&tee_state, &node_id),
+            Some(SECOND_SUBMISSION_SECONDS)
         );
     }
 }

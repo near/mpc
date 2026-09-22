@@ -1,11 +1,14 @@
 //! Attestation-freshness gauges.
 //!
 //! Both are absolute timestamps rather than remaining durations: a node that stops re-attesting
-//! also stops updating them, and only the absolute form keeps decaying towards now, so a staleness
-//! alert still fires on a frozen gauge. At rest both advance hourly — the expiry is re-read on
-//! every submission observation, the landing timestamp only when one is confirmed.
+//! also stops updating them, and only the absolute form keeps decaying towards now, so a
+//! staleness alert still fires on a frozen gauge. At rest both advance hourly — the expiry is
+//! re-read on every submission observation, the landing timestamp only when one is confirmed.
+//!
+//! TODO(#4498): once every contract reports an acceptance time, set the landing gauge from it
+//! rather than from this node's clock, so a mistaken confirmation cannot inflate it.
 
-use near_mpc_contract_interface::types::VerifiedAttestation;
+use near_mpc_contract_interface::types::GetAttestationResponse;
 use near_time::Clock;
 
 use crate::metrics::{
@@ -15,7 +18,7 @@ use crate::metrics::{
 const NO_ATTESTATION_STORED: i64 = 0;
 const NO_EXPIRY: i64 = -1;
 
-pub(crate) fn record_stored_attestation_expiry(stored: Option<&VerifiedAttestation>) {
+pub(crate) fn record_stored_attestation(stored: Option<&GetAttestationResponse>) {
     MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.set(expiry_gauge_value(stored));
 }
 
@@ -23,8 +26,8 @@ pub(crate) fn record_attestation_landed(clock: &Clock) {
     MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.set(clock.now_utc().unix_timestamp());
 }
 
-fn expiry_gauge_value(stored: Option<&VerifiedAttestation>) -> i64 {
-    match stored.map(VerifiedAttestation::expiry_timestamp_seconds) {
+fn expiry_gauge_value(stored: Option<&GetAttestationResponse>) -> i64 {
+    match stored.map(|stored| stored.attestation().expiry_timestamp_seconds()) {
         None => NO_ATTESTATION_STORED,
         Some(None) => NO_EXPIRY,
         Some(Some(expiry)) => i64::try_from(expiry).unwrap_or(i64::MAX),
@@ -35,7 +38,9 @@ fn expiry_gauge_value(stored: Option<&VerifiedAttestation>) -> i64 {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use near_mpc_contract_interface::types::MockAttestation;
+    use near_mpc_contract_interface::types::{
+        MockAttestation, StoredAttestation, VerifiedAttestation,
+    };
     use near_time::{FakeClock, Utc};
     use rstest::rstest;
 
@@ -47,6 +52,13 @@ mod tests {
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds,
             expected_measurements: None,
+        })
+    }
+
+    fn stamped(attestation: VerifiedAttestation) -> GetAttestationResponse {
+        GetAttestationResponse::Stamped(StoredAttestation {
+            attestation,
+            attested_at_seconds: Some(EXPIRES_AT),
         })
     }
 
@@ -67,12 +79,17 @@ mod tests {
 
     #[rstest]
     #[case::nothing_stored(None, NO_ATTESTATION_STORED)]
-    #[case::stored_with_expiry(Some(mock_with_expiry(Some(EXPIRES_AT))), EXPIRES_AT as i64)]
-    #[case::stored_without_expiry(Some(mock_with_expiry(None)), NO_EXPIRY)]
-    #[case::unstamped_mock(Some(VerifiedAttestation::Mock(MockAttestation::Valid)), NO_EXPIRY)]
-    #[case::expiry_beyond_i64(Some(mock_with_expiry(Some(u64::MAX))), i64::MAX)]
+    #[case::stored_with_expiry(Some(stamped(mock_with_expiry(Some(EXPIRES_AT)))), EXPIRES_AT as i64)]
+    #[case::stored_without_expiry(Some(stamped(mock_with_expiry(None))), NO_EXPIRY)]
+    #[case::unstamped_mock(
+        Some(GetAttestationResponse::Unstamped(VerifiedAttestation::Mock(
+            MockAttestation::Valid
+        ))),
+        NO_EXPIRY
+    )]
+    #[case::expiry_beyond_i64(Some(stamped(mock_with_expiry(Some(u64::MAX)))), i64::MAX)]
     fn expiry_gauge_value__should_report_stored_expiry_or_a_sentinel(
-        #[case] stored: Option<VerifiedAttestation>,
+        #[case] stored: Option<GetAttestationResponse>,
         #[case] expected: i64,
     ) {
         // When

@@ -9,7 +9,7 @@ use near_mpc_contract_interface::{
     method_names,
     types::{
         Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
-        ProtocolContractState, VerifiedAttestation,
+        ProtocolContractState, StoredAttestation,
     },
 };
 use near_workspaces::{
@@ -126,7 +126,7 @@ pub async fn tee_verifier_account_id(contract: &Contract) -> AccountId {
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<VerifiedAttestation>> {
+) -> anyhow::Result<Option<StoredAttestation>> {
     Ok(contract
         .view(method_names::GET_ATTESTATION)
         .args_json(serde_json::json!({
