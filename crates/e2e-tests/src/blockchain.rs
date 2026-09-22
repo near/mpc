@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
 use ed25519_dalek::SigningKey;
-use near_kit::{ExecutedOptimistic, Final, FinalExecutionOutcome, WaitLevel};
+use near_kit::rpc::FinalExecutionOutcome;
+use near_kit::transaction::{ExecutedOptimistic, Final, WaitLevel};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
@@ -25,10 +26,11 @@ impl NearBlockchain {
         rpc_url: &str,
         chain_id: &str,
         root_account: &str,
-        root_secret_key: near_kit::SecretKey,
+        root_secret_key: near_kit::signer::SecretKey,
     ) -> anyhow::Result<Self> {
-        let signer = near_kit::InMemorySigner::from_secret_key(root_account, root_secret_key)
-            .map_err(|e| anyhow::anyhow!("failed to create root signer: {e}"))?;
+        let signer =
+            near_kit::signer::InMemorySigner::from_secret_key(root_account, root_secret_key)
+                .map_err(|e| anyhow::anyhow!("failed to create root signer: {e}"))?;
         let client = near_kit::Near::custom(rpc_url, chain_id)
             .signer(signer)
             .build();
@@ -101,7 +103,7 @@ impl NearBlockchain {
 
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
         let sk = key.to_near_secret_key();
-        let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
+        let signer = near_kit::signer::InMemorySigner::from_secret_key(account_id, sk)
             .map_err(|e| anyhow::anyhow!("failed to create signer for {account_id}: {e}"))?;
         Ok(self.root_client.with_signer(signer))
     }

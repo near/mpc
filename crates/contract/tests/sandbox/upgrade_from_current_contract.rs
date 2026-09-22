@@ -45,6 +45,7 @@ pub fn current_contract_proposal() -> ProposeUpdateArgs {
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -73,6 +74,7 @@ async fn test_propose_contract_max_size_upload() {
 #[tokio::test]
 async fn test_propose_update_config() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -189,6 +191,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -202,6 +205,7 @@ async fn test_propose_update_contract() {
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -240,6 +244,7 @@ async fn test_invalid_contract_deploy() {
 #[tokio::test]
 async fn test_propose_update_contract_many() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -296,6 +301,7 @@ async fn test_propose_update_contract_many() {
 #[tokio::test]
 async fn test_vote_update_gas_before_threshold() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -370,6 +376,7 @@ async fn test_vote_update_gas_before_threshold() {
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -412,6 +419,7 @@ async fn test_propose_incorrect_updates() {
 async fn many_sequential_updates() {
     let number_of_participants = PARTICIPANT_LEN;
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -439,6 +447,7 @@ async fn many_sequential_updates() {
 async fn only_one_vote_from_participant() {
     let number_of_participants = 3;
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -507,6 +516,125 @@ async fn only_one_vote_from_participant() {
     assert!(update_occurred);
 }
 
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn remove_update_proposal__should_drop_the_proposal_and_its_votes() {
+    // Given
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_number_of_participants(3)
+        .build()
+        .await;
+    let alice = mpc_signer_accounts[0].call_mpc(contract.id());
+    let proposal: UpdateId = alice
+        .propose_update(dummy_contract_proposal())
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(alice.vote_update(proposal).await.unwrap().is_success());
+
+    // When
+    let execution = alice.remove_update_proposal(proposal).await.unwrap();
+
+    // Then
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let proposed_updates: near_mpc_contract_interface::types::ProposedUpdates = contract
+        .view(method_names::PROPOSED_UPDATES)
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(proposed_updates.updates.is_empty());
+    assert!(proposed_updates.votes.is_empty());
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn remove_update_proposal__should_not_pass_votes_on_to_a_later_proposal() {
+    // Given
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_number_of_participants(3)
+        .build()
+        .await;
+    let alice = mpc_signer_accounts[0].call_mpc(contract.id());
+    let removed_proposal: UpdateId = alice
+        .propose_update(dummy_contract_proposal())
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(
+        alice
+            .vote_update(removed_proposal)
+            .await
+            .unwrap()
+            .is_success()
+    );
+    assert!(
+        alice
+            .remove_update_proposal(removed_proposal)
+            .await
+            .unwrap()
+            .is_success()
+    );
+    let new_proposal: UpdateId = alice
+        .propose_update(dummy_contract_proposal())
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+
+    // When
+    let execution = mpc_signer_accounts[1]
+        .call_mpc(contract.id())
+        .vote_update(new_proposal)
+        .await
+        .unwrap();
+
+    // Then
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let update_occurred: bool = execution.json().unwrap();
+    assert!(!update_occurred);
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn remove_update_proposal__should_fail_for_an_unknown_id() {
+    // Given
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_number_of_participants(3)
+        .build()
+        .await;
+
+    // When
+    let execution = mpc_signer_accounts[0]
+        .call_mpc(contract.id())
+        .remove_update_proposal(UpdateId(0))
+        .await
+        .unwrap();
+
+    // Then
+    dbg!(&execution);
+    assert!(execution.is_failure());
+}
+
 /// Tests that we can upgrade the current contract to a new binary. The new contract binary used is
 /// the migration contract, [`migration_contract`].
 #[tokio::test]
@@ -538,6 +666,7 @@ async fn update_from_current_contract_to_migration_contract() {
 #[tokio::test]
 async fn migration_function_rejects_external_callers() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..

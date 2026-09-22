@@ -15,6 +15,7 @@ use mpc_contract::{
     errors,
     primitives::{
         participants::Participants,
+        test_utils::bogus_tee_verifier_account_id,
         thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
 };
@@ -182,6 +183,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         keys,
@@ -247,6 +249,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         keys,
@@ -295,7 +298,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_initialization() -> anyhow::Result<()> {
-    let (_, contract) = init().await;
+    let (_worker, contract) = init().await;
 
     // Empty candidates should fail.
     let participants = Participants::new();
@@ -305,7 +308,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters, None)
+        .init(proposed_parameters, bogus_tee_verifier_account_id(), None)
         .await?;
     assert!(
         result.is_failure(),
@@ -319,7 +322,11 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters.clone(), None)
+        .init(
+            proposed_parameters.clone(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
         .await?;
     assert!(
         result.is_success(),
@@ -330,7 +337,11 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters.clone(), None)
+        .init(
+            proposed_parameters.clone(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
         .await?;
     assert!(
         result.is_failure(),

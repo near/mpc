@@ -1,7 +1,7 @@
 pub mod presign;
 mod sign;
 
-use near_mpc_contract_interface::types::KeyEventId;
+use crate::network::wire_format::{MpcTaskId, RobustEcdsaTaskId};
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 
@@ -9,7 +9,6 @@ use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::ecdsa_common;
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
@@ -86,30 +85,6 @@ impl RobustEcdsaSignatureProvider {
 
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
         ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum RobustEcdsaTaskId {
-    KeyGeneration {
-        key_event: KeyEventId,
-    },
-    KeyResharing {
-        key_event: KeyEventId,
-    },
-    Presignature {
-        id: UniqueId,
-        domain_id: DomainId,
-    },
-    Signature {
-        id: SignatureId,
-        presignature_id: UniqueId,
-    },
-}
-
-impl From<RobustEcdsaTaskId> for MpcTaskId {
-    fn from(val: RobustEcdsaTaskId) -> Self {
-        MpcTaskId::RobustEcdsaTaskId(val)
     }
 }
 

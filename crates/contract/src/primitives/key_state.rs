@@ -1,4 +1,4 @@
-use super::participants::{ParticipantId, Participants};
+use super::participants::{IdentifiesParticipant, ParticipantId, Participants};
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use near_account_id::AccountId;
@@ -83,6 +83,12 @@ impl AuthenticatedParticipantId {
     }
 }
 
+impl IdentifiesParticipant for AuthenticatedParticipantId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        self.get().identifies_participant_in(participants)
+    }
+}
+
 /// This struct contains the account [`env::signer_account_id()`], but is only constructible given a
 /// set of participants that include the signer, thus acting as a typesystem-based enforcement
 /// mechanism (albeit a best-effort one) for authenticating the signer.
@@ -96,15 +102,17 @@ impl AuthenticatedAccountId {
 
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
-        if participants
-            .participants()
-            .iter()
-            .any(|(a_id, _, _)| *a_id == signer)
-        {
+        if participants.is_participant(&signer) {
             Ok(AuthenticatedAccountId(signer))
         } else {
             Err(InvalidState::NotParticipant { account_id: signer }.into())
         }
+    }
+}
+
+impl IdentifiesParticipant for AuthenticatedAccountId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        self.get().identifies_participant_in(participants)
     }
 }
 

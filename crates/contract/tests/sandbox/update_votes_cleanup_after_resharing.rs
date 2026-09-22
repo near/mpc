@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
 async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -80,7 +81,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
+                    url: participant_info.url.clone().try_into().unwrap(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
@@ -143,6 +144,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -191,7 +193,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
+                    url: participant_info.url.clone().try_into().unwrap(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),

@@ -241,6 +241,12 @@ Prepare the arguments for the init call:
 envsubst < docs/development/localnet/args/init_tee.json > "/tmp/$USER/init_args.json"
 ```
 
+The args name `tee-verifier.test.near` as the trusted TEE verifier, and the Dstack attestations
+submitted here are forwarded to it, so unlike on the plain localnet that account has to exist.
+Run the build, account-creation and deploy commands of
+[step 6 of the localnet guide](localnet.md#6-optional-deploy-the-tee-verifier) now, skipping its
+closing read-back, which only answers once the contract is initialized.
+
 Now call the `init` function on the contract:
 
 ```bash
@@ -282,10 +288,10 @@ near transaction view-status <transaction_Id> network-config mpc-localnet
 ### Vote Commands
 
 
-Set **CODE_HASH** to value you want to vote for.
+Set **MPC_NODE_MANIFEST_DIGEST** to value you want to vote for.
 for example:
 ```bash
-export CODE_HASH=7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
+export MPC_NODE_MANIFEST_DIGEST=7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
 ```
 
 Note: this hash should be the same as the `MPC_MANIFEST_DIGEST` set in the env file.
@@ -297,14 +303,14 @@ MPC_MANIFEST_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8
 ```bash
 
 # Sam votes
-near contract call-function as-transaction mpc-contract.test.near vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" \
+near contract call-function as-transaction mpc-contract.test.near vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 
 # Frodo votes
-near contract call-function as-transaction mpc-contract.test.near vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" \
+near contract call-function as-transaction mpc-contract.test.near vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```

@@ -3,11 +3,10 @@
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
+    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
     ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, SupportedForeignChains, TeeVerifierCodeHash, UpdateId,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    SignatureResponse, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -15,6 +14,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct InitArgs {
     pub parameters: GovernanceThresholdParameters,
+    pub tee_verifier_account_id: AccountId,
     pub init_config: Option<InitConfig>,
 }
 
@@ -50,6 +50,11 @@ pub struct VoteCancelKeygenArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteMpcNodeManifestDigestArgs {
+    pub mpc_node_manifest_digest: NodeImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteTeeVerifierChangeArgs {
     pub candidate_account_id: AccountId,
     pub expected_code_hash: TeeVerifierCodeHash,
@@ -68,11 +73,6 @@ pub struct RegisterBackupServiceArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct StartNodeMigrationArgs {
     pub destination_node_info: DestinationNodeInfo,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct RegisterForeignChainSupportArgs {
-    pub foreign_chain_support: SupportedForeignChains,
 }
 
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
@@ -129,19 +129,9 @@ pub struct VoteUpdateArgs {
     pub id: UpdateId,
 }
 
-#[derive(Serialize, Debug)]
-pub struct RegisterForeignChainConfigArgs {
-    #[expect(deprecated)]
-    pub foreign_chain_configuration: crate::types::ForeignChainConfiguration,
-}
-
-impl RegisterForeignChainConfigArgs {
-    #[expect(deprecated)]
-    pub fn new(foreign_chain_configuration: crate::types::ForeignChainConfiguration) -> Self {
-        Self {
-            foreign_chain_configuration,
-        }
-    }
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RemoveUpdateProposalArgs {
+    pub id: UpdateId,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

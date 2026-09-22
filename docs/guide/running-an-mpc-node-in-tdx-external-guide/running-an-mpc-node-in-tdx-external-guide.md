@@ -35,50 +35,35 @@ For a full architecture review of the TEE-based MPC, see: [design doc](../../des
 
 ## Prerequisites and Requirements
 
+Ensure your node meets the [MPC node requirements](../node-requirements.md). In addition, the node must meet the requirements outlined below.
+
 ### Hardware Requirements
 
-* Have a TDX enabled, bare metal, server.
+* A TDX enabled, bare metal, server.
 
 Note - we currently only support bare metal and do not support virtualized TDX solutions (such as GCP).
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
 
-The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
+The memory, cores and disk in [MPC node requirements](../node-requirements.md#resources)
+are what a single MPC CVM consumes. Because you may need to run two CVMs concurrently while
+migrating to a new launcher version, size your TDX host for at least **2x** those values.
 
-* Memory - 64GB per CVM
-* (v)Cores - 8 per CVM
-* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
-
-For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../../archive/guide/cloud-providers-tdx.md).
+For a non-exhaustive list of cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../cloud-providers-tdx.md).
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
-
-### Software Requirements
-
-* [`near-cli-rs`](https://github.com/near/near-cli-rs) — install per the upstream README; the `near` binary must be on your `$PATH`.
-
-### General
-
-* Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
-* Assign a static public IP for access towards machine from outside
-
-### Create DNS A record (optional)
-
-Although a node can be accessed using a public IP address, it is recommended to use a domain name instead. Using a domain name allows some flexibility in case of public IP address change/repurpose or failover scenarios. To use a domain name, one must register a DNS A record. Some recommended providers:
-
-* [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)
-* [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 
 ### TDX and Dstack Setup
 
 This section describes how to enable TDX on your machine (BIOS, operating system, and software configurations), and how to install and configure Dstack.
 
-Follow the three steps below to ensure you have a working TDX machine with Dstack configured:
+Follow the four steps below to ensure you have a working TDX machine with Dstack configured, and that routine host upgrades leave it that way:
 
 1. [Set up a bare-metal TDX server](#1-tdx-bare-metal-server-setup)
 2. [Dstack Setup and Configuration](#2-dstack-setup-and-configuration)
 3. [Set up a Local Gramine-Sealing-Key-Provider](#3-local-gramine-sealing-key-provider-setup)
+4. [Configure host package upgrades](#4-host-package-upgrades)
 
 ---
 
@@ -117,7 +102,9 @@ sudo apt install build-essential qemu-system-x86=1:8.2.2* docker.io docker-compo
 
 > **Note:** The QEMU version is pinned to **8.2.2** because TDX attestation measurements
 > (MRTD/RTMR0) depend on the QEMU version. Using a different version will produce different
-> measurements and attestation might fail.
+> measurements and attestation might fail. The `=` pin only applies to this install, so also
+> hold the package against later upgrades, as described in
+> [Host Package Upgrades](#4-host-package-upgrades).
 
 * Create `mpc` user and installation folder
 
@@ -244,6 +231,10 @@ WorkingDirectory=/opt/mpc/dstack/vmm-data/
 ExecStart=/opt/mpc/dstack/vmm-data/dstack-vmm -c vmm.toml
 Restart=on-failure
 RestartSec=5
+# The qemu CVMs are children of this unit. Without KillMode=process, systemd's
+# default (control-group) sends SIGTERM to every CVM whenever the daemon is
+# stopped or restarted.
+KillMode=process
 User=mpc
 Group=mpc
 
@@ -265,6 +256,24 @@ systemctl status dstack-vmm
 
 Notice that some of the commands require `sudo`, so they cannot be run using the
 `mpc` user which has no such permissions by default.
+
+Once a CVM is running, the first time you restart the daemon is worth verifying:
+the CVMs should survive it, and the restarted daemon should re-adopt them rather
+than leave orphans.
+
+```bash
+pgrep -a supervisor            # holds the CVM handles; same PID as before the restart
+pgrep -af qemu-system-x86_64   # one per CVM, same PIDs as before
+```
+
+Then confirm the daemon sees them, in the web UI or via `lsvm` (see
+[CVM management](#cvm-management) for the CLI setup). If QEMU is still running
+but the daemon lists no CVM, re-adoption failed: do **not** start the CVM from
+the UI, as that launches a second QEMU against the same disk image. Stop the
+orphaned QEMU process first, then start the CVM normally.
+
+Nothing else should stop this unit on its own; see
+[Host Package Upgrades](#4-host-package-upgrades).
 
 ---
 
@@ -631,6 +640,154 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    [`gramine-sealing-key-provider` failures](#gramine-sealing-key-provider-failures)
    in the Troubleshooting section.
 
+---
+
+#### 4. Host Package Upgrades
+
+Leave unattended security upgrades enabled: a patched host is part of what keeps
+the node trustworthy, and it is the standard for servers of this kind. What has
+to be prevented is an upgrade disturbing the CVMs underneath it, in one of three
+ways: rebooting the host, restarting `dstack-vmm`, or changing a package the
+CVM's identity or its attestation depends on.
+
+The settings below cover those three routes. Because dstack CVMs are
+near-independent of the host, they are enough on their own; there is no need to
+stagger upgrade windows across operators.
+
+##### Keep automatic reboots off
+
+A reboot stops every CVM, and TCB SVNs latch at platform reset, so rebooting is
+always a planned operation, never a side effect of a package upgrade. Ubuntu
+defaults to no automatic reboot, but confirm it rather than assume it:
+
+```bash
+apt-config dump | grep -i 'Unattended-Upgrade::Automatic-Reboot'
+```
+
+No output means unset, which is off. Any line that does print must read
+`Unattended-Upgrade::Automatic-Reboot "false";`. Query the effective value like
+this rather than grepping the files: the stock `50unattended-upgrades` ships
+these options `//`-commented, so a grep shows inactive lines that read like live
+config. A pending reboot then only shows up as `/var/run/reboot-required`, which
+you act on during a maintenance window.
+
+##### Keep upgrades from restarting `dstack-vmm`
+
+`needrestart` runs from a `DPkg::Post-Invoke` hook on every apt transaction, and
+in the non-interactive unattended-upgrades context it restarts affected services
+without asking. `dstack-vmm` maps the host's libc and OpenSSL, so an ordinary
+security upgrade is enough to bounce it, and with it every CVM in its cgroup.
+Exclude the unit:
+
+```bash
+sudo mkdir -p /etc/needrestart/conf.d
+sudo tee /etc/needrestart/conf.d/dstack-vmm.conf <<'EOF'
+# The MPC CVMs run under dstack-vmm; never bounce it from an apt transaction.
+$nrconf{override_rc}{qr(^dstack-vmm\.service$)} = 0;
+EOF
+```
+
+This is defense in depth on top of `KillMode=process` in the unit: the drop-in
+keeps the restart from being triggered, `KillMode=process` keeps a restart that
+does happen from taking the CVMs with it. If your `dstack-vmm.service` predates
+this guide it will not have that line, so add it under `[Service]` now (see
+[VMM service persistence](#vmm-service-persistence)) and reload:
+
+```bash
+sudo systemctl daemon-reload   # applies at the next stop; does not bounce the daemon
+```
+
+##### Freeze the TDX stack
+
+The CVM's disk-sealing key derives from the CPU microcode (via CPUSVN), and its
+attestation measurements from the QEMU version (via MRTD/RTMR0). An unattended
+upgrade of either can leave the CVM unable to unseal its disk, or produce
+measurements the contract does not allow. The rest of what the `canonical/tdx`
+PPAs provide is less sharp but no more welcome as an unobserved change: the
+quote path (`sgx-dcap-pccs`, `tdx-qgs`, `libsgx-*`, `libtdx-attest*`) and the
+host kernel (`linux-image-intel`), which installs silently and becomes the
+kernel you boot at the next maintenance window. Those PPAs publish every few
+months, so freezing the whole set costs nothing:
+
+```bash
+PPA_PKGS=$(comm -12 \
+  <(awk '/^Package: /{print $2}' /var/lib/apt/lists/ppa.launchpadcontent.net_kobuk-team_*_Packages | sort -u) \
+  <(dpkg-query -W -f='${Package}\n' | sort -u))
+
+sudo apt-mark hold intel-microcode $PPA_PKGS
+apt-mark showhold
+```
+
+`intel-microcode` comes from the Ubuntu archive rather than a PPA, hence the
+separate mention. Holds are origin-agnostic, so they stop both the PPA and the
+archive from moving these packages.
+
+The measurements have no other host-package inputs: the guest firmware, kernel
+and rootfs come from the dstack image directory. `pgrep -af qemu-system-x86_64`
+shows the CVM started with `-bios .../images/dstack-0.5.8/ovmf.fd`,
+`-kernel .../bzImage` and `-drive file=.../rootfs.img.verity`. The host's own
+`ovmf` and `qemu-efi-*` are held above as PPA members, but nothing measured
+comes from them.
+
+Updating any of it is then explicit:
+
+```bash
+sudo apt-mark unhold $PPA_PKGS
+sudo apt-get install $PPA_PKGS
+sudo apt-mark hold $PPA_PKGS
+```
+
+A QEMU change needs its new measurements approved on-chain first (see
+[OS Measurement Voting](#os-measurement-voting)). A microcode change means
+redeploying the CVM, so back up the key shares and follow
+[TDX platform TCB status](../tdx-tcb-status.md).
+
+##### Leave the TDX PPAs' apt priority intact
+
+`setup-tdx-common` installs two pieces per PPA that only work together: a
+`Pin-Priority: 4000` file in `/etc/apt/preferences.d/`, and a
+`99unattended-upgrades-kobuk-*` file in `/etc/apt/apt.conf.d/` adding the PPA to
+`Unattended-Upgrade::Allowed-Origins` with `Allow-downgrade "true"`. Keep both:
+
+```bash
+apt-config dump | grep -c kobuk            # expect 2
+ls /etc/apt/preferences.d/ | grep -c kobuk # expect 2
+```
+
+Removing a PPA from `Allowed-Origins` does not make unattended-upgrades ignore
+it. It stamps that repository with a never-install pin (-32768), overriding the
+4000, after which the Ubuntu archive at priority 500 wins and any archive
+version sorting above the installed `+tdx` one silently replaces it. Together
+with the holds above, the archive cannot take a package off the PPA and the PPA
+cannot move one on its own.
+
+Audit for drift after any work on the TDX stack, such as re-running
+`setup-tdx-host.sh`:
+
+```bash
+apt-get -s install --allow-downgrades $PPA_PKGS | grep -c '^Inst'   # 0 = in sync
+```
+
+A non-zero count means something pulled a TDX package onto an archive build.
+Dropping `-s` puts it back, since the 4000 pin already makes the PPA build the
+candidate.
+
+##### Watch which kernel you boot
+
+A TDX host usually has `linux-image-generic` installed next to the PPA's
+`linux-image-intel`, and `canonical/tdx` leaves GRUB on `GRUB_DEFAULT=saved`
+with `GRUB_SAVEDEFAULT=true` (`/etc/default/grub.d/99-tdx-kernel.cfg`), so the
+default is whichever entry booted last. One manual boot of another entry becomes
+permanent, and the host can come back up without TDX host support:
+
+```bash
+uname -r   # expect the -intel kernel
+```
+
+Check it after every reboot. How to make it deterministic (a pinned
+`saved_entry`, an explicit `GRUB_DEFAULT`, or dropping the generic kernel) is
+left to your setup.
+
 ## MPC Node Setup and Deployment
 
 This section will describe how to configure and deploy your MPC node inside a CVM.
@@ -947,6 +1104,37 @@ rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro"
 kind = "header"
 name = "x-token"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+# Testnet deployments verify against Solana devnet.
+[mpc_node_config.node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
+[mpc_node_config.node.foreign_chains.solana.providers.public]
+rpc_url = "https://api.devnet.solana.com"
+
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy]
+rpc_url = "https://solana-devnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.solana-devnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.fogo]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"
+
+[mpc_node_config.node.foreign_chains.fogo.providers.public]
+rpc_url = "https://testnet.fogo.io"
 ```
 
 **Mainnet:**
@@ -1054,6 +1242,36 @@ rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
 kind = "header"
 name = "x-token"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+
+[mpc_node_config.node.foreign_chains.solana.providers.public]
+rpc_url = "https://api.mainnet-beta.solana.com"
+
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy]
+rpc_url = "https://solana-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.solana-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.fogo]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"
+
+[mpc_node_config.node.foreign_chains.fogo.providers.public]
+rpc_url = "https://mainnet.fogo.io"
 ```
 
 ### Preparing a Docker Compose File
@@ -1134,15 +1352,7 @@ deployment shapes:
 
 ---
 
-#### Required Ports
-
-| Port   | Purpose                                                                 |
-|--------|-------------------------------------------------------------------------|
-| **80** | Node-to-node communication (port override convention)                   |
-| **24567** | Decentralized state sync                                             |
-| **8080** | Debug and telemetry collection, plus the `/public_data` endpoint       |
-| **3030** | Debug and telemetry collection                                         |
-| **8079** | Migration port                    |
+See [Required ports](../node-requirements.md#ports).
 
 ### Configuring and Starting the MPC Binary in a CVM
 
@@ -1428,7 +1638,7 @@ This section shows how to add the MPC node's public key (from the previous secti
   it cannot transfer funds or call other contracts.
 
   > **Why allow all methods instead of an explicit list?** The set of methods an
-  > MPC node must call changes across releases (e.g. `register_foreign_chain_config`
+  > MPC node must call changes across releases (e.g. `register_foreign_chains_config`
   > was added for foreign-chain support). A hand-maintained method list silently
   > drifts out of date, and the node then fails — with no obvious error — on any
   > new method the key was never granted. Allowing all methods on the contract
@@ -1506,7 +1716,7 @@ key may call **all** methods on that contract.
 If your node's key was previously added with a restricted `method_names` list
 (e.g. an older guide granted an explicit list), the node will fail — with no
 obvious error — on any contract method that was not in that list. A symptom of
-this is the node being unable to call `register_foreign_chain_config`, so the
+this is the node being unable to call `register_foreign_chains_config`, so the
 contract reports no foreign chains supported by your node.
 
 Access-key permissions are **immutable** in NEAR: you cannot edit an existing
@@ -1819,17 +2029,20 @@ The contract will retry with a fresh attempt; repeated failures need investigati
 
 ## Upgrades
 
-There are three types of upgrades, with different frequencies and operator effort:
+There are four types of upgrades, with different frequencies and operator effort:
 
 | Upgrade Type | Frequency | Operator Effort | Sealing Key Changes |
 | :--- | :--- | :--- | :--- |
 | MPC node image | High (~monthly) | Vote + restart CVM | No |
 | Launcher / CVM | Low | Vote + deploy new CVM + migrate key shares | Yes |
 | Host BIOS / microcode / TDX module | Whenever Intel publishes a TCB recovery | Vendor firmware update + reboot + deploy a new CVM and move the key shares into it | Yes (microcode moves CPUSVN) |
+| Host OS packages | Continuous (unattended security upgrades) | None, once configured | No, the packages that would move it are held |
 
 When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
 The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](../tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
+
+The fourth type is the routine patching of the host itself, which should stay automatic and should never touch a running CVM. Configure it once as described in [Host Package Upgrades](#4-host-package-upgrades); after that it needs no coordination with the rest of the network.
 
 ## MPC Node Image Upgrade
 
@@ -1874,7 +2087,7 @@ node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721
 node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
-The `node manifest digest` is what you vote for. When submitting the `code_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
+The `node manifest digest` is what you vote for. When submitting the `mpc_node_manifest_digest` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 
@@ -1885,15 +2098,15 @@ The `node manifest digest` is what you vote for. When submitting the `code_hash`
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
-Set `MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
+Set `MPC_NODE_MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
 
 ```bash
-MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+MPC_NODE_MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
-  vote_code_hash \
-  json-args "{\"code_hash\": \"$MANIFEST_DIGEST\"}" \
+  vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1922,13 +2135,13 @@ Returns the list of currently-accepted image hashes, most recent first.
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet \
-  code_hash_votes \
+  mpc_node_manifest_digest_votes \
   json-args '{}' \
   network-config testnet \
   now
 ```
 
-Shows per-participant votes so you can see how many more are needed to reach threshold.
+Shows the voters grouped by the image hash they voted for. May include former participants' votes, which don't count toward the threshold.
 
 ### Update the MPC Node
 

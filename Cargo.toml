@@ -46,7 +46,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.15.0"
+version = "3.16.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -149,7 +149,7 @@ frost-ed25519 = { version = "3.0.0", default-features = false }
 frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
 futures-lite = "2.6.1"
-gcloud-sdk = { version = "0.31.0", default-features = false, features = [
+gcloud-sdk = { version = "0.32.0", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "google-rpc",
     "tls-webpki-roots",
@@ -165,12 +165,9 @@ hyper-util = { version = "0.1.20", features = ["tokio"] }
 inferno = "0.12"
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.15.0"
-# Pinned to the 0.4.x line so it stays compatible with `tikv-jemalloc-ctl 0.5`
-# (and therefore `tikv-jemalloc-sys 0.5`, which is what `librocksdb-sys 0.11`
-# brings into the dep graph via `nearcore`'s `near-store`). Bumping past 0.5.x
-# would require also bumping that transitive rocksdb to >= 0.23 to avoid a
-# `links = "jemalloc"` collision.
-jemalloc_pprof = "0.4.2"
+# Must stay on the `tikv-jemalloc-sys` version that nearcore's rocksdb pulls in
+# (`links = "jemalloc"` permits one per graph); bump alongside the nearcore pin.
+jemalloc_pprof = "0.8.2"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 keccak = "0.1.5"
@@ -179,7 +176,7 @@ lru = "0.18.0"
 # Re-exported by `jemalloc_pprof` (workspace sibling). Used to embed runtime
 # binary mappings into emitted pprof profiles so `pprof` can symbolicate
 # addresses through ASLR.
-mappings = "0.5"
+mappings = "0.7"
 mockall = "0.15.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"
@@ -192,7 +189,7 @@ near-crypto-public = { version = "0.37.3", package = "near-crypto" }
 near-gas = "0.3.6"
 near-jsonrpc-client = "0.22.0"
 near-jsonrpc-primitives = "0.37.3"
-near-kit = { version = "0.17.0", default-features = false, features = ["rpc"] }
+near-kit = { version = "0.18.0", default-features = false, features = ["rpc"] }
 near-primitives = "0.37.3"
 near-sandbox = "0.3.15"
 near-sdk = { version = "5.29.0", features = ["legacy", "unstable"] }
@@ -204,10 +201,8 @@ pprof = { version = "0.15.0", features = [
     "cpp",
     "flamegraph",
 ], default-features = false }
-# `pprof_util 0.4.x` shares the `tikv-jemalloc-ctl 0.5` constraint with
-# `jemalloc_pprof 0.4.2`; needed to render heap dumps as flamegraphs in-process
-# since 0.4.x has no built-in `dump_flamegraph`.
-pprof_util = "0.4"
+# Same `tikv-jemalloc-sys` constraint as `jemalloc_pprof`.
+pprof_util = "0.8"
 proc-macro2 = "1.0"
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
@@ -216,7 +211,10 @@ reddsa = { version = "0.5.2", default-features = false, features = ["frost"] }
 regex = "1.12.3"
 reqwest = { version = "0.13.3", features = ["multipart", "json"] }
 rmp-serde = "1.3.1"
-rstest = { version = "0.26.1" }
+# Must resolve to the same `librocksdb-sys` as nearcore's `near-store`
+# (`links = "rocksdb"` permits one per graph); bump alongside the nearcore pin.
+rocksdb = "0.24.0"
+rstest = { version = "0.27.0" }
 rustls = { version = "0.23.39", default-features = false, features = [
     "ring",
     "std",
@@ -232,14 +230,14 @@ sha3 = "0.10.8"
 signature = "2.2.0"
 socket2 = "0.6.3"
 subtle = "2.6.1"
-sui-rpc = "0.3.1"
-sui-sdk-types = "0.3.1"
+sui-rpc = "0.4.0"
+sui-sdk-types = "0.4.0"
 syn = "3.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
 thiserror = "2.0.18"
 thread-priority = "3.0.0"
-tikv-jemallocator = { version = "0.5.4", features = [
+tikv-jemallocator = { version = "0.6.0", features = [
     "profiling",
     "unprefixed_malloc_on_supported_platforms",
 ] }
@@ -260,34 +258,31 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
-wycheproof = { version = "0.6", default-features = false, features = [
+wycheproof = { version = "0.7", default-features = false, features = [
     "ecdsa",
     "eddsa",
 ] }
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
-zstd = "0.13.3"
+zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
 httpmock = "0.8.2"
 
 prometheus = { version = "0.14.0", default-features = false }
-
-# TODO(#690): This cannot be upgraded until nearcore does
-rocksdb = "0.21.0"
 
 # This version needs to be exactly the same as in `near_sdk::schemars`
 schemars = "0.8.22"

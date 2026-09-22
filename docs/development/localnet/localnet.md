@@ -258,7 +258,11 @@ export SAM_P2P_KEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_publi
 export MPC_HOST=localhost
 ```
 
-With these set, we can prepare the arguments for the init call.
+With these set, we can prepare the arguments for the init call. Besides the
+participants, they name `tee-verifier.test.near` as the trusted TEE verifier.
+The nodes here submit mock attestations, which the contract verifies itself, so
+that account only has to exist once real Dstack attestations are in play. Step 6
+deploys it.
 
 ```shell
 envsubst < docs/development/localnet/args/init.json > /tmp/init_args.json
@@ -295,7 +299,7 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/development/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-## 6. (Optional) Deploy and vote in the TEE verifier
+## 6. (Optional) Deploy the TEE verifier
 
 The stateless `tee-verifier` contract exposes `verify_quote`, which the MPC
 contract calls to attest node quotes. Build it with `--no-abi` (its types don't
@@ -316,20 +320,9 @@ near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogene
 near contract deploy tee-verifier.test.near use-file "$TEE_VERIFIER_PATH" without-init-call network-config mpc-localnet sign-with-keychain send
 ```
 
-Now have Frodo and Sam vote it in. `expected_code_hash` commits every voter to
-the same audited WASM; the contract only compares voters' hashes against each
-other, not against the deployed bytes:
-
-```shell
-export TEE_VERIFIER_HASH=$(sha256sum "$TEE_VERIFIER_PATH" | cut -d' ' -f1)
-
-near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
-
-near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
-```
-
-Once both votes agree, the change is applied. Read the resolved verifier; it
-returns `tee-verifier.test.near`:
+The MPC contract already trusts this account since the init call named it; a
+different verifier can later be voted in via `vote_tee_verifier_change`. Read the
+trusted verifier; it returns `tee-verifier.test.near`:
 
 ```shell
 near contract call-function as-read-only mpc-contract.test.near tee_verifier_account_id json-args {} network-config mpc-localnet now
@@ -480,6 +473,36 @@ near contract call-function as-transaction mpc-contract.test.near verify_foreign
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_sui.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+#### Solana
+
+Solana providers prune historical transactions, so `verify_foreign_tx_solana.json` carries a
+placeholder `tx_id` instead of a pinned one (this is also why the launch script's smoke loop skips
+Solana). Patch in a fresh finalized signature first — the extractor reads an account, not the
+transaction's contents, so any recent successful transaction works as the anchor.
+
+The account it reads is the rent sysvar, chosen because its data never changes. `AccountState`
+observes an account at query time, so every node must see the same bytes: point it at an account
+that mutates and the nodes derive different payload hashes and the request simply times out.
+
+```shell
+# The mint sees a steady stream of *failing* transactions, so filter on `err` rather than
+# taking the most recent signature: a failed anchor makes the node answer TransactionFailed.
+SIG=$(curl -s https://api.mainnet-beta.solana.com -X POST -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getSignaturesForAddress","params":["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",{"limit":50,"commitment":"finalized"}]}' \
+  | jq -r 'first(.result[] | select(.err == null) | .signature)')
+TX_HEX=$(python3 -c 'import sys
+alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+n = 0
+for c in sys.argv[1]:
+    n = n * 58 + alphabet.index(c)
+print(n.to_bytes(64, "big").hex())' "$SIG")
+jq --arg tx "$TX_HEX" '.request.request.Solana.tx_id = $tx' docs/development/localnet/args/verify_foreign_tx_solana.json > /tmp/verify_foreign_tx_solana.json
+```
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args /tmp/verify_foreign_tx_solana.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 8. Clean Up

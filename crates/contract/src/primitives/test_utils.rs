@@ -2,7 +2,7 @@ use super::domain::DomainRegistry;
 use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
-        key_state::AuthenticatedParticipantId,
+        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
         participants::{ParticipantInfo, Participants},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
@@ -96,6 +96,10 @@ pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
     .unwrap()
 }
 
+pub fn bogus_tee_verifier_account_id() -> AccountId {
+    "tee-verifier.near".parse().unwrap()
+}
+
 #[test]
 fn test_random_public_key() {
     let pk1 = bogus_ed25519_near_public_key();
@@ -125,7 +129,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: format!("https://www.near{}.com", i),
+            url: format!("https://www.near{}.com", i).try_into().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
         },
     )
@@ -164,6 +168,16 @@ pub fn authenticate_as(
     ctx.signer_account_id(account_id.clone());
     testing_env!(ctx.build());
     AuthenticatedParticipantId::new(participants).unwrap()
+}
+
+pub fn authenticate_account_as(
+    account_id: &AccountId,
+    participants: &Participants,
+) -> AuthenticatedAccountId {
+    let mut ctx = VMContextBuilder::new();
+    ctx.signer_account_id(account_id.clone());
+    testing_env!(ctx.build());
+    AuthenticatedAccountId::new(participants).unwrap()
 }
 
 /// Build `n` participants and pre-authenticate each, returning the set alongside

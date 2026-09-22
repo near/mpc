@@ -86,6 +86,7 @@ fn bitcoin_only_config(rpc_url: &str) -> ForeignChainsConfig {
         sui: None,
         avalanche: None,
         adi: None,
+        fogo: None,
     }
 }
 

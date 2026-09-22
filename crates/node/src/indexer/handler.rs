@@ -4,6 +4,7 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
+use chain_gateway::account_id_compat::from_near_internal;
 use chain_gateway::event_subscriber::block_events::BlockContext;
 use futures::StreamExt;
 use mpc_primitives::domain::DomainId;
@@ -178,12 +179,14 @@ async fn handle_message(
                     SIGN => {
                         if let Some((signature_id, sign_args)) =
                             try_get_sign_args(&receipt, next_receipt_id, args, method_name)
+                            && let Some(predecessor_id) =
+                                try_convert_predecessor_id(&receipt, method_name)
                         {
                             signature_requests.push(SignatureRequestFromChain {
                                 signature_id,
                                 receipt_id: receipt.receipt_id,
                                 request: sign_args,
-                                predecessor_id: receipt.predecessor_id.clone(),
+                                predecessor_id,
                             });
                             metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                         }
@@ -303,6 +306,24 @@ fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArg
     Some((args, method_name))
 }
 
+fn try_convert_predecessor_id(receipt: &ReceiptView, method_name: &str) -> Option<AccountId> {
+    match from_near_internal(&receipt.predecessor_id) {
+        Ok(account_id) => Some(account_id),
+        Err(err) => {
+            tracing::error!(
+                target: "mpc",
+                %err,
+                receipt_id = %receipt.receipt_id,
+                predecessor_id = %receipt.predecessor_id,
+                "skipping `{method_name}`: predecessor is not a valid account ID for this \
+                 workspace's `near-account-id`",
+            );
+            metrics::MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS.inc();
+            None
+        }
+    }
+}
+
 /// If the executor for `execution_outcome` matches `expected_executor_id`,
 /// then return the SuccessReceiptId if existing. Otherwise, return None.
 fn try_extract_next_receipt_id(
@@ -310,7 +331,7 @@ fn try_extract_next_receipt_id(
     expected_executor_id: &AccountId,
 ) -> Option<CryptoHash> {
     let outcome = &execution_outcome.outcome;
-    if &outcome.executor_id != expected_executor_id {
+    if outcome.executor_id.as_str() != expected_executor_id.as_str() {
         return None;
     }
     let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
@@ -366,10 +387,12 @@ fn try_get_ckd_args(
         }
     };
 
+    let predecessor_id = try_convert_predecessor_id(receipt, expected_name)?;
+
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
         ckd_args.request.domain_id,
-        &receipt.predecessor_id,
+        &predecessor_id,
         &ckd_args.request.derivation_path,
     );
 
@@ -427,7 +450,7 @@ fn try_get_verify_foreign_tx_args(
 }
 
 fn try_get_request_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) -> Option<CKDId> {
-    if &receipt.receiver_id != mpc_contract_id {
+    if receipt.receiver_id.as_str() != mpc_contract_id.as_str() {
         None
     } else {
         Some(receipt.receipt_id)

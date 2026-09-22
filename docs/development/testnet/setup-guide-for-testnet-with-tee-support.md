@@ -66,7 +66,13 @@ export ROOT_ACCOUNT=${MPC_NETWORK_NAME}.testnet
 export MPC_CONTRACT_ACCOUNT=${MPC_NETWORK_NAME}_mpc.testnet
 export FRODO_ACCOUNT=${MPC_NETWORK_NAME}_frodo.testnet
 export SAM_ACCOUNT=${MPC_NETWORK_NAME}_sam.testnet
+export TEE_VERIFIER_ACCOUNT=${MPC_NETWORK_NAME}_verifier.testnet
 ```
+
+`TEE_VERIFIER_ACCOUNT` is the TEE verifier contract the MPC contract calls to verify the
+nodes' Dstack attestations. Deploy and lock one following steps 1-5 of
+[Deploy the TEE verifier contract](../deploy-tee-verifier.md); no vote is needed, since the
+init call below names it.
 
 
 Since the faucet gives only **10 NEAR per account** (and the MPC contract storage costs **15 NEAR**),
@@ -258,7 +264,7 @@ Add keys to each NEAR account:
 The keys are granted access to all methods on the MPC contract (empty
 `--function-names` list) while staying scoped to it via `--contract-account-id`.
 This avoids the keys breaking whenever a release adds a method the node must call
-(e.g. `register_foreign_chain_config`).
+(e.g. `register_foreign_chains_config`).
 
 ```bash
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
@@ -301,13 +307,14 @@ Example:
 
 ```json
 {
+  "tee_verifier_account_id": "yourusername-test_verifier.testnet",
   "parameters": {
     "threshold": 2,
     "participants": {
       "next_id": 2,
       "participants": [
         [
-          "barak_tee_test1_frodo.testnet",
+          "yourusername-test_frodo.testnet",
           0,
           {
             "tls_public_key": "ed25519:6CeuXPt6qXtXRHVb5C4USZAyQcg65LXJvebPyCJewaN1",
@@ -315,7 +322,7 @@ Example:
           }
         ],
         [
-          "barak_tee_test1_sam.testnet",
+          "yourusername-test_sam.testnet",
           1,
           {
             "tls_public_key": "ed25519:B2pHHn9Kr2GZhDn85VP3vGUccJK7Haekcmy5JRBScUn3",
@@ -374,14 +381,14 @@ docker start mpc-node
 
 Hash format: 00006c1059cc0219005b21956a4df8238b0cc33ad559a578a63169de4e28c81e  (no prefix)
 ```bash
-export CODE_HASH=<hash used to start the nodes>
+export MPC_NODE_MANIFEST_DIGEST=<hash used to start the nodes>
 ```
 
 ### Frodo votes
 
 ```bash
-near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" prepaid-gas '100.0 Tgas' \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' sign-as $FRODO_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```
@@ -389,8 +396,8 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash
 ### Sam votes
 
 ```bash
-near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" prepaid-gas '100.0 Tgas' \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' sign-as $SAM_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```

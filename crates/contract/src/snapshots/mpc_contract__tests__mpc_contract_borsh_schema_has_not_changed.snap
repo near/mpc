@@ -21,12 +21,6 @@ BorshSchemaContainer {
                 "ProposedGovernanceThresholdParameters",
             ],
         },
-        "(AuthenticatedParticipantId, DockerImageHash)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "DockerImageHash",
-            ],
-        },
         "(AuthenticatedParticipantId, LauncherVoteAction)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -132,11 +126,6 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)",
         },
-        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, DockerImageHash)",
-        },
         "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -169,15 +158,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "CodeHashesVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>",
-                    ),
-                ],
-            ),
+        "BoundedString<256>": Sequence {
+            length_width: 4,
+            length_range: 0..=256,
+            elements: "u8",
         },
         "Config": Struct {
             fields: NamedFields(
@@ -693,10 +677,6 @@ BorshSchemaContainer {
                         "ProposedUpdates",
                     ),
                     (
-                        "node_foreign_chain_support",
-                        "SupportedForeignChainsByNode",
-                    ),
-                    (
                         "config",
                         "Config",
                     ),
@@ -718,7 +698,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "tee_verifier_account_id",
-                        "Option<AccountId>",
+                        "AccountId",
                     ),
                     (
                         "tee_verifier_votes",
@@ -751,21 +731,6 @@ BorshSchemaContainer {
                     ),
                 ],
             ),
-        },
-        "Option<AccountId>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "AccountId",
-                ),
-            ],
         },
         "Option<EpochId>": Enum {
             tag_width: 1,
@@ -824,7 +789,7 @@ BorshSchemaContainer {
                 [
                     (
                         "url",
-                        "String",
+                        "BoundedString<256>",
                     ),
                     (
                         "tls_public_key",
@@ -1132,16 +1097,6 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "u8",
         },
-        "SupportedForeignChainsByNode": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "foreign_chain_support_by_node",
-                        "IterableMap",
-                    ),
-                ],
-            ),
-        },
         "TeeState": Struct {
             fields: NamedFields(
                 [
@@ -1155,7 +1110,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "votes",
-                        "CodeHashesVotes",
+                        "Votes<AuthenticatedAccountId>",
                     ),
                     (
                         "launcher_votes",
@@ -1250,6 +1205,20 @@ BorshSchemaContainer {
                     (
                         "values",
                         "IndexMap",
+                    ),
+                ],
+            ),
+        },
+        "Votes<AuthenticatedAccountId>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_voter",
+                        "IterableMap",
+                    ),
+                    (
+                        "votes_by_proposal",
+                        "IterableMap",
                     ),
                 ],
             ),

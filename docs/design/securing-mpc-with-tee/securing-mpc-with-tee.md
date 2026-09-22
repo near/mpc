@@ -371,7 +371,7 @@ pub struct Contract {
     ///If the vote threshold is reached and the new Docker image hash
     ///   is allowed by the TEE's RTMR3 measurement, the proposed hash is added
     ///   to the whitelist of approved MPC Docker images.
-    pub fn vote_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error>
+    pub fn vote_mpc_node_manifest_digest(&mut self, mpc_node_manifest_digest: NodeImageHash) -> Result<(), Error>
 
     ///Returns all whitelisted Docker image hashes that have been approved
     ///     by the DAO and verified by the TEE.
@@ -413,7 +413,7 @@ The private key never leaves the CVM. While the public key can be exported from 
 
 The Operator will then register the node's account key as an additional **function-call access key** on the node's NEAR account, scoped to the MPC signer contract (`--contract-account-id`) with an `unlimited` allowance and an **empty method-names list**. An empty list grants the key access to **all** methods on the MPC contract, while keeping it unable to transfer funds or call any other contract.
 
-We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chain_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
+We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chains_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
 
 > **⚠️ Security tradeoff:** Allowing all methods widens the *in-contract* blast
 > radius — a compromised node key can now call **any** contract method (e.g.
@@ -535,7 +535,7 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with two placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash and `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash.
 
-Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_code_hash`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
+Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_mpc_node_manifest_digest`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
 A valid Docker compose file to start the MPC node might look like the following
 
 ```yaml

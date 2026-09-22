@@ -6,20 +6,11 @@ pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::transaction_sender::{AccountCaller, SubmitFunctionCall, TransactionSigner};
 use near_account_id::AccountId;
-use near_contract_transport::{HasPollInterval, Json, ViewArgs, ViewContract, WatchContractState};
+use near_contract_transport::{HasPollInterval, ViewContract, WatchContractState};
 use near_mpc_contract_interface::client::MpcContractHandle;
-use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-};
-use near_mpc_contract_interface::types::{
-    AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey,
-};
+use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
-
-use mpc_primitives::hash::LauncherDockerComposeHash;
-
-type AllowedDockerImageHashesResponse = Vec<AllowedMpcDockerImageHash>;
 
 /// Shared TEE attestation lifecycle context.
 ///
@@ -137,21 +128,9 @@ async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 
     tx: watch::Sender<AllowedTeeHashes>,
     cancel: CancellationToken,
 ) {
-    let mut image_sub = chain_gateway
-        .view::<AllowedDockerImageHashesResponse, Json>(
-            governance_contract.clone(),
-            ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES),
-        )
-        .subscribe()
-        .await;
-
-    let mut launcher_sub = chain_gateway
-        .view::<Vec<LauncherDockerComposeHash>, Json>(
-            governance_contract,
-            ViewArgs::no_args(ALLOWED_LAUNCHER_COMPOSE_HASHES),
-        )
-        .subscribe()
-        .await;
+    let handle = MpcContractHandle::new(chain_gateway, governance_contract);
+    let mut image_sub = handle.allowed_docker_image_hashes().subscribe().await;
+    let mut launcher_sub = handle.allowed_launcher_compose_hashes().subscribe().await;
 
     let (image, launcher) = match (image_sub.latest(), launcher_sub.latest()) {
         (Ok(image), Ok(launcher)) => (image, launcher),

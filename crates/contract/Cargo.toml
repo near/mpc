@@ -132,14 +132,17 @@ mpc-contract = { workspace = true, features = [
 ] }
 near-abi = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
+near-jsonrpc-client = { workspace = true }
+near-jsonrpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
+near-primitives = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 rstest = { workspace = true }
 sha2 = { workspace = true }
 signature = { workspace = true }
-test-utils = { workspace = true }
+test-utils = { workspace = true, features = ["sandbox"] }
 threshold-signatures = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

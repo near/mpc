@@ -28,6 +28,9 @@ Subcontracting the day-to-day operation of *your* node is fine, but the same exp
 ### Keep your operator account isolated
 Use your MPC operator account only for running the node — don't call other smart contracts with it. This keeps it isolated and adds defense-in-depth against malicious contracts forwarding requests to the signer contract.
 
+## Requirements
+See [MPC node requirements](node-requirements.md) for bandwidth, memory, cores, disk, ports and public IP. TEE hosts have additional requirements, listed in the [TDX guide](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prerequisites-and-requirements).
+
 ## Staying reachable
 We have a shared Slack channel for all node operators. We expect you to be available there to coordinate network upgrades and respond to incidents.
 
@@ -59,6 +62,9 @@ Follow our [reproducible builds guide](./reproducible-builds.md) to verify the d
 
 ### Host firmware upgrades
 For TEE nodes, keeping the host's BIOS, CPU microcode and TDX module current is part of the job, and it isn't something we can coordinate for you: Intel raises the TCB bar on its own schedule, historically about every six months, and a platform below it has its attestation rejected until the host is updated. Check where your host stands and update it following [TDX platform TCB status](./tdx-tcb-status.md). Doing this proactively, rather than after an attestation failure, is what keeps the network from losing several participants at once.
+
+### Host package upgrades
+Keep unattended security upgrades enabled on the host: we want it as well patched as any other production server. Configure them so they cannot disturb a running CVM, following [Host Package Upgrades](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#4-host-package-upgrades).
 
 ### Contract upgrades & voting
 Contract upgrades happen through voting. Just like with nodes, reproduce the contract build to verify the code before voting.

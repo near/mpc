@@ -1,12 +1,12 @@
 # Cloud Providers Supporting Bare Metal Servers with Intel TDX
 
-**Status:** ARCHIVED
+_Last updated: September 14, 2026_
 
-_Last updated: August 31, 2025_
-
-This document lists cloud providers that currently support bare metal servers compatible with Intel TDX.
+This document lists some cloud providers that currently support bare metal servers compatible with Intel TDX. The list is not exhaustive.
 
 > **Disclaimer**: The pricing information provided here is for reference only. It is based on publicly available sources at the time of writing. Prices are estimates, subject to change by the providers, and are not controlled or guaranteed by NEAR.
+
+> **Note**: Prices below were surveyed in August 2025 and have not been re-verified since. Providers added after that survey are listed without pricing.
 
 ---
 
@@ -51,3 +51,27 @@ This document lists cloud providers that currently support bare metal servers co
 - **Plan**: Custom Bare Metal Server
 - **Details**: Provides fully customizable bare metal solutions tailored for performance, scalability, and security.
 - **Link**: [Custom Bare Metal Server Quote | Hivelocity Hosting](https://www.hivelocity.net)
+
+---
+
+## Worldstream
+- **Plan**: Custom dedicated server
+- **Details**: Dutch provider with TDX-capable dedicated servers; configuration is quoted per request.
+- **Price**: not surveyed — request a quote.
+- **Link**: [Worldstream](https://www.worldstream.com)
+
+---
+
+## WebNX
+- **Plan**: Custom dedicated server
+- **Details**: US provider (Ogden, Utah and Los Angeles) offering TDX-capable dedicated servers.
+- **Price**: not surveyed — request a quote.
+- **Link**: [WebNX](https://www.webnx.com)
+
+---
+
+## DataPacket
+- **Plan**: Custom dedicated server
+- **Details**: Bandwidth-oriented provider with TDX-capable dedicated servers across its global sites.
+- **Price**: not surveyed — request a quote.
+- **Link**: [DataPacket](https://www.datapacket.com)

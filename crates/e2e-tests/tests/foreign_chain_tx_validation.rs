@@ -248,12 +248,6 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
         .await
         .expect("timed out waiting for all chains to become available");
 
-    // TODO(#3630): drop the legacy view once deprecated API is dropped.
-    let supported = cluster
-        .view_foreign_chains_supported_by_contract()
-        .await
-        .expect("failed to view supported chains");
-    assert_eq!(*supported, expected_chains, "supported chains mismatch");
     let allowed = cluster
         .view_allowed_foreign_chain_providers()
         .await
@@ -286,7 +280,9 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
     }
 }
 
-fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) -> anyhow::Result<()> {
+fn verify_foreign_tx_response(
+    outcome: &near_kit::rpc::FinalExecutionOutcome,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
         outcome.is_success(),
         "verify_foreign_transaction failed: {:?}",

@@ -5,7 +5,9 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::near;
 use std::collections::BTreeSet;
 
-pub use near_mpc_contract_interface::types::ParticipantId;
+pub use near_mpc_contract_interface::types::{
+    MAX_PARTICIPANT_URL_BYTES, ParticipantId, ParticipantUrl,
+};
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -14,7 +16,7 @@ pub mod hpke {
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
-    pub url: String,
+    pub url: ParticipantUrl,
     /// The Ed25519 public key used for P2P TLS.
     pub tls_public_key: Ed25519PublicKey,
 }
@@ -81,13 +83,16 @@ impl Participants {
     /// Validates that the fields are coherent:
     ///  - All participant IDs are unique.
     ///  - All account IDs are unique.
+    ///  - All TLS public keys are unique.
     ///  - The next_id is greater than all participant IDs.
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
-        for (acc_id, pid, _) in &self.participants {
+        let mut tls_public_keys: BTreeSet<&Ed25519PublicKey> = BTreeSet::new();
+        for (acc_id, pid, info) in &self.participants {
             accounts.insert(acc_id.clone());
             ids.insert(*pid);
+            tls_public_keys.insert(&info.tls_public_key);
             if self.next_id.get() <= pid.get() {
                 return Err(InvalidCandidateSet::ParticipantIdNotLessThanNextId {
                     id: pid.get(),
@@ -102,19 +107,14 @@ impl Participants {
         if accounts.len() != self.len() {
             return Err(InvalidCandidateSet::DuplicateAccountIds.into());
         }
+        if tls_public_keys.len() != self.len() {
+            return Err(InvalidCandidateSet::DuplicateTlsPublicKeys.into());
+        }
         Ok(())
     }
 
-    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
-        self.participants
-            .iter()
-            .any(|(a_id, _, _)| a_id == account_id)
-    }
-
-    pub fn is_participant_given_participant_id(&self, participant_id: &ParticipantId) -> bool {
-        self.participants
-            .iter()
-            .any(|(_, p_id, _)| p_id == participant_id)
+    pub fn is_participant<K: IdentifiesParticipant>(&self, id: &K) -> bool {
+        id.identifies_participant_in(self)
     }
 
     pub fn init(
@@ -125,6 +125,16 @@ impl Participants {
             next_id,
             participants,
         }
+    }
+
+    /// The account registered under `tls_public_key`, if any. The contract keys TEE
+    /// attestations and foreign-chain configuration by TLS public key, so callers that
+    /// introduce a key into the set use this to keep that mapping injective.
+    pub fn account_with_tls_key(&self, tls_public_key: &Ed25519PublicKey) -> Option<&AccountId> {
+        self.participants
+            .iter()
+            .find(|(_, _, info)| info.tls_public_key == *tls_public_key)
+            .map(|(account_id, _, _)| account_id)
     }
 
     pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
@@ -203,16 +213,69 @@ impl Participants {
     }
 }
 
+pub trait IdentifiesParticipant {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool;
+}
+
+impl IdentifiesParticipant for AccountId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        participants
+            .participants
+            .iter()
+            .any(|(a_id, _, _)| a_id == self)
+    }
+}
+
+impl IdentifiesParticipant for ParticipantId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        participants
+            .participants
+            .iter()
+            .any(|(_, p_id, _)| p_id == self)
+    }
+}
+
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use crate::{
         errors::{Error, InvalidCandidateSet},
         primitives::{
             participants::{ParticipantId, Participants},
-            test_utils::{gen_accounts_and_info, gen_participant},
+            test_utils::{gen_accounts_and_info, gen_participant, gen_participants},
         },
     };
     use rand::Rng;
+
+    #[test]
+    fn validate__should_reject_participants_sharing_a_tls_public_key() {
+        // Given
+        let mut participants = gen_participants(3);
+        let shared_tls_key = participants.participants()[0].2.tls_public_key.clone();
+        participants.participants[2].2.tls_public_key = shared_tls_key;
+
+        // When
+        let result = participants.validate();
+
+        // Then
+        assert_eq!(
+            result.unwrap_err(),
+            Error::from(InvalidCandidateSet::DuplicateTlsPublicKeys)
+        );
+    }
+
+    #[test]
+    fn account_with_tls_key__should_find_the_holder_of_a_key() {
+        // Given
+        let participants = gen_participants(3);
+        let (expected_account, _, info) = participants.participants()[1].clone();
+
+        // When
+        let found = participants.account_with_tls_key(&info.tls_public_key);
+
+        // Then
+        assert_eq!(found, Some(&expected_account));
+    }
 
     #[test]
     fn test_participants() {
@@ -232,7 +295,7 @@ pub mod tests {
                 participants.id(account_id).unwrap(),
                 ParticipantId(idx as u32)
             );
-            assert!(participants.is_participant_given_account_id(account_id));
+            assert!(participants.is_participant(account_id));
         }
         assert_eq!(participants.len(), n);
         for i in 0..n {
