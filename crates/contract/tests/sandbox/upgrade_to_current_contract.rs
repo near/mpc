@@ -2,15 +2,16 @@
 
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, make_foreign_chain_available, propose_and_vote_contract_binary, submit_attestations,
+        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_account,
+        gen_accounts, init, make_foreign_chain_available, propose_and_vote_contract_binary,
+        submit_attestations,
     },
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
-            get_participants, get_state, get_tee_accounts, tee_verifier_account_id,
-            vote_add_launcher_hash, vote_tee_verifier_change,
+            get_participants, get_state, get_tee_accounts, prepay_and_submit_participant_info,
+            tee_verifier_account_id, vote_add_launcher_hash, vote_tee_verifier_change,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
@@ -229,6 +230,40 @@ async fn migrate__should_fail_when_no_tee_verifier_is_configured(
     Ok(())
 }
 
+/// Entries the upgrade under test has to carry across. Migration cost scales with this, and
+/// `stored_attestations` keeps entries for non-participants too, so it is sized past the real
+/// fleet (18 on mainnet, 19 on testnet when this was written) rather than at [`PARTICIPANT_LEN`].
+const STORED_ATTESTATION_ENTRIES: usize = 25;
+
+/// Tops the stored attestations up to `total` with entries owned by non-participants, the way a
+/// prospective node's submission would.
+async fn fill_stored_attestations(worker: &Worker<Sandbox>, contract: &Contract, total: usize) {
+    let mut accounts = Vec::with_capacity(total - PARTICIPANT_LEN);
+    for _ in PARTICIPANT_LEN..total {
+        accounts.push(gen_account(worker).await.0);
+    }
+
+    let submissions = accounts
+        .iter()
+        .enumerate()
+        .map(|(index, account)| async move {
+            let tls_key = dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]);
+            let result = prepay_and_submit_participant_info(
+                account,
+                contract,
+                &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+                &tls_key,
+            )
+            .await
+            .expect("submit_participant_info should not error");
+            assert!(result.is_success(), "filler submission failed: {result:?}");
+        });
+    futures::future::join_all(submissions).await;
+
+    let stored = get_tee_accounts(contract).await.unwrap();
+    assert_eq!(stored.len(), total, "stored attestation count");
+}
+
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
 /// can be upgraded to the [`current_contract`] binary using the proposal-and-vote flow.
 #[rstest]
@@ -244,6 +279,7 @@ async fn propose_upgrade_from_production_to_current_binary(
     let mpc_contract = worker.view_mpc(contract.id());
 
     submit_attestations(&contract, &accounts, &participants).await;
+    fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(

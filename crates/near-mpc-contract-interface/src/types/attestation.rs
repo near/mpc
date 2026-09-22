@@ -410,6 +410,7 @@ pub struct EventLog {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     const ATTESTED_AT_SECONDS: u64 = 1_800_000_000;
 
@@ -417,11 +418,33 @@ mod tests {
         VerifiedAttestation::Mock(MockAttestation::Valid)
     }
 
-    #[test]
-    fn get_attestation_response__should_read_a_stamped_response() {
+    /// The variant that ships. Its hash fields serialize as hex strings through a hand-written
+    /// impl, which `#[serde(untagged)]` replays out of a buffered `Content` rather than straight
+    /// off the wire.
+    fn dstack() -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(VerifiedDstackAttestation {
+            mpc_image_hash: [0x11; 32].into(),
+            launcher_compose_hash: [0x22; 32].into(),
+            expiry_timestamp_seconds: 1_800_604_800,
+            measurements: VerifiedMeasurements {
+                mrtd: [0x33; 48].into(),
+                rtmr0: [0x44; 48].into(),
+                rtmr1: [0x55; 48].into(),
+                rtmr2: [0x66; 48].into(),
+                key_provider_event_digest: [0x77; 48].into(),
+            },
+        })
+    }
+
+    #[rstest]
+    #[case::mock(mock())]
+    #[case::dstack(dstack())]
+    fn get_attestation_response__should_read_a_stamped_response(
+        #[case] attestation: VerifiedAttestation,
+    ) {
         // Given
         let response = serde_json::to_string(&StoredAttestation {
-            attestation: mock(),
+            attestation: attestation.clone(),
             attested_at_seconds: Some(ATTESTED_AT_SECONDS),
         })
         .unwrap();
@@ -430,15 +453,19 @@ mod tests {
         let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
 
         // Then
-        assert_eq!(parsed.attestation(), &mock());
+        assert_eq!(parsed.attestation(), &attestation);
         assert_eq!(parsed.attested_at_seconds(), Some(ATTESTED_AT_SECONDS));
     }
 
-    #[test]
-    fn get_attestation_response__should_read_an_entry_stored_before_the_timestamp_existed() {
+    #[rstest]
+    #[case::mock(mock())]
+    #[case::dstack(dstack())]
+    fn get_attestation_response__should_read_an_entry_stored_before_the_timestamp_existed(
+        #[case] attestation: VerifiedAttestation,
+    ) {
         // Given: an entry the migration left without an acceptance time
         let response = serde_json::to_string(&StoredAttestation {
-            attestation: mock(),
+            attestation: attestation.clone(),
             attested_at_seconds: None,
         })
         .unwrap();
@@ -447,20 +474,24 @@ mod tests {
         let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
 
         // Then
-        assert_eq!(parsed.attestation(), &mock());
+        assert_eq!(parsed.attestation(), &attestation);
         assert_eq!(parsed.attested_at_seconds(), None);
     }
 
-    #[test]
-    fn get_attestation_response__should_read_a_response_from_a_contract_without_the_timestamp() {
+    #[rstest]
+    #[case::mock(mock())]
+    #[case::dstack(dstack())]
+    fn get_attestation_response__should_read_a_response_from_a_contract_without_the_timestamp(
+        #[case] attestation: VerifiedAttestation,
+    ) {
         // Given: what a contract predating the stored timestamp returns
-        let response = serde_json::to_string(&mock()).unwrap();
+        let response = serde_json::to_string(&attestation).unwrap();
 
         // When
         let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
 
         // Then
-        assert_eq!(parsed.attestation(), &mock());
+        assert_eq!(parsed.attestation(), &attestation);
         assert_eq!(parsed.attested_at_seconds(), None);
     }
 }

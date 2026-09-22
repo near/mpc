@@ -237,12 +237,17 @@ mod tests {
         old.flush();
 
         // When
-        let migrated = migrate_stored_attestations(old);
+        let mut migrated = migrate_stored_attestations(old);
+        migrated.flush();
 
-        // Then
-        assert_eq!(migrated.len() as usize, node_ids.len());
+        // Then: read back the way the next contract call would — through a handle rebuilt from
+        // the borsh form, whose cache is empty — so the assertions come from storage and would
+        // catch the new map's writes being undone by the old map's removals.
+        let reread: IterableMap<dtos::Ed25519PublicKey, NodeAttestation> =
+            borsh::from_slice(&borsh::to_vec(&migrated).unwrap()).unwrap();
+        assert_eq!(reread.len() as usize, node_ids.len());
         for node_id in &node_ids {
-            let entry = migrated
+            let entry = reread
                 .get(&node_id.tls_public_key)
                 .expect("every entry survives the migration");
             assert_eq!(entry.node_id, *node_id);
