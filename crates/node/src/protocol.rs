@@ -289,9 +289,9 @@ impl MessageCounters {
 mod tests {
     use super::{MessageCounters, run_protocol};
     use crate::network::testing::{new_task_channel_for_test, run_test_clients};
+    use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind};
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::{ChannelId, MpcMessage, MpcMessageKind, MpcPeerMessage, UniqueId};
-    use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::primitives::{ChannelId, MpcMessage, MpcPeerMessage, UniqueId};
     use crate::tests::into_participant_ids;
     use crate::tracking;
     use std::collections::VecDeque;
