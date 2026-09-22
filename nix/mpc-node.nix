@@ -152,7 +152,7 @@ let
       ;
 
     strictDeps = true;
-    cargoProfile = "reproducible";
+    CARGO_PROFILE = "reproducible";
     cargoExtraArgs = "-p mpc-node --bin mpc-node --locked";
 
     nativeBuildInputs = [

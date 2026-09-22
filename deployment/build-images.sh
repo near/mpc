@@ -37,7 +37,7 @@ do
       ;;
     *)
       echo "Unknown parameter: $arg"
-      echo "Usage: $0 [--node] [--rust-launcher] [--push]"
+      echo "Usage: $0 [--node] [--node-gcp] [--rust-launcher] [--push]"
       exit 1
       ;;
   esac
