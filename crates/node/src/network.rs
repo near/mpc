@@ -554,13 +554,6 @@ pub struct TaskChannelComputationData {
     pub data: Vec<Vec<u8>>,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("received {kind} from participant {from}, who is not in the channel participant set")]
-pub struct ParticipantNotInChannelError {
-    pub from: ParticipantId,
-    pub kind: &'static str,
-}
-
 impl Drop for NetworkTaskChannel {
     fn drop(&mut self) {
         if let Some(drop) = self.drop.take() {
@@ -770,24 +763,23 @@ impl NetworkTaskChannel {
 
     /// Receives one message from the network and process it; that message may or may not be a
     /// computation message.
+    ///
+    /// A message from outside the channel's participant set is dropped rather than turned into an
+    /// error: letting it fail the computation would hand any excluded node the power to abort a
+    /// computation (and burn its presignature) with a single message.
     async fn receive_one(&mut self) -> anyhow::Result<Option<TaskChannelComputationData>> {
         let message = self.receive_raw().await?;
         if !self.sender.participants.contains(&message.from) {
-            let kind = message.message.kind.variant_name();
             tracing::warn!(
                 target: "network",
-                "[{}] [Task {:?}] Rejecting {} from participant {} (channel {:?}): not in participant set",
+                "[{}] [Task {:?}] Dropping {} from participant {} (channel {:?}): not in participant set",
                 self.sender.my_participant_id,
                 self.sender.task_id,
-                kind,
+                message.message.kind.variant_name(),
                 message.from,
                 message.message.channel_id,
             );
-            return Err(ParticipantNotInChannelError {
-                from: message.from,
-                kind,
-            }
-            .into());
+            return Ok(None);
         }
         match message.message.kind {
             MpcMessageKind::Computation(data) => {
@@ -1113,7 +1105,7 @@ mod tests {
         run_receive_message,
     };
     use crate::network::indexer_heights::IndexerHeightTracker;
-    use crate::network::testing::{new_test_transports, run_test_clients};
+    use crate::network::testing::{TestMeshTransportSender, new_test_transports, run_test_clients};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcMessageKind, MpcStartMessage, MpcTaskId, ParticipantId, UniqueId,
     };
@@ -1126,6 +1118,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
     use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
 
@@ -1363,6 +1356,35 @@ mod tests {
         assert_eq!(channel.sender().get_leader(), ORIGINATOR);
     }
 
+    #[tokio::test]
+    async fn network_task_channel__should_ignore_buffered_message_from_non_participant() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let channel_id = ChannelId(UniqueId::new(ORIGINATOR, 1, 0));
+        node.receive(THIRD_PARTY, computation_message(channel_id, 1))
+            .await
+            .unwrap();
+        node.receive(ORIGINATOR, start_message_with(vec![ME, ORIGINATOR]))
+            .await
+            .unwrap();
+        let mut channel = node
+            .new_channel()
+            .expect("a channel should have been created");
+        node.receive(ORIGINATOR, computation_message(channel_id, 2))
+            .await
+            .unwrap();
+
+        // When
+        let received = tokio::time::timeout(Duration::from_secs(5), channel.receive())
+            .await
+            .expect("the buffered out-of-set message must not stall the channel")
+            .expect("the buffered out-of-set message must not abort the channel");
+
+        // Then
+        assert_eq!(received.from, ORIGINATOR);
+        assert_eq!(received.data, vec![vec![2u8]]);
+    }
+
     const ME: ParticipantId = ParticipantId::from_raw(0);
     const ORIGINATOR: ParticipantId = ParticipantId::from_raw(1);
     const THIRD_PARTY: ParticipantId = ParticipantId::from_raw(2);
@@ -1380,35 +1402,77 @@ mod tests {
         }
     }
 
-    /// Drives a single message from `ORIGINATOR` through the inbound message handling of the node
-    /// `ME`, whose participant set is `ME`, `ORIGINATOR` and `THIRD_PARTY`.
+    fn computation_message(channel_id: ChannelId, payload: u8) -> MpcMessage {
+        MpcMessage {
+            channel_id,
+            kind: MpcMessageKind::Computation(vec![vec![payload]]),
+        }
+    }
+
     async fn receive_message_from_originator(
         message: MpcMessage,
     ) -> (anyhow::Result<()>, Option<NetworkTaskChannel>) {
-        let mut transports = new_test_transports(vec![ME, ORIGINATOR, THIRD_PARTY]);
-        let (my_transport_sender, my_receiver) = transports.remove(0);
-        let (originator_transport_sender, _) = transports.remove(0);
-        let indexer_heights = Arc::new(IndexerHeightTracker::new(&[ME, ORIGINATOR, THIRD_PARTY]));
-        let client = Arc::new(MeshNetworkClient::new(
-            my_transport_sender,
-            Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
-            indexer_heights.clone(),
-        ));
-        originator_transport_sender
-            .send(ME, message, ConnectionVersion::default())
-            .unwrap();
-        let mut my_receiver: Box<dyn MeshNetworkTransportReceiver> = my_receiver;
-        let (new_channel_sender, mut new_channel_receiver) = mpsc::unbounded_channel();
+        let mut node = ReceivingNode::new();
+        let result = node.receive(ORIGINATOR, message).await;
+        (result, node.new_channel())
+    }
 
-        let result = run_receive_message(
-            client,
-            &mut my_receiver,
-            &new_channel_sender,
-            indexer_heights,
-        )
-        .await;
+    /// The inbound message handling of the node `ME`, whose participant set is `ME`, `ORIGINATOR`
+    /// and `THIRD_PARTY`.
+    struct ReceivingNode {
+        client: Arc<MeshNetworkClient>,
+        my_receiver: Box<dyn MeshNetworkTransportReceiver>,
+        peer_senders: HashMap<ParticipantId, Arc<TestMeshTransportSender>>,
+        indexer_heights: Arc<IndexerHeightTracker>,
+        new_channel_sender: mpsc::UnboundedSender<NetworkTaskChannel>,
+        new_channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
+    }
 
-        (result, new_channel_receiver.try_recv().ok())
+    impl ReceivingNode {
+        fn new() -> Self {
+            let participants = vec![ME, ORIGINATOR, THIRD_PARTY];
+            let mut transports = new_test_transports(participants.clone());
+            let (my_transport_sender, my_receiver) = transports.remove(0);
+            let indexer_heights = Arc::new(IndexerHeightTracker::new(&participants));
+            let client = Arc::new(MeshNetworkClient::new(
+                my_transport_sender,
+                Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
+                indexer_heights.clone(),
+            ));
+            let (new_channel_sender, new_channel_receiver) = mpsc::unbounded_channel();
+            Self {
+                client,
+                my_receiver,
+                peer_senders: [ORIGINATOR, THIRD_PARTY]
+                    .into_iter()
+                    .zip(transports.into_iter().map(|(sender, _)| sender))
+                    .collect(),
+                indexer_heights,
+                new_channel_sender,
+                new_channel_receiver,
+            }
+        }
+
+        async fn receive(
+            &mut self,
+            from: ParticipantId,
+            message: MpcMessage,
+        ) -> anyhow::Result<()> {
+            self.peer_senders[&from]
+                .send(ME, message, ConnectionVersion::default())
+                .unwrap();
+            run_receive_message(
+                self.client.clone(),
+                &mut self.my_receiver,
+                &self.new_channel_sender,
+                self.indexer_heights.clone(),
+            )
+            .await
+        }
+
+        fn new_channel(&mut self) -> Option<NetworkTaskChannel> {
+            self.new_channel_receiver.try_recv().ok()
+        }
     }
 }
 
