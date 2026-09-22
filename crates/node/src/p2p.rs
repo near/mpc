@@ -11,16 +11,17 @@ use crate::network::handshake::{
     DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID, p2p_handshake_dialer,
     p2p_handshake_listener,
 };
+use crate::network::wire_format::{MpcMessageKind, Packet};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, ParticipantId,
-    PeerIndexerHeightMessage, PeerMessage,
+    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
+    PeerMessage,
 };
 use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshDeserialize;
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
@@ -133,17 +134,6 @@ impl Drop for DropToCancel {
     fn drop(&mut self) {
         self.0.cancel();
     }
-}
-
-/// Discriminants are wire format: only ever append, never reorder.
-/// See [`MpcTaskId`](crate::primitives::MpcTaskId).
-#[derive(BorshSerialize, BorshDeserialize)]
-#[borsh(use_discriminant = true)]
-#[repr(u8)]
-enum Packet {
-    Ping = 0,
-    MpcMessage(MpcMessage) = 1,
-    IndexerHeight(IndexerHeightMessage) = 2,
 }
 
 impl Packet {
@@ -1093,26 +1083,24 @@ pub mod testing {
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        IncomingConnection, OutgoingConnection, Packet, ParticipantIdentities,
-        PersistentConnection, incoming_connection_handler,
+        IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
+        incoming_connection_handler,
     };
     use crate::config::MpcConfig;
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
+    use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
     use crate::primitives::{
-        ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcStartMessage, MpcTaskId,
-        ParticipantId, PeerMessage, UniqueId,
+        ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
-    use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
-    use rstest::rstest;
     use rustls::ClientConfig;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -1163,7 +1151,7 @@ mod tests {
                     KeyEventId::new(EpochId::new(epoch_id), DomainId(domain_id), attempt_id);
                 let msg0to1 = MpcMessage {
                     channel_id,
-                    kind: crate::primitives::MpcMessageKind::Start(MpcStartMessage {
+                    kind: crate::network::wire_format::MpcMessageKind::Start(MpcStartMessage {
                         task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
                             key_event: key_id,
                         }),
@@ -1185,7 +1173,7 @@ mod tests {
 
                 let msg1to0 = MpcMessage {
                     channel_id,
-                    kind: crate::primitives::MpcMessageKind::Abort("test".to_owned()),
+                    kind: crate::network::wire_format::MpcMessageKind::Abort("test".to_owned()),
                 };
                 sender1
                     .send(
@@ -1252,24 +1240,6 @@ mod tests {
             );
         })
         .await;
-    }
-
-    #[rstest]
-    #[case(Packet::Ping, 0)]
-    #[case(Packet::MpcMessage(MpcMessage {
-        channel_id: ChannelId(UniqueId::new(ParticipantId::from_raw(0), 1, 0)),
-        kind: MpcMessageKind::Success,
-    }), 1)]
-    #[case(Packet::IndexerHeight(IndexerHeightMessage { height: 0 }), 2)]
-    fn packet__should_keep_borsh_discriminants_stable(
-        #[case] packet: Packet,
-        #[case] discriminant: u8,
-    ) {
-        // When
-        let encoded = borsh::to_vec(&packet).unwrap();
-
-        // Then
-        assert_eq!(encoded[0], discriminant);
     }
 
     fn all_alive_participant_ids(sender: &impl MeshNetworkTransportSender) -> Vec<ParticipantId> {

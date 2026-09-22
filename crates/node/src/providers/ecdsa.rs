@@ -5,7 +5,7 @@ pub mod triple;
 
 mod sign;
 
-use near_mpc_contract_interface::types::KeyEventId;
+use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 
@@ -15,14 +15,13 @@ use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
+use crate::primitives::ParticipantId;
 use crate::providers::{DomainKeyshare, SignatureProvider, ecdsa_common};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
-use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
@@ -121,38 +120,6 @@ impl EcdsaSignatureProvider {
 
     pub(super) fn my_participant_id(&self) -> ParticipantId {
         self.client.my_participant_id()
-    }
-}
-
-/// Discriminants are wire format: only ever append, never reorder. See [`MpcTaskId`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-#[borsh(use_discriminant = true)]
-#[repr(u8)]
-pub enum EcdsaTaskId {
-    KeyGeneration {
-        key_event: KeyEventId,
-    } = 0,
-    KeyResharing {
-        key_event: KeyEventId,
-    } = 1,
-    ManyTriples {
-        start: UniqueId,
-        count: u32,
-    } = 2,
-    Presignature {
-        id: UniqueId,
-        domain_id: DomainId,
-        paired_triple_id: UniqueId,
-    } = 3,
-    Signature {
-        id: SignatureId,
-        presignature_id: UniqueId,
-    } = 4,
-}
-
-impl From<EcdsaTaskId> for MpcTaskId {
-    fn from(val: EcdsaTaskId) -> Self {
-        MpcTaskId::EcdsaTaskId(val)
     }
 }
 

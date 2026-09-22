@@ -3,12 +3,14 @@ pub mod conn;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
+pub mod wire_format;
 
 use crate::metrics::networking_metrics;
 use crate::network::indexer_heights::IndexerHeightTracker;
+use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use crate::primitives::{
-    ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
-    MpcTaskId, ParticipantId, PeerMessage, UniqueId,
+    ChannelId, IndexerHeightMessage, MpcMessage, MpcPeerMessage, MpcStartMessage, ParticipantId,
+    PeerMessage, UniqueId,
 };
 use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::requests::queue::NetworkAPIForRequests;
@@ -894,7 +896,8 @@ pub mod testing {
     use super::{
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
     };
-    use crate::primitives::{MpcPeerMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId};
+    use crate::network::wire_format::MpcTaskId;
+    use crate::primitives::{MpcPeerMessage, ParticipantId, PeerMessage, UniqueId};
     use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
     use crate::tracking;
     use std::collections::{HashMap, HashSet};
@@ -1176,11 +1179,9 @@ mod tests {
         TestMeshTransportSender, new_test_client_with_versions, new_test_transports,
         run_test_clients,
     };
-    use crate::primitives::{
-        ChannelId, MpcMessage, MpcMessageKind, MpcStartMessage, MpcTaskId, ParticipantId, UniqueId,
-    };
+    use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId};
+    use crate::primitives::{ChannelId, MpcMessage, MpcStartMessage, ParticipantId, UniqueId};
     use crate::protocol_version::NetworkProtocolVersion;
-    use crate::providers::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
@@ -1571,8 +1572,8 @@ mod fault_handling_tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::network::testing::run_test_clients;
+    use crate::network::wire_format::EcdsaTaskId;
     use crate::primitives::{ParticipantId, UniqueId};
-    use crate::providers::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use std::sync::Arc;

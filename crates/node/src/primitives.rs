@@ -1,7 +1,4 @@
-use crate::providers::EcdsaTaskId;
-use crate::providers::eddsa::EddsaTaskId;
-use crate::providers::robust_ecdsa::RobustEcdsaTaskId;
-use crate::providers::{ckd::CKDTaskId, verify_foreign_tx::VerifyForeignTxTaskId};
+use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -205,49 +202,6 @@ pub struct MpcMessage {
     pub kind: MpcMessageKind,
 }
 
-/// Discriminants are wire format: only ever append, never reorder. See [`MpcTaskId`].
-#[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-#[borsh(use_discriminant = true)]
-#[repr(u8)]
-pub enum MpcMessageKind {
-    Start(MpcStartMessage) = 0,
-    Computation(Vec<Vec<u8>>) = 1,
-    Abort(String) = 2,
-    Success = 3,
-}
-
-impl MpcMessageKind {
-    pub fn variant_name(&self) -> &'static str {
-        match self {
-            MpcMessageKind::Start(_) => "Start",
-            MpcMessageKind::Computation(_) => "Computation",
-            MpcMessageKind::Abort(_) => "Abort",
-            MpcMessageKind::Success => "Success",
-        }
-    }
-}
-
-/// Redacts the raw bytes in Computation messages.
-/// These bytes contain serialized protocol round data (commitments, encrypted shares, proofs)
-/// which must not be leaked to logs.
-impl Debug for MpcMessageKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MpcMessageKind::Start(msg) => f.debug_tuple("Start").field(msg).finish(),
-            MpcMessageKind::Computation(chunks) => f
-                .debug_tuple("Computation")
-                .field(&format_args!(
-                    "[{} chunks, {} bytes]",
-                    chunks.len(),
-                    chunks.iter().map(|c| c.len()).sum::<usize>()
-                ))
-                .finish(),
-            MpcMessageKind::Abort(err) => f.debug_tuple("Abort").field(err).finish(),
-            MpcMessageKind::Success => write!(f, "Success"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct MpcStartMessage {
     pub task_id: MpcTaskId,
@@ -258,19 +212,6 @@ pub struct MpcStartMessage {
 pub struct MpcPeerMessage {
     pub from: ParticipantId,
     pub message: MpcMessage,
-}
-
-/// Discriminants are explicit and part of the wire format: a variant is only ever appended,
-/// never reordered or renumbered, so that nodes on different versions keep decoding each other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-#[borsh(use_discriminant = true)]
-#[repr(u8)]
-pub enum MpcTaskId {
-    EcdsaTaskId(EcdsaTaskId) = 0,
-    EddsaTaskId(EddsaTaskId) = 1,
-    CKDTaskId(CKDTaskId) = 2,
-    RobustEcdsaTaskId(RobustEcdsaTaskId) = 3,
-    VerifyForeignTxTaskId(VerifyForeignTxTaskId) = 4,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -298,69 +239,9 @@ pub struct Version {
 }
 
 #[cfg(test)]
-#[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::providers::ckd::CKDTaskId;
-    use mpc_primitives::domain::DomainId;
-    use mpc_primitives::{AttemptId, EpochId, KeyEventId};
-    use near_indexer_primitives::CryptoHash;
-    use rstest::rstest;
-
-    fn uid() -> UniqueId {
-        UniqueId::new(ParticipantId::from_raw(0), 1, 0)
-    }
-
-    fn key_event() -> KeyEventId {
-        KeyEventId::new(EpochId::new(0), DomainId(0), AttemptId(0))
-    }
-
-    #[rstest]
-    #[case(MpcMessageKind::Start(MpcStartMessage { task_id: EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), participants: Vec::new() }), 0)]
-    #[case(MpcMessageKind::Computation(Vec::new()), 1)]
-    #[case(MpcMessageKind::Abort(String::new()), 2)]
-    #[case(MpcMessageKind::Success, 3)]
-    fn mpc_message_kind__should_keep_borsh_discriminants_stable(
-        #[case] kind: MpcMessageKind,
-        #[case] discriminant: u8,
-    ) {
-        // When
-        let encoded = borsh::to_vec(&kind).unwrap();
-
-        // Then
-        assert_eq!(encoded[0], discriminant);
-    }
-
-    /// The two-byte prefix of an encoded task id is (outer discriminant, inner discriminant).
-    /// Pinning both is what lets a variant be appended without older nodes misreading the rest.
-    #[rstest]
-    #[case(EcdsaTaskId::KeyGeneration { key_event: key_event() }.into(), 0, 0)]
-    #[case(EcdsaTaskId::KeyResharing { key_event: key_event() }.into(), 0, 1)]
-    #[case(EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), 0, 2)]
-    #[case(EcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0), paired_triple_id: uid() }.into(), 0, 3)]
-    #[case(EcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 0, 4)]
-    #[case(EddsaTaskId::KeyGeneration { key_event: key_event() }.into(), 1, 0)]
-    #[case(EddsaTaskId::KeyResharing { key_event: key_event() }.into(), 1, 1)]
-    #[case(EddsaTaskId::Signature { id: CryptoHash::default() }.into(), 1, 2)]
-    #[case(CKDTaskId::KeyGeneration { key_event: key_event() }.into(), 2, 0)]
-    #[case(CKDTaskId::KeyResharing { key_event: key_event() }.into(), 2, 1)]
-    #[case(CKDTaskId::Ckd { id: CryptoHash::default() }.into(), 2, 2)]
-    #[case(RobustEcdsaTaskId::KeyGeneration { key_event: key_event() }.into(), 3, 0)]
-    #[case(RobustEcdsaTaskId::KeyResharing { key_event: key_event() }.into(), 3, 1)]
-    #[case(RobustEcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0) }.into(), 3, 2)]
-    #[case(RobustEcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 3, 3)]
-    #[case(VerifyForeignTxTaskId::VerifyForeignTx { id: CryptoHash::default(), presignature_id: uid() }.into(), 4, 0)]
-    fn mpc_task_id__should_keep_borsh_discriminants_stable(
-        #[case] task_id: MpcTaskId,
-        #[case] outer: u8,
-        #[case] inner: u8,
-    ) {
-        // When
-        let encoded = borsh::to_vec(&task_id).unwrap();
-
-        // Then
-        assert_eq!(encoded[..2], [outer, inner]);
-    }
+    use crate::network::wire_format::MpcMessageKind;
 
     #[test]
     fn test_validate_owned_by_accepts_matching_participant() {
@@ -392,85 +273,6 @@ mod tests {
             "Unexpected error message: {}",
             err
         );
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn mpc_message_kind_debug__should_redact_computation_payload() {
-        // given
-        let secret_data = b"SECRET_SHARE_DATA_THAT_MUST_NOT_LEAK".to_vec();
-        let kind = MpcMessageKind::Computation(vec![secret_data]);
-
-        // when
-        let debug_output = format!("{:?}", kind);
-
-        // then
-        assert!(
-            !debug_output.contains("SECRET_SHARE_DATA"),
-            "Debug output must not contain raw computation bytes, got: {}",
-            debug_output
-        );
-        assert!(
-            debug_output.contains("Computation"),
-            "Debug output should identify the message kind, got: {}",
-            debug_output
-        );
-        assert!(
-            debug_output.contains("1 chunks"),
-            "Debug output should show chunk count, got: {}",
-            debug_output
-        );
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn mpc_message_kind_debug__should_show_chunk_count_and_total_bytes() {
-        // given
-        let kind = MpcMessageKind::Computation(vec![vec![0u8; 100], vec![0u8; 200], vec![0u8; 50]]);
-
-        // when
-        let debug_output = format!("{:?}", kind);
-
-        // then
-        assert!(
-            debug_output.contains("3 chunks"),
-            "Debug output should show 3 chunks, got: {}",
-            debug_output
-        );
-        assert!(
-            debug_output.contains("350 bytes"),
-            "Debug output should show 350 total bytes, got: {}",
-            debug_output
-        );
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn mpc_message_kind_debug__should_show_non_sensitive_variants_normally() {
-        // given
-        let start = MpcMessageKind::Start(MpcStartMessage {
-            task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
-                start: UniqueId::new(ParticipantId::from_raw(0), 42, 0),
-                count: 1,
-            }),
-            participants: vec![ParticipantId::from_raw(0)],
-        });
-        let abort = MpcMessageKind::Abort("some error".into());
-        let success = MpcMessageKind::Success;
-
-        // when
-        let start_debug = format!("{:?}", start);
-        let abort_debug = format!("{:?}", abort);
-        let success_debug = format!("{:?}", success);
-
-        // then
-        assert!(start_debug.contains("Start"), "got: {}", start_debug);
-        assert!(
-            abort_debug.contains("some error"),
-            "Abort debug should show the error string, got: {}",
-            abort_debug
-        );
-        assert_eq!(success_debug, "Success");
     }
 
     #[test]
