@@ -21,7 +21,7 @@ counters tell you whether that is working:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| `mpc_led_computation_duration_seconds` | how long a computation took, recorded by its leader only. Labelled by `protocol_scheme`, `task` and `outcome` (`succeeded`, `failed`, `deadline_exceeded`, `abandoned` when the caller gave up on it, which is where `make_signature`, `ckd` and `verify_foreign_tx` always land, since an earlier deadline cuts them short before this one) | p99 of `outcome="succeeded"` approaching the deadline for that `task`. Watch it with the rate of the other outcomes: a p99 that *falls* while failures rise means slow computations are being dropped, not getting faster. |
+| `mpc_led_computation_duration_seconds` | how long a computation took, recorded by its leader only. Labelled by `protocol_scheme`, `task` and `outcome` (`succeeded`, `failed`, `deadline_exceeded`, `abandoned` when the caller gave up on it) | increase in the number of `failed`, `abandoned` or `deadline_exceeded` counts, and `succeeded` computations approaching the deadline for that `task`. |
 
 ## Backups
 
