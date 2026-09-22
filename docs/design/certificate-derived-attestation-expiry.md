@@ -17,21 +17,35 @@ expiry = earliest_collateral_expiration
 
 ## Why change it
 
-The 7 days are counted from submission time, and the node picks that time. So a node can present
-collateral with one hour of validity left and still receive a full week of trust. Nothing rejects
-it, because DCAP only asks whether the collateral is valid right now.
+### Why a constant was chosen
+
+The 7-day constant was a deliberate stop-gap, and a sound one at the time:
+
+1. A constant avoided parsing certificates and CRLs on chain, which is the expensive part.
+2. It was *shorter* than Intel's 30-day windows, so on its own it tightened rather than loosened.
+3. The node refused collateral older than 7 days (`MAX_COLLATERAL_AGE`), so any collateral presented
+   still had roughly 23 days of validity left. A 7-day expiry fitted inside Intel's window with room
+   to spare.
+
+### Why that no longer holds
+
+The third leg is gone. `MAX_COLLATERAL_AGE` was raised from 7 days to 31 as an emergency fix, after
+Intel served a CRL older than our limit and the fleet stopped attesting; the permanent policy is
+still open ([#3946](https://github.com/near/mpc/issues/3946)). Collateral may now be presented right
+up to its `nextUpdate`, so `now + 7 days` can outlast the collateral that justified it. And since the
+7 days are counted from submission time, the submitter chooses the overhang.
 
 This matters for revocation. The contract never re-checks a stored attestation against fresher
-collateral, and it has no way to learn about a new CRL. Trust ends at expiry and nowhere else. So a
-platform that Intel revokes in the next PCK CRL keeps a working attestation for up to 7 days after
-the CRL that vouched for it stopped being authoritative. An operator who wants those extra days only
-has to time its submissions.
+collateral, and it has no way to learn about a new CRL, so trust ends at expiry and nowhere else. A
+platform that Intel revokes in the next PCK CRL therefore keeps a working attestation for up to 7
+days after the CRL that vouched for it stopped being authoritative. Until on-chain CRL updates exist
+([#1050](https://github.com/near/mpc/issues/1050)), this expiry is the only bound on that.
 
-Until on-chain CRL updates exist ([#1050](https://github.com/near/mpc/issues/1050)), this expiry is
-the only bound on how long a revoked platform stays trusted.
+Intel's own value removes the guesswork. Any constant we choose instead either loosens security or
+assumes a refresh cadence Intel may not keep — an assumption that has already failed once.
 
-The change is also more generous in the normal case: Intel's windows are 30 days, so a node with
-fresh collateral gets about 30 days instead of 7.
+It is also more generous in the normal case: a node with fresh collateral gets about 30 days rather
+than 7.
 
 *Considered: a contract-side cap on top of the certificate value. Dropped — it leaves two expiries
 to keep in sync, it does not help the fleet convergence described in item 4, and
@@ -60,8 +74,37 @@ the age of the collateral the node presented.
 
 ## Getting it on chain
 
-`tee-verifier` gains one method, `verify_quote_with_claims`. It returns today's report plus
-`earliest_expiration_seconds`. `verify_quote` is untouched.
+```mermaid
+sequenceDiagram
+    participant Node
+    participant Contract as mpc-contract
+    participant Verifier as tee-verifier
+
+    Node->>Contract: submit_participant_info(attestation)
+    Contract->>Verifier: verify_quote_with_claims(quote, collateral)
+    Verifier-->>Contract: report + earliest_expiration_seconds
+    Note over Contract: resolve_verification:<br/>post-DCAP checks
+    Note over Contract: store expiry =<br/>earliest_expiration_seconds
+```
+
+`tee-verifier` gains one method, `verify_quote_with_claims`. `verify_quote` is untouched.
+
+```rust
+#[result_serializer(borsh)]
+pub fn verify_quote_with_claims(
+    &self,
+    #[serializer(borsh)] quote: QuoteBytes,
+    #[serializer(borsh)] collateral: Collateral,
+) -> VerificationResultWithClaims;
+
+pub enum VerificationResultWithClaims {
+    Verified {
+        report: VerifiedReport,
+        earliest_expiration_seconds: u64,
+    },
+    Rejected(VerifierError),
+}
+```
 
 This keeps the verifier 1:1 with `dcap-qvl`. `QuoteClaims` is `dcap-qvl`'s own type, so the new
 method exposes more of the upstream API rather than a shape of our own.
@@ -71,9 +114,8 @@ account is key-locked, so changing the return type means a new account and a
 `vote_tee_verifier_change`. During that rotation an old verifier may answer a new contract, or the
 reverse. A new method name fails closed; a changed field would mis-decode.
 
-In the contract, `resolve_verification` passes the value into `verify_and_store_dstack`. Off chain,
-`verify_locally` reads the same number, so the node, the CLI and `tee-authority` agree with the
-chain.
+Off chain, `verify_locally` reads the same number, so the node, the CLI and `tee-authority` agree
+with the chain.
 
 A re-submission always overwrites the stored expiry, even when the new value is earlier. The stored
 expiry should describe the collateral actually presented; keeping the longer of the two would let a
@@ -83,9 +125,10 @@ node hold on to trust from collateral it no longer has.
 verifier change needed, but it puts DER/X.509 parsing back into the contract wasm and undoes
 [#3264](https://github.com/near/mpc/issues/3264).*
 
-## Knock-on changes
+## What else has to change
 
-Six things rely on the expiry being `now + constant`.
+Six existing behaviours rely on the expiry being `now + constant`, and break without it. Each is
+listed as the problem it causes, then the fix.
 
 **1. Confirming a submission landed.** The node checks whether the stored expiry went up
 ([`tx_sender.rs`](../../crates/node/src/indexer/tx_sender.rs)). That stops working when the value is
