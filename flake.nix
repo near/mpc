@@ -66,12 +66,9 @@
           };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
         }
-        // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+        // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") rec {
           mpc-node-image = pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; };
-          mpc-node-gcp-image = pkgs.callPackage ./nix/mpc-node-image.nix {
-            inherit mpc-node;
-            withGcloud = true;
-          };
+          mpc-node-gcp-image = mpc-node-image.override { withGcloud = true; };
         }
       );
 

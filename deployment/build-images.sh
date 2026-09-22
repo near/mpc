@@ -188,22 +188,22 @@ if $USE_RUST_LAUNCHER; then
     rust_launcher_manifest_digest="$(manifest_digest_from_dir "$rust_launcher_skopeo_dir")"
 fi
 
+if $USE_NODE || $USE_NODE_GCP; then
+    node_binary_hash=$(sha256sum "$(nix build --no-link --print-out-paths .#mpc-node)/bin/mpc-node" | cut -d' ' -f1)
+fi
+
 if $USE_NODE; then
-    node_tar="$(mktemp --suffix=.tar.gz)"
+    node_tar="$(mktemp --suffix=.tar)"
     build_nix_image "$NODE_IMAGE_NAME" mpc-node-image "$node_tar"
     node_skopeo_dir="$(skopeo_compress "$node_tar")"
     node_manifest_digest="$(manifest_digest_from_dir "$node_skopeo_dir")"
 fi
 
 if $USE_NODE_GCP; then
-    node_gcp_tar="$(mktemp --suffix=.tar.gz)"
+    node_gcp_tar="$(mktemp --suffix=.tar)"
     build_nix_image "$NODE_GCP_IMAGE_NAME" mpc-node-gcp-image "$node_gcp_tar"
     node_gcp_skopeo_dir="$(skopeo_compress "$node_gcp_tar")"
     node_gcp_manifest_digest="$(manifest_digest_from_dir "$node_gcp_skopeo_dir")"
-fi
-
-if $USE_NODE || $USE_NODE_GCP; then
-    node_binary_hash=$(sha256sum "$(nix build --no-link --print-out-paths .#mpc-node)/bin/mpc-node" | cut -d' ' -f1)
 fi
 
 if $USE_PUSH; then

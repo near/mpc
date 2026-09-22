@@ -2057,10 +2057,9 @@ This is the most common upgrade. When a new MPC node version is released, operat
 ### Image/Code Inspection
 
 The following steps allow you to inspect the code that was used to build the
-docker image. Let's assume you want to vote for a docker image with tag
-[mpc-node:main-828f816](https://hub.docker.com/layers/nearone/mpc-node/main-828f816/),
-corresponding to the commit hash `828f816be36aed6f0d2438e0131b3e9d7d0931ad`.
-Notice that the suffix of the image tag is the short version of the git hash.
+docker image. Let's assume you want to vote for one of the tags listed on
+[DockerHub](https://hub.docker.com/r/nearone/mpc-node/tags). Notice that the
+suffix of the image tag is the short version of the git hash it was built from.
 
 * The manifest digest is shown on DockerHub and in the reproducible build script
   output. To verify it, build the image yourself from the same commit and compare
@@ -2071,7 +2070,7 @@ Notice that the suffix of the image tag is the short version of the git hash.
 ```bash
 git clone https://github.com/near/mpc
 cd mpc/
-git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
+git checkout <commit-hash>
 ```
 
 * Compile it using the reproducible build script on an x86_64 Linux host. For
@@ -2081,10 +2080,10 @@ git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```bash
 $ ./deployment/build-images.sh --node
 ...
-commit hash: 828f816be36aed6f0d2438e0131b3e9d7d0931ad
+commit hash: <commit-hash>
 SOURCE_DATE_EPOCH used: 0
-node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721bc
-node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+node binary hash: <hex>
+node manifest digest: sha256:<hex>
 ```
 
 The `node manifest digest` is what you vote for. When submitting the `mpc_node_manifest_digest` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.

@@ -41,7 +41,7 @@ the build (build scripts, proc-macros) cannot fetch anything. The commit hash is
 embedded in the binary, so build from a clean checkout of the commit you want
 to reproduce.
 
-**Build all images** (default behavior):
+**Build both node and launcher images** (default behavior):
 
 ```bash
 ./deployment/build-images.sh
@@ -79,9 +79,7 @@ build metadata in `crates/contract/Cargo.toml`
 `rust-toolchain.toml` (`1.97.1`). This metadata is embedded in the WASM, which
 lets automated third-party verifiers such as sourcescan.io and nearblocks replay
 the build and confirm the on-chain contract matches the published source. This
-is the build CI publishes as the release artifact. The build container has
-network access, so this path is reproducible but not hermetic. It requires
-`docker`:
+is the build CI publishes as the release artifact. It requires `docker`:
 
 ```bash
 cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
