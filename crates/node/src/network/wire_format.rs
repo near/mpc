@@ -15,7 +15,7 @@ use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::fmt::Debug;
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum Packet {
@@ -193,186 +193,129 @@ mod tests {
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
 
-    fn uid() -> UniqueId {
-        UniqueId::new(ParticipantId::from_raw(0), 1, 0)
+    fn uid(counter: u32) -> UniqueId {
+        UniqueId::new(ParticipantId::from_raw(0), 1, counter)
+    }
+
+    fn hash(byte: u8) -> CryptoHash {
+        CryptoHash([byte; 32])
     }
 
     fn key_event() -> KeyEventId {
-        KeyEventId::new(EpochId::new(0), DomainId(0), AttemptId(0))
+        KeyEventId::new(EpochId::new(1), DomainId(2), AttemptId(3))
     }
 
-    fn wire_prefix(value: &impl BorshSerialize, bytes: usize) -> String {
-        borsh::to_vec(value).unwrap()[..bytes]
+    /// Fixed inputs are chosen so that neighbouring fields encode to visibly distinct bytes.
+    fn rows(values: &[impl BorshSerialize + Debug]) -> String {
+        values
             .iter()
-            .map(|byte| format!("{byte:02x}"))
+            .map(|value| {
+                let hex = borsh::to_vec(value)
+                    .unwrap()
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("{value:?} => {hex}")
+            })
             .collect::<Vec<_>>()
-            .join(" ")
+            .join("\n")
     }
 
-    fn task_id_prefix(task_id: impl Into<MpcTaskId>) -> String {
-        wire_prefix(&task_id.into(), 2)
-    }
-
-    fn start_message() -> MpcStartMessage {
-        MpcStartMessage {
-            task_id: EcdsaTaskId::ManyTriples {
-                start: uid(),
-                count: 64,
-            }
-            .into(),
-            participants: Vec::new(),
-        }
-    }
-
-    /// Every variant that crosses the wire, with the discriminant bytes it encodes to. A changed
-    /// byte is a breaking wire change; a new line is an append.
+    /// Every value that crosses the wire, with the bytes it encodes to. A changed byte is a
+    /// breaking wire change; a new line is an append.
     #[test]
-    fn wire_format__should_keep_borsh_discriminants_stable() {
-        let rows = [
-            ("Packet::Ping", wire_prefix(&Packet::Ping, 1)),
-            (
-                "Packet::MpcMessage",
-                wire_prefix(
-                    &Packet::MpcMessage(MpcMessage {
-                        channel_id: ChannelId(uid()),
-                        kind: MpcMessageKind::Success,
-                    }),
-                    1,
-                ),
-            ),
-            (
-                "Packet::IndexerHeight",
-                wire_prefix(
-                    &Packet::IndexerHeight(IndexerHeightMessage { height: 0 }),
-                    1,
-                ),
-            ),
-            (
-                "MpcMessageKind::Start",
-                wire_prefix(&MpcMessageKind::Start(start_message()), 1),
-            ),
-            (
-                "MpcMessageKind::Computation",
-                wire_prefix(&MpcMessageKind::Computation(Vec::new()), 1),
-            ),
-            (
-                "MpcMessageKind::Abort",
-                wire_prefix(&MpcMessageKind::Abort(String::new()), 1),
-            ),
-            (
-                "MpcMessageKind::Success",
-                wire_prefix(&MpcMessageKind::Success, 1),
-            ),
-            (
-                "MpcTaskId::EcdsaTaskId(KeyGeneration)",
-                task_id_prefix(EcdsaTaskId::KeyGeneration {
-                    key_event: key_event(),
+    fn wire_format__should_stay_stable() {
+        let table = [
+            rows(&[
+                Packet::Ping,
+                Packet::MpcMessage(MpcMessage {
+                    channel_id: ChannelId(uid(1)),
+                    kind: MpcMessageKind::Success,
                 }),
-            ),
-            (
-                "MpcTaskId::EcdsaTaskId(KeyResharing)",
-                task_id_prefix(EcdsaTaskId::KeyResharing {
-                    key_event: key_event(),
+                Packet::IndexerHeight(IndexerHeightMessage { height: 4 }),
+            ]),
+            rows(&[
+                MpcMessageKind::Start(MpcStartMessage {
+                    task_id: EcdsaTaskId::ManyTriples {
+                        start: uid(1),
+                        count: 64,
+                    }
+                    .into(),
+                    participants: vec![ParticipantId::from_raw(5)],
                 }),
-            ),
-            (
-                "MpcTaskId::EcdsaTaskId(ManyTriples)",
-                task_id_prefix(EcdsaTaskId::ManyTriples {
-                    start: uid(),
+                MpcMessageKind::Computation(vec![vec![1, 2, 3]]),
+                MpcMessageKind::Abort("err".to_owned()),
+                MpcMessageKind::Success,
+            ]),
+            rows(&[
+                EcdsaTaskId::KeyGeneration {
+                    key_event: key_event(),
+                }
+                .into(),
+                EcdsaTaskId::KeyResharing {
+                    key_event: key_event(),
+                }
+                .into(),
+                EcdsaTaskId::ManyTriples {
+                    start: uid(1),
                     count: 64,
-                }),
-            ),
-            (
-                "MpcTaskId::EcdsaTaskId(Presignature)",
-                task_id_prefix(EcdsaTaskId::Presignature {
-                    id: uid(),
-                    domain_id: DomainId(0),
-                    paired_triple_id: uid(),
-                }),
-            ),
-            (
-                "MpcTaskId::EcdsaTaskId(Signature)",
-                task_id_prefix(EcdsaTaskId::Signature {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }),
-            ),
-            (
-                "MpcTaskId::EddsaTaskId(KeyGeneration)",
-                task_id_prefix(EddsaTaskId::KeyGeneration {
+                }
+                .into(),
+                EcdsaTaskId::Presignature {
+                    id: uid(1),
+                    domain_id: DomainId(2),
+                    paired_triple_id: uid(3),
+                }
+                .into(),
+                EcdsaTaskId::Signature {
+                    id: hash(1),
+                    presignature_id: uid(2),
+                }
+                .into(),
+                EddsaTaskId::KeyGeneration {
                     key_event: key_event(),
-                }),
-            ),
-            (
-                "MpcTaskId::EddsaTaskId(KeyResharing)",
-                task_id_prefix(EddsaTaskId::KeyResharing {
+                }
+                .into(),
+                EddsaTaskId::KeyResharing {
                     key_event: key_event(),
-                }),
-            ),
-            (
-                "MpcTaskId::EddsaTaskId(Signature)",
-                task_id_prefix(EddsaTaskId::Signature {
-                    id: CryptoHash::default(),
-                }),
-            ),
-            (
-                "MpcTaskId::CKDTaskId(KeyGeneration)",
-                task_id_prefix(CKDTaskId::KeyGeneration {
+                }
+                .into(),
+                EddsaTaskId::Signature { id: hash(1) }.into(),
+                CKDTaskId::KeyGeneration {
                     key_event: key_event(),
-                }),
-            ),
-            (
-                "MpcTaskId::CKDTaskId(KeyResharing)",
-                task_id_prefix(CKDTaskId::KeyResharing {
+                }
+                .into(),
+                CKDTaskId::KeyResharing {
                     key_event: key_event(),
-                }),
-            ),
-            (
-                "MpcTaskId::CKDTaskId(Ckd)",
-                task_id_prefix(CKDTaskId::Ckd {
-                    id: CryptoHash::default(),
-                }),
-            ),
-            (
-                "MpcTaskId::RobustEcdsaTaskId(KeyGeneration)",
-                task_id_prefix(RobustEcdsaTaskId::KeyGeneration {
+                }
+                .into(),
+                CKDTaskId::Ckd { id: hash(1) }.into(),
+                RobustEcdsaTaskId::KeyGeneration {
                     key_event: key_event(),
-                }),
-            ),
-            (
-                "MpcTaskId::RobustEcdsaTaskId(KeyResharing)",
-                task_id_prefix(RobustEcdsaTaskId::KeyResharing {
+                }
+                .into(),
+                RobustEcdsaTaskId::KeyResharing {
                     key_event: key_event(),
+                }
+                .into(),
+                RobustEcdsaTaskId::Presignature {
+                    id: uid(1),
+                    domain_id: DomainId(2),
+                }
+                .into(),
+                RobustEcdsaTaskId::Signature {
+                    id: hash(1),
+                    presignature_id: uid(2),
+                }
+                .into(),
+                MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTx {
+                    id: hash(1),
+                    presignature_id: uid(2),
                 }),
-            ),
-            (
-                "MpcTaskId::RobustEcdsaTaskId(Presignature)",
-                task_id_prefix(RobustEcdsaTaskId::Presignature {
-                    id: uid(),
-                    domain_id: DomainId(0),
-                }),
-            ),
-            (
-                "MpcTaskId::RobustEcdsaTaskId(Signature)",
-                task_id_prefix(RobustEcdsaTaskId::Signature {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }),
-            ),
-            (
-                "MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTx)",
-                task_id_prefix(VerifyForeignTxTaskId::VerifyForeignTx {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }),
-            ),
-        ];
-
-        let table = rows
-            .into_iter()
-            .map(|(variant, bytes)| format!("{variant:<52} {bytes}"))
-            .collect::<Vec<_>>()
-            .join("\n");
+            ]),
+        ]
+        .join("\n\n");
 
         insta::assert_snapshot!(table);
     }
