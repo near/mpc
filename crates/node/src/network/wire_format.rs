@@ -192,7 +192,6 @@ mod tests {
     use crate::primitives::{ChannelId, ParticipantId};
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
-    use rstest::rstest;
 
     fn uid() -> UniqueId {
         UniqueId::new(ParticipantId::from_raw(0), 1, 0)
@@ -202,38 +201,180 @@ mod tests {
         KeyEventId::new(EpochId::new(0), DomainId(0), AttemptId(0))
     }
 
-    #[rstest]
-    #[case(Packet::Ping, 0)]
-    #[case(Packet::MpcMessage(MpcMessage {
-        channel_id: ChannelId(uid()),
-        kind: MpcMessageKind::Success,
-    }), 1)]
-    #[case(Packet::IndexerHeight(IndexerHeightMessage { height: 0 }), 2)]
-    fn packet__should_keep_borsh_discriminants_stable(
-        #[case] packet: Packet,
-        #[case] discriminant: u8,
-    ) {
-        // When
-        let encoded = borsh::to_vec(&packet).unwrap();
-
-        // Then
-        assert_eq!(encoded[0], discriminant);
+    fn wire_prefix(value: &impl BorshSerialize, bytes: usize) -> String {
+        borsh::to_vec(value).unwrap()[..bytes]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
-    #[rstest]
-    #[case(MpcMessageKind::Start(MpcStartMessage { task_id: EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), participants: Vec::new() }), 0)]
-    #[case(MpcMessageKind::Computation(Vec::new()), 1)]
-    #[case(MpcMessageKind::Abort(String::new()), 2)]
-    #[case(MpcMessageKind::Success, 3)]
-    fn mpc_message_kind__should_keep_borsh_discriminants_stable(
-        #[case] kind: MpcMessageKind,
-        #[case] discriminant: u8,
-    ) {
-        // When
-        let encoded = borsh::to_vec(&kind).unwrap();
+    fn task_id_prefix(task_id: impl Into<MpcTaskId>) -> String {
+        wire_prefix(&task_id.into(), 2)
+    }
 
-        // Then
-        assert_eq!(encoded[0], discriminant);
+    fn start_message() -> MpcStartMessage {
+        MpcStartMessage {
+            task_id: EcdsaTaskId::ManyTriples {
+                start: uid(),
+                count: 64,
+            }
+            .into(),
+            participants: Vec::new(),
+        }
+    }
+
+    /// Every variant that crosses the wire, with the discriminant bytes it encodes to. A changed
+    /// byte is a breaking wire change; a new line is an append.
+    #[test]
+    fn wire_format__should_keep_borsh_discriminants_stable() {
+        let rows = [
+            ("Packet::Ping", wire_prefix(&Packet::Ping, 1)),
+            (
+                "Packet::MpcMessage",
+                wire_prefix(
+                    &Packet::MpcMessage(MpcMessage {
+                        channel_id: ChannelId(uid()),
+                        kind: MpcMessageKind::Success,
+                    }),
+                    1,
+                ),
+            ),
+            (
+                "Packet::IndexerHeight",
+                wire_prefix(
+                    &Packet::IndexerHeight(IndexerHeightMessage { height: 0 }),
+                    1,
+                ),
+            ),
+            (
+                "MpcMessageKind::Start",
+                wire_prefix(&MpcMessageKind::Start(start_message()), 1),
+            ),
+            (
+                "MpcMessageKind::Computation",
+                wire_prefix(&MpcMessageKind::Computation(Vec::new()), 1),
+            ),
+            (
+                "MpcMessageKind::Abort",
+                wire_prefix(&MpcMessageKind::Abort(String::new()), 1),
+            ),
+            (
+                "MpcMessageKind::Success",
+                wire_prefix(&MpcMessageKind::Success, 1),
+            ),
+            (
+                "MpcTaskId::EcdsaTaskId(KeyGeneration)",
+                task_id_prefix(EcdsaTaskId::KeyGeneration {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::EcdsaTaskId(KeyResharing)",
+                task_id_prefix(EcdsaTaskId::KeyResharing {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::EcdsaTaskId(ManyTriples)",
+                task_id_prefix(EcdsaTaskId::ManyTriples {
+                    start: uid(),
+                    count: 64,
+                }),
+            ),
+            (
+                "MpcTaskId::EcdsaTaskId(Presignature)",
+                task_id_prefix(EcdsaTaskId::Presignature {
+                    id: uid(),
+                    domain_id: DomainId(0),
+                    paired_triple_id: uid(),
+                }),
+            ),
+            (
+                "MpcTaskId::EcdsaTaskId(Signature)",
+                task_id_prefix(EcdsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }),
+            ),
+            (
+                "MpcTaskId::EddsaTaskId(KeyGeneration)",
+                task_id_prefix(EddsaTaskId::KeyGeneration {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::EddsaTaskId(KeyResharing)",
+                task_id_prefix(EddsaTaskId::KeyResharing {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::EddsaTaskId(Signature)",
+                task_id_prefix(EddsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                }),
+            ),
+            (
+                "MpcTaskId::CKDTaskId(KeyGeneration)",
+                task_id_prefix(CKDTaskId::KeyGeneration {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::CKDTaskId(KeyResharing)",
+                task_id_prefix(CKDTaskId::KeyResharing {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::CKDTaskId(Ckd)",
+                task_id_prefix(CKDTaskId::Ckd {
+                    id: CryptoHash::default(),
+                }),
+            ),
+            (
+                "MpcTaskId::RobustEcdsaTaskId(KeyGeneration)",
+                task_id_prefix(RobustEcdsaTaskId::KeyGeneration {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::RobustEcdsaTaskId(KeyResharing)",
+                task_id_prefix(RobustEcdsaTaskId::KeyResharing {
+                    key_event: key_event(),
+                }),
+            ),
+            (
+                "MpcTaskId::RobustEcdsaTaskId(Presignature)",
+                task_id_prefix(RobustEcdsaTaskId::Presignature {
+                    id: uid(),
+                    domain_id: DomainId(0),
+                }),
+            ),
+            (
+                "MpcTaskId::RobustEcdsaTaskId(Signature)",
+                task_id_prefix(RobustEcdsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }),
+            ),
+            (
+                "MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTx)",
+                task_id_prefix(VerifyForeignTxTaskId::VerifyForeignTx {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }),
+            ),
+        ];
+
+        let table = rows
+            .into_iter()
+            .map(|(variant, bytes)| format!("{variant:<52} {bytes}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        insta::assert_snapshot!(table);
     }
 
     #[test]
@@ -310,36 +451,5 @@ mod tests {
             abort_debug
         );
         assert_eq!(success_debug, "Success");
-    }
-
-    /// The two-byte prefix of an encoded task id is (outer discriminant, inner discriminant).
-    /// Pinning both is what lets a variant be appended without older nodes misreading the rest.
-    #[rstest]
-    #[case(EcdsaTaskId::KeyGeneration { key_event: key_event() }.into(), 0, 0)]
-    #[case(EcdsaTaskId::KeyResharing { key_event: key_event() }.into(), 0, 1)]
-    #[case(EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), 0, 2)]
-    #[case(EcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0), paired_triple_id: uid() }.into(), 0, 3)]
-    #[case(EcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 0, 4)]
-    #[case(EddsaTaskId::KeyGeneration { key_event: key_event() }.into(), 1, 0)]
-    #[case(EddsaTaskId::KeyResharing { key_event: key_event() }.into(), 1, 1)]
-    #[case(EddsaTaskId::Signature { id: CryptoHash::default() }.into(), 1, 2)]
-    #[case(CKDTaskId::KeyGeneration { key_event: key_event() }.into(), 2, 0)]
-    #[case(CKDTaskId::KeyResharing { key_event: key_event() }.into(), 2, 1)]
-    #[case(CKDTaskId::Ckd { id: CryptoHash::default() }.into(), 2, 2)]
-    #[case(RobustEcdsaTaskId::KeyGeneration { key_event: key_event() }.into(), 3, 0)]
-    #[case(RobustEcdsaTaskId::KeyResharing { key_event: key_event() }.into(), 3, 1)]
-    #[case(RobustEcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0) }.into(), 3, 2)]
-    #[case(RobustEcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 3, 3)]
-    #[case(VerifyForeignTxTaskId::VerifyForeignTx { id: CryptoHash::default(), presignature_id: uid() }.into(), 4, 0)]
-    fn mpc_task_id__should_keep_borsh_discriminants_stable(
-        #[case] task_id: MpcTaskId,
-        #[case] outer: u8,
-        #[case] inner: u8,
-    ) {
-        // When
-        let encoded = borsh::to_vec(&task_id).unwrap();
-
-        // Then
-        assert_eq!(encoded[..2], [outer, inner]);
     }
 }

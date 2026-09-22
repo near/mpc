@@ -237,23 +237,23 @@ impl<
     O: HasPeerNetworkProtocolVersion + Send + Sync + 'static,
 > NodeConnectivity<I, O>
 {
-    /// The protocol version the peer advertised in the handshake of whichever connection is
-    /// currently up; `None` while it is not connected. Both directions carry the peer's own
-    /// version, so either answers.
+    /// The version the peer advertised, once both directions are up and agree; `None` otherwise.
+    /// A half-connected peer, or one advertising a different version per direction, has no usable
+    /// version rather than a guess about which answer to trust.
     pub fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
         let outgoing = self
             .outgoing_receiver
             .borrow()
             .connection
             .upgrade()
-            .map(|conn| conn.peer_network_protocol_version());
-        outgoing.or_else(|| {
-            self.incoming_receiver
-                .borrow()
-                .connection
-                .upgrade()
-                .map(|conn| conn.peer_network_protocol_version())
-        })
+            .map(|conn| conn.peer_network_protocol_version())?;
+        let incoming = self
+            .incoming_receiver
+            .borrow()
+            .connection
+            .upgrade()
+            .map(|conn| conn.peer_network_protocol_version())?;
+        (outgoing == incoming).then_some(outgoing)
     }
 }
 
@@ -263,7 +263,7 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     fn was_connection_interrupted(&self, version: ConnectionVersion) -> bool;
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
     fn is_bidirectionally_connected(&self) -> bool;
-    /// The protocol version the peer advertised in its handshake; `None` while not connected.
+    /// The version the peer advertised, once both directions are up and agree; `None` otherwise.
     fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion>;
 }
 
@@ -427,21 +427,26 @@ mod tests {
         }
     }
 
+    const OUTGOING_VERSION: NetworkProtocolVersion = NetworkProtocolVersion::Dec2025;
+    const INCOMING_VERSION: NetworkProtocolVersion = NetworkProtocolVersion::Jan2026;
+
     #[rstest]
-    #[case::both_up(true, true, Some(NetworkProtocolVersion::Dec2025))]
-    #[case::only_outgoing_up(true, false, Some(NetworkProtocolVersion::Dec2025))]
-    #[case::only_incoming_up(false, true, Some(NetworkProtocolVersion::Jan2026))]
-    #[case::neither_up(false, false, None)]
-    fn node_connectivity__should_report_the_protocol_version_of_a_live_connection_only(
+    #[case::both_up_and_agreeing(true, true, OUTGOING_VERSION, Some(OUTGOING_VERSION))]
+    #[case::both_up_but_disagreeing(true, true, INCOMING_VERSION, None)]
+    #[case::only_outgoing_up(true, false, OUTGOING_VERSION, None)]
+    #[case::only_incoming_up(false, true, OUTGOING_VERSION, None)]
+    #[case::neither_up(false, false, OUTGOING_VERSION, None)]
+    fn node_connectivity__should_report_the_peer_version_only_when_both_directions_agree(
         #[case] keep_outgoing: bool,
         #[case] keep_incoming: bool,
+        #[case] incoming_version: NetworkProtocolVersion,
         #[case] expected: Option<NetworkProtocolVersion>,
     ) {
         // Given
         let connectivity = NodeConnectivity::<VersionedConnection, VersionedConnection>::new();
-        let outgoing = Arc::new(VersionedConnection(NetworkProtocolVersion::Dec2025));
+        let outgoing = Arc::new(VersionedConnection(OUTGOING_VERSION));
         connectivity.set_outgoing_connection(&outgoing);
-        let incoming = Arc::new(VersionedConnection(NetworkProtocolVersion::Jan2026));
+        let incoming = Arc::new(VersionedConnection(incoming_version));
         connectivity.set_incoming_connection(&incoming).unwrap();
 
         // When
