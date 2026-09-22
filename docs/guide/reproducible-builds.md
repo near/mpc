@@ -9,15 +9,20 @@ security and verification purposes.
 
 **Common requirements** (for both node and launcher Docker images):
 
-- `docker` with buildx support
+- `docker`
 - `jq`
 - `git`
 - `podman` - runs the pinned `skopeo` image that compresses the layers; its
   gzip output determines the manifest digest, so the pin (not a host `skopeo`)
   is what makes that digest reproducible
 
-**Additional requirements for building the node image**:
+**Additional requirements for building the node images**:
 
+- [Nix](https://nixos.org/download/) with flakes enabled, on an x86_64 Linux host
+
+**Additional requirements for building the launcher image**:
+
+- `docker` with buildx support
 - `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
 
 **Requirements for building the MPC contract** (either path works):
@@ -29,7 +34,14 @@ security and verification purposes.
 
 The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
 
-**Build both node and launcher images** (default behavior):
+The node images are built hermetically: Nix builds the node binary and
+assembles the image in a sandbox without network access, from inputs pinned by
+`flake.lock`, `Cargo.lock` and `rust-toolchain.toml`, so code that runs during
+the build (build scripts, proc-macros) cannot fetch anything. The commit hash is
+embedded in the binary, so build from a clean checkout of the commit you want
+to reproduce.
+
+**Build all images** (default behavior):
 
 ```bash
 ./deployment/build-images.sh
@@ -67,7 +79,9 @@ build metadata in `crates/contract/Cargo.toml`
 `rust-toolchain.toml` (`1.97.1`). This metadata is embedded in the WASM, which
 lets automated third-party verifiers such as sourcescan.io and nearblocks replay
 the build and confirm the on-chain contract matches the published source. This
-is the build CI publishes as the release artifact. It requires `docker`:
+is the build CI publishes as the release artifact. The build container has
+network access, so this path is reproducible but not hermetic. It requires
+`docker`:
 
 ```bash
 cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml

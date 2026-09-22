@@ -2074,9 +2074,9 @@ cd mpc/
 git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```
 
-* Compile it using the reproduce build script. For this you need to install
-  `repro-env`, `docker-buildx`, and `podman`, and have the `docker` daemon
-  running.
+* Compile it using the reproducible build script on an x86_64 Linux host. For
+  this you need to install [Nix](https://nixos.org/download/) with flakes
+  enabled and `podman`, and have the `docker` daemon running.
 
 ```bash
 $ ./deployment/build-images.sh --node

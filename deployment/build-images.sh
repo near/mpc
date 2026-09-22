@@ -1,8 +1,9 @@
 #! /usr/bin/env bash
 # Script to reproducibly build the docker images for the node and launcher
 #
-# Requirements: docker, docker-buildx, git, find, touch, podman
-# Extra requirements if using --node or --rust-launcher: repro-env
+# Requirements: docker, git, podman
+# Extra requirements if using --node or --node-gcp: nix
+# Extra requirements if using --rust-launcher: repro-env, docker-buildx, find, touch
 # Extra requirements if using --push: skopeo, docker must be logged in to registry
 #
 # Usage:
@@ -12,6 +13,7 @@
 
 
 set -euo pipefail
+shopt -s inherit_errexit
 
 USE_RUST_LAUNCHER=false
 USE_NODE=false
@@ -60,18 +62,21 @@ require_cmds() {
   [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
-require_cmds docker git find touch podman
+require_cmds docker git podman
 
-if $USE_NODE || $USE_NODE_GCP || $USE_RUST_LAUNCHER; then
-    require_cmds repro-env
+if $USE_NODE || $USE_NODE_GCP; then
+    require_cmds nix
 fi
 
 if $USE_PUSH; then
     require_cmds skopeo
 fi
 
-if ! docker buildx &>/dev/null; then
-  die "Please install docker-buildx"
+if $USE_RUST_LAUNCHER; then
+    require_cmds repro-env find touch
+    if ! docker buildx &>/dev/null; then
+      die "Please install docker-buildx"
+    fi
 fi
 
 if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
@@ -79,10 +84,7 @@ if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
     exit 1
 fi
 
-DOCKERFILE_NODE=deployment/Dockerfile-node
 : "${NODE_IMAGE_NAME:=mpc-node}"
-
-DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 : "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
 
 DOCKERFILE_RUST_LAUNCHER=deployment/Dockerfile-rust-launcher
@@ -92,30 +94,32 @@ DOCKERFILE_RUST_LAUNCHER=deployment/Dockerfile-rust-launcher
 SOURCE_DATE_EPOCH=0
 GIT_COMMIT_HASH=$(git rev-parse HEAD)
 
-# This might be necessary to fix reproducibility with old docker versions where
-# rewrite-timestamp is not working as expected
-# https://github.com/moby/buildkit/issues/4986
-find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE_EPOCH" {} +
+if $USE_RUST_LAUNCHER; then
+    # This might be necessary to fix reproducibility with old docker versions where
+    # rewrite-timestamp is not working as expected
+    # https://github.com/moby/buildkit/issues/4986
+    find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE_EPOCH" {} +
 
-# Create our own builder (build env) to enable reproducible images
+    # Create our own builder (build env) to enable reproducible images
 
-buildkit_version="0.27.1"
-buildkit_image_name="buildkit_${buildkit_version}"
-# Digest of moby/buildkit:v${buildkit_version}; a re-pushed tag would change the
-# build output, so the builder is pinned by digest like the skopeo image below.
-buildkit_digest="sha256:1e110c71d389d6d24f67b9438e2f7b8da749a6ff407b22a1631e025c95599368"
+    buildkit_version="0.27.1"
+    buildkit_image_name="buildkit_${buildkit_version}"
+    # Digest of moby/buildkit:v${buildkit_version}; a re-pushed tag would change the
+    # build output, so the builder is pinned by digest like the skopeo image below.
+    buildkit_digest="sha256:1e110c71d389d6d24f67b9438e2f7b8da749a6ff407b22a1631e025c95599368"
 
-if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
-    docker buildx create --use --driver-opt image=moby/buildkit@${buildkit_digest} --name ${buildkit_image_name}
-else
-    # A reused builder may hold a stale local-context cache: buildkit keys
-    # context changes on (size, mtime), but the touch above resets mtime, so a
-    # changed file with unchanged size looks identical and the stale copy is
-    # reused. Prune only type=source.local to force a fresh read (base-image and
-    # apt caches are kept). A freshly created builder has no cache, so we only
-    # prune when reusing one. `|| true`: the builder's container is bootstrapped
-    # lazily on first build and may not exist yet, leaving nothing to prune.
-    docker buildx prune --builder "${buildkit_image_name}" --filter type=source.local -f >/dev/null 2>&1 || true
+    if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
+        docker buildx create --use --driver-opt image=moby/buildkit@${buildkit_digest} --name ${buildkit_image_name}
+    else
+        # A reused builder may hold a stale local-context cache: buildkit keys
+        # context changes on (size, mtime), but the touch above resets mtime, so a
+        # changed file with unchanged size looks identical and the stale copy is
+        # reused. Prune only type=source.local to force a fresh read (base-image and
+        # apt caches are kept). A freshly created builder has no cache, so we only
+        # prune when reusing one. `|| true`: the builder's container is bootstrapped
+        # lazily on first build and may not exist yet, leaving nothing to prune.
+        docker buildx prune --builder "${buildkit_image_name}" --filter type=source.local -f >/dev/null 2>&1 || true
+    fi
 fi
 
 
@@ -133,6 +137,18 @@ build_reproducible_image() {
     --output "type=docker,name=$image_name,dest=$tar_path,rewrite-timestamp=true" \
     --progress plain -f "$dockerfile_path" .
   docker load -i "$tar_path"
+}
+
+build_nix_image() {
+  local image_name=$1
+  local package=$2
+  local tar_path=$3
+  local store_path loaded_image
+  store_path=$(nix build --print-build-logs --no-link --print-out-paths ".#$package")
+  # Copied out of the root-owned store so podman can relabel the mount below.
+  cp "$store_path" "$tar_path"
+  loaded_image=$(docker load -i "$tar_path" | sed -n 's/^Loaded image: //p')
+  docker tag "$loaded_image" "$image_name"
 }
 
 # skopeo re-gzips every layer here, so the manifest digest depends on the
@@ -172,57 +188,22 @@ if $USE_RUST_LAUNCHER; then
     rust_launcher_manifest_digest="$(manifest_digest_from_dir "$rust_launcher_skopeo_dir")"
 fi
 
-if $USE_NODE || $USE_NODE_GCP; then
-    # Pin jemalloc's `./configure` auto-detected values so tikv-jemalloc-sys
-    # produces identical bytes across builders. See nix/mpc-node.nix for the
-    # full rationale; values match the standard x86_64 Linux ABI.
-    #
-    # GIT_CEILING_DIRECTORIES stops jemalloc's `./configure` from walking out
-    # of `target/` and finding the surrounding mpc repo's `.git/` — without
-    # it, `git describe HEAD` returns mpc's commit SHA, which is then baked
-    # into jemalloc's VERSION file (and the linked binary's `.rodata` and
-    # `smallocx_<sha>` exported symbol). The path is the in-container
-    # workspace mount (`/build`), not the host path.
-    # Pin the C/C++ ISA for cc-crate dependencies (rocksdb, snappy, zstd,
-    # jemalloc, ...) to match the rustc target-cpu set in .cargo/config.toml.
-    # Without this, the cc crate uses the container's default `-march`, which
-    # would diverge from the Rust code's ISA expectations.
-    #
-    # PCLMUL and AES are not part of the v3 micro-arch level (per System V
-    # psABI) but are universally available on v3-capable hardware. Adding
-    # them explicitly keeps rocksdb's PCLMUL-accelerated CRC32C path
-    # compiled in. Match nix/mpc-node.nix and flake.nix.
-    # BUILT_OVERRIDE_mpc_node_GIT_VERSION pins built's GIT_VERSION so local git
-    # tags aren't embedded in the binary (which would break reproducibility).
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
-    JEMALLOC_SYS_WITH_LG_VADDR=48 \
-    JEMALLOC_SYS_WITH_LG_PAGE=12 \
-    JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
-    GIT_CEILING_DIRECTORIES=/build/target \
-    BUILT_OVERRIDE_mpc_node_GIT_VERSION="${GIT_COMMIT_HASH:0:7}" \
-    repro-env build \
-      --env SOURCE_DATE_EPOCH \
-      --env JEMALLOC_SYS_WITH_LG_VADDR \
-      --env JEMALLOC_SYS_WITH_LG_PAGE \
-      --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
-      --env GIT_CEILING_DIRECTORIES \
-      --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
-      -- cargo build -p mpc-node --profile reproducible --locked
-    node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
-fi
-
 if $USE_NODE; then
-    node_tar="$(mktemp --suffix=.tar)"
-    build_reproducible_image "$NODE_IMAGE_NAME" "$DOCKERFILE_NODE" "$node_tar"
+    node_tar="$(mktemp --suffix=.tar.gz)"
+    build_nix_image "$NODE_IMAGE_NAME" mpc-node-image "$node_tar"
     node_skopeo_dir="$(skopeo_compress "$node_tar")"
     node_manifest_digest="$(manifest_digest_from_dir "$node_skopeo_dir")"
 fi
 
 if $USE_NODE_GCP; then
-    node_gcp_tar="$(mktemp --suffix=.tar)"
-    build_reproducible_image "$NODE_GCP_IMAGE_NAME" "$DOCKERFILE_NODE_GCP" "$node_gcp_tar"
+    node_gcp_tar="$(mktemp --suffix=.tar.gz)"
+    build_nix_image "$NODE_GCP_IMAGE_NAME" mpc-node-gcp-image "$node_gcp_tar"
     node_gcp_skopeo_dir="$(skopeo_compress "$node_gcp_tar")"
     node_gcp_manifest_digest="$(manifest_digest_from_dir "$node_gcp_skopeo_dir")"
+fi
+
+if $USE_NODE || $USE_NODE_GCP; then
+    node_binary_hash=$(sha256sum "$(nix build --no-link --print-out-paths .#mpc-node)/bin/mpc-node" | cut -d' ' -f1)
 fi
 
 if $USE_PUSH; then

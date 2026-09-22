@@ -48,23 +48,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Allow unprivileged user namespaces (needed by repro-env)
+      - name: Allow unprivileged user namespaces (needed by podman)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - name: Install repro-env
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y repro-env
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
-      - name: Cache repro-env packages
-        uses: ./.github/actions/cache-repro-env-pkgs
-        with:
-          save: ${{ github.ref == 'refs/heads/main' }}
+      - name: Restore /nix from cache
+        uses: ./.github/actions/restore-nix-cache
 
-      - name: Build MPC Node binary and image
+      - name: Build MPC Node binary and images
         run: |
-          export NODE_IMAGE_NAME=test_image_tag_ci
-          ./deployment/build-images.sh --node
+          export NODE_IMAGE_NAME=test_image_tag_ci NODE_GCP_IMAGE_NAME=test_image_gcp_ci
+          ./deployment/build-images.sh --node --node-gcp
+
+      - name: Check the build commit label and gcloud in the images
+        run: |
+          docker run --rm test_image_tag_ci /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA:0:7})"
+          docker run --rm test_image_gcp_ci gcloud version
 
       - name: Check mpc-node docker image can initialize and start
         run: |
@@ -96,6 +97,8 @@ jobs:
 
       - name: Cache repro-env packages
         uses: ./.github/actions/cache-repro-env-pkgs
+        with:
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build Rust launcher docker image
         shell: bash
@@ -221,14 +224,6 @@ jobs:
 
       - name: Build mpc-contract (Nix)
         run: nix build -L .#mpc-contract
-
-  nix-build-mpc-node:
-    name: "Nix build mpc-node"
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    permissions:
-      contents: read
-    uses: ./.github/workflows/nix-build-mpc-node.yml
 
   fast-ci-checks:
     name: "Fast CI checks"

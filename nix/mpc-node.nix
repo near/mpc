@@ -21,6 +21,7 @@
   # passed in from flake.nix so the dev shell, the reproducible build, and
   # bindgen-parsed headers all agree on the same feature-test macros.
   prodCFlags,
+  gitRev ? null,
 }:
 
 let
@@ -286,5 +287,9 @@ craneLib.buildPackage (
       platforms = platforms.unix;
       mainProgram = "mpc-node";
     };
+  }
+  # Not in commonArgs: the revision would re-key cargoArtifacts on every commit.
+  // lib.optionalAttrs (gitRev != null) {
+    BUILT_OVERRIDE_mpc_node_GIT_COMMIT_HASH_SHORT = gitRev;
   }
 )

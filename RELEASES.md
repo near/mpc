@@ -97,16 +97,17 @@ run if any artifact is missing.
 **Do this before publishing (step 5) — publishing creates the git tag and is
 effectively irreversible.** Confirm the CI-built artifacts match a local
 reproducible build, so the released `:X.Y.Z` images and contract WASM are
-exactly what the source produces:
+exactly what the source produces. Both build from committed git state, so
+commit first:
 
 - **Contract WASM** — build via the reproducible path and compare its hash to
-  the CI `contract` artifact (builds from committed git state, so commit first):
+  the CI `contract` artifact:
   ```sh
   cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
   ```
 - **Docker images** — compare the digests in the draft release to the ones
-  produced locally (with no flags the script builds and prints digests for all
-  three images):
+  produced locally on an x86_64 Linux host (with no flags the script builds and
+  prints digests for all three images):
   ```sh
   ./deployment/build-images.sh
   ```

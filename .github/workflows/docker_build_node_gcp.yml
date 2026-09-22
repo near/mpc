@@ -32,13 +32,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PAT }}
 
-      - name: Allow unprivileged user namespaces (needed by repro-env)
+      - name: Allow unprivileged user namespaces (needed by podman)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - name: Install repro-env
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y repro-env
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       - name: Build and push node gcp image
         run: |
