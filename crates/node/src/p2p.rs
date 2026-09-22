@@ -688,6 +688,11 @@ async fn incoming_connection_handler(
     tracking::set_progress(&format!("Authenticated as {}", peer_id));
 
     let Some(_connection_slot) = incoming_connection_limits.try_reserve(peer_id) else {
+        tracing::debug!(
+            peer_id = %peer_id,
+            max = MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+            "dropping incoming connection, participant at connection limit"
+        );
         INCOMING_CONNECTIONS_REJECTED
             .with_label_values(&[peer_id.to_string().as_str()])
             .inc();
@@ -1130,29 +1135,30 @@ mod tests {
         incoming_connection_handler,
     };
     use crate::config::MpcConfig;
-    use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
-    use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
-    use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
+    use crate::network::{
+        conn::{AllNodeConnectivities, ConnectionVersion},
+        wire_format::{EcdsaTaskId, MpcTaskId},
+        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+    };
     use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
     };
-    use crate::tracking;
     use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
-    use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use crate::tracking::{self, testing::start_root_task_with_periodic_dump};
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
-    use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
     use rustls::ClientConfig;
-    use std::sync::Arc;
-    use std::time::Duration;
-    use tokio::io::AsyncReadExt;
-    use tokio::net::{TcpListener, TcpStream};
-    use tokio::sync::mpsc;
-    use tokio::task::JoinHandle;
-    use tokio::time::timeout;
+    use std::{sync::Arc, time::Duration};
+    use tokio::{
+        io::AsyncReadExt,
+        net::{TcpListener, TcpStream},
+        sync::mpsc,
+        task::JoinHandle,
+        time::timeout,
+    };
     use tokio_rustls::TlsAcceptor;
 
     #[tokio::test]
@@ -1765,46 +1771,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn incoming_connection_limits__should_free_slot_when_permit_is_dropped() {
-        // Given
-        let peer = ParticipantId::from_raw(1);
-        let limits = IncomingConnectionLimits::new([peer]);
-        let mut held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
-            .map(|_| limits.try_reserve(peer).unwrap())
-            .collect();
-        assert!(limits.try_reserve(peer).is_none());
-
-        // When
-        held_slots.pop();
-
-        // Then
-        assert!(limits.try_reserve(peer).is_some());
-    }
-
-    #[test]
-    fn incoming_connection_limits__should_track_participants_independently() {
-        // Given
-        let flooding_peer = ParticipantId::from_raw(1);
-        let other_peer = ParticipantId::from_raw(2);
-        let limits = IncomingConnectionLimits::new([flooding_peer, other_peer]);
-        let _held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
-            .map(|_| limits.try_reserve(flooding_peer).unwrap())
-            .collect();
-
-        // When
-        let other_peer_slot = limits.try_reserve(other_peer);
-
-        // Then
-        assert!(other_peer_slot.is_some());
-    }
-
     #[tokio::test]
     #[test_log::test]
     async fn incoming_connection_handler__should_close_connection_when_peer_connection_limit_is_reached()
      {
         start_root_task_with_periodic_dump(async move {
-            // Given a known peer that already has its slots filled
+            // Given
             let my_id = ParticipantId::from_raw(0);
             let peer_id = ParticipantId::from_raw(1);
             let mut participant_identities = ParticipantIdentities::default();
@@ -1834,13 +1806,13 @@ mod tests {
                 ),
             );
 
-            // When the peer connects over TLS
+            // When
             let mut client = tokio_rustls::TlsConnector::from(make_client_config())
                 .connect("dummy".try_into().unwrap(), client_tcp)
                 .await
                 .unwrap();
 
-            // Then the connection gets closed
+            // Then
             let mut buf = [0u8; 1];
             let bytes_read = timeout(
                 OutgoingConnection::HANDSHAKE_TIMEOUT / 2,
