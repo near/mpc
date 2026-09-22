@@ -60,7 +60,7 @@ async fn request_and_await_response(
 /// Primes each domain's presignatures for the current online set with [`WARMUP_SIGNATURES`]
 /// generously-budgeted signs, whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and
 /// RobustEcdsa consume pre-generated presignatures; Frost and CKD sign directly, so pass only the
-/// block's signable CaitSith/DamgardEtAl domains after every online-set change.
+/// block's signable CaitSith/RobustEcdsa domains after every online-set change.
 async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
     for domain in domains {
         for _ in 0..WARMUP_SIGNATURES {

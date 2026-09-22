@@ -4,7 +4,8 @@
 > described here is in place and remains accurate. Robust ECDSA (`RobustEcdsa`, named
 > `DamgardEtAl` when this document was written), which
 > motivated it, has since had its implementation removed and replaced by an insecure
-> stub — see [`crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md`](../../crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md).
+> stub — see [`crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md`](../../crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md);
+> TODO([#4383](https://github.com/near/mpc/issues/4383)) tracks the replacement scheme.
 > The protocol variant, its honest-majority `2t - 1` threshold rule and the routing
 > described below all still exist, but no production domain uses them. Statements below
 > about Robust ECDSA's security properties describe the removed scheme.

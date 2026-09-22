@@ -240,11 +240,7 @@ async fn do_presign(
         k += k_p.to_scalar();
     }
 
-    if k.is_zero().into() {
-        return Err(ProtocolError::ZeroScalar);
-    }
-    // cannot be zero due to the previous check
-    let k_inv = k.invert().unwrap();
+    let k_inv = Option::<Scalar>::from(k.invert()).ok_or(ProtocolError::ZeroScalar)?;
 
     let big_r = Secp256K1Group::generator() * k;
     let x_me = args.keygen_out.private_share.to_scalar();
@@ -304,6 +300,10 @@ mod test {
         assert_eq!(result.len(), 5);
         // testing that big_r is the same accross participants
         assert!(result.windows(2).all(|w| w[0].1.big_r == w[1].1.big_r));
+        // the sign phase recombines the stub's outputs correctly only if
+        // alpha == c on every party and e carries no mask
+        assert!(result.iter().all(|(_, out)| out.alpha == out.c));
+        assert!(result.iter().all(|(_, out)| out.e == Scalar::ZERO));
 
         insta::assert_json_snapshot!(result);
     }

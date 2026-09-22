@@ -20,6 +20,8 @@
 //! robust scheme means replacing the presigning protocol in [`presign`]; the rest of
 //! the module, including [`sign::sign`] and presignature rerandomization, is
 //! scheme-agnostic.
+//!
+//! TODO(#4383): replace this stub with a real robust scheme.
 
 pub mod presign;
 pub mod sign;
