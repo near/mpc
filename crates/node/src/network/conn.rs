@@ -14,6 +14,18 @@ pub struct ConnectionVersion {
     pub incoming: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConnectionLiveness {
+    pub outgoing: bool,
+    pub incoming: bool,
+}
+
+impl ConnectionLiveness {
+    pub fn is_bidirectional(self) -> bool {
+        self.outgoing && self.incoming
+    }
+}
+
 /// A connection object along with a version number.
 ///
 /// The expectation is that every time we make a new connection, the version
@@ -165,10 +177,13 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         }
     }
 
-    pub fn is_bidirectionally_connected(&self) -> bool {
+    pub fn connection_liveness(&self) -> ConnectionLiveness {
         let outgoing = self.outgoing_receiver.borrow();
         let incoming = self.incoming_receiver.borrow();
-        outgoing.is_connected() && incoming.is_connected()
+        ConnectionLiveness {
+            outgoing: outgoing.is_connected(),
+            incoming: incoming.is_connected(),
+        }
     }
 
     /// Given the result of a previous call to [`connection_version()`](Self::connection_version), determine
@@ -262,9 +277,13 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     fn connection_version(&self) -> ConnectionVersion;
     fn was_connection_interrupted(&self, version: ConnectionVersion) -> bool;
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
-    fn is_bidirectionally_connected(&self) -> bool;
+    fn connection_liveness(&self) -> ConnectionLiveness;
     /// The version the peer advertised, once both directions are up and agree; `None` otherwise.
     fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion>;
+
+    fn is_bidirectionally_connected(&self) -> bool {
+        self.connection_liveness().is_bidirectional()
+    }
 }
 
 #[async_trait::async_trait]
@@ -311,8 +330,8 @@ where
         Ok(())
     }
 
-    fn is_bidirectionally_connected(&self) -> bool {
-        NodeConnectivity::is_bidirectionally_connected(self)
+    fn connection_liveness(&self) -> ConnectionLiveness {
+        NodeConnectivity::connection_liveness(self)
     }
 
     fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
@@ -396,8 +415,8 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 mod tests {
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::network::conn::{
-        AllNodeConnectivities, ConnectionVersion, ConnectionWithVersion, NodeConnectivity,
-        OptionSenderConnectionId,
+        AllNodeConnectivities, ConnectionLiveness, ConnectionVersion, ConnectionWithVersion,
+        NodeConnectivity, NodeConnectivityInterface, OptionSenderConnectionId,
     };
     use crate::primitives::ParticipantId;
     use crate::protocol_version::NetworkProtocolVersion;
@@ -410,6 +429,12 @@ mod tests {
     impl SenderConnectionId for usize {
         fn sender_connection_id(&self) -> u32 {
             *self as u32
+        }
+    }
+
+    impl HasPeerNetworkProtocolVersion for usize {
+        fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
+            NetworkProtocolVersion::Jan2026
         }
     }
 
@@ -568,6 +593,29 @@ mod tests {
         assert!(connectivity.is_bidirectionally_connected());
         assert!(connectivity.was_connection_interrupted(ver(1, 2)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 2)));
+    }
+
+    #[test]
+    fn connection_liveness__should_report_each_direction_independently() {
+        // Given
+        let connectivity = NodeConnectivity::<usize, usize>::new();
+        let outgoing = Arc::new(0);
+        let incoming = Arc::new(0);
+        connectivity.set_outgoing_connection(&outgoing);
+        connectivity.set_incoming_connection(&incoming).unwrap();
+
+        // When
+        drop(incoming);
+
+        // Then
+        assert_eq!(
+            connectivity.connection_liveness(),
+            ConnectionLiveness {
+                outgoing: true,
+                incoming: false,
+            }
+        );
+        assert!(!connectivity.is_bidirectionally_connected());
     }
 
     #[tokio::test]

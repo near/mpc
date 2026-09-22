@@ -137,6 +137,37 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check. Solana has no probe and is left out of both
 gauges.
 
+## Peer connectivity
+
+Each pair of nodes holds two TCP connections, one per direction: each side dials
+the other and writes on the connection it dialed, so one can be down while the
+other carries traffic.
+
+| Metric | What it tracks | When to worry |
+| --- | --- | --- |
+| `mpc_network_live_connections` | whether each connection is up, by `peer_participant_id`, `connection_direction` and the node's own `my_participant_id` | `1` for both directions of every peer. The node's own series is always `1`. |
+| `mpc_network_connection_closed_total` | connections torn down, by `peer_participant_id`, `connection_direction` and `reason` | should be near flat. Every teardown aborts the computations in flight with that peer, so churn surfaces as failed signatures. |
+
+`reason` is one of:
+
+* `peer_eof`: the peer closed. Expected around restarts and reconnections.
+* `read_timeout`: nothing arrived within the read timeout; reachable but silent.
+* `write_timeout`: half-open, the peer stopped acknowledging without closing.
+* `read_error` / `write_error`: the network between the two nodes.
+* `unexpected_data`: a packet we cannot account for. Suspect a version mismatch.
+* `local_shutdown`: this node, on its way out.
+
+Reading the numbers:
+
+* The gauge is current state only, so a link that dropped ten times and came back
+  reads like one that never dropped. The counter is what exposes flapping.
+* `min by (instance, peer_participant_id) (mpc_network_live_connections)` is the
+  bidirectional view; keep `connection_direction` to see which wire is down.
+* Both ends record each teardown, against their own direction, so aggregating
+  without `instance` multiplies one restart by the size of the cluster.
+* Only established connections count; a handshake that never finished is a failed
+  connection attempt, and appears in the logs only.
+
 ## Recommended alerts
 
 ```promql
@@ -193,6 +224,15 @@ increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  f
 # expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
 # 2h hold waits for two rounds to agree.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
+
+# Warn: a peer link is torn down repeatedly. Each teardown aborts the computations
+# in flight with that peer, well before either direction reads as down.
+sum by (instance, peer_participant_id, connection_direction) (
+  increase(mpc_network_connection_closed_total[5m])) > 3  for 15m
+
+# Page: a peer is unreachable in at least one direction. The min() is the
+# bidirectional view; check the series itself for which direction is down.
+min by (instance, peer_participant_id) (mpc_network_live_connections) == 0  for 5m
 
 # Warn: no backup for over a day. Only meaningful once backups are being taken
 # against this node.

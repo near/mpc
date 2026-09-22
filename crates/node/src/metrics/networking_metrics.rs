@@ -1,6 +1,9 @@
 use std::sync::LazyLock;
 
-use prometheus::{HistogramVec, IntGaugeVec, register_histogram_vec, register_int_gauge_vec};
+use prometheus::{
+    HistogramVec, IntCounterVec, IntGaugeVec, register_histogram_vec, register_int_counter_vec,
+    register_int_gauge_vec,
+};
 
 pub(crate) const INCOMING_CONNECTION: &str = "incoming";
 pub(crate) const OUTGOING_CONNECTION: &str = "outgoing";
@@ -17,6 +20,7 @@ const LABEL_MY_PARTICIPANT_ID: &str = "my_participant_id";
 const LABEL_PEER_PARTICIPANT_ID: &str = "peer_participant_id";
 const LABEL_CONNECTION_DIRECTION: &str = "connection_direction";
 const LABEL_MESSAGE_TYPE: &str = "message_type";
+const LABEL_CLOSE_REASON: &str = "reason";
 
 // Conservative estimate of maximum transmission unit
 // https://en.wikipedia.org/wiki/Maximum_transmission_unit
@@ -47,8 +51,12 @@ const NETWORK_MESSAGE_SIZES_BYTES_BUCKETS: &[f64] = &[
 pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     register_int_gauge_vec!(
         "mpc_network_live_connections",
-        "Current state of the mesh network connections",
-        &[LABEL_MY_PARTICIPANT_ID, LABEL_PEER_PARTICIPANT_ID],
+        "Current state of the mesh network connections, per direction",
+        &[
+            LABEL_MY_PARTICIPANT_ID,
+            LABEL_PEER_PARTICIPANT_ID,
+            LABEL_CONNECTION_DIRECTION,
+        ],
     )
     .unwrap()
 });
@@ -66,3 +74,45 @@ pub(crate) static MPC_P2P_TCP_WRITE_SIZE_BYTES: LazyLock<HistogramVec> = LazyLoc
     )
     .unwrap()
 });
+
+pub(crate) static NETWORK_CONNECTION_CLOSED: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_network_connection_closed_total",
+        "Established P2P connections torn down, by peer, direction and cause",
+        &[
+            LABEL_PEER_PARTICIPANT_ID,
+            LABEL_CONNECTION_DIRECTION,
+            LABEL_CLOSE_REASON,
+        ],
+    )
+    .unwrap()
+});
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConnectionCloseReason {
+    WriteTimeout,
+    WriteError,
+    ReadError,
+    ReadTimeout,
+    PeerEof,
+    UnexpectedData,
+    LocalShutdown,
+}
+
+impl ConnectionCloseReason {
+    pub(crate) fn is_local_failure(self) -> bool {
+        matches!(self, Self::WriteError | Self::WriteTimeout)
+    }
+
+    pub(crate) fn as_label(self) -> &'static str {
+        match self {
+            Self::WriteTimeout => "write_timeout",
+            Self::WriteError => "write_error",
+            Self::ReadError => "read_error",
+            Self::ReadTimeout => "read_timeout",
+            Self::PeerEof => "peer_eof",
+            Self::UnexpectedData => "unexpected_data",
+            Self::LocalShutdown => "local_shutdown",
+        }
+    }
+}

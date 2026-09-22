@@ -16,7 +16,7 @@ use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
-use conn::{ConnectionVersion, NodeConnectivityInterface};
+use conn::{ConnectionLiveness, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
@@ -414,16 +414,26 @@ impl MeshNetworkClient {
         networking_metrics::NETWORK_LIVE_CONNECTIONS.reset();
 
         for id in self.all_participant_ids() {
-            let metric = networking_metrics::NETWORK_LIVE_CONNECTIONS
-                .with_label_values(&[&my_participant_id.to_string(), &id.to_string()]);
-            if id == my_participant_id {
-                metric.set(1);
+            let liveness = if id == my_participant_id {
+                ConnectionLiveness {
+                    outgoing: true,
+                    incoming: true,
+                }
             } else {
-                let is_live_participant = self
-                    .transport_sender
-                    .connectivity(id)
-                    .is_bidirectionally_connected();
-                metric.set(is_live_participant.into());
+                self.transport_sender.connectivity(id).connection_liveness()
+            };
+
+            for (direction, is_live) in [
+                (networking_metrics::OUTGOING_CONNECTION, liveness.outgoing),
+                (networking_metrics::INCOMING_CONNECTION, liveness.incoming),
+            ] {
+                networking_metrics::NETWORK_LIVE_CONNECTIONS
+                    .with_label_values(&[
+                        &my_participant_id.to_string(),
+                        &id.to_string(),
+                        direction,
+                    ])
+                    .set(is_live.into());
             }
         }
     }
@@ -911,7 +921,7 @@ impl NetworkTaskChannel {
 
 #[cfg(test)]
 pub mod testing {
-    use super::conn::{ConnectionVersion, NodeConnectivityInterface};
+    use super::conn::{ConnectionLiveness, ConnectionVersion, NodeConnectivityInterface};
     use super::indexer_heights::IndexerHeightTracker;
     use super::{
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
@@ -956,8 +966,11 @@ pub mod testing {
 
     #[async_trait::async_trait]
     impl NodeConnectivityInterface for TestConnectivityInterface {
-        fn is_bidirectionally_connected(&self) -> bool {
-            true
+        fn connection_liveness(&self) -> ConnectionLiveness {
+            ConnectionLiveness {
+                outgoing: true,
+                incoming: true,
+            }
         }
 
         fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {

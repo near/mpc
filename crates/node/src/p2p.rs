@@ -1,6 +1,7 @@
 use crate::config::MpcConfig;
 use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
+    self, ConnectionCloseReason, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES,
+    NETWORK_CONNECTION_CLOSED, OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
@@ -247,17 +248,26 @@ impl OutgoingConnection {
             &format!("TLS connection to {}", target_participant_id),
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
+                let mut close_on_abort = RecordLocalShutdownOnAbort {
+                    peer_id,
+                    armed: true,
+                };
                 let mut sent_bytes: u64 = 0;
                 let peer_id_string = peer_id.to_string();
 
-                let result: anyhow::Result<()> = async {
+                let (close_reason, result): (ConnectionCloseReason, anyhow::Result<()>) = async {
                     loop {
                         tokio::select! {
                             data = receiver.recv() => {
                                 let Some(data) = data else {
-                                    break;
+                                    return (ConnectionCloseReason::LocalShutdown, Ok(()));
                                 };
-                                let serialized = borsh::to_vec(&data)?;
+                                let serialized = match borsh::to_vec(&data) {
+                                    Ok(serialized) => serialized,
+                                    Err(err) => {
+                                        return (ConnectionCloseReason::WriteError, Err(err.into()));
+                                    }
+                                };
                                 let bytes = Bytes::from(serialized);
                                 let payload_size = bytes.len();
 
@@ -265,13 +275,13 @@ impl OutgoingConnection {
                                 // (e.g., due to half-open connection where peer stopped ACKing)
                                 match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
                                     Ok(Ok(_)) => {},
-                                    Ok(Err(e)) => return Err(e.into()),
+                                    Ok(Err(e)) => return (ConnectionCloseReason::WriteError, Err(e.into())),
                                     Err(_) => {
                                         // Write timed out - connection is likely stuck/half-open
-                                        return Err(anyhow::anyhow!(
+                                        return (ConnectionCloseReason::WriteTimeout, Err(anyhow!(
                                             "write operation timed out after {}s (connection may be half-open)",
                                             WRITE_OPERATION_TIMEOUT.as_secs()
-                                        ));
+                                        )));
                                     }
                                 }
 
@@ -308,40 +318,36 @@ impl OutgoingConnection {
                                 };
                                 tracking::set_progress(&format!("sent {} bytes", sent_bytes));
                             }
-                            _ = futures::StreamExt::next(&mut framed_tls_stream) => {
+                            received = futures::StreamExt::next(&mut framed_tls_stream) => {
                                 // We do not expect any data from the other side. However,
                                 // selecting on it will quickly return error if the connection
                                 // is broken before we have data to send. That way we can
                                 // immediately quit the loop as soon as the connection is broken
                                 // (so we can reconnect).
-                                break;
+                                return match received {
+                                    Some(Ok(_)) => (
+                                        ConnectionCloseReason::UnexpectedData,
+                                        Err(anyhow!("peer wrote on the connection we dialed")),
+                                    ),
+                                    Some(Err(err)) => {
+                                        (ConnectionCloseReason::ReadError, Err(err.into()))
+                                    }
+                                    None => (ConnectionCloseReason::PeerEof, Ok(())),
+                                };
                             }
                         }
                     }
-                    anyhow::Ok(())
                 }.await;
 
-                // Peer closing without close_notify is normal in P2P networks (task aborts,
-                // reconnections, process restarts). Treat it as a clean close, not an error.
-                if let Err(err) = &result
-                    && is_tls_close_notify_error(err)
-                {
-                    tracing::debug!(
-                        err = %err,
-                        peer_id = %peer_id,
-                        "peer closed connection without TLS close_notify"
-                    );
-                    return Ok(());
-                }
-
-                // Send TLS close_notify before dropping the connection so
-                // the peer does not see an unexpected EOF.
-                let mut tls_stream = framed_tls_stream.into_inner();
-                if let Err(err) = tls_stream.shutdown().await {
-                    tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
-                }
-
-                result
+                close_on_abort.armed = false;
+                close_connection(
+                    peer_id,
+                    OUTGOING_CONNECTION,
+                    close_reason,
+                    result,
+                    framed_tls_stream.into_inner(),
+                )
+                .await
             },
         );
         let sender_clone = sender.clone();
@@ -719,17 +725,27 @@ async fn incoming_connection_handler(
 
     let peer_id_string = peer_id.to_string();
 
-    let result: anyhow::Result<()> = async {
+    let (close_reason, result): (ConnectionCloseReason, anyhow::Result<()>) = async {
         loop {
-            let payload_bytes = match framed_tls_stream_reader
+            let read = framed_tls_stream_reader
                 .next()
                 .timeout(MESSAGE_READ_TIMEOUT_DURATION)
-                .await?
-            {
-                Some(result) => result?,
-                None => {
+                .await;
+            let payload_bytes = match read {
+                Ok(Some(Ok(payload_bytes))) => payload_bytes,
+                Ok(Some(Err(err))) => return (ConnectionCloseReason::ReadError, Err(err.into())),
+                Ok(None) => {
                     // Stream ended cleanly (peer closed connection).
-                    return Ok(());
+                    return (ConnectionCloseReason::PeerEof, Ok(()));
+                }
+                Err(elapsed) => {
+                    return (
+                        ConnectionCloseReason::ReadTimeout,
+                        Err(anyhow::Error::new(elapsed).context(format!(
+                            "no message received within {}s",
+                            MESSAGE_READ_TIMEOUT_DURATION.as_secs()
+                        ))),
+                    );
                 }
             };
 
@@ -747,8 +763,15 @@ async fn incoming_connection_handler(
                 }
             };
 
-            let packet =
-                Packet::try_from_slice(&payload_bytes).context("Failed to deserialize packet")?;
+            let packet = match Packet::try_from_slice(&payload_bytes) {
+                Ok(packet) => packet,
+                Err(err) => {
+                    return (
+                        ConnectionCloseReason::UnexpectedData,
+                        Err(anyhow::Error::new(err).context("Failed to deserialize packet")),
+                    );
+                }
+            };
 
             let message_label = packet.message_type_label();
 
@@ -757,16 +780,23 @@ async fn incoming_connection_handler(
                     // Do nothing. Pings are just for TCP keepalive.
                 }
                 Packet::MpcMessage(mpc_message) => {
-                    message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
+                    let sent = message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
                         from: peer_id,
                         message: mpc_message,
-                    }))?;
+                    }));
+                    if let Err(err) = sent {
+                        return (ConnectionCloseReason::LocalShutdown, Err(err.into()));
+                    }
                 }
                 Packet::IndexerHeight(message) => {
-                    message_sender.send(PeerMessage::IndexerHeight(PeerIndexerHeightMessage {
-                        from: peer_id,
-                        message,
-                    }))?;
+                    let sent =
+                        message_sender.send(PeerMessage::IndexerHeight(PeerIndexerHeightMessage {
+                            from: peer_id,
+                            message,
+                        }));
+                    if let Err(err) = sent {
+                        return (ConnectionCloseReason::LocalShutdown, Err(err.into()));
+                    }
                 }
             }
 
@@ -791,27 +821,14 @@ async fn incoming_connection_handler(
     }
     .await;
 
-    // Peer closing without close_notify is normal in P2P networks (task aborts,
-    // reconnections, process restarts). Treat it as a clean close, not an error.
-    if let Err(err) = &result
-        && is_tls_close_notify_error(err)
-    {
-        tracing::debug!(
-            err = %err,
-            peer_id = %peer_id,
-            "peer closed connection without TLS close_notify"
-        );
-        return Ok(());
-    }
-
-    // Send TLS close_notify before dropping the connection so
-    // the peer does not see an unexpected EOF.
-    let mut tls_stream = framed_tls_stream_reader.into_inner();
-    if let Err(err) = tls_stream.shutdown().await {
-        tracing::debug!(err = %err, "TLS shutdown failed on incoming connection");
-    }
-
-    result
+    close_connection(
+        peer_id,
+        INCOMING_CONNECTION,
+        close_reason,
+        result,
+        framed_tls_stream_reader.into_inner(),
+    )
+    .await
 }
 
 /// Adapts a [`TcpListener`] into a [`Stream`](futures::Stream) of accepted connections, so that the
@@ -838,6 +855,91 @@ async fn run_accept_loop<S>(
         match result {
             Ok(stream) => on_connection(stream),
             Err(err) => tracing::error!("error accepting tcp stream: {}", err),
+        }
+    }
+}
+
+async fn close_connection(
+    peer_id: ParticipantId,
+    direction: &'static str,
+    reason: ConnectionCloseReason,
+    result: anyhow::Result<()>,
+    mut stream: impl AsyncWrite + Unpin,
+) -> anyhow::Result<()> {
+    let peer_gone = result.as_ref().err().is_some_and(is_tls_close_notify_error);
+    let reason = if peer_gone {
+        ConnectionCloseReason::PeerEof
+    } else {
+        reason
+    };
+    record_connection_closed(peer_id, direction, reason, result.as_ref().err());
+
+    if peer_gone {
+        return Ok(());
+    }
+
+    // Send TLS close_notify before dropping the connection so
+    // the peer does not see an unexpected EOF.
+    if let Err(err) = stream.shutdown().await {
+        tracing::debug!(err = %err, direction, "TLS shutdown failed");
+    }
+
+    if reason.is_local_failure() {
+        result
+    } else {
+        Ok(())
+    }
+}
+
+fn record_connection_closed(
+    peer_id: ParticipantId,
+    direction: &'static str,
+    reason: ConnectionCloseReason,
+    error: Option<&anyhow::Error>,
+) {
+    NETWORK_CONNECTION_CLOSED
+        .with_label_values(&[&peer_id.to_string(), direction, reason.as_label()])
+        .inc();
+
+    match (reason, error) {
+        (ConnectionCloseReason::PeerEof | ConnectionCloseReason::LocalShutdown, _) => {
+            tracing::info!(
+                peer_id = %peer_id,
+                direction,
+                reason = reason.as_label(),
+                "connection closed"
+            )
+        }
+        (_, None) => tracing::warn!(
+            peer_id = %peer_id,
+            direction,
+            reason = reason.as_label(),
+            "connection closed"
+        ),
+        (_, Some(err)) => tracing::warn!(
+            peer_id = %peer_id,
+            direction,
+            reason = reason.as_label(),
+            err = %format_args!("{err:#}"),
+            "connection closed"
+        ),
+    }
+}
+
+struct RecordLocalShutdownOnAbort {
+    peer_id: ParticipantId,
+    armed: bool,
+}
+
+impl Drop for RecordLocalShutdownOnAbort {
+    fn drop(&mut self) {
+        if self.armed {
+            record_connection_closed(
+                self.peer_id,
+                OUTGOING_CONNECTION,
+                ConnectionCloseReason::LocalShutdown,
+                None,
+            );
         }
     }
 }
@@ -1084,9 +1186,12 @@ pub mod testing {
 mod tests {
     use super::{
         IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
-        incoming_connection_handler,
+        close_connection, incoming_connection_handler,
     };
     use crate::config::MpcConfig;
+    use crate::metrics::networking_metrics::{
+        ConnectionCloseReason, NETWORK_CONNECTION_CLOSED, OUTGOING_CONNECTION,
+    };
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
     use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
@@ -1480,6 +1585,73 @@ mod tests {
             );
         })
         .await;
+    }
+
+    fn missing_close_notify_error() -> anyhow::Error {
+        anyhow::Error::new(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "peer closed connection without sending close_notify",
+        ))
+    }
+
+    fn closures_recorded(peer_id: ParticipantId, reason: ConnectionCloseReason) -> u64 {
+        NETWORK_CONNECTION_CLOSED
+            .with_label_values(&[&peer_id.to_string(), OUTGOING_CONNECTION, reason.as_label()])
+            .get()
+    }
+
+    #[tokio::test]
+    async fn close_connection__should_attribute_a_missing_close_notify_to_the_peer() {
+        // Given
+        let peer_id = ParticipantId::from_raw(700);
+
+        // When
+        close_connection(
+            peer_id,
+            OUTGOING_CONNECTION,
+            ConnectionCloseReason::ReadError,
+            Err(missing_close_notify_error()),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+
+        // Then
+        assert_eq!(
+            closures_recorded(peer_id, ConnectionCloseReason::PeerEof),
+            1
+        );
+        assert_eq!(
+            closures_recorded(peer_id, ConnectionCloseReason::ReadError),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn close_connection__should_keep_the_reported_reason_for_any_other_error() {
+        // Given
+        let peer_id = ParticipantId::from_raw(701);
+
+        // When
+        let result = close_connection(
+            peer_id,
+            OUTGOING_CONNECTION,
+            ConnectionCloseReason::WriteTimeout,
+            Err(anyhow::anyhow!("connection reset by peer")),
+            Vec::new(),
+        )
+        .await;
+
+        // Then
+        assert!(result.is_err());
+        assert_eq!(
+            closures_recorded(peer_id, ConnectionCloseReason::WriteTimeout),
+            1
+        );
+        assert_eq!(
+            closures_recorded(peer_id, ConnectionCloseReason::PeerEof),
+            0
+        );
     }
 
     /// Regression test to ensure that
