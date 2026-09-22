@@ -5,8 +5,8 @@
 > here was removed. What remains is a stub that produces valid ECDSA signatures while
 > leaking the signing key. It exists so that the node and contract plumbing built
 > around this protocol — presignature storage, task routing, resharing, threshold
-> validation — stays compiled and exercised until a real robust scheme replaces it
-> (TODO([#4383](https://github.com/near/mpc/issues/4383))).
+> validation — stays compiled and exercised until a real robust scheme replaces it.
+> TODO(#4383): replace the stub with a real robust scheme.
 > Never add a domain for this protocol on mainnet or testnet.
 
 ## Pipeline
