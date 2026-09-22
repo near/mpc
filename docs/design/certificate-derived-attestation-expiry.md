@@ -235,7 +235,7 @@ so step 3 is a rotation, not a first deployment.
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
 `attested_at_seconds` is the replacement health signal.
-[`tdx-tcb-status.md`](../tdx-tcb-status.md) sells the old behaviour as the cheapest health check and
+[`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) sells the old behaviour as the cheapest health check and
 needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` description from
 [#4236](https://github.com/near/mpc/pull/4236).
 
