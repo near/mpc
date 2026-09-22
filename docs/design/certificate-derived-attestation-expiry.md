@@ -223,8 +223,9 @@ lifetimes, but it should be a deliberate choice rather than an accident.*
    numbers; they come from the measurement. The vote is `propose_update` / `vote_update`, which is
    separate governance from the contract upgrade, and it has to land before step 4 — otherwise the
    heavier method runs under the old budget and every submission runs out of gas.
-3. **Deploy the new verifier and vote it in.** It still serves `verify_quote`, so nothing changes on
-   chain yet. Reversible by voting back.
+3. **Deploy the new verifier and vote it in**, per
+   [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
+   so nothing changes on chain yet. Reversible by voting back.
 4. **Upgrade `mpc-contract`** to call `verify_quote_with_claims`. Certificate-derived expiry takes
    effect here, and from this point voting back to the old verifier no longer works.
 5. **Release the node** with the near-expiry refresh rule from item 4.
