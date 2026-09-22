@@ -29,23 +29,21 @@ The 7-day constant was a deliberate stop-gap, and a sound one at the time:
 
 ### Why that no longer holds
 
-The third leg is gone. `MAX_COLLATERAL_AGE` was raised from 7 days to 31 as an emergency fix, after
-Intel served a CRL older than our limit and the fleet stopped attesting; the permanent policy is
-still open ([#3946](https://github.com/near/mpc/issues/3946)). Collateral may now be presented right
-up to its `nextUpdate`, so `now + 7 days` can outlast the collateral that justified it. And since the
-7 days are counted from submission time, the submitter chooses the overhang.
+**Intel's own value removes the guesswork.** Any constant we pick instead either loosens security or
+assumes a refresh cadence Intel may not keep, and that assumption has already failed once.
 
-This matters for revocation. The contract never re-checks a stored attestation against fresher
-collateral, and it has no way to learn about a new CRL, so trust ends at expiry and nowhere else. A
-platform that Intel revokes in the next PCK CRL therefore keeps a working attestation for up to 7
-days after the CRL that vouched for it stopped being authoritative. Until on-chain CRL updates exist
-([#1050](https://github.com/near/mpc/issues/1050)), this expiry is the only bound on that.
+**The third leg has also gone.** `MAX_COLLATERAL_AGE` is now 31 days rather than 7
+([#3946](https://github.com/near/mpc/issues/3946)), so collateral can be presented right up to its
+`nextUpdate` and `now + 7 days` outlasts it. The submitter picks when to submit, so it picks the
+overhang.
 
-Intel's own value removes the guesswork. Any constant we choose instead either loosens security or
-assumes a refresh cadence Intel may not keep — an assumption that has already failed once.
+That overhang is a revocation window. The contract never re-checks a stored attestation against
+fresher collateral, so a platform Intel revokes in the next PCK CRL stays trusted for up to 7 more
+days. Until on-chain CRL updates exist ([#1050](https://github.com/near/mpc/issues/1050)), this
+expiry is the only bound on that.
 
-It is also more generous in the normal case: a node with fresh collateral gets about 30 days rather
-than 7.
+Using Intel's value is also more generous in the normal case: a node with fresh collateral gets
+about 30 days rather than 7.
 
 *Considered: a contract-side cap on top of the certificate value. Dropped — it leaves two expiries
 to keep in sync, it does not help the fleet convergence described in item 4, and
