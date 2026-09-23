@@ -32,13 +32,13 @@ The inputs to this phase are:
 5. Each $P_i$ commits coefficientwise to $f_{a_i}$ and $f_{b_i}$:
 
 $$
-A_i \gets \mathsf{Com}(f_{a_i}; f_{\rho_i}) \qquad
-B_i \gets \mathsf{Com}(f_{b_i}; f_{\sigma_i})
+\hat f_{a_i} \gets \mathsf{Com}(f_{a_i}; f_{\rho_i}) \qquad
+\hat f_{b_i} \gets \mathsf{Com}(f_{b_i}; f_{\sigma_i})
 $$
 
-$\qquad$ i.e. $A_{i,m} \gets \mathsf{Com}(a_{i,m}; \rho_{i,m})$ for $m \in \set{0..t}$ and $B_{i,m} \gets \mathsf{Com}(b_{i,m}; \sigma_{i,m})$ for $m \in \set{1..2t}$, where $a_{i,m}, b_{i,m}, \rho_{i,m}, \sigma_{i,m}$ are the coefficients of $f_{a_i}, f_{b_i}, f_{\rho_i}, f_{\sigma_i}$. We write $A_i(j) = \sum_{m=0}^{t} j^m \cdot A_{i,m}$ and $B_i(j) = \sum_{m=1}^{2t} j^m \cdot B_{i,m}$ for their evaluation at $j$.
+$\qquad$ i.e. $\hat f_{a_i}$ is the polynomial with coefficients $\mathsf{Com}(a_{i,m}; \rho_{i,m})$ for $m \in \set{0..t}$ and $\hat f_{b_i}$ the polynomial with coefficients $\mathsf{Com}(b_{i,m}; \sigma_{i,m})$ for $m \in \set{1..2t}$, where $a_{i,m}, b_{i,m}, \rho_{i,m}, \sigma_{i,m}$ are the coefficients of $f_{a_i}, f_{b_i}, f_{\rho_i}, f_{\sigma_i}$. Their evaluation satisfies $\hat f_{a_i}(j) = \mathsf{Com}(f_{a_i}(j); f_{\rho_i}(j))$ and $\hat f_{b_i}(j) = \mathsf{Com}(f_{b_i}(j); f_{\sigma_i}(j))$.
 
-6. $\star$ Each $P_i$ sends $(A_i, B_i)$ to every party.
+6. $\star$ Each $P_i$ sends $(\hat f_{a_i}, \hat f_{b_i})$ to every party.
 7. $\textcolor{red}{\star}$ Each $P_i$ **privately** sends
 $(k_{ij}, a_{ij}, b_{ij}, d_{ij}, e_{ij}, \rho_{ij}, \sigma_{ij})$ to every party $P_j$ such that:
 
@@ -54,13 +54,13 @@ $$
 
 **Round 2:**
 
-1. $\bullet$ Each $P_i$ waits to receive the commitments $(A_j, B_j)$ from each party $P_j$
+1. $\bullet$ Each $P_i$ waits to receive the committed polynomials $(\hat f_{a_j}, \hat f_{b_j})$ from each party $P_j$
 2. $\bullet$ Each $P_i$ waits to receive $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji}, \rho_{ji}, \sigma_{ji})$ from each party $P_j$
 3. $\blacktriangle$ Each $P_i$ *asserts* the following identifying whether $P_j$ is honest or malicious:
 
 $$
-\mathsf{Com}(a_{ji}; \rho_{ji}) = A_j(i) \qquad
-\mathsf{Com}(b_{ji}; \sigma_{ji}) = B_j(i)
+\mathsf{Com}(a_{ji}; \rho_{ji}) = \hat f_{a_j}(i) \qquad
+\mathsf{Com}(b_{ji}; \sigma_{ji}) = \hat f_{b_j}(i)
 $$
 
 4. Each $P_i$ sums the shares received from the participants:
@@ -75,7 +75,7 @@ e_i \gets \sum_j e_{ji} \qquad
 \sigma_i \gets \sum_j \sigma_{ji}
 $$
 
-5. Each $P_i$ computes the aggregated commitments $A \gets \sum_j A_j$ and $B \gets \sum_j B_j$ (coefficientwise), so that $A(i) = \mathsf{Com}(a_i; \rho_i)$ and $B(i) = \mathsf{Com}(b_i; \sigma_i)$.
+5. Each $P_i$ sums the committed polynomials $\hat f_a \gets \sum_j \hat f_{a_j}$ and $\hat f_b \gets \sum_j \hat f_{b_j}$, so that $\hat f_a(i) = \mathsf{Com}(a_i; \rho_i)$ and $\hat f_b(i) = \mathsf{Com}(b_i; \sigma_i)$.
 6. Each $P_i$ computes $R_i \gets k_i \cdot G$
 7. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
 8. $\star$ Each $P_i$ sends $(R_i, w_i, \eta_i)$ to every party, where $\eta_i \gets H(\text{all commitments received in round 1})$.
@@ -89,13 +89,13 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 4. $\blacktriangle$ Each $P_i$ *asserts* that $R \neq Identity$
 5. Each $P_i$ computes $w \gets \mathsf{Interpolation}(w_1, \ldots w_{2 \cdot t+1}; 0)$
 6. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
-7. Each $P_i$ computes $\pi_i \gets \mathsf{Prove}\big(w_i \cdot G, A(i), B(i), R_i;\ a_i, b_i, \rho_i, \sigma_i\big)$
+7. Each $P_i$ computes $\pi_i \gets \mathsf{Prove}\big(w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i;\ a_i, b_i, \rho_i, \sigma_i\big)$
 8. $\star$ Each $P_i$ sends $\pi_i$ to every party.
 
 **Round 4:**
 
 1. $\bullet$ Each $P_i$ waits to receive $\pi_j$ from every party.
-2. $\blacktriangle$ For each $j$, each $P_i$ *asserts* that $\mathsf{Verify}\big(w_j \cdot G, A(j), B(j), R_j;\ \pi_j\big)$ succeeds, identifying $P_j$ as malicious otherwise.
+2. $\blacktriangle$ For each $j$, each $P_i$ *asserts* that $\mathsf{Verify}\big(w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j;\ \pi_j\big)$ succeeds, identifying $P_j$ as malicious otherwise.
 3. Each $P_i$ computes $c_i \gets a_i \cdot w^{-1}$
 4. Each $P_i$ computes $\alpha_i \gets c_i+d_i$
 5. Each $P_i$ computes $\beta_i \gets c_i \cdot x_i$.
@@ -119,12 +119,12 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 
 $$
 w \cdot G = a \cdot R_i + b \cdot G \qquad
-A(i) = a \cdot G + \rho \cdot H_{\mathsf{ped}} \qquad
-B(i) = b \cdot G + \sigma \cdot H_{\mathsf{ped}}
+\hat f_a(i) = a \cdot G + \rho \cdot H_{\mathsf{ped}} \qquad
+\hat f_b(i) = b \cdot G + \sigma \cdot H_{\mathsf{ped}}
 $$
 
-* $\mathsf{Prove}$: sample $(u_a, u_b, u_\rho, u_\sigma)$; $K_0 \gets u_a \cdot R_i + u_b \cdot G$, $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$, $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$; $e \gets H(\mathsf{sid}, i, w \cdot G, A(i), B(i), R_i, K_0, K_1, K_2)$; $z_a \gets u_a + e a$, $z_b \gets u_b + e b$, $z_\rho \gets u_\rho + e \rho$, $z_\sigma \gets u_\sigma + e \sigma$; output $\pi = (e, z_a, z_b, z_\rho, z_\sigma)$.
-* $\mathsf{Verify}$: $K_0 \gets z_a \cdot R_i + z_b \cdot G - e \cdot (w \cdot G)$, $K_1 \gets z_a \cdot G + z_\rho \cdot H_{\mathsf{ped}} - e \cdot A(i)$, $K_2 \gets z_b \cdot G + z_\sigma \cdot H_{\mathsf{ped}} - e \cdot B(i)$; accept iff $e = H(\mathsf{sid}, i, w \cdot G, A(i), B(i), R_i, K_0, K_1, K_2)$.
+* $\mathsf{Prove}$: sample $(u_a, u_b, u_\rho, u_\sigma)$; $K_0 \gets u_a \cdot R_i + u_b \cdot G$, $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$, $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$; $e \gets H(\mathsf{sid}, i, w \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$; $z_a \gets u_a + e a$, $z_b \gets u_b + e b$, $z_\rho \gets u_\rho + e \rho$, $z_\sigma \gets u_\sigma + e \sigma$; output $\pi = (e, z_a, z_b, z_\rho, z_\sigma)$.
+* $\mathsf{Verify}$: $K_0 \gets z_a \cdot R_i + z_b \cdot G - e \cdot (w \cdot G)$, $K_1 \gets z_a \cdot G + z_\rho \cdot H_{\mathsf{ped}} - e \cdot \hat f_a(i)$, $K_2 \gets z_b \cdot G + z_\sigma \cdot H_{\mathsf{ped}} - e \cdot \hat f_b(i)$; accept iff $e = H(\mathsf{sid}, i, w \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$.
 
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).
 
