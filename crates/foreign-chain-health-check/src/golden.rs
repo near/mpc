@@ -110,9 +110,9 @@ const MAINNET: GoldenSet = GoldenSet {
         block_hash: "0x1b716b05027567f9f4a2fe37f8769dc3b04a2e5a3893f6e0ed45f24c7c0ffa5",
     }),
     aptos: Some(AptosVector {
-        tx: "5e949318834deb56d39beb4641181e7a653f7c6e692d66f762224c1b3be99ab9",
+        tx: "d6005d80bb08c3452c9451701b6554dec42de51be75b2ea9776bdf865a8847e1",
         event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 1_064_848_097,
+        event_sequence_number: 1_065_454_718,
     }),
     sui: Some(SuiVector {
         chain_id: sui::MAINNET_GENESIS_CHECKPOINT_DIGEST,
@@ -127,9 +127,21 @@ const MAINNET: GoldenSet = GoldenSet {
 
 const TESTNET: GoldenSet = GoldenSet {
     ethereum: None,
-    base: None,
-    bnb: None,
-    arbitrum: None,
+    // Base Sepolia.
+    base: Some(BlockHashVector {
+        tx: "ce5d7c9b0da923c8a0f5a774fa97e796510bcaa3a4c39f5a97de8ea1a4bde6fa",
+        block_hash: "cab32b157f9ea53b2308d285db440bb9c63501cdf89103017a4fffde749b3b60",
+    }),
+    // BSC testnet (Chapel).
+    bnb: Some(BlockHashVector {
+        tx: "3ae63e2e036f7cc4c266a9f55ab194751e0a10d4c4794ba02caa6b12cfed09bb",
+        block_hash: "20c3d3870d5d6a5a911f0e83b9d32fd1bee3cadc94294f5db913fdbf5a17fae4",
+    }),
+    // Arbitrum Sepolia.
+    arbitrum: Some(BlockHashVector {
+        tx: "ff09e6c516be6285e3ae768563c4f07c3bbac59d44fedd09a805d8f5c6f492c8",
+        block_hash: "b6ceb5a5655d4f028ea0e737581a98004463da326f6a6c84f18363331571099b",
+    }),
     polygon: None,
     hyper_evm: None,
     avalanche: None,
@@ -147,9 +159,9 @@ const TESTNET: GoldenSet = GoldenSet {
         block_hash: "0x1f33823b145e92ca069b90d3cfb012277762d9dd1dc2efb975b10a7c3d92875",
     }),
     aptos: Some(AptosVector {
-        tx: "6864a1549b48aa1cd22a095e30d8c103a45cde49597a8149bd1d17628101348b",
+        tx: "2165b938e2c80bf706d1960c81861daa1418e1882c96fe46c6ab563e54ad4d95",
         event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 863_012_938,
+        event_sequence_number: 863_263_604,
     }),
     sui: Some(SuiVector {
         chain_id: sui::TESTNET_GENESIS_CHECKPOINT_DIGEST,
