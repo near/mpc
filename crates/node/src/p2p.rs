@@ -4,24 +4,25 @@ use crate::metrics::networking_metrics::{
     self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
-    AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
-    OptionSenderConnectionId, SenderConnectionId,
+    AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
+    NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
 };
 use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
 use crate::network::handshake::{
     DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID, p2p_handshake_dialer,
     p2p_handshake_listener,
 };
+use crate::network::wire_format::{MpcMessageKind, Packet};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, ParticipantId,
-    PeerIndexerHeightMessage, PeerMessage,
+    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
+    PeerMessage,
 };
-use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
+use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshDeserialize;
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
@@ -119,6 +120,13 @@ struct OutgoingConnection {
     /// This is cancelled when the connection is closed. Used to wait for the
     /// connection to close.
     closed: CancellationToken,
+    peer_network_protocol_version: NetworkProtocolVersion,
+}
+
+impl HasPeerNetworkProtocolVersion for OutgoingConnection {
+    fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
+        self.peer_network_protocol_version
+    }
 }
 
 /// Simple structure to cancel the CancellationToken when dropped.
@@ -128,13 +136,6 @@ impl Drop for DropToCancel {
     fn drop(&mut self) {
         self.0.cancel();
     }
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-enum Packet {
-    Ping,
-    MpcMessage(MpcMessage),
-    IndexerHeight(IndexerHeightMessage),
 }
 
 impl Packet {
@@ -208,7 +209,7 @@ impl OutgoingConnection {
             ),
         )
         .await??;
-        match connection_info {
+        let peer_network_protocol_version = match connection_info {
             HandshakeOutcome::Unsupported(peer_version) => {
                 if let Err(err) = tls_stream.shutdown().await {
                     tracing::error!(err = %err, "TLS shutdown failed");
@@ -222,6 +223,7 @@ impl OutgoingConnection {
             HandshakeOutcome::Dec2025(_) => {
                 // a dialer concluding a successful handshake with a listening legacy node is
                 // always assumed to be accepted
+                NetworkProtocolVersion::Dec2025
             }
             HandshakeOutcome::Jan2026(handshake_data) => {
                 if !handshake_data.is_accepted() {
@@ -234,8 +236,9 @@ impl OutgoingConnection {
                     }
                     anyhow::bail!("connection not accepted: {:?}", handshake_data);
                 }
+                handshake_data.peer_network_protocol_version
             }
-        }
+        };
 
         let mut framed_tls_stream = configure_framed_stream(tls_stream);
 
@@ -362,6 +365,7 @@ impl OutgoingConnection {
             _sender_task: sender_task,
             _keepalive_task: keepalive_task,
             closed,
+            peer_network_protocol_version,
         })
     }
 
@@ -494,14 +498,20 @@ impl PersistentConnection {
     }
 }
 
-#[derive(Default)]
 pub struct IncomingConnection {
     sender_connection_id: u32,
+    peer_network_protocol_version: NetworkProtocolVersion,
 }
 
 impl SenderConnectionId for IncomingConnection {
     fn sender_connection_id(&self) -> u32 {
         self.sender_connection_id
+    }
+}
+
+impl HasPeerNetworkProtocolVersion for IncomingConnection {
+    fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
+        self.peer_network_protocol_version
     }
 }
 
@@ -684,7 +694,7 @@ async fn incoming_connection_handler(
         ),
     )
     .await??;
-    let sender_connection_id = match connection_info {
+    let (sender_connection_id, peer_network_protocol_version) = match connection_info {
         HandshakeOutcome::Unsupported(peer_version) => {
             if let Err(err) = tls_stream.shutdown().await {
                 tracing::error!(err = %err, "TLS shutdown failed");
@@ -701,7 +711,7 @@ async fn incoming_connection_handler(
                 tls_stream.shutdown().await?;
                 return Ok(());
             }
-            1
+            (1, NetworkProtocolVersion::Dec2025)
         }
         HandshakeOutcome::Jan2026(connection_info) => {
             if !connection_info.is_accepted() {
@@ -710,13 +720,17 @@ async fn incoming_connection_handler(
                 }
                 anyhow::bail!("Connection not accepted: {:?}", connection_info);
             } else {
-                connection_info.sender_connection_id
+                (
+                    connection_info.sender_connection_id,
+                    connection_info.peer_network_protocol_version,
+                )
             }
         }
     };
     tracing::info!("Incoming {} <-- {} handshake succeeded", my_id, peer_id);
     let incoming_conn = Arc::new(IncomingConnection {
         sender_connection_id,
+        peer_network_protocol_version,
     });
     if let Err(err) = connectivities
         .get(peer_id)?
@@ -1045,6 +1059,7 @@ pub mod testing {
             TestPorts::mpc_node_tests(27);
         pub const MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST: TestPorts = TestPorts::mpc_node_tests(28);
         pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
+        pub const PEER_PROTOCOL_VERSION_TEST: TestPorts = TestPorts::mpc_node_tests(30);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1101,12 +1116,13 @@ mod tests {
     use crate::config::MpcConfig;
     use crate::log_dedup::{Decision, Deduplicator};
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
+    use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
     use crate::primitives::{
-        ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
+        ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
     };
-    use crate::providers::EcdsaTaskId;
+    use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
@@ -1163,7 +1179,7 @@ mod tests {
                     KeyEventId::new(EpochId::new(epoch_id), DomainId(domain_id), attempt_id);
                 let msg0to1 = MpcMessage {
                     channel_id,
-                    kind: crate::primitives::MpcMessageKind::Start(MpcStartMessage {
+                    kind: crate::network::wire_format::MpcMessageKind::Start(MpcStartMessage {
                         task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
                             key_event: key_id,
                         }),
@@ -1185,7 +1201,7 @@ mod tests {
 
                 let msg1to0 = MpcMessage {
                     channel_id,
-                    kind: crate::primitives::MpcMessageKind::Abort("test".to_owned()),
+                    kind: crate::network::wire_format::MpcMessageKind::Abort("test".to_owned()),
                 };
                 sender1
                     .send(
@@ -1201,6 +1217,55 @@ mod tests {
                 assert_eq!(msg.from, participant1);
                 assert_eq!(msg.message, msg1to0);
             }
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn tls_mesh_network__should_record_peer_protocol_version_after_handshake() {
+        // Given
+        let configs = generate_test_p2p_configs(
+            &["test0".parse().unwrap(), "test1".parse().unwrap()],
+            2,
+            &port_seed::PEER_PROTOCOL_VERSION_TEST,
+        )
+        .unwrap();
+        let participant0 = configs[0].0.my_participant_id;
+        let participant1 = configs[1].0.my_participant_id;
+        let all_participants = [participant0, participant1];
+
+        start_root_task_with_periodic_dump(async move {
+            let (sender0, _receiver0) = super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
+                .await
+                .unwrap();
+            assert_eq!(
+                sender0
+                    .connectivity(participant1)
+                    .peer_network_protocol_version(),
+                None
+            );
+            let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
+                .await
+                .unwrap();
+
+            // When
+            sender0.wait_for_ready(2, &all_participants).await.unwrap();
+            sender1.wait_for_ready(2, &all_participants).await.unwrap();
+
+            // Then
+            assert_eq!(
+                sender0
+                    .connectivity(participant1)
+                    .peer_network_protocol_version(),
+                Some(CURRENT_PROTOCOL_VERSION)
+            );
+            assert_eq!(
+                sender1
+                    .connectivity(participant0)
+                    .peer_network_protocol_version(),
+                Some(CURRENT_PROTOCOL_VERSION)
+            );
         })
         .await;
     }

@@ -6,8 +6,8 @@ makes it the trusted verifier for the MPC contract.
 ## Overview
 
 Putting the verifier code on-chain is not enough for the MPC contract to use it: the
-contract only calls a verifier the participants have voted to trust. So this runbook has
-two halves. First, deploy the verifier to its own account and lock it — remove the
+contract only calls the verifier it trusts, the one named at init or voted in since. So this
+runbook has two halves. First, deploy the verifier to its own account and lock it — remove the
 account's keys so the code can never change
 ([steps 1-5](#1-reproducibly-build-the-verifier-and-record-its-hash)). Then the
 participants vote that account, together with its code hash, in as the trusted verifier
@@ -181,8 +181,7 @@ near contract call-function as-transaction "$SIGNER_CONTRACT" vote_tee_verifier_
 
 ## 7. Confirm the change applied
 
-Read the resolved verifier; once the threshold is reached it returns `$VERIFIER_ACCOUNT`
-(and `null` until then):
+Read the resolved verifier; once the threshold is reached it returns `$VERIFIER_ACCOUNT`:
 
 ```shell
 near contract call-function as-read-only "$SIGNER_CONTRACT" tee_verifier_account_id json-args {} network-config "$NETWORK" now

@@ -17,7 +17,7 @@ pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol)
     matches!(
         (purpose, protocol),
         (DomainPurpose::Sign, Protocol::CaitSith)
-            | (DomainPurpose::Sign, Protocol::DamgardEtAl)
+            | (DomainPurpose::Sign, Protocol::RobustEcdsa)
             | (DomainPurpose::Sign, Protocol::Frost)
             | (DomainPurpose::ForeignTx, Protocol::CaitSith)
             | (DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation)
@@ -37,7 +37,7 @@ pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
 }
 
 /// Validates the per-domain reconstruction threshold against the participant
-/// count. Universal bound `2 <= t <= n` plus, for [`DamgardEtAl`](Protocol::DamgardEtAl), the
+/// count. Universal bound `2 <= t <= n` plus, for [`RobustEcdsa`](Protocol::RobustEcdsa), the
 /// honest-majority bound `2t - 1 <= n`.
 pub fn validate_domain_reconstruction_threshold(
     domain: &DomainConfig,
@@ -54,7 +54,7 @@ pub fn validate_domain_reconstruction_threshold(
         }
         .into());
     }
-    if domain.protocol == Protocol::DamgardEtAl {
+    if domain.protocol == Protocol::RobustEcdsa {
         let required = t.checked_mul(2).and_then(|x| x.checked_sub(1)).ok_or(
             DomainError::ReconstructionThresholdOverflow {
                 reconstruction_threshold: t,
@@ -323,7 +323,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(3),
-                protocol: Protocol::DamgardEtAl,
+                protocol: Protocol::RobustEcdsa,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
@@ -382,7 +382,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(4),
-                protocol: Protocol::DamgardEtAl,
+                protocol: Protocol::RobustEcdsa,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
@@ -440,7 +440,7 @@ pub mod tests {
     #[rstest]
     #[case(Protocol::CaitSith, DomainPurpose::Sign)]
     #[case(Protocol::Frost, DomainPurpose::Sign)]
-    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign)]
+    #[case(Protocol::RobustEcdsa, DomainPurpose::Sign)]
     #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
     fn test_infer_purpose_from_protocol(
         #[case] protocol: Protocol,
@@ -452,7 +452,7 @@ pub mod tests {
     #[rstest]
     // Valid combinations
     #[case(DomainPurpose::Sign, Protocol::CaitSith, true)]
-    #[case(DomainPurpose::Sign, Protocol::DamgardEtAl, true)]
+    #[case(DomainPurpose::Sign, Protocol::RobustEcdsa, true)]
     #[case(DomainPurpose::Sign, Protocol::Frost, true)]
     #[case(DomainPurpose::ForeignTx, Protocol::CaitSith, true)]
     #[case(DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation, true)]
@@ -460,7 +460,7 @@ pub mod tests {
     #[case(DomainPurpose::Sign, Protocol::ConfidentialKeyDerivation, false)]
     #[case(DomainPurpose::ForeignTx, Protocol::Frost, false)]
     #[case(DomainPurpose::ForeignTx, Protocol::ConfidentialKeyDerivation, false)]
-    #[case(DomainPurpose::ForeignTx, Protocol::DamgardEtAl, false)]
+    #[case(DomainPurpose::ForeignTx, Protocol::RobustEcdsa, false)]
     #[case(DomainPurpose::CKD, Protocol::CaitSith, false)]
     fn test_valid_protocol_purpose_combinations(
         #[case] purpose: DomainPurpose,
@@ -473,10 +473,10 @@ pub mod tests {
     #[rstest]
     #[case(Protocol::CaitSith, DomainPurpose::Sign, true)]
     #[case(Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
-    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    #[case(Protocol::RobustEcdsa, DomainPurpose::Sign, true)]
     #[case(Protocol::Frost, DomainPurpose::Sign, true)]
     #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD, true)]
-    #[case(Protocol::DamgardEtAl, DomainPurpose::ForeignTx, false)]
+    #[case(Protocol::RobustEcdsa, DomainPurpose::ForeignTx, false)]
     #[case(Protocol::Frost, DomainPurpose::ForeignTx, false)]
     #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::Sign, false)]
     #[case(Protocol::CaitSith, DomainPurpose::CKD, false)]

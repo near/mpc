@@ -44,7 +44,7 @@ impl MpcContract {
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         match domain_config.protocol {
-            dtos::Protocol::CaitSith | dtos::Protocol::DamgardEtAl => {
+            dtos::Protocol::CaitSith | dtos::Protocol::RobustEcdsa => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists() {
-        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::DamgardEtAl] {
+        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::RobustEcdsa] {
             test_signature_common(true, false, protocol);
             test_signature_common(false, false, protocol);
         }
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
-        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::DamgardEtAl] {
+        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::RobustEcdsa] {
             test_signature_common(true, true, protocol);
             test_signature_common(false, true, protocol);
         }

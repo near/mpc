@@ -34,7 +34,7 @@ fn main() {
     let threshold = ReconstructionThreshold::from(config.threshold);
     let max_malicious = MaxMalicious::from(config.threshold - 1);
 
-    println!("Protocol simulation: ECDSA (Cait-Sith vs DamgardEtAl)");
+    println!("Protocol simulation: ECDSA (Cait-Sith vs RobustEcdsa)");
     println!(
         "Participants: {}, threshold: {}, latency: {}ms, samples: {}",
         config.num_participants,
@@ -74,7 +74,7 @@ fn main() {
         pk,
         &config,
     );
-    bench_damgard(
+    bench_robust_ecdsa(
         &participants,
         &key_packages,
         max_malicious,
@@ -162,7 +162,7 @@ fn bench_cait_sith(
     );
 }
 
-fn bench_damgard(
+fn bench_robust_ecdsa(
     participants: &[Participant],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
     max_malicious: MaxMalicious,
@@ -180,7 +180,7 @@ fn bench_damgard(
     );
 
     bench_simulation(
-        "DamgardEtAl: presign",
+        "RobustEcdsa: presign",
         &|| {
             let mut rng = MockCryptoRng::seed_from_u64(66);
             robust_run_presign(
@@ -195,7 +195,7 @@ fn bench_damgard(
         config.samples,
     );
     bench_simulation(
-        "DamgardEtAl: sign",
+        "RobustEcdsa: sign",
         &|| {
             let mut rng = MockCryptoRng::seed_from_u64(77);
             robust_run_sign(

@@ -228,7 +228,7 @@ To generate a new threshold signature key, all participants must vote for it to 
 }
 ```
 
-`reconstruction_threshold` is the per-domain `t` in t-of-n key reconstruction; it must satisfy `2 <= t <= n` against the current participant count. `DamgardEtAl` domains additionally require the honest-majority bound `2t - 1 <= n`.
+`reconstruction_threshold` is the per-domain `t` in t-of-n key reconstruction; it must satisfy `2 <= t <= n` against the current participant count. `RobustEcdsa` domains additionally require the honest-majority bound `2t - 1 <= n`.
 
 ### Deployment
 
@@ -319,7 +319,7 @@ These functions require the caller to be a participant or candidate.
 
 | Function                                                                   | Behavior                                                                                                                                                                                                                                 | Return Value             | Gas Requirement | Effective Gas Cost |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------- | ------------------ |
-| `init(parameters: ThresholdParameters, init_config: Option<InitConfig>)` | Initializes the contract with a threshold, candidate participants, and config values. Can only be called once. This sets the contract state to `Running` with zero domains. vote_add_domains can be called to initialize key generation. | `Result<Self, Error>`    | TBD             | TBD                |
+| `init(parameters: ThresholdParameters, tee_verifier_account_id: AccountId, init_config: Option<InitConfig>)` | Initializes the contract with a threshold, candidate participants, the trusted TEE verifier account, and config values. Can only be called once. This sets the contract state to `Running` with zero domains. vote_add_domains can be called to initialize key generation. | `Result<Self, Error>`    | TBD             | TBD                |
 | `state()`                                                                  | Returns the current state of the contract.                                                                                                                                                                                               | `&ProtocolContractState` | TBD             | TBD                |
 | `get_pending_request(request: &SignatureRequest)`                          | Retrieves pending signature requests.                                                                                                                                                                                                    | `Option<YieldIndex>`     | TBD             | TBD                |
 | `get_pending_ckd_request(request: &CKDRequest)`                            | Retrieves pending confidential key derivation requests.                                                                                                                                                                                  | `Option<YieldIndex>`     | TBD             | TBD                |
