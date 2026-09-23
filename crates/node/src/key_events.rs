@@ -1,9 +1,9 @@
 use crate::indexer::participants::KeyEventIdComparisonResult;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::network::MeshNetworkClient;
-use crate::primitives::{MpcTaskId, ParticipantId};
-use crate::providers::EcdsaTaskId;
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::network::wire_format::{EcdsaTaskId, EddsaTaskId, MpcTaskId};
+use crate::primitives::ParticipantId;
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
@@ -582,12 +582,12 @@ pub async fn keygen_follower(
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel receiver closed unexpectedly; exiting."))?;
         let key_event_id = match channel.task_id() {
-            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event }) => {
-                key_event
-            }
-            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyGeneration { key_event }) => {
-                key_event
-            }
+            crate::network::wire_format::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration {
+                key_event,
+            }) => key_event,
+            crate::network::wire_format::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyGeneration {
+                key_event,
+            }) => key_event,
             _ => {
                 tracing::info!("Ignoring non-keygen task {:?}", channel.task_id());
                 continue;
@@ -724,12 +724,12 @@ pub async fn resharing_follower(
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel receiver closed unexpectedly; exiting."))?;
         let key_event_id = match channel.task_id() {
-            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event }) => {
-                key_event
-            }
-            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing { key_event }) => {
-                key_event
-            }
+            crate::network::wire_format::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
+                key_event,
+            }) => key_event,
+            crate::network::wire_format::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing {
+                key_event,
+            }) => key_event,
             _ => {
                 tracing::info!("Ignoring non-resharing task {:?}", channel.task_id());
                 continue;
