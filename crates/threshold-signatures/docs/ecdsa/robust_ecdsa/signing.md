@@ -48,9 +48,9 @@ d_i \gets \sum_j d_{ji} \qquad
 e_i \gets \sum_j e_{ji}
 $$
 
-3. Each $P_i$ computes $R_i = g^{k_i}$
-4. Each $P_i$ computes $w_i = a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
-5. Each $P_i$ computes $B_i = g^{b_i}$
+3. Each $P_i$ computes $R_i \gets g^{k_i}$
+4. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
+5. Each $P_i$ computes $B_i \gets g^{b_i}$
 6. Each $P_i$ computes $h_i \gets H(B_i)$
 7. $\star$ Each $P_i$ sends $(R_i, w_i, h_i)$ to every party.
 
