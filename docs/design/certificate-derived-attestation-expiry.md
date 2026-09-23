@@ -134,9 +134,15 @@ a calendar date that repeats for weeks.
 
 Fix: store `attested_at_seconds` on
 [`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
-variants, so one field covers both. This restores today's semantics exactly, and gives operators a
-better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
-moves off 604 and the fee floor needs re-checking) and a state migration.
+variants, so one field covers both. This restores today's semantics, and gives operators a
+better health signal than expiry. Costs 9 bytes per entry (599 → 608, so `WORST_CASE_ENTRY_BYTES`
+moves 604 → 613 and the fee floor needs re-checking) and a state migration.
+
+Landed in [#4500](https://github.com/near/mpc/pull/4500) as an `Option<u64>`: the contract never
+recorded when it accepted the entries already on chain, so the migration leaves those `None` rather
+than inventing a time. Nodes are upgraded before the contract, so the node keeps the expiry check as
+a fallback — for those entries and for a contract that predates the field — until
+[#4498](https://github.com/near/mpc/issues/4498) removes it.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
@@ -170,7 +176,8 @@ It stays possible, and gets cheaper, via the timestamp from item 1: record `veri
 when `vote_tee_verifier_change` passes, and in `re_verify` let any entry with
 `attested_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
 submitted after the rotation are untouched, every node gets a full day to re-attest, and there is no
-sweep or per-entry write.
+sweep or per-entry write. An entry carried over by the migration has no `attested_at`, so that rule
+has to decide what a missing one means; treating it as older than any rotation is the safe reading.
 
 **4. Near-expiry collateral.** A node presenting nearly stale collateral now gets a nearly worthless
 attestation. And because `nextUpdate` is shared across the fleet, every node's expiry converges on
@@ -218,7 +225,8 @@ lifetimes, but it should be a deliberate choice rather than an accident.*
 
 ## Rollout
 
-1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
+1. **Land item 1**, the stored submission timestamp, so confirmation keeps working. Done in
+   [#4500](https://github.com/near/mpc/pull/4500).
 2. **Measure `claims()`, then propose and vote the gas config.** This document does not propose
    numbers; they come from the measurement. The vote is `propose_update` / `vote_update`, which is
    separate governance from the contract upgrade, and it has to land before step 4 — otherwise the
@@ -236,9 +244,9 @@ so step 3 is a rotation, not a first deployment.
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
 `attested_at_seconds` is the replacement health signal.
-[`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) sells the old behaviour as the cheapest health check and
-needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` description from
-[#4236](https://github.com/near/mpc/pull/4236).
+[`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) sold the old behaviour as the cheapest health check
+and was rewritten in #4500; the `mpc_attestation_expiry_timestamp_seconds` description from
+[#4236](https://github.com/near/mpc/pull/4236) still needs it.
 
 ## Open questions
 
