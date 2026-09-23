@@ -14,6 +14,7 @@
 dockerTools.buildImage {
   name = "mpc-launcher";
   tag = "latest";
+  compressor = "none";
 
   copyToRoot = [
     docker-client

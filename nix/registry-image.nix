@@ -10,7 +10,6 @@ runCommand "${image.imageName}-registry"
     passthru.archive = image;
   }
   ''
-    # The sandbox has no policy.json and no /var/tmp
-    skopeo --insecure-policy --tmpdir "$TMPDIR" copy --dest-compress \
-      docker-archive:${image} dir:$out
+    # The sandbox has no policy.json
+    skopeo --insecure-policy copy --dest-compress docker-archive:${image} dir:$out
   ''

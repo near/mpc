@@ -58,7 +58,10 @@
             inherit crane prodCFlags;
             gitRev = self.shortRev or self.dirtyShortRev or null;
           };
-          tee-launcher = mpc-node.override { pname = "tee-launcher"; };
+          tee-launcher = mpc-node.override {
+            pname = "tee-launcher";
+            gitRev = null;
+          };
           registryImage = pkgs.callPackage ./nix/registry-image.nix { };
           nodeImage = pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; };
         in

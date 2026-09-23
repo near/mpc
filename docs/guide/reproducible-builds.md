@@ -8,7 +8,8 @@ security and verification purposes.
 ## Docker images
 
 The `mpc-node`, `mpc-node-gcp` and `mpc-launcher` images are built hermetically
-with [Nix](https://nixos.org/download/) (flakes enabled). Every build step runs
+with [Nix](https://nixos.org/download/), with
+`experimental-features = nix-command flakes` in `nix.conf`. Every build step runs
 in the Nix sandbox without network access, from inputs pinned by `flake.lock`,
 `Cargo.lock` and `rust-toolchain.toml`: only the download of those pinned
 inputs uses the network, and each download is checked against its hash, so
@@ -19,7 +20,8 @@ without it; set `sandbox-fallback = false` in `nix.conf`, as CI does, so such a
 build fails instead.
 
 Each image builds to the exact layout pushed to Docker Hub, so the SHA-256 of
-its `manifest.json` is the manifest digest that operators vote on:
+its `manifest.json` is the manifest digest that operators vote on. On x86_64
+Linux, run:
 
 ```bash
 nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image
@@ -66,6 +68,17 @@ Install Rosetta (`softwareupdate --install-rosetta --agree-to-license`) and run
 `sudo darwin-rebuild switch`; the commands above then work unchanged. The
 [nixpkgs documentation](https://github.com/NixOS/nixpkgs/blob/56c02bc00adcf003215cc4bd996d6efaf4cff188/doc/packages/darwin-builder.section.md)
 describes the setup without nix-darwin.
+
+Without a Linux builder, Docker Desktop can run the build: enable its Rosetta
+emulation and give it at least 16 GB of memory. Nix runs natively in the
+container and hands the `x86_64-linux` build steps to Rosetta:
+
+```bash
+docker run --rm --privileged --platform linux/arm64 \
+  -e NIX_CONFIG=$'experimental-features = nix-command flakes\nsandbox = true\nsandbox-fallback = false\nextra-platforms = x86_64-linux' \
+  nixos/nix:2.33.6 \
+  sh -c 'nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image && sha256sum result/manifest.json'
+```
 
 ## mpc-contract
 
