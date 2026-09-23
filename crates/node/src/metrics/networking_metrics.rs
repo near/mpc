@@ -17,6 +17,11 @@ const LABEL_MY_PARTICIPANT_ID: &str = "my_participant_id";
 const LABEL_PEER_PARTICIPANT_ID: &str = "peer_participant_id";
 const LABEL_CONNECTION_DIRECTION: &str = "connection_direction";
 const LABEL_MESSAGE_TYPE: &str = "message_type";
+const LABEL_WRITE_OUTCOME: &str = "outcome";
+
+pub(crate) const WRITE_COMPLETED: &str = "completed";
+pub(crate) const WRITE_FAILED: &str = "failed";
+pub(crate) const WRITE_TIMED_OUT: &str = "timed_out";
 
 // Conservative estimate of maximum transmission unit
 // https://en.wikipedia.org/wiki/Maximum_transmission_unit
@@ -44,6 +49,23 @@ const NETWORK_MESSAGE_SIZES_BYTES_BUCKETS: &[f64] = &[
     MTU_BYTES * 4096.0, // ~5.2MB
 ];
 
+const WRITE_PROGRESS_BYTES_BUCKETS: &[f64] = &[
+    0.0,
+    1.0,
+    64.0,
+    512.0,
+    MTU_BYTES,
+    MTU_BYTES * 4.0,
+    MTU_BYTES * 16.0,
+    MTU_BYTES * 64.0,
+    MTU_BYTES * 256.0,
+    MTU_BYTES * 1024.0,
+    MTU_BYTES * 4096.0,
+];
+
+const WRITE_DURATION_SECONDS_BUCKETS: &[f64] =
+    &[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0];
+
 pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     register_int_gauge_vec!(
         "mpc_network_live_connections",
@@ -63,6 +85,26 @@ pub(crate) static MPC_P2P_TCP_WRITE_SIZE_BYTES: LazyLock<HistogramVec> = LazyLoc
             LABEL_MESSAGE_TYPE,
         ],
         NETWORK_MESSAGE_SIZES_BYTES_BUCKETS.to_vec()
+    )
+    .unwrap()
+});
+
+pub(crate) static MPC_P2P_WRITE_PROGRESS_BYTES: LazyLock<HistogramVec> = LazyLock::new(|| {
+    register_histogram_vec!(
+        "mpc_p2p_write_progress_bytes",
+        "Bytes the socket accepted during a single P2P write attempt",
+        &[LABEL_PEER_PARTICIPANT_ID, LABEL_WRITE_OUTCOME],
+        WRITE_PROGRESS_BYTES_BUCKETS.to_vec()
+    )
+    .unwrap()
+});
+
+pub(crate) static MPC_P2P_WRITE_DURATION_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
+    register_histogram_vec!(
+        "mpc_p2p_write_duration_seconds",
+        "Time taken by a single P2P write attempt",
+        &[LABEL_PEER_PARTICIPANT_ID, LABEL_WRITE_OUTCOME],
+        WRITE_DURATION_SECONDS_BUCKETS.to_vec()
     )
     .unwrap()
 });

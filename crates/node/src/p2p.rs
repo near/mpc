@@ -1,6 +1,9 @@
+mod write_progress;
+
 use crate::config::MpcConfig;
 use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
+    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, MPC_P2P_WRITE_DURATION_SECONDS,
+    MPC_P2P_WRITE_PROGRESS_BYTES, OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
@@ -13,6 +16,7 @@ use crate::network::handshake::{
 };
 use crate::network::wire_format::{MpcMessageKind, Packet};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
+use crate::p2p::write_progress::{BytesAccepted, CountWrites};
 use crate::primitives::{
     IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
     PeerMessage,
@@ -32,7 +36,8 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::time::timeout;
+use tokio::time::error::Elapsed;
+use tokio::time::{timeout, timeout_at};
 use tokio_rustls::TlsAcceptor;
 use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
@@ -151,6 +156,31 @@ impl Packet {
     }
 }
 
+#[derive(Clone, Copy)]
+enum WriteOutcome {
+    Completed,
+    Failed,
+    TimedOut,
+}
+
+impl WriteOutcome {
+    fn of<T, E>(write_result: &Result<Result<T, E>, Elapsed>) -> Self {
+        match write_result {
+            Ok(Ok(_)) => Self::Completed,
+            Ok(Err(_)) => Self::Failed,
+            Err(_) => Self::TimedOut,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Completed => networking_metrics::WRITE_COMPLETED,
+            Self::Failed => networking_metrics::WRITE_FAILED,
+            Self::TimedOut => networking_metrics::WRITE_TIMED_OUT,
+        }
+    }
+}
+
 impl OutgoingConnection {
     /// Both sides of the connection must complete handshake within this time, or else
     /// the connection is considered not successful.
@@ -171,6 +201,7 @@ impl OutgoingConnection {
         participant_identities: &ParticipantIdentities,
         sender_connection_id: u32,
     ) -> anyhow::Result<OutgoingConnection> {
+        let bytes_accepted = BytesAccepted::default();
         let mut tls_stream = timeout(Self::CONNECT_TIMEOUT, async {
             let tcp_stream = TcpStream::connect(target_address)
                 .await
@@ -179,7 +210,10 @@ impl OutgoingConnection {
                 configure_tcp_stream(tcp_stream).context("failed to configure tcp stream")?;
 
             tokio_rustls::TlsConnector::from(client_config)
-                .connect("dummy".try_into().unwrap(), tcp_stream)
+                .connect(
+                    "dummy".try_into().unwrap(),
+                    CountWrites::new(tcp_stream, bytes_accepted.clone()),
+                )
                 .await
                 .context("failed to establish tls stream")
         })
@@ -261,15 +295,41 @@ impl OutgoingConnection {
                                 let bytes = Bytes::from(serialized);
                                 let payload_size = bytes.len();
 
+                                let write_started = tokio::time::Instant::now();
+                                let accepted_before = bytes_accepted.get();
                                 // Add timeout to write operations to detect if writes are hanging
                                 // (e.g., due to half-open connection where peer stopped ACKing)
-                                match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
+                                let write_result = timeout_at(
+                                    write_started + WRITE_OPERATION_TIMEOUT,
+                                    framed_tls_stream.send(bytes),
+                                )
+                                .await;
+                                let elapsed = write_started.elapsed();
+                                let socket_accepted_bytes = bytes_accepted.since(accepted_before);
+                                let outcome = WriteOutcome::of(&write_result).label();
+
+                                MPC_P2P_WRITE_PROGRESS_BYTES
+                                    .with_label_values(&[peer_id_string.as_str(), outcome])
+                                    .observe(socket_accepted_bytes as f64);
+                                MPC_P2P_WRITE_DURATION_SECONDS
+                                    .with_label_values(&[peer_id_string.as_str(), outcome])
+                                    .observe(elapsed.as_secs_f64());
+
+                                match write_result {
                                     Ok(Ok(_)) => {},
                                     Ok(Err(e)) => return Err(e.into()),
                                     Err(_) => {
                                         // Write timed out - connection is likely stuck/half-open
+                                        tracing::warn!(
+                                            peer_id = %peer_id,
+                                            payload_size,
+                                            socket_accepted_bytes,
+                                            timeout_s = WRITE_OPERATION_TIMEOUT.as_secs(),
+                                            "write timed out, tearing down connection"
+                                        );
                                         return Err(anyhow::anyhow!(
-                                            "write operation timed out after {}s (connection may be half-open)",
+                                            "write operation timed out after {}s (connection may be half-open), \
+                                             socket accepted {socket_accepted_bytes} of {payload_size} payload bytes",
                                             WRITE_OPERATION_TIMEOUT.as_secs()
                                         ));
                                     }
