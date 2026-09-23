@@ -290,15 +290,19 @@ impl MeshNetworkClient {
     /// a message for a task before its Start message, we'll still return a Sender that will
     /// buffer the messages and deliver them to the channel, once a Start message is received.
     ///
-    /// Fails with [`InvalidStartMessage`] if the Start message describes a participant set we
-    /// cannot take part in; no channel state is created in that case.
+    /// Fails with [`InvalidChannelId`] for a channel id `originator` may not open, or
+    /// [`InvalidStartMessage`] for a participant set we cannot join; no channel state is created.
     fn sender_for(
         &self,
         channel_id: ChannelId,
         start: Option<&MpcStartMessage>,
         originator: ParticipantId,
     ) -> anyhow::Result<SenderOrNewChannel> {
+        let owner = channel_id.0.participant_id();
         if let Some(start) = start {
+            if owner != originator {
+                return Err(InvalidChannelId::NotOwnedByOriginator { owner, originator }.into());
+            }
             self.validate_start_participants(&start.participants, originator)?;
         }
         // INVARIANT: For each key in the `senders` map, exactly one of the following is true:
@@ -312,6 +316,9 @@ impl MeshNetworkClient {
         let sender = match channels.senders.entry(channel_id) {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
+                if owner == self.my_participant_id() && originator != self.my_participant_id() {
+                    return Err(InvalidChannelId::NoOpenChannel(channel_id).into());
+                }
                 let (sender, receiver) = mpsc::unbounded_channel();
                 entry.insert(sender.clone());
                 let incomplete_channel = IncompleteNetworkTaskChannel { receiver };
@@ -440,6 +447,18 @@ struct IncompleteNetworkTaskChannel {
 enum SenderOrNewChannel {
     Sender(mpsc::UnboundedSender<MpcPeerMessage>),
     NewChannel(NetworkTaskChannel),
+}
+
+/// Reason why a message may not open channel state under its [`ChannelId`].
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum InvalidChannelId {
+    #[error("channel id is owned by {owner}, not by the originator {originator}")]
+    NotOwnedByOriginator {
+        owner: ParticipantId,
+        originator: ParticipantId,
+    },
+    #[error("no open channel {0:?} under our participant id")]
+    NoOpenChannel(ChannelId),
 }
 
 /// Reason why the participant set of an [`MpcStartMessage`] was rejected.
@@ -1171,7 +1190,7 @@ mod tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::conn::ConnectionVersion;
     use super::{
-        InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
+        InvalidChannelId, InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
         MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
         run_receive_message,
     };
@@ -1477,20 +1496,101 @@ mod tests {
         assert_eq!(received.data, vec![vec![2u8]]);
     }
 
+    #[rstest]
+    #[case::owned_by_a_third_party(THIRD_PARTY)]
+    #[case::owned_by_us(ME)]
+    #[tokio::test]
+    async fn run_receive_message__should_reject_start_message_for_a_channel_id_the_originator_does_not_own(
+        #[case] owner: ParticipantId,
+    ) {
+        // Given
+        let start_message = MpcMessage {
+            channel_id: ChannelId(UniqueId::new(owner, 1, 0)),
+            ..start_message_with(vec![ME, ORIGINATOR])
+        };
+        let mut node = ReceivingNode::new();
+
+        // When
+        let result = node.receive(ORIGINATOR, start_message).await;
+
+        // Then
+        let error = result.expect_err("the Start message should be rejected");
+        assert_eq!(
+            error.downcast_ref::<InvalidChannelId>(),
+            Some(&InvalidChannelId::NotOwnedByOriginator {
+                owner,
+                originator: ORIGINATOR,
+            })
+        );
+        assert!(node.new_channel().is_none());
+        assert!(node.channel_ids_in_use().is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_receive_message__should_reject_message_for_a_channel_id_we_own_but_never_opened() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let ours = ChannelId(UniqueId::new(ME, 1, 0));
+
+        // When
+        let result = node.receive(ORIGINATOR, computation_message(ours, 1)).await;
+
+        // Then
+        let error = result.expect_err("the message should be rejected");
+        assert_eq!(
+            error.downcast_ref::<InvalidChannelId>(),
+            Some(&InvalidChannelId::NoOpenChannel(ours))
+        );
+        assert!(node.channel_ids_in_use().is_empty());
+    }
+
+    #[tokio::test]
+    async fn network_task_channel__should_deliver_message_buffered_before_the_start_message() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let channel_id = ChannelId(UniqueId::new(ORIGINATOR, 1, 0));
+        node.receive(THIRD_PARTY, computation_message(channel_id, 1))
+            .await
+            .unwrap();
+        node.receive(
+            ORIGINATOR,
+            start_message_with(vec![ME, ORIGINATOR, THIRD_PARTY]),
+        )
+        .await
+        .unwrap();
+        let mut channel = node
+            .new_channel()
+            .expect("a channel should have been created");
+
+        // When
+        let received = tokio::time::timeout(Duration::from_secs(5), channel.receive())
+            .await
+            .expect("the buffered message must not stall the channel")
+            .expect("the buffered message must not abort the channel");
+
+        // Then
+        assert_eq!(received.from, THIRD_PARTY);
+        assert_eq!(received.data, vec![vec![1u8]]);
+    }
+
     const ME: ParticipantId = ParticipantId::from_raw(0);
     const ORIGINATOR: ParticipantId = ParticipantId::from_raw(1);
     const THIRD_PARTY: ParticipantId = ParticipantId::from_raw(2);
 
+    fn start_of(leader: ParticipantId, participants: Vec<ParticipantId>) -> MpcStartMessage {
+        MpcStartMessage {
+            task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
+                start: UniqueId::new(leader, 1, 0),
+                count: 1,
+            }),
+            participants,
+        }
+    }
+
     fn start_message_with(participants: Vec<ParticipantId>) -> MpcMessage {
         MpcMessage {
             channel_id: ChannelId(UniqueId::new(ORIGINATOR, 1, 0)),
-            kind: MpcMessageKind::Start(MpcStartMessage {
-                task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
-                    start: UniqueId::new(ORIGINATOR, 1, 0),
-                    count: 1,
-                }),
-                participants,
-            }),
+            kind: MpcMessageKind::Start(start_of(ORIGINATOR, participants)),
         }
     }
 
@@ -1564,6 +1664,17 @@ mod tests {
 
         fn new_channel(&mut self) -> Option<NetworkTaskChannel> {
             self.new_channel_receiver.try_recv().ok()
+        }
+
+        fn channel_ids_in_use(&self) -> Vec<ChannelId> {
+            self.client
+                .channels
+                .lock()
+                .unwrap()
+                .senders
+                .keys()
+                .copied()
+                .collect()
         }
     }
 }
