@@ -84,7 +84,7 @@ $$
 
 1. $\bullet$ Each $P_i$ waits to receive $(R_j, w_j, \eta_j)$ from each $P_j$, and $\blacktriangle$ *asserts* that $\eta_j = \eta_i$.
 2. $\blacktriangle$ Each $P_i$ *asserts* that:
-$\forall j \in \\{t+2.. N_1\\},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1}; j) =  R_j$
+$\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1}; j) =  R_j$
 3. Each $P_i$ computes $R \gets \mathsf{Interpolation}(R_1, \ldots R_{t+1}; 0)$
 4. $\blacktriangle$ Each $P_i$ *asserts* that $R \neq Identity$
 5. Each $P_i$ computes $w \gets \mathsf{Interpolation}(w_1, \ldots w_{2 \cdot t+1}; 0)$
@@ -108,7 +108,7 @@ $\forall j \in \\{t+2.. N_1\\},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 9. $\bullet$ The coordinator waits to receive $s_j$ from every party.
 10. The coordinator sums the received elements $s \gets \sum_j s_j$.
 11. $\blacktriangle$ The coordinator *asserts* that $s\neq 0$
-12. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
+12. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\set{\frac{q}{2}..~q-1}$
 13. $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid ECDSA signature for $h$.
 
 **Output:** the signature $(R, s)$.
