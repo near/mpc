@@ -7,10 +7,7 @@ use foreign_chain_inspector::NetworkFingerprintInspector;
 use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
     BlockConfirmations, EthereumFinality, ForeignChainInspector,
-    aptos::{
-        AptosExtractedValue, AptosTransactionHash,
-        inspector::{AptosExtractor, AptosFinality, AptosInspector},
-    },
+    aptos::inspector::AptosInspector,
     bitcoin::{
         BitcoinExtractedValue, BitcoinTransactionHash,
         inspector::{BitcoinExtractor, BitcoinInspector},
@@ -40,8 +37,6 @@ use crate::golden;
 pub enum Mismatch {
     ChainId { expected: String, got: String },
     BlockHash { expected: [u8; 32], got: [u8; 32] },
-    EventTypeTag { expected: String, got: String },
-    EventSequenceNumber { expected: u64, got: u64 },
 }
 
 impl std::fmt::Display for Mismatch {
@@ -56,14 +51,6 @@ impl std::fmt::Display for Mismatch {
                 "block hash mismatch: expected 0x{}, got 0x{} — is this provider on the expected network?",
                 hex::encode(expected),
                 hex::encode(got),
-            ),
-            Self::EventTypeTag { expected, got } => write!(
-                f,
-                "event type tag mismatch: expected {expected}, got {got} — is this provider on the expected network?"
-            ),
-            Self::EventSequenceNumber { expected, got } => write!(
-                f,
-                "event sequence number mismatch: expected {expected}, got {got}"
             ),
         }
     }
@@ -245,42 +232,28 @@ where
     Ok(())
 }
 
+/// Aptos fullnodes prune history after a few weeks.
+/// The check verifies the provider's chain identity instead of a pinned transaction.
 pub async fn check_aptos(
     url: String,
     auth_header: Option<(HeaderName, HeaderValue)>,
     timeout: Duration,
-    tx: [u8; 32],
-    expected_type_tag: &str,
-    expected_sequence_number: u64,
+    expected_chain_id: &str,
 ) -> anyhow::Result<()> {
     let inspector = AptosInspector::new(ReqwestAptosClient::new(url, auth_header, timeout));
-    let verdict = inspector
-        .extract(
-            AptosTransactionHash::from(tx),
-            AptosFinality::Committed,
-            vec![AptosExtractor::Event { event_index: 0 }],
-        )
-        .await?;
-    let values = extracted(verdict)?;
-    match values.into_iter().next().context("RPC returned no value")? {
-        AptosExtractedValue::Event(event) => {
-            if event.type_tag != expected_type_tag {
-                return Err(Mismatch::EventTypeTag {
-                    expected: expected_type_tag.to_string(),
-                    got: event.type_tag.clone(),
-                }
-                .into());
-            }
-            if event.sequence_number != expected_sequence_number {
-                return Err(Mismatch::EventSequenceNumber {
-                    expected: expected_sequence_number,
-                    got: event.sequence_number,
-                }
-                .into());
-            }
-            Ok(())
+    let expected = inspector.canonical_fingerprint(expected_chain_id);
+    let got = inspector
+        .network_fingerprint()
+        .await
+        .context("failed to fetch the ledger info")?;
+    if got != expected {
+        return Err(Mismatch::ChainId {
+            expected: expected.to_string(),
+            got: got.to_string(),
         }
+        .into());
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -294,52 +267,34 @@ mod tests {
     use httpmock::prelude::*;
     use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-    fn golden_aptos_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {
-        serde_json::json!({
-            "type": "block_metadata_transaction",
-            "hash": format!("0x{tx}"),
-            "success": true,
-            "events": [{
-                "guid": { "creation_number": "0", "account_address": "0x1" },
-                "sequence_number": sequence_number.to_string(),
-                "type": type_tag,
-                "data": { "epoch": "7510" }
-            }]
-        })
+    async fn mock_ledger_info(server: &MockServer, chain_id: u64) {
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": chain_id }));
+            })
+            .await;
     }
 
     #[tokio::test]
-    async fn check_aptos__should_pass_when_provider_returns_golden_event() {
+    async fn check_aptos__should_pass_when_provider_is_on_the_expected_network() {
         // Given
         let server = MockServer::start_async().await;
         let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
-        let tx = aptos.tx;
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(golden_aptos_body(
-                    tx,
-                    aptos.event_type_tag,
-                    aptos.event_sequence_number,
-                ));
-            })
-            .await;
+        mock_ledger_info(&server, 1).await;
 
         // When
         let result = check_aptos(
             server.base_url(),
             None,
             Duration::from_secs(5),
-            golden::hex32(tx).unwrap(),
-            aptos.event_type_tag,
-            aptos.event_sequence_number,
+            aptos.chain_id,
         )
         .await;
 
         // Then
         result.unwrap();
-        mock.assert_async().await;
     }
 
     use foreign_chain_rpc_interfaces::sui::proto::{
@@ -486,38 +441,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_aptos__should_fail_when_event_type_tag_differs() {
+    async fn check_aptos__should_fail_when_chain_id_differs() {
         // Given
         let server = MockServer::start_async().await;
-        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
-        let tx = aptos.tx;
-        server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(golden_aptos_body(
-                    tx,
-                    "0xdead::wrong::Event",
-                    aptos.event_sequence_number,
-                ));
-            })
-            .await;
+        let expected = golden::golden_set(Network::Mainnet).aptos.unwrap();
+        mock_ledger_info(&server, 2).await;
 
         // When
         let result = check_aptos(
             server.base_url(),
             None,
             Duration::from_secs(5),
-            golden::hex32(tx).unwrap(),
-            aptos.event_type_tag,
-            aptos.event_sequence_number,
+            expected.chain_id,
         )
         .await;
 
         // Then
         assert_matches!(
             result.unwrap_err().downcast_ref::<Mismatch>(),
-            Some(Mismatch::EventTypeTag { .. })
+            Some(Mismatch::ChainId { .. })
         );
     }
 }

@@ -235,6 +235,8 @@ async fn run_starknet(
     }
 }
 
+/// Aptos providers prune historical transactions, so probe verifies the
+/// provider's chain identity — see [`checks::check_aptos`].
 async fn run_aptos(
     cfg: &ForeignChainConfig,
     vector: Option<AptosVector>,
@@ -246,22 +248,13 @@ async fn run_aptos(
         return;
     };
     let timeout = cfg.timeout_duration();
-    let parsed_tx = golden::hex32(vector.tx);
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed_tx, resolve_provider_auth(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok(tx), Ok((url, header))) => {
+        let status = match resolve_provider_auth(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok((url, header)) => {
                 run_check(
                     timeout,
-                    checks::check_aptos(
-                        url,
-                        header,
-                        timeout,
-                        *tx,
-                        vector.event_type_tag,
-                        vector.event_sequence_number,
-                    ),
+                    checks::check_aptos(url, header, timeout, vector.chain_id),
                 )
                 .await
             }
@@ -540,18 +533,14 @@ mod tests {
         assert!(reason.contains("DEFINITELY_UNSET_TOKEN_ENV"));
     }
 
-    fn aptos_event_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {
-        serde_json::json!({
-            "type": "block_metadata_transaction",
-            "hash": format!("0x{tx}"),
-            "success": true,
-            "events": [{
-                "guid": { "creation_number": "0", "account_address": "0x1" },
-                "sequence_number": sequence_number.to_string(),
-                "type": type_tag,
-                "data": { "epoch": "7510" }
-            }]
-        })
+    async fn mock_ledger_info(server: &MockServer, chain_id: u64) {
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": chain_id }));
+            })
+            .await;
     }
 
     fn aptos_provider(rpc_url: String) -> ForeignChainProviderConfig {
@@ -563,34 +552,12 @@ mod tests {
 
     #[tokio::test]
     async fn check_all_providers__should_report_pass_fail_and_skip_in_one_run() {
-        // Given — one Aptos provider serves the golden event (pass), another a
-        // wrong event (fail), and a separate chain has no testnet reference (skip).
+        // Given — one Aptos provider is on testnet (pass), another on mainnet
+        // (fail), and a separate chain has no testnet reference (skip).
         let healthy = MockServer::start_async().await;
         let broken = MockServer::start_async().await;
-        let aptos = golden::golden_set(Network::Testnet).aptos.unwrap();
-        let tx = aptos.tx;
-        healthy
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(aptos_event_body(
-                    tx,
-                    aptos.event_type_tag,
-                    aptos.event_sequence_number,
-                ));
-            })
-            .await;
-        broken
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(aptos_event_body(
-                    tx,
-                    "0xdead::wrong::Event",
-                    aptos.event_sequence_number,
-                ));
-            })
-            .await;
+        mock_ledger_info(&healthy, 2).await;
+        mock_ledger_info(&broken, 1).await;
 
         let mut providers = NonEmptyBTreeMap::new(
             "healthy".to_string().into(),

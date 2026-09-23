@@ -14,11 +14,12 @@ pub struct BlockHashVector {
     pub block_hash: &'static str,
 }
 
+/// Aptos fullnodes prune history after a few weeks, so we werify it by
+/// chain id — see [`check_aptos`](crate::checks::check_aptos).
 #[derive(Clone, Copy)]
 pub struct AptosVector {
-    pub tx: &'static str,
-    pub event_type_tag: &'static str,
-    pub event_sequence_number: u64,
+    /// The `chain_id` the ledger-info endpoint reports, as decimal digits.
+    pub chain_id: &'static str,
 }
 
 /// Unlike other chains, Sui is verified by chain identity rather than a pinned
@@ -109,11 +110,7 @@ const MAINNET: GoldenSet = GoldenSet {
         tx: "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e",
         block_hash: "0x1b716b05027567f9f4a2fe37f8769dc3b04a2e5a3893f6e0ed45f24c7c0ffa5",
     }),
-    aptos: Some(AptosVector {
-        tx: "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
-        event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 822_198_006,
-    }),
+    aptos: Some(AptosVector { chain_id: "1" }),
     sui: Some(SuiVector {
         chain_id: sui::MAINNET_GENESIS_CHECKPOINT_DIGEST,
     }),
@@ -146,11 +143,7 @@ const TESTNET: GoldenSet = GoldenSet {
         tx: "0x115b24c74eade5ee4c01e63cce5aa462fc2d59d040f5b088a31ad44c9aa58dc",
         block_hash: "0x1f33823b145e92ca069b90d3cfb012277762d9dd1dc2efb975b10a7c3d92875",
     }),
-    aptos: Some(AptosVector {
-        tx: "f2b7473ddd239c7df77bd3b07cc21a4c92b84b891c469b1dbbcfd8f9f8ed2ea9",
-        event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 830_687_280,
-    }),
+    aptos: Some(AptosVector { chain_id: "2" }),
     sui: Some(SuiVector {
         chain_id: sui::TESTNET_GENESIS_CHECKPOINT_DIGEST,
     }),
@@ -254,7 +247,7 @@ mod tests {
                 felt32(v.block_hash).unwrap();
             }
             if let Some(v) = set.aptos {
-                hex32(v.tx).unwrap();
+                v.chain_id.parse::<u8>().unwrap();
             }
             if let Some(v) = set.sui {
                 base58_32(v.chain_id).unwrap();
