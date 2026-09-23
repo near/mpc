@@ -1,3 +1,15 @@
+//! Provider for [`Protocol::RobustEcdsa`](mpc_primitives::domain::Protocol::RobustEcdsa)
+//! domains.
+//!
+//! # Do not enable this in production
+//!
+//! The underlying scheme in
+//! [`threshold_signatures::ecdsa::robust_ecdsa`] is an insecure stub that leaks the
+//! signing key, kept so this plumbing stays exercised until a real robust scheme
+//! replaces it. Read that module's docs before enabling a domain for this protocol
+//! anywhere. Everything in this module is scheme-agnostic and is expected to survive
+//! that replacement unchanged.
+
 pub mod presign;
 mod sign;
 
@@ -177,7 +189,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
         for Err(join_error) in futures::future::join_all(generate_presignatures).await {
             tracing::error!(
-                "Damgard et al background presignature task ended unexpectedly: {join_error}"
+                "Robust ECDSA background presignature task ended unexpectedly: {join_error}"
             );
         }
 

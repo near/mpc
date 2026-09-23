@@ -4569,7 +4569,7 @@ expression: abi
             "CaitSith",
             "Frost",
             "ConfidentialKeyDerivation",
-            "DamgardEtAl"
+            "RobustEcdsa"
           ]
         },
         "ProtocolContractState": {

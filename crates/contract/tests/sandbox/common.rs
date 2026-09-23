@@ -248,7 +248,7 @@ impl SandboxTestSetupBuilder {
         let mut key_for_domains = Vec::new();
 
         // Match the per-domain reconstruction threshold to the cluster
-        // threshold by default. DamgardEtAl additionally requires
+        // threshold by default. RobustEcdsa additionally requires
         // `2t - 1 <= n`, so cap t at `n.div_ceil(2)`.
         let n = self.number_of_participants as u64;
         let cluster_threshold = threshold_parameters.threshold().value();
@@ -260,7 +260,7 @@ impl SandboxTestSetupBuilder {
             let domain_id = DomainId(domain_configs.len() as u64);
 
             let reconstruction_threshold = match *protocol {
-                Protocol::DamgardEtAl => {
+                Protocol::RobustEcdsa => {
                     ReconstructionThreshold::new(cluster_threshold.min(n.div_ceil(2)))
                 }
                 _ => ReconstructionThreshold::new(cluster_threshold),
