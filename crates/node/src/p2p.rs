@@ -1355,7 +1355,8 @@ mod tests {
             }
             if sender
                 .connectivity(participant)
-                .is_bidirectionally_connected()
+                .connection_liveness()
+                .is_bidirectional()
             {
                 result.push(participant);
             }
@@ -1530,11 +1531,17 @@ mod tests {
             alice.wait_for_ready(2, &participants).await.unwrap();
             bob_initial.wait_for_ready(2, &participants).await.unwrap();
 
-            assert!(alice.connectivity(bob_id).is_bidirectionally_connected());
+            assert!(
+                alice
+                    .connectivity(bob_id)
+                    .connection_liveness()
+                    .is_bidirectional()
+            );
             assert!(
                 bob_initial
                     .connectivity(alice_id)
-                    .is_bidirectionally_connected()
+                    .connection_liveness()
+                    .is_bidirectional()
             );
 
             let alice_connection_versions = alice.connectivity(bob_id).connection_version();
@@ -1567,7 +1574,8 @@ mod tests {
             assert!(
                 !bob_new
                     .connectivity(alice_id)
-                    .is_bidirectionally_connected()
+                    .connection_liveness()
+                    .is_bidirectional()
             );
 
             let bob_new_version = bob_new.connectivity(alice_id).connection_version();
@@ -1581,7 +1589,8 @@ mod tests {
             assert!(
                 bob_initial
                     .connectivity(alice_id)
-                    .is_bidirectionally_connected()
+                    .connection_liveness()
+                    .is_bidirectional()
             );
         })
         .await;

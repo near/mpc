@@ -230,7 +230,8 @@ impl MeshNetworkClient {
                 && self
                     .transport_sender
                     .connectivity(participant)
-                    .is_bidirectionally_connected()
+                    .connection_liveness()
+                    .is_bidirectional()
             {
                 result.push(participant);
             }

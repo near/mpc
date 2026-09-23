@@ -280,10 +280,6 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     fn connection_liveness(&self) -> ConnectionLiveness;
     /// The version the peer advertised, once both directions are up and agree; `None` otherwise.
     fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion>;
-
-    fn is_bidirectionally_connected(&self) -> bool {
-        self.connection_liveness().is_bidirectional()
-    }
 }
 
 #[async_trait::async_trait]
@@ -416,7 +412,7 @@ mod tests {
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::network::conn::{
         AllNodeConnectivities, ConnectionLiveness, ConnectionVersion, ConnectionWithVersion,
-        NodeConnectivity, NodeConnectivityInterface, OptionSenderConnectionId,
+        NodeConnectivity, OptionSenderConnectionId,
     };
     use crate::primitives::ParticipantId;
     use crate::protocol_version::NetworkProtocolVersion;
@@ -429,12 +425,6 @@ mod tests {
     impl SenderConnectionId for usize {
         fn sender_connection_id(&self) -> u32 {
             *self as u32
-        }
-    }
-
-    impl HasPeerNetworkProtocolVersion for usize {
-        fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
-            NetworkProtocolVersion::Jan2026
         }
     }
 
@@ -556,31 +546,31 @@ mod tests {
     fn test_connectivity() {
         let connectivity = NodeConnectivity::<usize, usize>::new();
         assert_eq!(connectivity.connection_version(), ver(1, 1));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(!connectivity.connection_liveness().is_bidirectional());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
         let conn = Arc::new(0);
         connectivity.set_outgoing_connection(&conn);
         assert_eq!(connectivity.connection_version(), ver(1, 1));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(!connectivity.connection_liveness().is_bidirectional());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
         let conn2 = Arc::new(0);
         connectivity.set_incoming_connection(&conn2).unwrap();
         assert_eq!(connectivity.connection_version(), ver(1, 1));
-        assert!(connectivity.is_bidirectionally_connected());
+        assert!(connectivity.connection_liveness().is_bidirectional());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
         drop(conn);
         assert_eq!(connectivity.connection_version(), ver(2, 1));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(!connectivity.connection_liveness().is_bidirectional());
         assert!(connectivity.was_connection_interrupted(ver(1, 1)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 1)));
 
         let conn3 = Arc::new(1);
         connectivity.set_incoming_connection(&conn3).unwrap();
         assert_eq!(connectivity.connection_version(), ver(2, 2));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(!connectivity.connection_liveness().is_bidirectional());
         assert!(connectivity.was_connection_interrupted(ver(2, 1)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 2)));
 
@@ -590,7 +580,7 @@ mod tests {
         let conn4 = Arc::new(1);
         connectivity.set_outgoing_connection(&conn4);
         assert_eq!(connectivity.connection_version(), ver(2, 2));
-        assert!(connectivity.is_bidirectionally_connected());
+        assert!(connectivity.connection_liveness().is_bidirectional());
         assert!(connectivity.was_connection_interrupted(ver(1, 2)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 2)));
     }
@@ -615,7 +605,7 @@ mod tests {
                 incoming: false,
             }
         );
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(!connectivity.connection_liveness().is_bidirectional());
     }
 
     #[tokio::test]
