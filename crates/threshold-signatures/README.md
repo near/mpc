@@ -227,8 +227,7 @@ MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- robust_ecdsa_presign_
 By default, the maximum number of malicious parties is 6, the latency is 0 milliseconds and the number of iterations is 15.
 The detailed numbers and analysis can be found in the [docs/benches/results.md](docs/benches/results.md) documentation.
 
-The Robust ECDSA figures there were measured against the removed implementation, not
-against the stub that replaced it; the `robust_ecdsa` benchmarks now serve as a lower
+The `robust_ecdsa` benchmarks measure the stub, so they serve only as a lower
 bound on what a replacement scheme could cost.
 As for Ed25519 the online phase is relatively slow with the current implementation (which does not split the scheme into presign and sign) compared to the ECDSA. With 100ms of latency, the current implementation (no presigning) is roughly 3 times slower to serve a message signing request (online phase) than both of the ECDSA schemes due to the fact that it has 3 times more rounds.
 

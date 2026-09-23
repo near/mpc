@@ -39,9 +39,6 @@ the interface each one presents, not a choice between them.
 | **Threshold parameter** | `ReconstructionThreshold` | `MaxMalicious` |
 | **Participants** | `N >= t` | exactly `N = 2t + 1` |
 
-The [benchmark analysis](../../docs/benches/results.md) compares OT-based ECDSA against
-the removed robust implementation; its robust figures no longer describe this module.
-
 ## DKG
 
 Both schemes share the same curve-generic DKG implementation (see [root API](../lib.rs) and [`docs/dkg.md`](../../docs/dkg.md)). Key generation, resharing, and refresh are identical -- only the signing workflow differs.
