@@ -5,61 +5,60 @@ images, and for the on-chain MPC contract WASM. Reproducible builds ensure that
 the same source code always produces identical binaries, which is important for
 security and verification purposes.
 
-## Prerequisites
+## Docker images
 
-**Common requirements** (for both node and launcher Docker images):
+The `mpc-node`, `mpc-node-gcp` and `mpc-launcher` images are built hermetically
+with [Nix](https://nixos.org/download/) (flakes enabled). Every build step runs
+in the Nix sandbox without network access, from inputs pinned by `flake.lock`,
+`Cargo.lock` and `rust-toolchain.toml`: only the download of those pinned
+inputs uses the network, and each download is checked against its hash, so
+code that runs during the build (build scripts, proc-macros) cannot fetch
+anything. Nix enables the sandbox by default on Linux; do not disable it.
 
-- `docker`
-- `jq`
-- `git`
-- `podman` - runs the pinned `skopeo` image that compresses the layers; its
-  gzip output determines the manifest digest, so the pin (not a host `skopeo`)
-  is what makes that digest reproducible
-
-**Additional requirements for building the node images**:
-
-- [Nix](https://nixos.org/download/) with flakes enabled, on an x86_64 Linux host
-
-**Additional requirements for building the launcher image**:
-
-- `docker` with buildx support
-- `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
-
-**Requirements for building the MPC contract** (either path works):
-
-- [Nix](https://nixos.org/download/) with flakes enabled (Nix path), or
-- `docker` and [`cargo-near`](https://github.com/near/cargo-near) (NEP-330 path)
-
-## Building Images
-
-The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
-
-The node images are built hermetically: Nix builds the node binary and
-assembles the image in a sandbox without network access, from inputs pinned by
-`flake.lock`, `Cargo.lock` and `rust-toolchain.toml`, so code that runs during
-the build (build scripts, proc-macros) cannot fetch anything. The commit hash is
-embedded in the binary, so build from a clean checkout of the commit you want
-to reproduce.
-
-**Build both node and launcher images** (default behavior):
+Each image builds to the exact layout pushed to Docker Hub, so the SHA-256 of
+its `manifest.json` is the manifest digest that operators vote on:
 
 ```bash
-./deployment/build-images.sh
+git clone https://github.com/near/mpc
+cd mpc
+git checkout <commit-hash>
+nix build .#packages.x86_64-linux.mpc-node-image
+sha256sum result/manifest.json
 ```
 
-**Build only the node image**:
+Use `mpc-node-gcp-image` or `mpc-launcher-image` for the other images. The
+commit hash is embedded in the node binary, so build from a clean checkout of
+the commit you want to reproduce.
+
+To run an image locally, load it into Docker:
 
 ```bash
-./deployment/build-images.sh --node
+docker load --input "$(nix build --no-link --print-out-paths .#packages.x86_64-linux.mpc-node-image.archive)"
 ```
 
-**Build only the launcher image**:
+### Building on macOS
 
-```bash
-./deployment/build-images.sh --rust-launcher
+The images are `x86_64-linux` builds, so Nix needs a Linux builder to run them.
+On Apple silicon, nixpkgs' `darwin.linux-builder-vz` runs a NixOS builder VM
+that executes `x86_64-linux` builds through Rosetta. With
+[nix-darwin](https://github.com/nix-darwin/nix-darwin), add:
+
+```nix
+nix.linux-builder = {
+  enable = true;
+  package = pkgs.darwin.linux-builder-vz;
+  systems = [ "aarch64-linux" "x86_64-linux" ];
+  config.virtualisation = {
+    cores = 8;
+    darwin-builder.memorySize = 16 * 1024;
+    darwin-builder.diskSize = 100 * 1024;
+  };
+};
 ```
 
-The script will output the image hashes and other build information, which can be used to verify the reproducibility of the build.
+After `darwin-rebuild switch`, the commands above work unchanged. The
+[nixpkgs manual](https://nixos.org/manual/nixpkgs/unstable/#sec-darwin-builder-vz)
+describes the setup without nix-darwin.
 
 ## mpc-contract
 

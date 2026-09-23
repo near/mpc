@@ -1,0 +1,16 @@
+{ runCommand, skopeo }:
+
+# The image exactly as pushed to a registry: the layers are compressed here, so
+# the SHA-256 of manifest.json is the manifest digest that operators vote on,
+# and a digest-preserving copy publishes it unchanged
+image:
+runCommand "${image.imageName}-registry"
+  {
+    nativeBuildInputs = [ skopeo ];
+    passthru.archive = image;
+  }
+  ''
+    # The sandbox has no policy.json and no /var/tmp
+    skopeo --insecure-policy --tmpdir "$TMPDIR" copy --dest-compress \
+      docker-archive:${image} dir:$out
+  ''

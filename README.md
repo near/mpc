@@ -127,7 +127,7 @@ cargo install cargo-insta
 
 ## Reproducible Builds
 
-Both the node and launcher Docker images support reproducible builds, ensuring identical binaries from the same source. Run `./deployment/build-images.sh` from the project root.
+Both the node and launcher Docker images are built hermetically with Nix, ensuring identical images from the same source: `nix build .#packages.x86_64-linux.mpc-node-image`.
 
 For prerequisites and options, see [docs/guide/reproducible-builds.md](docs/guide/reproducible-builds.md).
 

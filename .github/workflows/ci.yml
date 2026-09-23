@@ -41,9 +41,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-    env:
-      NODE_IMAGE_NAME: test_image_tag_ci
-      NODE_GCP_IMAGE_NAME: test_image_gcp_ci
 
     steps:
       - name: Checkout repository
@@ -51,25 +48,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Allow unprivileged user namespaces (needed by podman)
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          extra-conf: sandbox-fallback = false
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
 
-      - name: Build MPC Node binary and images
-        run: ./deployment/build-images.sh --node --node-gcp
-
-      - name: Check the images report the build commit and ship gcloud
+      - name: Build MPC Node images
         run: |
-          docker run --rm "$NODE_IMAGE_NAME" /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA:0:7})"
-          docker run --rm "$NODE_GCP_IMAGE_NAME" gcloud version
+          nix build --print-build-logs --out-link result-mpc-node .#mpc-node-image
+          nix build --print-build-logs --out-link result-mpc-node-gcp .#mpc-node-gcp-image
+          sha256sum result-*/manifest.json
 
       - name: Check mpc-node docker image can initialize and start
-        run: ./scripts/check-mpc-node-docker-starts.sh
+        run: |
+          docker load --input "$(nix build --no-link --print-out-paths .#mpc-node-image.archive)"
+          ./scripts/check-mpc-node-docker-starts.sh
 
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
@@ -86,27 +82,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Allow unprivileged user namespaces (needed by repro-env)
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev repro-env
-
-      - name: Cache repro-env packages
-        uses: ./.github/actions/cache-repro-env-pkgs
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
-          save: ${{ github.ref == 'refs/heads/main' }}
+          extra-conf: sandbox-fallback = false
+
+      - name: Restore /nix from cache
+        uses: ./.github/actions/restore-nix-cache
 
       - name: Build Rust launcher docker image
         shell: bash
         run: |
-          ./deployment/build-images.sh --rust-launcher
+          nix build --print-build-logs .#mpc-launcher-image
+          sha256sum result/manifest.json
 
       - name: Run Rust launcher non-TEE runtime check
         shell: bash
         run: |
+          docker load --input "$(nix build --no-link --print-out-paths .#mpc-launcher-image.archive)"
           ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
 
   mpc-unittests:

@@ -19,7 +19,7 @@ errors like:
 ## 1) Create a docker image with the new launcher
 
 Use the existing CI workflow for building the launcher image.
-<https://github.com/near/mpc/actions/workflows/docker_build_rust_launcher.yml>
+<https://github.com/near/mpc/actions/workflows/docker_build_images.yml>
 
 This will produce a new docker image in
 <https://hub.docker.com/r/nearone/mpc-launcher>

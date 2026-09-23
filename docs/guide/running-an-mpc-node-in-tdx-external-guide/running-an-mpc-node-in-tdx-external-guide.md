@@ -2061,9 +2061,8 @@ docker image. Let's assume you want to vote for one of the tags listed on
 [DockerHub](https://hub.docker.com/r/nearone/mpc-node/tags). Notice that the
 suffix of the image tag is the short version of the git hash it was built from.
 
-* The manifest digest is shown on DockerHub and in the reproducible build script
-  output. To verify it, build the image yourself from the same commit and compare
-  the manifest digest.
+* The manifest digest is shown on DockerHub. To verify it, build the image
+  yourself from the same commit and compare the manifest digest.
 
 * Download the MPC code from this repository:
 
@@ -2073,20 +2072,17 @@ cd mpc/
 git checkout <commit-hash>
 ```
 
-* Compile it using the reproducible build script on an x86_64 Linux host. For
-  this you need to install [Nix](https://nixos.org/download/) with flakes
-  enabled and `podman`, and have the `docker` daemon running.
+* Build it with [Nix](https://nixos.org/download/) (flakes enabled) on an
+  x86_64 Linux host, or on macOS with a Linux builder (see
+  [Reproducible Builds](../reproducible-builds.md#building-on-macos)):
 
 ```bash
-$ ./deployment/build-images.sh --node
-...
-commit hash: <commit-hash>
-SOURCE_DATE_EPOCH used: 0
-node binary hash: <hex>
-node manifest digest: sha256:<hex>
+$ nix build .#packages.x86_64-linux.mpc-node-image
+$ sha256sum result/manifest.json
+<hex>  result/manifest.json
 ```
 
-The `node manifest digest` is what you vote for. When submitting the `mpc_node_manifest_digest` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
+The printed hex digest is what you vote for: submit it as the `mpc_node_manifest_digest` value in the voting command (DockerHub shows it with a `sha256:` prefix). The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 
@@ -2170,7 +2166,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 
 The following steps allow you to inspect the code used to build the launcher image and verify its manifest digest before voting.
 
-* The launcher manifest digest is shown on DockerHub and in the reproducible build script output. To verify it, build the launcher yourself from the same commit and compare the manifest digest.
+* The launcher manifest digest is shown on DockerHub. To verify it, build the launcher yourself from the same commit and compare the manifest digest.
 
 * Download the MPC code from this repository:
 
@@ -2180,16 +2176,15 @@ cd mpc/
 git checkout <commit-hash>
 ```
 
-* Compile it using the reproducible build script. For this you need to install `repro-env`, `docker-buildx`, and `podman`, and have the `docker` daemon running.
+* Build it with [Nix](https://nixos.org/download/), as for the node image above:
 
 ```bash
-$ ./deployment/build-images.sh --rust-launcher
-...
-rust launcher binary hash: <hex>
-rust launcher manifest digest: sha256:<hex>
+$ nix build .#packages.x86_64-linux.mpc-launcher-image
+$ sha256sum result/manifest.json
+<hex>  result/manifest.json
 ```
 
-The `rust launcher manifest digest` is what you vote for. When submitting the `launcher_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest.
+The printed hex digest is what you vote for: submit it as the `launcher_hash` value in the voting command.
 
 * Do your own due diligence on the code/binary.
 

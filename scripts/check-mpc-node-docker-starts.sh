@@ -26,7 +26,7 @@ if $USE_RUST_LAUNCHER; then
   cd "$REPO_ROOT/deployment/cvm-deployment"
   # Use the locally built image instead of pulling from Docker Hub.
   # This ensures the runtime test uses the same image that was just built. See #2704.
-  docker tag mpc-rust-launcher:latest nearone/mpc-launcher:ci-local
+  docker tag mpc-launcher:latest nearone/mpc-launcher:ci-local
   # Create a temporary compose in the same directory (so relative volume mounts work)
   sed 's|nearone/mpc-launcher@sha256:[a-f0-9]*|nearone/mpc-launcher:ci-local|' \
     launcher_docker_compose_nontee.yaml > launcher_docker_compose_nontee_local.yaml
