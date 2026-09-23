@@ -110,9 +110,9 @@ const MAINNET: GoldenSet = GoldenSet {
         block_hash: "0x1b716b05027567f9f4a2fe37f8769dc3b04a2e5a3893f6e0ed45f24c7c0ffa5",
     }),
     aptos: Some(AptosVector {
-        tx: "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
+        tx: "5e949318834deb56d39beb4641181e7a653f7c6e692d66f762224c1b3be99ab9",
         event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 822_198_006,
+        event_sequence_number: 1_064_848_097,
     }),
     sui: Some(SuiVector {
         chain_id: sui::MAINNET_GENESIS_CHECKPOINT_DIGEST,
@@ -147,9 +147,9 @@ const TESTNET: GoldenSet = GoldenSet {
         block_hash: "0x1f33823b145e92ca069b90d3cfb012277762d9dd1dc2efb975b10a7c3d92875",
     }),
     aptos: Some(AptosVector {
-        tx: "f2b7473ddd239c7df77bd3b07cc21a4c92b84b891c469b1dbbcfd8f9f8ed2ea9",
+        tx: "6864a1549b48aa1cd22a095e30d8c103a45cde49597a8149bd1d17628101348b",
         event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 830_687_280,
+        event_sequence_number: 863_012_938,
     }),
     sui: Some(SuiVector {
         chain_id: sui::TESTNET_GENESIS_CHECKPOINT_DIGEST,
