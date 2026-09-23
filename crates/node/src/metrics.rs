@@ -1,5 +1,8 @@
 use std::{sync::LazyLock, time::Duration};
 
+use crate::network::wire_format::{
+    CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcTaskId, RobustEcdsaTaskId, VerifyForeignTxTaskId,
+};
 use crate::providers::verify_foreign_tx::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 pub(crate) mod networking_metrics;
@@ -240,6 +243,25 @@ pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> = L
     },
 );
 
+fn buckets_covering_computation_deadlines() -> Vec<f64> {
+    vec![
+        0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4, 12.8, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0,
+    ]
+}
+
+pub static MPC_LED_COMPUTATION_DURATION_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_led_computation_duration_seconds",
+            "Wall clock time a computation took, measured by the node that led it, including \
+             time spent waiting on the network. Outcomes deadline_exceeded and abandoned both \
+             mean the computation's work was lost; monitor them together.",
+            &["protocol_scheme", "task", "outcome"],
+            buckets_covering_computation_deadlines(),
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
@@ -475,10 +497,81 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
         .unwrap()
 });
 
-pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
-pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";
-pub const MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL: &str = "failed";
-pub const MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL: &str = "deadline_exceeded";
+pub const TOTAL_RESULT_LABEL: &str = "total";
+pub const SUCCEEDED_OUTCOME_LABEL: &str = "succeeded";
+pub const FAILED_OUTCOME_LABEL: &str = "failed";
+pub const DEADLINE_EXCEEDED_OUTCOME_LABEL: &str = "deadline_exceeded";
+pub const ABANDONED_OUTCOME_LABEL: &str = "abandoned";
+
+pub(crate) const ECDSA_PROTOCOL_SCHEME_LABEL: &str = "ecdsa";
+pub(crate) const EDDSA_PROTOCOL_SCHEME_LABEL: &str = "eddsa";
+pub(crate) const ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL: &str = "robust_ecdsa";
+pub(crate) const CKD_PROTOCOL_SCHEME_LABEL: &str = "ckd";
+
+pub(crate) const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
+pub(crate) const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
+pub(crate) const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
+pub(crate) const KEY_GENERATION_TASK_LABEL: &str = "key_generation";
+pub(crate) const KEY_RESHARING_TASK_LABEL: &str = "key_resharing";
+pub(crate) const CKD_TASK_LABEL: &str = "ckd";
+pub(crate) const VERIFY_FOREIGN_TX_TASK_LABEL: &str = "verify_foreign_tx";
+
+pub(crate) struct ComputationLabels {
+    pub(crate) protocol_scheme: &'static str,
+    pub(crate) task: &'static str,
+}
+
+impl MpcTaskId {
+    pub(crate) fn metric_labels(&self) -> ComputationLabels {
+        let (protocol_scheme, task) = match self {
+            MpcTaskId::EcdsaTaskId(task) => (
+                ECDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    EcdsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    EcdsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    EcdsaTaskId::ManyTriples { .. } => TRIPLE_GENERATION_TASK_LABEL,
+                    EcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
+                    EcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
+                },
+            ),
+            MpcTaskId::EddsaTaskId(task) => (
+                EDDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    EddsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    EddsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    EddsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
+                },
+            ),
+            MpcTaskId::CKDTaskId(task) => (
+                CKD_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    CKDTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    CKDTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    CKDTaskId::Ckd { .. } => CKD_TASK_LABEL,
+                },
+            ),
+            MpcTaskId::RobustEcdsaTaskId(task) => (
+                ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    RobustEcdsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    RobustEcdsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    RobustEcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
+                    RobustEcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
+                },
+            ),
+            MpcTaskId::VerifyForeignTxTaskId(task) => (
+                ECDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    VerifyForeignTxTaskId::VerifyForeignTx { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
+                },
+            ),
+        };
+        ComputationLabels {
+            protocol_scheme,
+            task,
+        }
+    }
+}
 
 pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {

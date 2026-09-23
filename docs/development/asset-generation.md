@@ -319,6 +319,12 @@ The online and offline gauges only count classified assets; assets still in
 the "unknown" state count towards neither. For an asset sitting in the hot
 queue, only `maybe_discard_owned()` classifies it as online.
 
+### Computation duration (histogram)
+
+| Metric | Description |
+|--------|-------------|
+| `mpc_led_computation_duration_seconds` | Wall clock time a computation took, recorded by its leader. Labels: `protocol_scheme`, `task`, `outcome` (`succeeded`, `failed`, `deadline_exceeded`, `abandoned`). See [node-operator-metrics.md](../guide/node-operator-metrics.md#computation-times). |
+
 ## Configuration
 
 Defined in `crates/node/src/config.rs` and set in `config.yaml`.

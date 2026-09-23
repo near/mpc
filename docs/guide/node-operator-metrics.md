@@ -17,6 +17,12 @@ counters tell you whether that is working:
 | `mpc_block_updates_dropped_total` | block updates the node dropped, including signature requests it will never process | should stay flat. Every increase is user requests the cluster may never answer. |
 | `mpc_num_fail_on_timeout_indexed` | requests the MPC contract marked as failed because no answer arrived in time | should be near zero. A sustained rate means this node, or the whole cluster, is too slow to answer. May overcount when NEAR has many forks. |
 
+## Computation times
+
+| Metric | What it tracks | When to worry |
+| --- | --- | --- |
+| `mpc_led_computation_duration_seconds` | how long a computation took, recorded by its leader only. Labelled by `protocol_scheme`, `task` and `outcome` (`succeeded`, `failed`, `deadline_exceeded`, `abandoned` when the caller gave up on it) | increase in the number of `failed`, `abandoned` or `deadline_exceeded` counts, and `succeeded` computations approaching the deadline for that `task`. |
+
 ## Backups
 
 After every resharing, the node hands its key shares to the backup service
@@ -145,6 +151,29 @@ increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 
 # Warn: requests fail for lack of an answer in time. Cross check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Warn: more than one computation in ten ends without a result: failed, past its
+# deadline, or dropped by the caller. The last clause skips tasks with under ten
+# computations in the window, so one failed key generation or resharing does not
+# alert.
+sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count{outcome!="succeeded"}[15m]))
+  / sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count[15m])) > 0.1
+  and sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count[15m])) > 0.01
+  for 15m
+
+# Warn: computations are running out of headroom against the deadline that ends
+# them. Signature, presignature, CKD and foreign-tx verification run under a
+# configured 60s by default, and 45s is three quarters of it. Key generation and
+# resharing are left out: a handful per epoch cannot support a percentile.
+histogram_quantile(0.99, sum by (protocol_scheme, task, le) (
+  rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task!~"triple_generation|key_generation|key_resharing"}[15m])
+)) > 45  for 15m
+
+# Warn: the same for triple generation, which runs under its own deadline, 120s
+# by default. Splitting it out is what lets the alert above stay strict.
+histogram_quantile(0.99, sum by (protocol_scheme, le) (
+  rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task="triple_generation"}[15m])
+)) > 90  for 15m
 
 # Warn: a provider refuses or garbles answers: a dead API key, the wrong chain,
 # or a broken backend. Needs a human; retrying does not help.

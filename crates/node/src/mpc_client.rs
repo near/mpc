@@ -93,15 +93,15 @@ async fn run_led_computation<T>(
     computation: impl Future<Output = anyhow::Result<T>>,
 ) -> anyhow::Result<T> {
     let (outcome_label, result) = match timeout(deadline, computation).await {
-        Ok(Ok(value)) => (metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL, Ok(value)),
-        Ok(Err(error)) => (metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, Err(error)),
+        Ok(Ok(value)) => (metrics::SUCCEEDED_OUTCOME_LABEL, Ok(value)),
+        Ok(Err(error)) => (metrics::FAILED_OUTCOME_LABEL, Err(error)),
         Err(elapsed) => (
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL,
             Err(elapsed.into()),
         ),
     };
     metric
-        .with_label_values(&[metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
+        .with_label_values(&[metrics::TOTAL_RESULT_LABEL])
         .inc();
     metric.with_label_values(&[outcome_label]).inc();
     result
@@ -853,18 +853,10 @@ mod tests {
 
         // Then
         assert_eq!(result.unwrap(), 42);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-            1,
-        );
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-            0,
-        );
+        assert_label_value(&metric, metrics::SUCCEEDED_OUTCOME_LABEL, 1);
+        assert_label_value(&metric, metrics::TOTAL_RESULT_LABEL, 1);
+        assert_label_value(&metric, metrics::FAILED_OUTCOME_LABEL, 0);
+        assert_label_value(&metric, metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL, 0);
     }
 
     #[tokio::test]
@@ -881,18 +873,10 @@ mod tests {
 
         // Then
         assert_eq!(result.unwrap_err().to_string(), "computation failed");
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 1);
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-            0,
-        );
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-            0,
-        );
+        assert_label_value(&metric, metrics::FAILED_OUTCOME_LABEL, 1);
+        assert_label_value(&metric, metrics::TOTAL_RESULT_LABEL, 1);
+        assert_label_value(&metric, metrics::SUCCEEDED_OUTCOME_LABEL, 0);
+        assert_label_value(&metric, metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL, 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -911,17 +895,9 @@ mod tests {
 
         // Then
         result.unwrap_err();
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-            1,
-        );
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-            0,
-        );
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
+        assert_label_value(&metric, metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL, 1);
+        assert_label_value(&metric, metrics::TOTAL_RESULT_LABEL, 1);
+        assert_label_value(&metric, metrics::SUCCEEDED_OUTCOME_LABEL, 0);
+        assert_label_value(&metric, metrics::FAILED_OUTCOME_LABEL, 0);
     }
 }
