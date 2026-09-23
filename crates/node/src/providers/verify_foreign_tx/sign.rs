@@ -1,3 +1,4 @@
+use crate::network::wire_format::VerifyForeignTxTaskId;
 use std::collections::HashSet;
 
 use anyhow::{Context, bail};
@@ -24,7 +25,7 @@ use tokio_util::time::FutureExt;
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
 use crate::primitives::ParticipantId;
-use crate::providers::verify_foreign_tx::{MeasuredFanOut, VerifyForeignTxTaskId};
+use crate::providers::verify_foreign_tx::MeasuredFanOut;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,

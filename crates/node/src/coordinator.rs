@@ -19,17 +19,18 @@ use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::metrics::tokio_runtime_metrics::run_monitor_loop;
 use crate::mpc_client::MpcClient;
+use crate::network::wire_format::{EcdsaTaskId, EddsaTaskId, MpcTaskId};
 use crate::network::{
     MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
 };
 use crate::p2p::{new_tls_mesh_network, new_tls_mesh_network_with_address_updates};
-use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::primitives::ParticipantId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::triple;
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
-use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::{DomainKeyshare, EcdsaSignatureProvider};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
@@ -627,7 +628,7 @@ where
                                     DomainKeyshare::new(data, reconstruction_threshold),
                                 );
                             }
-                            Protocol::DamgardEtAl => {
+                            Protocol::RobustEcdsa => {
                                 robust_ecdsa_keyshares.insert(
                                     domain_id,
                                     DomainKeyshare::new(data, reconstruction_threshold),

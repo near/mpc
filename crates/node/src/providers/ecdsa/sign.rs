@@ -1,12 +1,11 @@
 use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::wire_format::EcdsaTaskId;
 use crate::primitives::UniqueId;
 use crate::protocol::NamedProtocol;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
-use crate::providers::ecdsa::{
-    EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
-};
+use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput, PresignatureStorage};
 use crate::types::{SignatureId, SignatureRequest};
 use anyhow::Context;
 use k256::Scalar;
