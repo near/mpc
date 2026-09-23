@@ -37,6 +37,7 @@ impl ForeignChainRequestBuilder<FogoRequest<NotSet, NotSet>, NotSet> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod test {
     use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::DomainId;
@@ -46,17 +47,17 @@ mod test {
     use super::*;
 
     #[test]
-    fn build_wraps_into_fogo_variant() {
-        // given
+    fn build__should_wrap_into_fogo_variant() {
+        // Given
         let builder = ForeignChainRequestBuilder::new_fogo()
             .with_tx_id(SvmTxId::from([1; 64]))
             .with_finality(SvmFinality::Finalized)
             .with_domain_id(DomainId::from(1));
 
-        // when
+        // When
         let (_verifier, request_args) = builder.build().unwrap();
 
-        // then
+        // Then
         assert_matches!(request_args.request, ForeignChainRpcRequest::Fogo(_));
     }
 }

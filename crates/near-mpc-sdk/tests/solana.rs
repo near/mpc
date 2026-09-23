@@ -5,12 +5,13 @@ use near_mpc_sdk::foreign_chain::{
 };
 
 #[test]
-fn no_extractor_added() {
-    // given
+#[expect(non_snake_case)]
+fn build__should_add_no_extractors_without_expectations() {
+    // Given
     let domain_id = DomainId::from(2);
     let tx_id = SvmTxId::from([123; 64]);
 
-    // when
+    // When
     let (_verifier, built_sign_request_args) = ForeignChainRequestBuilder::new_solana()
         .with_tx_id(tx_id)
         .with_finality(SvmFinality::Finalized)
@@ -18,7 +19,7 @@ fn no_extractor_added() {
         .build()
         .unwrap();
 
-    // then
+    // Then
     let no_extractors = vec![];
 
     assert_matches!(built_sign_request_args.request, ForeignChainRpcRequest::Solana(solana_rpc_request) => {

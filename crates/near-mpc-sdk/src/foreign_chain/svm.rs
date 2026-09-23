@@ -11,12 +11,10 @@ pub use near_mpc_contract_interface::types::{
     SvmInnerInstruction, SvmRpcRequest, SvmTxId,
 };
 
-/// Trait that maps an [`SvmRpcRequest`] to the correct [`ForeignChainRpcRequest`] variant.
 pub trait SvmChainVariant {
     fn wrap(request: SvmRpcRequest) -> ForeignChainRpcRequest;
 }
 
-/// Type alias with concrete types for when the request is ready to be built.
 pub type BuildableSvmRequest<Chain> = SvmRequest<Chain, SvmTxId, SvmFinality>;
 
 #[derive(Debug, Clone)]
@@ -133,10 +131,8 @@ impl<Chain> ForeignChainRequestBuilder<BuildableSvmRequest<Chain>, NotSet> {
     }
 }
 
-/// Tests for the generic SVM builder logic. Uses Solana as the representative chain
-/// since the builder is generic over [`Chain`] — chain-specific variant tests live in each
-/// chain module.
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod test {
     use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
@@ -164,87 +160,13 @@ mod test {
     }
 
     #[test]
-    fn with_tx_id_sets_expected_value() {
-        // given
-        let tx_id = SvmTxId::from([123; 64]);
-
-        // when
-        let builder = ForeignChainRequestBuilder::new_solana().with_tx_id(tx_id.clone());
-
-        // then
-        assert_eq!(builder.request.tx_id, tx_id);
-    }
-
-    #[test]
-    fn with_finality_sets_expected_value() {
-        // given
-        let tx_id = SvmTxId::from([123; 64]);
-
-        // when
-        let builder = ForeignChainRequestBuilder::new_solana()
-            .with_tx_id(tx_id)
-            .with_finality(SvmFinality::Finalized);
-
-        // then
-        assert_eq!(builder.request.finality, SvmFinality::Finalized);
-    }
-
-    #[test]
-    fn with_expected_inner_instruction_sets_expected_value() {
-        // given
-        let inner_instruction = test_inner_instruction(3);
-
-        // when
-        let builder = ForeignChainRequestBuilder::new_solana()
-            .with_tx_id(SvmTxId::from([123; 64]))
-            .with_finality(SvmFinality::Finalized)
-            .with_expected_inner_instruction(2, 1, inner_instruction.clone());
-
-        // then
-        assert_eq!(
-            builder.request.expected_values,
-            vec![ExpectedSvmValue {
-                extractor: SvmExtractor::InnerInstruction {
-                    instruction_index: 2,
-                    inner_instruction_index: 1,
-                },
-                value: SvmExtractedValue::InnerInstruction(inner_instruction),
-            }]
-        );
-    }
-
-    #[test]
-    fn with_expected_account_state_sets_expected_value() {
-        // given
-        let pubkey = [7; 32];
-        let account = test_account(4);
-
-        // when
-        let builder = ForeignChainRequestBuilder::new_solana()
-            .with_tx_id(SvmTxId::from([123; 64]))
-            .with_finality(SvmFinality::Finalized)
-            .with_expected_account_state(pubkey, account.clone());
-
-        // then
-        assert_eq!(
-            builder.request.expected_values,
-            vec![ExpectedSvmValue {
-                extractor: SvmExtractor::AccountState {
-                    pubkey: SvmAddress(pubkey),
-                },
-                value: SvmExtractedValue::AccountState(account),
-            }]
-        );
-    }
-
-    #[test]
-    fn build_preserves_extractor_insertion_order() {
-        // given
+    fn build__should_preserve_extractor_insertion_order() {
+        // Given
         let inner_instruction = test_inner_instruction(3);
         let account = test_account(4);
         let pubkey = [7; 32];
 
-        // when
+        // When
         let (verifier, request_args) = ForeignChainRequestBuilder::new_solana()
             .with_tx_id(SvmTxId::from([123; 64]))
             .with_finality(SvmFinality::Finalized)
@@ -254,7 +176,7 @@ mod test {
             .build()
             .unwrap();
 
-        // then
+        // Then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Solana(rpc_request) => {
             assert_eq!(
                 rpc_request.extractors.to_vec(),
@@ -279,15 +201,15 @@ mod test {
     }
 
     #[test]
-    fn build_produces_correct_request_args() {
-        // given
+    fn build__should_produce_correct_request_args() {
+        // Given
         let domain_id = DomainId::from(2);
         let tx_id = SvmTxId::from([123; 64]);
         let inner_instruction = test_inner_instruction(3);
         let account = test_account(4);
         let pubkey = [7; 32];
 
-        // when
+        // When
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_solana()
             .with_tx_id(tx_id.clone())
             .with_finality(SvmFinality::Finalized)
@@ -297,7 +219,7 @@ mod test {
             .build()
             .unwrap();
 
-        // then
+        // Then
         let expected_request = ForeignChainRpcRequest::Solana(SvmRpcRequest {
             tx_id,
             finality: SvmFinality::Finalized,
@@ -334,12 +256,12 @@ mod test {
     }
 
     #[test]
-    fn build_produces_correct_verifier() {
-        // given
+    fn build__should_produce_correct_verifier() {
+        // Given
         let tx_id = SvmTxId::from([123; 64]);
         let inner_instruction = test_inner_instruction(3);
 
-        // when
+        // When
         let (verifier, _request_args) = ForeignChainRequestBuilder::new_solana()
             .with_tx_id(tx_id.clone())
             .with_finality(SvmFinality::Confirmed)
@@ -348,7 +270,7 @@ mod test {
             .build()
             .unwrap();
 
-        // then
+        // Then
         let expected_verifier = ForeignChainSignatureVerifier {
             expected_extracted_values: vec![ExtractedValue::SvmExtractedValue(
                 SvmExtractedValue::InnerInstruction(inner_instruction),
@@ -368,33 +290,33 @@ mod test {
     }
 
     #[test]
-    fn verifier_request_matches_request_args() {
-        // given
+    fn build__should_give_verifier_and_request_args_the_same_request() {
+        // Given
         let builder = ForeignChainRequestBuilder::new_solana()
             .with_tx_id(SvmTxId::from([123; 64]))
             .with_finality(SvmFinality::Finalized)
             .with_expected_account_state([7; 32], test_account(4))
             .with_domain_id(DomainId::from(1));
 
-        // when
+        // When
         let (verifier, request_args) = builder.build().unwrap();
 
-        // then
+        // Then
         assert_eq!(verifier.request, request_args.request);
     }
 
     #[test]
-    fn build_without_extractors_produces_empty_extractors() {
-        // given
+    fn build__should_produce_empty_extractors_without_expectations() {
+        // Given
         let builder = ForeignChainRequestBuilder::new_solana()
             .with_tx_id(SvmTxId::from([42; 64]))
             .with_finality(SvmFinality::Confirmed)
             .with_domain_id(DomainId::from(1));
 
-        // when
+        // When
         let (_verifier, request_args) = builder.build().unwrap();
 
-        // then
+        // Then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Solana(rpc_request) => {
             assert!(rpc_request.extractors.is_empty());
         });
