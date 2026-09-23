@@ -236,7 +236,7 @@ async fn run_starknet(
 }
 
 /// Aptos providers prune historical transactions, so probe verifies the
-/// provider's chain identity — see [`checks::check_aptos`].
+/// provider's chain identity.
 async fn run_aptos(
     cfg: &ForeignChainConfig,
     vector: Option<AptosVector>,

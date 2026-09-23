@@ -14,11 +14,9 @@ pub struct BlockHashVector {
     pub block_hash: &'static str,
 }
 
-/// Aptos fullnodes prune history after a few weeks, so we werify it by
-/// chain id — see [`check_aptos`](crate::checks::check_aptos).
+/// Aptos fullnodes prune history after a few weeks, so we verify it by chain id.
 #[derive(Clone, Copy)]
 pub struct AptosVector {
-    /// The `chain_id` the ledger-info endpoint reports, as decimal digits.
     pub chain_id: &'static str,
 }
 
