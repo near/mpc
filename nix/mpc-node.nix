@@ -287,7 +287,7 @@ craneLib.buildPackage (
       mainProgram = pname;
     };
   }
-  # Not in commonArgs: the revision would re-key cargoArtifacts on every commit.
+  # Not in commonArgs: the revision would re-key cargoArtifacts on every commit
   // lib.optionalAttrs (gitRev != null) {
     BUILT_OVERRIDE_mpc_node_GIT_COMMIT_HASH_SHORT = gitRev;
   }

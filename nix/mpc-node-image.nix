@@ -27,7 +27,7 @@ dockerTools.buildLayeredImage {
 
   extraCommands = ''
     mkdir -p app root
-    # The node writes /tmp/allowed_image_hashes.json; nothing else creates /tmp.
+    # The node writes its allowed image hashes here and nothing else creates it
     mkdir -m 1777 tmp
     ln -s ${lib.getExe mpc-node} app/mpc-node
     install -m 755 ${../deployment/start.sh} app/start.sh

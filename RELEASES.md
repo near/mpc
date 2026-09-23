@@ -190,7 +190,7 @@ writing manifest ...: blob unknown to registry
 ```
 
 the registry holds an orphaned blob from an earlier push that was
-interrupted mid-upload. Launcher/node images share base-image layer blobs
+interrupted mid-upload. The images reuse identical layer blobs
 across tags, so skopeo's blob `HEAD` checks see the orphaned blob as
 "present" and skip re-uploading it, then Docker Hub rejects the manifest
 because it can't link that blob.

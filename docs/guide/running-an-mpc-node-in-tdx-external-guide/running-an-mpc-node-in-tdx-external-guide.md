@@ -2082,7 +2082,7 @@ $ sha256sum result/manifest.json
 <hex>  result/manifest.json
 ```
 
-The printed hex digest is what you vote for: submit it as the `mpc_node_manifest_digest` value in the voting command (DockerHub shows it with a `sha256:` prefix). The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
+The printed hex digest is what you vote for: submit it as the `mpc_node_manifest_digest` value in the voting command (DockerHub shows it with a `sha256:` prefix). The launcher pulls the image directly by this digest, and Docker verifies that the content matches during the pull. If the commit has no `mpc-node-image` flake output, it predates the Nix build: follow `docs/guide/reproducible-builds.md` in that checkout instead.
 
 * Do your own due diligence on the code/binary
 

@@ -13,22 +13,26 @@ in the Nix sandbox without network access, from inputs pinned by `flake.lock`,
 `Cargo.lock` and `rust-toolchain.toml`: only the download of those pinned
 inputs uses the network, and each download is checked against its hash, so
 code that runs during the build (build scripts, proc-macros) cannot fetch
-anything. Nix enables the sandbox by default on Linux; do not disable it.
+anything. Nix enables the sandbox by default on Linux, but where the kernel
+refuses the namespaces it needs (e.g. inside a container) it silently builds
+without it; set `sandbox-fallback = false` in `nix.conf`, as CI does, so such a
+build fails instead.
 
 Each image builds to the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` is the manifest digest that operators vote on:
 
 ```bash
-git clone https://github.com/near/mpc
-cd mpc
-git checkout <commit-hash>
-nix build .#packages.x86_64-linux.mpc-node-image
+nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image
 sha256sum result/manifest.json
 ```
 
-Use `mpc-node-gcp-image` or `mpc-launcher-image` for the other images. The
-commit hash is embedded in the node binary, so build from a clean checkout of
-the commit you want to reproduce.
+Use `mpc-node-gcp-image` or `mpc-launcher-image` for the other images. Building
+`.#packages.x86_64-linux.mpc-node-image` from a checkout gives the same result
+only if the working tree is clean, because the commit hash is embedded in the
+node binary. The digest also covers `flake.lock`, so bumping nixpkgs changes it
+even when the code does not. Commits without these flake outputs, such as
+patch releases from release branches created before the switch to Nix, are
+reproduced by following this guide in that checkout.
 
 To run an image locally, load it into Docker:
 
@@ -39,9 +43,11 @@ docker load --input "$(nix build --no-link --print-out-paths .#packages.x86_64-l
 ### Building on macOS
 
 The images are `x86_64-linux` builds, so Nix needs a Linux builder to run them.
-On Apple silicon, nixpkgs' `darwin.linux-builder-vz` runs a NixOS builder VM
-that executes `x86_64-linux` builds through Rosetta. With
-[nix-darwin](https://github.com/nix-darwin/nix-darwin), add:
+On Apple silicon with macOS 26 or newer, nixpkgs' `darwin.linux-builder-vz`
+runs a NixOS builder VM that executes `x86_64-linux` builds through Rosetta. It
+is only in nixpkgs-unstable (not 26.05), so with
+[nix-darwin](https://github.com/nix-darwin/nix-darwin) on nixpkgs-unstable,
+add:
 
 ```nix
 nix.linux-builder = {
@@ -56,8 +62,9 @@ nix.linux-builder = {
 };
 ```
 
-After `darwin-rebuild switch`, the commands above work unchanged. The
-[nixpkgs manual](https://nixos.org/manual/nixpkgs/unstable/#sec-darwin-builder-vz)
+Install Rosetta (`softwareupdate --install-rosetta --agree-to-license`) and run
+`sudo darwin-rebuild switch`; the commands above then work unchanged. The
+[nixpkgs documentation](https://github.com/NixOS/nixpkgs/blob/56c02bc00adcf003215cc4bd996d6efaf4cff188/doc/packages/darwin-builder.section.md)
 describes the setup without nix-darwin.
 
 ## mpc-contract
@@ -78,7 +85,8 @@ build metadata in `crates/contract/Cargo.toml`
 `rust-toolchain.toml` (`1.97.1`). This metadata is embedded in the WASM, which
 lets automated third-party verifiers such as sourcescan.io and nearblocks replay
 the build and confirm the on-chain contract matches the published source. This
-is the build CI publishes as the release artifact. It requires `docker`:
+is the build CI publishes as the release artifact. It requires `docker` and
+[`cargo-near`](https://github.com/near/cargo-near):
 
 ```bash
 cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
