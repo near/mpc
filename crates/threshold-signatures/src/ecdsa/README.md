@@ -21,7 +21,7 @@ See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 
 ### Robust ECDSA (`robust_ecdsa/`) -- stub, not a secure scheme
 
-The \[[DJNPO20](https://eprint.iacr.org/2020/501)\] implementation was removed and replaced by a stub that produces valid signatures while leaking the signing key, so that the node plumbing built around this protocol stays exercised until a real robust scheme replaces it. Requires exactly `N = 2t+1` signers where `t = MaxMalicious`.
+The previous implementation was removed and replaced by a stub that produces valid signatures while leaking the signing key, so that the node plumbing built around this protocol stays exercised until a real robust scheme replaces it. Requires exactly `N = 2t+1` signers where `t = MaxMalicious`.
 
 See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) before using it for anything.
 

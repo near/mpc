@@ -3,10 +3,9 @@
 //! # Do not enable this in production
 //!
 //! This module intentionally contains **no secure signing scheme**. It is a
-//! placeholder: the implementation of [DJNPO20](https://eprint.iacr.org/2020/501)
-//! that used to live here was removed, and only its type and protocol surface was
-//! kept so that a future robust scheme can be dropped in without rebuilding the
-//! node and contract plumbing around it.
+//! placeholder: the implementation that used to live here was removed, and only its
+//! type and protocol surface was kept so that a future robust scheme can be dropped
+//! in without rebuilding the node and contract plumbing around it.
 //!
 //! [`presign::presign`] broadcasts the nonce `k` in the clear, so every presigning
 //! participant learns it. Given any signature `(R, s)` produced from that

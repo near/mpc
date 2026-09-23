@@ -10,8 +10,8 @@ based one. The former is originally imported from the
 [Cait-Sith](https://github.com/cronokirby/cait-sith) library and amended to meet
 our industrial needs. This includes modifying parts of the code to improve the
 performance, augment the security, and generalize functions' syntax. The latter
-however is implemented from scratch and follows
-\[[DJNPØ](https://eprint.iacr.org/2020/501)\]
+is currently an insecure stub; see
+[Robust Threshold ECDSA](#robust-threshold-ecdsa) below.
 
 The EdDSA implementation is mainly a wrapper of the
 [Frost](https://github.com/ZcashFoundation/frost) signing functions instantiated
@@ -94,9 +94,9 @@ The following functionalities are provided:
 
 2) **Key Resharing / Key Refresh**: same as in OT-based ECDSA.
 
-3) **Presigning (offline)**: **stub, not a secure scheme.** The
-[[DJNPO20](https://eprint.iacr.org/2020/501)] implementation was removed and
-replaced by a one-round stub that produces valid signatures while leaking the
+3) **Presigning (offline)**: **stub, not a secure scheme.** The previous
+implementation was removed and replaced by a one-round stub that produces
+valid signatures while leaking the
 signing key, so that the plumbing built around this protocol stays exercised
 until a real robust scheme replaces it. Read the
 [docs](docs/ecdsa/robust_ecdsa/signing.md) before using it for anything.

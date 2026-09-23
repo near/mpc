@@ -1,8 +1,8 @@
 # Benchmarking
 
 > **Note on the Robust ECDSA figures.** Every Robust ECDSA number below was measured
-> against the [[DJNPO20](https://eprint.iacr.org/2020/501)] implementation, which has
-> since been removed and replaced by an insecure stub (see
+> against the previous implementation, which has since been removed and replaced by
+> an insecure stub (see
 > [`docs/ecdsa/robust_ecdsa/signing.md`](../ecdsa/robust_ecdsa/signing.md)). They are
 > retained as a record of what that scheme cost, and as a target for whichever robust
 > scheme replaces the stub. They do **not** describe what the `robust_ecdsa`
@@ -205,5 +205,5 @@ NUM_PARTICIPANTS=7 LATENCY_MS=100 cargo bench -p threshold-signatures --features
 NUM_PARTICIPANTS=15 THRESHOLD=8 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
 ```
 
-The simulation harness runs the Damgård et al. scheme alongside, which requires exactly
+The simulation harness runs the Robust ECDSA protocol alongside, which requires exactly
 `2 * (threshold - 1) + 1` participants.

@@ -1,9 +1,9 @@
 # Robust ECDSA — stub
 
 > **Status: this is not a secure scheme.**
-> The [[DJNPO20](https://eprint.iacr.org/2020/501)] implementation this document used
-> to specify was removed. What remains is a stub that produces valid ECDSA
-> signatures while leaking the signing key, kept so that the surrounding node and
+> The implementation this document used to specify was removed. What remains is a
+> stub that produces valid ECDSA signatures while leaking the signing key, kept so
+> that the surrounding node and
 > contract plumbing stays exercised until a real robust scheme replaces it.
 > TODO(#4383): replace the stub with a real robust scheme.
 > Never add a domain for this protocol on mainnet or testnet.

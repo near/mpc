@@ -1,9 +1,8 @@
 # Robust Threshold ECDSA — stub (`src/ecdsa/robust_ecdsa/`)
 
 > **Status: this is not a secure scheme.**
-> The [[DJNPO20](https://eprint.iacr.org/2020/501)] implementation that used to live
-> here was removed. What remains is a stub that produces valid ECDSA signatures while
-> leaking the signing key. It exists so that the node and contract plumbing built
+> The implementation that used to live here was removed. What remains is a stub that
+> produces valid ECDSA signatures while leaking the signing key. It exists so that the node and contract plumbing built
 > around this protocol — presignature storage, task routing, resharing, threshold
 > validation — stays compiled and exercised until a real robust scheme replaces it.
 > TODO(#4383): replace the stub with a real robust scheme.
