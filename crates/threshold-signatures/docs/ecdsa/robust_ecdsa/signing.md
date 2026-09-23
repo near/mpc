@@ -4,7 +4,8 @@ This document specifies the signing protocol described in [[DJNPO20](https://epr
 
 ### Note:  We denote $\mathcal{P}$ the set of participants included the DKG and the threshold $t = \mathsf{MaxMalicious}$
 
-$h_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm and $\mathsf{Com}(v; r) = g^{v} \cdot h_{\mathsf{ped}}^{r}$ a Pedersen commitment.
+$h_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm and $\mathsf{Com}(v; r) = v 
+\cdot G + r \cdot h_{\mathsf{ped}}$ a Pedersen commitment.
 
 # Signing
 
@@ -24,11 +25,21 @@ The inputs to this phase are:
 
 **Round 1:**
 
-1. Each $P_i$ generates two random degree $t$ polynomials $f_{k_i}$ and $f_{a_i}$
-2. Each $P_i$ generates three random degree $2t$ polynomials $f_{b_i}$, $f_{d_i}$, and $f_{e_i}$ and set their constant terms to zero.
-3. Each $P_i$ generates a random degree $t$ polynomial $f_{\rho_i}$ and a random degree $2t$ polynomial $f_{\sigma_i}$ with constant term zero, and commits to the coefficients of $f_{a_i}$ and $f_{b_i}$: $A_{i,m} \gets \mathsf{Com}(a_{i,m}; \rho_{i,m})$ for $m \in \\{0..t\\}$ and $B_{i,m} \gets \mathsf{Com}(b_{i,m}; \sigma_{i,m})$ for $m \in \\{1..2t\\}$, where $a_{i,m}, b_{i,m}, \rho_{i,m}, \sigma_{i,m}$ are the coefficients of $f_{a_i}, f_{b_i}, f_{\rho_i}, f_{\sigma_i}$.
-4. $\star$ Each $P_i$ sends $(A_{i,0}, \ldots, A_{i,t}, B_{i,1}, \ldots, B_{i,2t})$ to every party.
-5. $\textcolor{red}{\star}$ Each $P_i$ **privately** sends
+1. Each $P_i$ generates two random, degree $t$ polynomials $f_{k_i}$ and $f_{a_i}$
+2. Each $P_i$ generates a random, degree $t$ polynomial $f_{\rho_i}$ with constant term zero.
+3. Each $P_i$ generates three random, degree $2t$ polynomials $f_{b_i}$, $f_{d_i}$, and $f_{e_i}$ and set their constant terms to zero.
+4. Each $P_i$ generates a random, degree $2t$ polynomial $f_{\sigma_i}$ with constant term zero
+5. Each $P_i$ commits to the coefficients of $f_{a_i}$ and $f_{b_i}$:
+
+$$
+A_{i,m} \gets \mathsf{Com}(a_{i,m}; \rho_{i,m})\quad \forall m \in \set{1..t}\\
+B_{i,m} \gets \mathsf{Com}(b_{i,m}; \sigma_{i,m}) \quad \forall m \in \set{1..2t}
+$$
+
+$\qquad$ where $a_{i,m}, b_{i,m}, \rho_{i,m}, \sigma_{i,m}$ are the coefficients of $f_{a_i}, f_{b_i}, f_{\rho_i}, f_{\sigma_i}$.
+
+6. $\star$ Each $P_i$ sends $(A_{i,0}, \ldots, A_{i,t}, B_{i,1}, \ldots, B_{i,2t})$ to every party.
+7. $\textcolor{red}{\star}$ Each $P_i$ **privately** sends
 $(k_{ij}, a_{ij}, b_{ij}, d_{ij}, e_{ij}, \rho_{ij}, \sigma_{ij})$ to every party $P_j$ such that:
 
 $$
@@ -43,8 +54,16 @@ $$
 
 **Round 2:**
 
-1. $\bullet$ Each $P_i$ waits to receive the commitments and $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji}, \rho_{ji}, \sigma_{ji})$ from each other $P_j$, and $\blacktriangle$ *asserts* that $\mathsf{Com}(a_{ji}; \rho_{ji}) = \prod_{m=0}^{t} A_{j,m}^{\,i^m}$ and $\mathsf{Com}(b_{ji}; \sigma_{ji}) = \prod_{m=1}^{2t} B_{j,m}^{\,i^m}$, identifying $P_j$ as malicious otherwise.
-2. Each $P_i$ sums the shares received from the participants:
+1. $\bullet$ Each $P_i$ waits to receive the commitments  $(A_{i,0}, \ldots, A_{i,t}, B_{i,1}, \ldots, B_{i,2t})$
+2. $\bullet$ Each $P_i$ waits to receive $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji}, \rho_{ji}, \sigma_{ji})$ from each party $P_j$
+3. $\blacktriangle$ Each $P_i$ *asserts* the following identifying whether $P_j$ is honest or malicious:
+
+$$
+\mathsf{Com}(a_{ji}; \rho_{ji}) = \prod_{m=0}^{t} A_{j,m}^{\,i^m}\\
+\mathsf{Com}(b_{ji}; \sigma_{ji}) = \prod_{m=1}^{2t} B_{j,m}^{\,i^m}
+$$
+
+4. Each $P_i$ sums the shares received from the participants:
 
 $$
 k_i \gets \sum_j k_{ji} \qquad
@@ -56,9 +75,9 @@ e_i \gets \sum_j e_{ji} \qquad
 \sigma_i \gets \sum_j \sigma_{ji}
 $$
 
-3. Each $P_i$ computes $R_i = g^{k_i}$
-4. Each $P_i$ computes $w_i = a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
-5. $\star$ Each $P_i$ sends $(R_i, w_i, \eta_i)$ to every party, where $\eta_i \gets H(\text{all commitments received in round 1})$.
+5. Each $P_i$ computes $R_i \gets g^{k_i}$
+6. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
+7. $\star$ Each $P_i$ sends $(R_i, w_i, \eta_i)$ to every party, where $\eta_i \gets H(\text{all commitments received in round 1})$.
 
 **Round 3:**
 
