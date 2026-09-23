@@ -278,6 +278,18 @@ impl VerifiedAttestation {
         }
     }
 
+    /// `None` for a mock without an expiry, which never expires.
+    pub fn expiry_timestamp_seconds(&self) -> Option<u64> {
+        match self {
+            Self::Dstack(attestation) => Some(attestation.expiry_timestamp_seconds),
+            Self::Mock(MockAttestation::WithConstraints {
+                expiry_timestamp_seconds,
+                ..
+            }) => *expiry_timestamp_seconds,
+            Self::Mock(_) => None,
+        }
+    }
+
     pub fn re_verify(
         &self,
         timestamp_seconds: u64,

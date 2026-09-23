@@ -233,8 +233,9 @@ impl StoredDockerImageHashes {
 pub struct AllowedLauncherImage {
     pub(crate) launcher_hash: LauncherImageHash,
     pub(crate) compose_hashes: Vec<LauncherDockerComposeHash>,
-    /// When this launcher expires: computed as `now + ttl` when it is voted in / re-voted,
-    /// and refreshed on each attestation by a current participant. Drives expiry.
+    /// When this launcher expires: `now + ttl` when it is voted in / re-voted, extended on
+    /// each attestation by a current participant to at least that attestation's expiry.
+    /// Never moves earlier, so eviction cannot kick a node whose attestation is still valid.
     pub(crate) expires_at: Timestamp,
 }
 
@@ -249,6 +250,10 @@ impl AllowedLauncherImage {
             compose_hashes,
             expires_at: expiry_from_now(ttl),
         }
+    }
+
+    fn extend_expiry_to(&mut self, until: Timestamp) {
+        self.expires_at = self.expires_at.max(until);
     }
 
     fn is_expired(&self, now: Timestamp) -> bool {
@@ -298,7 +303,7 @@ impl AllowedLauncherImages {
             .iter_mut()
             .find(|e| e.launcher_hash == launcher_hash)
         {
-            existing.expires_at = expiry_from_now(ttl);
+            existing.extend_expiry_to(expiry_from_now(ttl));
             return AllowedLauncherImageInsertion::Refreshed;
         }
 
@@ -348,15 +353,24 @@ impl AllowedLauncherImages {
             .unwrap_or_default()
     }
 
-    /// Refreshes the `expires_at` timestamp (to `now + ttl`) of the entry whose
-    /// `compose_hashes` contains `compose_hash`. Returns `true` if a matching entry was found.
-    pub fn refresh(&mut self, compose_hash: &LauncherDockerComposeHash, ttl: Duration) -> bool {
+    /// Extends the `expires_at` timestamp of the entry whose `compose_hashes` contains
+    /// `compose_hash` to at least `now + ttl` and `attestation_expiry`. Returns `true` if a
+    /// matching entry was found.
+    pub fn refresh(
+        &mut self,
+        compose_hash: &LauncherDockerComposeHash,
+        ttl: Duration,
+        attestation_expiry: Option<Timestamp>,
+    ) -> bool {
         if let Some(entry) = self
             .entries
             .iter_mut()
             .find(|e| e.compose_hashes.contains(compose_hash))
         {
-            entry.expires_at = expiry_from_now(ttl);
+            entry.extend_expiry_to(expiry_from_now(ttl));
+            if let Some(attestation_expiry) = attestation_expiry {
+                entry.extend_expiry_to(attestation_expiry);
+            }
             true
         } else {
             false
@@ -428,6 +442,16 @@ impl AllowedLauncherImages {
             .iter()
             .find(|e| &e.launcher_hash == launcher_hash)
             .map(|e| e.expires_at.as_secs())
+    }
+
+    /// Test-only: overwrites `expires_at`, which production code never moves earlier.
+    #[cfg(test)]
+    pub(crate) fn set_expires_at_secs(&mut self, launcher_hash: &LauncherImageHash, secs: u64) {
+        self.entries
+            .iter_mut()
+            .find(|e| &e.launcher_hash == launcher_hash)
+            .expect("launcher must be allowed first")
+            .expires_at = Timestamp::from_secs(secs);
     }
 
     /// Test-only: allows one more compose hash for an already-allowed launcher. The attestation
@@ -781,7 +805,7 @@ mod tests {
 
         // When it is refreshed on use just before the deadline (expires_at=190).
         set_block_secs(90);
-        assert!(allowed.refresh(&compose, ttl));
+        assert!(allowed.refresh(&compose, ttl, None));
 
         // Then it stays live past the original deadline (101), within the refreshed window (190),
         set_block_secs(150);
@@ -790,8 +814,68 @@ mod tests {
         // and refreshing an unknown compose hash returns false.
         assert!(!allowed.refresh(
             &get_docker_compose_hash(&dummy_launcher_hash(9), &mpc_hash),
-            ttl
+            ttl,
+            None
         ));
+    }
+
+    #[test]
+    fn refresh__should_extend_expiry_to_attestation_expiry_beyond_ttl() {
+        // Given
+        let ttl = Duration::from_secs(100);
+        set_block_secs(1);
+        let mut allowed = AllowedLauncherImages::default();
+        let launcher = dummy_launcher_hash(1);
+        let mpc_hash = dummy_code_hash(10);
+        allowed.add_or_refresh(launcher, &[mpc_hash], ttl);
+        let compose = get_docker_compose_hash(&launcher, &mpc_hash);
+
+        // When
+        set_block_secs(10);
+        allowed.refresh(&compose, ttl, Some(Timestamp::from_secs(500)));
+
+        // Then
+        assert_eq!(allowed.expires_at_secs(&launcher), Some(500));
+    }
+
+    #[test]
+    fn refresh__should_not_shorten_expiry() {
+        // Given
+        let ttl = Duration::from_secs(100);
+        set_block_secs(1);
+        let mut allowed = AllowedLauncherImages::default();
+        let launcher = dummy_launcher_hash(1);
+        let mpc_hash = dummy_code_hash(10);
+        allowed.add_or_refresh(launcher, &[mpc_hash], ttl);
+        let compose = get_docker_compose_hash(&launcher, &mpc_hash);
+        allowed.refresh(&compose, ttl, Some(Timestamp::from_secs(500)));
+
+        // When
+        set_block_secs(20);
+        allowed.refresh(&compose, ttl, Some(Timestamp::from_secs(50)));
+
+        // Then
+        assert_eq!(allowed.expires_at_secs(&launcher), Some(500));
+    }
+
+    #[test]
+    fn add_or_refresh__should_not_shorten_expiry_on_re_add() {
+        // Given
+        let ttl = Duration::from_secs(100);
+        set_block_secs(1);
+        let mut allowed = AllowedLauncherImages::default();
+        let launcher = dummy_launcher_hash(1);
+        let mpc_hash = dummy_code_hash(10);
+        allowed.add_or_refresh(launcher, &[mpc_hash], ttl);
+        let compose = get_docker_compose_hash(&launcher, &mpc_hash);
+        allowed.refresh(&compose, ttl, Some(Timestamp::from_secs(500)));
+
+        // When
+        set_block_secs(20);
+        allowed.add_or_refresh(launcher, &[mpc_hash], ttl);
+
+        // Then
+        assert_eq!(allowed.expires_at_secs(&launcher), Some(500));
     }
 
     #[test]
