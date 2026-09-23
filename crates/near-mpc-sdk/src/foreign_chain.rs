@@ -23,7 +23,7 @@ pub mod validation;
 use near_mpc_contract_interface::types::PublicKey;
 // response types
 pub use near_mpc_contract_interface::types::{
-    ForeignTxNegativeVerdict, Hash256, SignatureResponse, VerifyForeignTransactionResponse,
+    Hash256, SignatureResponse, VerifyForeignTransactionResponse,
 };
 
 // raw request arg type
@@ -39,13 +39,11 @@ pub struct ForeignChainSignatureVerifier {
     request: ForeignChainRpcRequest,
 }
 
-#[derive(Debug)]
 pub enum VerifyForeignChainError {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
     UnexpectedSignatureScheme,
     SignatureVerificationFailed,
-    NegativeVerdict(ForeignTxNegativeVerdict),
 }
 
 impl ForeignChainSignatureVerifier {
@@ -55,18 +53,16 @@ impl ForeignChainSignatureVerifier {
         // TODO(#2232): don't use interface API types for public keys
         public_key: &PublicKey,
     ) -> Result<(), VerifyForeignChainError> {
-        let payload_hash = match &response.negative_verdict {
-            Some(verdict) => {
-                ForeignTxSignPayload::negative_verdict(self.request, *verdict).compute_msg_hash()
-            }
-            None => expected_payload_hash(self.request, self.expected_extracted_values),
-        }
-        .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
+        let expected_payload_hash =
+            expected_payload_hash(self.request, self.expected_extracted_values)
+                .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
 
-        if payload_hash != response.payload_hash {
+        let payload_is_correct = expected_payload_hash == response.payload_hash;
+
+        if !payload_is_correct {
             return Err(VerifyForeignChainError::IncorrectPayloadSigned {
                 got: response.payload_hash.clone(),
-                expected: payload_hash,
+                expected: expected_payload_hash,
             });
         }
         let verification_result = match (public_key, &response.signature) {
@@ -75,13 +71,13 @@ impl ForeignChainSignatureVerifier {
                 SignatureResponse::Secp256k1(k256_signature),
             ) => near_mpc_signature_verifier::verify_ecdsa_signature(
                 k256_signature,
-                &payload_hash,
+                &expected_payload_hash,
                 secp256k1_public_key,
             ),
             (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
                 near_mpc_signature_verifier::verify_eddsa_signature(
                     signature,
-                    payload_hash.as_slice(),
+                    expected_payload_hash.as_slice(),
                     ed25519_public_key,
                 )
             }
@@ -92,12 +88,7 @@ impl ForeignChainSignatureVerifier {
             _ => return Err(VerifyForeignChainError::UnexpectedSignatureScheme),
         };
 
-        verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)?;
-
-        match &response.negative_verdict {
-            Some(verdict) => Err(VerifyForeignChainError::NegativeVerdict(*verdict)),
-            None => Ok(()),
-        }
+        verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)
     }
 }
 
@@ -186,183 +177,3 @@ pub enum BuildRequestError {
 }
 
 impl std::error::Error for BuildRequestError {}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use assert_matches::assert_matches;
-    use near_mpc_contract_interface::types::{
-        EvmExtractedValue, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, K256Signature,
-        Secp256k1PublicKey,
-    };
-
-    use super::*;
-
-    fn ethereum_request() -> ForeignChainRpcRequest {
-        ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
-            tx_id: EvmTxId([0xab; 32]),
-            extractors: [EvmExtractor::BlockHash].into(),
-            finality: EvmFinality::Finalized,
-        })
-    }
-
-    fn verifier_for(request: ForeignChainRpcRequest) -> ForeignChainSignatureVerifier {
-        ForeignChainSignatureVerifier {
-            expected_extracted_values: vec![ExtractedValue::EvmExtractedValue(
-                EvmExtractedValue::BlockHash(Hash256([0xef; 32])),
-            )],
-            request,
-        }
-    }
-
-    fn signing_key() -> k256::ecdsa::SigningKey {
-        k256::ecdsa::SigningKey::from_bytes(&[42u8; 32].into()).unwrap()
-    }
-
-    fn sign_payload_hash(
-        signing_key: &k256::ecdsa::SigningKey,
-        payload_hash: &Hash256,
-    ) -> SignatureResponse {
-        let (signature, recovery_id) = signing_key
-            .sign_prehash_recoverable(&payload_hash.0)
-            .unwrap();
-        SignatureResponse::Secp256k1(K256Signature::from_ecdsa_recoverable(
-            &signature,
-            recovery_id,
-        ))
-    }
-
-    fn public_key_of(signing_key: &k256::ecdsa::SigningKey) -> PublicKey {
-        PublicKey::Secp256k1(Secp256k1PublicKey::from(&k256::PublicKey::from(
-            signing_key.verifying_key(),
-        )))
-    }
-
-    #[test]
-    fn foreign_chain_signature_verifier__should_return_negative_verdict_for_well_signed_negative_response()
-     {
-        // Given
-        let signing_key = signing_key();
-        let request = ethereum_request();
-        let payload_hash = ForeignTxSignPayload::negative_verdict(
-            request.clone(),
-            ForeignTxNegativeVerdict::TransactionNotFound,
-        )
-        .compute_msg_hash()
-        .unwrap();
-        let signature = sign_payload_hash(&signing_key, &payload_hash);
-        let response = VerifyForeignTransactionResponse {
-            payload_hash,
-            signature,
-            negative_verdict: Some(ForeignTxNegativeVerdict::TransactionNotFound),
-        };
-
-        // When
-        let result =
-            verifier_for(request).verify_signature(&response, &public_key_of(&signing_key));
-
-        // Then
-        assert_matches!(
-            result,
-            Err(VerifyForeignChainError::NegativeVerdict(
-                ForeignTxNegativeVerdict::TransactionNotFound
-            ))
-        );
-    }
-
-    #[test]
-    fn foreign_chain_signature_verifier__should_reject_negative_verdict_when_payload_hash_mismatches()
-     {
-        // Given
-        let signing_key = signing_key();
-        let request = ethereum_request();
-        let verdict = ForeignTxNegativeVerdict::TransactionNotFound;
-        let wrong_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: request.clone(),
-            values: vec![],
-        })
-        .compute_msg_hash()
-        .unwrap();
-        let expected_negative_hash =
-            ForeignTxSignPayload::negative_verdict(request.clone(), verdict)
-                .compute_msg_hash()
-                .unwrap();
-        let signature = sign_payload_hash(&signing_key, &wrong_payload_hash);
-        let response = VerifyForeignTransactionResponse {
-            payload_hash: wrong_payload_hash.clone(),
-            signature,
-            negative_verdict: Some(verdict),
-        };
-
-        // When
-        let result =
-            verifier_for(request).verify_signature(&response, &public_key_of(&signing_key));
-
-        // Then
-        assert_matches!(
-            result,
-            Err(VerifyForeignChainError::IncorrectPayloadSigned {
-                got,
-                expected
-            }) if got == wrong_payload_hash && expected == expected_negative_hash
-        );
-    }
-
-    #[test]
-    fn foreign_chain_signature_verifier__should_reject_negative_verdict_with_invalid_signature() {
-        // Given
-        let signing_key = signing_key();
-        let wrong_signing_key = k256::ecdsa::SigningKey::from_bytes(&[7u8; 32].into()).unwrap();
-        let request = ethereum_request();
-        let payload_hash = ForeignTxSignPayload::negative_verdict(
-            request.clone(),
-            ForeignTxNegativeVerdict::TransactionNotFound,
-        )
-        .compute_msg_hash()
-        .unwrap();
-        let signature = sign_payload_hash(&wrong_signing_key, &payload_hash);
-        let response = VerifyForeignTransactionResponse {
-            payload_hash,
-            signature,
-            negative_verdict: Some(ForeignTxNegativeVerdict::TransactionNotFound),
-        };
-
-        // When
-        let result =
-            verifier_for(request).verify_signature(&response, &public_key_of(&signing_key));
-
-        // Then
-        assert_matches!(
-            result,
-            Err(VerifyForeignChainError::SignatureVerificationFailed)
-        );
-    }
-
-    #[test]
-    fn foreign_chain_signature_verifier__should_accept_well_signed_success_response() {
-        // Given
-        let signing_key = signing_key();
-        let request = ethereum_request();
-        let payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: request.clone(),
-            values: vec![ExtractedValue::EvmExtractedValue(
-                EvmExtractedValue::BlockHash(Hash256([0xef; 32])),
-            )],
-        })
-        .compute_msg_hash()
-        .unwrap();
-        let signature = sign_payload_hash(&signing_key, &payload_hash);
-        let response = VerifyForeignTransactionResponse {
-            payload_hash,
-            signature,
-            negative_verdict: None,
-        };
-
-        // When
-        let result =
-            verifier_for(request).verify_signature(&response, &public_key_of(&signing_key));
-
-        // Then
-        assert_matches!(result, Ok(()));
-    }
-}

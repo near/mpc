@@ -3686,15 +3686,6 @@ expression: abi
             "$ref": "#/definitions/ForeignChainsConfig"
           }
         },
-        "ForeignTxNegativeVerdict": {
-          "description": "A settled negative answer about the requested foreign-chain transaction.\n\nA verdict is a definitive observation, not a transient RPC failure: the transaction does not exist, it failed, or it does not contain the requested log index. No values are extracted; the signed payload hashes the original [`ForeignChainRpcRequest`] together with the verdict.",
-          "type": "string",
-          "enum": [
-            "TransactionNotFound",
-            "TransactionFailed",
-            "LogIndexOutOfBounds"
-          ]
-        },
         "GovernanceThreshold": {
           "description": "Network-wide governance threshold (`k`): the minimum number of participants that must agree to approve a governance action (participant set changes, resharing, parameter updates). Distinct from a domain's [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.",
           "type": "integer",
@@ -4521,16 +4512,6 @@ expression: abi
             "signature"
           ],
           "properties": {
-            "negative_verdict": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ForeignTxNegativeVerdict"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "payload_hash": {
               "$ref": "#/definitions/Hash256"
             },
@@ -5549,16 +5530,6 @@ expression: abi
             "signature"
           ],
           "properties": {
-            "negative_verdict": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ForeignTxNegativeVerdict"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "payload_hash": {
               "$ref": "#/definitions/Hash256"
             },

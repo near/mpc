@@ -757,7 +757,6 @@ pub fn sign_foreign_tx_response(
     let response = VerifyForeignTransactionResponse {
         payload_hash,
         signature: signature_response,
-        negative_verdict: None,
     };
     (payload, response)
 }

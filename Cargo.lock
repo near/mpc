@@ -7159,11 +7159,9 @@ dependencies = [
  "assert_matches",
  "borsh",
  "derive_more 2.1.1",
- "k256 0.13.4",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-signature-verifier",
- "near-sdk",
  "thiserror 2.0.20",
 ]
 
