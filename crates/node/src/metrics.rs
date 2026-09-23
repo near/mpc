@@ -254,7 +254,8 @@ pub static MPC_LED_COMPUTATION_DURATION_SECONDS: LazyLock<prometheus::HistogramV
         prometheus::register_histogram_vec!(
             "mpc_led_computation_duration_seconds",
             "Wall clock time a computation took, measured by the node that led it, including \
-             time spent waiting on the network.",
+             time spent waiting on the network. Outcomes deadline_exceeded and abandoned both \
+             mean the computation's work was lost; monitor them together.",
             &["protocol_scheme", "task", "outcome"],
             buckets_covering_computation_deadlines(),
         )
