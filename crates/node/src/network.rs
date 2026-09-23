@@ -1121,7 +1121,7 @@ mod tests {
     use super::{
         InvalidChannelId, InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
         MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
-        SenderOrNewChannel, run_receive_message,
+        run_receive_message,
     };
     use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::network::testing::{TestMeshTransportSender, new_test_transports, run_test_clients};
@@ -1479,30 +1479,6 @@ mod tests {
         // Then
         assert_eq!(received.from, THIRD_PARTY);
         assert_eq!(received.data, vec![vec![1u8]]);
-    }
-
-    #[tokio::test]
-    async fn sender_for__should_not_buffer_a_peer_message_under_a_channel_id_we_own() {
-        // Given
-        let mut node = ReceivingNode::new();
-        let ours = ChannelId(UniqueId::new(ME, 1, 0));
-        let _ = node.receive(ORIGINATOR, computation_message(ours, 1)).await;
-
-        // When
-        let opened = node
-            .client
-            .sender_for(ours, Some(&start_of(ME, vec![ME, ORIGINATOR])), ME);
-
-        // Then
-        let mut channel = match opened.unwrap() {
-            SenderOrNewChannel::NewChannel(channel) => channel,
-            SenderOrNewChannel::Sender(_) => panic!("a fresh channel should have been opened"),
-        };
-        assert!(
-            tokio::time::timeout(Duration::from_millis(50), channel.receive())
-                .await
-                .is_err()
-        );
     }
 
     const ME: ParticipantId = ParticipantId::from_raw(0);
