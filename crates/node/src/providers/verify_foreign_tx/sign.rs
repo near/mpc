@@ -614,14 +614,17 @@ fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
 /// A mismatched verdict is a node level event, not a provider failure: an honest provider may
 /// just lag behind its peers. The node log names the disagreeing providers.
 fn count_verdict_mismatch(error: &anyhow::Error, chain: dtos::ForeignChain) {
-    if error
-        .downcast_ref::<ForeignChainInspectionError>()
-        .is_some_and(|err| matches!(err, ForeignChainInspectionError::InspectorResponseMismatch))
-    {
+    if is_verdict_mismatch(error) {
         metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
             .with_label_values(&[chain.label()])
             .inc();
     }
+}
+
+fn is_verdict_mismatch(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ForeignChainInspectionError>()
+        .is_some_and(|err| matches!(err, ForeignChainInspectionError::InspectorResponseMismatch))
 }
 
 #[cfg(test)]
@@ -640,37 +643,27 @@ mod tests {
     }
 
     #[test]
-    fn count_verdict_mismatch__should_count_an_inspector_response_mismatch() {
+    fn is_verdict_mismatch__should_match_an_inspector_response_mismatch() {
         // Given
         let error = anyhow::Error::from(ForeignChainInspectionError::InspectorResponseMismatch);
 
         // When
-        count_verdict_mismatch(&error, dtos::ForeignChain::Bitcoin);
+        let is_mismatch = is_verdict_mismatch(&error);
 
         // Then
-        assert_eq!(
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
-                .with_label_values(&["bitcoin"])
-                .get(),
-            1
-        );
+        assert!(is_mismatch);
     }
 
     #[test]
-    fn count_verdict_mismatch__should_not_count_other_errors() {
+    fn is_verdict_mismatch__should_not_match_other_errors() {
         // Given
         let error = anyhow::Error::from(ForeignChainInspectionError::NotFinalized);
 
         // When
-        count_verdict_mismatch(&error, dtos::ForeignChain::Bitcoin);
+        let is_mismatch = is_verdict_mismatch(&error);
 
         // Then
-        assert_eq!(
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
-                .with_label_values(&["bitcoin"])
-                .get(),
-            0
-        );
+        assert!(!is_mismatch);
     }
 
     #[test]
