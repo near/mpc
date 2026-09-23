@@ -4,30 +4,24 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[features]
-clap = ["dep:clap"]
-
 [dependencies]
 anyhow = { workspace = true }
-bs58 = { workspace = true }
-clap = { workspace = true, optional = true }
 foreign-chain-inspector = { workspace = true }
-foreign-chain-rpc-factory = { workspace = true }
-foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
-hex = { workspace = true }
-http = { workspace = true }
 mpc-node-config = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
-tokio = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
 foreign-chain-inspector = { workspace = true, features = ["test-utils"] }
+foreign-chain-rpc-factory = { workspace = true }
+foreign-chain-rpc-interfaces = { workspace = true }
+http = { workspace = true }
 httpmock = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 tonic = { workspace = true, features = ["codegen", "router", "server"] }
 
 [lints]

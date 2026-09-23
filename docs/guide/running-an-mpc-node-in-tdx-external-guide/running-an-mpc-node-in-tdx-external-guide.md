@@ -984,7 +984,7 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, the chain's `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints) below), and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
 
 You need your own API keys:
 
@@ -995,7 +995,7 @@ You need your own API keys:
 > **Important:**
 >
 > * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
-> * Before deploying, verify your config with the [foreign-chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet` (or `--network mainnet`). It checks every provider with the same client code the node uses.
+> * Before deploying, verify your config with the [foreign chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml`. It runs the same provider probe the node runs after startup and reports the same verdicts.
 
 Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
 
@@ -1005,6 +1005,8 @@ Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with you
 [mpc_node_config.node.foreign_chains.bitcoin]
 timeout_sec = 30
 max_retries = 3
+# Genesis block hash, as block explorers render it.
+expected_network_fingerprint = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
 
 [mpc_node_config.node.foreign_chains.bitcoin.providers.public]
 rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
@@ -1012,6 +1014,7 @@ rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "11124"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.testnet.abs.xyz"
@@ -1033,6 +1036,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "0x534e5f5345504f4c4941" # SN_SEPOLIA
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
@@ -1054,6 +1058,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "2" # Aptos ledger chain id
 
 [mpc_node_config.node.foreign_chains.aptos.providers.public]
 rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
@@ -1084,6 +1089,8 @@ token = { val = "YOUR_GEOMI_API_KEY" }
 [mpc_node_config.node.foreign_chains.sui]
 timeout_sec = 30
 max_retries = 3
+# Genesis checkpoint digest.
+expected_network_fingerprint = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"
 
 [mpc_node_config.node.foreign_chains.sui.providers.public]
 rpc_url = "https://archive.testnet.sui.io"
@@ -1143,6 +1150,8 @@ rpc_url = "https://testnet.fogo.io"
 [mpc_node_config.node.foreign_chains.bitcoin]
 timeout_sec = 30
 max_retries = 3
+# Genesis block hash, as block explorers render it.
+expected_network_fingerprint = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
 
 [mpc_node_config.node.foreign_chains.bitcoin.providers.public]
 rpc_url = "https://bitcoin-rpc.publicnode.com"
@@ -1150,6 +1159,7 @@ rpc_url = "https://bitcoin-rpc.publicnode.com"
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "2741"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.mainnet.abs.xyz"
@@ -1171,6 +1181,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "0x534e5f4d41494e" # SN_MAIN
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-rpc.publicnode.com"
@@ -1192,6 +1203,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "1" # Aptos ledger chain id
 
 [mpc_node_config.node.foreign_chains.aptos.providers.public]
 rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
@@ -1222,6 +1234,8 @@ token = { val = "YOUR_GEOMI_API_KEY" }
 [mpc_node_config.node.foreign_chains.sui]
 timeout_sec = 30
 max_retries = 3
+# Genesis checkpoint digest.
+expected_network_fingerprint = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"
 
 [mpc_node_config.node.foreign_chains.sui.providers.public]
 rpc_url = "https://archive.mainnet.sui.io"
@@ -1273,6 +1287,41 @@ expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"
 [mpc_node_config.node.foreign_chains.fogo.providers.public]
 rpc_url = "https://mainnet.fogo.io"
 ```
+
+#### Expected network fingerprints
+
+`expected_network_fingerprint` is the value every provider of a chain must report when asked which
+network it serves. Only some chains call it a chain id: Bitcoin's and the SVM chains' is their
+genesis block hash, and Sui's is its genesis checkpoint digest. The node compares it with each
+provider's answer after startup and then hourly, and the config tester does the same, so a provider
+pointed at the wrong network is reported before it can fail a real request. The value is set per
+chain, so a config can mix networks, and it is always a quoted string, including the ones that look
+numeric. A chain configured without it has all of its providers reported unhealthy.
+
+| chain | fingerprint | mainnet | testnet |
+|---|---|---|---|
+| ethereum | EIP-155 chain id, decimal | `"1"` | `"11155111"` (Sepolia) |
+| base | EIP-155 chain id, decimal | `"8453"` | `"84532"` (Sepolia) |
+| bnb | EIP-155 chain id, decimal | `"56"` | `"97"` |
+| arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
+| polygon | EIP-155 chain id, decimal | `"137"` | `"80002"` (Amoy) |
+| hyper_evm | EIP-155 chain id, decimal | `"999"` | `"998"` |
+| avalanche | EIP-155 chain id, decimal | `"43114"` | `"43113"` (Fuji) |
+| adi | EIP-155 chain id, decimal | `"36900"` | `"99999"` (AB testnet) |
+| abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
+| starknet | chain id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
+| bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` (testnet3) |
+| aptos | ledger chain id, decimal | `"1"` | `"2"` |
+| sui | genesis checkpoint digest, base58 | `"4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"` | `"69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"` |
+| solana | genesis block hash, base58 | `"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"` | `"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"` (devnet) |
+| fogo | genesis block hash, base58 | `"CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"` | `"9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"` |
+
+Bitcoin's genesis hash is written the way block explorers render it, leading zeros first, and it
+also tells the other test networks apart where a network name would not: testnet4 is
+`"00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"`, signet
+`"00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"`, and regtest
+`"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`. The SVM chains write their
+genesis hash in base58, so a hex hash from a block explorer is not accepted for them.
 
 ### Preparing a Docker Compose File
 
