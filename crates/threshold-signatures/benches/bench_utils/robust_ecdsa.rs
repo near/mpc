@@ -1,3 +1,7 @@
+//! Benchmarks the Robust ECDSA stub, not a real scheme: its presigning is a single
+//! broadcast round, so these numbers are a lower bound on what a replacement scheme
+//! could cost rather than a comparison against OT-based ECDSA.
+
 use std::collections::HashMap;
 
 use rand::Rng;

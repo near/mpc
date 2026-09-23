@@ -17,10 +17,10 @@
 //! ```
 
 use crate::network::testing::run_test_clients;
+use crate::network::wire_format::EcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::ecdsa::triple::SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE;
 use crate::tests::into_participant_ids;
 use crate::tracking;

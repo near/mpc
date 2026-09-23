@@ -276,24 +276,11 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
-        let request = QueryRequest::CallFunction {
-            account_id: to_near_internal(&mpc_contract_id),
-            method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
-            args: vec![].into(),
-        };
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
+        let (_block_height, whitelist) = self
+            .get_mpc_state(mpc_contract_id, ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+            .await?;
 
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => {
-                decode_allowed_foreign_chain_providers(&result.result)
-            }
-            _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
-        }
+        Ok(whitelist)
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
@@ -367,25 +354,6 @@ impl IndexerViewClient {
             }
         }
     }
-}
-
-/// TODO(#4353): drop the borsh fallback once mainnet and testnet both return JSON.
-fn decode_allowed_foreign_chain_providers(
-    bytes: &[u8],
-) -> anyhow::Result<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
-    let json_error = match serde_json::from_slice(bytes) {
-        Ok(whitelist) => return Ok(whitelist),
-        Err(error) => error,
-    };
-    borsh::from_slice(bytes).with_context(|| {
-        let preview: String = bytes.iter().take(32).map(|b| format!("{b:02x}")).collect();
-        format!(
-            "failed to decode allowed_foreign_chain_providers as JSON ({json_error}) or \
-             borsh (len={}, first {} bytes hex: {preview})",
-            bytes.len(),
-            bytes.len().min(32),
-        )
-    })
 }
 
 pub(crate) trait ReadAttestationExpiry: Send + Sync {
@@ -572,13 +540,7 @@ pub struct IndexerAPI<TransactionSender> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{
-        BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress, decode_allowed_foreign_chain_providers,
-        dtos,
-    };
-    use assert_matches::assert_matches;
-    use near_mpc_bounded_collections::NonEmptyBTreeMap;
-    use std::collections::BTreeMap;
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();
@@ -678,68 +640,5 @@ mod tests {
         let expected =
             pre.len() + resync.len() + usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1;
         assert_eq!(caught_up_at, Some(expected));
-    }
-
-    fn whitelist_fixture() -> BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
-        BTreeMap::from([(
-            dtos::ForeignChain::Bitcoin,
-            dtos::ChainEntry {
-                providers: NonEmptyBTreeMap::new(
-                    dtos::ProviderId("alchemy".to_string()),
-                    dtos::ProviderConfig {
-                        base_url: "http://localhost:7".to_string(),
-                        auth_scheme: dtos::AuthScheme::None,
-                        chain_routing: dtos::ChainRouting::Embedded,
-                    },
-                ),
-                quorum: 1,
-            },
-        )])
-    }
-
-    #[test]
-    fn decode_allowed_foreign_chain_providers__should_decode_a_json_result() {
-        // Given
-        let bytes = serde_json::to_vec(&whitelist_fixture()).unwrap();
-
-        // When
-        let decoded = decode_allowed_foreign_chain_providers(&bytes).unwrap();
-
-        // Then
-        assert_eq!(decoded, whitelist_fixture());
-    }
-
-    #[test]
-    fn decode_allowed_foreign_chain_providers__should_decode_a_borsh_result() {
-        // Given
-        let bytes = borsh::to_vec(&whitelist_fixture()).unwrap();
-
-        // When
-        let decoded = decode_allowed_foreign_chain_providers(&bytes).unwrap();
-
-        // Then
-        assert_eq!(decoded, whitelist_fixture());
-    }
-
-    #[test]
-    fn decode_allowed_foreign_chain_providers__should_decode_an_empty_borsh_result() {
-        // Given
-        let bytes =
-            borsh::to_vec(&BTreeMap::<dtos::ForeignChain, dtos::ChainEntry>::new()).unwrap();
-
-        // When
-        let decoded = decode_allowed_foreign_chain_providers(&bytes).unwrap();
-
-        // Then
-        assert!(decoded.is_empty());
-    }
-
-    #[test]
-    fn decode_allowed_foreign_chain_providers__should_return_err_on_bytes_of_neither_encoding() {
-        // When
-        let result = decode_allowed_foreign_chain_providers(b"not a whitelist");
-
-        // Then
-        assert_matches!(result, Err(_));
     }
 }

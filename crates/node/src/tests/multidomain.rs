@@ -31,7 +31,7 @@ async fn test_basic_multidomain() {
         std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 
-    // TODO(#1689): in this test it would be desirable to add DamgardEtAl.
+    // TODO(#1689): in this test it would be desirable to add RobustEcdsa.
     // That requires having NUM_PARTICIPANTS = 5 and GOVERNANCE_THRESHOLD = 5
     // which makes this test too slow to pass in CI, which should be fixed
     let mut domains = vec![

@@ -45,17 +45,9 @@
         in
         "${llvmPkgs.clang-unwrapped.lib}/lib/clang/${clangVersion}/include";
 
-      # Production ISA: x86-64-v3 plus PCLMUL and AES. The v3 micro-arch
-      # level (per System V psABI) covers AVX2/BMI2/F16C/FMA/LZCNT/MOVBE
-      # but NOT PCLMUL or AES — we add those explicitly so rocksdb's
-      # PCLMUL-accelerated CRC32C path is compiled in. Production node
-      # fleet is all v3-capable (Haswell / Excavator and newer).
-      #
-      # Shared between the reproducible mpc-node build (nix/mpc-node.nix)
-      # and the dev shell (devShells.default below) so feature-test macros
-      # in bindgen-parsed headers, cc-rs-compiled C/C++ deps, and the
-      # rustc target-cpu line up across all build paths.
-      prodCFlags = "-march=x86-64-v3 -mpclmul -maes";
+      # Production ISA, read from the single source of truth so bindgen sees
+      # the same feature-test macros the cc-rs deps are compiled with.
+      prodCFlags = (lib.importTOML ./.cargo/config.toml).env.CFLAGS_x86_64_unknown_linux_gnu;
 
     in
     {
@@ -98,13 +90,6 @@
           isX86 = stdenv.hostPlatform.isx86_64;
 
           envCommon = {
-            # `-include cstdint` is needed by neard's rocksdb C++ build
-            # regardless of host. Production ISA flags are scoped to the
-            # x86_64 Linux host target below so wasm cross-compilation
-            # (e.g. the contract WASM build via blst) isn't polluted —
-            # `-march=x86-64-v3` is invalid for the wasm32 target.
-            CXXFLAGS = "-include cstdint";
-
             # WASM Toolchain
             CC_wasm32_unknown_unknown = "${llvmPkgs.clang-unwrapped}/bin/clang";
             AR_wasm32_unknown_unknown = "${llvmPkgs.llvm}/bin/llvm-ar";
@@ -134,15 +119,9 @@
 
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
-          }
-          // lib.optionalAttrs (stdenv.isLinux && isX86) {
-            # Production ISA for cc-crate dependencies (rocksdb, snappy, zstd,
-            # jemalloc). Target-scoped so wasm cross-builds aren't polluted.
-            CFLAGS_x86_64_unknown_linux_gnu = prodCFlags;
-            CXXFLAGS_x86_64_unknown_linux_gnu = "${prodCFlags} -include cstdint";
           };
 
-          envDarwin = lib.optionalAttrs stdenv.isDarwin {
+          envDarwin = lib.optionalAttrs stdenv.hostPlatform.isDarwin {
             # Cargo resolves its linker separately from CC — force it to use the
             # LLVM 19 clang so -lSystem (and other SDK libs) are found.
             CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${llvmPkgs.clang}/bin/clang";
@@ -192,18 +171,18 @@
               zstd
               bzip2
             ]
-            ++ lib.optionals stdenv.isLinux [
+            ++ lib.optionals stdenv.hostPlatform.isLinux [
               udev
               dbus
             ]
-            ++ lib.optionals stdenv.isDarwin [
+            ++ lib.optionals stdenv.hostPlatform.isDarwin [
               apple-sdk_14
             ];
 
           hardening = [
             "fortify"
           ]
-          ++ lib.optionals stdenv.isDarwin [
+          ++ lib.optionals stdenv.hostPlatform.isDarwin [
             "stackprotector"
             "strictoverflow"
             "format"
@@ -232,7 +211,7 @@
             hardeningDisable = hardening;
 
             shellHook = ''
-              ${lib.optionalString stdenv.isDarwin ''
+              ${lib.optionalString stdenv.hostPlatform.isDarwin ''
                 # Override CC/CXX to use LLVM 19 clang, matching Rust 1.86.0's
                 # bundled LLVM version. The default stdenv's clang 21 produces
                 # LLVM bitcode that Rust's LLVM 19 cannot read.
