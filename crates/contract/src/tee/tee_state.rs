@@ -1386,8 +1386,7 @@ mod tests {
     }
 
     #[test]
-    fn reverify_and_cleanup_participants__should_keep_participant_whose_attestation_outlives_launcher_ttl()
-     {
+    fn reverify_and_cleanup_participants__should_keep_launcher_of_valid_attestation() {
         // Given
         const TTL: Duration = Duration::from_secs(100);
         const NANOS_PER_SECOND: u64 = 1_000_000_000;
