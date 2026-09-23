@@ -47,9 +47,18 @@ docker load --input "$(nix build --no-link --print-out-paths .#packages.x86_64-l
 The images are `x86_64-linux` builds, so Nix needs a Linux builder to run them.
 On Apple silicon with macOS 26 or newer, nixpkgs' `darwin.linux-builder-vz`
 runs a NixOS builder VM that executes `x86_64-linux` builds through Rosetta. It
-is only in nixpkgs-unstable (not 26.05), so with
-[nix-darwin](https://github.com/nix-darwin/nix-darwin) on nixpkgs-unstable,
-add:
+is only in nixpkgs-unstable (not 26.05), which the
+[nix-darwin](https://github.com/nix-darwin/nix-darwin) template tracks:
+
+```bash
+sudo mkdir -p /etc/nix-darwin
+sudo chown "$(id -nu):$(id -ng)" /etc/nix-darwin
+cd /etc/nix-darwin
+nix flake init -t nix-darwin/master
+sed -i '' "s/simple/$(scutil --get LocalHostName)/" flake.nix
+```
+
+Add to `configuration` in `flake.nix`:
 
 ```nix
 nix.linux-builder = {
@@ -62,12 +71,20 @@ nix.linux-builder = {
     darwin-builder.diskSize = 100 * 1024;
   };
 };
+# Writing /etc/pam.d needs Full Disk Access on recent macOS
+security.pam.services.sudo_local.enable = false;
 ```
 
-Install Rosetta (`softwareupdate --install-rosetta --agree-to-license`) and run
-`sudo darwin-rebuild switch`; the commands above then work unchanged. The
-[nixpkgs documentation](https://github.com/NixOS/nixpkgs/blob/56c02bc00adcf003215cc4bd996d6efaf4cff188/doc/packages/darwin-builder.section.md)
-describes the setup without nix-darwin.
+Then install nix-darwin, which also starts the builder. If it reports
+unexpected files in `/etc` (such as the `/etc/bashrc` written by the Nix
+installer), rename each with a `.before-nix-darwin` suffix and rerun:
+
+```bash
+sudo nix --extra-experimental-features 'nix-command flakes' run nix-darwin/master#darwin-rebuild -- switch
+```
+
+The commands above then work unchanged. The builder needs Rosetta
+(`softwareupdate --install-rosetta --agree-to-license`).
 
 Without a Linux builder, Docker Desktop can run the build: enable its Rosetta
 emulation and give it at least 16 GB of memory. Nix runs natively in the
