@@ -50,8 +50,9 @@ $$
 
 3. Each $P_i$ computes $R_i = g^{k_i}$
 4. Each $P_i$ computes $w_i = a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
-5. Each $P_i$ computes $B_i = g^{b_i}$ and $h_i \gets H(B_i)$
-6. $\star$ Each $P_i$ sends $(R_i, w_i, h_i)$ to every party.
+5. Each $P_i$ computes $B_i = g^{b_i}$
+6. Each $P_i$ computes $h_i \gets H(B_i)$
+7. $\star$ Each $P_i$ sends $(R_i, w_i, h_i)$ to every party.
 
 **Round 3:**
 
