@@ -2,17 +2,13 @@ use prometheus::{CounterVec, IntCounterVec, register_counter_vec, register_int_c
 use std::sync::LazyLock;
 use tokio_metrics::{TaskIntervals, TaskMonitor};
 
-use crate::metrics::MONITOR_SAMPLE_DURATION;
+use crate::metrics::{
+    ECDSA_PROTOCOL_SCHEME_LABEL, EDDSA_PROTOCOL_SCHEME_LABEL, MAKE_SIGNATURE_TASK_LABEL,
+    MONITOR_SAMPLE_DURATION, PRESIGNATURE_GENERATION_TASK_LABEL,
+    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL, TRIPLE_GENERATION_TASK_LABEL,
+};
 
 const TOKIO_TASK_LABELS: &[&str] = &["protocol_scheme", "task", "role"];
-
-const ECDSA_PROTOCOL_SCHEME_LABEL: &str = "ecdsa";
-const EDDSA_PROTOCOL_SCHEME_LABEL: &str = "eddsa";
-const ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL: &str = "robust_ecdsa";
-
-const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
-const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
-const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
 
 const LEADER_ROLE_LABEL: &str = "leader";
 const FOLLOWER_ROLE_LABEL: &str = "follower";

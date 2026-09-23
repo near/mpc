@@ -163,7 +163,7 @@ impl MpcContract {
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation)?,
+                self.submit_dstack_attestation(node_id, attestation),
             )),
         }
     }
@@ -233,12 +233,8 @@ impl MpcContract {
         &mut self,
         node_id: NodeId,
         attestation: DstackAttestation,
-    ) -> Result<Promise, Error> {
-        let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
-            return Err(TeeError::VerifierNotConfigured.into());
-        };
-
-        Ok(Promise::new(verifier_account_id)
+    ) -> Promise {
+        Promise::new(self.tee_verifier_account_id.clone())
             .function_call(
                 method_names::VERIFY_QUOTE.to_string(),
                 borsh::to_vec(&(&attestation.quote, &attestation.collateral))
@@ -253,7 +249,7 @@ impl MpcContract {
                         node_id,
                         tcb_info: attestation.tcb_info,
                     }),
-            ))
+            )
     }
 
     #[handle_result]
@@ -521,7 +517,8 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id, gen_participants,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
+        create_node_id, gen_participants,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
@@ -1027,6 +1024,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
@@ -1151,6 +1149,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

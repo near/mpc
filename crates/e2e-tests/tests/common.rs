@@ -372,11 +372,11 @@ pub fn must_get_bls_public_key(
     }
 }
 
-/// Builds a [`DamgardEtAl`] signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
-pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
+/// Builds a [`RobustEcdsa`] signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
+pub fn robust_ecdsa_domain(id: u64, t: u64) -> DomainConfig {
     DomainConfig {
         id: DomainId(id),
-        protocol: Protocol::DamgardEtAl,
+        protocol: Protocol::RobustEcdsa,
         reconstruction_threshold: ReconstructionThreshold::new(t),
         purpose: DomainPurpose::Sign,
     }
