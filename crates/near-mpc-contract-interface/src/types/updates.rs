@@ -1,11 +1,31 @@
 use crate::types::Config;
+use crate::types::Hash256;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-type Sha256Digest = [u8; 32];
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+pub enum Update {
+    Code(Vec<u8>),
+    Config(Config),
+}
 
+impl Update {
+    pub fn payload_bytes(&self) -> Result<u128, PayloadBytesError> {
+        let bytes = match self {
+            Update::Code(code) => code.len(),
+            Update::Config(config) => serde_json::to_vec(config)?.len(),
+        };
+        u128::try_from(bytes).map_err(|_| PayloadBytesError::Overflow)
+    }
+}
+
+// TODO(#4513): drop once production runs the vote-then-submit API.
 #[derive(
     Debug,
     Copy,
@@ -29,6 +49,7 @@ type Sha256Digest = [u8; 32];
 )]
 pub struct UpdateId(pub u64);
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 #[derive(
     Debug,
     Clone,
@@ -51,7 +72,7 @@ pub struct ProposedUpdates {
     pub updates: BTreeMap<UpdateId, UpdateHash>,
 }
 
-/// An update hash
+/// Identifies an [`Update`] by content.
 #[derive(
     Debug,
     Clone,
@@ -70,10 +91,11 @@ pub struct ProposedUpdates {
     derive(schemars::JsonSchema)
 )]
 pub enum UpdateHash {
-    Code(Sha256Digest),
-    Config(Sha256Digest),
+    Code(Hash256),
+    Config(Hash256),
 }
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -100,7 +122,7 @@ impl ProposeUpdateArgs {
     }
 }
 
-/// Sizing a proposal's payload failed.
+/// Sizing a payload failed.
 #[derive(Debug, thiserror::Error)]
 pub enum PayloadBytesError {
     #[error("the config does not serialize to JSON: {0}")]
