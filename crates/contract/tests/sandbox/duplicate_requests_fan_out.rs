@@ -3,7 +3,7 @@
 //! Items are declared in order of occurrence: every function (or type) is defined
 //! before any helper it transitively depends on.
 
-#![allow(non_snake_case)] // Tests use the `<sut>__should_<assertion>` form mandated by CLAUDE.md.
+#![allow(non_snake_case)] // Tests use the `<sut>__should_<assertion>` form mandated by AGENTS.md.
 
 use crate::sandbox::{
     common::SandboxTestSetup,
