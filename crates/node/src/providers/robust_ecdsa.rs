@@ -1,4 +1,4 @@
-//! Provider for [`Protocol::RobustEcdsa`](mpc_primitives::domain::Protocol::RobustEcdsa)
+//! Provider for [`Protocol::RobustEcdsa`]
 //! domains.
 //!
 //! # Do not enable this in production
@@ -29,7 +29,7 @@ use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
 use mpc_primitives::ReconstructionThreshold;
-use mpc_primitives::domain::DomainId;
+use mpc_primitives::domain::{DomainId, Protocol};
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::MaxMalicious;
@@ -198,8 +198,10 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 }
 
 /// Derives `(num_signers, max_malicious)` for robust-ECDSA from the domain's
-/// reconstruction threshold `t`. Returns an error if `t < 2`,
-/// which the contract's threshold validation already rejects.
+/// reconstruction threshold `t`, with `num_signers` taken from
+/// [`Protocol::required_active_signers`] so node and contract agree on it.
+/// Returns an error if `t < 2`, which the contract's threshold validation
+/// already rejects.
 pub(super) fn compute_thresholds(
     reconstruction_threshold: ReconstructionThreshold,
 ) -> anyhow::Result<(usize, MaxMalicious)> {
@@ -211,10 +213,9 @@ pub(super) fn compute_thresholds(
     let max_malicious = t
         .checked_sub(1)
         .ok_or_else(|| anyhow::anyhow!("robust-ECDSA max_malicious underflow for t={t}"))?;
-    let num_signers = t
-        .checked_mul(2)
-        .and_then(|two_t| two_t.checked_sub(1))
-        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA signer count overflow for t={t}"))?;
+    let num_signers: usize = Protocol::RobustEcdsa
+        .required_active_signers(reconstruction_threshold)
+        .try_into()?;
     Ok((num_signers, MaxMalicious::from(max_malicious)))
 }
 
