@@ -15,16 +15,6 @@ pub enum Update {
     Config(Config),
 }
 
-impl Update {
-    pub fn payload_bytes(&self) -> Result<u128, PayloadBytesError> {
-        let bytes = match self {
-            Update::Code(code) => code.len(),
-            Update::Config(config) => serde_json::to_vec(config)?.len(),
-        };
-        u128::try_from(bytes).map_err(|_| PayloadBytesError::Overflow)
-    }
-}
-
 // TODO(#4513): drop once production runs the vote-then-submit API.
 #[derive(
     Debug,

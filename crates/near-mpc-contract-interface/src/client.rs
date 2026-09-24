@@ -10,6 +10,8 @@ use near_contract_transport::{
 };
 use serde::de::DeserializeOwned;
 
+mod helpers;
+
 use crate::call_args::{
     InitArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
     RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
@@ -197,7 +199,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         update: Update,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let deposit = NearToken::from_yoctonear(propose_update_required_deposit_yoctonear(
-            update.payload_bytes()?,
+            helpers::update_payload_bytes(&update)?,
             STORAGE_BYTE_COST_YOCTONEAR,
         )?);
         let args = borsh::to_vec(&update)?;
