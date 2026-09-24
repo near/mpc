@@ -33,7 +33,7 @@ $$
 \hat f_{b_i} \gets \mathsf{Com}(f_{b_i}; f_{\sigma_i})
 $$
 
-   * **Pedersen commitment:** $H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm, and $\mathsf{Com}(v; r) = v \cdot G + r \cdot H_{\mathsf{ped}}$.
+   * **Pedersen commitment:** $H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm, and $\mathsf{Com}(v; r) = v \cdot G + r \cdot H_{\mathsf{ped}}$. $H_{\mathsf{ped}}$ is a fixed public constant, derived once by hashing a protocol-specific tag to the curve ([RFC 9380](https://www.rfc-editor.org/rfc/rfc9380)), so that no party can know its discrete logarithm.
 
    * $\mathsf{Com}$ extends coefficientwise to polynomials: for $f(X) = \sum_m f_m X^m$ and $r(X) = \sum_m r_m X^m$, $\mathsf{Com}(f; r)$ is the polynomial with coefficients $\mathsf{Com}(f_m; r_m)$. Since $\mathsf{Com}$ is linear, $\mathsf{Com}(f; r)(j) = \mathsf{Com}(f(j); r(j))$.
 
@@ -110,8 +110,10 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 
    * $\mathsf{Prove}$:
       * sample $(u_a, u_b, u_\rho, u_\sigma)$
-      * compute $K_0 \gets u_a \cdot R_i + u_b \cdot G$, $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$, $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$
-      * compute $e \gets H(\mathsf{sid}, i, w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$
+      * compute $K_0 \gets u_a \cdot R_i + u_b \cdot G$
+      * compute $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$
+      * compute $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$
+      * compute $e \gets H(\eta_i, i, w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$
       * compute $z_a \gets u_a + e a_i$, $z_b \gets u_b + e b_i$, $z_\rho \gets u_\rho + e \rho_i$, $z_\sigma \gets u_\sigma + e \sigma_i$
       * output $\pi_i = (e, z_a, z_b, z_\rho, z_\sigma)$
 
@@ -125,7 +127,9 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
       * compute $K_0 \gets z_a \cdot R_j + z_b \cdot G - e \cdot (w_j \cdot G)$
       * compute $K_1 \gets z_a \cdot G + z_\rho \cdot H_{\mathsf{ped}} - e \cdot \hat f_a(j)$
       * compute $K_2 \gets z_b \cdot G + z_\sigma \cdot H_{\mathsf{ped}} - e \cdot \hat f_b(j)$
-      * accept iff $e = H(\mathsf{sid}, j, w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j, K_0, K_1, K_2)$
+      * accept iff $e = H(\eta_i, j, w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j, K_0, K_1, K_2)$
+
+   $\quad$ *Note: the verifier uses its own* $\eta_i$*, asserted equal to* $\eta_j$ *in round 3.*
 
 
 3. Each $P_i$ computes $c_i \gets a_i \cdot w^{-1}$
