@@ -46,9 +46,6 @@ pub struct PresignatureConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
-    /// When true (the default), a cait-sith leader presigns and signs in one computation over a
-    /// triple pair whenever every live peer supports it. Set to false to sign only from stored
-    /// presignatures, the pre-online-presign behavior kept as a production rollback path.
     #[serde(default = "default_true")]
     pub online_presign: bool,
 }
