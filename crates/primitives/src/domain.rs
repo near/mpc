@@ -110,7 +110,7 @@ impl Protocol {
     /// Equal to `t` for every scheme except [`RobustEcdsa`](Protocol::RobustEcdsa),
     /// whose honest-majority setting needs `2t - 1` signers. Saturates at
     /// [`u64::MAX`] when `2t - 1` overflows, so the result still exceeds every
-    /// participant count and such a `t` is rejected by validation.
+    /// possible participant count.
     pub fn required_active_signers(self, reconstruction_threshold: ReconstructionThreshold) -> u64 {
         let t = reconstruction_threshold.inner();
         match self {
