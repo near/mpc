@@ -109,11 +109,12 @@ mod test {
     use crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput;
     use crate::ecdsa::ot_based_ecdsa::sign::sign;
     use crate::ecdsa::ot_based_ecdsa::test::run_presign;
-    use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare, test::deal};
+    use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
     use crate::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature, x_coordinate};
     use crate::test_utils::{
         GenProtocol, MockCryptoRng, assert_buffer_capacity, check_one_coordinator_output,
-        expected_buffer_by_role, generate_participants, run_keygen, run_protocol, run_sign,
+        deal_triple, expected_buffer_by_role, generate_participants, run_keygen, run_protocol,
+        run_sign,
     };
     use assert_matches::assert_matches;
     use k256::{PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
@@ -137,8 +138,8 @@ mod test {
         fn new(num_participants: usize, threshold: usize, rng: &mut MockCryptoRng) -> Self {
             let participants = generate_participants(num_participants);
             let key_packages = run_keygen(&participants, threshold, rng);
-            let triple0 = deal(rng, &participants, threshold.into()).unwrap();
-            let triple1 = deal(rng, &participants, threshold.into()).unwrap();
+            let triple0 = deal_triple(rng, &participants, threshold.into()).unwrap();
+            let triple1 = deal_triple(rng, &participants, threshold.into()).unwrap();
             let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(rng));
             Self {
                 participants,

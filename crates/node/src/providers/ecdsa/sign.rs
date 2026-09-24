@@ -512,24 +512,22 @@ mod tests {
     use k256::elliptic_curve::PrimeField;
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::Tweak;
+    use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use rand::{RngCore, SeedableRng};
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
     use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
     use threshold_signatures::ecdsa::KeygenOutput;
-    use threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many;
     use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
     use threshold_signatures::participants::Participant;
-    use threshold_signatures::protocol::Protocol;
-    use threshold_signatures::test_utils::{generate_participants, run_keygen, run_protocol};
+    use threshold_signatures::test_utils::{deal_triple, generate_participants, run_keygen};
 
     const TWEAK: [u8; 32] = [1u8; 32];
     const MSG_HASH: [u8; 32] = [2u8; 32];
 
-    /// Runs one keygen and one triple generation in-process, then hands every participant its
-    /// shares so the fake-network clients only exercise the signing computation.
+    /// Deals a key and a triple pair to every participant, so the fake-network clients only
+    /// exercise the signing computation.
     fn deal_shares(
         participants: &[Participant],
         threshold: usize,
@@ -542,25 +540,16 @@ mod tests {
             run_keygen::<Secp256K1Sha256, _>(participants, threshold, rng)
                 .into_iter()
                 .collect();
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = _>>)> = Vec::new();
-        for p in participants {
-            let rng_p = StdRng::seed_from_u64(rng.next_u64());
-            let protocol = generate_triple_many::<2, _, _>(
-                participants,
-                *p,
-                TSReconstructionThreshold::from(threshold),
-                rng_p,
-            )
-            .unwrap();
-            protocols.push((*p, Box::new(protocol)));
-        }
-        let triples = run_protocol(protocols).unwrap();
+        let (pub0, shares0) = deal_triple(rng, participants, threshold.into()).unwrap();
+        let (pub1, shares1) = deal_triple(rng, participants, threshold.into()).unwrap();
         let public_keygen_output = keys[&participants[0]].clone();
-        let shares = triples
-            .into_iter()
-            .map(|(p, two_triples)| {
-                let pair = (two_triples[0].clone(), two_triples[1].clone());
-                (p.into(), (keys[&p].clone(), pair))
+        let shares = participants
+            .iter()
+            .zip(shares0)
+            .zip(shares1)
+            .map(|((p, share0), share1)| {
+                let pair = ((share0, pub0.clone()), (share1, pub1.clone()));
+                ((*p).into(), (keys[p].clone(), pair))
             })
             .collect();
         (public_keygen_output, shares)
