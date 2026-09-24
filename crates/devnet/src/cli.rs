@@ -238,6 +238,9 @@ pub struct MpcInitContractCmd {
     /// The threshold to initialize with.
     #[clap(long)]
     pub threshold: u64,
+    /// The TEE verifier contract account the MPC contract trusts.
+    #[clap(long)]
+    pub tee_verifier_account_id: AccountId,
 }
 
 #[derive(clap::Parser)]
@@ -282,7 +285,7 @@ pub struct MpcVoteUpdateCmd {
 
 #[derive(clap::Parser)]
 pub struct MpcVoteAddDomainsCmd {
-    /// The protocols to add domains for, e.g. `CaitSith,Frost,DamgardEtAl,ConfidentialKeyDerivation`.
+    /// The protocols to add domains for, e.g. `CaitSith,Frost,RobustEcdsa,ConfidentialKeyDerivation`.
     #[clap(long, value_delimiter = ',')]
     pub protocols: Vec<String>,
     /// The indices of the voters; leave empty to vote from every other participant.

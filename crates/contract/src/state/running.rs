@@ -551,8 +551,8 @@ pub mod running_tests {
     }
 
     #[test]
-    fn vote_add_domains__should_reject_damgard_etal_threshold_violating_honest_majority() {
-        // Given a running state and a DamgardEtAl proposal with `2t - 1 > n`.
+    fn vote_add_domains__should_reject_robust_ecdsa_threshold_violating_honest_majority() {
+        // Given a running state and a RobustEcdsa proposal with `2t - 1 > n`.
         // gen_threshold_params produces n in [3, 30]; pick t = n so that
         // 2t - 1 > n holds (universally true for n >= 2).
         let mut state = gen_running_state(1);
@@ -562,7 +562,7 @@ pub mod running_tests {
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
             id: DomainId(next_id),
-            protocol: Protocol::DamgardEtAl,
+            protocol: Protocol::RobustEcdsa,
             reconstruction_threshold: ReconstructionThreshold::new(n),
             purpose: DomainPurpose::Sign,
         }];
@@ -570,7 +570,7 @@ pub mod running_tests {
         // When voting to add the domain
         let err = state.vote_add_domains(proposal).unwrap_err();
 
-        // Then the DamgardEtAl-specific bound is enforced
+        // Then the RobustEcdsa-specific bound is enforced
         assert!(
             err.to_string().contains("requires at least"),
             "Expected InsufficientParticipantsForProtocol, got: {err}"

@@ -112,7 +112,7 @@ pub struct NearBlockchain { /* root_client + rpc_url */ }
 
 impl NearBlockchain {
     pub fn new(rpc_url: &str, chain_id: &str, root_account: &str,
-        root_secret: near_kit::SecretKey) -> anyhow::Result<Self>;
+        root_secret: near_kit::signer::SecretKey) -> anyhow::Result<Self>;
     pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
         keys: &[SigningKey]) -> anyhow::Result<()>;
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
@@ -181,13 +181,16 @@ The entry point for tests. `MpcCluster::start(config)` does everything:
 6. Deploy the compiled MPC contract WASM to `mpc.sandbox`.
 7. Create `nodeN.sandbox` accounts, each with a `near_signer_key` and a
    disjoint `operator_key` as full-access keys.
-8. Call `init()` on the contract with the initial participants.
+8. Call `init()` on the contract with the initial participants and the
+   tee-verifier account.
 9. Call `submit_participant_info` for each initial participant (with a
    `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
 10. Deploy the tee-verifier WASM to `tee-verifier.sandbox` and vote it in from
-    every participant, for topology parity with production. Mock attestations
-    are verified without calling it, so the verifier stays idle; the
-    cross-contract flow is covered by the mpc-contract sandbox tests.
+    every participant, for topology parity with production. The vote is a no-op
+    on the current contract, which trusts the verifier from init; it configures
+    the verifier on production builds that predate the init argument. Mock
+    attestations are verified without calling it, so the verifier stays idle;
+    the cross-contract flow is covered by the mpc-contract sandbox tests.
 11. Spawn the `mpc-node` binaries (start *before* adding domains so key
     generation has running nodes to talk to).
 12. Sleep briefly and assert no node exited early.

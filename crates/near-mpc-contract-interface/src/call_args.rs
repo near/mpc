@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct InitArgs {
     pub parameters: GovernanceThresholdParameters,
+    pub tee_verifier_account_id: AccountId,
     pub init_config: Option<InitConfig>,
 }
 

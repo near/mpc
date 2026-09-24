@@ -95,9 +95,14 @@ impl<C: CallContract> MpcContractHandle<C> {
     pub async fn init(
         &self,
         parameters: GovernanceThresholdParameters,
+        tee_verifier_account_id: AccountId,
         init_config: Option<InitConfig>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&InitArgs::new(parameters, init_config))?;
+        let args = serde_json::to_vec(&InitArgs::new(
+            parameters,
+            tee_verifier_account_id,
+            init_config,
+        ))?;
         self.call(FunctionCallArgs::no_deposit(INIT, args, MAX_GAS))
             .await
     }
@@ -546,6 +551,7 @@ mod tests {
         handle
             .init(
                 governance_threshold_parameters.clone(),
+                "tee-verifier.near".parse().unwrap(),
                 Some(InitConfig::default()),
             )
             .await

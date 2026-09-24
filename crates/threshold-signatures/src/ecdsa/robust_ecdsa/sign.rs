@@ -27,15 +27,14 @@ pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 /// Depending on whether the current participant is a coordinator or not,
 /// runs the signature protocol as either a participant or a coordinator.
 ///
-/// WARNING:
-/// This robust ECDSA scheme is vulnerable to split-view attacks in the robust
-/// setting if different subsets of participants sign different `(msg_hash, tweak)`
-/// values using shares derived from the same presignature (i.e., different
-/// rerandomization inputs for the same presignature).
-/// To reduce risk in this implementation, require `N1 = N2 = 2 * max_malicious + 1`,
-/// ensure all participants agree on `(msg_hash, tweak, participants)` when creating
-/// [`RerandomizedPresignOutput`], never reuse a presignature, and do not sign with
-/// `msg_hash == 0`.
+/// This phase is scheme-agnostic: it sums the participants' Lagrange-linearized
+/// shares of `s`, so it carries over unchanged to whichever scheme replaces the
+/// current presigning stub. It provides no secrecy of its own, and inherits the key
+/// leak documented in the [module docs](super).
+///
+/// The `N = 2 * max_malicious + 1` participant count and the `msg_hash != 0`
+/// rejection below are retained from the removed scheme, which needed both to blunt
+/// split-view attacks.
 pub fn sign<M>(
     participants: &[Participant],
     coordinator: Participant,
@@ -90,8 +89,6 @@ where
         ));
     }
 
-    // The next two conditions prevent split-view attacks
-    // documented in docs/ecdsa/robust_ecdsa/signing.md
     if participants.len() != robust_ecdsa_threshold {
         return Err(InitializationError::BadParameters(
             "the number of participants during signing must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),

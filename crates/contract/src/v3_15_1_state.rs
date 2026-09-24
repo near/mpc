@@ -118,7 +118,11 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
-            tee_verifier_account_id: old.tee_verifier_account_id,
+            tee_verifier_account_id: old.tee_verifier_account_id.unwrap_or_else(|| {
+                env::panic_str(
+                    "No TEE verifier is configured. Participants must vote one in via vote_tee_verifier_change before upgrading.",
+                )
+            }),
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
         }

@@ -200,8 +200,6 @@ if $USE_NODE || $USE_NODE_GCP; then
     JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
     GIT_CEILING_DIRECTORIES=/build/target \
     BUILT_OVERRIDE_mpc_node_GIT_VERSION="${GIT_COMMIT_HASH:0:7}" \
-    CFLAGS="-march=x86-64-v3 -mpclmul -maes" \
-    CXXFLAGS="-march=x86-64-v3 -mpclmul -maes" \
     repro-env build \
       --env SOURCE_DATE_EPOCH \
       --env JEMALLOC_SYS_WITH_LG_VADDR \
@@ -209,8 +207,6 @@ if $USE_NODE || $USE_NODE_GCP; then
       --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
       --env GIT_CEILING_DIRECTORIES \
       --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
-      --env CFLAGS \
-      --env CXXFLAGS \
       -- cargo build -p mpc-node --profile reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
 fi

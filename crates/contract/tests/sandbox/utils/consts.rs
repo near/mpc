@@ -9,7 +9,7 @@ pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
     Protocol::CaitSith,
     Protocol::Frost,
     Protocol::ConfidentialKeyDerivation,
-    Protocol::DamgardEtAl,
+    Protocol::RobustEcdsa,
 ];
 
 /* --- Gas constants --- */

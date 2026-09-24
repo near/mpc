@@ -1,7 +1,8 @@
 use std::error::Error;
 
 use near_account_id::AccountId;
-use near_kit::{Error as NearKitError, Near, RpcError as NearKitRpcError};
+use near_kit::rpc::RpcError as NearKitRpcError;
+use near_kit::{Error as NearKitError, Near};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::ProtocolContractState;
 

@@ -79,7 +79,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
         let scheme_tag = format!("fanout-{:?}-{}", key.domain_config.protocol, domain_id.0);
 
         let statuses = match (&key.domain_config.protocol, &key.domain_secret_key) {
-            (Protocol::CaitSith | Protocol::DamgardEtAl, SharedSecretKey::Secp256k1(sk)) => {
+            (Protocol::CaitSith | Protocol::RobustEcdsa, SharedSecretKey::Secp256k1(sk)) => {
                 let (payload, request, response) =
                     create_response_secp256k1(domain_id, &parallel_id, &scheme_tag, "", sk);
                 let response_args = SignatureRespondArgs { request, response };

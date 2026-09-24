@@ -5,11 +5,9 @@ pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::network::NetworkTaskChannel;
-use crate::primitives::{MpcTaskId, UniqueId};
+use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
-use crate::types::VerifyForeignTxId;
-use borsh::{BorshDeserialize, BorshSerialize};
 use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
 use foreign_chain_inspector::adi::inspector::AdiInspector;
@@ -204,20 +202,6 @@ pub struct VerifyForeignTxProvider {
     foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum VerifyForeignTxTaskId {
-    VerifyForeignTx {
-        id: VerifyForeignTxId,
-        presignature_id: UniqueId,
-    },
-}
-
-impl From<VerifyForeignTxTaskId> for MpcTaskId {
-    fn from(val: VerifyForeignTxTaskId) -> Self {
-        MpcTaskId::VerifyForeignTxTaskId(val)
-    }
 }
 
 impl VerifyForeignTxProvider {

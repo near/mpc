@@ -5,8 +5,9 @@ use crate::api::common::require_deposit;
 use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{self, Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::Keyset;
+use crate::primitives::participants::Participants;
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{NodeId, TeeQuoteStatus};
+use crate::tee::tee_state::{NodeId, TeeQuoteStatus, TeeState};
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::types::{self as dtos};
@@ -77,6 +78,10 @@ impl MpcContract {
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
     /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong) if the destination node's url exceeds
     ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).
+    /// - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed) if the destination node's TLS
+    ///   public key belongs to another account.
+    /// - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged) if the destination node reuses the
+    ///   signer's current TLS public key. Use [`Self::update_participant_url`] to change only the url.
     ///
     /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
@@ -112,6 +117,17 @@ impl MpcContract {
             .destination_node_info
             .clone()
             .try_into_contract_type()?;
+        assert_destination_tls_key_changed(
+            running_state.parameters.participants(),
+            &account_id,
+            &destination_node_info.destination_node_info.tls_public_key,
+        )?;
+        assert_tls_key_unclaimed(
+            running_state.parameters.participants(),
+            &self.tee_state,
+            &account_id,
+            &destination_node_info.destination_node_info.tls_public_key,
+        )?;
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
         Ok(())
@@ -185,6 +201,10 @@ impl MpcContract {
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid
     /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong): if the destination node's url exceeds
     ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).
+    /// - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed): if the destination node's TLS
+    ///   public key belongs to another account
+    /// - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged): if the destination node reuses the
+    ///   caller's current TLS public key
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: dtos::Keyset) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
@@ -230,6 +250,24 @@ impl MpcContract {
             }
             .into());
         }
+        // Re-checked here, not just in `start_node_migration`: the participant set and the
+        // stored attestations may have changed since the migration was started.
+        assert_destination_tls_key_changed(
+            running_state.parameters.participants(),
+            &account_id,
+            &expected_destination_node
+                .destination_node_info
+                .tls_public_key,
+        )?;
+        assert_tls_key_unclaimed(
+            running_state.parameters.participants(),
+            &self.tee_state,
+            &account_id,
+            &expected_destination_node
+                .destination_node_info
+                .tls_public_key,
+        )?;
+
         // ensure that this node has a valid TEE quote.
         let node_id = NodeId {
             account_id: account_id.clone(),
@@ -272,6 +310,8 @@ impl MpcContract {
             .parameters
             .update_info(account_id, contract_participant_info)?;
 
+        // Safe to drop unconditionally: `assert_destination_tls_key_changed` above rejects a
+        // destination that reuses `old_key`, so the config removed here is never the new node's.
         if let Some(old_key) = old_tls_key {
             self.foreign_chains
                 .get_mut()
@@ -307,6 +347,52 @@ impl MpcContract {
         }
         Ok(())
     }
+}
+
+/// Rejects a destination that carries `account_id`'s current TLS key.
+///
+/// A migration moves a participant onto a different node: the node software only concludes one
+/// when the registered destination key differs from its own, and
+/// [`MpcContract::conclude_node_migration`] drops the foreign-chain config registered under the
+/// key it replaces. [`MpcContract::update_participant_url`] covers changing only the url.
+fn assert_destination_tls_key_changed(
+    participants: &Participants,
+    account_id: &AccountId,
+    destination_tls_key: &dtos::Ed25519PublicKey,
+) -> Result<(), Error> {
+    if participants
+        .info(account_id)
+        .is_some_and(|info| info.tls_public_key == *destination_tls_key)
+    {
+        return Err(errors::NodeMigrationError::DestinationTlsKeyUnchanged.into());
+    }
+    Ok(())
+}
+
+/// Rejects `tls_public_key` when an account other than `account_id` already holds it,
+/// either as a participant or as the owner of a stored attestation.
+fn assert_tls_key_unclaimed(
+    participants: &Participants,
+    tee_state: &TeeState,
+    account_id: &AccountId,
+    tls_public_key: &dtos::Ed25519PublicKey,
+) -> Result<(), Error> {
+    let claimants = [
+        participants.account_with_tls_key(tls_public_key).cloned(),
+        tee_state.attestation_owner(tls_public_key),
+    ];
+    let Some(claimant) = claimants
+        .into_iter()
+        .flatten()
+        .find(|claimant| claimant != account_id)
+    else {
+        return Ok(());
+    };
+    Err(errors::NodeMigrationError::TlsKeyAlreadyClaimed {
+        tls_public_key: tls_public_key.clone(),
+        account_id: claimant,
+    }
+    .into())
 }
 
 /// Minimum deposit required for the operator-authenticated node-management methods
@@ -1008,6 +1094,210 @@ mod tests {
                 assert_eq!(&found_id, expected_participant_id);
             }
         }
+    }
+
+    #[test]
+    fn start_node_migration__should_reject_a_tls_key_held_by_another_participant() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let participants = running_state.parameters.participants().clone();
+        let (account_id, _, _) = participants.participants()[0].clone();
+        let victim_tls_key = participants.participants()[1].2.tls_public_key.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.tls_public_key = victim_tls_key;
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::TlsKeyAlreadyClaimed { .. })
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+    }
+
+    #[test]
+    fn start_node_migration__should_reject_a_destination_reusing_the_callers_current_tls_key() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let (account_id, _, own_info) =
+            running_state.parameters.participants().participants()[0].clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.tls_public_key = own_info.tls_public_key;
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::DestinationTlsKeyUnchanged)
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+    }
+
+    #[test]
+    fn conclude_node_migration__should_reject_a_destination_reusing_the_callers_current_tls_key() {
+        // Given: a migration whose destination carries the caller's own registered TLS key,
+        // stored directly so the `start_node_migration` guard is bypassed.
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let keyset = running_state.keyset.clone();
+        let (account_id, participant_id, own_info) =
+            running_state.parameters.participants().participants()[0].clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.tls_public_key = own_info.tls_public_key.clone();
+
+        // When, Then
+        let setup = ConcludeNodeMigrationTestSetup {
+            destination_node_info: Some(destination.clone()),
+            attestation_tls_key: own_info.tls_public_key.clone(),
+            signer_account_id: account_id,
+            signer_account_pk: near_sdk::PublicKey::from(destination.signer_account_pk.clone()),
+            expected_error_check: Some(|k| {
+                matches!(
+                    k,
+                    Error::NodeMigrationError(NodeMigrationError::DestinationTlsKeyUnchanged)
+                )
+            }),
+            expected_post_call_info: Some((participant_id, own_info)),
+        };
+        setup.run(&mut contract, &keyset);
+    }
+
+    #[test]
+    fn start_node_migration__should_reject_a_tls_key_attested_by_another_account() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let (account_id, _, _) = running_state.parameters.participants().participants()[0].clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let destination = gen_random_destination_info();
+        contract
+            .tee_state
+            .verify_and_store_mock(
+                NodeId {
+                    account_id: gen_account_id(),
+                    tls_public_key: destination.destination_node_info.tls_public_key.clone(),
+                    account_public_key: bogus_ed25519_public_key(),
+                },
+                MpcMockAttestation::Valid,
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            )
+            .expect("storing the foreign attestation should succeed");
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::TlsKeyAlreadyClaimed { .. })
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+    }
+
+    #[test]
+    fn conclude_node_migration__should_reject_a_tls_key_held_by_another_participant() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let keyset = running_state.keyset.clone();
+        let participants = running_state.parameters.participants().clone();
+        let (account_id, participant_id, own_info) = participants.participants()[0].clone();
+        let victim_tls_key = participants.participants()[1].2.tls_public_key.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.tls_public_key = victim_tls_key.clone();
+
+        // When, Then
+        let setup = ConcludeNodeMigrationTestSetup {
+            destination_node_info: Some(destination.clone()),
+            attestation_tls_key: victim_tls_key,
+            signer_account_id: account_id,
+            signer_account_pk: near_sdk::PublicKey::from(destination.signer_account_pk.clone()),
+            expected_error_check: Some(|k| {
+                matches!(
+                    k,
+                    Error::NodeMigrationError(NodeMigrationError::TlsKeyAlreadyClaimed { .. })
+                )
+            }),
+            expected_post_call_info: Some((participant_id, own_info)),
+        };
+        setup.run(&mut contract, &keyset);
+    }
+
+    #[test]
+    fn conclude_node_migration__should_reject_a_tls_key_attested_by_another_account() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let keyset = running_state.keyset.clone();
+        let (account_id, participant_id, own_info) =
+            running_state.parameters.participants().participants()[0].clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let destination = gen_random_destination_info();
+        let destination_tls_key = destination.destination_node_info.tls_public_key.clone();
+        contract
+            .tee_state
+            .verify_and_store_mock(
+                NodeId {
+                    account_id: gen_account_id(),
+                    tls_public_key: destination_tls_key.clone(),
+                    account_public_key: bogus_ed25519_public_key(),
+                },
+                MpcMockAttestation::Valid,
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            )
+            .expect("storing the foreign attestation should succeed");
+        contract
+            .node_migrations
+            .set_destination_node_info(account_id.clone(), destination.clone());
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_pk(near_sdk::PublicKey::from(
+            destination.signer_account_pk.clone(),
+        ));
+
+        // When
+        let result = contract.conclude_node_migration(keyset.into_dto_type());
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::TlsKeyAlreadyClaimed { .. })
+        );
+        let ProtocolContractState::Running(running) = &contract.protocol_state else {
+            panic!("expected running state");
+        };
+        assert_eq!(
+            running.parameters.participants().info(&account_id),
+            Some(&own_info)
+        );
+        assert_eq!(
+            running.parameters.participants().id(&account_id).unwrap(),
+            participant_id
+        );
     }
 
     #[test]

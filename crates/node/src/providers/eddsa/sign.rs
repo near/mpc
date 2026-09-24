@@ -1,8 +1,9 @@
 use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::wire_format::EddsaTaskId;
 use crate::protocol::NamedProtocol;
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::types::SignatureId;
 use anyhow::Context;
 use near_mpc_contract_interface::types::Tweak;

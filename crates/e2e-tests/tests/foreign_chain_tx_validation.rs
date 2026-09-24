@@ -280,7 +280,9 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
     }
 }
 
-fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) -> anyhow::Result<()> {
+fn verify_foreign_tx_response(
+    outcome: &near_kit::rpc::FinalExecutionOutcome,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
         outcome.is_success(),
         "verify_foreign_transaction failed: {:?}",

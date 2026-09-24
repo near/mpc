@@ -5,11 +5,12 @@ use crate::db::{DBCol, SecretDB};
 use crate::metrics;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::wire_format::EcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::NamedProtocol;
 use crate::providers::HasParticipants;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::ecdsa::EcdsaSignatureProvider;
 use crate::providers::ecdsa_common::active_participants_query;
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::TripleConfig;
@@ -386,9 +387,9 @@ mod tests {
     use crate::db::{DBCol, SecretDB};
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::{new_test_client, run_test_clients};
+    use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
-    use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::primitives::{ParticipantId, UniqueId};
     use crate::tests::into_participant_ids;
     use crate::tracking;
     use futures::{FutureExt, StreamExt, stream};
@@ -423,7 +424,7 @@ mod tests {
             domain(0, Protocol::CaitSith, 3),
             domain(1, Protocol::CaitSith, 2),
             domain(2, Protocol::CaitSith, 3),
-            domain(3, Protocol::DamgardEtAl, 5),
+            domain(3, Protocol::RobustEcdsa, 5),
             domain(4, Protocol::Frost, 4),
         ];
 

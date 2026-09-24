@@ -698,7 +698,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "tee_verifier_account_id",
-                        "Option<AccountId>",
+                        "AccountId",
                     ),
                     (
                         "tee_verifier_votes",
@@ -731,21 +731,6 @@ BorshSchemaContainer {
                     ),
                 ],
             ),
-        },
-        "Option<AccountId>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "AccountId",
-                ),
-            ],
         },
         "Option<EpochId>": Enum {
             tag_width: 1,
@@ -879,8 +864,8 @@ BorshSchemaContainer {
                 ),
                 (
                     3,
-                    "DamgardEtAl",
-                    "Protocol__DamgardEtAl",
+                    "RobustEcdsa",
+                    "Protocol__RobustEcdsa",
                 ),
             ],
         },
@@ -939,10 +924,10 @@ BorshSchemaContainer {
         "Protocol__ConfidentialKeyDerivation": Struct {
             fields: Empty,
         },
-        "Protocol__DamgardEtAl": Struct {
+        "Protocol__Frost": Struct {
             fields: Empty,
         },
-        "Protocol__Frost": Struct {
+        "Protocol__RobustEcdsa": Struct {
             fields: Empty,
         },
         "PublicKeyExtended": Enum {

@@ -1,6 +1,34 @@
 use super::NetworkTaskChannel;
+use crate::metrics;
+use crate::network::wire_format::MpcTaskId;
 use crate::tracking;
 use std::future::Future;
+use tokio::time::Instant;
+
+struct RecordDurationOnDrop {
+    task_id: MpcTaskId,
+    started: Instant,
+    outcome: &'static str,
+}
+
+impl RecordDurationOnDrop {
+    fn new(task_id: MpcTaskId) -> Self {
+        Self {
+            task_id,
+            started: Instant::now(),
+            outcome: metrics::ABANDONED_OUTCOME_LABEL,
+        }
+    }
+}
+
+impl Drop for RecordDurationOnDrop {
+    fn drop(&mut self) {
+        let labels = self.task_id.metric_labels();
+        metrics::MPC_LED_COMPUTATION_DURATION_SECONDS
+            .with_label_values(&[labels.protocol_scheme, labels.task, self.outcome])
+            .observe(self.started.elapsed().as_secs_f64());
+    }
+}
 
 /// Interface for a computation that is leader-centric:
 ///  - If any follower's computation returns error, it automatically sends an Abort message to
@@ -30,6 +58,7 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
         let leader_waits_for_success = self.leader_waits_for_success();
         let sender = channel.sender();
         let sender_clone = sender.clone();
+        let task_id = channel.task_id();
 
         // We'll wrap the following future in a timeout below.
         let fut = async move {
@@ -59,15 +88,28 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
 
         async move {
             let sender = sender_clone;
+            let mut recorder = sender
+                .is_leader()
+                .then(|| RecordDurationOnDrop::new(task_id));
             let result = tokio::time::timeout(timeout, fut).await;
             let result = match result {
                 Ok(result) => result,
                 Err(_) => {
                     let err = anyhow::anyhow!("Timeout");
                     sender.communicate_failure(&err);
+                    if let Some(recorder) = &mut recorder {
+                        recorder.outcome = metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL;
+                    }
                     return Err(err);
                 }
             };
+            if let Some(recorder) = &mut recorder {
+                recorder.outcome = if result.is_ok() {
+                    metrics::SUCCEEDED_OUTCOME_LABEL
+                } else {
+                    metrics::FAILED_OUTCOME_LABEL
+                };
+            }
             if result.is_ok() {
                 if !sender.is_leader() && leader_waits_for_success {
                     sender.communicate_success()?;

@@ -15,6 +15,7 @@ use mpc_contract::{
     errors,
     primitives::{
         participants::Participants,
+        test_utils::bogus_tee_verifier_account_id,
         thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
 };
@@ -307,7 +308,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters, None)
+        .init(proposed_parameters, bogus_tee_verifier_account_id(), None)
         .await?;
     assert!(
         result.is_failure(),
@@ -321,7 +322,11 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters.clone(), None)
+        .init(
+            proposed_parameters.clone(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
         .await?;
     assert!(
         result.is_success(),
@@ -332,7 +337,11 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters.clone(), None)
+        .init(
+            proposed_parameters.clone(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
         .await?;
     assert!(
         result.is_failure(),

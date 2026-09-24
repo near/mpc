@@ -199,7 +199,8 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key, gen_account_id, gen_participant, gen_participants,
+        bogus_ed25519_public_key, bogus_tee_verifier_account_id, gen_account_id, gen_participant,
+        gen_participants,
     };
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
@@ -840,6 +841,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
@@ -907,6 +909,7 @@ mod tests {
             2,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

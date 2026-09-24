@@ -2,13 +2,13 @@ use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::wire_format::RobustEcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::UniqueId;
 use crate::protocol::NamedProtocol;
 use crate::providers::ecdsa_common;
 use crate::providers::robust_ecdsa::{
-    EcdsaKeyshare, KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
-    compute_thresholds,
+    EcdsaKeyshare, KeygenOutput, RobustEcdsaSignatureProvider, compute_thresholds,
 };
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
@@ -61,7 +61,7 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, damgard_et_al_threshold) = compute_thresholds(reconstruction_threshold)
+    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(reconstruction_threshold)
         .expect("contract validation guarantees a valid threshold");
 
     loop {
@@ -120,7 +120,7 @@ pub(super) async fn run_background_presignature_generation(
                         let _in_flight = in_flight;
                         let _semaphore_guard = parallelism_limiter.acquire().await?;
                         let presignature = PresignComputation {
-                            max_malicious: damgard_et_al_threshold,
+                            max_malicious: robust_ecdsa_threshold,
                             keygen_out,
                         }
                         .perform_leader_centric_computation(
@@ -161,7 +161,7 @@ impl RobustEcdsaSignatureProvider {
         id.validate_owned_by(channel.sender().get_leader())?;
         let keyshare = self.keyshare(domain_id)?;
 
-        let (num_signers, damgard_et_al_threshold) =
+        let (num_signers, robust_ecdsa_threshold) =
             compute_thresholds(keyshare.reconstruction_threshold)?;
         if channel.participants().len() != num_signers {
             metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS
@@ -175,7 +175,7 @@ impl RobustEcdsaSignatureProvider {
         }
 
         FollowerPresignComputation {
-            max_malicious: damgard_et_al_threshold,
+            max_malicious: robust_ecdsa_threshold,
             keygen_out: keyshare.keygen_output,
             out_presignature_store: keyshare.presignature_store,
             out_presignature_id: id,

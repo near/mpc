@@ -299,7 +299,7 @@ impl TeeState {
         let participants_with_valid_attestation: Vec<_> = participants
             .participants()
             .iter()
-            .filter(|(_, _, participant_info)| {
+            .filter(|(account_id, _, participant_info)| {
                 // Use the stored NodeId (keyed by TLS public key) so the real
                 // `account_public_key` participates in re-verification. If
                 // there is no stored attestation for this TLS key, the
@@ -308,6 +308,13 @@ impl TeeState {
                 else {
                     return false;
                 };
+
+                // Compared by account alone: `with_mocked_participant_attestations` stores a
+                // placeholder `account_public_key`, so full `NodeId` equality would reject
+                // legitimate mocked entries.
+                if node_id.account_id != **account_id {
+                    return false;
+                }
 
                 let tee_status =
                     self.reverify_participants(&node_id, tee_upgrade_deadline_duration);
@@ -1485,6 +1492,46 @@ mod tests {
             validation_result,
             TeeValidationResult::Full,
             "All participants should be valid before expiry"
+        );
+    }
+
+    #[test]
+    fn reverify_and_cleanup_participants__should_reject_a_participant_whose_tls_key_is_attested_to_another_account()
+     {
+        // Given: three participants, the first two attested under their own accounts and the
+        // third's TLS key attested to an unrelated account.
+        let tee_upgrade_duration = Duration::MAX;
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(3);
+        let participant_list: Vec<_> = participants.participants().to_vec();
+
+        for (account_id, _, participant_info) in participant_list.iter().take(2) {
+            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
+            tee_state
+                .verify_and_store_mock(node_id, MockAttestation::Valid, tee_upgrade_duration)
+                .expect("mock attestation is valid");
+        }
+
+        let impersonated_tls_key = participant_list[2].2.tls_public_key.clone();
+        let imposter: AccountId = "imposter.near".parse().unwrap();
+        tee_state
+            .verify_and_store_mock(
+                create_node_id(&imposter, &impersonated_tls_key),
+                MockAttestation::Valid,
+                tee_upgrade_duration,
+            )
+            .expect("mock attestation is valid");
+
+        // When
+        let validation_result =
+            tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
+
+        // Then: the third participant does not inherit the imposter's attestation.
+        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
+        assert_matches!(
+            validation_result,
+            TeeValidationResult::Partial { participants_with_valid_attestation }
+                if account_ids(&participants_with_valid_attestation) == expected_valid_account_ids
         );
     }
 

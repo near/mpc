@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_kit::WaitLevel;
+use near_kit::transaction::WaitLevel;
 use near_mpc_contract_interface::client::MpcContractHandle;
 
 /// A [`near_kit::Near`] client bound to a specific account
@@ -37,6 +37,7 @@ where
             .args_raw(call_args.args)
             .gas(call_args.gas)
             .deposit(call_args.deposit)
+            .finish()
             .wait_until::<T>()
             .await
     }
