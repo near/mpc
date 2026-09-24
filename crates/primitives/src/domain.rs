@@ -1,3 +1,4 @@
+use crate::threshold::ReconstructionThreshold;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -102,6 +103,24 @@ impl From<Protocol> for Curve {
     }
 }
 
+impl Protocol {
+    /// Number of participants that must be online to produce an output for a
+    /// domain running this protocol at `reconstruction_threshold` `t`.
+    ///
+    /// Equal to `t` for every scheme except [`RobustEcdsa`](Protocol::RobustEcdsa),
+    /// whose honest-majority setting needs `2t - 1` signers. Saturates at
+    /// [`u64::MAX`] when `2t - 1` overflows, so the result still exceeds every
+    /// participant count and such a `t` is rejected by validation.
+    pub fn required_active_signers(self, reconstruction_threshold: ReconstructionThreshold) -> u64 {
+        let t = reconstruction_threshold.inner();
+        match self {
+            // 2t - 1, evaluated as 2(t - 1) + 1 so saturation lands exactly on u64::MAX.
+            Protocol::RobustEcdsa => t.saturating_sub(1).saturating_mul(2).saturating_add(1),
+            Protocol::CaitSith | Protocol::Frost | Protocol::ConfidentialKeyDerivation => t,
+        }
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -128,5 +147,44 @@ mod tests {
             Curve::from(Protocol::ConfidentialKeyDerivation),
             Curve::Bls12381
         );
+    }
+
+    #[test]
+    fn required_active_signers__should_equal_reconstruction_threshold_for_non_robust_schemes() {
+        // Given
+        let t = ReconstructionThreshold::new(3);
+
+        // When / Then
+        for protocol in [
+            Protocol::CaitSith,
+            Protocol::Frost,
+            Protocol::ConfidentialKeyDerivation,
+        ] {
+            assert_eq!(protocol.required_active_signers(t), 3, "{protocol:?}");
+        }
+    }
+
+    #[test]
+    fn required_active_signers__should_be_2t_minus_1_for_robust_ecdsa() {
+        // Given
+        let t = ReconstructionThreshold::new(3);
+
+        // When
+        let required = Protocol::RobustEcdsa.required_active_signers(t);
+
+        // Then
+        assert_eq!(required, 5);
+    }
+
+    #[test]
+    fn required_active_signers__should_saturate_for_robust_ecdsa_on_overflow() {
+        // Given
+        let t = ReconstructionThreshold::new(u64::MAX);
+
+        // When
+        let required = Protocol::RobustEcdsa.required_active_signers(t);
+
+        // Then
+        assert_eq!(required, u64::MAX);
     }
 }
