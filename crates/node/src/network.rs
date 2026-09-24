@@ -951,6 +951,7 @@ pub mod testing {
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
         senders: HashMap<ParticipantId, mpsc::UnboundedSender<PeerMessage>>,
+        /// Protocol version each peer is reported to run; a peer missing here reports `None`.
         protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
         // Used to simulate a network partition
         blocked_pairs: HashSet<(ParticipantId, ParticipantId)>,
