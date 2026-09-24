@@ -135,8 +135,6 @@ near-contract-transport = { workspace = true, features = ["traits"] }
 near-jsonrpc-client = { workspace = true }
 near-jsonrpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
-# Tests run off-chain, so they may hash an update without the host function.
-near-mpc-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-primitives = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
