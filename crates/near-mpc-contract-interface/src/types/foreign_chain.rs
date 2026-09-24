@@ -228,7 +228,9 @@ pub struct VerifyForeignTransactionResponseV2 {
 )]
 pub enum ForeignTxVerificationResponseOutcome {
     Verified {},
-    NegativeVerdict { verdict: ForeignTxNegativeVerdict },
+    NegativeVerdict {
+        verdict: ForeignTxVerificationNegativeVerdict,
+    },
     Inconclusive {},
 }
 
@@ -1827,11 +1829,12 @@ pub struct StarknetTxId(pub StarknetFelt);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub enum ForeignTxNegativeVerdict {
+pub enum ForeignTxVerificationNegativeVerdict {
     TransactionFailed,
     LogIndexOutOfBounds,
     TransactionNotFound,
     AccountNotFound,
+    NonCanonicalBlock,
 }
 
 /// Canonical payload for foreign-chain transaction verification signatures.
@@ -1929,7 +1932,7 @@ pub struct ForeignTxSignPayloadV2 {
 )]
 pub enum ForeignTxVerificationOutcome {
     Verified { values: Vec<ExtractedValue> },
-    NegativeVerdict(ForeignTxNegativeVerdict),
+    NegativeVerdict(ForeignTxVerificationNegativeVerdict),
     Inconclusive,
 }
 
@@ -2393,25 +2396,31 @@ mod tests {
             (
                 "transaction_failed",
                 ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxNegativeVerdict::TransactionFailed,
+                    ForeignTxVerificationNegativeVerdict::TransactionFailed,
                 ),
             ),
             (
                 "log_index_out_of_bounds",
                 ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxNegativeVerdict::LogIndexOutOfBounds,
+                    ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds,
                 ),
             ),
             (
                 "transaction_not_found",
                 ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxNegativeVerdict::TransactionNotFound,
+                    ForeignTxVerificationNegativeVerdict::TransactionNotFound,
                 ),
             ),
             (
                 "account_not_found",
                 ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxNegativeVerdict::AccountNotFound,
+                    ForeignTxVerificationNegativeVerdict::AccountNotFound,
+                ),
+            ),
+            (
+                "non_canonical_block",
+                ForeignTxVerificationOutcome::NegativeVerdict(
+                    ForeignTxVerificationNegativeVerdict::NonCanonicalBlock,
                 ),
             ),
             ("inconclusive", ForeignTxVerificationOutcome::Inconclusive),
@@ -2438,7 +2447,7 @@ mod tests {
     #[case::verified(ForeignTxVerificationResponseOutcome::Verified {}, json!({"Verified": {}}))]
     #[case::negative_verdict(
         ForeignTxVerificationResponseOutcome::NegativeVerdict {
-            verdict: ForeignTxNegativeVerdict::TransactionNotFound,
+            verdict: ForeignTxVerificationNegativeVerdict::TransactionNotFound,
         },
         json!({"NegativeVerdict": {"verdict": "TransactionNotFound"}})
     )]

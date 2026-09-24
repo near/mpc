@@ -6,6 +6,7 @@ expression: hashes
   "account_not_found": "64092a0f0da305ef8f336488e5a88d25a9b4c3fa798f9c258a481c51fa625d9d",
   "inconclusive": "a5bedbf4b687132b021347c8eca0e1b09692564571fafe03da876247a64e5093",
   "log_index_out_of_bounds": "1b86a0a510fa8d8015206c4145f9e5b2e7b4ed144a5bfad40f274c7a06a7abbe",
+  "non_canonical_block": "63c4a4ae9b2ef10e1c50eb77f3496af6cc8c473bb3cc7c1ccc68f0987221ab68",
   "transaction_failed": "d9e72a007713e34428efc8bceef61119cec19ae2c423f1cd61d2ee7f7dcf4c93",
   "transaction_not_found": "60410b402f761aa30cf0e268fdcc609ab9afa886abd5263d5066069269e5fce9",
   "verified": "890f4fbc8d41ecfb96cc257c2bec5cb9969e8debd320a1c2c0a7d6411873aa1f"
