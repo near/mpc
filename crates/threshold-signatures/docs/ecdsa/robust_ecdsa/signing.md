@@ -158,17 +158,11 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 
 Our specification introduces several modifications to the original paper, aimed at enhancing performance, security, and compatibility. The key changes are:
 
-1. Single-shot signing without presignatures
-2. Sign computation optimization
-3. Communication optimization
-4. Identifiable check on the $w$ opening
-5. Key derivation
-6. Outsourcing the message hash
-
-Change (1) binds each signing session to a single request, changes (2) and (3) improve the overall performance of the scheme, change (4) strengthens the scheme's overall security, change (5) allows key derivation, and change (6) enhances compatibility with external systems that rely on this library for signing operations.
-
-### Single-shot signing without presignatures
-The original protocol needs the message only in its last step, so all earlier rounds can be preprocessed as message-independent presignatures. We instead run a single four-round protocol whose inputs — the message hash $h$ and the tweak $\epsilon$ — are fixed from round 1. Nonce shares are generated and consumed within one session, so a preprocessed nonce can never serve two different messages (see [Security considerations](#security-considerations) for the risks that remain when views are inconsistent).
+1. Sign computation optimization
+2. Communication optimization
+3. Identifiable check on the $w$ opening
+4. Key derivation
+5. Outsourcing the message hash
 
 ### Sign computation optimization
 We require from the sender to linearize the value $s_i$ before sending it.
