@@ -76,8 +76,7 @@ pub static MPC_OWNED_NUM_TRIPLES_AVAILABLE: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
         prometheus::register_int_gauge_vec!(
             "mpc_owned_num_triples_available",
-            "Number of triples generated that we own, and not yet used. \
-             Sampled every second from the stores.",
+            "Number of triples generated that we own, and not yet used",
             &[TRIPLE_STORE_LABEL]
         )
         .unwrap()
@@ -108,8 +107,7 @@ pub static MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE: LazyLock<prometheus::IntGaugeV
     LazyLock::new(|| {
         prometheus::register_int_gauge_vec!(
             "mpc_owned_num_presignatures_available",
-            "Number of presignatures generated that we own, and not yet used. \
-             Sampled every second from the stores.",
+            "Number of presignatures generated that we own, and not yet used",
             &[PRESIGNATURE_STORE_LABEL]
         )
         .unwrap()

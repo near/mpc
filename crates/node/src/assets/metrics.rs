@@ -65,8 +65,7 @@ pub fn set_owned_asset_gauges(gauges: &OwnedAssetGauges, label: &str, counts: Ow
         .set(to_gauge_value(counts.offline));
 }
 
-/// Reports one store under `label`. Callers pass their `TripleStorage` or
-/// `PresignatureStorage<P>`, which deref-coerce to the underlying storage.
+/// Sets the series `label` of `gauges` from a fresh read of `store`.
 pub fn report_store<T>(
     gauges: &OwnedAssetGauges,
     label: impl ToString,
@@ -80,6 +79,11 @@ pub fn report_store<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assets::test_utils::{TestContext, make_presign};
+    use crate::db::DBCol;
+    use crate::primitives::ParticipantId;
+    use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
+    use std::sync::{Arc, Mutex};
 
     fn counts(available: usize, online: usize, offline: usize) -> OwnedAssetCounts {
         OwnedAssetCounts {
@@ -130,5 +134,26 @@ mod tests {
             read(&PRESIGNATURE_GAUGES, "test-overwrite"),
             counts(0, 0, 0)
         );
+    }
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn report_store__should_follow_the_store_after_take_owned() {
+        // Given: a store holding two owned presignatures whose participants
+        // are all alive, reported once.
+        let participants: Vec<ParticipantId> = (0..3).map(ParticipantId::from_raw).collect();
+        let ctx = TestContext::new(participants[0], Arc::new(Mutex::new(participants.clone())));
+        let store = ctx.new_store::<PresignOutputWithParticipants>(DBCol::Presignature, Vec::new());
+        for _ in 0..2 {
+            store.add_owned(store.generate_and_reserve_id(), make_presign(&participants));
+        }
+        report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store);
+        assert_eq!(read(&PRESIGNATURE_GAUGES, "test-take-owned").available, 2);
+
+        // When: the signature path consumes one and the reporter samples again.
+        store.take_owned().await;
+        report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store);
+
+        // Then: the gauge dropped with the store (the #2356 regression).
+        assert_eq!(read(&PRESIGNATURE_GAUGES, "test-take-owned").available, 1);
     }
 }

@@ -81,8 +81,7 @@ operations:
 | `generate_and_reserve_id()` | Returns a fresh unique ID for a new asset. |
 | `generate_and_reserve_id_range(n)` | Returns the start of a contiguous range of `n` unique IDs. |
 | `num_owned()` | Count of owned assets excluding confirmed-offline (online + unknown). |
-| `num_owned_ready()` | Count of owned online assets. |
-| `num_owned_offline()` | Count of owned offline assets. |
+| `owned_asset_counts()` | Available, online and offline counts, read together under one lock. |
 
 ### Properties of an asset taken from the queue
 
@@ -213,7 +212,7 @@ Called by the generation loops when the store is full
 
 This prevents the store from filling up with unusable assets when participants
 go offline. It is also the only path that moves a hot-queue asset into the
-ready region, so `num_owned_ready()` only converges while it runs.
+ready region, so the online count only converges while it runs.
 
 **Note on orphaned unowned assets:** When an owned asset is discarded, only the
 local copy is deleted. There is no mechanism to notify borrower nodes to delete
@@ -309,8 +308,8 @@ set.
 | Metric | Labels | Description |
 |--------|--------|-------------|
 | `mpc_owned_num_triples_available` | `reconstruction_threshold` | Owned triples excluding confirmed-offline (online + unknown). Maps to `num_owned()`. |
-| `mpc_owned_num_triples_online` | `reconstruction_threshold` | Owned online triples. Maps to `num_owned_ready()`. |
-| `mpc_owned_num_triples_with_offline_participant` | `reconstruction_threshold` | Owned offline triples. Maps to `num_owned_offline()`. |
+| `mpc_owned_num_triples_online` | `reconstruction_threshold` | Owned online triples. Maps to `owned_asset_counts().online`. |
+| `mpc_owned_num_triples_with_offline_participant` | `reconstruction_threshold` | Owned offline triples. Maps to `owned_asset_counts().offline`. |
 | `mpc_owned_num_presignatures_available` | `domain_id` | Owned presignatures excluding confirmed-offline. Same semantics as triples. |
 | `mpc_owned_num_presignatures_online` | `domain_id` | Owned online presignatures. |
 | `mpc_owned_num_presignatures_with_offline_participant` | `domain_id` | Owned offline presignatures. |
