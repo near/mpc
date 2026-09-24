@@ -1,53 +1,51 @@
 # Reproducible Builds
 
-This project supports reproducible builds for the node and launcher Docker
-images, and for the on-chain MPC contract WASM. Reproducible builds ensure that
-the same source code always produces identical binaries, which is important for
-security and verification purposes.
+The `mpc-node`, `mpc-node-gcp` and `mpc-launcher` Docker images and the MPC
+contract WASM are built reproducibly: the same commit yields the same bytes,
+so anyone can check what is deployed against the source.
 
 ## Docker images
 
-The `mpc-node`, `mpc-node-gcp` and `mpc-launcher` images are built hermetically
-with [Nix](https://nixos.org/download/), with
-`experimental-features = nix-command flakes` in `nix.conf`. Every build step runs
-in the Nix sandbox without network access, from inputs pinned by `flake.lock`,
-`Cargo.lock` and `rust-toolchain.toml`: only the download of those pinned
-inputs uses the network, and each download is checked against its hash, so
-code that runs during the build (build scripts, proc-macros) cannot fetch
-anything. Nix enables the sandbox by default on Linux, but where the kernel
-refuses the namespaces it needs (e.g. inside a container) it silently builds
-without it; set `sandbox-fallback = false` in `nix.conf`, as CI does, so such a
-build fails instead.
+The images are built with [Nix](https://nixos.org/download/) (flakes enabled).
+Every build step runs in the Nix sandbox without network access, from inputs
+pinned by `flake.lock`, `Cargo.lock` and `rust-toolchain.toml`; only fetching
+those inputs touches the network, and each fetch is checked against its hash.
+Where the kernel refuses the sandbox (for example inside a container) Nix
+silently builds without it, so set `sandbox-fallback = false` in `nix.conf`,
+as CI does, to make such a build fail instead.
 
-Each image builds to the exact layout pushed to Docker Hub, so the SHA-256 of
-its `manifest.json` is the manifest digest that operators vote on. On x86_64
-Linux, run:
+Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
+its `manifest.json` is the manifest digest operators vote on. The same commands
+work on x86_64 Linux and, with the builder below, on macOS:
 
 ```bash
 nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image
 sha256sum result/manifest.json
 ```
 
-Use `mpc-node-gcp-image` or `mpc-launcher-image` for the other images. Building
-`.#packages.x86_64-linux.mpc-node-image` from a checkout gives the same result
-only if the working tree is clean, because the commit hash is embedded in the
-node binary. The digest also covers `flake.lock`, so bumping nixpkgs changes it
-even when the code does not. Commits without these flake outputs, such as
-patch releases from release branches created before the switch to Nix, are
-reproduced by following this guide in that checkout.
+Use `mpc-node-gcp-image` or `mpc-launcher-image` for the other images. From a
+checkout, `.#packages.x86_64-linux.mpc-node-image` gives the same digest only
+with a clean working tree, because the node binary embeds the commit hash. The
+digests also cover `flake.lock`, so a nixpkgs bump changes them without any
+code change. Commits without these flake outputs, such as patch releases from
+release branches created before the switch to Nix, are reproduced by following
+this guide in that checkout.
 
-To run an image locally, load it into Docker:
+To run an image locally, load it into Docker with `skopeo`:
 
 ```bash
-docker load --input "$(nix build --no-link --print-out-paths .#packages.x86_64-linux.mpc-node-image.archive)"
+skopeo copy dir:result docker-daemon:mpc-node:latest
 ```
 
 ### Building on macOS
 
-The images are `x86_64-linux` builds, so Nix needs a Linux builder to run them.
-On Apple silicon with macOS 26 or newer, nixpkgs' `darwin.linux-builder-vz`
-runs a NixOS builder VM that executes `x86_64-linux` builds through Rosetta. It
-is only in nixpkgs-unstable (not 26.05), which the
+The images are `x86_64-linux` derivations, so Nix needs a Linux builder. On
+Apple silicon, nixpkgs' `darwin.linux-builder-vz` runs a NixOS VM that executes
+the same derivations a Linux host does, translated by Rosetta rather than cross
+compiled, so the digests match. It needs macOS 26 or newer (older Rosetta lacks
+the x86-64-v3 instructions the build runs) with Rosetta installed
+(`softwareupdate --install-rosetta --agree-to-license`), and it exists only in
+nixpkgs-unstable (not 26.05), which the
 [nix-darwin](https://github.com/nix-darwin/nix-darwin) template tracks:
 
 ```bash
@@ -71,24 +69,22 @@ nix.linux-builder = {
     darwin-builder.diskSize = 100 * 1024;
   };
 };
-# Writing /etc/pam.d needs Full Disk Access on recent macOS
+# Managing PAM files needs Full Disk Access on recent macOS
 security.pam.services.sudo_local.enable = false;
 ```
 
-Then install nix-darwin, which also starts the builder. If it reports
-unexpected files in `/etc` (such as the `/etc/bashrc` written by the Nix
-installer), rename each with a `.before-nix-darwin` suffix and rerun:
+Install nix-darwin, which also starts the builder. If it reports files in
+`/etc` it did not create (such as the `/etc/bashrc` written by the Nix
+installer), rename them with a `.before-nix-darwin` suffix and rerun:
 
 ```bash
 sudo nix --extra-experimental-features 'nix-command flakes' run nix-darwin/master#darwin-rebuild -- switch
 ```
 
-The commands above then work unchanged. The builder needs Rosetta
-(`softwareupdate --install-rosetta --agree-to-license`).
+The Linux commands above now work unchanged.
 
-Without a Linux builder, Docker Desktop can run the build: enable its Rosetta
-emulation and give it at least 16 GB of memory. Nix runs natively in the
-container and hands the `x86_64-linux` build steps to Rosetta:
+Without a Linux builder, Docker Desktop with Rosetta enabled and at least 16 GB
+of memory runs the same build in a container:
 
 ```bash
 docker run --rm --privileged --platform linux/arm64 \

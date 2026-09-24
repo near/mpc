@@ -19,7 +19,6 @@ for arg in "$@"; do
   esac
 done
 
-: "${NODE_IMAGE_NAME:=mpc-node}"
 : "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher-nontee}"
 
 if $USE_RUST_LAUNCHER; then
@@ -58,7 +57,7 @@ else
     -e MPC_IMAGE_HASH=5ba283860c0efa3d4c3e08a76a2b77fab4725baad4f48504eac858e04af7fd64 \
     -e MPC_LATEST_ALLOWED_HASH_FILE=/tmp/image-digest.bin \
     -e MPC_BACKUP_ENCRYPTION_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
-    -e MPC_ENV=mainnet "${NODE_IMAGE_NAME}")
+    -e MPC_ENV=mainnet mpc-node)
 
 fi
 

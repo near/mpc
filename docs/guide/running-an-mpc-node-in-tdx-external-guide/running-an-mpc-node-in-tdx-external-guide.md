@@ -2072,9 +2072,9 @@ cd mpc/
 git checkout <commit-hash>
 ```
 
-* Build it with [Nix](https://nixos.org/download/) (flakes enabled) on an
-  x86_64 Linux host, or on macOS with a Linux builder (see
-  [Reproducible Builds](../reproducible-builds.md#building-on-macos)):
+* Build it with [Nix](https://nixos.org/download/); see
+  [Reproducible Builds](../reproducible-builds.md) for the Linux and macOS
+  setup:
 
 ```bash
 $ nix build .#packages.x86_64-linux.mpc-node-image
@@ -2082,7 +2082,7 @@ $ sha256sum result/manifest.json
 <hex>  result/manifest.json
 ```
 
-The printed hex digest is what you vote for: submit it as the `mpc_node_manifest_digest` value in the voting command (DockerHub shows it with a `sha256:` prefix). The launcher pulls the image directly by this digest, and Docker verifies that the content matches during the pull. If the commit has no `mpc-node-image` flake output, it predates the Nix build: follow `docs/guide/reproducible-builds.md` in that checkout instead.
+The printed hex digest is what you vote for as `mpc_node_manifest_digest` (DockerHub shows it with a `sha256:` prefix, which the voting command omits). The launcher pulls the image by this digest, and Docker verifies that the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 
@@ -2093,10 +2093,10 @@ The printed hex digest is what you vote for: submit it as the `mpc_node_manifest
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
-Set `MPC_NODE_MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
+Set `MPC_NODE_MANIFEST_DIGEST` from your own build, or paste the DockerHub digest without the `sha256:` prefix, then send the vote:
 
 ```bash
-MPC_NODE_MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+MPC_NODE_MANIFEST_DIGEST=$(sha256sum result/manifest.json | cut -d' ' -f1)
 
 near contract call-function as-transaction \
   v1.signer-prod.testnet \

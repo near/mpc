@@ -64,8 +64,8 @@ jobs:
 
       - name: Check mpc-node docker image can initialize and start
         run: |
-          docker load --input "$(nix build --no-link --print-out-paths .#mpc-node-image.archive)"
-          docker load --input "$(nix build --no-link --print-out-paths .#mpc-node-gcp-image.archive)"
+          skopeo copy dir:result-mpc-node docker-daemon:mpc-node:latest
+          skopeo copy dir:result-mpc-node-gcp docker-daemon:mpc-node-gcp:latest
           docker run --rm mpc-node /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
           docker run --rm mpc-node-gcp gcloud version
           ./scripts/check-mpc-node-docker-starts.sh
@@ -102,7 +102,7 @@ jobs:
       - name: Run Rust launcher non-TEE runtime check
         shell: bash
         run: |
-          docker load --input "$(nix build --no-link --print-out-paths .#mpc-launcher-image.archive)"
+          skopeo copy dir:result docker-daemon:mpc-launcher:latest
           ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
 
   mpc-unittests:

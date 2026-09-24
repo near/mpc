@@ -106,7 +106,7 @@ exactly what the source produces:
   produced locally:
   ```sh
   for image in mpc-node mpc-node-gcp mpc-launcher; do
-    nix build --out-link "result-$image" ".#packages.x86_64-linux.$image-image"
+    nix build --out-link "result-$image" "github:near/mpc/<merge-commit>#packages.x86_64-linux.$image-image"
   done
   sha256sum result-*/manifest.json
   ```

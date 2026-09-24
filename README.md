@@ -127,9 +127,7 @@ cargo install cargo-insta
 
 ## Reproducible Builds
 
-Both the node and launcher Docker images are built hermetically with Nix, ensuring identical images from the same source: `nix build .#packages.x86_64-linux.mpc-node-image`.
-
-For prerequisites and options, see [docs/guide/reproducible-builds.md](docs/guide/reproducible-builds.md).
+The `mpc-node`, `mpc-node-gcp` and `mpc-launcher` Docker images are built hermetically with Nix, so the same commit always produces the same image digests. See [docs/guide/reproducible-builds.md](docs/guide/reproducible-builds.md).
 
 ## Releases
 

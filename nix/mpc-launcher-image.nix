@@ -23,15 +23,10 @@ dockerTools.buildImage {
     dockerTools.fakeNss
   ];
 
-  extraCommands = ''
-    mkdir -p app mnt/shared
-    mkdir -m 1777 tmp
-    cp ${lib.getExe tee-launcher} app/tee-launcher
-  '';
+  extraCommands = "install -D ${lib.getExe tee-launcher} app/tee-launcher";
 
   config = {
     Cmd = [ "/app/tee-launcher" ];
-    WorkingDir = "/app";
     Env = [ "PATH=/bin" ];
   };
 }
