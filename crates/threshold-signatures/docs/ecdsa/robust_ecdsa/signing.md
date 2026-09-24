@@ -4,11 +4,6 @@ This document specifies the signing protocol described in [[DJNPO20](https://epr
 
 ### Note:  We denote $\mathcal{P}$ the set of participants included the DKG and the threshold $t = \mathsf{MaxMalicious}$
 
-$H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm and $\mathsf{Com}(v; r) = v 
-\cdot G + r \cdot H_{\mathsf{ped}}$ a Pedersen commitment.
-
-$\mathsf{Com}$ extends coefficientwise to polynomials: for $f(X) = \sum_m f_m X^m$ and $r(X) = \sum_m r_m X^m$, $\mathsf{Com}(f; r)$ is the polynomial with coefficients $\mathsf{Com}(f_m; r_m)$. Since $\mathsf{Com}$ is linear, $\mathsf{Com}(f; r)(j) = \mathsf{Com}(f(j); r(j))$.
-
 # Signing
 
 In this phase, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}$
@@ -37,6 +32,10 @@ $$
 \hat f_{a_i} \gets \mathsf{Com}(f_{a_i}; f_{\rho_i}) \qquad
 \hat f_{b_i} \gets \mathsf{Com}(f_{b_i}; f_{\sigma_i})
 $$
+
+   **Pedersen commitment:** $H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm, and $\mathsf{Com}(v; r) = v \cdot G + r \cdot H_{\mathsf{ped}}$.
+
+   $\mathsf{Com}$ extends coefficientwise to polynomials: for $f(X) = \sum_m f_m X^m$ and $r(X) = \sum_m r_m X^m$, $\mathsf{Com}(f; r)$ is the polynomial with coefficients $\mathsf{Com}(f_m; r_m)$. Since $\mathsf{Com}$ is linear, $\mathsf{Com}(f; r)(j) = \mathsf{Com}(f(j); r(j))$.
 
 $\quad$ *Note: the constant coefficient of* $\hat f_{b_i}$ *is the identity, since* $f_{b_i}$ *and* $f_{\sigma_i}$ *have constant term zero, and is not sent.*
 
@@ -77,10 +76,18 @@ e_i \gets \sum_j e_{ji} \qquad
 \sigma_i \gets \sum_j \sigma_{ji}
 $$
 
-5. Each $P_i$ sums the committed polynomials $\hat f_a \gets \sum_j \hat f_{a_j}$ and $\hat f_b \gets \sum_j \hat f_{b_j}$, so that $\hat f_a(i) = \mathsf{Com}(a_i; \rho_i)$ and $\hat f_b(i) = \mathsf{Com}(b_i; \sigma_i)$.
+5. Each $P_i$ sums the committed polynomials:
+
+$$
+\hat f_a \gets \sum_j \hat f_{a_j} \qquad \hat f_b \gets \sum_j \hat f_{b_j}
+$$
+
+$\quad$ *Note: it follows that* $\hat f_a(i) = \mathsf{Com}(a_i; \rho_i)$ *and* $\hat f_b(i) = \mathsf{Com}(b_i; \sigma_i)$*.*
+
 6. Each $P_i$ computes $R_i \gets k_i \cdot G$
 7. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
-8. $\star$ Each $P_i$ sends $(R_i, w_i, \eta_i)$ to every party, where $\eta_i \gets H(\text{all commitments received in round 1})$.
+8. Each $P_i$ computes the hash $\eta_i \gets H\big(\{(\hat f_{a_j}, \hat f_{b_j})\}_{j \in \mathcal{P}_1}\big)$
+9. $\star$ Each $P_i$ sends $(R_i, w_i, \eta_i)$ to every party.
 
 **Round 3:**
 
@@ -92,12 +99,35 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 5. Each $P_i$ computes $w \gets \mathsf{Interpolation}(w_1, \ldots w_{2 \cdot t+1}; 0)$
 6. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
 7. Each $P_i$ computes $\pi_i \gets \mathsf{Prove}\big(w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i;\ a_i, b_i, \rho_i, \sigma_i\big)$
+
+   **Proof of the $w_i$ opening** (sigma protocol, Fiat-Shamir) for the statement, with witness $(a_i, b_i, \rho_i, \sigma_i)$:
+
+   $$
+   w_i \cdot G = a_i \cdot R_i + b_i \cdot G \qquad
+   \hat f_a(i) = a_i \cdot G + \rho_i \cdot H_{\mathsf{ped}} \qquad
+   \hat f_b(i) = b_i \cdot G + \sigma_i \cdot H_{\mathsf{ped}}
+   $$
+
+   * $\mathsf{Prove}$:
+      * sample $(u_a, u_b, u_\rho, u_\sigma)$
+      * compute $K_0 \gets u_a \cdot R_i + u_b \cdot G$, $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$, $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$
+      * compute $e \gets H(\mathsf{sid}, i, w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$
+      * compute $z_a \gets u_a + e a_i$, $z_b \gets u_b + e b_i$, $z_\rho \gets u_\rho + e \rho_i$, $z_\sigma \gets u_\sigma + e \sigma_i$
+      * output $\pi_i = (e, z_a, z_b, z_\rho, z_\sigma)$
+
 8. $\star$ Each $P_i$ sends $\pi_i$ to every party.
 
 **Round 4:**
 
 1. $\bullet$ Each $P_i$ waits to receive $\pi_j$ from every party.
 2. $\blacktriangle$ For each $j$, each $P_i$ *asserts* that $\mathsf{Verify}\big(w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j;\ \pi_j\big)$ succeeds, identifying $P_j$ as malicious otherwise.
+   * $\mathsf{Verify}$, parsing $\pi_j = (e, z_a, z_b, z_\rho, z_\sigma)$:
+      * compute $K_0 \gets z_a \cdot R_j + z_b \cdot G - e \cdot (w_j \cdot G)$
+      * compute $K_1 \gets z_a \cdot G + z_\rho \cdot H_{\mathsf{ped}} - e \cdot \hat f_a(j)$
+      * compute $K_2 \gets z_b \cdot G + z_\sigma \cdot H_{\mathsf{ped}} - e \cdot \hat f_b(j)$
+      * accept iff $e = H(\mathsf{sid}, j, w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j, K_0, K_1, K_2)$
+
+
 3. Each $P_i$ computes $c_i \gets a_i \cdot w^{-1}$
 4. Each $P_i$ computes $\alpha_i \gets c_i+d_i$
 5. Each $P_i$ computes $\beta_i \gets c_i \cdot x_i$.
@@ -117,16 +147,6 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 
 *Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
 
-**Proof of the $w_i$ opening** (sigma protocol, Fiat-Shamir) for the statement, with witness $(a, b, \rho, \sigma)$:
-
-$$
-w \cdot G = a \cdot R_i + b \cdot G \qquad
-\hat f_a(i) = a \cdot G + \rho \cdot H_{\mathsf{ped}} \qquad
-\hat f_b(i) = b \cdot G + \sigma \cdot H_{\mathsf{ped}}
-$$
-
-* $\mathsf{Prove}$: sample $(u_a, u_b, u_\rho, u_\sigma)$; $K_0 \gets u_a \cdot R_i + u_b \cdot G$, $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$, $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$; $e \gets H(\mathsf{sid}, i, w \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$; $z_a \gets u_a + e a$, $z_b \gets u_b + e b$, $z_\rho \gets u_\rho + e \rho$, $z_\sigma \gets u_\sigma + e \sigma$; output $\pi = (e, z_a, z_b, z_\rho, z_\sigma)$.
-* $\mathsf{Verify}$: $K_0 \gets z_a \cdot R_i + z_b \cdot G - e \cdot (w \cdot G)$, $K_1 \gets z_a \cdot G + z_\rho \cdot H_{\mathsf{ped}} - e \cdot \hat f_a(i)$, $K_2 \gets z_b \cdot G + z_\sigma \cdot H_{\mathsf{ped}} - e \cdot \hat f_b(i)$; accept iff $e = H(\mathsf{sid}, i, w \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$.
 
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).
 
