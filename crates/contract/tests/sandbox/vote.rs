@@ -159,10 +159,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let curve = Curve::from(*protocol);
         let threshold = init_running.parameters.threshold.0 as usize;
 
-        // DamgardEtAl requires `2t - 1 <= n` (n=10 => t <= 5); other
+        // RobustEcdsa requires `2t - 1 <= n` (n=10 => t <= 5); other
         // protocols use the cluster threshold (= 6 for n=10).
         let reconstruction_threshold = match *protocol {
-            Protocol::DamgardEtAl => ReconstructionThreshold::new(5),
+            Protocol::RobustEcdsa => ReconstructionThreshold::new(5),
             _ => ReconstructionThreshold::new(6),
         };
 

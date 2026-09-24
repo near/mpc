@@ -285,7 +285,7 @@ pub struct MpcVoteUpdateCmd {
 
 #[derive(clap::Parser)]
 pub struct MpcVoteAddDomainsCmd {
-    /// The protocols to add domains for, e.g. `CaitSith,Frost,DamgardEtAl,ConfidentialKeyDerivation`.
+    /// The protocols to add domains for, e.g. `CaitSith,Frost,RobustEcdsa,ConfidentialKeyDerivation`.
     #[clap(long, value_delimiter = ',')]
     pub protocols: Vec<String>,
     /// The indices of the voters; leave empty to vote from every other participant.

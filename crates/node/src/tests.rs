@@ -289,7 +289,7 @@ pub async fn request_signature_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     let payload = match domain.protocol {
-        Protocol::CaitSith | Protocol::DamgardEtAl => {
+        Protocol::CaitSith | Protocol::RobustEcdsa => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
 

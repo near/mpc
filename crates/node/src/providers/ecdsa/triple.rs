@@ -424,7 +424,7 @@ mod tests {
             domain(0, Protocol::CaitSith, 3),
             domain(1, Protocol::CaitSith, 2),
             domain(2, Protocol::CaitSith, 3),
-            domain(3, Protocol::DamgardEtAl, 5),
+            domain(3, Protocol::RobustEcdsa, 5),
             domain(4, Protocol::Frost, 4),
         ];
 

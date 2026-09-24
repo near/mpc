@@ -74,7 +74,7 @@ pub async fn keygen_computation_inner(
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        Protocol::DamgardEtAl => {
+        Protocol::RobustEcdsa => {
             let keyshare = RobustEcdsaSignatureProvider::run_key_generation_client(
                 reconstruction_threshold,
                 channel,
@@ -274,7 +274,7 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Protocol::DamgardEtAl,
+            Protocol::RobustEcdsa,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());

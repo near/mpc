@@ -279,7 +279,7 @@ pub enum DomainError {
         participants: u64,
     },
     #[error(
-        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the DamgardEtAl bound."
+        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the Robust ECDSA bound."
     )]
     ReconstructionThresholdOverflow { reconstruction_threshold: u64 },
     #[error(

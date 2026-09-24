@@ -1,8 +1,17 @@
 # Domain Separation: Protocol & Governance Configuration Design
 
-The addition of Robust ECDSA (aka DamgardEtAl) invalidates three assumptions in the current design:
+> **Status: implemented. One premise has since changed.** The domain separation design
+> described here is in place and remains accurate. Robust ECDSA (`RobustEcdsa`), which
+> motivated it, has since had its implementation removed and replaced by an insecure
+> stub — see [`crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md`](../../crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md).
+> TODO(#4383): replace the stub with a real robust scheme.
+> The protocol variant, its honest-majority `2t - 1` threshold rule and the routing
+> described below all still exist, but no production domain uses them. Statements below
+> about Robust ECDSA's security properties describe the removed scheme.
 
-✗ There is one protocol per curve (now: both CaitSith and DamgardEtAl operate over Secp256k1).
+The addition of Robust ECDSA (`RobustEcdsa`) invalidates three assumptions in the current design:
+
+✗ There is one protocol per curve (now: both CaitSith and RobustEcdsa operate over Secp256k1).
 
 ✗ All domains share a single cryptographic threshold.
 
@@ -88,10 +97,10 @@ The node (`crates/node/`) imports types from **both** the internal contract crat
 Contract per-domain DistributedKeyConfig.reconstruction_threshold (ReconstructionThreshold(u64))
   → Coordinator reads the per-domain ReconstructionThreshold from contract state
   → For CaitSith/FROST: passed directly to keygen/sign
-  → For DamgardEtAl: compute_thresholds() → (num_signers, max_malicious)
+  → For RobustEcdsa: compute_thresholds() → (num_signers, max_malicious)
 ```
 
-For DamgardEtAl, the node derives `(num_signers, max_malicious)` from the per-domain `ReconstructionThreshold` via `compute_thresholds()` in `crates/node/src/providers/robust_ecdsa.rs` (used by `robust_ecdsa/presign.rs` and `robust_ecdsa/sign.rs`). No threshold translation from a global value is needed, since each domain carries its own `ReconstructionThreshold`.
+For RobustEcdsa, the node derives `(num_signers, max_malicious)` from the per-domain `ReconstructionThreshold` via `compute_thresholds()` in `crates/node/src/providers/robust_ecdsa.rs` (used by `robust_ecdsa/presign.rs` and `robust_ecdsa/sign.rs`). No threshold translation from a global value is needed, since each domain carries its own `ReconstructionThreshold`.
 
 ### 1.5 Current Curve-Protocol Pairings
 
@@ -100,7 +109,7 @@ For DamgardEtAl, the node derives `(num_signers, max_malicious)` from the per-do
 | Secp256k1 | CaitSith | Sign, ForeignTx | Yes |
 | Ed25519 | FROST | Sign | Yes |
 | Bls12381 | CKD | CKD | Yes |
-| Secp256k1 | DamgardEtAl (V2Secp256k1) | Sign | Ongoing |
+| Secp256k1 | RobustEcdsa (V2Secp256k1) | Sign | Ongoing |
 
 
 ## 2. Proposed Design
@@ -151,7 +160,7 @@ pub enum Protocol {
     CaitSith,                    // → Secp256k1
     Frost,                       // → Edwards25519
     ConfidentialKeyDerivation,   // → Bls12381
-    DamgardEtAl,                 // → Secp256k1
+    RobustEcdsa,                 // → Secp256k1
 }
 
 /// Identifies the elliptic curve. Used by the contract to verify
@@ -166,7 +175,7 @@ pub enum Curve {
 impl From<Protocol> for Curve {
     fn from(protocol: Protocol) -> Self {
         match protocol {
-            Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
+            Protocol::CaitSith | Protocol::RobustEcdsa => Curve::Secp256k1,
             Protocol::Frost => Curve::Edwards25519,
             Protocol::ConfidentialKeyDerivation => Curve::Bls12381,
         }
@@ -259,8 +268,8 @@ pub fn validate_domain_reconstruction_threshold(config: &DistributedKeyConfig, n
 
     // Protocol-specific constraints
     match config.protocol {
-        Protocol::DamgardEtAl => {
-            // DamgardEtAl works in honest majority setting
+        Protocol::RobustEcdsa => {
+            // RobustEcdsa works in honest majority setting
             // i.e. requires t < n/2
             if 2 * t - 1 > num_participants {
                 return Err(Error::InsufficientParticipantsForProtocol {
@@ -311,8 +320,8 @@ pub fn min_active_participants(
 ) -> u64 {
     let t = reconstruction_threshold.inner();
     match protocol {
-        // DamgardEtAl requires honest majority: n >= 2t - 1
-        Protocol::DamgardEtAl => 2 * t - 1,
+        // RobustEcdsa requires honest majority: n >= 2t - 1
+        Protocol::RobustEcdsa => 2 * t - 1,
         // All other protocols need at least t participants
         _ => t,
     }
@@ -326,7 +335,7 @@ pub fn threshold_range(
 ) -> Option<(u64, u64)> {
     let min = 2u64;
     let max = match protocol {
-        Protocol::DamgardEtAl => (num_participants + 1) / 2,
+        Protocol::RobustEcdsa => (num_participants + 1) / 2,
         _ => num_participants,
     };
     if min > max { None } else { Some((min, max)) }
@@ -423,7 +432,7 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 - Remove `V2Secp256k1` from DTO `SignatureScheme` enum.
 - Remove `is_valid_scheme_for_purpose` entry for `V2Secp256k1`.
 - Remove the `KeyshareData::V2Secp256k1` variant in the node (or gate behind a feature flag if reshare data exists in dev/testnet).
-- Update `coordinator.rs` routing: the `V2Secp256k1` match arm is removed; robust ECDSA will be routed via `Protocol::DamgardEtAl` (added below).
+- Update `coordinator.rs` routing: the `V2Secp256k1` match arm is removed; robust ECDSA will be routed via `Protocol::RobustEcdsa` (added below).
 
 **Changes (add Protocol enum)**:
 - Add new enum:
@@ -433,7 +442,7 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
       CaitSith,                    // OT-based ECDSA (current Secp256k1)
       Frost,                       // Threshold Schnorr (current Edwards25519)
       ConfidentialKeyDerivation,   // BLS-based CKD
-      DamgardEtAl,                 // Robust ECDSA (new)
+      RobustEcdsa,                 // Robust ECDSA (new)
   }
   ```
 - Implement `From<Protocol> for Curve` to derive the curve from the protocol (see §2.1).
@@ -509,7 +518,7 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 **Changes**:
 - Add `validate_domain_reconstruction_threshold(config: &DistributedKeyConfig, num_participants)` with protocol-specific rules:
   - CaitSith/Frost/CKD: `t <= n` (same as current).
-  - DamgardEtAl: `2t - 1 <= n`.
+  - RobustEcdsa: `2t - 1 <= n`.
 - Add `min_active_participants(protocol, reconstruction_threshold)` helper (see §3.1).
 - Update `vote_add_domains` to validate each new distributed key's `reconstruction_threshold` against the current participant count.
 - Update `KeyEvent` to pass per-key threshold (from `DistributedKeyConfig.reconstruction_threshold`) instead of the global threshold.
@@ -520,7 +529,7 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 
 **Key behavioral change**: This is where `DistributedKeyConfig` gains real per-key threshold semantics. Before this PR, the `reconstruction_threshold` was always the global value.
 
-**Tests**: Unit tests for `validate_domain_reconstruction_threshold` edge cases: DamgardEtAl with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
+**Tests**: Unit tests for `validate_domain_reconstruction_threshold` edge cases: RobustEcdsa with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
 
 ---
 
@@ -595,13 +604,13 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
       Protocol::CaitSith => EcdsaSignatureProvider,
       Protocol::Frost => EddsaSignatureProvider,
       Protocol::ConfidentialKeyDerivation => CKDProvider,
-      Protocol::DamgardEtAl => RobustEcdsaSignatureProvider,
+      Protocol::RobustEcdsa => RobustEcdsaSignatureProvider,
   }
   ```
 
 **No contract changes in this PR** — purely a node-side consumer update.
 
-**Tests**: Integration tests with both old contract (fallback to `state()`) and new contract (`state_v2()`). Verify DamgardEtAl active-signers derivation produces correct values. Verify provider routing for all protocol types.
+**Tests**: Integration tests with both old contract (fallback to `state()`) and new contract (`state_v2()`). Verify RobustEcdsa active-signers derivation produces correct values. Verify provider routing for all protocol types.
 
 ---
 
@@ -905,14 +914,14 @@ With per-key `protocol` and `reconstruction_threshold`, `vote_add_domains` must 
 
 During resharing, each domain's key must be reshared with its own `ReconstructionThreshold`. The `KeyEvent` for each domain already carries its config. The coordinator passes the per-domain threshold to the crypto protocol. Per-domain thresholds can only be changed via resharing — there is no independent vote function for threshold changes.
 
-`ReconstructionThreshold` has uniform semantics across all protocols: it always means "number of shares needed to reconstruct the secret" (`t`). Each protocol may impose different constraints on `t` (e.g., DamgardEtAl requires `t < n/2`), but the stored value has the same meaning everywhere. The node reads the per-domain `ReconstructionThreshold` from contract state and applies the protocol-specific interpretation:
+`ReconstructionThreshold` has uniform semantics across all protocols: it always means "number of shares needed to reconstruct the secret" (`t`). Each protocol may impose different constraints on `t` (e.g., RobustEcdsa requires `t < n/2`), but the stored value has the same meaning everywhere. The node reads the per-domain `ReconstructionThreshold` from contract state and applies the protocol-specific interpretation:
 
 ```rust
 let dk = distributed_key_registry.get(distributed_key_id);
 let threshold = dk.reconstruction_threshold;
 match dk.protocol {
-    // DamgardEtAl: derive (num_signers, max_malicious) = (2t - 1, t - 1)
-    Protocol::DamgardEtAl => {
+    // RobustEcdsa: derive (num_signers, max_malicious) = (2t - 1, t - 1)
+    Protocol::RobustEcdsa => {
         let (num_signers, max_malicious) = compute_thresholds(threshold)?;
     }
     // CaitSith/FROST/CKD: t is passed directly to keygen/sign

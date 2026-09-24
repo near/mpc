@@ -89,13 +89,13 @@ pub enum Protocol {
     CaitSith,
     Frost,
     ConfidentialKeyDerivation,
-    DamgardEtAl,
+    RobustEcdsa,
 }
 
 impl From<Protocol> for Curve {
     fn from(protocol: Protocol) -> Self {
         match protocol {
-            Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
+            Protocol::CaitSith | Protocol::RobustEcdsa => Curve::Secp256k1,
             Protocol::Frost => Curve::Edwards25519,
             Protocol::ConfidentialKeyDerivation => Curve::Bls12381,
         }
@@ -113,8 +113,8 @@ mod tests {
     }
 
     #[test]
-    fn from_protocol_for_curve__should_map_damgard_et_al_to_secp256k1() {
-        assert_eq!(Curve::from(Protocol::DamgardEtAl), Curve::Secp256k1);
+    fn from_protocol_for_curve__should_map_robust_ecdsa_to_secp256k1() {
+        assert_eq!(Curve::from(Protocol::RobustEcdsa), Curve::Secp256k1);
     }
 
     #[test]

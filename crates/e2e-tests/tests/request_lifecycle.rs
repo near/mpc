@@ -1,7 +1,7 @@
 use crate::common::{
-    ROBUST_ECDSA_PORT_SEED, SIGN_REQUEST_PER_SCHEME_PORT_SEED, damgard_etal_domain,
-    generate_ckd_app_public_key, generate_ecdsa_payload, must_get_domain,
-    must_get_payload_for_domain, must_setup_cluster,
+    ROBUST_ECDSA_PORT_SEED, SIGN_REQUEST_PER_SCHEME_PORT_SEED, generate_ckd_app_public_key,
+    generate_ecdsa_payload, must_get_domain, must_get_payload_for_domain, must_setup_cluster,
+    robust_ecdsa_domain,
 };
 
 use near_mpc_contract_interface::types::{Curve, DomainPurpose, Protocol, SignatureResponse};
@@ -86,13 +86,13 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         c.num_nodes = 6;
         c.initial_participant_indices = (0..6).collect();
         c.threshold = 5;
-        c.domains = vec![damgard_etal_domain(0, 3)];
+        c.domains = vec![robust_ecdsa_domain(0, 3)];
         c.triples_to_buffer = 0;
         c.presignatures_to_buffer = 6;
     })
     .await;
 
-    let domain = must_get_domain(&running, Protocol::DamgardEtAl);
+    let domain = must_get_domain(&running, Protocol::RobustEcdsa);
 
     let mut rng = StdRng::seed_from_u64(0);
 
@@ -109,7 +109,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // then
     assert!(
         outcome.is_success(),
-        "DamgardEtAl sign request failed: {:?}",
+        "RobustEcdsa sign request failed: {:?}",
         outcome.failure_message()
     );
 

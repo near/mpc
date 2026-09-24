@@ -864,8 +864,8 @@ BorshSchemaContainer {
                 ),
                 (
                     3,
-                    "DamgardEtAl",
-                    "Protocol__DamgardEtAl",
+                    "RobustEcdsa",
+                    "Protocol__RobustEcdsa",
                 ),
             ],
         },
@@ -924,10 +924,10 @@ BorshSchemaContainer {
         "Protocol__ConfidentialKeyDerivation": Struct {
             fields: Empty,
         },
-        "Protocol__DamgardEtAl": Struct {
+        "Protocol__Frost": Struct {
             fields: Empty,
         },
-        "Protocol__Frost": Struct {
+        "Protocol__RobustEcdsa": Struct {
             fields: Empty,
         },
         "PublicKeyExtended": Enum {

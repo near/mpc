@@ -119,9 +119,9 @@ pub(crate) fn basic_setup_with_protocol(
         .build();
     testing_env!(context.clone());
     let domain_id = DomainId::default();
-    // DamgardEtAl requires 2t - 1 <= n; with n=4, the max valid t is 2.
+    // RobustEcdsa requires 2t - 1 <= n; with n=4, the max valid t is 2.
     let reconstruction_threshold = match protocol {
-        Protocol::DamgardEtAl => ReconstructionThreshold::new(2),
+        Protocol::RobustEcdsa => ReconstructionThreshold::new(2),
         _ => ReconstructionThreshold::new(3),
     };
     let domains = vec![DomainConfig {
