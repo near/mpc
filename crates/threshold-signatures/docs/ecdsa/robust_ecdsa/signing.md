@@ -33,9 +33,9 @@ $$
 \hat f_{b_i} \gets \mathsf{Com}(f_{b_i}; f_{\sigma_i})
 $$
 
-   **Pedersen commitment:** $H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm, and $\mathsf{Com}(v; r) = v \cdot G + r \cdot H_{\mathsf{ped}}$.
+   * **Pedersen commitment:** $H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm, and $\mathsf{Com}(v; r) = v \cdot G + r \cdot H_{\mathsf{ped}}$.
 
-   $\mathsf{Com}$ extends coefficientwise to polynomials: for $f(X) = \sum_m f_m X^m$ and $r(X) = \sum_m r_m X^m$, $\mathsf{Com}(f; r)$ is the polynomial with coefficients $\mathsf{Com}(f_m; r_m)$. Since $\mathsf{Com}$ is linear, $\mathsf{Com}(f; r)(j) = \mathsf{Com}(f(j); r(j))$.
+   * $\mathsf{Com}$ extends coefficientwise to polynomials: for $f(X) = \sum_m f_m X^m$ and $r(X) = \sum_m r_m X^m$, $\mathsf{Com}(f; r)$ is the polynomial with coefficients $\mathsf{Com}(f_m; r_m)$. Since $\mathsf{Com}$ is linear, $\mathsf{Com}(f; r)(j) = \mathsf{Com}(f(j); r(j))$.
 
 $\quad$ *Note: the constant coefficient of* $\hat f_{b_i}$ *is the identity, since* $f_{b_i}$ *and* $f_{\sigma_i}$ *have constant term zero, and is not sent.*
 
