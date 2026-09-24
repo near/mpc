@@ -158,13 +158,17 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 
 Our specification introduces several modifications to the original paper, aimed at enhancing performance, security, and compatibility. The key changes are:
 
-1. Sign computation optimization
-2. Communication optimization
-3. Identifiable check on the $w$ opening
-4. Key derivation
-5. Outsourcing the message hash
+1. Single-shot signing without presignatures
+2. Sign computation optimization
+3. Communication optimization
+4. Identifiable check on the $w$ opening
+5. Key derivation
+6. Outsourcing the message hash
 
-Changes (1) and (2) improve the overall performance of the scheme, change (3) strengthens the scheme's overall security, change (4) allows key derivation, and change (5) enhances compatibility with external systems that rely on this library for signing operations.
+Change (1) binds each signing session to a single request, changes (2) and (3) improve the overall performance of the scheme, change (4) strengthens the scheme's overall security, change (5) allows key derivation, and change (6) enhances compatibility with external systems that rely on this library for signing operations.
+
+### Single-shot signing without presignatures
+The original protocol needs the message only in its last step, so all earlier rounds can be preprocessed as message-independent presignatures. We instead run a single four-round protocol whose inputs — the message hash $h$ and the tweak $\epsilon$ — are fixed from round 1. Nonce shares are generated and consumed within one session, so a preprocessed nonce can never serve two different messages (see [Security considerations](#security-considerations) for the risks that remain when views are inconsistent).
 
 ### Sign computation optimization
 We require from the sender to linearize the value $s_i$ before sending it.
@@ -177,7 +181,7 @@ Such choice can overload the network with $O(n^2)$ messages. Instead, we make th
 that each of the parties would only send their shares to the coordinator which combines them in the corresponding way.
 
 ### Identifiable check on the $w$ opening
-The shares of $a$ and $b$ are dealt under Pedersen commitments, and each participant proves that its $w_i$ is consistent with its committed $a_i$ and $b_i$. A dealer or participant failing a check is identified.
+The shares of $a$ and $b$ are dealt under Pedersen commitments, and each participant proves that its $w_i$ is consistent with its committed $a_i$ and $b_i$. A dealer or participant failing a check is identified. This replaces the values $W_i = a_i \cdot R$ and the global check $W = w \cdot G$ of the original scheme, making a failed check attributable to a specific party. The proofs are verified against a consistent transcript: every party echoes the hash $\eta_i$ of all round-1 commitments, and the Fiat-Shamir challenge is bound to it.
 
 ### Key derivation
 The key derivation is a feature that allows the holder of a secret key to derive multiple secret keys for different applications (e.g. an MPC node holding a secret key share that uses to derive several clients secret key shares).
