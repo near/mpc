@@ -48,7 +48,7 @@ pub const START_KEYGEN_INSTANCE: &str = "start_keygen_instance";
 pub const START_RESHARE_INSTANCE: &str = "start_reshare_instance";
 // TODO(#4513): drop once production runs the vote-then-submit API.
 pub const PROPOSE_UPDATE: &str = "propose_update";
-pub const SUBMIT_UPDATE: &str = "submit_update";
+pub const SUBMIT_CONTRACT_UPDATE: &str = "submit_contract_update";
 pub const UPDATE_CONFIG: &str = "update_config";
 pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 

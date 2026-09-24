@@ -27,7 +27,7 @@ use crate::method_names::{
     ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, INIT, LAUNCHER_HASH_VOTES,
     MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
     REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN,
-    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, SUBMIT_UPDATE, UPDATE_PARTICIPANT_URL,
+    START_NODE_MIGRATION, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
     VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST,
     VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
@@ -192,7 +192,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    pub async fn submit_update(
+    pub async fn submit_contract_update(
         &self,
         update: Update,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
@@ -201,8 +201,13 @@ impl<C: CallContract> MpcContractHandle<C> {
             STORAGE_BYTE_COST_YOCTONEAR,
         )?);
         let args = borsh::to_vec(&update)?;
-        self.call(FunctionCallArgs::new(SUBMIT_UPDATE, args, MAX_GAS, deposit))
-            .await
+        self.call(FunctionCallArgs::new(
+            SUBMIT_CONTRACT_UPDATE,
+            args,
+            MAX_GAS,
+            deposit,
+        ))
+        .await
     }
 
     pub async fn vote_contract_update(
@@ -654,7 +659,7 @@ mod tests {
             .unwrap();
         handle.vote_update(UpdateId(7)).await.unwrap();
         handle
-            .submit_update(Update::Code(vec![7u8; 4]))
+            .submit_contract_update(Update::Code(vec![7u8; 4]))
             .await
             .unwrap();
         handle

@@ -51,7 +51,7 @@ deposit:  0 NEAR
 args:     {"id":7}
 
 contract: mpc.near
-method:   submit_update
+method:   submit_contract_update
 gas:      300.0 Tgas
 deposit:  0.32772 NEAR
 args:     0x000400000007070707
