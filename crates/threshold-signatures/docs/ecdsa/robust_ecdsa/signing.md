@@ -7,6 +7,8 @@ This document specifies the signing protocol described in [[DJNPO20](https://epr
 $H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm and $\mathsf{Com}(v; r) = v 
 \cdot G + r \cdot H_{\mathsf{ped}}$ a Pedersen commitment.
 
+$\mathsf{Com}$ extends coefficientwise to polynomials: for $f(X) = \sum_m f_m X^m$ and $r(X) = \sum_m r_m X^m$, $\mathsf{Com}(f; r)$ is the polynomial with coefficients $\mathsf{Com}(f_m; r_m)$. Since $\mathsf{Com}$ is linear, $\mathsf{Com}(f; r)(j) = \mathsf{Com}(f(j); r(j))$.
+
 # Signing
 
 In this phase, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}$
@@ -29,14 +31,14 @@ The inputs to this phase are:
 2. Each $P_i$ generates a random, degree $t$ polynomial $f_{\rho_i}$ with constant term zero.
 3. Each $P_i$ generates three random, degree $2t$ polynomials $f_{b_i}$, $f_{d_i}$, and $f_{e_i}$ and set their constant terms to zero.
 4. Each $P_i$ generates a random, degree $2t$ polynomial $f_{\sigma_i}$ with constant term zero
-5. Each $P_i$ commits coefficientwise to $f_{a_i}$ and $f_{b_i}$:
+5. Each $P_i$ commits to $f_{a_i}$ and $f_{b_i}$:
 
 $$
 \hat f_{a_i} \gets \mathsf{Com}(f_{a_i}; f_{\rho_i}) \qquad
 \hat f_{b_i} \gets \mathsf{Com}(f_{b_i}; f_{\sigma_i})
 $$
 
-$\qquad$ i.e. $\hat f_{a_i}$ is the polynomial with coefficients $\mathsf{Com}(a_{i,m}; \rho_{i,m})$ for $m \in \set{0..t}$ and $\hat f_{b_i}$ the polynomial with coefficients $\mathsf{Com}(b_{i,m}; \sigma_{i,m})$ for $m \in \set{1..2t}$, where $a_{i,m}, b_{i,m}, \rho_{i,m}, \sigma_{i,m}$ are the coefficients of $f_{a_i}, f_{b_i}, f_{\rho_i}, f_{\sigma_i}$. Their evaluation satisfies $\hat f_{a_i}(j) = \mathsf{Com}(f_{a_i}(j); f_{\rho_i}(j))$ and $\hat f_{b_i}(j) = \mathsf{Com}(f_{b_i}(j); f_{\sigma_i}(j))$.
+$\quad$ *Note: the constant coefficient of* $\hat f_{b_i}$ *is the identity, since* $f_{b_i}$ *and* $f_{\sigma_i}$ *have constant term zero, and is not sent.*
 
 6. $\star$ Each $P_i$ sends $(\hat f_{a_i}, \hat f_{b_i})$ to every party.
 7. $\textcolor{red}{\star}$ Each $P_i$ **privately** sends
