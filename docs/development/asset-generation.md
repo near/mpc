@@ -304,16 +304,16 @@ set.
 
 ## Prometheus metrics
 
-### Asset counts (gauges, updated each loop iteration)
+### Asset counts
 
-| Metric | Description |
-|--------|-------------|
-| `mpc_owned_num_triples_available` | Owned triples excluding confirmed-offline (online + unknown). Maps to `num_owned()`. |
-| `mpc_owned_num_triples_online` | Owned online triples. Maps to `num_owned_ready()`. |
-| `mpc_owned_num_triples_with_offline_participant` | Owned offline triples. Maps to `num_owned_offline()`. |
-| `mpc_owned_num_presignatures_available` | Owned presignatures excluding confirmed-offline. Same semantics as triples. |
-| `mpc_owned_num_presignatures_online` | Owned online presignatures. |
-| `mpc_owned_num_presignatures_with_offline_participant` | Owned offline presignatures. |
+| Metric | Labels | Description |
+|--------|--------|-------------|
+| `mpc_owned_num_triples_available` | `reconstruction_threshold` | Owned triples excluding confirmed-offline (online + unknown). Maps to `num_owned()`. |
+| `mpc_owned_num_triples_online` | `reconstruction_threshold` | Owned online triples. Maps to `num_owned_ready()`. |
+| `mpc_owned_num_triples_with_offline_participant` | `reconstruction_threshold` | Owned offline triples. Maps to `num_owned_offline()`. |
+| `mpc_owned_num_presignatures_available` | `domain_id` | Owned presignatures excluding confirmed-offline. Same semantics as triples. |
+| `mpc_owned_num_presignatures_online` | `domain_id` | Owned online presignatures. |
+| `mpc_owned_num_presignatures_with_offline_participant` | `domain_id` | Owned offline presignatures. |
 
 The online and offline gauges only count classified assets; assets still in
 the "unknown" state count towards neither. For an asset sitting in the hot
@@ -352,27 +352,6 @@ Defined in `crates/node/src/config.rs` and set in `config.yaml`.
 |-------|------|-------------|
 | `timeout_sec` | `u64` | Timeout for a single signature computation. |
 
-## Troubleshooting: observed production anomaly
-
-The following was observed simultaneously in production (#2123):
-
-1. The presignature generation task is not reported as running.
-2. The node is computing signatures as leader.
-3. The number of available presignatures does not decrease.
-
-**Explanation:** The asset count gauges are only updated inside the
-presignature generation loop. The signature path consumes presignatures
-via `take_owned()` but never updates these metrics. If the generation
-loop dies, the gauges freeze at their last value. The node can continue
-signing (consuming presignatures from the store) while the metrics show
-a stale, unchanging count.
-
-Eventually the node will exhaust its owned presignatures. At that point
-`take_owned()` blocks indefinitely (waiting for a presignature that will
-never arrive), and the node stops being able to lead signature
-computations. It can still participate as a **follower**, since
-`take_unowned(id)` does not depend on the local generation loop.
-
 ## Appendix
 
 ### Triple generation loop
@@ -381,7 +360,6 @@ Source: `crates/node/src/providers/ecdsa/triple.rs`
 
 ```
 loop {
-    update metrics
     if num_owned + in_flight < desired_triples_to_buffer
        AND in_flight < concurrency * 2 * 64:
         pick threshold random online participants
@@ -416,7 +394,7 @@ Source: `crates/node/src/providers/ecdsa/presign.rs`
 
 ```
 loop {
-    update metrics + progress tracker
+    update progress tracker
     if num_owned + in_flight < desired_presignatures_to_buffer
        AND in_flight < concurrency * 2:
         reserve 1 ID

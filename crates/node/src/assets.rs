@@ -1,7 +1,9 @@
 pub mod cleanup;
+pub mod metrics;
 #[cfg(test)]
 pub mod test_utils;
 
+use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
@@ -579,6 +581,15 @@ where
     /// are known to have some participant offline.
     pub fn num_owned_offline(&self) -> usize {
         self.owned_queue.offline()
+    }
+
+    /// The three counts above in one read, for the asset metrics reporter.
+    pub fn owned_asset_counts(&self) -> OwnedAssetCounts {
+        OwnedAssetCounts {
+            available: self.num_owned(),
+            online: self.num_owned_ready(),
+            offline: self.num_owned_offline(),
+        }
     }
 
     pub async fn take_owned(&self) -> (UniqueId, T) {

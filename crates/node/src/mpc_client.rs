@@ -1,3 +1,4 @@
+use crate::assets::metrics::ASSET_METRICS_REPORTING_INTERVAL;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -158,6 +159,20 @@ impl MpcClient {
             }
         });
 
+        // Reads every asset store directly, so the owned-asset gauges do not
+        // depend on any generation loop iterating.
+        let asset_metrics_reporter = tracking::spawn("report asset metrics", {
+            let ecdsa = self.ecdsa_signature_provider.clone();
+            let robust_ecdsa = self.robust_ecdsa_signature_provider.clone();
+            async move {
+                loop {
+                    ecdsa.report_asset_metrics();
+                    robust_ecdsa.report_asset_metrics();
+                    tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
+                }
+            }
+        });
+
         let monitor_passive_channels = {
             tracking::spawn(
                 "monitor passive channels",
@@ -232,6 +247,7 @@ impl MpcClient {
 
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
+        asset_metrics_reporter.await?;
         monitor_chain.await?;
         let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;

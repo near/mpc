@@ -17,6 +17,7 @@ use crate::network::wire_format::{MpcTaskId, RobustEcdsaTaskId};
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 
+use crate::assets::metrics::{PRESIGNATURE_GAUGES, report_store};
 use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
@@ -83,6 +84,18 @@ impl RobustEcdsaSignatureProvider {
 
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
         ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
+    }
+
+    /// Reports the owned-asset gauges for every presignature store of this
+    /// provider, labelled by domain. Robust ECDSA uses no triples.
+    pub fn report_asset_metrics(&self) {
+        for (domain_id, keyshare) in &self.keyshares {
+            report_store(
+                &PRESIGNATURE_GAUGES,
+                domain_id,
+                &keyshare.presignature_store,
+            );
+        }
     }
 }
 
