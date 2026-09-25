@@ -41,6 +41,7 @@ pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 24;
 pub const BACKUP_SERVICE_RUN_PORT_SEED: u16 = 25;
 pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 26;
 pub const FOREIGN_CHAIN_PROBE_PORT_SEED: u16 = 27;
+pub const FOREIGN_TX_VERDICT_MISMATCH_PORT_SEED: u16 = 28;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -293,6 +294,30 @@ pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> anyhow::Result<i64>
         .into_iter()
         .flatten()
         .sum())
+}
+
+/// Wait until a metric summed across all running nodes satisfies `predicate`.
+pub async fn wait_for_metric_sum(
+    cluster: &MpcCluster,
+    name: &str,
+    predicate: impl Fn(i64) -> bool + Copy,
+    timeout: std::time::Duration,
+) -> anyhow::Result<()> {
+    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+    (|| async {
+        let sum = sum_metric(cluster, name).await?;
+        anyhow::ensure!(
+            predicate(sum),
+            "metric {name} summed over nodes not satisfied (sum: {sum})"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times(max_times),
+    )
+    .await
 }
 
 pub fn must_load_contract_wasm() -> Vec<u8> {

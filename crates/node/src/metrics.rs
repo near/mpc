@@ -209,6 +209,17 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS: LazyLock<prometheus::In
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_verify_foreign_tx_verdict_mismatches",
+            "Number of verify foreign tx attempts whose extraction failed because the node's \
+             providers disagreed on the verdict for the transaction",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_SIGN_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_responses_indexed",

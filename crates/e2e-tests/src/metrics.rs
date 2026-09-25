@@ -28,3 +28,4 @@ pub const LAST_BACKUP_SERVED_EPOCH: &str = "mpc_last_backup_served_epoch";
 pub const FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: &str =
     "mpc_foreign_chain_rpc_providers_configured";
 pub const FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY: &str = "mpc_foreign_chain_rpc_providers_healthy";
+pub const FOREIGN_TX_VERDICT_MISMATCHES: &str = "mpc_num_verify_foreign_tx_verdict_mismatches";

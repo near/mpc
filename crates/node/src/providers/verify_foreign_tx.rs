@@ -4,6 +4,7 @@ mod sign;
 pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
+use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
 use crate::providers::EcdsaSignatureProvider;
@@ -79,6 +80,9 @@ impl ForeignChainInspectors<HttpClient> {
             })?;
             let providers = inspectors.iter().map(|(provider, _)| provider);
             let recorder = ProviderCallMetrics::new(chain, providers);
+            // Published at zero so that `increase()` sees the chain's first mismatch.
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
+                .with_label_values(&[chain.label()]);
             Ok(Some(FanOut::new(inspectors).measuring(recorder)))
         }
 
@@ -291,6 +295,26 @@ mod tests {
         })
     }
 
+    fn every_chain_config() -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            bitcoin: chain_config(Bitcoin),
+            ethereum: chain_config(Ethereum),
+            abstract_chain: chain_config(Abstract),
+            starknet: chain_config(Starknet),
+            bnb: chain_config(Bnb),
+            base: chain_config(Base),
+            arbitrum: chain_config(Arbitrum),
+            hyper_evm: chain_config(HyperEvm),
+            polygon: chain_config(Polygon),
+            aptos: chain_config(Aptos),
+            sui: chain_config(Sui),
+            avalanche: chain_config(Avalanche),
+            adi: chain_config(Adi),
+            solana: chain_config(Solana),
+            fogo: chain_config(Fogo),
+        }
+    }
+
     fn published_inspection_series() -> BTreeSet<(String, String)> {
         crate::metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
             .collect()
@@ -314,23 +338,7 @@ mod tests {
     async fn foreign_chain_inspectors_build__should_wire_provider_metrics_for_every_configured_chain()
      {
         // Given
-        let config = ForeignChainsConfig {
-            bitcoin: chain_config(Bitcoin),
-            ethereum: chain_config(Ethereum),
-            abstract_chain: chain_config(Abstract),
-            starknet: chain_config(Starknet),
-            bnb: chain_config(Bnb),
-            base: chain_config(Base),
-            arbitrum: chain_config(Arbitrum),
-            hyper_evm: chain_config(HyperEvm),
-            polygon: chain_config(Polygon),
-            aptos: chain_config(Aptos),
-            sui: chain_config(Sui),
-            avalanche: chain_config(Avalanche),
-            adi: chain_config(Adi),
-            solana: chain_config(Solana),
-            fogo: chain_config(Fogo),
-        };
+        let config = every_chain_config();
 
         // When
         ForeignChainInspectors::build(&config).unwrap();
@@ -342,6 +350,31 @@ mod tests {
                 let series = (chain.label().to_string(), format!("p{index}"));
                 assert!(published.contains(&series), "{series:?} was not published");
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn foreign_chain_inspectors_build__should_publish_verdict_mismatches_for_every_configured_chain()
+     {
+        // Given
+        let config = every_chain_config();
+
+        // When
+        ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        let published: BTreeSet<String> = metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
+            .collect()
+            .iter()
+            .flat_map(|family| family.get_metric())
+            .flat_map(|metric| metric.get_label())
+            .map(|label| label.value().to_string())
+            .collect();
+        for (chain, _) in config.iter_chains() {
+            assert!(
+                published.contains(chain.label()),
+                "{chain:?} was not published"
+            );
         }
     }
 
