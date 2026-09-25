@@ -24,6 +24,7 @@ impl MpcContract {
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
+    #[handle_result]
     #[payable]
     pub fn sign(&mut self, request: dtos::SignRequestArgs) {
         log!(

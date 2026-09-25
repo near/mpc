@@ -21,6 +21,7 @@ impl MpcContract {
     /// [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)
     /// to support use cases
     /// where the derived key is intentionally public (no encryption).
+    #[handle_result]
     #[payable]
     pub fn request_app_private_key(&mut self, request: dtos::CKDRequestArgs) {
         log!(
