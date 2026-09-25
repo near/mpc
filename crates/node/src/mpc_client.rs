@@ -73,7 +73,8 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
             EcdsaTaskId::ManyTriples { .. } | EcdsaTaskId::Presignature { .. } => true,
             EcdsaTaskId::KeyGeneration { .. }
             | EcdsaTaskId::KeyResharing { .. }
-            | EcdsaTaskId::Signature { .. } => false,
+            | EcdsaTaskId::Signature { .. }
+            | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
         MpcTaskId::RobustEcdsaTaskId(id) => match id {
             RobustEcdsaTaskId::Presignature { .. } => true,
@@ -717,7 +718,7 @@ mod tests {
     fn is_heavy_generation_task__should_classify_generation_vs_other_tasks() {
         // Given every task kind paired with whether it is CPU-heavy asset
         // generation that must run on the lower-priority gen runtime.
-        let cases: [(MpcTaskId, bool); 12] = [
+        let cases: [(MpcTaskId, bool); 13] = [
             // ECDSA: triples and presignatures are heavy generation.
             (
                 EcdsaTaskId::ManyTriples {
@@ -741,6 +742,14 @@ mod tests {
                 EcdsaTaskId::Signature {
                     id: CryptoHash::default(),
                     presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                EcdsaTaskId::OnlinePresignSignature {
+                    id: CryptoHash::default(),
+                    paired_triple_id: uid(),
                 }
                 .into(),
                 false,
