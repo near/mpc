@@ -1,0 +1,11 @@
+flowchart LR
+    subgraph BUNDLE["carried in the witness bundle, each step hashing to the next"]
+        direction LR
+        V["the value read,<br/>or the gap where an<br/>absent key would sit"]
+        TN["trie nodes<br/>along the path"]
+        SR["shard<br/>state root"]
+        SP["path over all<br/>shard roots"]
+    end
+    H["block header at B,<br/>which the node<br/>validated itself"]
+
+    V --> TN --> SR --> SP -->|"lands on"| H

@@ -1,0 +1,8 @@
+sequenceDiagram
+    participant R as Relay
+    participant E as Entry nodes<br/>(k, rotating, dialed out)
+    participant N as Every other node
+
+    R->>E: announcement, signed by the relay:<br/>the client's signed message, block B's hash,<br/>and the bundle itself if small, else its hash
+    E->>N: passed on over the existing MPC mesh
+    N->>R: bundle too big to travel inline:<br/>GET /bundle/(hash), CDN-cacheable
