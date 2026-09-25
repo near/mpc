@@ -10,12 +10,15 @@ use near_contract_transport::{
 };
 use serde::de::DeserializeOwned;
 
+mod helpers;
+
 use crate::call_args::{
     InitArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
     RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
     UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
-    VoteCancelKeygenArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs,
-    VoteTeeVerifierChangeArgs, VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
+    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs,
+    VoteNewParametersArgs, VoteTeeVerifierChangeArgs, VoteUpdateArgs,
+    VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -26,10 +29,11 @@ use crate::method_names::{
     ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, INIT, LAUNCHER_HASH_VOTES,
     MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
     REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN,
-    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
+    START_NODE_MIGRATION, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
-    VOTE_CANCEL_RESHARING, VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS,
-    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST,
+    VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, CKDAppPublicKey,
@@ -37,8 +41,8 @@ use crate::types::{
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
     GovernanceThresholdParameters, InitConfig, LauncherDockerComposeHash, LauncherHashVotes,
     LauncherImageHash, MeasurementVotes, NodeImageHash, PayloadBytesError, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
-    VerifyForeignTransactionRequestArgs,
+    ProposedGovernanceThresholdParameters, SignRequestArgs, TeeVerifierCodeHash, Update,
+    UpdateHash, UpdateId, VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -64,7 +68,10 @@ pub const VOTE_MPC_NODE_MANIFEST_DIGEST_GAS: NearGas = NearGas::from_tgas(300);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
+// TODO(#4513): drop once production runs the vote-then-submit API.
 pub const VOTE_UPDATE_GAS: NearGas = NearGas::from_tgas(260);
+// TODO(#166): not benchmarked.
+pub const VOTE_CONTRACT_UPDATE_GAS: NearGas = NearGas::from_tgas(22);
 
 /// Typed interface to the MPC signer contract at a fixed account, generic over
 /// the transport backend `C`.
@@ -153,6 +160,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    // TODO(#4513): drop once production runs the vote-then-submit API.
     pub async fn propose_update(
         &self,
         args: ProposeUpdateArgs,
@@ -172,6 +180,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    // TODO(#4513): drop once production runs the vote-then-submit API.
     pub async fn vote_update(
         &self,
         id: UpdateId,
@@ -185,6 +194,38 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn submit_contract_update(
+        &self,
+        update: Update,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let deposit = NearToken::from_yoctonear(propose_update_required_deposit_yoctonear(
+            helpers::update_payload_bytes(&update)?,
+            STORAGE_BYTE_COST_YOCTONEAR,
+        )?);
+        let args = borsh::to_vec(&update)?;
+        self.call(FunctionCallArgs::new(
+            SUBMIT_CONTRACT_UPDATE,
+            args,
+            MAX_GAS,
+            deposit,
+        ))
+        .await
+    }
+
+    pub async fn vote_contract_update(
+        &self,
+        update_hash: UpdateHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteContractUpdateArgs::new(update_hash))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_CONTRACT_UPDATE,
+            args,
+            VOTE_CONTRACT_UPDATE_GAS,
+        ))
+        .await
+    }
+
+    // TODO(#4513): drop once production runs the vote-then-submit API.
     pub async fn remove_update_proposal(
         &self,
         id: UpdateId,
@@ -466,11 +507,11 @@ mod tests {
         BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
         ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose,
         Ed25519PublicKey, EpochId, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-        GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
+        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, MockAttestation,
         ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
-        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
-        VerifyForeignTransactionRequestArgs,
+        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, Update, UpdateHash,
+        UpdateId, VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{
         CallContract, FunctionCallArgs, ObservedState, mock::MockViewContract,
@@ -619,6 +660,14 @@ mod tests {
             .await
             .unwrap();
         handle.vote_update(UpdateId(7)).await.unwrap();
+        handle
+            .submit_contract_update(Update::Code(vec![7u8; 4]))
+            .await
+            .unwrap();
+        handle
+            .vote_contract_update(UpdateHash::Code(Hash256([7u8; 32])))
+            .await
+            .unwrap();
         handle.remove_update_proposal(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {
