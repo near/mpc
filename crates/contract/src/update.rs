@@ -15,7 +15,6 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::deposits::{
     DepositOverflowError, propose_update_required_deposit_yoctonear,
 };
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, UpdateHash};
 use near_sdk::{
     Gas, NearToken, Promise, env, near,
@@ -197,12 +196,10 @@ impl ProposedUpdates {
         match entry.update {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
-                promise = promise.deploy_contract(code).function_call(
-                    method_names::MIGRATE,
-                    Vec::new(),
-                    NearToken::from_near(0),
-                    gas,
-                );
+                promise = MpcContract::ext_on(promise.deploy_contract(code))
+                    .with_static_gas(gas)
+                    .with_unused_gas_weight(0)
+                    .migrate();
             }
             Update::Config(config) => {
                 // If we vote for a new config, we should use

@@ -27,7 +27,6 @@ impl MpcContract {
     /// Submit a verification + signing request for a foreign chain transaction.
     /// MPC nodes will verify the transaction on the foreign chain before signing.
     /// The signed payload is derived from the transaction ID (hash of tx_id).
-    #[handle_result]
     #[payable]
     pub fn verify_foreign_transaction(
         &mut self,
@@ -178,8 +177,9 @@ impl MpcContract {
                 );
                 let promise = Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .with_unused_gas_weight(0)
                     .fail_on_timeout();
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                PromiseOrValue::Promise(promise.as_return())
             }
         }
     }

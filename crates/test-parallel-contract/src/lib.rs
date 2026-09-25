@@ -1,21 +1,14 @@
 use elliptic_curve::group::Group;
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainId, Payload, SignRequestArgs,
 };
-use near_sdk::serde::Serialize;
-use near_sdk::{AccountId, Gas, NearToken, Promise, env, near, serde_json};
-use sha2::{Digest, Sha256};
+use near_sdk::{AccountId, Gas, NearToken, Promise, env, ext_contract, near};
 use std::collections::BTreeMap;
 
-#[derive(Serialize)]
-struct SignArgs {
-    pub request: SignRequestArgs,
-}
-
-#[derive(Serialize)]
-struct CKDArgs {
-    pub request: CKDRequestArgs,
+#[ext_contract(ext_mpc_contract)]
+pub trait MpcContract {
+    fn sign(&mut self, request: SignRequestArgs);
+    fn request_app_private_key(&mut self, request: CKDRequestArgs);
 }
 
 pub fn generate_app_public_key(seed: u64) -> CKDAppPublicKey {
@@ -62,9 +55,7 @@ impl TestContract {
                 .iter()
                 .flat_map(|(domain_id, num_calls)| {
                     (0..*num_calls).map(move |i| {
-                        let mut hasher = Sha256::new();
-                        hasher.update(format!("{seed}-{i}").as_str());
-                        let payload_bytes: [u8; 32] = hasher.finalize().into();
+                        let payload_bytes = env::sha256_array(format!("{seed}-{i}"));
 
                         sign_promise(
                             target_contract,
@@ -180,23 +171,19 @@ impl TestContract {
 }
 
 fn sign_promise(target_contract: &AccountId, request: SignRequestArgs) -> Promise {
-    let args = SignArgs { request };
-    Promise::new(target_contract.clone()).function_call(
-        method_names::SIGN.to_string(),
-        serde_json::to_vec(&args).unwrap(),
-        NearToken::from_yoctonear(1),
-        Gas::from_tgas(SIGN_CALL_TGAS),
-    )
+    ext_mpc_contract::ext(target_contract.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(SIGN_CALL_TGAS))
+        .with_unused_gas_weight(0)
+        .sign(request)
 }
 
 fn ckd_promise(target_contract: &AccountId, request: CKDRequestArgs) -> Promise {
-    let args = CKDArgs { request };
-    Promise::new(target_contract.clone()).function_call(
-        method_names::REQUEST_APP_PRIVATE_KEY.to_string(),
-        serde_json::to_vec(&args).unwrap(),
-        NearToken::from_yoctonear(1),
-        Gas::from_tgas(CKD_CALL_TGAS),
-    )
+    ext_mpc_contract::ext(target_contract.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(CKD_CALL_TGAS))
+        .with_unused_gas_weight(0)
+        .request_app_private_key(request)
 }
 
 /// Combines the given child promises via [`Promise::and`], chains `handle_results` as
@@ -209,10 +196,10 @@ fn join_with_handle_results(mut promises: Vec<Promise>) -> Promise {
     while !promises.is_empty() {
         combined_promise = combined_promise.and(promises.pop().unwrap());
     }
-    combined_promise.then(Promise::new(env::current_account_id()).function_call(
-        "handle_results".to_string(),
-        vec![],
-        NearToken::from_near(0),
-        Gas::from_tgas(HANDLE_RESULTS_TGAS),
-    ))
+    combined_promise.then(
+        TestContract::ext_self()
+            .with_static_gas(Gas::from_tgas(HANDLE_RESULTS_TGAS))
+            .with_unused_gas_weight(0)
+            .handle_results(),
+    )
 }

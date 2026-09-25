@@ -24,7 +24,6 @@ impl MpcContract {
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
-    #[handle_result]
     #[payable]
     pub fn sign(&mut self, request: dtos::SignRequestArgs) {
         log!(
@@ -212,8 +211,9 @@ impl MpcContract {
 
                 let promise = Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .with_unused_gas_weight(0)
                     .fail_on_timeout();
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                PromiseOrValue::Promise(promise.as_return())
             }
         }
     }

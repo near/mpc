@@ -21,7 +21,6 @@ impl MpcContract {
     /// [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)
     /// to support use cases
     /// where the derived key is intentionally public (no encryption).
-    #[handle_result]
     #[payable]
     pub fn request_app_private_key(&mut self, request: dtos::CKDRequestArgs) {
         log!(
@@ -143,8 +142,9 @@ impl MpcContract {
                 );
                 let promise = Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .with_unused_gas_weight(0)
                     .fail_on_timeout();
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                PromiseOrValue::Promise(promise.as_return())
             }
         }
     }

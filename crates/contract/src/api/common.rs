@@ -5,7 +5,7 @@ use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, env, log, near};
 
-/// Register used to receive data id from `promise_await_data`.
+/// Register used to receive data id from [`env::promise_yield_create`].
 /// Note: This is an implementation constant, not a configurable policy value.
 const DATA_ID_REGISTER: u64 = 0;
 

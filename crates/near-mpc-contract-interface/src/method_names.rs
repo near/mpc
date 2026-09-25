@@ -42,7 +42,6 @@ pub const MIGRATE: &str = "migrate";
 pub const START_KEYGEN_INSTANCE: &str = "start_keygen_instance";
 pub const START_RESHARE_INSTANCE: &str = "start_reshare_instance";
 pub const PROPOSE_UPDATE: &str = "propose_update";
-pub const UPDATE_CONFIG: &str = "update_config";
 pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
 // TEE / Participant
@@ -54,12 +53,8 @@ pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
 pub const START_NODE_MIGRATION: &str = "start_node_migration";
 pub const CANCEL_NODE_MIGRATION: &str = "cancel_node_migration";
 pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
-pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrations";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
-pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
-pub const REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES: &str =
-    "remove_non_participant_tee_verifier_votes";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
@@ -67,11 +62,6 @@ pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
-pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
-pub const FAIL_ATTESTATION_SUBMISSION: &str = "fail_attestation_submission";
-
-// TEE verifier contract (the method `mpc-contract` calls cross-contract)
-pub const VERIFY_QUOTE: &str = "verify_quote";
 
 // View methods
 pub const STATE: &str = "state";
