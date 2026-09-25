@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-pub const ASSET_METRICS_REPORTING_INTERVAL: Duration = Duration::from_secs(1);
+pub const ASSET_METRICS_REPORTING_INTERVAL: Duration = Duration::from_millis(100);
 
 /// One store's owned counts, see [`DistributedAssetStorage::owned_asset_counts`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
