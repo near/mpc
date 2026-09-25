@@ -219,7 +219,9 @@ pub mod near_crypto_compatible_serialization {
     const ED25519_PREFIX: &str = "ed25519";
 
     pub mod signing_keys {
-        use super::*;
+        use super::{
+            Deserialize, Deserializer, ED25519_PREFIX, Serialize, Serializer, SigningKey, de,
+        };
 
         pub fn serialize<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -264,7 +266,9 @@ pub mod near_crypto_compatible_serialization {
     pub mod verifying_key {
         use anyhow::Context;
 
-        use super::*;
+        use super::{
+            Deserialize, Deserializer, ED25519_PREFIX, Serialize, Serializer, VerifyingKey, de,
+        };
 
         pub fn serialize<S>(key: &VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
         where
