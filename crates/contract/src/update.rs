@@ -5,16 +5,22 @@ use crate::{
     config::Config,
     dto_mapping::IntoInterfaceType,
     errors::{ConversionError, Error},
-    primitives::participants::Participants,
+    primitives::{
+        key_state::AuthenticatedAccountId,
+        participants::Participants,
+        proposal_hash::{Json, Sha256, ToProposalHash},
+        votes::Votes,
+    },
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
-use derive_more::Deref;
+use derive_more::{Deref, DerefMut};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::deposits::{
     DepositOverflowError, propose_update_required_deposit_yoctonear,
 };
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, UpdateHash};
 use near_sdk::{
     Gas, NearToken, Promise, env, near,
@@ -287,6 +293,24 @@ fn bytes_used(update: &Update) -> u128 {
     }
 
     n_bytes_used
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug, Deref, DerefMut)]
+pub struct ContractUpdateVotes(Votes<AuthenticatedAccountId>);
+
+impl Default for ContractUpdateVotes {
+    fn default() -> Self {
+        Self(Votes::new(
+            StorageKey::ContractUpdateVotesByVoter,
+            StorageKey::ContractUpdateVotesByProposal,
+        ))
+    }
+}
+
+impl ToProposalHash for dtos::UpdateHash {
+    type Serializer = Json;
+    type Hasher = Sha256;
 }
 
 #[cfg(test)]

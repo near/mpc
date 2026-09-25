@@ -245,6 +245,13 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ContractUpdateVotes": Struct {
+            fields: UnnamedFields(
+                [
+                    "Votes<AuthenticatedAccountId>",
+                ],
+            ),
+        },
         "DockerImageHash": Struct {
             fields: UnnamedFields(
                 [
@@ -675,6 +682,10 @@ BorshSchemaContainer {
                     (
                         "proposed_updates",
                         "ProposedUpdates",
+                    ),
+                    (
+                        "contract_update_votes",
+                        "ContractUpdateVotes",
                     ),
                     (
                         "config",

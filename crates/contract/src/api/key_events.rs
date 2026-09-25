@@ -117,6 +117,12 @@ impl MpcContract {
                 ))
                 .remove_non_participant_update_votes()
                 .detach();
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.remove_non_participant_update_votes_tera_gas,
+                ))
+                .remove_non_participant_contract_update_votes()
+                .detach();
             // Spawn a promise to drop votes cast by non-participants.
             Self::ext_self()
                 .with_static_gas(Gas::from_tgas(self.config.clean_tee_status_tera_gas))

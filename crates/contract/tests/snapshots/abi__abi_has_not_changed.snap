@@ -225,6 +225,25 @@ expression: abi
         "kind": "view"
       },
       {
+        "name": "contract_update_votes",
+        "doc": " Returns all currently stored votes.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "derived_public_key",
         "doc": " This is the derived public key of the caller given path and predecessor\n if predecessor is not provided, it will be the caller of the contract.\n\n The domain parameter specifies which domain we're deriving the public key for;\n the default is the first domain.",
         "kind": "view",
@@ -948,6 +967,28 @@ expression: abi
             }
           ]
         },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "remove_contract_update_vote",
+        "doc": " Withdraws the caller's update vote.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "remove_non_participant_contract_update_votes",
+        "doc": " Removes update votes from non-participants.\n Can only be called by participants or by the contract itself.",
+        "kind": "call",
         "result": {
           "serialization_type": "json",
           "type_schema": {
@@ -1959,6 +2000,156 @@ expression: abi
         }
       },
       {
+        "name": "submit_contract_update",
+        "doc": " Submits an update and applies it. Fails if the update doesn't yet have enough\n participant votes.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "update",
+              "type_schema": {
+                "declaration": "Update",
+                "definitions": {
+                  "Config": {
+                    "Struct": [
+                      [
+                        "key_event_timeout_blocks",
+                        "u64"
+                      ],
+                      [
+                        "tee_upgrade_deadline_duration_seconds",
+                        "u64"
+                      ],
+                      [
+                        "contract_upgrade_deposit_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "sign_call_gas_attachment_requirement_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "ckd_call_gas_attachment_requirement_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "return_signature_and_clean_state_on_success_call_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "return_ck_and_clean_state_on_success_call_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "fail_on_timeout_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "fail_attestation_submission_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_tee_status_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_invalid_attestations_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "cleanup_orphaned_node_migrations_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "remove_non_participant_update_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_foreign_chain_data_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "verifier_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "resolve_verification_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "launcher_hash_unused_ttl_seconds",
+                        "u64"
+                      ],
+                      [
+                        "attestation_storage_fee_millinear",
+                        "u64"
+                      ]
+                    ]
+                  },
+                  "Update": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Code",
+                          "Update__Code"
+                        ],
+                        [
+                          1,
+                          "Config",
+                          "Update__Config"
+                        ]
+                      ]
+                    }
+                  },
+                  "Update__Code": {
+                    "Struct": [
+                      "Vec<u8>"
+                    ]
+                  },
+                  "Update__Config": {
+                    "Struct": [
+                      "Config"
+                    ]
+                  },
+                  "Vec<u8>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u64": {
+                    "Primitive": 8
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "submit_participant_info",
         "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
         "kind": "call",
@@ -2222,6 +2413,28 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_contract_update",
+        "doc": " Replaces the caller's earlier vote, if any. Returns whether `update_hash` is approved.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "update_hash",
+              "type_schema": {
+                "$ref": "#/definitions/UpdateHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
           }
         }
       },

@@ -30,8 +30,10 @@ mod sandbox_test_methods;
 pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
-    foreign_chains_metadata::ForeignChainsMetadata, tee::tee_state::TeeState,
-    tee::verifier_votes::TeeVerifierVotes, update::ProposedUpdates,
+    foreign_chains_metadata::ForeignChainsMetadata,
+    tee::tee_state::TeeState,
+    tee::verifier_votes::TeeVerifierVotes,
+    update::{ContractUpdateVotes, ProposedUpdates},
 };
 use config::Config;
 use near_mpc_contract_interface::types::{
@@ -54,6 +56,7 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
+    contract_update_votes: ContractUpdateVotes,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
