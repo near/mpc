@@ -9,7 +9,7 @@ use crate::{MpcContract, MpcContractExt, pending_requests};
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::{method_names, types as dtos};
-use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
+use near_sdk::{CryptoHash, Gas, NearToken, PromiseError, PromiseOrValue, env, log, near};
 
 #[near]
 impl MpcContract {
@@ -210,13 +210,9 @@ impl MpcContract {
                     &request,
                 );
 
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
+                let promise = Self::ext_self()
+                    .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .fail_on_timeout();
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
         }

@@ -203,8 +203,6 @@ impl MeshNetworkClient {
     /// Requires a bidirectional connection, but ignores indexer height, so it is still not a full
     /// liveness check: intersect with [`Self::all_alive_participant_ids`] when picking a
     /// participant set.
-    // TODO(#4399): drop the attribute, the online-presign leader selects participants with this.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn participants_supporting(&self, required: NetworkProtocolVersion) -> Vec<ParticipantId> {
         self.all_participant_ids()
             .into_iter()
