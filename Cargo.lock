@@ -6178,6 +6178,7 @@ dependencies = [
  "near-jsonrpc-primitives 0.37.3",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "near-mpc-sdk",
  "near-primitives 0.37.3",
  "near-sdk",
  "node-types",

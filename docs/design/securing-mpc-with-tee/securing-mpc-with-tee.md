@@ -417,7 +417,7 @@ We grant access to all contract methods rather than an explicit allow-list becau
 
 > **⚠️ Security tradeoff:** Allowing all methods widens the *in-contract* blast
 > radius — a compromised node key can now call **any** contract method (e.g.
-> `propose_update`, `vote_*`), not just the previously allow-listed set. It still
+> `submit_contract_update`, `vote_*`), not just the previously allow-listed set. It still
 > cannot transfer funds or call any other contract. We accept this because the
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.

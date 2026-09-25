@@ -14,7 +14,7 @@ use crate::state::running::RunningContractState;
 use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
-use crate::update::{ContractUpdateVotes, ProposedUpdates};
+use crate::update::ContractUpdateVotes;
 use crate::{MpcContract, MpcContractExt, v3_15_1_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
@@ -64,7 +64,6 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: ProposedUpdates::default(),
             contract_update_votes: ContractUpdateVotes::default(),
             config,
             tee_state,
@@ -155,7 +154,6 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: Default::default(),
             contract_update_votes: Default::default(),
             tee_state,
             accept_requests: true,

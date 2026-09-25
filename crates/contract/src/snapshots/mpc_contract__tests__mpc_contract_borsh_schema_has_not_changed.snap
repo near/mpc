@@ -680,10 +680,6 @@ BorshSchemaContainer {
                         "LookupMap",
                     ),
                     (
-                        "proposed_updates",
-                        "ProposedUpdates",
-                    ),
-                    (
                         "contract_update_votes",
                         "ContractUpdateVotes",
                     ),
@@ -833,24 +829,6 @@ BorshSchemaContainer {
                     (
                         "per_domain_thresholds",
                         "BTreeMap<DomainId, ReconstructionThreshold>",
-                    ),
-                ],
-            ),
-        },
-        "ProposedUpdates": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_participant",
-                        "IterableMap",
-                    ),
-                    (
-                        "entries",
-                        "IterableMap",
-                    ),
-                    (
-                        "id",
-                        "UpdateId",
                     ),
                 ],
             ),
@@ -1156,13 +1134,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 8]",
-                ],
-            ),
-        },
-        "UpdateId": Struct {
-            fields: UnnamedFields(
-                [
-                    "u64",
                 ],
             ),
         },

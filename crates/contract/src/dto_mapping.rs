@@ -14,7 +14,6 @@ use mpc_attestation::{
     collateral::Collateral,
 };
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::env::sha256_array;
 
 use crate::{
     config::Config,
@@ -36,7 +35,6 @@ use crate::{
         running::RunningContractState,
     },
     tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
-    update::{ProposedUpdates, Update, UpdateId},
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -443,33 +441,6 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::UpdateId> for UpdateId {
-    fn into_dto_type(self) -> dtos::UpdateId {
-        dtos::UpdateId(self.0)
-    }
-}
-
-impl IntoContractType<UpdateId> for dtos::UpdateId {
-    fn into_contract_type(self) -> UpdateId {
-        UpdateId(self.0)
-    }
-}
-
-impl IntoInterfaceType<dtos::UpdateHash> for &Update {
-    fn into_dto_type(self) -> dtos::UpdateHash {
-        match self {
-            Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code).into()),
-            Update::Config(config) => dtos::UpdateHash::Config(
-                sha256_array(
-                    serde_json::to_vec(&config.into_dto_type())
-                        .expect("serde serialization must succeed"),
-                )
-                .into(),
-            ),
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::Config> for &Config {
     fn into_dto_type(self) -> dtos::Config {
         dtos::Config {
@@ -500,26 +471,6 @@ impl IntoInterfaceType<dtos::Config> for &Config {
             launcher_hash_unused_ttl_seconds: self.launcher_hash_unused_ttl_seconds,
             attestation_storage_fee_millinear: self.attestation_storage_fee_millinear,
         }
-    }
-}
-
-impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
-    fn into_dto_type(self) -> dtos::ProposedUpdates {
-        let all = self.all_updates();
-
-        let votes = all
-            .votes
-            .into_iter()
-            .map(|(account, update_id)| (account, update_id.into_dto_type()))
-            .collect();
-
-        let updates = all
-            .updates
-            .into_iter()
-            .map(|(update_id, update)| (update_id.into_dto_type(), update))
-            .collect();
-
-        dtos::ProposedUpdates { votes, updates }
     }
 }
 

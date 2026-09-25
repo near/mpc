@@ -348,6 +348,9 @@ impl SandboxTestSetupBuilder {
 /// - The proposal transaction fails,
 /// - The state call is not deserializable,
 /// - Or the post-upgrade code does not match the expected binary.
+///
+/// Only contracts running the production binary take this flow.
+#[expect(deprecated)]
 pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
     contract: &Contract,
