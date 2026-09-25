@@ -250,7 +250,7 @@ impl MpcContract {
             .with_unused_gas_weight(0)
             .verify_quote(attestation.quote, attestation.collateral)
             .then(
-                Self::ext(env::current_account_id())
+                Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
                     .resolve_verification(VerificationContext {
                         node_id,
@@ -438,7 +438,7 @@ impl MpcContract {
             Err(err) => {
                 // Fail the submitter's transaction from a separate receipt so any prior state
                 // commits (a panic here would roll it back)
-                let promise = Self::ext(env::current_account_id())
+                let promise = Self::ext_self()
                     .with_static_gas(Gas::from_tgas(
                         self.config.fail_attestation_submission_tera_gas,
                     ))
