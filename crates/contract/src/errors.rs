@@ -125,6 +125,10 @@ pub enum InvalidParameters {
     RequestNotFound,
     #[error("Update not found.")]
     UpdateNotFound,
+    #[error(
+        "The submitted update is not backed by a governance threshold of current participants."
+    )]
+    UpdateNotApproved,
     #[error("Participant already in set.")]
     ParticipantAlreadyInSet,
     #[error("Participant id already used.")]

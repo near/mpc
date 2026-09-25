@@ -35,7 +35,7 @@ use crate::{
         tee_state::{NodeAttestation, TeeState},
         verifier_votes::TeeVerifierVotes,
     },
-    update::ProposedUpdates,
+    update::{ContractUpdateVotes, ProposedUpdates},
 };
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -113,6 +113,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             proposed_updates: old.proposed_updates,
+            contract_update_votes: ContractUpdateVotes::default(),
             config: old.config,
             tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,

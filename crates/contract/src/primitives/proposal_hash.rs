@@ -15,9 +15,10 @@
 //! }
 //! ```
 //!
-//! New encodings (e.g. JSON) join as further strategy types.
+//! Further encodings join as strategy types.
 
 use borsh::BorshSerialize;
+use near_sdk::serde::Serialize;
 
 pub(crate) use mpc_primitives::hash::{PROPOSAL_HASH_BYTES, ProposalHash};
 
@@ -38,6 +39,16 @@ impl<T: BorshSerialize> SerializeProposal<T> for Borsh {
 
     fn serialize(value: &T) -> Vec<u8> {
         borsh::to_vec(value).expect("borsh serialization must succeed")
+    }
+}
+
+pub(crate) struct Json;
+
+impl<T: Serialize> SerializeProposal<T> for Json {
+    type Output = Vec<u8>;
+
+    fn serialize(value: &T) -> Vec<u8> {
+        serde_json::to_vec(value).expect("JSON serialization must succeed")
     }
 }
 
@@ -76,8 +87,9 @@ pub(crate) trait ToProposalHash: Sized {
 
 #[cfg(test)]
 mod tests {
-    use super::{Borsh, Identity, PROPOSAL_HASH_BYTES, Sha256, ToProposalHash};
+    use super::{Borsh, Identity, Json, PROPOSAL_HASH_BYTES, Sha256, ToProposalHash};
     use borsh::BorshSerialize;
+    use near_sdk::serde::Serialize;
 
     struct TestDigest([u8; PROPOSAL_HASH_BYTES]);
 
@@ -98,6 +110,35 @@ mod tests {
     impl ToProposalHash for TestProposal {
         type Serializer = Borsh;
         type Hasher = Sha256;
+    }
+
+    #[derive(Serialize)]
+    #[serde(crate = "near_sdk::serde")]
+    struct TestJsonProposal {
+        value: u64,
+    }
+
+    impl ToProposalHash for TestJsonProposal {
+        type Serializer = Json;
+        type Hasher = Sha256;
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn to_proposal_hash__should_be_sha256_of_json_bytes() {
+        // Given
+        let proposal = TestJsonProposal { value: 42 };
+
+        // When
+        let hash = proposal.to_proposal_hash();
+
+        // Then: sha256 of `{"value":42}`
+        assert_eq!(
+            hash,
+            "dc60e632a90329ccfd34fbe904d94704dbbb6669575185e26389854ff64139c3"
+                .parse()
+                .unwrap()
+        );
     }
 
     #[test]

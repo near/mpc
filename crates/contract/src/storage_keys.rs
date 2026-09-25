@@ -40,4 +40,6 @@ pub enum StorageKey {
     PendingVerifyForeignTxRequestsV3,
     CodeHashVotesByVoter,
     CodeHashVotesByProposal,
+    ContractUpdateVotesByVoter,
+    ContractUpdateVotesByProposal,
 }
