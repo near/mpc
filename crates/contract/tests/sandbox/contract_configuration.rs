@@ -1,33 +1,25 @@
 use crate::sandbox::utils::transactions::CallMpcContract;
 use crate::sandbox::{
-    common::SandboxTestSetup, upgrade_from_current_contract::current_contract_proposal,
+    common::{SandboxTestSetup, vote_update_till_approved},
+    upgrade_from_current_contract::current_contract_update,
 };
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::UpdateId;
+use near_mpc_sdk::update::hash;
 
 #[tokio::test]
 async fn test_high_gas_deposit_config_value_passes_upgrades() {
-    let (saw_completion, saw_failure) = run_upgrade_scenario(1).await;
-
-    assert!(saw_completion, "Update never completed");
-    assert!(!saw_failure, "Upgrade unexpectedly failed");
+    assert!(run_upgrade_scenario(1).await, "Upgrade unexpectedly failed");
 }
 
 #[tokio::test]
 async fn test_zero_gas_deposit_config_value_fails_upgrades() {
-    let (saw_completion, saw_failure) = run_upgrade_scenario(0).await;
-
     assert!(
-        saw_failure,
-        "Upgrade never failed; expected failure with zero gas"
-    );
-    assert!(
-        !saw_completion,
+        !run_upgrade_scenario(0).await,
         "Upgrade unexpectedly completed with zero gas"
     );
 }
 
-async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
+async fn run_upgrade_scenario(min_gas: u64) -> bool {
     let init_config = near_mpc_contract_interface::types::InitConfig {
         contract_upgrade_deposit_tera_gas: Some(min_gas),
         ..Default::default()
@@ -44,41 +36,17 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .build()
         .await;
 
+    let update = current_contract_update();
+    vote_update_till_approved(&contract, &mpc_signer_accounts, hash(&update)).await;
+
     let execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
-        .propose_update(current_contract_proposal())
+        .submit_contract_update(update)
         .await
         .unwrap();
+    dbg!(&execution);
 
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
-
-    let mut saw_completion = false;
-    let mut saw_failure = false;
-
-    for voter in mpc_signer_accounts {
-        let execution = voter
-            .call_mpc(contract.id())
-            .vote_update(proposal_id)
-            .await
-            .unwrap();
-
-        dbg!(&execution);
-
-        if !execution.is_success() {
-            saw_failure = true;
-            break;
-        }
-
-        let update_completed: bool = execution.json().expect("Vote cast was unsuccessful");
-
-        if update_completed {
-            saw_completion = true;
-            break;
-        }
-    }
-
-    (saw_completion, saw_failure)
+    execution.is_success()
 }
 
 #[tokio::test]

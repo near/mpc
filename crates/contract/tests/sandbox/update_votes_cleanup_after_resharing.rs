@@ -5,28 +5,29 @@ use crate::sandbox::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
         resharing_utils::do_resharing,
-        transactions::{CallMpcContract, execute_async_handle_calls},
+        transactions::execute_async_handle_calls,
     },
 };
 use anyhow::Result;
 use mpc_contract::primitives::{
     participants::Participants, thresholds::GovernanceThresholdParameters,
 };
+use mpc_primitives::hash::ProposalHash;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol, ReconstructionThreshold,
-    UpdateId,
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold, Update, UpdateHash,
 };
+use near_mpc_sdk::update::hash;
 use near_workspaces::Account;
 use sha2::Digest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// Tests that update votes from non-participants are cleared after resharing.
 #[tokio::test]
-async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
-    // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
+async fn contract_update_votes_from_kicked_out_participants_are_cleared_after_resharing()
+-> Result<()> {
+    // Given
     let SandboxTestSetup {
         worker: _worker,
         contract,
@@ -40,41 +41,29 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
 
-    // Propose update and have first 2 participants vote on it
-    let code = vec![1u8; 1000];
-    let update_id: UpdateId = mpc_signer_accounts[0]
-        .call_mpc(contract.id())
-        .propose_update(ProposeUpdateArgs {
-            code: Some(code.clone()),
-            config: None,
-        })
-        .await?
-        .json()?;
-
-    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| async move {
-        handle.vote_update(update_id).await
+    let update_hash = hash(&Update::Code(vec![1u8; 1000]));
+    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| {
+        let update_hash = update_hash.clone();
+        async move { handle.vote_contract_update(update_hash).await }
     })
     .await?;
 
-    let proposals_before: dtos::ProposedUpdates = contract
-        .view(method_names::PROPOSED_UPDATES)
+    let votes_before: BTreeMap<ProposalHash, BTreeSet<AccountId>> = contract
+        .view(method_names::CONTRACT_UPDATE_VOTES)
         .await?
         .json()?;
 
-    assert_expected_proposed_update(
-        &proposals_before,
-        update_id,
-        &code,
-        &mpc_signer_accounts[0..2],
+    assert_eq!(
+        votes_before,
+        expected_contract_update_votes(&update_hash, &mpc_signer_accounts[0..2])
     );
 
-    // when: resharing completes with new participants that exclude participant 0
-    // Reshare with threshold participants, excluding participant 0 who voted
+    // When
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
         .participants
         .iter()
-        .skip(1) // Skip participant 0, so participant 1-6 are included
+        .skip(1)
         .take(threshold.0 as usize)
     {
         new_participants
@@ -96,7 +85,6 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = dtos::EpochId(6);
 
-    // when: resharing completes with new participants that exclude participant 0
     do_resharing(
         &mpc_signer_accounts[1..threshold.0 as usize + 1],
         &contract,
@@ -105,29 +93,21 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     )
     .await?;
 
-    // then: the cleanup promise removes participant 0's vote from storage
+    // Then
     let final_participants = assert_running_return_participants(&contract).await?;
-    let proposals_after: dtos::ProposedUpdates = contract
-        .view(method_names::PROPOSED_UPDATES)
+    let votes_after: BTreeMap<ProposalHash, BTreeSet<AccountId>> = contract
+        .view(method_names::CONTRACT_UPDATE_VOTES)
         .await?
         .json()?;
 
-    assert_expected_proposed_update(
-        &proposals_after,
-        update_id,
-        &code,
-        &mpc_signer_accounts[1..2],
+    assert_eq!(
+        votes_after,
+        expected_contract_update_votes(&update_hash, &mpc_signer_accounts[1..2])
     );
 
-    // Verify the remaining voter is still a participant
-    let votes_for_update: Vec<_> = proposals_after
-        .votes
-        .iter()
-        .filter(|(_, uid)| **uid == update_id)
-        .map(|(account, _)| account)
-        .collect();
-    assert_eq!(votes_for_update.len(), 1);
-    let voter_id: &AccountId = votes_for_update[0];
+    let remaining_voters: Vec<&AccountId> = votes_after.values().flatten().collect();
+    assert_eq!(remaining_voters.len(), 1);
+    let voter_id: &AccountId = remaining_voters[0];
     assert!(
         final_participants
             .participants
@@ -237,37 +217,11 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     Ok(())
 }
 
-pub fn assert_expected_proposed_update(
-    actual_proposed_updates: &dtos::ProposedUpdates,
-    expected_update_id: UpdateId,
-    expected_update_code: &[u8],
-    expected_voter_accounts: &[Account],
-) {
-    let mut expected_votes: Vec<_> = expected_voter_accounts
-        .iter()
-        .map(|a| a.id().clone())
-        .collect();
-    expected_votes.sort();
-
-    // Build expected votes map
-    let expected_votes_map: BTreeMap<dtos::AccountId, UpdateId> = expected_votes
-        .into_iter()
-        .map(|account_id| (account_id, expected_update_id))
-        .collect();
-
-    // Build expected updates map
-    let mut expected_updates_map = BTreeMap::new();
-    expected_updates_map.insert(
-        expected_update_id,
-        dtos::UpdateHash::Code(dtos::Hash256(
-            sha2::Sha256::digest(expected_update_code).into(),
-        )),
-    );
-
-    let expected = dtos::ProposedUpdates {
-        votes: expected_votes_map,
-        updates: expected_updates_map,
-    };
-
-    assert_eq!(*actual_proposed_updates, expected);
+fn expected_contract_update_votes(
+    update_hash: &UpdateHash,
+    voters: &[Account],
+) -> BTreeMap<ProposalHash, BTreeSet<AccountId>> {
+    let key =
+        ProposalHash::new(sha2::Sha256::digest(serde_json::to_vec(update_hash).unwrap()).into());
+    BTreeMap::from([(key, voters.iter().map(|a| a.id().clone()).collect())])
 }

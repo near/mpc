@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use near_mpc_contract_interface::types::Protocol;
-use near_sdk::{Gas, NearToken};
+use near_sdk::Gas;
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
@@ -20,21 +20,5 @@ pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(65);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_INIT: Gas = Gas::from_tgas(300);
-/// Gas required for votes cast before the threshold is reached (votes 1 through N-1).
-/// These votes are cheap because they only record the vote without triggering the actual
-/// contract update deployment and migration.
-pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
-/// Maximum gas expected for the threshold vote that triggers the contract update.
-/// This vote is more expensive because it deploys the new contract code and executes
-/// the migration function.
-pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(190);
-
-/* --- Deposit constants --- */
-/// This is the current deposit required for a contract deploy. This is subject to change but make
-/// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
-/// not be getting that big.
-///
-/// TODO(#2756): Reduce this to the minimal value possible
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(17000);
 
 pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);
