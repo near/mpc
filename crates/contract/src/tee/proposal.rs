@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
-use near_sdk::{env::sha256, log, near};
+use near_sdk::{env::sha256_array, log, near};
 use std::{collections::BTreeMap, time::Duration};
 
 use crate::primitives::{
@@ -460,16 +460,7 @@ pub fn get_docker_compose_hash(
             "{{DEFAULT_IMAGE_DIGEST_HASH}}",
             &mpc_docker_image_hash.as_hex(),
         );
-    let hash = sha256(filled_yaml.as_bytes());
-    assert!(
-        hash.len() == 32,
-        "Docker compose hash must be 32 bytes long"
-    );
-
-    let mut hash_arr = [0u8; 32];
-    hash_arr.copy_from_slice(&hash);
-
-    LauncherDockerComposeHash::from(hash_arr)
+    LauncherDockerComposeHash::from(sha256_array(filled_yaml))
 }
 
 #[cfg(test)]

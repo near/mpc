@@ -15,7 +15,7 @@ use near_mpc_contract_interface::types::{
     CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
-    AccountId, env,
+    AccountId, env, require,
     store::{IterableMap, Lazy, LookupMap},
 };
 use std::collections::BTreeSet;
@@ -102,9 +102,10 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
-        if !matches!(old.protocol_state, ProtocolContractState::Running(_)) {
-            env::panic_str("Contract must be in running state when migrating.");
-        }
+        require!(
+            matches!(old.protocol_state, ProtocolContractState::Running(_)),
+            "Contract must be in running state when migrating."
+        );
         old.node_foreign_chain_support.clear_storage();
 
         crate::MpcContract {

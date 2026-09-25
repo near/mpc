@@ -18,7 +18,7 @@ use crate::update::ProposedUpdates;
 use crate::{MpcContract, MpcContractExt, v3_15_1_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
-use near_sdk::{AccountId, env, log, near};
+use near_sdk::{AccountId, env, log, near, state::ContractState};
 
 #[near]
 impl MpcContract {
@@ -210,7 +210,7 @@ impl MpcContract {
 }
 
 fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
-    env::storage_read(b"STATE")
+    env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
 }
