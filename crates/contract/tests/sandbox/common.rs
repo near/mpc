@@ -36,7 +36,7 @@ use near_mpc_contract_interface::types::{
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
     SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
     SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
-    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, UpdateId,
+    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, Update, UpdateHash, UpdateId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -389,7 +389,6 @@ pub async fn propose_and_vote_contract_binary(
         "Code hash post upgrade is not matching the proposed binary."
     );
 }
-
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
@@ -411,6 +410,55 @@ pub async fn vote_update_till_completion(
         }
     }
     panic!("Update didn't occurred")
+}
+
+pub async fn vote_and_submit_contract_binary(
+    accounts: &[Account],
+    contract: &Contract,
+    new_contract_binary: &[u8],
+) {
+    let update = Update::Code(new_contract_binary.to_vec());
+    vote_update_till_approved(contract, accounts, near_mpc_sdk::update::hash(&update)).await;
+
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await
+        .expect("submit update call succeeds");
+    assert!(
+        execution.failures().is_empty(),
+        "submit update failed: {execution:#?}"
+    );
+
+    let contract_binary_post_upgrade = contract.view_code().await.unwrap();
+    assert_eq!(
+        hash(new_contract_binary),
+        hash(&contract_binary_post_upgrade),
+        "Code hash post upgrade is not matching the submitted binary."
+    );
+}
+
+pub async fn vote_update_till_approved(
+    contract: &Contract,
+    accounts: &[Account],
+    update_hash: UpdateHash,
+) {
+    for voter in accounts {
+        let execution = voter
+            .call_mpc(contract.id())
+            .vote_contract_update(update_hash.clone())
+            .await
+            .unwrap();
+
+        dbg!(&execution);
+
+        let approved: bool = execution.json().expect("Vote cast was unsuccessful");
+
+        if approved {
+            return;
+        }
+    }
+    panic!("update hash was not approved")
 }
 
 /// Returns the [`dtos::Ed25519PublicKey`] corresponding to the [`Account`]'s
