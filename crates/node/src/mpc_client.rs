@@ -1,4 +1,4 @@
-use crate::assets::metrics::ASSET_METRICS_REPORTING_INTERVAL;
+use crate::assets::metrics::{ASSET_METRICS_REPORTING_INTERVAL, ClearOwnedAssetGaugesOnDrop};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -166,6 +166,7 @@ impl MpcClient {
             let ecdsa = self.ecdsa_signature_provider.clone();
             let robust_ecdsa = self.robust_ecdsa_signature_provider.clone();
             async move {
+                let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
                 loop {
                     ecdsa.report_asset_metrics();
                     robust_ecdsa.report_asset_metrics();

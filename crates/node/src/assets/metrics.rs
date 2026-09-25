@@ -5,8 +5,7 @@
 
 use crate::assets::DistributedAssetStorage;
 use crate::metrics;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -43,6 +42,23 @@ pub static PRESIGNATURE_GAUGES: OwnedAssetGauges = OwnedAssetGauges {
     online: &metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE,
     offline: &metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT,
 };
+
+impl OwnedAssetGauges {
+    fn reset(&self) {
+        self.available.reset();
+        self.online.reset();
+        self.offline.reset();
+    }
+}
+
+pub struct ClearOwnedAssetGaugesOnDrop;
+
+impl Drop for ClearOwnedAssetGaugesOnDrop {
+    fn drop(&mut self) {
+        TRIPLE_GAUGES.reset();
+        PRESIGNATURE_GAUGES.reset();
+    }
+}
 
 fn to_gauge_value(count: usize) -> i64 {
     i64::try_from(count).unwrap_or(i64::MAX)
@@ -83,6 +99,8 @@ mod tests {
     use crate::db::DBCol;
     use crate::primitives::ParticipantId;
     use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
+    use prometheus::core::Collector;
+    use serial_test::serial;
     use std::sync::{Arc, Mutex};
 
     fn counts(available: usize, online: usize, offline: usize) -> OwnedAssetCounts {
@@ -91,6 +109,14 @@ mod tests {
             online,
             offline,
         }
+    }
+
+    fn series_count(gauges: &OwnedAssetGauges) -> usize {
+        [gauges.available, gauges.online, gauges.offline]
+            .iter()
+            .flat_map(|gauge| gauge.collect())
+            .map(|family| family.get_metric().len())
+            .sum()
     }
 
     fn read(gauges: &OwnedAssetGauges, label: &str) -> OwnedAssetCounts {
@@ -103,6 +129,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(asset_gauges)]
     #[expect(non_snake_case)]
     fn set_owned_asset_gauges__should_keep_series_apart_by_label() {
         // Given, When
@@ -119,6 +146,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(asset_gauges)]
     #[expect(non_snake_case)]
     fn set_owned_asset_gauges__should_overwrite_previous_values() {
         // Given
@@ -134,6 +162,7 @@ mod tests {
         );
     }
     #[tokio::test]
+    #[serial(asset_gauges)]
     #[expect(non_snake_case)]
     async fn report_store__should_follow_the_store_after_take_owned() {
         // Given
@@ -152,5 +181,21 @@ mod tests {
 
         // Then
         assert_eq!(read(&PRESIGNATURE_GAUGES, "test-take-owned").available, 1);
+    }
+    #[test]
+    #[serial(asset_gauges)]
+    #[expect(non_snake_case)]
+    fn clear_owned_asset_gauges_on_drop__should_remove_every_series() {
+        // Given: a reported store, and the guard the reporter task holds.
+        let guard = ClearOwnedAssetGaugesOnDrop;
+        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-cleared", counts(3, 2, 1));
+        assert_eq!(series_count(&TRIPLE_GAUGES), 3);
+
+        // When: the reporter task ends with its job.
+        drop(guard);
+
+        // Then: no series is left behind for a store that no longer exists.
+        assert_eq!(series_count(&TRIPLE_GAUGES), 0);
+        assert_eq!(series_count(&PRESIGNATURE_GAUGES), 0);
     }
 }
