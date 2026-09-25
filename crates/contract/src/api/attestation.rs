@@ -14,12 +14,23 @@ use crate::tee::tee_state::{
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos};
-use near_sdk::{AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
+use near_sdk::{
+    AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, ext_contract, log, near,
+};
 use std::collections::BTreeMap;
 use std::time::Duration;
-use tee_verifier_interface::{VerificationResult, VerifiedReport};
+use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifiedReport};
+
+#[ext_contract(ext_tee_verifier)]
+pub trait TeeVerifier {
+    #[result_serializer(borsh)]
+    fn verify_quote(
+        &self,
+        #[serializer(borsh)] quote: QuoteBytes,
+        #[serializer(borsh)] collateral: Collateral,
+    ) -> VerificationResult;
+}
 
 #[near]
 impl MpcContract {
@@ -234,14 +245,10 @@ impl MpcContract {
         node_id: NodeId,
         attestation: DstackAttestation,
     ) -> Promise {
-        Promise::new(self.tee_verifier_account_id.clone())
-            .function_call(
-                method_names::VERIFY_QUOTE.to_string(),
-                borsh::to_vec(&(&attestation.quote, &attestation.collateral))
-                    .expect("borsh serialization of verify_quote args must succeed"),
-                NearToken::from_near(0),
-                Gas::from_tgas(self.config.verifier_tera_gas),
-            )
+        ext_tee_verifier::ext(self.tee_verifier_account_id.clone())
+            .with_static_gas(Gas::from_tgas(self.config.verifier_tera_gas))
+            .with_unused_gas_weight(0)
+            .verify_quote(attestation.quote, attestation.collateral)
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
