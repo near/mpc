@@ -279,10 +279,6 @@ pub enum DomainError {
         participants: u64,
     },
     #[error(
-        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the Robust ECDSA bound."
-    )]
-    ReconstructionThresholdOverflow { reconstruction_threshold: u64 },
-    #[error(
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]
     UnknownDomainInProposal { domain_id: DomainId },

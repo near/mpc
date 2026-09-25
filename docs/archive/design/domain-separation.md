@@ -1,9 +1,11 @@
 # Domain Separation: Protocol & Governance Configuration Design
 
+**Status:** ARCHIVED
+
 > **Status: implemented. One premise has since changed.** The domain separation design
 > described here is in place and remains accurate. Robust ECDSA (`RobustEcdsa`), which
 > motivated it, has since had its implementation removed and replaced by an insecure
-> stub — see [`crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md`](../../crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md).
+> stub — see [`crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md`](../../../crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md).
 > TODO(#4383): replace the stub with a real robust scheme.
 > The protocol variant, its honest-majority `2t - 1` threshold rule and the routing
 > described below all still exist, but no production domain uses them. Statements below
