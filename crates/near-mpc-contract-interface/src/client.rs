@@ -69,6 +69,7 @@ pub const VOTE_MPC_NODE_MANIFEST_DIGEST_GAS: NearGas = NearGas::from_tgas(300);
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
 // TODO(#4513): drop once production runs the vote-then-submit API.
+#[deprecated(note = "gas for the id-based `vote_update` of `3.15.1`")]
 pub const VOTE_UPDATE_GAS: NearGas = NearGas::from_tgas(260);
 // TODO(#166): not benchmarked.
 pub const VOTE_CONTRACT_UPDATE_GAS: NearGas = NearGas::from_tgas(22);
@@ -163,6 +164,9 @@ impl<C: CallContract> MpcContractHandle<C> {
     }
 
     // TODO(#4513): drop once production runs the vote-then-submit API.
+    #[deprecated(
+        note = "contract-update API of `3.15.1`; current contracts take `submit_contract_update`"
+    )]
     pub async fn propose_update(
         &self,
         args: ProposeUpdateArgs,
@@ -183,11 +187,15 @@ impl<C: CallContract> MpcContractHandle<C> {
     }
 
     // TODO(#4513): drop once production runs the vote-then-submit API.
+    #[deprecated(
+        note = "contract-update API of `3.15.1`; current contracts take `vote_contract_update`"
+    )]
     pub async fn vote_update(
         &self,
         id: UpdateId,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
+        #[expect(deprecated)]
         self.call(FunctionCallArgs::no_deposit(
             VOTE_UPDATE,
             args,
@@ -250,6 +258,7 @@ impl<C: CallContract> MpcContractHandle<C> {
     }
 
     // TODO(#4513): drop once production runs the vote-then-submit API.
+    #[deprecated(note = "contract-update API of `3.15.1`; current contracts store no proposals")]
     pub async fn remove_update_proposal(
         &self,
         id: UpdateId,
@@ -682,6 +691,7 @@ mod tests {
             })
             .await
             .unwrap();
+        #[expect(deprecated)]
         handle
             .propose_update(ProposeUpdateArgs {
                 code: Some(vec![7u8; 4]),
@@ -689,6 +699,7 @@ mod tests {
             })
             .await
             .unwrap();
+        #[expect(deprecated)]
         handle.vote_update(UpdateId(7)).await.unwrap();
         handle
             .submit_contract_update(Update::Code(vec![7u8; 4]))
@@ -703,6 +714,7 @@ mod tests {
             .remove_non_participant_contract_update_votes()
             .await
             .unwrap();
+        #[expect(deprecated)]
         handle.remove_update_proposal(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {

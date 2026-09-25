@@ -3,7 +3,7 @@ use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_accoun
 use crate::caller::{CallMpcContract, Verbosity, WithVerbosity};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
-    MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
+    MpcSubmitUpdateCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
     MpcVoteNewParametersCmd, MpcVoteUpdateCmd, NewMpcNetworkCmd, RemoveContractCmd,
     UpdateMpcNetworkCmd,
 };
@@ -25,9 +25,10 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, ParticipantId,
-    ParticipantInfo, Participants, ProposeUpdateArgs, ProposedGovernanceThresholdParameters,
-    Protocol, ProtocolContractState, ReconstructionThreshold, UpdateId, protocol_state_to_string,
+    ParticipantInfo, Participants, ProposedGovernanceThresholdParameters, Protocol,
+    ProtocolContractState, ReconstructionThreshold, Update, protocol_state_to_string,
 };
+use near_mpc_sdk::update::hash;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use node_types::http_server::StaticWebData;
@@ -460,9 +461,9 @@ fn get_voter_account_ids<'a>(
         .collect::<Vec<_>>()
 }
 
-impl MpcProposeUpdateContractCmd {
+impl MpcSubmitUpdateCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to propose update contract for MPC network {}", name);
+        println!("Going to submit contract update for MPC network {}", name);
         let funding_account = resolve_funding_account(&config);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
@@ -474,49 +475,34 @@ impl MpcProposeUpdateContractCmd {
             .clone()
             .expect("Contract is not deployed");
         let contract_code = std::fs::read(&self.path).unwrap();
-        let proposer_account_id = &mpc_setup.participants[self.proposer_index];
+        let submitter_account_id = &mpc_setup.participants[self.submitter_index];
 
-        // Fund the proposer account with additional tokens first to cover the additional deposit.
+        // Fund the submitter account with additional tokens first to cover the deposit.
         let account_to_fund = AccountToFund::from_existing(
-            proposer_account_id.clone(),
+            submitter_account_id.clone(),
             mpc_setup.desired_balance_per_account + self.deposit_near * ONE_NEAR,
         );
         fund_accounts(&mut setup.accounts, vec![account_to_fund], funding_account).await;
-        let proposer = setup.accounts.account(proposer_account_id);
+        let submitter = setup.accounts.account(submitter_account_id);
 
-        let result = proposer
+        submitter
             .call_mpc(&contract)
             .with_verbosity(Verbosity::Quiet)
-            .propose_update(ProposeUpdateArgs {
-                code: Some(contract_code),
-                config: None,
-            })
+            .submit_contract_update(Update::Code(contract_code))
             .await
             .into_return_value()
-            .expect("Failed to propose update");
-        let update_id: UpdateId = serde_json::from_slice(&result).expect(&format!(
-            "Failed to deserialize result: {}",
-            String::from_utf8_lossy(&result)
-        ));
-        println!("Proposed update with ID {}", update_id.0);
-        println!("Run the following command to vote for the update:");
-        let self_exe = std::env::current_exe()
-            .expect("Failed to get current executable path")
-            .to_str()
-            .expect("Failed to convert path to string")
-            .to_string();
-        println!(
-            "{} mpc {} vote-update --update-id={}",
-            self_exe, name, update_id.0
-        );
+            .expect("Failed to submit update");
+        println!("Submitted the update; the contract migrates in a follow-up receipt.");
     }
 }
 
 impl MpcVoteUpdateCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
+        let contract_code = std::fs::read(&self.path).unwrap();
+        let update_hash = hash(&Update::Code(contract_code));
         println!(
-            "Going to vote update contract for MPC network {} with update ID {}",
-            name, self.update_id
+            "Going to vote for contract update {:?} for MPC network {}",
+            update_hash, name
         );
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
@@ -532,22 +518,37 @@ impl MpcVoteUpdateCmd {
         let mut futs = Vec::new();
         for account_id in from_accounts {
             let handle = setup.accounts.account(account_id).call_mpc(&contract);
-            futs.push(async move { handle.vote_update(UpdateId(self.update_id)).await });
+            let update_hash = update_hash.clone();
+            futs.push(async move { handle.vote_contract_update(update_hash).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
             match result.into_return_value() {
-                Ok(_) => {
-                    println!("Participant {} vote_update({}) succeed", i, self.update_id);
+                Ok(result) => {
+                    let approved: bool = serde_json::from_slice(&result).expect(&format!(
+                        "Failed to deserialize result: {}",
+                        String::from_utf8_lossy(&result)
+                    ));
+                    println!(
+                        "Participant {} vote_contract_update succeeded; update approved: {}",
+                        i, approved
+                    );
                 }
                 Err(err) => {
-                    println!(
-                        "Participant {} vote_update({}) failed: {:?}",
-                        i, self.update_id, err
-                    );
+                    println!("Participant {} vote_contract_update failed: {:?}", i, err);
                 }
             }
         }
+        println!("Once the update is approved, run the following command to submit it:");
+        let self_exe = std::env::current_exe()
+            .expect("Failed to get current executable path")
+            .to_str()
+            .expect("Failed to convert path to string")
+            .to_string();
+        println!(
+            "{} mpc {} submit-update --path={}",
+            self_exe, name, self.path
+        );
     }
 }
 
