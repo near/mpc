@@ -296,6 +296,7 @@ expression: abi
       },
       {
         "name": "get_attestation",
+        "doc": " The attestation stored under `tls_public_key`, with the block time at which the contract\n accepted it.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -313,7 +314,7 @@ expression: abi
           "type_schema": {
             "anyOf": [
               {
-                "$ref": "#/definitions/VerifiedAttestation"
+                "$ref": "#/definitions/StoredAttestation"
               },
               {
                 "type": "null"
@@ -5021,6 +5022,27 @@ expression: abi
         },
         "StarknetTxId": {
           "$ref": "#/definitions/StarknetFelt"
+        },
+        "StoredAttestation": {
+          "description": "An attestation as the contract stores it.",
+          "type": "object",
+          "required": [
+            "attestation"
+          ],
+          "properties": {
+            "attestation": {
+              "$ref": "#/definitions/VerifiedAttestation"
+            },
+            "attested_at_seconds": {
+              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it, including a resubmission of an identical attestation, so a submitter can tell whether its own submission landed.\n\n`None` for an entry stored before the contract recorded this, which no submission has replaced yet.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
         },
         "SuiExtractor": {
           "oneOf": [
