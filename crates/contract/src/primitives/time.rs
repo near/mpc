@@ -21,6 +21,12 @@ impl Timestamp {
         }
     }
 
+    pub(crate) fn from_secs(secs: u64) -> Self {
+        Self {
+            duration_since_unix_epoch: Duration::from_secs(secs),
+        }
+    }
+
     pub(crate) fn checked_add(self, duration: Duration) -> Option<Self> {
         let current_time_stamp = self.duration_since_unix_epoch;
         let new_time_stamp = current_time_stamp.checked_add(duration)?;

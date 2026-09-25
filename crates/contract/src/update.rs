@@ -77,7 +77,7 @@ impl TryFrom<ProposeUpdateArgs> for Update {
         let ProposeUpdateArgs { code, config } = value;
         let update = match (code, config) {
             (Some(contract), None) => Update::Contract(contract),
-            (None, Some(config)) => Update::Config(config.try_into()?),
+            (None, Some(config)) => Update::Config(config.into()),
             (Some(_), Some(_)) => {
                 return Err(ConversionError::DataConversion {
                     reason: "Code and config updates are not allowed at the same time".into(),
@@ -307,29 +307,6 @@ mod tests {
         id: u64,
         votes: BTreeMap<AccountId, u64>,
         entries: BTreeMap<u64, UpdateEntry>,
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn update_try_from__should_reject_invalid_config_at_propose_time() {
-        // Given a proposed config whose launcher TTL is below the attestation validity window.
-        let mut config = dummy_config(1);
-        config.launcher_hash_unused_ttl_seconds = 0;
-        let args = near_mpc_contract_interface::types::ProposeUpdateArgs {
-            code: None,
-            config: Some(config),
-        };
-
-        // When it is converted into an `Update`.
-        let result = Update::try_from(args);
-
-        // Then it is rejected up front, so `do_update` never clears proposals for a config
-        // that would panic at apply time.
-        let err = result.expect_err("invalid config must be rejected at propose time");
-        assert!(
-            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
-            "error should point at the invalid field, got: {err:?}"
-        );
     }
 
     #[test]
@@ -643,7 +620,7 @@ mod tests {
         let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
-        let update_2 = Update::Config(dummy_config(1).try_into().unwrap());
+        let update_2 = Update::Config(dummy_config(1).into());
         let update_id_2 = proposed_updates.propose(update_2.clone());
 
         let account_0 = gen_account_id();
@@ -737,7 +714,7 @@ mod tests {
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
-        let update_2 = Update::Config(dummy_config(2).try_into().unwrap());
+        let update_2 = Update::Config(dummy_config(2).into());
         let update_id_2 = proposed_updates.propose(update_2.clone());
         assert_eq!(update_id_2.0, 2);
 

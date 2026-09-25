@@ -3,6 +3,7 @@ use crate::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
         participants::Participants,
         proposal_hash::ToProposalHash,
+        time::Timestamp,
         votes::{VoterSet, Votes},
     },
     storage_keys::StorageKey,
@@ -379,8 +380,8 @@ impl TeeState {
         self.allowed_launcher_images.all_compose_hashes()
     }
 
-    /// Refreshes the `expires_at` timestamp of the launcher image referenced by the stored
-    /// attestation for `tls_public_key`, extending it to `now + ttl`. The
+    /// Extends the `expires_at` timestamp of the launcher image referenced by the stored
+    /// attestation for `tls_public_key` to at least `now + ttl` and the attestation's expiry. The
     /// [`AuthenticatedParticipantId`] is an unused capability token — requiring it means only
     /// a current participant can refresh.
     pub(crate) fn refresh_launcher_usage(
@@ -395,8 +396,12 @@ impl TeeState {
         if let Some(launcher_compose_hash) =
             attestation.verified_attestation.launcher_compose_hash()
         {
+            let attestation_expiry = attestation
+                .verified_attestation
+                .expiry_timestamp_seconds()
+                .map(Timestamp::from_secs);
             self.allowed_launcher_images
-                .refresh(&launcher_compose_hash, ttl);
+                .refresh(&launcher_compose_hash, ttl, attestation_expiry);
         }
     }
 
@@ -1381,6 +1386,56 @@ mod tests {
     }
 
     #[test]
+    fn reverify_and_cleanup_participants__should_keep_launcher_of_valid_attestation() {
+        // Given
+        const TTL: Duration = Duration::from_secs(100);
+        const NANOS_PER_SECOND: u64 = 1_000_000_000;
+        let participants = gen_participants(1);
+        let (account_id, _, participant_info) = participants.participants()[0].clone();
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .block_timestamp(10 * NANOS_PER_SECOND)
+                .build()
+        );
+        let authenticated = AuthenticatedParticipantId::new(&participants).unwrap();
+
+        let mut tee_state = TeeState::default();
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let adopted = LauncherImageHash::from([1u8; 32]);
+        let unused = LauncherImageHash::from([2u8; 32]);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(adopted, &[mpc_hash], TTL);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(unused, &[mpc_hash], TTL);
+
+        let node_id = create_node_id(&account_id, &participant_info.tls_public_key);
+        let mock = MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: Some(crate::tee::proposal::get_docker_compose_hash(
+                &adopted, &mpc_hash,
+            )),
+            expiry_timestamp_seconds: Some(1_000),
+            expected_measurements: None,
+        };
+        tee_state
+            .verify_and_store_mock(node_id.clone(), mock, Duration::MAX)
+            .unwrap();
+        tee_state.refresh_launcher_usage(&node_id.tls_public_key, &authenticated, TTL);
+
+        // When
+        set_block_timestamp(500 * NANOS_PER_SECOND);
+        let validation_result =
+            tee_state.reverify_and_cleanup_participants(&participants, Duration::MAX);
+
+        // Then
+        assert_matches!(validation_result, TeeValidationResult::Full);
+        assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![adopted]);
+    }
+
+    #[test]
     fn validate_tee_returns_partial_when_participant_has_no_attestation() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
@@ -1813,7 +1868,7 @@ mod tests {
         let mock = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: Some(compose_1),
-            expiry_timestamp_seconds: Some(1_000_000),
+            expiry_timestamp_seconds: Some(100),
             expected_measurements: None,
         };
         tee_state

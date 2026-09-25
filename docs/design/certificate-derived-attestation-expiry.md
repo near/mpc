@@ -152,11 +152,17 @@ Without that rule, a node that attests once with 30 days of validity and then st
 on day 14 and is kicked with 16 days left. Effective validity becomes `min(certificate expiry, 14
 days since the last attestation)`, which turns launcher cleanup into a second attestation deadline.
 
-Fix: keep the TTL, but never evict a hash that a current participant's non-expired attestation still
-references. The TTL is then left retiring only hashes nobody adopted. This matches the existing
-refresh gate (`refresh_launcher_usage` requires `AuthenticatedParticipantId`) and is cheap, because
-`cleanup_expired()` already runs where the stored attestations are iterated. The rule that the list
-never empties stays.
+Fix ([#4516](https://github.com/near/mpc/issues/4516)): keep the TTL, but let each refresh extend
+the hash's expiry to at least the refreshing attestation's own expiry, and never move an expiry
+earlier. A hash then outlives every current participant's attestation that refreshed it, and the TTL
+is left retiring only hashes nobody adopted. Reads and cleanup both compare against the stored expiry,
+so neither needs a reference check. The refresh stays gated on `AuthenticatedParticipantId`, so a
+joining node's hash is protected only from its first submission as a participant, which the hourly
+resubmission makes at most an hour after it joins. The rule that the list never empties stays.
+
+*Considered: a reference check at cleanup. Not enough on its own: the allowed-set reads already skip
+expired entries, so `re_verify` would reject a hash that cleanup kept. Guarding the reads too would
+mean passing the participant set into every one of them.*
 
 *Considered: dropping the TTL and evicting purely on references. Simpler config, but a newly
 voted-in hash has no references until nodes adopt it, so it would need its own grace period.*
@@ -245,5 +251,3 @@ needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` descript
 - **How much gas does `claims()` add?** Measure, then choose between re-balancing against
   `resolve_verification` and the lean fallback.
 - **How early should a node refuse to submit collateral** (item 4)? Needs a number.
-- **Whose attestation protects a launcher hash** (item 2)? Current participants only, matching the
-  existing refresh gate, leaves a joining node's hash unprotected during resharing.
