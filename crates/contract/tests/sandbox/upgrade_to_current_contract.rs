@@ -271,6 +271,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    // TODO(#4513): call [`vote_and_submit_contract_binary`] instead
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;

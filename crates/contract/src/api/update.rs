@@ -349,7 +349,8 @@ mod tests {
         gen_running_state_with_params,
     };
     use assert_matches::assert_matches;
-    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::mock::MockAction;
+    use near_sdk::test_utils::{VMContextBuilder, get_created_receipts};
     use near_sdk::{AccountId, env, testing_env};
     use rand::SeedableRng;
     use rand::seq::SliceRandom;
@@ -1025,6 +1026,36 @@ mod tests {
 
         // When
         let _ = contract.submit_contract_update(code_update());
+    }
+
+    #[rstest]
+    fn submit_contract_update__should_attach_the_configured_upgrade_gas(
+        #[values(code_update(), config_update())] update: dtos::Update,
+    ) {
+        // Given
+        let mut env = Environment::new(None, None, None);
+        let (mut contract, participants) = contract_with_participants(running_state());
+        approve(&mut env, &mut contract, &participants, &update);
+        let configured_tera_gas = match &update {
+            dtos::Update::Code(_) => contract.config.contract_upgrade_deposit_tera_gas,
+            dtos::Update::Config(config) => config.contract_upgrade_deposit_tera_gas,
+        };
+
+        // When
+        env.set_signer(&participants[0]);
+        env.set_deposit(submit_deposit());
+        contract.submit_contract_update(update).unwrap();
+
+        // Then
+        let attached_gas: Vec<Gas> = get_created_receipts()
+            .iter()
+            .flat_map(|receipt| receipt.actions.iter())
+            .filter_map(|action| match action {
+                MockAction::FunctionCallWeight { prepaid_gas, .. } => Some(*prepaid_gas),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(attached_gas, vec![Gas::from_tgas(configured_tera_gas)]);
     }
 
     #[rstest]
