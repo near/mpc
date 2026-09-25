@@ -105,15 +105,13 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn set_owned_asset_gauges__should_keep_series_apart_by_label() {
-        // Given: two stores of each asset type. Labels are unique to this test
-        // so other tests cannot interfere through the global gauges.
-        // When
+        // Given, When
         set_owned_asset_gauges(&TRIPLE_GAUGES, "test-t2", counts(10, 7, 2));
         set_owned_asset_gauges(&TRIPLE_GAUGES, "test-t3", counts(5, 1, 3));
         set_owned_asset_gauges(&PRESIGNATURE_GAUGES, "test-d0", counts(20, 20, 0));
         set_owned_asset_gauges(&PRESIGNATURE_GAUGES, "test-d1", counts(4, 0, 1));
 
-        // Then: every store's counts sit under its own label.
+        // Then
         assert_eq!(read(&TRIPLE_GAUGES, "test-t2"), counts(10, 7, 2));
         assert_eq!(read(&TRIPLE_GAUGES, "test-t3"), counts(5, 1, 3));
         assert_eq!(read(&PRESIGNATURE_GAUGES, "test-d0"), counts(20, 20, 0));
@@ -123,13 +121,13 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn set_owned_asset_gauges__should_overwrite_previous_values() {
-        // Given: a series reported once.
+        // Given
         set_owned_asset_gauges(&PRESIGNATURE_GAUGES, "test-overwrite", counts(42, 40, 2));
 
-        // When: the store has drained.
+        // When
         set_owned_asset_gauges(&PRESIGNATURE_GAUGES, "test-overwrite", counts(0, 0, 0));
 
-        // Then: the gauges follow the store rather than staying stale.
+        // Then
         assert_eq!(
             read(&PRESIGNATURE_GAUGES, "test-overwrite"),
             counts(0, 0, 0)
@@ -138,8 +136,7 @@ mod tests {
     #[tokio::test]
     #[expect(non_snake_case)]
     async fn report_store__should_follow_the_store_after_take_owned() {
-        // Given: a store holding two owned presignatures whose participants
-        // are all alive, reported once.
+        // Given
         let participants: Vec<ParticipantId> = (0..3).map(ParticipantId::from_raw).collect();
         let ctx = TestContext::new(participants[0], Arc::new(Mutex::new(participants.clone())));
         let store = ctx.new_store::<PresignOutputWithParticipants>(DBCol::Presignature, Vec::new());
@@ -149,11 +146,11 @@ mod tests {
         report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store);
         assert_eq!(read(&PRESIGNATURE_GAUGES, "test-take-owned").available, 2);
 
-        // When: the signature path consumes one and the reporter samples again.
+        // When
         store.take_owned().await;
         report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store);
 
-        // Then: the gauge dropped with the store (the #2356 regression).
+        // Then
         assert_eq!(read(&PRESIGNATURE_GAUGES, "test-take-owned").available, 1);
     }
 }
