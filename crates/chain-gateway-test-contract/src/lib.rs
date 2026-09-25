@@ -3,7 +3,7 @@ pub mod consts;
 
 use consts::{DEFAULT_VALUE, PRIVATE_SET_ARGS_GAS, SET_VALUE_IN_PROMISE_GAS};
 
-use near_sdk::{Promise, env::log_str, near};
+use near_sdk::{Promise, log, near};
 
 #[derive(Debug)]
 #[near(contract_state)]
@@ -26,7 +26,7 @@ impl Contract {
     }
 
     pub fn set_value(&mut self, value: String) {
-        log_str(&format!("Setting value to: {value}"));
+        log!("Setting value to: {value}");
         self.stored_value = value;
     }
 

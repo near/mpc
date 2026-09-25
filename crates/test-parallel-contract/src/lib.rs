@@ -2,7 +2,7 @@ use elliptic_curve::group::Group;
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainId, Payload, SignRequestArgs,
 };
-use near_sdk::{AccountId, Gas, NearToken, Promise, env, ext_contract, near};
+use near_sdk::{AccountId, Gas, NearToken, Promise, env, ext_contract, log, near};
 use std::collections::BTreeMap;
 
 #[ext_contract(ext_mpc_contract)]
@@ -160,10 +160,10 @@ impl TestContract {
     #[private]
     pub fn handle_results(&self) -> u64 {
         let num_calls = env::promise_results_count();
-        env::log_str(format!("{num_calls} parallel calls completed!").as_str());
+        log!("{num_calls} parallel calls completed!");
         for i in 0..num_calls {
             let result = env::promise_result_checked(i, 500);
-            env::log_str(&format!("sign #{i}: {:?}", result));
+            log!("sign #{i}: {:?}", result);
             assert_matches::assert_matches!(result, Ok(_));
         }
         num_calls
@@ -190,13 +190,8 @@ fn ckd_promise(target_contract: &AccountId, request: CKDRequestArgs) -> Promise 
 /// the resolution callback, and returns the resulting promise. `handle_results`
 /// observes every child's resolution and panics if any of them failed, so a parent
 /// transaction that completes with `Ok` is proof that every queued call resolved.
-fn join_with_handle_results(mut promises: Vec<Promise>) -> Promise {
-    promises.reverse();
-    let mut combined_promise = promises.pop().unwrap();
-    while !promises.is_empty() {
-        combined_promise = combined_promise.and(promises.pop().unwrap());
-    }
-    combined_promise.then(
+fn join_with_handle_results(promises: Vec<Promise>) -> Promise {
+    promises.into_iter().reduce(Promise::and).unwrap().then(
         TestContract::ext_self()
             .with_static_gas(Gas::from_tgas(HANDLE_RESULTS_TGAS))
             .with_unused_gas_weight(0)

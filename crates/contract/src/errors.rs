@@ -5,7 +5,7 @@ use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
-use near_sdk::FunctionError;
+use near_sdk::{FunctionError, PublicKey};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NodeMigrationError {
@@ -15,8 +15,8 @@ pub enum NodeMigrationError {
         "The transaction was submitted by a different public key than expected. Found: {found:?}, expected: {expected:?}"
     )]
     AccountPublicKeyMismatch {
-        found: near_sdk::PublicKey,
-        expected: near_sdk::PublicKey,
+        found: PublicKey,
+        expected: PublicKey,
     },
     #[error(
         "The submitted keyset differs from the expected keyset. Found: {found:?}, expected: {expected:?}"

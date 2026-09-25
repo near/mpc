@@ -17,7 +17,7 @@ use near_mpc_contract_interface::deposits::{
 };
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, UpdateHash};
 use near_sdk::{
-    Gas, NearToken, Promise, env, near,
+    Gas, NearToken, Promise, env, log, near,
     serde::{Deserialize, Serialize},
     store::IterableMap,
 };
@@ -159,7 +159,7 @@ impl ProposedUpdates {
         self.remove_vote(&voter);
 
         if !self.entries.contains_key(id) {
-            env::log_str(&format!("no update with id {:?} exists", id));
+            log!("no update with id {:?} exists", id);
             return None;
         };
 
@@ -192,14 +192,13 @@ impl ProposedUpdates {
         self.entries.clear();
         self.vote_by_participant.clear();
 
-        let mut promise = Promise::new(env::current_account_id());
-        match entry.update {
+        let promise = match entry.update {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
-                promise = MpcContract::ext_on(promise.deploy_contract(code))
+                MpcContract::ext_on(Promise::new(env::current_account_id()).deploy_contract(code))
                     .with_static_gas(gas)
                     .with_unused_gas_weight(0)
-                    .migrate();
+                    .migrate()
             }
             Update::Config(config) => {
                 // If we vote for a new config, we should use
@@ -207,12 +206,12 @@ impl ProposedUpdates {
                 // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
                 let dto_config = config.into_dto_type();
-                promise = MpcContract::ext_on(promise)
+                MpcContract::ext_self()
                     .with_static_gas(new_config_gas_value)
                     .with_unused_gas_weight(0)
-                    .update_config(dto_config);
+                    .update_config(dto_config)
             }
-        }
+        };
         Some(promise)
     }
 
