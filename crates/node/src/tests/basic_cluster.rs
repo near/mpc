@@ -15,6 +15,7 @@ use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_time::Clock;
+use prometheus::core::Collector;
 
 const NUM_PARTICIPANTS: usize = 4;
 const GOVERNANCE_THRESHOLD: usize = 3;
@@ -26,9 +27,18 @@ fn signatures_led(mode: &str) -> u64 {
         .get()
 }
 
-async fn wait_until_positive(gauge: &prometheus::IntGauge, what: &str) {
+fn gauge_total(gauge: &prometheus::IntGaugeVec) -> i64 {
+    gauge
+        .collect()
+        .iter()
+        .flat_map(|family| family.get_metric())
+        .map(|metric| metric.get_gauge().get_value() as i64)
+        .sum()
+}
+
+async fn wait_until_positive(gauge: &prometheus::IntGaugeVec, what: &str) {
     tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
-        while gauge.get() == 0 {
+        while gauge_total(gauge) == 0 {
             tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
         }
     })
@@ -103,6 +113,7 @@ async fn test_basic_cluster() {
         .expect("timeout waiting for keygen to complete");
 
     wait_until_positive(&MPC_OWNED_NUM_TRIPLES_AVAILABLE, "triples").await;
+    wait_until_positive(&MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, "presignatures").await;
     let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
     assert!(
         request_signature_and_await_response(

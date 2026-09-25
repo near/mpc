@@ -116,8 +116,9 @@ impl MpcNode {
     }
 
     /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
-    /// the named metric, parsed as `i64`. Returns `None` if the metric is not
-    /// found or the node is unreachable.
+    /// the named metric, parsed as `i64`. A labelled metric has one line per
+    /// series; their values are summed, so callers get the per-node total.
+    /// Returns `None` if the metric is not found or the node is unreachable.
     pub async fn get_metric(&self, name: &str) -> anyhow::Result<Option<i64>> {
         let url = format!("http://{}/metrics", self.web_address());
         let body = match reqwest::get(&url).await {
@@ -125,6 +126,7 @@ impl MpcNode {
             Err(_) => return Ok(None),
         };
 
+        let mut total: Option<i64> = None;
         for line in body.lines() {
             if line.starts_with('#') {
                 continue;
@@ -134,11 +136,11 @@ impl MpcNode {
             if metric_key == name {
                 let value_str = line.rsplit_once(' ').map(|(_, v)| v).unwrap_or("0");
                 if let Ok(v) = value_str.parse::<f64>() {
-                    return Ok(Some(v as i64));
+                    total = Some(total.unwrap_or(0) + v as i64);
                 }
             }
         }
-        Ok(None)
+        Ok(total)
     }
 
     /// Writes a flag file that controls block ingestion. Requires the
