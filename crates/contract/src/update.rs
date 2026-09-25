@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::{
+    MpcContract,
     config::Config,
     dto_mapping::IntoInterfaceType,
     errors::{ConversionError, Error},
@@ -209,12 +210,10 @@ impl ProposedUpdates {
                 // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
                 let dto_config = config.into_dto_type();
-                promise = promise.function_call(
-                    method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&dto_config,)).unwrap(),
-                    NearToken::from_near(0),
-                    new_config_gas_value,
-                );
+                promise = MpcContract::ext_on(promise)
+                    .with_static_gas(new_config_gas_value)
+                    .with_unused_gas_weight(0)
+                    .update_config(dto_config);
             }
         }
         Some(promise)
