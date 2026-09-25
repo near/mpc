@@ -22,10 +22,14 @@ Triples  ──►  Presignatures  ──►  Signatures
 ```
 
 Each MPC signature requires one **presignature**, and each presignature
-requires a pair of **triples** (called a `PairedTriple`). Triple
-generation is the bottleneck: it involves heavy OT-based cryptographic
-computation. Presignature generation is significantly faster, and
-signature generation is fairly cheap.
+requires a pair of **triples** (called a `PairedTriple`). With
+`signature.online_presign` enabled (the default), a cait-sith leader
+skips the stored presignature and consumes a triple pair directly,
+presigning and signing in one computation, whenever it holds a pair
+whose participants are all alive and advertise the protocol version that
+introduced this flow. Triple generation is the bottleneck: it involves
+heavy OT-based cryptographic computation. Presignature generation is
+significantly faster, and signature generation is fairly cheap.
 
 ## Queue design
 
@@ -260,14 +264,21 @@ Source: `crates/node/src/providers/ecdsa/sign.rs`
 Unlike triples and presignatures, signatures are not pre-generated.
 When a signature request arrives:
 
-1. **Leader** calls `presignature_store.take_owned()` for the relevant
-   domain, consuming one presignature. Verify-foreign-tx leaders call
-   `take_owned_matching(supporters)` instead, so the borrowers can all
-   inspect the requested chain.
-2. Leader opens a network channel with the presignature's borrowers
-   and broadcasts the presignature ID along with the signature request.
-3. **Followers** call `presignature_store.take_unowned(id)` to retrieve
-   their share, then run the protocol.
+1. **Leader** picks the asset to consume. With `signature.online_presign`
+   enabled (the default), the leader calls
+   `triple_store.take_owned_matching(supporting)`, which hands out a pair
+   only if one is available right now whose participants are all alive
+   and advertise the protocol version that introduced this flow; that
+   consumes one triple pair and no presignature. Otherwise it calls
+   `presignature_store.take_owned()` for the relevant domain, consuming
+   one presignature. Verify-foreign-tx leaders always call
+   `presignature_store.take_owned_matching(supporters)`, so the
+   borrowers can all inspect the requested chain.
+2. Leader opens a network channel with the asset's borrowers and
+   broadcasts the asset ID along with the signature request.
+3. **Followers** call `take_unowned(id)` on the matching store to
+   retrieve their share, then run the protocol: presign-and-sign in one
+   computation for a triple pair, sign only for a presignature.
 4. The leader does **not** wait for all followers to confirm success
    (`leader_waits_for_success` returns `false`).
 

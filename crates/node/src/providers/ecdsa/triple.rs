@@ -15,7 +15,7 @@ use crate::providers::ecdsa_common::active_participants_query;
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::TripleConfig;
 use mpc_primitives::ReconstructionThreshold;
-use mpc_primitives::domain::Protocol;
+use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::DomainConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
@@ -353,14 +353,37 @@ pub fn participants_from_triples(
         .collect()
 }
 
+pub fn validate_paired_triple_request(
+    leader: ParticipantId,
+    paired_triple_id: UniqueId,
+    num_participants: usize,
+    reconstruction_threshold: usize,
+    bad_request_counter: &prometheus::IntCounterVec,
+    domain_id: DomainId,
+) -> anyhow::Result<()> {
+    paired_triple_id.validate_owned_by(leader)?;
+    if num_participants != reconstruction_threshold {
+        bad_request_counter
+            .with_label_values(&[&domain_id.to_string()])
+            .inc();
+        anyhow::bail!(
+            "CaitSith participant count ({num_participants}) does not match domain threshold \
+             t={reconstruction_threshold}",
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{
         ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleStorage,
-        caitsith_triple_thresholds,
+        caitsith_triple_thresholds, validate_paired_triple_request,
     };
     use crate::assets::test_utils::{make_triple, triple_v2_key};
     use crate::db::{DBCol, SecretDB};
+    use crate::metrics;
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::{new_test_client, run_test_clients};
     use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
@@ -371,6 +394,7 @@ mod tests {
     use futures::{FutureExt, StreamExt, stream};
     use mpc_primitives::domain::{DomainId, Protocol};
     use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+    use rstest::rstest;
     use std::collections::{BTreeSet, HashMap};
     use std::sync::Arc;
     use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
@@ -380,8 +404,38 @@ mod tests {
     const NUM_PARTICIPANTS: usize = 4;
     const RECONSTRUCTION_THRESHOLD: usize = 3;
     const PARALLELISM_PER_CLIENT: usize = 4;
+
     const TRIPLES_PER_BATCH: usize = 10;
     const BATCHES_TO_GENERATE_PER_CLIENT: usize = 10;
+
+    #[rstest]
+    #[case::owned_by_leader_with_t_participants(1, 1, 3, 3, true)]
+    #[case::owned_by_someone_else(2, 1, 3, 3, false)]
+    #[case::fewer_participants_than_threshold(1, 1, 2, 3, false)]
+    #[case::more_participants_than_threshold(1, 1, 4, 3, false)]
+    fn validate_paired_triple_request__should_accept_only_leader_owned_pair_with_t_participants(
+        #[case] owner: u32,
+        #[case] leader: u32,
+        #[case] num_participants: usize,
+        #[case] reconstruction_threshold: usize,
+        #[case] accepted: bool,
+    ) {
+        // Given
+        let paired_triple_id = UniqueId::new(ParticipantId::from_raw(owner), 1, 0);
+
+        // When
+        let result = validate_paired_triple_request(
+            ParticipantId::from_raw(leader),
+            paired_triple_id,
+            num_participants,
+            reconstruction_threshold,
+            &metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS,
+            DomainId(0),
+        );
+
+        // Then
+        assert_eq!(result.is_ok(), accepted, "{result:?}");
+    }
 
     fn domain(id: u64, protocol: Protocol, t: u64) -> DomainConfig {
         DomainConfig {

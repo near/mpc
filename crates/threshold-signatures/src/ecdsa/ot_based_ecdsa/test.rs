@@ -2,12 +2,13 @@ use super::{
     PresignArguments, PresignOutput, RerandomizedPresignOutput,
     presign::presign,
     sign::sign,
-    triples::{TriplePub, TripleShare, generate_triple_many, test::deal},
+    triples::{TriplePub, TripleShare, generate_triple_many},
 };
 use crate::test_utils::{
     GenOutput, GenProtocol, MockCryptoRng, assert_public_key_invariant,
-    check_one_coordinator_output, generate_participants, generate_participants_with_random_ids,
-    run_keygen, run_protocol, run_refresh, run_reshare, run_sign,
+    check_one_coordinator_output, deal_triple, generate_participants,
+    generate_participants_with_random_ids, run_keygen, run_protocol, run_refresh, run_reshare,
+    run_sign,
 };
 use crate::{Participant, ReconstructionThreshold, protocol::Protocol};
 
@@ -192,8 +193,8 @@ fn test_refresh() {
     let key_packages = run_refresh(&participants, &keys, threshold, &mut rng);
     let public_key = key_packages[0].1.public_key;
     assert_public_key_invariant(&key_packages);
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into()).unwrap();
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into()).unwrap();
+    let (pub0, shares0) = deal_triple(&mut rng, &participants, threshold.into()).unwrap();
+    let (pub1, shares1) = deal_triple(&mut rng, &participants, threshold.into()).unwrap();
 
     // Presign
     let presign_result = run_presign(
@@ -245,8 +246,8 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
 
     let public_key = key_packages[0].1.public_key;
     // Prepare triples
-    let (pub0, shares0) = deal(&mut rng, &new_participant, new_threshold.into())?;
-    let (pub1, shares1) = deal(&mut rng, &new_participant, new_threshold.into())?;
+    let (pub0, shares0) = deal_triple(&mut rng, &new_participant, new_threshold.into())?;
+    let (pub1, shares1) = deal_triple(&mut rng, &new_participant, new_threshold.into())?;
 
     // Presign
     let presign_result = run_presign(
@@ -297,8 +298,8 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
 
     let public_key = key_packages[0].1.public_key;
     // Prepare triples
-    let (pub0, shares0) = deal(&mut rng, &new_participant, new_threshold.into())?;
-    let (pub1, shares1) = deal(&mut rng, &new_participant, new_threshold.into())?;
+    let (pub0, shares0) = deal_triple(&mut rng, &new_participant, new_threshold.into())?;
+    let (pub1, shares1) = deal_triple(&mut rng, &new_participant, new_threshold.into())?;
 
     let presign_result = run_presign(
         key_packages,
@@ -332,8 +333,8 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     assert_public_key_invariant(&key_packages);
     let public_key = key_packages[0].1.public_key;
 
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into())?;
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into())?;
+    let (pub0, shares0) = deal_triple(&mut rng, &participants, threshold.into())?;
+    let (pub1, shares1) = deal_triple(&mut rng, &participants, threshold.into())?;
 
     let presign_result = run_presign(
         key_packages,
@@ -368,8 +369,8 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
 
     let public_key = key_packages[0].1.public_key;
 
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into())?;
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into())?;
+    let (pub0, shares0) = deal_triple(&mut rng, &participants, threshold.into())?;
+    let (pub1, shares1) = deal_triple(&mut rng, &participants, threshold.into())?;
 
     let presign_result = run_presign(
         key_packages,
@@ -404,8 +405,8 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
 
     let public_key = key_packages[0].1.public_key;
 
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into())?;
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into())?;
+    let (pub0, shares0) = deal_triple(&mut rng, &participants, threshold.into())?;
+    let (pub1, shares1) = deal_triple(&mut rng, &participants, threshold.into())?;
 
     let presign_result = run_presign(
         key_packages,

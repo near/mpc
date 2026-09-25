@@ -58,6 +58,27 @@ pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLoc
     .unwrap()
 });
 
+pub static MPC_ONLINE_PRESIGN_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
+    LazyLock::new(|| {
+        prometheus::register_histogram!(
+            "near_mpc_online_presign_signature_time_elapsed",
+            "Time taken to generate a signature directly from a triple pair (presigning \
+             included)",
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_BAD_PEER_ONLINE_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_bad_peer_online_presign_requests",
+            "Signature-from-triples requests from a peer whose participant-set size did not \
+             match the domain's reconstruction threshold",
+            &["domain_id"]
+        )
+        .unwrap()
+    });
+
 pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     prometheus::register_histogram!(
         "near_mpc_ckd_time_elapsed",
@@ -466,6 +487,17 @@ pub static PEERS_INDEXER_HEIGHTS: LazyLock<prometheus::IntGaugeVec> = LazyLock::
     .unwrap()
 });
 
+pub static MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_ecdsa_signatures_led_by_mode",
+            "Number of cait-sith signature computations led by this node, by signing flow \
+             (stored_presignature or online_presign)",
+            &["mode"]
+        )
+        .unwrap()
+    });
+
 pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(
         "mpc_node_build_info",
@@ -521,7 +553,11 @@ pub(crate) const EDDSA_PROTOCOL_SCHEME_LABEL: &str = "eddsa";
 pub(crate) const ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL: &str = "robust_ecdsa";
 pub(crate) const CKD_PROTOCOL_SCHEME_LABEL: &str = "ckd";
 
+pub(crate) const ONLINE_PRESIGN_MODE_LABEL: &str = "online_presign";
+pub(crate) const STORED_PRESIGNATURE_MODE_LABEL: &str = "stored_presignature";
+
 pub(crate) const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
+pub(crate) const MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL: &str = "make_online_presign_signature";
 pub(crate) const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
 pub(crate) const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
 pub(crate) const KEY_GENERATION_TASK_LABEL: &str = "key_generation";
@@ -545,6 +581,9 @@ impl MpcTaskId {
                     EcdsaTaskId::ManyTriples { .. } => TRIPLE_GENERATION_TASK_LABEL,
                     EcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
                     EcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
+                    EcdsaTaskId::OnlinePresignSignature { .. } => {
+                        MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL
+                    }
                 },
             ),
             MpcTaskId::EddsaTaskId(task) => (

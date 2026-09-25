@@ -5,7 +5,7 @@ use crate::network::wire_format::EcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::UniqueId;
 use crate::protocol::NamedProtocol;
-use crate::providers::ecdsa::triple::participants_from_triples;
+use crate::providers::ecdsa::triple::{participants_from_triples, validate_paired_triple_request};
 use crate::providers::ecdsa::{EcdsaKeyshare, EcdsaSignatureProvider, KeygenOutput, TripleStorage};
 use crate::providers::ecdsa_common;
 use crate::tracking::AutoAbortTaskCollection;
@@ -148,27 +148,20 @@ impl EcdsaSignatureProvider {
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
         let leader = channel.sender().get_leader();
-        // Both the new presignature id and the triples it consumes must be
-        // owned by the leader, never one of ours.
+        // The new presignature id must be owned by the leader, never one of ours.
         id.validate_owned_by(leader)?;
-        paired_triple_id.validate_owned_by(leader)?;
         let keyshare = self.keyshare(domain_id)?;
 
-        // The triple store is keyed by the domain's reconstruction threshold
-        // `t`. For cait-sith the leader pairs exactly `t` participants, so the
-        // channel participant count must match — cross-check it.
         let reconstruction_threshold = keyshare.reconstruction_threshold;
         let reconstruction_threshold_usize: usize = reconstruction_threshold.inner().try_into()?;
-        if channel.participants().len() != reconstruction_threshold_usize {
-            metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS
-                .with_label_values(&[&domain_id.to_string()])
-                .inc();
-            anyhow::bail!(
-                "CaitSith presign participant count ({}) does not match domain threshold t={}",
-                channel.participants().len(),
-                reconstruction_threshold_usize,
-            );
-        }
+        validate_paired_triple_request(
+            leader,
+            paired_triple_id,
+            channel.participants().len(),
+            reconstruction_threshold_usize,
+            &metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS,
+            domain_id,
+        )?;
         let triple_store = self.triple_store_for_t(reconstruction_threshold)?;
         FollowerPresignComputation {
             reconstruction_threshold: TSReconstructionThreshold::from(
