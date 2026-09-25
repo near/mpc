@@ -63,6 +63,18 @@ deposit:  0 NEAR
 args:     {"update_hash":{"Code":"0707070707070707070707070707070707070707070707070707070707070707"}}
 
 contract: mpc.near
+method:   remove_contract_update_vote
+gas:      5.0 Tgas
+deposit:  0 NEAR
+args:     {}
+
+contract: mpc.near
+method:   remove_non_participant_contract_update_votes
+gas:      5.0 Tgas
+deposit:  0 NEAR
+args:     {}
+
+contract: mpc.near
 method:   remove_update_proposal
 gas:      300.0 Tgas
 deposit:  0 NEAR
