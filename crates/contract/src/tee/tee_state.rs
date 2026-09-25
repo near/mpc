@@ -23,7 +23,7 @@ use near_mpc_contract_interface::types::{
     self as dtos, AccountId, Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction,
     MeasurementVoteAction,
 };
-use near_sdk::{env, near, store::IterableMap};
+use near_sdk::{env, near, store::IterableMap, store::LookupMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
 
@@ -77,6 +77,132 @@ pub(crate) struct NodeAttestation {
     pub(crate) verified_attestation: VerifiedAttestation,
 }
 
+/// All stored attestations. The value lives only in the TLS keyed map; `by_account_key`
+/// is a reverse index from the operator account public key to the TLS key of the newest
+/// attestation carrying it, so resolving a caller costs two point reads instead of a
+/// scan over every stored entry.
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub(crate) struct AttestationStore {
+    map: IterableMap<Ed25519PublicKey, NodeAttestation>,
+    by_account_key: LookupMap<Ed25519PublicKey, Ed25519PublicKey>,
+}
+
+impl Default for AttestationStore {
+    fn default() -> Self {
+        Self {
+            map: IterableMap::new(StorageKey::StoredAttestations),
+            by_account_key: LookupMap::new(StorageKey::StoredAttestationsByAccountKey),
+        }
+    }
+}
+
+impl AttestationStore {
+    /// Adopts an existing value map and rebuilds the reverse index from its entries,
+    /// walking the whole map once. Used at state migration time.
+    pub(crate) fn from_value_map(map: IterableMap<Ed25519PublicKey, NodeAttestation>) -> Self {
+        let mut store = Self {
+            map,
+            by_account_key: LookupMap::new(StorageKey::StoredAttestationsByAccountKey),
+        };
+        for (tls_pk, attestation) in store.map.iter() {
+            store.by_account_key.insert(
+                attestation.node_id.account_public_key.clone(),
+                tls_pk.clone(),
+            );
+        }
+        store
+    }
+
+    /// Stores the attestation under its TLS key and points the reverse index at it,
+    /// keeping one row per account public key:
+    /// a new account key writes a row, a rotated TLS key repoints the row at the newest
+    /// entry, and a rotated account key drops the row of the previous one.
+    pub(crate) fn insert(
+        &mut self,
+        node_id: NodeId,
+        verified_attestation: VerifiedAttestation,
+    ) -> ParticipantInsertion {
+        let tls_pk = node_id.tls_public_key.clone();
+        let account_pk = node_id.account_public_key.clone();
+
+        let previous = self.map.insert(
+            tls_pk.clone(),
+            NodeAttestation {
+                node_id,
+                verified_attestation,
+            },
+        );
+
+        // The replaced entry may have been the only thing indexing its account key.
+        if let Some(old) = &previous
+            && old.node_id.account_public_key != account_pk
+            && self.by_account_key.get(&old.node_id.account_public_key) == Some(&tls_pk)
+        {
+            self.by_account_key.remove(&old.node_id.account_public_key);
+        }
+        self.by_account_key.insert(account_pk, tls_pk);
+
+        match previous {
+            Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
+            None => ParticipantInsertion::NewlyInsertedParticipant,
+        }
+    }
+
+    pub(crate) fn get_by_tls(&self, tls_pk: &Ed25519PublicKey) -> Option<&NodeAttestation> {
+        self.map.get(tls_pk)
+    }
+
+    /// Resolves an account public key through the reverse index. Returns `None` when the
+    /// indexed entry does not carry the key, so a stale row can never resolve to a
+    /// foreign node.
+    pub(crate) fn get_by_account_key(
+        &self,
+        account_pk: &Ed25519PublicKey,
+    ) -> Option<&NodeAttestation> {
+        let tls_pk = self.by_account_key.get(account_pk)?;
+        let attestation = self.map.get(tls_pk)?;
+        (attestation.node_id.account_public_key == *account_pk).then_some(attestation)
+    }
+
+    /// Removes the entry under `tls_pk`, keeping the reverse index consistent: the row of
+    /// the removed account key is cleared only while it still points at the removed key,
+    /// since a rotation may already have repointed it at a newer entry.
+    pub(crate) fn remove(&mut self, tls_pk: &Ed25519PublicKey) -> Option<NodeAttestation> {
+        let removed = self.map.remove(tls_pk)?;
+        let account_pk = removed.node_id.account_public_key.clone();
+        if self.by_account_key.get(&account_pk) == Some(tls_pk) {
+            self.by_account_key.remove(&account_pk);
+        }
+        Some(removed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn contains_key(&self, tls_pk: &Ed25519PublicKey) -> bool {
+        self.map.contains_key(tls_pk)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.map.len() as usize
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Ed25519PublicKey, &NodeAttestation)> {
+        self.map.iter()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn flush(&mut self) {
+        self.map.flush();
+        self.by_account_key.flush();
+    }
+}
+
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
@@ -84,11 +210,10 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: LauncherHashVotes,
-    /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
-    /// Attestations are stored for any valid participant that has submitted one, not
-    /// just for the currently active participants. Callers must not assume this map is
-    /// small; use the key-indexed accessors rather than scanning the whole collection.
-    pub(crate) stored_attestations: IterableMap<Ed25519PublicKey, NodeAttestation>,
+    /// Attestations of any node that has submitted one, not just of the currently active
+    /// participants. Callers must not assume this collection is small; use the TLS key and
+    /// account key accessors rather than scanning the whole store.
+    pub(crate) stored_attestations: AttestationStore,
     pub(crate) allowed_measurements: AllowedMeasurements,
     pub(crate) measurement_votes: MeasurementVotes,
 }
@@ -103,7 +228,7 @@ impl Default for TeeState {
                 StorageKey::CodeHashVotesByProposal,
             ),
             launcher_votes: Default::default(),
-            stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
+            stored_attestations: AttestationStore::default(),
             allowed_measurements: Default::default(),
             measurement_votes: Default::default(),
         }
@@ -116,7 +241,6 @@ impl TeeState {
         let mut tee_state = Self::default();
 
         for (account_id, _, participant_info) in participants.participants() {
-            let tls_public_key = participant_info.tls_public_key.clone();
             // TODO(#1087): replace account_public_key with a real account public
             // key passed in by the caller. `Participants` does not currently
             // carry the operator's account public key, so a mocked entry
@@ -130,23 +254,18 @@ impl TeeState {
             // initialization so this sentinel can go away.
             let node_id = NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: tls_public_key.clone(),
+                tls_public_key: participant_info.tls_public_key.clone(),
                 // Use tls_public_key as account_public_key instead of hardcoded
                 // Ed25519PublicKey::from([0u8; 32]) so that same account public
                 // key isn't associated with different tls keys.
                 // This is not a fix for above issue: #1087, which should be
                 // addressed outside this PR.
-                account_public_key: tls_public_key.clone(),
+                account_public_key: participant_info.tls_public_key.clone(),
             };
 
             tee_state.stored_attestations.insert(
-                tls_public_key,
-                NodeAttestation {
-                    node_id,
-                    verified_attestation: VerifiedAttestation::Mock(
-                        attestation::MockAttestation::Valid,
-                    ),
-                },
+                node_id,
+                VerifiedAttestation::Mock(attestation::MockAttestation::Valid),
             );
         }
 
@@ -231,24 +350,15 @@ impl TeeState {
         // overwritten by a submission from a different account. Without this,
         // any caller could replace any participant's stored attestation, since
         // the entry is keyed only by `tls_public_key`.
-        if let Some(existing) = self.stored_attestations.get(&tls_pk)
+        if let Some(existing) = self.stored_attestations.get_by_tls(&tls_pk)
             && existing.node_id.account_id != node_id.account_id
         {
             return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
         }
 
-        let previous = self.stored_attestations.insert(
-            tls_pk,
-            NodeAttestation {
-                node_id,
-                verified_attestation,
-            },
-        );
-
-        Ok(match previous {
-            Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
-            None => ParticipantInsertion::NewlyInsertedParticipant,
-        })
+        Ok(self
+            .stored_attestations
+            .insert(node_id, verified_attestation))
     }
 
     /// reverifies stored participant attestations.
@@ -262,7 +372,7 @@ impl TeeState {
         let allowed_launcher_compose_hashes = self.get_allowed_launcher_compose_hashes();
         let allowed_measurements = self.get_accepted_measurements();
 
-        let participant_attestation = self.stored_attestations.get(&node_id.tls_public_key);
+        let participant_attestation = self.stored_attestations.get_by_tls(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
             return TeeQuoteStatus::Invalid("participant has no attestation".to_string());
         };
@@ -389,7 +499,7 @@ impl TeeState {
         _authenticated_participant: &AuthenticatedParticipantId,
         ttl: Duration,
     ) {
-        let Some(attestation) = self.stored_attestations.get(tls_public_key) else {
+        let Some(attestation) = self.stored_attestations.get_by_tls(tls_public_key) else {
             return;
         };
         if let Some(launcher_compose_hash) =
@@ -521,7 +631,7 @@ impl TeeState {
     /// verification work.
     pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
         self.stored_attestations
-            .get(tls_public_key)
+            .get_by_tls(tls_public_key)
             .map(|node_attestation| node_attestation.node_id.account_id.clone())
     }
 
@@ -529,15 +639,15 @@ impl TeeState {
     /// Note: This may include accounts that are no longer active protocol participants.
     pub fn get_tee_accounts(&self) -> Vec<NodeId> {
         self.stored_attestations
-            .values()
-            .map(|node_attestation| node_attestation.node_id.clone())
+            .iter()
+            .map(|(_, node_attestation)| node_attestation.node_id.clone())
             .collect()
     }
 
     /// Find a NodeId by its TLS public key.
     pub fn find_node_id_by_tls_key(&self, tls_public_key: &Ed25519PublicKey) -> Option<NodeId> {
         self.stored_attestations
-            .get(tls_public_key)
+            .get_by_tls(tls_public_key)
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
@@ -548,9 +658,8 @@ impl TeeState {
         signer_account_pk: &Ed25519PublicKey,
     ) -> Result<&NodeId, AttestationCheckError> {
         self.stored_attestations
-            .iter()
-            .find(|(_, attestation)| attestation.node_id.account_public_key == *signer_account_pk)
-            .map(|(_, attestation)| &attestation.node_id)
+            .get_by_account_key(signer_account_pk)
+            .map(|attestation| &attestation.node_id)
             .ok_or(AttestationCheckError::AttestationNotFound)
     }
 
@@ -571,7 +680,7 @@ impl TeeState {
 
         let attestation = self
             .stored_attestations
-            .get(&info.tls_public_key)
+            .get_by_tls(&info.tls_public_key)
             .ok_or(AttestationCheckError::AttestationNotFound)?;
 
         if attestation.node_id.account_id != signer_id {
@@ -1011,7 +1120,7 @@ mod tests {
         // then
         let stored_entry = tee_state
             .stored_attestations
-            .get(&node_id.tls_public_key)
+            .get_by_tls(&node_id.tls_public_key)
             .unwrap();
 
         assert_eq!(
@@ -1567,7 +1676,7 @@ mod tests {
         );
         let stored = tee_state
             .stored_attestations
-            .get(&tls_public_key)
+            .get_by_tls(&tls_public_key)
             .expect("entry must still be present");
         assert_eq!(stored.node_id, alice_node);
     }
@@ -1597,7 +1706,7 @@ mod tests {
         assert_matches!(result, Ok(ParticipantInsertion::UpdatedExistingParticipant));
         let stored = tee_state
             .stored_attestations
-            .get(&rotated_node.tls_public_key)
+            .get_by_tls(&rotated_node.tls_public_key)
             .expect("entry must be present");
         assert_eq!(stored.node_id, rotated_node);
     }
@@ -1685,7 +1794,7 @@ mod tests {
         assert_eq!(tee_state.stored_attestations.len(), 1);
         let stored = tee_state
             .stored_attestations
-            .get(&node_id.tls_public_key)
+            .get_by_tls(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
     }
@@ -1908,5 +2017,210 @@ mod tests {
             tee_state.verify_and_store_mock(node_id, live_mock, Duration::from_secs(0)),
             Ok(_)
         );
+    }
+
+    /// Builds a [`NodeId`] with explicitly distinct TLS and account public keys so
+    /// attestation store tests can rotate each independently.
+    fn node_id_with_keys(
+        account_id: &AccountId,
+        tls_public_key: Ed25519PublicKey,
+        account_public_key: Ed25519PublicKey,
+    ) -> NodeId {
+        NodeId {
+            account_id: account_id.clone(),
+            tls_public_key,
+            account_public_key,
+        }
+    }
+
+    #[test]
+    fn attestation_store__should_overwrite_same_tls_key_with_same_account_key() {
+        // Given: an attestation under some TLS key.
+        testing_env!(VMContextBuilder::new().build());
+        let mut store = AttestationStore::default();
+
+        let tls_pk = bogus_ed25519_public_key();
+        let account_pk = bogus_ed25519_public_key();
+        let first = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            tls_pk.clone(),
+            account_pk.clone(),
+        );
+        store.insert(
+            first.clone(),
+            VerifiedAttestation::Mock(MockAttestation::Valid),
+        );
+
+        // When: the same TLS key and account key attest again.
+        let insertion = store.insert(
+            first.clone(),
+            VerifiedAttestation::Mock(MockAttestation::Invalid),
+        );
+
+        // Then: the value is replaced and the index row is untouched.
+        assert_matches!(insertion, ParticipantInsertion::UpdatedExistingParticipant);
+        assert_eq!(store.len(), 1);
+        assert_matches!(
+            store.get_by_tls(&tls_pk).unwrap().verified_attestation,
+            VerifiedAttestation::Mock(MockAttestation::Invalid)
+        );
+        assert_eq!(
+            store.get_by_account_key(&account_pk).unwrap().node_id,
+            first
+        );
+    }
+
+    #[test]
+    fn attestation_store__should_reindex_when_same_tls_key_rotates_account_key() {
+        // Given: an attestation under some TLS key, indexed by its account key.
+        testing_env!(VMContextBuilder::new().build());
+        let mut store = AttestationStore::default();
+
+        let tls_pk = bogus_ed25519_public_key();
+        let old_account_pk = bogus_ed25519_public_key();
+        let new_account_pk = bogus_ed25519_public_key();
+        let old_node = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            tls_pk.clone(),
+            old_account_pk.clone(),
+        );
+        store.insert(old_node, VerifiedAttestation::Mock(MockAttestation::Valid));
+
+        // When: the same TLS key attests again under a rotated account key.
+        let new_node = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            tls_pk.clone(),
+            new_account_pk.clone(),
+        );
+        store.insert(
+            new_node.clone(),
+            VerifiedAttestation::Mock(MockAttestation::Valid),
+        );
+
+        // Then: the old account key's index row is gone and the new one resolves.
+        assert!(store.get_by_account_key(&old_account_pk).is_none());
+        assert_eq!(
+            store.get_by_account_key(&new_account_pk).unwrap().node_id,
+            new_node
+        );
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn attestation_store__should_point_index_at_newest_tls_key_after_rotation() {
+        // Given: an attestation indexed by its account key.
+        testing_env!(VMContextBuilder::new().build());
+        let mut store = AttestationStore::default();
+
+        let account_pk = bogus_ed25519_public_key();
+        let old_tls_pk = bogus_ed25519_public_key();
+        let new_tls_pk = bogus_ed25519_public_key();
+        let old_node = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            old_tls_pk.clone(),
+            account_pk.clone(),
+        );
+        store.insert(old_node, VerifiedAttestation::Mock(MockAttestation::Valid));
+
+        // When: the same account key attests a new TLS key.
+        let new_node = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            new_tls_pk.clone(),
+            account_pk.clone(),
+        );
+        store.insert(
+            new_node.clone(),
+            VerifiedAttestation::Mock(MockAttestation::Valid),
+        );
+
+        // Then: the index resolves to the newest entry, while the replaced value row stays
+        // behind for clean_invalid_attestations to reclaim.
+        assert_eq!(
+            store.get_by_account_key(&account_pk).unwrap().node_id,
+            new_node
+        );
+        assert!(store.get_by_tls(&old_tls_pk).is_some());
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn attestation_store__remove__should_clear_index_only_while_it_points_at_removed_key() {
+        // Given: an account key that rotated onto a newer TLS key.
+        testing_env!(VMContextBuilder::new().build());
+        let mut store = AttestationStore::default();
+
+        let account_pk = bogus_ed25519_public_key();
+        let old_tls_pk = bogus_ed25519_public_key();
+        let new_tls_pk = bogus_ed25519_public_key();
+        let old_node = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            old_tls_pk.clone(),
+            account_pk.clone(),
+        );
+        let new_node = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            new_tls_pk.clone(),
+            account_pk.clone(),
+        );
+        store.insert(
+            old_node.clone(),
+            VerifiedAttestation::Mock(MockAttestation::Valid),
+        );
+        store.insert(
+            new_node.clone(),
+            VerifiedAttestation::Mock(MockAttestation::Valid),
+        );
+
+        // When: the superseded entry is swept.
+        let removed = store
+            .remove(&old_tls_pk)
+            .expect("sweeping a stored key must return its entry");
+
+        // Then: the index still resolves the account key to the newest entry.
+        assert_eq!(removed.node_id, old_node);
+        assert_eq!(
+            store.get_by_account_key(&account_pk).unwrap().node_id,
+            new_node
+        );
+
+        // When: the newest entry itself is removed.
+        store
+            .remove(&new_tls_pk)
+            .expect("sweeping the newest key must remove it");
+
+        // Then: the account key has no resolution left.
+        assert!(store.get_by_account_key(&account_pk).is_none());
+    }
+
+    #[test]
+    fn attestation_store__get_by_account_key__should_resolve_newest_after_repeated_rotations() {
+        // Given: one account key attesting three TLS keys in sequence.
+        testing_env!(VMContextBuilder::new().build());
+        let mut store = AttestationStore::default();
+
+        let account_pk = bogus_ed25519_public_key();
+        let tls_keys: Vec<Ed25519PublicKey> = (0..3).map(|_| bogus_ed25519_public_key()).collect();
+        for tls_pk in &tls_keys {
+            let node = node_id_with_keys(
+                &"alice.near".parse().unwrap(),
+                tls_pk.clone(),
+                account_pk.clone(),
+            );
+            store.insert(node, VerifiedAttestation::Mock(MockAttestation::Valid));
+        }
+        let newest_node = node_id_with_keys(
+            &"alice.near".parse().unwrap(),
+            tls_keys[2].clone(),
+            account_pk.clone(),
+        );
+
+        // When / Then: only the last attested TLS key resolves for the account key.
+        assert_eq!(
+            store.get_by_account_key(&account_pk).unwrap().node_id,
+            newest_node
+        );
+        for tls_pk in &tls_keys[..2] {
+            assert!(store.get_by_tls(tls_pk).is_some());
+        }
     }
 }

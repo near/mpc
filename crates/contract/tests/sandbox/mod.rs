@@ -1,3 +1,4 @@
+pub mod attestation_scan_gas;
 pub mod contract_configuration;
 pub mod duplicate_requests_fan_out;
 pub mod foreign_chain_request;

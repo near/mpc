@@ -32,7 +32,7 @@ use crate::{
         proposal::{
             AllowedLauncherImages, LauncherHashVotes, NodeImageHash, StoredDockerImageHashes,
         },
-        tee_state::{NodeAttestation, TeeState},
+        tee_state::{AttestationStore, NodeAttestation, TeeState},
         verifier_votes::TeeVerifierVotes,
     },
     update::ProposedUpdates,
@@ -66,7 +66,7 @@ impl From<OldTeeState> for TeeState {
                 StorageKey::CodeHashVotesByProposal,
             ),
             launcher_votes: old.launcher_votes,
-            stored_attestations: old.stored_attestations,
+            stored_attestations: AttestationStore::from_value_map(old.stored_attestations),
             allowed_measurements: old.allowed_measurements,
             measurement_votes: old.measurement_votes,
         }
@@ -145,9 +145,16 @@ impl OldSupportedForeignChainsByNode {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
+    use crate::primitives::key_state::{EpochId, Keyset};
+    use crate::primitives::test_utils::{bogus_ed25519_public_key, gen_participants};
+    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
+    use crate::state::running::RunningContractState;
     use crate::storage_keys::StorageKey;
+    use mpc_attestation::attestation::{MockAttestation, VerifiedAttestation};
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use std::collections::BTreeMap;
 
     #[test]
     fn old_supported_foreign_chains_by_node__clear_storage__should_release_all_entries() {
@@ -175,5 +182,127 @@ mod tests {
 
         // Then
         assert_eq!(env::storage_usage(), baseline);
+    }
+
+    /// Simulates the upgrade from a `3.15.1` deployment: state whose attestations are
+    /// keyed by TLS public key only. The migration must rebuild the reverse index from
+    /// the stored entries so caller resolution by account public key works right after.
+    #[test]
+    fn migration__should_rebuild_the_attestation_index_and_keep_register_working() {
+        // Given: a `3.15.1` layout contract in Running state, with two stored
+        // attestations, one of them for `operator.near` under account key K.
+        testing_env!(VMContextBuilder::new().build());
+
+        let participants = gen_participants(2);
+        let (operator, _, _) = participants.participants().iter().next().unwrap().clone();
+        let parameters =
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
+        let other: near_sdk::AccountId = "other.near".parse().unwrap();
+
+        let operator_tls_pk = bogus_ed25519_public_key();
+        let operator_account_pk = bogus_ed25519_public_key();
+        let other_tls_pk = bogus_ed25519_public_key();
+        let other_account_pk = bogus_ed25519_public_key();
+
+        let mut stored_attestations = IterableMap::<dtos::Ed25519PublicKey, NodeAttestation>::new(
+            StorageKey::StoredAttestations,
+        );
+        for (tls_pk, account_pk, account_id) in [
+            (&operator_tls_pk, &operator_account_pk, &operator),
+            (&other_tls_pk, &other_account_pk, &other),
+        ] {
+            stored_attestations.insert(
+                tls_pk.clone(),
+                NodeAttestation {
+                    node_id: crate::tee::tee_state::NodeId {
+                        account_id: account_id.clone(),
+                        tls_public_key: tls_pk.clone(),
+                        account_public_key: account_pk.clone(),
+                    },
+                    verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+                },
+            );
+        }
+
+        let old = MpcContract {
+            protocol_state: ProtocolContractState::Running(RunningContractState::new(
+                DomainRegistry::default(),
+                Keyset::new(EpochId::new(0), Vec::new()),
+                parameters,
+                AddDomainsVotes::default(),
+            )),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequestsV3,
+            ),
+            proposed_updates: ProposedUpdates::default(),
+            node_foreign_chain_support: OldSupportedForeignChainsByNode {
+                foreign_chain_support_by_node: IterableMap::new(
+                    StorageKey::_DeprecatedSupportedForeignChainsByNode,
+                ),
+            },
+            config: Config::default(),
+            tee_state: OldTeeState {
+                allowed_docker_image_hashes: StoredDockerImageHashes::default(),
+                allowed_launcher_images: AllowedLauncherImages::default(),
+                votes: OldCodeHashesVotes {
+                    proposal_by_account: BTreeMap::new(),
+                },
+                launcher_votes: LauncherHashVotes::default(),
+                stored_attestations,
+                allowed_measurements: AllowedMeasurements::default(),
+                measurement_votes: MeasurementVotes::default(),
+            },
+            accept_requests: true,
+            node_migrations: NodeMigrations::default(),
+            foreign_chains: Lazy::new(
+                StorageKey::ForeignChainMetadata,
+                ForeignChainsMetadata::default(),
+            ),
+            tee_verifier_account_id: None,
+            tee_verifier_votes: TeeVerifierVotes::default(),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+        };
+
+        // When: the contract migrates, walking the old map into the new store.
+        let mut contract: crate::MpcContract = old.into();
+
+        // Then: both account keys resolve through the rebuilt index.
+        let migrated_operator = contract
+            .tee_state
+            .stored_attestations
+            .get_by_account_key(&operator_account_pk)
+            .expect("operator account key must resolve after migration");
+        assert_eq!(migrated_operator.node_id.account_id, operator);
+        assert_eq!(migrated_operator.node_id.tls_public_key, operator_tls_pk);
+        let migrated_other = contract
+            .tee_state
+            .stored_attestations
+            .get_by_account_key(&other_account_pk)
+            .expect("other account key must resolve after migration");
+        assert_eq!(migrated_other.node_id.tls_public_key, other_tls_pk);
+
+        // And: a caller signing with its recorded account key can register foreign
+        // chains right after the upgrade.
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(operator.clone())
+                .predecessor_account_id(operator.clone())
+                .signer_account_pk(near_sdk::PublicKey::from(operator_account_pk))
+                .build()
+        );
+        let foreign_chains_config: dtos::ForeignChainsConfig =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
+        contract
+            .register_foreign_chains_config(foreign_chains_config)
+            .expect("register must work right after the migration");
+        assert!(
+            contract
+                .foreign_chains
+                .get()
+                .foreign_chains_configs
+                .contains_key(&operator_tls_pk)
+        );
     }
 }
