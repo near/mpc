@@ -276,7 +276,7 @@ mod tests {
         let code: [u8; 1000] = std::array::from_fn(|_| rand::random());
         let hash = Sha256::digest(code);
         let update = Update::Contract(code.into());
-        let expected_update_hash = dtos::UpdateHash::Code(hash.into());
+        let expected_update_hash = dtos::UpdateHash::Code(dtos::Hash256(hash.into()));
         let expected_votes = propose_and_vote(contract, update, expected_update_id);
         TestUpdate {
             update_id: expected_update_id.into_dto_type(),
@@ -329,7 +329,7 @@ mod tests {
             let config_votes = propose_and_vote(&mut contract, config_update_obj, config_update_id);
             TestUpdate {
                 update_id: config_update_id.into_dto_type(),
-                update_hash: dtos::UpdateHash::Config(config_hash.into()),
+                update_hash: dtos::UpdateHash::Config(dtos::Hash256(config_hash.into())),
                 votes: config_votes,
             }
         };
