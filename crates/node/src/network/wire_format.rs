@@ -100,8 +100,6 @@ pub enum EcdsaTaskId {
         id: SignatureId,
         presignature_id: UniqueId,
     } = 4,
-    /// Presigning and signing in one computation over the leader's triple pair; no
-    /// presignature is involved.
     OnlinePresignSignature {
         id: SignatureId,
         paired_triple_id: UniqueId,
