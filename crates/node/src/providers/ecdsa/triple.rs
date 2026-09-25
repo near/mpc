@@ -82,31 +82,7 @@ impl Deref for TripleStorage {
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
-const TRIPLE_METRICS_REPORTING_INTERVAL: Duration = Duration::from_secs(5);
-
 impl EcdsaSignatureProvider {
-    /// Reports the triple-buffer gauges summed across every per-`t` store.
-    /// Each generator owns a distinct store keyed by its threshold, so a single
-    /// reporter prevents these unlabeled gauges from being clobbered by
-    /// whichever generator ticked last.
-    pub(super) async fn run_triple_metrics_reporting(triple_stores: Vec<Arc<TripleStorage>>) -> ! {
-        loop {
-            let mut online: i64 = 0;
-            let mut offline: i64 = 0;
-            let mut available: i64 = 0;
-            for store in &triple_stores {
-                online += i64::try_from(store.num_owned_ready()).expect("triple count fits in i64");
-                offline +=
-                    i64::try_from(store.num_owned_offline()).expect("triple count fits in i64");
-                available += i64::try_from(store.num_owned()).expect("triple count fits in i64");
-            }
-            metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(online);
-            metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(offline);
-            metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(available);
-            tokio::time::sleep(TRIPLE_METRICS_REPORTING_INTERVAL).await;
-        }
-    }
-
     /// Continuously runs triple generation in the background, using the number of threads
     /// specified in the config, trying to maintain some number of available triples all the
     /// time as specified in the config. Generated triples will be written to `triple_store`
