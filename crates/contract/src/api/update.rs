@@ -9,7 +9,7 @@ use crate::state::ProtocolContractState;
 use crate::update::{ProposedUpdates, Update, UpdateId};
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
-use near_sdk::{Gas, env, log, near};
+use near_sdk::{FunctionError, Gas, env, log, near};
 
 #[near]
 impl MpcContract {
@@ -107,9 +107,10 @@ impl MpcContract {
 
         let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
 
-        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
-            return Err(InvalidParameters::UpdateNotFound.into());
-        };
+        self.proposed_updates
+            .do_update(&id, update_gas_deposit)
+            .ok_or(InvalidParameters::UpdateNotFound)?
+            .detach();
 
         Ok(true)
     }
@@ -186,8 +187,7 @@ impl MpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
-        let new_config: Config =
-            Config::try_from(config).unwrap_or_else(|e| env::panic_str(&e.to_string()));
+        let new_config: Config = Config::try_from(config).unwrap_or_else(|e| e.panic());
         self.config = new_config;
     }
 }

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::{
+    MpcContract,
     config::Config,
     dto_mapping::IntoInterfaceType,
     errors::{ConversionError, Error},
@@ -14,10 +15,9 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::deposits::{
     DepositOverflowError, propose_update_required_deposit_yoctonear,
 };
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, UpdateHash};
 use near_sdk::{
-    Gas, NearToken, Promise, env, near,
+    Gas, NearToken, Promise, env, log, near,
     serde::{Deserialize, Serialize},
     store::IterableMap,
 };
@@ -159,7 +159,7 @@ impl ProposedUpdates {
         self.remove_vote(&voter);
 
         if !self.entries.contains_key(id) {
-            env::log_str(&format!("no update with id {:?} exists", id));
+            log!("no update with id {:?} exists", id);
             return None;
         };
 
@@ -192,16 +192,13 @@ impl ProposedUpdates {
         self.entries.clear();
         self.vote_by_participant.clear();
 
-        let mut promise = Promise::new(env::current_account_id());
-        match entry.update {
+        let promise = match entry.update {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
-                promise = promise.deploy_contract(code).function_call(
-                    method_names::MIGRATE,
-                    Vec::new(),
-                    NearToken::from_near(0),
-                    gas,
-                );
+                MpcContract::ext_on(Promise::new(env::current_account_id()).deploy_contract(code))
+                    .with_static_gas(gas)
+                    .with_unused_gas_weight(0)
+                    .migrate()
             }
             Update::Config(config) => {
                 // If we vote for a new config, we should use
@@ -209,14 +206,12 @@ impl ProposedUpdates {
                 // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
                 let dto_config = config.into_dto_type();
-                promise = promise.function_call(
-                    method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&dto_config,)).unwrap(),
-                    NearToken::from_near(0),
-                    new_config_gas_value,
-                );
+                MpcContract::ext_self()
+                    .with_static_gas(new_config_gas_value)
+                    .with_unused_gas_weight(0)
+                    .update_config(dto_config)
             }
-        }
+        };
         Some(promise)
     }
 

@@ -21,11 +21,13 @@ use crate::sandbox::{
 use attestation_types::Measurements;
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
 use mpc_contract::{
+    MpcContract,
     errors::TeeError,
     tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_mpc_contract_interface::types as dtos;
+use near_sdk::state::ContractState;
 use near_workspaces::{
     Account, AccountId, Contract, Worker,
     network::Sandbox,
@@ -67,16 +69,16 @@ async fn whitelist_fixture_dstack_hashes(
     let state = setup
         .worker
         .view_state(setup.contract.id())
-        .prefix(b"STATE")
+        .prefix(MpcContract::state_key())
         .await
         .unwrap()
-        .remove(b"STATE".as_slice())
+        .remove(MpcContract::state_key())
         .expect("the contract must have a STATE entry");
     let patched =
         whitelist_dstack_in_state(&state, image_digest(), launcher_image_hash(), compose_hash);
     setup
         .worker
-        .patch_state(setup.contract.id(), b"STATE", &patched)
+        .patch_state(setup.contract.id(), MpcContract::state_key(), &patched)
         .await
         .unwrap();
 }

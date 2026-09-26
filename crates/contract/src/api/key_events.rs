@@ -115,11 +115,13 @@ impl MpcContract {
                 .with_static_gas(Gas::from_tgas(
                     self.config.remove_non_participant_update_votes_tera_gas,
                 ))
+                .with_unused_gas_weight(0)
                 .remove_non_participant_update_votes()
                 .detach();
             // Spawn a promise to drop votes cast by non-participants.
             Self::ext_self()
                 .with_static_gas(Gas::from_tgas(self.config.clean_tee_status_tera_gas))
+                .with_unused_gas_weight(0)
                 .clean_tee_status()
                 .detach();
             // Spawn a bounded sweep over stored attestations to prune invalid / expired entries.
@@ -127,6 +129,7 @@ impl MpcContract {
                 .with_static_gas(Gas::from_tgas(
                     self.config.clean_invalid_attestations_tera_gas,
                 ))
+                .with_unused_gas_weight(0)
                 .clean_invalid_attestations(RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN)
                 .detach();
             // Spawn a promise to clean up orphaned node migrations for non-participants
@@ -134,6 +137,7 @@ impl MpcContract {
                 .with_static_gas(Gas::from_tgas(
                     self.config.cleanup_orphaned_node_migrations_tera_gas,
                 ))
+                .with_unused_gas_weight(0)
                 .cleanup_orphaned_node_migrations()
                 .detach();
             // Spawn a promise to clean up foreign chain data for non-participants
@@ -141,6 +145,7 @@ impl MpcContract {
                 .with_static_gas(Gas::from_tgas(
                     self.config.clean_foreign_chain_data_tera_gas,
                 ))
+                .with_unused_gas_weight(0)
                 .clean_foreign_chain_data()
                 .detach();
             // Spawn a promise to drop verifier-change votes cast by non-participants
@@ -149,6 +154,7 @@ impl MpcContract {
                     self.config
                         .remove_non_participant_tee_verifier_votes_tera_gas,
                 ))
+                .with_unused_gas_weight(0)
                 .remove_non_participant_tee_verifier_votes()
                 .detach();
         }
