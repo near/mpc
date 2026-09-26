@@ -44,7 +44,7 @@ impl Environment {
             signer,
             block_height,
             seed,
-            deposit: NearToken::from_yoctonear(0),
+            deposit: NearToken::ZERO,
         };
         env.set();
         env

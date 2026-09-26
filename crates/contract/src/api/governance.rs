@@ -146,7 +146,7 @@ mod tests {
         let voting_context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
             .predecessor_account_id(first_participant_id.clone())
-            .attached_deposit(NearToken::from_near(0))
+            .attached_deposit(NearToken::ZERO)
             .build();
         testing_env!(voting_context);
 
@@ -309,7 +309,7 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(signer.clone())
                 .predecessor_account_id(signer.clone())
-                .attached_deposit(NearToken::from_near(0))
+                .attached_deposit(NearToken::ZERO)
                 .build()
         );
         contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
@@ -338,7 +338,7 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(signer.clone())
                 .predecessor_account_id(signer)
-                .attached_deposit(NearToken::from_near(0))
+                .attached_deposit(NearToken::ZERO)
                 .build()
         );
         let result = contract.vote_new_parameters(dtos::EpochId::new(1), args);
@@ -507,7 +507,7 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(first_participant_id)
             .predecessor_account_id("forwarder.near".parse().unwrap())
-            .attached_deposit(NearToken::from_near(0))
+            .attached_deposit(NearToken::ZERO)
             .build();
         testing_env!(ctx);
 

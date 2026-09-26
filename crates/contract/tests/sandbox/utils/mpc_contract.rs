@@ -21,7 +21,7 @@ pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
         .outcomes()
         .iter()
         .map(|outcome| outcome.tokens_burnt)
-        .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+        .fold(NearToken::ZERO, NearToken::saturating_add)
 }
 
 pub async fn get_config(contract: &Contract) -> anyhow::Result<Config> {
