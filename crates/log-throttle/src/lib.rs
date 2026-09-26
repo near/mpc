@@ -21,6 +21,7 @@ impl LogThrottle {
         }
     }
 
+    /// Determines decision. Returns `Decision::Emit` on the first call and again after `interval` expiry, otherwise `Desicion::Suppress`
     pub fn check(&mut self, now: Instant) -> Decision {
         if let Some(last) = self.last_emit
             && now.duration_since(last) < self.interval
@@ -28,13 +29,13 @@ impl LogThrottle {
             self.suppressed = self.suppressed.saturating_add(1);
             return Decision::Suppress;
         }
+        let suppressed = self.suppressed;
+        self.suppressed = 0;
         self.last_emit = Some(now);
-        Decision::Emit {
-            suppressed: self.suppressed,
-        }
+        Decision::Emit { suppressed }
     }
 
-    /// Clears suppression state so the next occurrence is always emitted
+    /// Clears state
     pub fn reset(&mut self) {
         self.last_emit = None;
         self.suppressed = 0;
@@ -89,6 +90,16 @@ mod tests {
         assert_eq!(
             throttle.check(now + Duration::from_millis(50)),
             Decision::Emit { suppressed: 2 }
+        );
+
+        assert_eq!(
+            throttle.check(now + Duration::from_millis(60)),
+            Decision::Suppress
+        );
+
+        assert_eq!(
+            throttle.check(now + Duration::from_millis(90)),
+            Decision::Emit { suppressed: 1 }
         );
     }
 
