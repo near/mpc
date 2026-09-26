@@ -229,7 +229,6 @@ mod tests {
         SharedSecretKey, basic_setup, basic_setup_with_protocol,
         with_active_participant_and_attested_context,
     };
-    use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use assert_matches::assert_matches;
     use dtos::{Curve, DomainId, Payload, Tweak};
     use k256::ecdsa::SigningKey;
@@ -239,7 +238,6 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::{RngCore, SeedableRng};
     use rstest::rstest;
-    use std::panic;
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
         let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
@@ -492,53 +490,6 @@ mod tests {
                 .pending_signature_requests
                 .get(&signature_request)
                 .is_none()
-        );
-    }
-
-    #[test]
-    fn add_signature_request__should_panic_when_pending_queue_is_full() {
-        // Given: a contract with a queue already at the fan-out cap for some request key.
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = dtos::SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([3u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        for i in 0..MAX_PENDING_REQUEST_FAN_OUT {
-            contract.add_signature_request(signature_request.clone(), [i; 32]);
-        }
-        assert_eq!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .map(|q| q.len()),
-            Some(usize::from(MAX_PENDING_REQUEST_FAN_OUT)),
-        );
-
-        // When: one more append is attempted.
-        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            contract.add_signature_request(signature_request.clone(), [0xff; 32]);
-        }));
-
-        // Then: it panics with the typed cap-exceeded error and leaves the queue untouched.
-        let err = result.expect_err("appending past the cap should panic");
-        let msg = err
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| err.downcast_ref::<&str>().copied())
-            .unwrap_or_default();
-        assert!(
-            msg.contains("Pending-request queue is full"),
-            "unexpected panic message: {msg}",
-        );
-        assert_eq!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .map(|q| q.len()),
-            Some(usize::from(MAX_PENDING_REQUEST_FAN_OUT)),
-            "queue should not have grown past the cap",
         );
     }
 

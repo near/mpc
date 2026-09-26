@@ -29,9 +29,9 @@ use crate::errors::{Error, InvalidParameters, RequestError};
 /// duplicates to make `respond*` run out of gas and strand every queued caller.
 ///
 /// 128 is validated empirically by the sandbox test
-/// `test_contract_request_duplicate_requests_fan_out`, which fills the queue to this
-/// cap across all four signature schemes and confirms `respond*` drains it inside its
-/// 300 TGas budget.
+/// `respond__should_drain_saturated_fan_out_queue`, which fills the queue to this cap
+/// across all four signature schemes and confirms `respond*` drains it inside its 300 TGas
+/// budget.
 pub const MAX_PENDING_REQUEST_FAN_OUT: u8 = 128;
 
 /// Append a yield index to the pending-request fan-out queue for `request`.
@@ -105,5 +105,67 @@ where
     queue.remove(0);
     if queue.is_empty() {
         requests.remove(request);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::panic;
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn push_pending_yield__should_reject_an_entry_after_the_fan_out_limit() {
+        let mut requests: LookupMap<u64, Vec<YieldIndex>> = LookupMap::new(b"t");
+        let test_key: u64 = 42;
+
+        for i in 0..MAX_PENDING_REQUEST_FAN_OUT {
+            push_pending_yield(&mut requests, test_key, [i; 32]);
+        }
+
+        let queue = requests.get(&test_key).expect("queue should exist");
+        assert_eq!(
+            queue.len(),
+            usize::from(MAX_PENDING_REQUEST_FAN_OUT),
+            "queue should contain exactly the configured fan-out limit"
+        );
+        for (idx, yield_idx) in queue.iter().enumerate() {
+            assert_eq!(
+                yield_idx.data_id, [idx as u8; 32],
+                "entry at {idx} should match insertion order"
+            );
+        }
+
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            push_pending_yield(&mut requests, test_key, [0xff; 32]);
+        }));
+
+        let err = result.expect_err("appending past the cap should panic");
+        let msg = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        assert!(
+            msg.contains("Pending-request queue is full"),
+            "unexpected panic message: {msg}"
+        );
+        assert!(
+            msg.contains(&MAX_PENDING_REQUEST_FAN_OUT.to_string()),
+            "panic message should include the configured limit"
+        );
+
+        let queue = requests.get(&test_key).expect("queue should still exist");
+        assert_eq!(
+            queue.len(),
+            usize::from(MAX_PENDING_REQUEST_FAN_OUT),
+            "queue should not grow past the configured fan-out limit"
+        );
+        for (idx, yield_idx) in queue.iter().enumerate() {
+            assert_eq!(
+                yield_idx.data_id, [idx as u8; 32],
+                "original entry at {idx} should be preserved after rejection"
+            );
+        }
     }
 }
