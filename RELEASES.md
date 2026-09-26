@@ -74,18 +74,16 @@ merge commit is what will be released.
 
 ### 2. Wait for the build workflows
 
-When the release PR merges, four workflows fire on the protected branch:
+When the release PR merges, two workflows fire on the protected branch:
 
-- [Build Docker Node Image](.github/workflows/docker_build_node.yml)
-- [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
-- [Build Docker Rust Launcher Image](.github/workflows/docker_build_rust_launcher.yml)
+- [Build Docker Images](.github/workflows/docker_build_images.yml)
 - [Build Contract](.github/workflows/build_contract.yml)
 
-The image workflows push `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`.
+The image workflow pushes `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`.
 The contract workflow uploads the reproducible WASM as a GitHub Actions
 artifact named `contract`.
 
-Wait for all four to finish successfully. The Release workflow refuses to
+Wait for both to finish successfully. The Release workflow refuses to
 run if any artifact is missing.
 
 > **Tip:** The pre-release images are deployable. If you want to
@@ -105,10 +103,12 @@ exactly what the source produces:
   cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
   ```
 - **Docker images** — compare the digests in the draft release to the ones
-  produced locally (with no flags the script builds and prints digests for all
-  three images):
+  produced locally:
   ```sh
-  ./deployment/build-images.sh
+  for image in mpc-node mpc-node-gcp mpc-launcher; do
+    nix build --out-link "result-$image" "github:near/mpc/<merge-commit>#packages.x86_64-linux.$image-image"
+  done
+  sha256sum result-*/manifest.json
   ```
 
 See [reproducible builds](./docs/guide/reproducible-builds.md) for the full
@@ -182,7 +182,7 @@ released.
 
 ### Docker push fails with `blob unknown to registry`
 
-If a Build Docker image workflow fails (deterministically, even on re-run)
+If the Build Docker Images workflow fails (deterministically, even on re-run)
 with:
 
 ```
@@ -190,7 +190,7 @@ writing manifest ...: blob unknown to registry
 ```
 
 the registry holds an orphaned blob from an earlier push that was
-interrupted mid-upload. Launcher/node images share base-image layer blobs
+interrupted mid-upload. The images reuse identical layer blobs
 across tags, so skopeo's blob `HEAD` checks see the orphaned blob as
 "present" and skip re-uploading it, then Docker Hub rejects the manifest
 because it can't link that blob.

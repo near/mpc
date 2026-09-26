@@ -21,6 +21,8 @@
   # passed in from flake.nix so the dev shell, the reproducible build, and
   # bindgen-parsed headers all agree on the same feature-test macros.
   prodCFlags,
+  pname ? "mpc-node",
+  gitRev ? null,
 }:
 
 let
@@ -44,7 +46,6 @@ let
   # Take the version from [workspace.package.version] so this file stays in
   # sync on every release bump.
   workspaceCargoToml = lib.importTOML ../Cargo.toml;
-  pname = "mpc-node";
   version = workspaceCargoToml.workspace.package.version;
 
   # Source filter. `filterCargoSources` keeps `.rs`, `Cargo.toml`, `Cargo.lock`
@@ -151,8 +152,8 @@ let
       ;
 
     strictDeps = true;
-    cargoProfile = "reproducible";
-    cargoExtraArgs = "-p mpc-node --bin mpc-node --locked";
+    CARGO_PROFILE = "reproducible";
+    cargoExtraArgs = "-p ${pname} --bin ${pname} --locked";
 
     nativeBuildInputs = [
       pkg-config
@@ -281,10 +282,13 @@ craneLib.buildPackage (
     inherit cargoArtifacts;
 
     meta = with lib; {
-      description = "MPC node binary for NEAR threshold signer";
       license = licenses.mit;
       platforms = platforms.unix;
-      mainProgram = "mpc-node";
+      mainProgram = pname;
     };
+  }
+  # Not in commonArgs: the revision would re-key cargoArtifacts on every commit
+  // lib.optionalAttrs (gitRev != null) {
+    BUILT_OVERRIDE_mpc_node_GIT_COMMIT_HASH_SHORT = gitRev;
   }
 )

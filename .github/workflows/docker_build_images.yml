@@ -1,4 +1,4 @@
-name: Build Docker Node GCP Image
+name: Build Docker Images
 
 # cancel-in-progress is false to avoid orphaning blobs mid-push; see RELEASES.md.
 concurrency:
@@ -14,7 +14,7 @@ on:
 
 jobs:
   build-and-push-images:
-    name: "Build and push Docker node gcp image with commit hash"
+    name: "Build and push Docker images with commit hash"
     runs-on: warp-ubuntu-2604-x64-16x
     environment: production
     permissions:
@@ -32,15 +32,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PAT }}
 
-      - name: Allow unprivileged user namespaces (needed by repro-env)
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          extra-conf: sandbox-fallback = false
 
-      - name: Install repro-env
+      - name: Build and push images
         run: |
-          sudo apt-get update
-          sudo apt-get install -y repro-env
-
-      - name: Build and push node gcp image
-        run: |
-          export NODE_GCP_IMAGE_NAME=mpc-node-gcp
-          ./deployment/build-images.sh --node-gcp --push
+          tag="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}"
+          for image in mpc-node mpc-node-gcp mpc-launcher; do
+            nix build --print-build-logs --out-link "result-$image" ".#$image-image"
+            sha256sum "result-$image/manifest.json"
+            skopeo copy --preserve-digests "dir:result-$image" "docker://docker.io/nearone/$image:$tag"
+          done
