@@ -28,6 +28,13 @@ impl RobustEcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
+        let msg_hash = EcdsaMessageHash::from(
+            *sign_request
+                .payload
+                .as_ecdsa()
+                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
+        )
+        .validate()?;
         let keyshare = self.keyshare(sign_request.domain)?;
         let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
@@ -41,16 +48,11 @@ impl RobustEcdsaSignatureProvider {
         let (_num_signers, robust_ecdsa_threshold) =
             compute_thresholds(keyshare.reconstruction_threshold)?;
 
-        let msg_hash = *sign_request
-            .payload
-            .as_ecdsa()
-            .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
-
         let (signature, public_key) = SignComputation {
             keygen_out: keyshare.keygen_output,
             max_malicious: robust_ecdsa_threshold,
             presign_out: presignature.presignature,
-            msg_hash: msg_hash.into(),
+            msg_hash,
             tweak: sign_request.tweak,
             entropy: sign_request.entropy,
         }
@@ -215,6 +217,7 @@ pub struct FollowerSignComputation {
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+        let msg_hash = self.msg_hash.validate()?;
         let presign_out = self
             .presignature_store
             .take_unowned(self.presignature_id)?
@@ -223,7 +226,7 @@ impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
             keygen_out: self.keygen_out,
             max_malicious: self.max_malicious,
             presign_out,
-            msg_hash: self.msg_hash,
+            msg_hash,
             tweak: self.tweak,
             entropy: self.entropy,
         }
@@ -234,5 +237,87 @@ impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
 
     fn leader_waits_for_success(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::SecretDB;
+    use crate::network::testing::new_test_client;
+    use crate::primitives::{MpcTaskId, ParticipantId};
+    use crate::providers::ecdsa_common::PresignOutputWithParticipants;
+    use mpc_primitives::domain::DomainId;
+    use near_indexer_primitives::CryptoHash;
+    use near_time::Clock;
+    use rand::SeedableRng;
+    use threshold_signatures::ecdsa::{KeygenOutput, Scalar};
+    use threshold_signatures::frost_secp256k1::SigningKey;
+    use threshold_signatures::frost_secp256k1::keys::SigningShare;
+
+    #[expect(non_snake_case)]
+    #[test_log::test(tokio::test)]
+    async fn follower_sign_computation__should_reject_zero_hash_without_consuming_presignature() {
+        // Given
+        let leader = ParticipantId::from_raw(1);
+        let follower = ParticipantId::from_raw(2);
+        let participants = vec![leader, follower, ParticipantId::from_raw(3)];
+        let client = new_test_client(participants.clone(), follower);
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(temp_dir.path(), [7; 16]).unwrap();
+        let store =
+            Arc::new(PresignatureStorage::new(Clock::real(), db, client, DomainId(0)).unwrap());
+        let presignature_id = UniqueId::new(leader, 1, 0);
+        store.add_unowned(
+            presignature_id,
+            PresignOutputWithParticipants {
+                presignature: PresignOutput {
+                    big_r: (k256::ProjectivePoint::GENERATOR).into(),
+                    c: Scalar::ONE,
+                    e: Scalar::ONE,
+                    alpha: Scalar::ONE,
+                    beta: Scalar::ONE,
+                },
+                participants: participants.clone(),
+            },
+        );
+        let mut rng = rand::rngs::StdRng::from_seed([9; 32]);
+        let signing_key = SigningKey::new(&mut rng);
+        let keygen_out = KeygenOutput {
+            private_share: SigningShare::new(Scalar::ONE),
+            public_key: signing_key.into(),
+        };
+        let (mut channel, _inbound) = crate::network::testing::new_task_channel_for_test(
+            MpcTaskId::RobustEcdsaTaskId(RobustEcdsaTaskId::Signature {
+                id: CryptoHash([0; 32]),
+                presignature_id,
+            }),
+            leader,
+            follower,
+            participants,
+        );
+
+        // When
+        let result = FollowerSignComputation {
+            keygen_out,
+            max_malicious: MaxMalicious::from(1),
+            presignature_id,
+            presignature_store: store.clone(),
+            msg_hash: EcdsaMessageHash([0; 32]),
+            tweak: Tweak::new([0; 32]),
+            entropy: [1; 32],
+        }
+        .compute(&mut channel)
+        .await;
+
+        // Then
+        let error = result.expect_err("zero message hashes must be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("does not support a zero message hash"),
+            "{error:?}"
+        );
+        store.take_unowned(presignature_id).unwrap();
     }
 }

@@ -46,9 +46,13 @@ impl MpcContract {
         match domain_config.protocol {
             dtos::Protocol::CaitSith | dtos::Protocol::RobustEcdsa => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
-                k256::Scalar::from_repr(hash.into())
+                let scalar = k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
+                assert!(
+                    !bool::from(scalar.is_zero()),
+                    "ECDSA does not support a zero message hash"
+                );
             }
             dtos::Protocol::Frost => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
@@ -540,6 +544,23 @@ mod tests {
             Some(usize::from(MAX_PENDING_REQUEST_FAN_OUT)),
             "queue should not have grown past the cap",
         );
+    }
+
+    #[rstest]
+    #[case(dtos::Protocol::CaitSith)]
+    #[case(dtos::Protocol::DamgardEtAl)]
+    #[should_panic(expected = "ECDSA does not support a zero message hash")]
+    fn sign__should_reject_zero_hash_for_ecdsa(#[case] protocol: dtos::Protocol) {
+        // Given
+        let (_context, mut contract, _secret_key) =
+            basic_setup_with_protocol(protocol, dtos::DomainPurpose::Sign, &mut OsRng);
+
+        // When
+        contract.sign(dtos::SignRequestArgs {
+            payload: Payload::from_legacy_ecdsa([0; 32]),
+            path: "zero_hash_test".to_string(),
+            domain_id: DomainId::legacy_ecdsa_id(),
+        });
     }
 
     #[test]
