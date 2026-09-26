@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
+use thiserror::Error;
 
 use crate::event_subscriber::block_events::BlockContext;
 use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
@@ -46,8 +47,9 @@ use near_contract_transport::BlockHeight;
 /// Given these expectations, we provide the aforementioned functionalities by tracking the
 /// following:
 ///  - We keep a fixed-sized window of recent blocks, i.e. all blocks with height >= H - W + 1,
-///    where H is the height of the latest block we have seen, and W is the window size.
-///  - We keep track of the canonical chain as well as the final chain.
+///    where H is the maximum height seen, and W is the window size.
+///  - We keep track of the canonical chain as well as the final chain. [`Self::add_block`]
+///    selects a greater-height head by default; [`Self::select_head`] can override it.
 ///
 /// Despite the assumptions we make on the indexer's behavior, this class guarantees not to panic
 /// even if the indexer violates these assumptions in arbitrary ways.
@@ -103,7 +105,7 @@ pub struct RecentBlocksTracker {
     /// The children of the root are the earliest blocks we are keeping who do not have any order
     /// with each other.
     root_children: Vec<Arc<BlockNode>>,
-    /// The head of the canonical chain. This is the chain of the highest-height block we've seen.
+    /// The selected canonical head, or the highest-height block seen by default.
     /// This may be None if we have no block at all.
     canonical_head: Weak<BlockNode>,
     /// The head of the final chain. This is determined by recovering information from the
@@ -121,11 +123,10 @@ pub struct RecentBlocksTracker {
 pub enum BlockStatus {
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
     OptimisticButNotCanonical = 0,
-    #[expect(rustdoc::private_intra_doc_links)]
     /// The block is optimistically included in the chain, and it is on the canonical chain,
     /// but it is not yet part of the final chain.
     /// Note that if two chains tie for canonical height, the first one seen is considered the
-    /// canonical chain (c.f. [`RecentBlocksTracker::update_canonical_head`]).
+    /// canonical chain unless [`RecentBlocksTracker::select_head`] overrides it.
     OptimisticAndCanonical = 1,
     /// The block is finalized by the blockchain.
     /// It is an ancestor (including self) of the latest final block.
@@ -204,6 +205,22 @@ impl BlockStatusHandle {
 
 pub struct AddBlockResult {
     pub block_status: BlockStatusHandle,
+}
+
+/// A requested canonical head cannot be selected without contradicting tracked state.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum SelectHeadError {
+    /// The block was never added or has been pruned.
+    #[error("canonical head {0} is not tracked")]
+    UnknownBlock(CryptoHash),
+    /// The target is not a known descendant of the final head (including itself).
+    #[error("canonical head {head} does not descend from final head {final_head}")]
+    FinalityConflict {
+        /// Requested canonical head.
+        head: CryptoHash,
+        /// Latest known final head.
+        final_head: CryptoHash,
+    },
 }
 
 /// Represents a block in the recent blockchain.
@@ -369,6 +386,36 @@ impl RecentBlocksTracker {
         AddBlockResult { block_status }
     }
 
+    /// Select an authoritative tracked head, including an equal-height replacement
+    /// or an earlier descendant of the final head. Retention and finality do not
+    /// change. Unknown or finality-conflicting targets leave the tracker unchanged.
+    pub fn select_head(&mut self, hash: CryptoHash) -> Result<(), SelectHeadError> {
+        let target = self
+            .hash_to_node
+            .get(&hash)
+            .cloned()
+            .ok_or(SelectHeadError::UnknownBlock(hash))?;
+        if let Some(final_head) = &self.final_head {
+            let mut ancestor = Some(target.clone());
+            loop {
+                match ancestor {
+                    Some(node) if node.hash == final_head.hash => break,
+                    Some(node) if node.height > final_head.height => {
+                        ancestor = node.get_parent();
+                    }
+                    _ => {
+                        return Err(SelectHeadError::FinalityConflict {
+                            head: hash,
+                            final_head: final_head.hash,
+                        });
+                    }
+                }
+            }
+        }
+        self.update_canonical_head(&target);
+        Ok(())
+    }
+
     /// Advance the final head, mark its ancestors as final, and drop every
     /// subtree that BFT-safety guarantees can no longer be on the final chain.
     /// See [`RecentBlocksTracker`] for the picture of which subtrees this catches.
@@ -496,7 +543,7 @@ impl RecentBlocksTracker {
     }
 
     /// Calculates the minimum height of blocks that we need to keep.
-    /// This is typically canonical_head.height - window_size + 1, but in case of delayed finality,
+    /// This is typically maximum_height_available - window_size + 1, but in case of delayed finality,
     /// we ensure that the final head is not pruned. Otherwise, not only would the logic be very
     /// messy, but also we would not be able to provide a contiguous stream of finalized blocks.
     fn minimum_height_to_keep(&self) -> Option<BlockHeight> {
@@ -572,8 +619,8 @@ pub mod test_utils {
     use super::super::block_events::BlockContext;
     use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
     use crate::types::BlockEntropy;
-    use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
+    use near_indexer_primitives::near_primitives::hash::hash;
     use std::collections::HashSet;
     use std::fmt::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -786,9 +833,141 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::test_utils::Tester;
-    use super::{AtomicBlockStatus, BlockStatus};
+    use super::{AtomicBlockStatus, BlockStatus, SelectHeadError};
     use std::sync::Arc;
     use std::sync::atomic::AtomicU8;
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn select_head__should_switch_same_height_and_known_lower_heads() {
+        // Given
+        let mut t = Tester::new(10);
+        let root = t.block(1);
+        let left = root.descendant(3);
+        let right = root.descendant(3);
+        let tip = left.descendant(5);
+        let root_status = t.add(&root);
+        let left_status = t.add(&left);
+        let right_status = t.add(&right);
+
+        // When
+        t.tracker.select_head(right.hash).unwrap();
+
+        // Then
+        assert_eq!(left_status.is_canonical(), Some(false));
+        assert_eq!(right_status.is_canonical(), Some(true));
+        let tip_status = t.add(&tip);
+
+        // When
+        t.tracker.select_head(right.hash).unwrap();
+
+        // Then
+        assert_eq!(tip_status.is_canonical(), Some(false));
+        assert_eq!(right_status.is_canonical(), Some(true));
+
+        // When
+        t.tracker.select_head(root.hash).unwrap();
+
+        // Then
+        assert_eq!(root_status.is_canonical(), Some(true));
+        assert_eq!(right_status.is_canonical(), Some(false));
+        assert_eq!(t.tracker.maximum_height_available, 5.into());
+        let before = format!("{:?}", t.tracker);
+
+        // When
+        t.tracker.select_head(root.hash).unwrap();
+
+        // Then
+        assert_eq!(format!("{:?}", t.tracker), before);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn select_head__should_reject_missing_and_finality_conflicts_without_mutation() {
+        // Given
+        let mut t = Tester::new(10);
+        let b1 = t.block(1);
+        let b2 = b1.child();
+        let b3 = b2.child();
+        let b4 = b3.child();
+        let b1_status = t.add(&b1);
+        let b2_status = t.add(&b2);
+        t.add(&b3);
+        let b4_status = t.add(&b4);
+        let disconnected = t.block(3);
+        let disconnected_status = t.add(&disconnected);
+        let before = format!("{:?}", t.tracker);
+        for target in [b1.hash, disconnected.hash] {
+            // When
+            let result = t.tracker.select_head(target);
+
+            // Then
+            assert_eq!(
+                result,
+                Err(SelectHeadError::FinalityConflict {
+                    head: target,
+                    final_head: b2.hash,
+                })
+            );
+            assert_eq!(format!("{:?}", t.tracker), before);
+        }
+        let unknown = t.block(100).hash;
+        assert_eq!(
+            t.tracker.select_head(unknown),
+            Err(SelectHeadError::UnknownBlock(unknown))
+        );
+        assert_eq!(format!("{:?}", t.tracker), before);
+        assert_eq!(b1_status.is_final(), Some(true));
+        assert_eq!(b2_status.is_final(), Some(true));
+        assert_eq!(b4_status.is_canonical(), Some(true));
+        assert_eq!(disconnected_status.is_canonical(), Some(false));
+
+        // When
+        t.tracker.select_head(b2.hash).unwrap();
+
+        // Then
+        assert_eq!(b4_status.is_canonical(), Some(false));
+        assert_eq!(b2_status.is_final(), Some(true));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn select_head__should_preserve_retained_final_ancestry_after_pruning() {
+        // Given
+        let mut t = Tester::new(2);
+        let b1 = t.block(1);
+        let b2 = b1.child();
+        let b3 = b2.child();
+        let b4 = b3.child();
+        let b5 = b4.child();
+        let b6 = b5.child();
+        let old = t.add(&b1);
+        t.add(&b2);
+        t.add(&b3);
+        let final_status = t.add(&b4);
+        let lower_status = t.add(&b5);
+        let tip_status = t.add(&b6);
+        let before = format!("{:?}", t.tracker);
+
+        // When
+        let result = t.tracker.select_head(b1.hash);
+
+        // Then
+        assert_eq!(old.is_final(), None);
+        assert_eq!(result, Err(SelectHeadError::UnknownBlock(b1.hash)));
+        assert_eq!(format!("{:?}", t.tracker), before);
+        let retained = t.tracker.hash_to_node.len();
+
+        // When
+        t.tracker.select_head(b5.hash).unwrap();
+
+        // Then
+        assert_eq!(lower_status.is_canonical(), Some(true));
+        assert_eq!(tip_status.is_canonical(), Some(false));
+        assert_eq!(final_status.is_final(), Some(true));
+        assert_eq!(t.tracker.hash_to_node.len(), retained);
+        assert_eq!(t.tracker.maximum_height_available, 6.into());
+    }
 
     #[test]
     fn test_no_forks() {
