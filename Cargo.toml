@@ -19,6 +19,7 @@ members = [
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
     "crates/launcher-interface",
+    "crates/log-throttle",
     "crates/mpc-attestation",
     "crates/near-contract-transport",
     "crates/near-mpc-bounded-collections",
@@ -64,6 +65,7 @@ foreign-chain-rpc-factory = { path = "crates/foreign-chain-rpc-factory" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 launcher-interface = { path = "crates/launcher-interface" }
+log-throttle = { path = "crates/log-throttle" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }

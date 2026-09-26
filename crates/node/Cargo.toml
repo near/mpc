@@ -38,6 +38,7 @@ hyper-util = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
 launcher-interface = { workspace = true }
+log-throttle = {workspace = true}
 lru = { workspace = true }
 mpc-attestation = { workspace = true, features = ["local-verify"] }
 mpc-node-config = { workspace = true }

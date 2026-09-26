@@ -1,43 +1,58 @@
-use crate::config::MpcConfig;
-use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, INCOMING_CONNECTIONS_REJECTED, MPC_P2P_TCP_WRITE_SIZE_BYTES,
-    OUTGOING_CONNECTION,
+use crate::{
+    config::MpcConfig,
+    metrics::networking_metrics::{
+        self, INCOMING_CONNECTION, INCOMING_CONNECTIONS_REJECTED, MPC_P2P_TCP_WRITE_SIZE_BYTES,
+        OUTGOING_CONNECTION,
+    },
+    network::conn::{
+        AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
+        NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
+    },
+    network::{
+        constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION},
+        handshake::{
+            DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID,
+            p2p_handshake_dialer, p2p_handshake_listener,
+        },
+        wire_format::{MpcMessageKind, Packet},
+        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+    },
+    primitives::{
+        IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
+        PeerMessage,
+    },
+    protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
+    tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
 };
-use crate::network::conn::{
-    AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
-    NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
-};
-use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
-use crate::network::handshake::{
-    DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID, p2p_handshake_dialer,
-    p2p_handshake_listener,
-};
-use crate::network::wire_format::{MpcMessageKind, Packet};
-use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
-    PeerMessage,
-};
-use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
-use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
+use log_throttle::{Decision, LogThrottle};
 use rustls::{ClientConfig, CommonState};
-use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::time::timeout;
+use std::{
+    collections::HashMap,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::{
+        Mutex,
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+    },
+    time::timeout,
+};
 use tokio_rustls::TlsAcceptor;
-use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
-use tokio_util::sync::CancellationToken;
-use tokio_util::time::FutureExt;
+use tokio_util::{
+    codec::{Decoder, Framed, LengthDelimitedCodec},
+    sync::CancellationToken,
+    time::FutureExt,
+};
 use tracing::{error, info};
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
@@ -438,6 +453,7 @@ impl PersistentConnection {
     }
     const MIN_CONNECTION_ID: u32 = 0;
 
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         client_config: Arc<ClientConfig>,
         my_id: ParticipantId,
@@ -446,6 +462,7 @@ impl PersistentConnection {
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
         resolve_address: impl Fn() -> Option<String> + Send + 'static,
+        log_throttle: Arc<Mutex<LogThrottle>>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
@@ -467,7 +484,8 @@ impl PersistentConnection {
                     .await
                     {
                         Ok(new_conn) => {
-                            tracing::info!(
+                            log_throttle.lock().await.reset();
+                            info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
                                 "outgoing connection established"
@@ -476,13 +494,22 @@ impl PersistentConnection {
                             new_conn
                         }
                         Err(e) => {
-                            tracing::info!(
-                                my_id = %my_id,
-                                target_participant_id = %target_participant_id,
-                                error = %format_args!("{e:#}"),
-                                "could not connect, retrying"
-                            );
-
+                            let decision = log_throttle
+                                .lock()
+                                .await
+                                .check(tokio::time::Instant::now().into_std());
+                            match decision {
+                                Decision::Suppress => {}
+                                Decision::Emit { suppressed } => {
+                                    info!(
+                                        my_id = %my_id,
+                                        target_participant_id = %target_participant_id,
+                                        suppressed,
+                                        error = %format_args!("{e:#}"),
+                                        "could not connect",
+                                    );
+                                }
+                            }
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
@@ -606,6 +633,7 @@ where
                 participant_identities.clone(),
                 connectivities.get(participant.id)?,
                 resolve_address,
+                Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60)))),
             )?),
         );
     }
@@ -1135,19 +1163,22 @@ mod tests {
         OutgoingConnection, ParticipantIdentities, PersistentConnection,
         incoming_connection_handler,
     };
-    use crate::config::MpcConfig;
-    use crate::network::{
-        conn::{AllNodeConnectivities, ConnectionVersion},
-        wire_format::{EcdsaTaskId, MpcTaskId},
-        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+    use crate::{
+        config::MpcConfig,
+        network::{
+            conn::{AllNodeConnectivities, ConnectionVersion},
+            wire_format::{EcdsaTaskId, MpcTaskId},
+            {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+        },
+        p2p::testing::{generate_test_p2p_configs, port_seed},
+        primitives::{
+            ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
+        },
+        protocol_version::CURRENT_PROTOCOL_VERSION,
+        tracking::{self, testing::start_root_task_with_periodic_dump},
     };
-    use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
-    use crate::primitives::{
-        ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
-    };
-    use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
-    use crate::tracking::{self, testing::start_root_task_with_periodic_dump};
     use ed25519_dalek::SigningKey;
+    use log_throttle::{Decision, LogThrottle};
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
     use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -1156,7 +1187,7 @@ mod tests {
     use tokio::{
         io::AsyncReadExt,
         net::{TcpListener, TcpStream},
-        sync::mpsc,
+        sync::{Mutex, mpsc},
         task::JoinHandle,
         time::timeout,
     };
@@ -1664,6 +1695,7 @@ mod tests {
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
                 || None,
+                Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60)))),
             )
             .unwrap();
 
@@ -1710,6 +1742,7 @@ mod tests {
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
                 resolve_address,
+                Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60)))),
             )
             .unwrap();
 
@@ -1770,6 +1803,50 @@ mod tests {
             format!("{error:#}").contains("timed out"),
             "unexpected error: {error:#}"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn persistent_connection__should_share_dedup_state_with_retry_loop() {
+        // Given
+        let (target_address, mut accept_rx, listener_task) = must_spawn_silent_listener().await;
+        let client_config = make_client_config();
+        let my_id = ParticipantId::from_raw(0);
+        let target_id = ParticipantId::from_raw(1);
+        let log_throttle = Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60))));
+        start_root_task_with_periodic_dump(async move {
+            let connectivity = AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                my_id,
+                &[my_id, target_id],
+            );
+            // When
+            let _connection = PersistentConnection::new(
+                client_config,
+                my_id,
+                target_address,
+                target_id,
+                Arc::new(ParticipantIdentities::default()),
+                connectivity.get(target_id).unwrap(),
+                || None,
+                log_throttle.clone(),
+            )
+            .unwrap();
+
+            for _ in 0..2 {
+                timeout(Duration::from_secs(120), accept_rx.recv())
+                    .await
+                    .unwrap();
+            }
+
+            // Then
+            let decision = log_throttle
+                .lock()
+                .await
+                .check(tokio::time::Instant::now().into_std());
+            assert_eq!(decision, Decision::Suppress);
+        })
+        .await;
+        listener_task.abort();
     }
 
     #[tokio::test]
