@@ -193,7 +193,7 @@ near-jsonrpc-primitives = "0.37.3"
 near-kit = { version = "0.18.0", default-features = false, features = ["rpc"] }
 near-primitives = "0.37.3"
 near-sandbox = "0.3.15"
-near-sdk = { version = "5.29.0", features = ["legacy", "unstable"] }
+near-sdk = { version = "5.29.0", features = ["unstable"] }
 near-token = "0.3.4"
 near-workspaces = { version = "0.23.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }

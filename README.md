@@ -19,7 +19,7 @@ The node supports multiple threshold signature schemes, organized into *domains*
 **[OT-based ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md)** (Secp256k1) — Originally derived from [Cait-Sith](https://github.com/cronokirby/cait-sith). Uses an offline phase with two protocols:
   - *Triple generation*: runs continuously in the background (target: up to 1M Beaver triples per node).
   - *Presignature generation*: also runs in the background; each presignature consumes two triples.
-  - *Signing*: one round of communication using a presignature.
+  - *Signing*: by default, three rounds that presign and sign in one computation over a pair of triples; otherwise, one round using a stored presignature.
 
 **[Robust ECDSA](crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md)** (Secp256k1) — **currently an insecure stub, never enabled in production.** The previous implementation was removed; the remaining stub produces valid signatures while leaking the signing key, and exists to keep the surrounding plumbing exercised until a real robust scheme replaces it.
 

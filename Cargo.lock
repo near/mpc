@@ -7177,9 +7177,13 @@ dependencies = [
  "assert_matches",
  "borsh",
  "derive_more 2.1.1",
+ "hex",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-signature-verifier",
+ "serde_json",
+ "sha2 0.10.9",
+ "test-utils",
  "thiserror 2.0.20",
 ]
 
@@ -11603,7 +11607,6 @@ dependencies = [
  "near-mpc-contract-interface",
  "near-sdk",
  "serde",
- "sha2 0.10.9",
 ]
 
 [[package]]

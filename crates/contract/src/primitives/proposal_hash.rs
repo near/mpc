@@ -18,6 +18,7 @@
 //! New encodings (e.g. JSON) join as further strategy types.
 
 use borsh::BorshSerialize;
+use near_sdk::env::sha256_array;
 
 pub(crate) use mpc_primitives::hash::{PROPOSAL_HASH_BYTES, ProposalHash};
 
@@ -45,7 +46,7 @@ pub(crate) struct Sha256;
 
 impl<B: AsRef<[u8]>> HashProposal<B> for Sha256 {
     fn hash(bytes: B) -> ProposalHash {
-        ProposalHash::new(near_sdk::env::sha256_array(bytes.as_ref()))
+        ProposalHash::new(sha256_array(bytes))
     }
 }
 

@@ -11,11 +11,13 @@ use std::collections::HashMap;
 
 pub use triple::TripleStorage;
 
+use crate::assets::metrics::{PRESIGNATURE_GAUGES, TRIPLE_GAUGES, report_store};
 use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::ParticipantId;
+use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::{DomainKeyshare, SignatureProvider, ecdsa_common};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
@@ -46,6 +48,10 @@ pub struct EcdsaSignatureProvider {
 }
 
 pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
+
+/// Handshake protocol version that introduced [`EcdsaTaskId::OnlinePresignSignature`].
+pub const ONLINE_PRESIGN_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
+    NetworkProtocolVersion::Sep2026;
 
 impl EcdsaSignatureProvider {
     pub fn new(
@@ -86,6 +92,21 @@ impl EcdsaSignatureProvider {
 
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
         ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
+    }
+
+    /// Reports the owned-asset gauges for every store of this provider: triple
+    /// stores labelled by their `t`, presignature stores by their domain.
+    pub fn report_asset_metrics(&self) {
+        for (t, store) in &self.triple_stores {
+            report_store(&TRIPLE_GAUGES, t.inner(), store);
+        }
+        for (domain_id, keyshare) in &self.keyshares {
+            report_store(
+                &PRESIGNATURE_GAUGES,
+                domain_id,
+                &keyshare.presignature_store,
+            );
+        }
     }
 
     /// Returns the triple store for `t`, or an error if no store was
@@ -209,6 +230,19 @@ impl SignatureProvider for EcdsaSignatureProvider {
                         .instrument(self.make_signature_follower(channel, id, presignature_id))
                         .await?;
                 }
+                EcdsaTaskId::OnlinePresignSignature {
+                    id,
+                    paired_triple_id,
+                } => {
+                    ECDSA_TASK_MONITORS
+                        .make_online_presign_signature_follower
+                        .instrument(self.make_online_presign_signature_follower(
+                            channel,
+                            id,
+                            paired_triple_id,
+                        ))
+                        .await?;
+                }
             },
 
             _ => anyhow::bail!(
@@ -239,13 +273,6 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 ),
             ));
         }
-
-        // Held outside the join group below: this reporter never completes, so
-        // joining it would mask generator failures. Aborted on drop when this returns.
-        let _metrics_task = tracking::spawn(
-            "report triple metrics",
-            Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
-        );
 
         let mut generate_presignatures = Vec::new();
         for (domain_id, data) in &self.keyshares {

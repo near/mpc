@@ -2,7 +2,7 @@ use derive_more::Display;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 /// the current protocol version
-pub const CURRENT_PROTOCOL_VERSION: NetworkProtocolVersion = NetworkProtocolVersion::Jan2026;
+pub const CURRENT_PROTOCOL_VERSION: NetworkProtocolVersion = NetworkProtocolVersion::Sep2026;
 
 /// This must be extended every time we introduce an incompatible protocol
 /// change.
@@ -13,6 +13,8 @@ pub enum NetworkProtocolVersion {
     Unsupported = 0,
     Dec2025 = 7,
     Jan2026 = 8,
+    /// Adds [`EcdsaTaskId::OnlinePresignSignature`](crate::network::wire_format::EcdsaTaskId::OnlinePresignSignature).
+    Sep2026 = 9,
     #[num_enum(catch_all)]
     Unknown(u32),
 }

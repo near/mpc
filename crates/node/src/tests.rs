@@ -225,7 +225,10 @@ impl IntegrationTestSetup {
                     desired_presignatures_to_buffer: 5,
                     timeout_sec: 60,
                 },
-                signature: SignatureConfig { timeout_sec: 60 },
+                signature: SignatureConfig {
+                    timeout_sec: 60,
+                    online_presign: true,
+                },
                 ckd: CKDConfig { timeout_sec: 60 },
                 foreign_chains: ForeignChainsConfig::default(),
                 triple: TripleConfig {

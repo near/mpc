@@ -259,7 +259,9 @@ pub fn assert_expected_proposed_update(
     let mut expected_updates_map = BTreeMap::new();
     expected_updates_map.insert(
         expected_update_id,
-        dtos::UpdateHash::Code(sha2::Sha256::digest(expected_update_code).into()),
+        dtos::UpdateHash::Code(dtos::Hash256(
+            sha2::Sha256::digest(expected_update_code).into(),
+        )),
     );
 
     let expected = dtos::ProposedUpdates {

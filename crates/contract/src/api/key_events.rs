@@ -4,9 +4,8 @@
 use crate::crypto_shared::types::PublicKeyExtendedConversionError;
 use crate::errors::{Error, InvalidParameters};
 use crate::{MpcContract, MpcContractExt};
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos};
-use near_sdk::{Gas, NearToken, Promise, env, log, near};
+use near_sdk::{Gas, env, log, near};
 
 #[near]
 impl MpcContract {
@@ -112,64 +111,51 @@ impl MpcContract {
 
             // Spawn a promise to clean up votes from non-participants.
             // Note: MpcContract::vote_update uses filtering to ensure correctness even if this cleanup fails.
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::REMOVE_NON_PARTICIPANT_UPDATE_VOTES.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.remove_non_participant_update_votes_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .remove_non_participant_update_votes()
                 .detach();
             // Spawn a promise to drop votes cast by non-participants.
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEAN_TEE_STATUS.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.clean_tee_status_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(self.config.clean_tee_status_tera_gas))
+                .with_unused_gas_weight(0)
+                .clean_tee_status()
                 .detach();
             // Spawn a bounded sweep over stored attestations to prune invalid / expired entries.
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEAN_INVALID_ATTESTATIONS.to_string(),
-                    serde_json::to_vec(&serde_json::json!({
-                        "max_scan": RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN
-                    }))
-                    .unwrap(),
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.clean_invalid_attestations_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.clean_invalid_attestations_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .clean_invalid_attestations(RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN)
                 .detach();
             // Spawn a promise to clean up orphaned node migrations for non-participants
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEANUP_ORPHANED_NODE_MIGRATIONS.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.cleanup_orphaned_node_migrations_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .cleanup_orphaned_node_migrations()
                 .detach();
             // Spawn a promise to clean up foreign chain data for non-participants
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEAN_FOREIGN_CHAIN_DATA.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.clean_foreign_chain_data_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .clean_foreign_chain_data()
                 .detach();
             // Spawn a promise to drop verifier-change votes cast by non-participants
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(
-                        self.config
-                            .remove_non_participant_tee_verifier_votes_tera_gas,
-                    ),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config
+                        .remove_non_participant_tee_verifier_votes_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .remove_non_participant_tee_verifier_votes()
                 .detach();
         }
 
