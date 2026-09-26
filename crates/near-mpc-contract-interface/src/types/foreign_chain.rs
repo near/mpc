@@ -131,6 +131,32 @@ pub struct VerifyForeignTransactionRequest {
     pub expected_payload_hash: Option<Hash256>,
 }
 
+/// Requests a [`ForeignTxSignPayload::V2`] signature. Notice there is no
+/// expected payload hash compared to V1: a hash of the V2 payload covers the
+/// NEAR block height at which the MPC network performed the checks, which is
+/// decided by the MPC network and unknown to the caller.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct VerifyForeignTransactionRequestV2 {
+    pub request: ForeignChainRpcRequest,
+    pub domain_id: DomainId,
+}
+
 #[derive(
     Debug,
     Clone,
@@ -151,6 +177,61 @@ pub struct VerifyForeignTransactionRequest {
 pub struct VerifyForeignTransactionResponse {
     pub payload_hash: Hash256,
     pub signature: SignatureResponse,
+}
+
+/// Response to a [`VerifyForeignTransactionRequestV2`].
+///
+/// [`Self::payload_hash`] is the hash of the [`ForeignTxSignPayload::V2`]
+/// built from the request, [`Self::verification_block_height`] and the
+/// outcome. A [`ForeignTxVerificationResponseOutcome::Verified`] response omits the
+/// extracted values; recomputing its hash takes the values the caller expects.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct VerifyForeignTransactionResponseV2 {
+    pub payload_hash: Hash256,
+    pub signature: SignatureResponse,
+    pub verification_block_height: NearBlockHeight,
+    pub outcome: ForeignTxVerificationResponseOutcome,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ForeignTxVerificationResponseOutcome {
+    Verified {},
+    NegativeVerdict {
+        verdict: ForeignTxVerificationNegativeVerdict,
+    },
+    Inconclusive {},
 }
 
 #[derive(
@@ -1504,6 +1585,30 @@ pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
 )]
 pub struct BlockConfirmations(pub u64);
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+    derive_more::Display,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct NearBlockHeight(pub u64);
+
 #[serde_as]
 #[derive(
     Debug,
@@ -1701,11 +1806,43 @@ pub struct StarknetFelt(#[serde_as(as = "Hex")] pub [u8; 32]);
 )]
 pub struct StarknetTxId(pub StarknetFelt);
 
+/// The network's negative answer about the requested foreign chain
+/// transaction, as observed at [`ForeignTxSignPayloadV2::verification_block_height`].
+///
+/// A later check may answer differently, for example once a transaction that
+/// was not found lands.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ForeignTxVerificationNegativeVerdict {
+    TransactionFailed,
+    LogIndexOutOfBounds,
+    TransactionNotFound,
+    AccountNotFound,
+    NonCanonicalBlock,
+}
+
 /// Canonical payload for foreign-chain transaction verification signatures.
 ///
 /// This enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte
-/// `msg_hash` that the MPC network signs. Callers select the payload version
-/// via [`VerifyForeignTransactionRequestArgs::payload_version`].
+/// `msg_hash` that the MPC network signs. Callers select V1 with
+/// [`VerifyForeignTransactionRequestArgs`] and V2 with
+/// [`VerifyForeignTransactionRequestV2`].
 ///
 /// IMPORTANT: Never reorder existing enum variants or struct fields, as this
 /// would change the Borsh encoding and break signature verification.
@@ -1728,6 +1865,7 @@ pub struct StarknetTxId(pub StarknetFelt);
 )]
 pub enum ForeignTxSignPayload {
     V1(ForeignTxSignPayloadV1),
+    V2(ForeignTxSignPayloadV2),
 }
 
 #[derive(
@@ -1750,6 +1888,52 @@ pub enum ForeignTxSignPayload {
 pub struct ForeignTxSignPayloadV1 {
     pub request: ForeignChainRpcRequest,
     pub values: Vec<ExtractedValue>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignTxSignPayloadV2 {
+    pub request: ForeignChainRpcRequest,
+    pub verification_block_height: NearBlockHeight,
+    pub outcome: ForeignTxVerificationOutcome,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ForeignTxVerificationOutcome {
+    Verified { values: Vec<ExtractedValue> },
+    NegativeVerdict(ForeignTxVerificationNegativeVerdict),
+    Inconclusive,
 }
 
 impl ForeignTxSignPayload {
@@ -2190,6 +2374,89 @@ mod tests {
 
         // Then
         assert_ne!(hash_a, hash_b);
+    }
+
+    #[test]
+    fn foreign_tx_sign_payload_v2__should_have_consistent_hashes() {
+        // Given
+        let request = ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+            tx_id: EvmTxId([0xab; 32]),
+            extractors: [EvmExtractor::BlockHash].into(),
+            finality: EvmFinality::Finalized,
+        });
+        let outcomes = [
+            (
+                "verified",
+                ForeignTxVerificationOutcome::Verified {
+                    values: vec![ExtractedValue::EvmExtractedValue(
+                        EvmExtractedValue::BlockHash(Hash256([0xef; 32])),
+                    )],
+                },
+            ),
+            (
+                "transaction_failed",
+                ForeignTxVerificationOutcome::NegativeVerdict(
+                    ForeignTxVerificationNegativeVerdict::TransactionFailed,
+                ),
+            ),
+            (
+                "log_index_out_of_bounds",
+                ForeignTxVerificationOutcome::NegativeVerdict(
+                    ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds,
+                ),
+            ),
+            (
+                "transaction_not_found",
+                ForeignTxVerificationOutcome::NegativeVerdict(
+                    ForeignTxVerificationNegativeVerdict::TransactionNotFound,
+                ),
+            ),
+            (
+                "account_not_found",
+                ForeignTxVerificationOutcome::NegativeVerdict(
+                    ForeignTxVerificationNegativeVerdict::AccountNotFound,
+                ),
+            ),
+            (
+                "non_canonical_block",
+                ForeignTxVerificationOutcome::NegativeVerdict(
+                    ForeignTxVerificationNegativeVerdict::NonCanonicalBlock,
+                ),
+            ),
+            ("inconclusive", ForeignTxVerificationOutcome::Inconclusive),
+        ];
+
+        // When
+        let hashes: BTreeMap<_, _> = outcomes
+            .into_iter()
+            .map(|(name, outcome)| {
+                let payload = ForeignTxSignPayload::V2(ForeignTxSignPayloadV2 {
+                    request: request.clone(),
+                    verification_block_height: NearBlockHeight(0x0102_0304_0506_0708),
+                    outcome,
+                });
+                (name, hex::encode(payload.compute_msg_hash().unwrap().0))
+            })
+            .collect();
+
+        // Then
+        insta::assert_json_snapshot!(hashes);
+    }
+
+    #[rstest]
+    #[case::verified(ForeignTxVerificationResponseOutcome::Verified {}, json!({"Verified": {}}))]
+    #[case::negative_verdict(
+        ForeignTxVerificationResponseOutcome::NegativeVerdict {
+            verdict: ForeignTxVerificationNegativeVerdict::TransactionNotFound,
+        },
+        json!({"NegativeVerdict": {"verdict": "TransactionNotFound"}})
+    )]
+    #[case::inconclusive(ForeignTxVerificationResponseOutcome::Inconclusive {}, json!({"Inconclusive": {}}))]
+    fn foreign_tx_response_outcome__should_serialize_every_arm_as_an_object(
+        #[case] outcome: ForeignTxVerificationResponseOutcome,
+        #[case] expected: serde_json::Value,
+    ) {
+        assert_eq!(serde_json::to_value(outcome).unwrap(), expected);
     }
 
     #[rstest]
