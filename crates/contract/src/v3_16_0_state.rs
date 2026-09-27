@@ -26,14 +26,11 @@ use crate::{
 };
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
-/// layout diverges, shadow the old type here (see this module's history for examples) so
-/// state written by the `3.16.0` contract still deserializes during migration.
+/// layout diverges, shadow the old type here (see earlier `v*_state.rs` modules in git history
+/// for examples) so state written by the `3.16.0` contract still deserializes during migration.
 ///
 /// This module reads the *current* [`ProtocolContractState`], so a bound added to a stored type
-/// is also an upgrade gate: state the new type rejects cannot be migrated. That is deliberate for
-/// [`ParticipantUrl`](crate::primitives::participants::ParticipantUrl) — a url over the bound
-/// fails [`crate::MpcContract::migrate`] and rolls the deploy back, rather than being silently
-/// truncated. Check the participant set before deploying a change of that kind.
+/// is also an upgrade gate: state the new type rejects cannot be migrated.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
