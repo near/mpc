@@ -188,9 +188,11 @@ async fn submit_tx(
 
 /// Whether the attestation we submitted is now the one stored on chain.
 ///
-/// Every accepted submission restamps the entry's `attested_at_seconds`, and only the owning
-/// account may rewrite the entry, so a changed timestamp is our own submission landing. A
-/// contract that reports no timestamp falls back to [`submitted_attestation_landed_by_expiry`].
+/// Every accepted submission restamps the entry's
+/// [`attested_at_seconds`](near_mpc_contract_interface::types::StoredAttestation::attested_at_seconds),
+/// and only the owning account may rewrite the entry, so a changed timestamp is our own
+/// submission landing. A contract that reports no timestamp falls back to
+/// [`submitted_attestation_landed_by_expiry`].
 fn submitted_attestation_landed(
     baseline: SubmissionBaseline,
     stored: &GetAttestationResponse,

@@ -77,8 +77,9 @@ pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
     /// Block time at which this entry was accepted. Restamped by every accepted submission, so
-    /// a submitter can recognize its own on chain. `None` only for an entry stored before the
-    /// contract recorded this.
+    /// a submitter can recognize its own on chain. `None` for an entry stored before the contract
+    /// recorded this, and the init block time for a mocked entry nobody submitted (see
+    /// [`TeeState::with_mocked_participant_attestations`]).
     pub(crate) attested_at_seconds: Option<u64>,
 }
 

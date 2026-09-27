@@ -469,11 +469,12 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
         .get_attestation(node.tls_public_key)
         .unwrap()
         .expect("participant attestation should still be stored");
+    let attested_at_before = stored_before
+        .attested_at_seconds
+        .expect("an accepted submission stamps its acceptance time");
     assert_eq!(
         stored_after.attested_at_seconds,
-        stored_before
-            .attested_at_seconds
-            .map(|before| before + 3600)
+        Some(attested_at_before + 3600)
     );
 }
 

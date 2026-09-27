@@ -216,6 +216,10 @@ impl IndexerViewClient {
         }
     }
 
+    /// Caps how much of an unparsable response reaches the error, since the attestation it
+    /// carries is externally sized.
+    const MAX_RENDERED_RESPONSE_CHARS: usize = 512;
+
     pub(crate) async fn get_participant_attestation(
         &self,
         mpc_contract_id: &AccountId,
@@ -249,7 +253,15 @@ impl IndexerViewClient {
             QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
                 Option<near_mpc_contract_interface::types::GetAttestationResponse>,
             >(&call_result.result)
-            .context("failed to deserialize get_attestation response"),
+            .with_context(|| {
+                // An untagged enum reports only that nothing matched, naming no field, so the
+                // response itself is the only clue to the shape the contract returned.
+                let rendered: String = String::from_utf8_lossy(&call_result.result)
+                    .chars()
+                    .take(Self::MAX_RENDERED_RESPONSE_CHARS)
+                    .collect();
+                format!("failed to deserialize get_attestation response: {rendered}")
+            }),
             _ => {
                 anyhow::bail!("Unexpected result from a view client function call");
             }
