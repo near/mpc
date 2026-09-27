@@ -171,7 +171,7 @@ pub struct TcbStatusWithAdvisory {
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, derive_more::Display)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub enum VerifierError {
-    /// `dcap_qvl::verify::verify` rejected the quote / collateral.
+    /// `dcap-qvl` rejected the quote / collateral.
     #[display("dcap verification failed: {_0}")]
     DcapVerification(String),
 }
@@ -187,6 +187,35 @@ pub enum VerificationResult {
     /// The quote verified successfully against the supplied collateral.
     Verified(VerifiedReport),
     /// The verifier ran and rejected the quote.
+    Rejected(VerifierError),
+}
+
+/// Validity window of the collateral a quote was verified against, mirroring
+/// the date fields of `dcap_qvl::QuoteClaims`. Unix seconds.
+///
+/// The unprefixed window spans all eight collateral sources; the `qe_iden_*`
+/// window only the QE Identity JSON and its issuer chain.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+pub struct CollateralDates {
+    pub earliest_issue_date: u64,
+    pub latest_issue_date: u64,
+    pub earliest_expiration_date: u64,
+    pub qe_iden_earliest_issue_date: u64,
+    pub qe_iden_latest_issue_date: u64,
+    pub qe_iden_earliest_expiration_date: u64,
+}
+
+/// Outcome of `verify_quote_with_collateral_dates`: [`VerificationResult`] plus
+/// the collateral's [`CollateralDates`].
+#[expect(clippy::large_enum_variant)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+pub enum VerificationResultWithCollateralDates {
+    Verified {
+        report: VerifiedReport,
+        collateral_dates: CollateralDates,
+    },
     Rejected(VerifierError),
 }
 
@@ -375,6 +404,33 @@ mod tests {
         // When
         let bytes = borsh::to_vec(&original).expect("Borsh serialization should succeed");
         let decoded: VerificationResult =
+            borsh::from_slice(&bytes).expect("Borsh deserialization should succeed");
+
+        // Then
+        assert_eq!(original, decoded);
+    }
+
+    #[rstest]
+    #[case::verified(VerificationResultWithCollateralDates::Verified {
+        report: sample_verified_report(Report::TD10(sample_td10())),
+        collateral_dates: CollateralDates {
+            earliest_issue_date: 1,
+            latest_issue_date: 2,
+            earliest_expiration_date: 3,
+            qe_iden_earliest_issue_date: 4,
+            qe_iden_latest_issue_date: 5,
+            qe_iden_earliest_expiration_date: 6,
+        },
+    })]
+    #[case::rejected(VerificationResultWithCollateralDates::Rejected(
+        VerifierError::DcapVerification(String::from("TCB status is invalid"))
+    ))]
+    fn verification_result_with_collateral_dates__should_round_trip_borsh(
+        #[case] original: VerificationResultWithCollateralDates,
+    ) {
+        // When
+        let bytes = borsh::to_vec(&original).expect("Borsh serialization should succeed");
+        let decoded: VerificationResultWithCollateralDates =
             borsh::from_slice(&bytes).expect("Borsh deserialization should succeed");
 
         // Then
