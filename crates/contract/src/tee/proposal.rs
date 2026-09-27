@@ -941,7 +941,7 @@ mod tests {
     }
 
     #[test]
-    fn add_or_refresh__should_reset_expires_at_on_re_add() {
+    fn add_or_refresh__should_extend_expires_at_on_re_add() {
         // Given an entry added at t=1 with ttl=100 (expires_at=101).
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
@@ -950,14 +950,14 @@ mod tests {
         let mpc_hashes = vec![dummy_code_hash(10)];
         allowed.add_or_refresh(launcher, &mpc_hashes, ttl);
 
-        // When it is re-added (re-vote) just before expiry, resetting expires_at to 190.
+        // When it is re-added (re-vote) just before expiry, extending expires_at to 190.
         set_block_secs(90);
         assert_eq!(
             allowed.add_or_refresh(launcher, &mpc_hashes, ttl),
             AllowedLauncherImageInsertion::Refreshed
         );
 
-        // Then it stays live past the original deadline (101), within the refreshed window (190).
+        // Then it stays live past the original deadline (101), within the extended window (190).
         set_block_secs(150);
         assert_eq!(allowed.launcher_hashes().len(), 1);
     }

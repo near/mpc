@@ -145,8 +145,9 @@ approach instead.*
 **2. Launcher-image eviction.** A launcher hash is evicted after `launcher_hash_unused_ttl_seconds`
 (14 days) without use, where "used" means an accepted attestation from a current participant
 refreshed it. `re_verify` re-checks a stored attestation's launcher hash against the current allowed
-set, so evicting a hash kicks a node whose attestation is still valid. Today `Config::validate`
-prevents this by requiring the TTL to exceed the 7-day constant, which is going away.
+set, so evicting a hash kicks a node whose attestation is still valid. Until
+[#4516](https://github.com/near/mpc/issues/4516), `Config::validate` prevented this by requiring the
+TTL to exceed the 7-day constant, which is going away.
 
 Without that rule, a node that attests once with 30 days of validity and then stops loses its hash
 on day 14 and is kicked with 16 days left. Effective validity becomes `min(certificate expiry, 14

@@ -2163,7 +2163,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 2. Participants vote to approve the new launcher manifest digest and/or OS measurements.
 3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](../node-migration-guide.md).
-5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
+5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused and no attestation made with it is still valid; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
 
 ### Launcher Image Voting
 

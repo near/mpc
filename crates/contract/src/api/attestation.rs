@@ -761,8 +761,9 @@ mod tests {
             .clone();
 
         // Stamp the launcher earlier with the config TTL so its expiry is
-        // STAMPED_AT_SECONDS + ttl; a refresh on resolve (restamps to
-        // RESOLVE_AT_SECONDS + ttl) is then observable.
+        // STAMPED_AT_SECONDS + ttl; a refresh on resolve (extends to
+        // RESOLVE_AT_SECONDS + ttl, which is later than the attestation's own expiry) is then
+        // observable.
         contract
             .tee_state
             .allowed_launcher_images
@@ -782,7 +783,7 @@ mod tests {
         let result = contract
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
-        // Then the launcher is refreshed by the participant: expiry restamped to
+        // Then the launcher is refreshed by the participant: expiry extended to
         // RESOLVE_AT_SECONDS + ttl.
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
