@@ -89,7 +89,13 @@ impl TeeVerifier {
             now_seconds,
             &QuotePolicy::claims_only(now_seconds),
         ) {
-            Ok(claims) => claims.into_interface_type(),
+            Ok(claims) => {
+                let (report, collateral_dates) = claims.into_interface_type();
+                VerificationResultWithCollateralDates::Verified {
+                    report,
+                    collateral_dates,
+                }
+            }
             Err(err) => VerificationResultWithCollateralDates::Rejected(
                 VerifierError::DcapVerification(err.to_string()),
             ),

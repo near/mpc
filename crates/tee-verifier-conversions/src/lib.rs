@@ -20,7 +20,7 @@ use alloc::{string::ToString as _, vec::Vec};
 use dcap_qvl::{QuoteClaims, quote as dq_quote, tcb_info as dq_tcb, verify as dq_verify};
 use tee_verifier_interface::{
     Collateral, CollateralDates, EnclaveReport, QuoteBytes, Report, TDReport10, TDReport15,
-    TcbStatus, TcbStatusWithAdvisory, VerificationResultWithCollateralDates, VerifiedReport,
+    TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
 };
 
 /// Converts an interface type into its `dcap_qvl` counterpart `T`.
@@ -96,8 +96,8 @@ impl IntoInterfaceType<VerifiedReport> for dq_verify::VerifiedReport {
 
 /// Builds the report the way `dcap_qvl`'s private `into_report_unchecked` does,
 /// so it matches what [`dq_verify::verify`] returns for the same quote.
-impl IntoInterfaceType<VerificationResultWithCollateralDates> for QuoteClaims {
-    fn into_interface_type(self) -> VerificationResultWithCollateralDates {
+impl IntoInterfaceType<(VerifiedReport, CollateralDates)> for QuoteClaims {
+    fn into_interface_type(self) -> (VerifiedReport, CollateralDates) {
         let QuoteClaims {
             claims_version: _,
             header: _,
@@ -113,8 +113,8 @@ impl IntoInterfaceType<VerificationResultWithCollateralDates> for QuoteClaims {
             qe_iden_earliest_expiration_date,
             report,
         } = self;
-        VerificationResultWithCollateralDates::Verified {
-            report: VerifiedReport {
+        (
+            VerifiedReport {
                 status: tcb.status.to_string(),
                 advisory_ids: tcb.advisory_ids,
                 report: report.into_interface_type(),
@@ -128,7 +128,7 @@ impl IntoInterfaceType<VerificationResultWithCollateralDates> for QuoteClaims {
                     advisory_ids: platform.tcb_level.advisory_ids,
                 },
             },
-            collateral_dates: CollateralDates {
+            CollateralDates {
                 earliest_issue_date,
                 latest_issue_date,
                 earliest_expiration_date,
@@ -136,7 +136,7 @@ impl IntoInterfaceType<VerificationResultWithCollateralDates> for QuoteClaims {
                 qe_iden_latest_issue_date,
                 qe_iden_earliest_expiration_date,
             },
-        }
+        )
     }
 }
 
@@ -490,11 +490,11 @@ mod tests {
         let claims = dcap_quote_claims();
 
         // When
-        let result: VerificationResultWithCollateralDates = claims.into_interface_type();
+        let result: (VerifiedReport, CollateralDates) = claims.into_interface_type();
 
         // Then
-        let expected = VerificationResultWithCollateralDates::Verified {
-            report: VerifiedReport {
+        let expected = (
+            VerifiedReport {
                 status: "OutOfDate".to_string(),
                 advisory_ids: vec!["INTEL-SA-00001".to_string()],
                 report: Report::TD10(dcap_td10().into_interface_type()),
@@ -508,7 +508,7 @@ mod tests {
                     advisory_ids: vec!["INTEL-SA-00002".to_string()],
                 },
             },
-            collateral_dates: CollateralDates {
+            CollateralDates {
                 earliest_issue_date: 1,
                 latest_issue_date: 2,
                 earliest_expiration_date: 3,
@@ -516,7 +516,7 @@ mod tests {
                 qe_iden_latest_issue_date: 5,
                 qe_iden_earliest_expiration_date: 6,
             },
-        };
+        );
         assert_eq!(result, expected);
     }
 
