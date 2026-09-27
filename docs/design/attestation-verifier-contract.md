@@ -245,7 +245,7 @@ A CLI helper that runs all four deterministically (for example `attestation-cli 
 
 ### The Verifier Contract
 
-The verifier exposes exactly one method:
+The verifier exposes two methods:
 
 ```rust
 #[near]
@@ -265,10 +265,19 @@ impl TeeVerifier {
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResult;
+
+    /// `verify_quote` plus the collateral's validity window. Added for
+    /// [certificate-derived expiry](certificate-derived-attestation-expiry.md#getting-it-on-chain).
+    #[result_serializer(borsh)]
+    pub fn verify_quote_with_collateral_dates(
+        &self,
+        #[serializer(borsh)] quote: QuoteBytes,
+        #[serializer(borsh)] collateral: Collateral,
+    ) -> VerificationResultWithCollateralDates;
 }
 ```
 
-The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `VerifierError`, `VerificationResult`, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. Most are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types; the two verifier-outcome types are:
+The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `CollateralDates`, `VerifierError`, the two result types, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. Most are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types; `CollateralDates` mirrors the six date fields of `dcap_qvl::QuoteClaims`. The verifier-outcome types are:
 
 ```rust
 pub enum VerifierError {
@@ -277,6 +286,14 @@ pub enum VerifierError {
 
 pub enum VerificationResult {
     Verified(VerifiedReport),
+    Rejected(VerifierError),
+}
+
+pub enum VerificationResultWithCollateralDates {
+    Verified {
+        report: VerifiedReport,
+        collateral_dates: CollateralDates,
+    },
     Rejected(VerifierError),
 }
 ```

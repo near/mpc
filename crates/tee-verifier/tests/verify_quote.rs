@@ -248,6 +248,35 @@ fn verify_quote_with_collateral_dates__should_reject_without_panicking_for_inval
     );
 }
 
+#[test]
+fn verify_quote_with_collateral_dates__should_reject_mismatched_collateral_like_verify_quote() {
+    // Given
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let mut collateral = collateral();
+    collateral.tcb_info = String::from("{}");
+
+    // When
+    let verify_quote_result = contract.verify_quote(make_quote_bytes(), collateral.clone());
+    let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral);
+
+    // Then
+    assert!(
+        matches!(
+            verify_quote_result,
+            VerificationResult::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected verify_quote to reject, got {verify_quote_result:?}"
+    );
+    assert!(
+        matches!(
+            result,
+            VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected Rejected(DcapVerification(_)), got {result:?}"
+    );
+}
+
 fn hex_arr<const N: usize>(s: &str) -> [u8; N] {
     hex::decode(s)
         .expect("valid hex")

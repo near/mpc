@@ -1,9 +1,9 @@
 //! Stateless TEE attestation verifier contract.
 //!
-//! Wraps [`dcap_qvl::verify::verify`] in `verify_quote`, and
+//! Wraps [`dcap_qvl::verify::verify`] in [`TeeVerifier::verify_quote`], and
 //! [`dcap_qvl::verify::QuoteVerifier::verify_with_policy`] in
-//! `verify_quote_with_collateral_dates`, which also returns the collateral's
-//! validity window. The contract holds no state and has no admin;
+//! [`TeeVerifier::verify_quote_with_collateral_dates`], which also returns the
+//! collateral's validity window. The contract holds no state and has no admin;
 //! verifier-internal policy (the `dcap-qvl` version, Intel root certs, etc.) is
 //! bound to the deployed code hash. Per-team allowlists, report-data binding, and other
 //! post-DCAP checks live in the caller, not here.
@@ -70,8 +70,9 @@ impl TeeVerifier {
 
     /// [`Self::verify_quote`] plus the collateral's validity window.
     ///
-    /// Applies no policy ([`QuotePolicy::claims_only`]), so it accepts and
-    /// reports the same as [`Self::verify_quote`]. Costs more gas: reading the
+    /// Applies no policy ([`QuotePolicy::claims_only`]), so an accepted quote
+    /// gets the same report as from [`Self::verify_quote`]. It can also reject
+    /// collateral whose dates do not parse, and costs more gas: reading the
     /// dates parses the collateral a second time.
     #[result_serializer(borsh)]
     pub fn verify_quote_with_collateral_dates(
