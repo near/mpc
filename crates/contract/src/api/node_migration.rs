@@ -733,7 +733,7 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let mut test_env = Environment::new(None, Some(account_id), None);
-        test_env.set_deposit(NearToken::from_yoctonear(0));
+        test_env.set_deposit(NearToken::ZERO);
 
         // panics via `require_deposit` before the migration is stored
         // When, Then
@@ -771,7 +771,7 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let mut test_env = Environment::new(None, Some(account_id), None);
-        test_env.set_deposit(NearToken::from_yoctonear(0));
+        test_env.set_deposit(NearToken::ZERO);
         let backup_service_info = BackupServiceInfo {
             public_key: bogus_ed25519_public_key(),
         };

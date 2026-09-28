@@ -42,13 +42,13 @@ pub mod types {
     };
 
     pub use updates::{
-        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash, UpdateId,
+        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, Update, UpdateHash, UpdateId,
     };
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
         KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash,
-        NodeImageHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
+        NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
     };
 
     // Re-export crypto types from near-mpc-crypto-types

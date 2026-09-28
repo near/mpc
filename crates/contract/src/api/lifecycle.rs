@@ -15,10 +15,10 @@ use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ProposedUpdates;
-use crate::{MpcContract, MpcContractExt, v3_15_1_state};
+use crate::{MpcContract, MpcContractExt, v3_16_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
-use near_sdk::{AccountId, env, log, near};
+use near_sdk::{AccountId, env, log, near, state::ContractState};
 
 #[near]
 impl MpcContract {
@@ -47,10 +47,7 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = match init_config {
-            Some(c) => c.try_into()?,
-            None => Config::default(),
-        };
+        let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -136,10 +133,7 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = match init_config {
-            Some(c) => c.try_into()?,
-            None => Config::default(),
-        };
+        let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(MpcContract {
             config,
@@ -180,11 +174,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_15_1_state::MpcContract>() {
+        match try_state_read::<v3_16_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.15.1 state: {:?}", err);
+                log!("failed to deserialize state into 3.16.0 state: {:?}", err);
             }
         };
 
@@ -210,54 +204,7 @@ impl MpcContract {
 }
 
 fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
-    env::storage_read(b"STATE")
+    env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::*;
-    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
-    use crate::primitives::thresholds::GovernanceThreshold;
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::{NearToken, testing_env};
-
-    #[test]
-    fn init__should_reject_launcher_ttl_below_attestation_validity() {
-        // Given a launcher TTL one second below the attestation validity window.
-        let participants = gen_participants(3);
-        let signer = participants.participants()[0].0.clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer.clone())
-                .predecessor_account_id(signer)
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
-        let parameters =
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
-        let bad_config = dtos::InitConfig {
-            launcher_hash_unused_ttl_seconds: Some(
-                mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS - 1,
-            ),
-            ..Default::default()
-        };
-
-        // When init is called with that config.
-        let err = MpcContract::init(
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            Some(bad_config),
-        )
-        .expect_err("init must reject a launcher TTL below the attestation validity window");
-
-        // Then it fails, pointing at the invalid config field.
-        assert!(
-            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
-            "error should point at the invalid config field, got: {err:?}"
-        );
-    }
 }

@@ -29,3 +29,7 @@ args:     {}
 contract: mpc.near
 method:   os_measurement_votes
 args:     {}
+
+contract: mpc.near
+method:   contract_update_votes
+args:     {}

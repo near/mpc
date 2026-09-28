@@ -357,12 +357,9 @@ pub(crate) async fn presign_rounds(
 #[allow(non_snake_case)]
 mod test {
     use super::*;
-    use crate::{
-        ecdsa::ot_based_ecdsa::triples::test::deal,
-        test_utils::{
-            GenProtocol, MockCryptoRng, generate_participants, generate_test_keys,
-            make_keygen_output, run_protocol,
-        },
+    use crate::test_utils::{
+        GenProtocol, MockCryptoRng, deal_triple, generate_participants, generate_test_keys,
+        make_keygen_output, run_protocol,
     };
     use rand_core::SeedableRng;
     use rstest::rstest;
@@ -378,9 +375,9 @@ mod test {
         let threshold = 2;
 
         let (triple0_pub, triple0_shares) =
-            deal(&mut rng, &participants, original_threshold.into()).unwrap();
+            deal_triple(&mut rng, &participants, original_threshold.into()).unwrap();
         let (triple1_pub, triple1_shares) =
-            deal(&mut rng, &participants, original_threshold.into()).unwrap();
+            deal_triple(&mut rng, &participants, original_threshold.into()).unwrap();
 
         let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
@@ -438,18 +435,10 @@ mod test {
         let participants = generate_participants(num_participants);
         let (f, pk) = generate_test_keys(threshold - 1, &mut rng);
 
-        let (triple0_pub, triple0_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
-            &mut rng,
-            &participants,
-            threshold.into(),
-        )
-        .unwrap();
-        let (triple1_pub, triple1_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
-            &mut rng,
-            &participants,
-            threshold.into(),
-        )
-        .unwrap();
+        let (triple0_pub, triple0_shares) =
+            deal_triple(&mut rng, &participants, threshold.into()).unwrap();
+        let (triple1_pub, triple1_shares) =
+            deal_triple(&mut rng, &participants, threshold.into()).unwrap();
 
         let triple0_map: std::collections::HashMap<_, _> =
             participants.iter().copied().zip(triple0_shares).collect();

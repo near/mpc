@@ -3,7 +3,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, make_foreign_chain_available, propose_and_vote_contract_binary, submit_attestations,
+        init, propose_and_vote_contract_binary, submit_attestations,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -18,14 +18,12 @@ use crate::sandbox::{
         views::ViewMpcContract,
     },
 };
-use anyhow::Context as _;
 use mpc_contract::primitives::{
     key_state::EpochId,
     participants::Participants,
     test_utils::bogus_tee_verifier_account_id,
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
-use mpc_contract::storage_keys::StorageKey;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
@@ -37,9 +35,7 @@ use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -575,151 +571,4 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         "init_running call was accepted by external caller. expected method to be private. {:?}",
         error_message
     )
-}
-
-/// Legacy per-node support registered on the old contract must not break the
-/// upgrade, and the current foreign-chain state must survive it. The upgrade runs
-/// through the proposal-and-vote flow so the migration is bound by the production gas
-/// budget while clearing more legacy entries.
-#[rstest]
-#[tokio::test]
-async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
-) -> anyhow::Result<()> {
-    // Given
-    const LEGACY_PARTICIPANT_LEN: usize = 20;
-    let all_chains = [
-        dtos::ForeignChain::Solana,
-        dtos::ForeignChain::Bitcoin,
-        dtos::ForeignChain::Ethereum,
-        dtos::ForeignChain::Base,
-        dtos::ForeignChain::Bnb,
-        dtos::ForeignChain::Arbitrum,
-        dtos::ForeignChain::Abstract,
-        dtos::ForeignChain::Starknet,
-        dtos::ForeignChain::Polygon,
-        dtos::ForeignChain::HyperEvm,
-        dtos::ForeignChain::Ton,
-        dtos::ForeignChain::Aptos,
-        dtos::ForeignChain::Sui,
-        dtos::ForeignChain::Avalanche,
-        dtos::ForeignChain::Adi,
-        dtos::ForeignChain::Fogo,
-    ];
-    let worker = test_utils::sandbox::start_sandbox().await?;
-    let contract = deploy_old(&worker, network).await?;
-    let (accounts, participants) =
-        init_old_contract(&worker, &contract, LEGACY_PARTICIPANT_LEN).await?;
-    submit_attestations(&contract, &accounts, &participants).await;
-    call_contract_key_generation(
-        &[DomainConfig {
-            id: 0.into(),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(6),
-            purpose: DomainPurpose::ForeignTx,
-        }],
-        &accounts,
-        &contract,
-        0,
-    )
-    .await;
-    let chain = dtos::ForeignChain::Bitcoin;
-    make_foreign_chain_available(chain, &contract, &accounts).await;
-    for account in &accounts {
-        account
-            .call(contract.id(), "register_foreign_chain_support")
-            .args_json(serde_json::json!({ "foreign_chain_support": all_chains }))
-            .transact()
-            .await?
-            .into_result()?;
-    }
-    let configs_before: dtos::ForeignChainsConfigs = contract
-        .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
-        .await?
-        .json()
-        .context("GET_FOREIGN_CHAINS_CONFIGS json")?;
-    let available_before: dtos::AvailableForeignChains = contract
-        .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
-        .await?
-        .json()
-        .context("GET_AVAILABLE_FOREIGN_CHAINS json")?;
-    let allowed_before: BTreeMap<dtos::ForeignChain, dtos::ChainEntry> = contract
-        .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-        .await?
-        .json()
-        .context("ALLOWED_FOREIGN_CHAIN_PROVIDERS json")?;
-    assert_eq!(configs_before.len(), LEGACY_PARTICIPANT_LEN);
-    assert_eq!(*available_before, BTreeSet::from([chain]));
-    assert!(allowed_before.contains_key(&chain));
-    let legacy_keys = legacy_support_storage_keys(&accounts)?;
-    let state_before = worker.view_state(contract.id()).await?;
-    let missing: Vec<_> = legacy_keys
-        .iter()
-        .filter(|key| !state_before.contains_key(*key))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "legacy map storage keys must exist before the upgrade: {missing:?}"
-    );
-
-    // When
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
-
-    // Then
-    let configs_after: dtos::ForeignChainsConfigs = contract
-        .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
-        .await?
-        .json()
-        .context("GET_FOREIGN_CHAINS_CONFIGS json")?;
-    let available_after: dtos::AvailableForeignChains = contract
-        .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
-        .await?
-        .json()
-        .context("GET_AVAILABLE_FOREIGN_CHAINS json")?;
-    let allowed_after: BTreeMap<dtos::ForeignChain, dtos::ChainEntry> = contract
-        .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-        .await?
-        .json()
-        .context("ALLOWED_FOREIGN_CHAIN_PROVIDERS json")?;
-    assert_eq!(configs_after, configs_before);
-    assert_eq!(available_after, available_before);
-    assert_eq!(allowed_after, allowed_before);
-    let state_after = worker.view_state(contract.id()).await?;
-    let leftover: Vec<_> = legacy_keys
-        .iter()
-        .filter(|key| state_after.contains_key(*key))
-        .collect();
-    assert!(
-        leftover.is_empty(),
-        "legacy map storage must be reclaimed: {leftover:?}"
-    );
-
-    let error = contract
-        .view("get_foreign_chain_support_by_node")
-        .await
-        .expect_err("legacy view must be removed");
-    let error = format!("{error:?}");
-    assert!(
-        error.contains("MethodResolveError(MethodNotFound)"),
-        "{error}"
-    );
-    Ok(())
-}
-
-/// Raw storage keys written by the `3.15.1` `IterableMap<AccountId, BTreeSet<ForeignChain>>`.
-fn legacy_support_storage_keys(accounts: &[Account]) -> anyhow::Result<Vec<Vec<u8>>> {
-    let prefix = borsh::to_vec(&StorageKey::_DeprecatedSupportedForeignChainsByNode)?;
-    let indices_prefix = [prefix.as_slice(), b"v"].concat();
-    let values_prefix = [prefix.as_slice(), b"m"].concat();
-
-    let mut keys = Vec::with_capacity(accounts.len() * 2);
-    for (index, account) in accounts.iter().enumerate() {
-        let index = u32::try_from(index)?;
-        keys.push([indices_prefix.as_slice(), &index.to_le_bytes()].concat());
-        keys.push(
-            Sha256::digest([values_prefix.as_slice(), &borsh::to_vec(account.id())?].concat())
-                .to_vec(),
-        );
-    }
-    Ok(keys)
 }
