@@ -9,13 +9,13 @@
 use std::sync::LazyLock;
 
 use elliptic_curve::hash2curve::{ExpandMsgXmd, GroupDigest};
-use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField};
-use k256::Secp256k1;
+use elliptic_curve::ops::LinearCombination;
+use k256::{ProjectivePoint, Secp256k1};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
 use crate::crypto::constants::{NEAR_PEDERSEN_GENERATOR_DST, NEAR_PEDERSEN_GENERATOR_MSG};
-use crate::ecdsa::{CoefficientCommitment, Element, Polynomial, PolynomialCommitment, Scalar};
+use crate::ecdsa::{Element, Polynomial, PolynomialCommitment, Scalar};
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 
@@ -31,26 +31,16 @@ pub static PEDERSEN_H: LazyLock<Element> = LazyLock::new(|| {
 
 /// Computes the Pedersen commitment `Com(value; blinding) = value * G + blinding * H`.
 pub fn commit(value: &Scalar, blinding: &Scalar) -> Element {
-    Secp256K1Group::generator() * *value + *PEDERSEN_H * *blinding
+    ProjectivePoint::lincomb(&ProjectivePoint::GENERATOR, value, &PEDERSEN_H, blinding)
 }
 
 /// Commits to `f` coefficientwise under the blinding `r`: coefficient `m` is `Com(f_m; r_m)`.
+/// Errors if the two polynomials do not have the same degree.
 pub fn commit_polynomial(
     f: &Polynomial,
     r: &Polynomial,
 ) -> Result<PolynomialCommitment, ProtocolError> {
-    let f_coefficients = f.get_coefficients();
-    let r_coefficients = r.get_coefficients();
-    let zero = Secp256K1ScalarField::zero();
-
-    let len = f_coefficients.len().max(r_coefficients.len());
-    let mut commitments = Vec::with_capacity(len);
-    for m in 0..len {
-        let f_m = f_coefficients.get(m).unwrap_or(&zero);
-        let r_m = r_coefficients.get(m).unwrap_or(&zero);
-        commitments.push(CoefficientCommitment::new(commit(f_m, r_m)));
-    }
-    PolynomialCommitment::new(&commitments)
+    f.commit_polynomial_pedersen(r, &PEDERSEN_H)
 }
 
 /// Checks that `(value, blinding)` opens the committed polynomial at `participant`,
@@ -69,11 +59,16 @@ pub fn verify_share(
 mod test {
     use super::*;
     use crate::test_utils::MockCryptoRng;
+    use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField};
     use rand::SeedableRng;
 
     #[test]
-    fn test_pedersen_generator_is_valid() {
+    #[allow(non_snake_case)]
+    fn pedersen_generator__should_be_a_valid_pinned_point() {
+        // Given
         let h = *PEDERSEN_H;
+
+        // Then
         assert!(bool::from(h.ct_ne(&Secp256K1Group::identity())));
         assert!(bool::from(h.ct_ne(&Secp256K1Group::generator())));
 
@@ -83,12 +78,15 @@ mod test {
     }
 
     #[test]
-    fn test_commit_is_binding_to_both_arguments() {
+    #[allow(non_snake_case)]
+    fn commit__should_bind_to_both_value_and_blinding() {
+        // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let v = Secp256K1ScalarField::random(&mut rng);
         let r = Secp256K1ScalarField::random(&mut rng);
         let zero = Secp256K1ScalarField::zero();
 
+        // Then
         assert_eq!(commit(&v, &zero), Secp256K1Group::generator() * v);
         assert_eq!(commit(&zero, &r), *PEDERSEN_H * r);
         assert_eq!(
@@ -100,15 +98,19 @@ mod test {
     }
 
     #[test]
-    fn test_commit_polynomial_matches_pointwise_commitments() {
+    #[allow(non_snake_case)]
+    fn commit_polynomial__should_match_pointwise_commitments() {
+        // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let f = Polynomial::generate_polynomial(None, 3, &mut rng).unwrap();
         let r = Polynomial::generate_polynomial(Some(Secp256K1ScalarField::zero()), 3, &mut rng)
             .unwrap();
 
+        // When
         let committed = commit_polynomial(&f, &r).unwrap();
-        assert_eq!(committed.degree(), 3);
 
+        // Then
+        assert_eq!(committed.degree(), 3);
         for id in [0u32, 1, 5, 17] {
             let participant = Participant::from(id);
             let expected = commit(
@@ -123,27 +125,27 @@ mod test {
     }
 
     #[test]
-    fn test_commit_polynomial_zero_pads_the_shorter_polynomial() {
+    #[allow(non_snake_case)]
+    fn commit_polynomial__should_reject_mismatched_degrees() {
+        // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let f = Polynomial::generate_polynomial(None, 4, &mut rng).unwrap();
         let r = Polynomial::generate_polynomial(None, 2, &mut rng).unwrap();
 
-        let committed = commit_polynomial(&f, &r).unwrap();
-        assert_eq!(committed.degree(), 4);
+        // When
+        let result = commit_polynomial(&f, &r);
 
-        // the unblinded tail commits to the plain coefficients of f
-        let f_coefficients = f.get_coefficients();
-        let coefficients = committed.get_coefficients();
-        for m in 3..=4 {
-            assert_eq!(
-                coefficients[m].value(),
-                Secp256K1Group::generator() * f_coefficients[m]
-            );
-        }
+        // Then
+        let Err(e) = result else {
+            panic!("expected InvalidInput error");
+        };
+        assert!(matches!(e, ProtocolError::InvalidInput(_)));
     }
 
     #[test]
-    fn test_verify_share_accepts_valid_and_rejects_invalid_openings() {
+    #[allow(non_snake_case)]
+    fn verify_share__should_accept_valid_and_reject_invalid_openings() {
+        // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let f = Polynomial::generate_polynomial(None, 3, &mut rng).unwrap();
         let r = Polynomial::generate_polynomial(None, 3, &mut rng).unwrap();
@@ -153,6 +155,7 @@ mod test {
         let value = f.eval_at_participant(participant).unwrap().0;
         let blinding = r.eval_at_participant(participant).unwrap().0;
 
+        // Then
         assert!(verify_share(&committed, participant, &value, &blinding).unwrap());
 
         let one = Secp256K1ScalarField::one();

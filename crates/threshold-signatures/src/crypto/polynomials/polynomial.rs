@@ -1,5 +1,5 @@
 use frost_core::{
-    Field, Group, Scalar, keys::CoefficientCommitment, serialization::SerializableScalar,
+    Element, Field, Group, Scalar, keys::CoefficientCommitment, serialization::SerializableScalar,
 };
 use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
@@ -175,6 +175,31 @@ impl<C: Ciphersuite> Polynomial<C> {
             .collect::<Vec<_>>();
         // self cannot be the zero polynomial because there is no way
         // to create such a polynomial using this library. This implies the panic never occurs.
+        PolynomialCommitment::new(&coef_commitment)
+    }
+
+    /// Commits to the polynomial coefficientwise under a Pedersen commitment:
+    /// coefficient `m` of the result is `f_m * G + r_m * h` for the blinding
+    /// polynomial `r` and the second generator `h`.
+    /// Errors if the blinding polynomial does not have the same degree, so that a
+    /// degree mismatch cannot silently leave coefficients unblinded.
+    pub fn commit_polynomial_pedersen(
+        &self,
+        blinding: &Self,
+        h: &Element<C>,
+    ) -> Result<PolynomialCommitment<C>, ProtocolError> {
+        if self.coefficients.len() != blinding.coefficients.len() {
+            return Err(ProtocolError::InvalidInput(
+                "the blinding polynomial must have the same degree as the committed polynomial"
+                    .to_string(),
+            ));
+        }
+        let coef_commitment = self
+            .coefficients
+            .iter()
+            .zip(&blinding.coefficients)
+            .map(|(f_m, r_m)| CoefficientCommitment::new(C::Group::generator() * *f_m + *h * *r_m))
+            .collect::<Vec<_>>();
         PolynomialCommitment::new(&coef_commitment)
     }
 
