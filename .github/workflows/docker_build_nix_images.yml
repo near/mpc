@@ -13,10 +13,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push-images:
-    name: "Build and push Nix Docker images with commit hash"
+  build-images:
+    name: "Build Nix Docker images"
     runs-on: warp-ubuntu-2604-x64-16x
-    environment: production
     permissions:
       contents: read
 
@@ -26,22 +25,48 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          extra-conf: sandbox-fallback = false
+
+      - name: Build images
+        run: |
+          for image in mpc-node mpc-node-gcp mpc-launcher; do
+            nix build --print-build-logs --out-link "result-$image" ".#$image-image"
+          done
+          sha256sum result-*/manifest.json
+
+      - name: Upload images
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: images
+          path: result-*
+          if-no-files-found: error
+          retention-days: 1
+
+  push-images:
+    name: "Push Nix Docker images with commit hash"
+    needs: build-images
+    runs-on: warp-ubuntu-2604-x64-2x
+    environment: production
+    permissions: {}
+
+    steps:
+      - name: Download images
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: images
+
       - name: Login to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PAT }}
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          extra-conf: sandbox-fallback = false
-
-      - name: Build and push images
+      - name: Push images
         run: |
           tag="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}-nix"
           for image in mpc-node mpc-node-gcp mpc-launcher; do
-            nix build --print-build-logs --out-link "result-$image" ".#$image-image"
-            sha256sum "result-$image/manifest.json"
             skopeo copy --preserve-digests "dir:result-$image" "docker://docker.io/nearone/$image:$tag"
           done
