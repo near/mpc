@@ -15,7 +15,7 @@ auth_scheme = { Path = { placeholder = "{api_key}" } }
 chain_routing = "Embedded"
 
 [chains.Arbitrum.providers.tatum]
-base_url = "https://arbitrum-one-sepolia.gateway.tatum.io"
+base_url = "https://arb-testnet.gateway.tatum.io"
 auth_scheme = { Header = { name = "x-api-key" } }
 chain_routing = "Embedded"
 
