@@ -72,9 +72,11 @@ nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image
 sha256sum result/manifest.json
 ```
 
-Use `mpc-node-gcp-image` or `mpc-launcher-image` for the other images. From a
-checkout, `.#packages.x86_64-linux.mpc-node-image` gives the same digest only
-with a clean working tree, because the node binary embeds the commit hash.
+Take the full `<commit-hash>` from `main` or the release branch, since GitHub
+also serves commits that are on no branch. Use `mpc-node-gcp-image` or
+`mpc-launcher-image` for the other images. From a checkout,
+`.#packages.x86_64-linux.mpc-node-image` gives the same digest only with a
+clean working tree, because the node binary embeds the commit hash.
 
 ### Building on macOS
 
@@ -126,7 +128,7 @@ of memory runs the same build in a container:
 ```bash
 docker run --rm --privileged --platform linux/arm64 \
   -e NIX_CONFIG=$'experimental-features = nix-command flakes\nsandbox = true\nsandbox-fallback = false\nextra-platforms = x86_64-linux' \
-  nixos/nix:2.33.6 \
+  nixos/nix:2.33.6@sha256:a29d7e469a042a4f7e82fea231a1096cd57f17e3ac499b0c5472fadc5ef95188 \
   sh -c 'nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image && sha256sum result/manifest.json'
 ```
 
