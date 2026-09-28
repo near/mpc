@@ -1383,12 +1383,12 @@ Use the following custom settings for MPC:
    - public sysinfo = enabled
    - pin NUMA = disabled
 6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
-   Public 0.0.0.0:80 → 80 (main node to node communication port)
-   Public 0.0.0.0:24567 → 24567 (required for decentralized state sync)
-   Public 0.0.0.0:8080 → 8080 (required for collecting debug and telemetry information)
-   Public 0.0.0.0:8079 → 8079 (required for the node-migration HTTP endpoint)
-   Local 127.0.0.1:3030 → 3030 (use a public host address if you want the debug metrics available on the internet)
-   Local 127.0.0.1:<dstack_agent_port> → 8090 (required for access CVM information and container logs)
+   - Public `0.0.0.0:80` → `80` (main node to node communication port)
+   - Public `0.0.0.0:24567` → `24567` (required for decentralized state sync)
+   - Public `0.0.0.0:8080` → `8080` (required for collecting debug and telemetry information)
+   - Public `0.0.0.0:8079` → `8079` (required for the node-migration HTTP endpoint)
+   - Local `127.0.0.1:3030` → `3030` (use a public host address if you want the debug metrics available on the internet)
+   - Local `127.0.0.1:<dstack_agent_port>` → `8090` (required to access CVM information and container logs, see [Accessing MPC (or Launcher) Docker Logs](#accessing-mpc-or-launcher-docker-logs))
 
    The **host address** is the IP qemu binds each forward to. Single-node deployments use `0.0.0.0` to bind on every host interface. **Multi-node deployments** (mainnet + testnet on one host) use a specific public IP per CVM — see [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md).
 
@@ -1451,15 +1451,17 @@ Full flag reference and `.env` field-by-field documentation:
 Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.
 More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).
 
-> **Log retention:** the MPC container is reused across **restarts**, so its
-> logs are preserved and remain viewable here after a restart. An **upgrade**
-> (new image) recreates the container, which clears its logs.
+> **Log retention:** from launcher 3.14.0, the MPC container is reused across
+> **restarts**, so its logs are preserved and remain viewable here after a
+> restart. An **upgrade** (new image) recreates the container, which clears its
+> logs. Launchers before 3.14.0 recreate the container on every restart, so they
+> clear its logs each time.
 
 ---
 
 #### Local Access
 
-The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface).
+The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface). If you deployed with `deploy-launcher.sh`, it is the host port set in `EXTERNAL_DSTACK_AGENT_PORT` in your env file (default `127.0.0.1:9208`).
 
 Open in your browser:
 
@@ -1473,10 +1475,10 @@ http://localhost:<dstack_agent_port>
 
 If you need to access the web page from another machine, set up SSH port forwarding.
 
-For example, if `dstack_agent_port = 8090`:
+For example, if `dstack_agent_port = 9208`:
 
 ```bash
-ssh -NL 17190:localhost:8090 USER_NAME@TDX_SERVER
+ssh -NL 17190:localhost:9208 USER_NAME@TDX_SERVER
 ```
 
 Then open:
@@ -1490,6 +1492,18 @@ http://localhost:17190
 #### Example / Screenshot
 
 ![CVM Web Page](attachments/CVM_web_page.png)
+
+---
+
+#### Command-Line Access
+
+The same port serves each container's logs as plain text at `/logs/<container>` (`mpc-node` or `launcher`):
+
+```bash
+curl -sS 'http://localhost:<dstack_agent_port>/logs/mpc-node?text&timestamps&bare&tail=1000'
+```
+
+`tail` is the number of lines read from the end of the log (default `1000`, or `all`). Add `&follow` to keep streaming new lines.
 
 ### Retrieve Public Keys from the MPC Node
 
