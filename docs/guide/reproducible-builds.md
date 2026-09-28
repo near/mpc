@@ -7,7 +7,7 @@ security and verification purposes.
 
 ## Prerequisites
 
-**Common requirements** (for both node and launcher Docker images):
+**Common requirements** (for building the node and launcher images with the script below):
 
 - `docker` with buildx support
 - `jq`
@@ -56,12 +56,11 @@ During the transition to hermetic builds, CI also builds every image with
 `nearone/<image>:<branch>-<short-sha>-nix`. These images are not voted on yet:
 operators vote on the digests printed by the script above.
 
-Every build step runs in the Nix sandbox without network access, from inputs
-pinned by `flake.lock`, `Cargo.lock` and `rust-toolchain.toml`; only fetching
-those pinned inputs touches the network. Where the kernel refuses the
-sandbox (for example inside a container) Nix silently builds without it, so set
-`sandbox-fallback = false` in `nix.conf`, as CI does, to make such a build fail
-instead.
+Every build step runs in the Nix sandbox, from inputs pinned by `flake.lock`,
+`Cargo.lock` and `rust-toolchain.toml`; only fetching those pinned inputs
+touches the network. Where the kernel refuses the sandbox (for example inside a
+container) Nix silently builds without it, so set `sandbox-fallback = false` in
+`nix.conf`, as CI does, to make such a build fail instead.
 
 Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` equals the digest of the published `-nix` tag. The same
@@ -73,8 +72,8 @@ sha256sum result/manifest.json
 ```
 
 Take the full `<commit-hash>` from `main` or the release branch, since GitHub
-also serves commits that are on no branch. Use `mpc-node-gcp-image` or
-`mpc-launcher-image` for the other images. From a checkout,
+also serves commits from any fork under `near/mpc`. Use `mpc-node-gcp-image`
+or `mpc-launcher-image` for the other images. From a checkout,
 `.#packages.x86_64-linux.mpc-node-image` gives the same digest only with a
 clean working tree, because the node binary embeds the commit hash.
 
@@ -122,8 +121,8 @@ installer), rename them with a `.before-nix-darwin` suffix and rerun:
 sudo nix --extra-experimental-features 'nix-command flakes' run nix-darwin/master#darwin-rebuild -- switch
 ```
 
-Without a Linux builder, Docker Desktop with Rosetta enabled and at least 16 GB
-of memory runs the same build in a container:
+Without a Linux builder, Docker Desktop on macOS 26 or newer, with Rosetta
+enabled and at least 16 GB of memory, runs the same build in a container:
 
 ```bash
 docker run --rm --privileged --platform linux/arm64 \
