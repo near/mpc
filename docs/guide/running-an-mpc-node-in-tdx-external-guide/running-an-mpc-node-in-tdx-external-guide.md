@@ -946,6 +946,7 @@ The snippet above shows only the fields you are likely to change. Required field
 Adjust the variables as per your environment.
 
 * `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
+* `home_dir`: must be `/data` or a path under it. `/data` is the only persistent volume in the node container; anything outside it is lost when the container is recreated, and the node starts over with new keys.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](../node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
