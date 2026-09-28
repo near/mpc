@@ -72,6 +72,7 @@ pub fn verify_share(
 mod test {
     use super::*;
     use crate::test_utils::MockCryptoRng;
+    use assert_matches::assert_matches;
     use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField};
     use rand::SeedableRng;
 
@@ -149,10 +150,7 @@ mod test {
         let result = commit_polynomial(&f, &r);
 
         // Then
-        let Err(e) = result else {
-            panic!("expected InvalidInput error");
-        };
-        assert!(matches!(e, ProtocolError::InvalidInput(_)));
+        assert_matches!(result, Err(ProtocolError::InvalidInput(_)));
     }
 
     #[test]
