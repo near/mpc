@@ -72,6 +72,14 @@ pub async fn run_command(args: cli::Args) {
         }
         cli::Command::Run(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
+
+            let (status_reporter, status) = adapters::web::status_channel();
+            if let Some(listen_address) = subcommand_args.listen_address {
+                adapters::web::spawn_web_server(listen_address, status)
+                    .await
+                    .expect("failed to start the web server");
+            }
+
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
@@ -92,13 +100,6 @@ pub async fn run_command(args: cli::Args) {
                     request_timeout,
                 )
                 .await;
-
-            let (status_reporter, status) = adapters::web::status_channel();
-            if let Some(listen_address) = subcommand_args.listen_address {
-                adapters::web::spawn_web_server(listen_address, status)
-                    .await
-                    .expect("failed to start the web server");
-            }
 
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());

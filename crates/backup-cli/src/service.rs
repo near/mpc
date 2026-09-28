@@ -146,7 +146,15 @@ where
             .await
             .map_err(|err| anyhow!("failed to store keyshares: {err:?}"))?;
         self.backed_up = BackedUpKeyset::from_keyshares(&keyshares);
-        self.status.keyset_backed_up(keyset.epoch_id);
+        // We report only a backup that covers the whole keyset, because a partial fetch is
+        // re-attempted next tick and /status must not claim the epoch is done meanwhile.
+        if self
+            .backed_up
+            .as_ref()
+            .is_some_and(|backed_up| backed_up.covers(&keyset))
+        {
+            self.status.keyset_backed_up(keyset.epoch_id);
+        }
         Ok(BackupOutcome::BackedUp {
             epoch_id: keyset.epoch_id,
             num_domains: keyshares.len(),
@@ -702,6 +710,22 @@ mod tests {
             }
         );
         assert_eq!(service.backed_up, backed_up(5, &[0]));
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_not_report_a_backup_missing_domains() {
+        // Given
+        let mut service = service(
+            FakeP2PClient::holding_domains(&[0]),
+            FakeKeyshareStorage::empty(),
+        )
+        .await;
+
+        // When
+        back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+
+        // Then
+        assert!(service.status.reported.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

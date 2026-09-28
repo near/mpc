@@ -251,7 +251,7 @@ Notes:
 - Pass the encryption key through the environment as above rather than on the command line, where `ps` would expose it.
 - Keyshares already backed up are never re-fetched or overwritten, so restarting the service is safe and older epochs' files are kept.
 - It re-reads the contract every `--poll-interval-seconds` (default 60) and acts only when the state actually changed. A successful backup logs at `info`, a failed one at `warn`, and a failed backup is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
-- `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`. When unset (the default), nothing is served.
+- `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`. When unset (the default), nothing is served. After a restart the backup time is unknown, so until the next backup `/status` reports `timestamp_seconds: null` and the timestamp gauge is absent — an alert on that gauge returns no data then, rather than firing.
 - This is the backup direction only. Restoring (Steps 6–8) stays manual.
 
 See [Automatic backups](../archive/design/migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee, including the RPC endpoint's role.
