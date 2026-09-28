@@ -41,13 +41,20 @@ where
             .await
             .map_err(|err| anyhow!("failed to load stored keyshares: {err:?}"))?;
 
+        let backed_up = BackedUpKeyset::from_keyshares(&stored);
+        // A covered keyset is skipped until the next epoch change, so without this report a
+        // restart would leave /status and /metrics claiming no backup for weeks.
+        if let Some(backed_up) = &backed_up {
+            status.keyset_already_backed_up(backed_up.epoch_id);
+        }
+
         Ok(Self {
             keyshares,
             storage,
             contract_state,
             status,
             retry_delay,
-            backed_up: BackedUpKeyset::from_keyshares(&stored),
+            backed_up,
         })
     }
 
@@ -239,11 +246,16 @@ mod tests {
     #[derive(Default)]
     struct FakeStatusReporter {
         reported: std::sync::Mutex<Vec<EpochId>>,
+        already_backed_up: std::sync::Mutex<Vec<EpochId>>,
     }
 
     impl ReportBackupStatus for FakeStatusReporter {
         fn keyset_backed_up(&self, epoch_id: EpochId) {
             self.reported.lock().unwrap().push(epoch_id);
+        }
+
+        fn keyset_already_backed_up(&self, epoch_id: EpochId) {
+            self.already_backed_up.lock().unwrap().push(epoch_id);
         }
     }
 
@@ -449,6 +461,32 @@ mod tests {
             .back_up_if_needed(state, &CancellationToken::new())
             .await
             .expect("the backup should succeed")
+    }
+
+    #[tokio::test]
+    async fn new__should_report_a_keyset_that_storage_already_covers() {
+        // Given
+        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(5, &FIXTURE_DOMAIN_IDS));
+
+        // When
+        let service = service(FakeP2PClient::new(), storage).await;
+
+        // Then
+        assert_eq!(
+            *service.status.already_backed_up.lock().unwrap(),
+            vec![EpochId::new(5)]
+        );
+        assert!(service.status.reported.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn new__should_report_nothing_when_storage_is_empty() {
+        // When
+        let service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
+
+        // Then
+        assert!(service.status.already_backed_up.lock().unwrap().is_empty());
+        assert!(service.status.reported.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

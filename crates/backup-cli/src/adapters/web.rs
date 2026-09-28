@@ -19,7 +19,9 @@ pub struct BackupStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct LastBackup {
     pub epoch_id: EpochId,
-    pub timestamp_seconds: u64,
+    /// `None` when the keyset was found already backed up on startup: storage holds no
+    /// record of when it was written.
+    pub timestamp_seconds: Option<u64>,
 }
 
 /// Connects the service to the web server: the [`BackupStatusReporter`] goes to the service,
@@ -35,19 +37,32 @@ pub struct BackupStatusReporter {
 
 impl ReportBackupStatus for BackupStatusReporter {
     fn keyset_backed_up(&self, epoch_id: EpochId) {
+        self.publish(epoch_id, unix_now_seconds());
+    }
+
+    fn keyset_already_backed_up(&self, epoch_id: EpochId) {
+        self.publish(epoch_id, None);
+    }
+}
+
+impl BackupStatusReporter {
+    fn publish(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>) {
         self.sender.send_replace(BackupStatus {
             last_backup: Some(LastBackup {
                 epoch_id,
-                timestamp_seconds: unix_now_seconds(),
+                timestamp_seconds,
             }),
         });
     }
 }
 
-fn unix_now_seconds() -> u64 {
+/// `None` when the system clock is before the Unix epoch (e.g. an RTC reset before NTP
+/// sync), since no timestamp is more honest than a 1970 one.
+fn unix_now_seconds() -> Option<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs())
+        .ok()
+        .map(|elapsed| elapsed.as_secs())
 }
 
 /// Serves `/health`, `/status` and `/metrics` on `listen_address` until the process exits.
@@ -83,11 +98,12 @@ async fn serve_status(State(status): State<watch::Receiver<BackupStatus>>) -> Js
 }
 
 async fn serve_metrics(State(status): State<watch::Receiver<BackupStatus>>) -> String {
-    render_metrics(&status.borrow().clone())
+    render_metrics(&status.borrow())
 }
 
 /// Renders the Prometheus exposition of `status`. The gauges are absent until the first
-/// backup, mirroring the node's `mpc_last_backup_served_*` metrics.
+/// backup, mirroring the node's `mpc_last_backup_served_*` metrics; the timestamp gauge
+/// stays absent while the backup time is unknown.
 fn render_metrics(status: &BackupStatus) -> String {
     let registry = Registry::new();
     if let Some(last_backup) = &status.last_backup {
@@ -97,12 +113,14 @@ fn render_metrics(status: &BackupStatus) -> String {
             "Epoch id of the keyset most recently backed up by this service",
             saturating_i64(last_backup.epoch_id.get()),
         );
-        register_gauge(
-            &registry,
-            "backup_cli_last_backup_timestamp_seconds",
-            "Unix time at which keyshares were most recently backed up",
-            saturating_i64(last_backup.timestamp_seconds),
-        );
+        if let Some(timestamp_seconds) = last_backup.timestamp_seconds {
+            register_gauge(
+                &registry,
+                "backup_cli_last_backup_timestamp_seconds",
+                "Unix time at which keyshares were most recently backed up",
+                saturating_i64(timestamp_seconds),
+            );
+        }
     }
 
     let mut buffer = vec![];
@@ -133,7 +151,16 @@ mod tests {
         BackupStatus {
             last_backup: Some(LastBackup {
                 epoch_id: EpochId::new(5),
-                timestamp_seconds: 1_700_000_000,
+                timestamp_seconds: Some(1_700_000_000),
+            }),
+        }
+    }
+
+    fn status_after_a_restart() -> BackupStatus {
+        BackupStatus {
+            last_backup: Some(LastBackup {
+                epoch_id: EpochId::new(5),
+                timestamp_seconds: None,
             }),
         }
     }
@@ -152,7 +179,24 @@ mod tests {
             .last_backup
             .expect("a backup should be published");
         assert_eq!(last_backup.epoch_id, EpochId::new(5));
-        assert!(last_backup.timestamp_seconds > 0);
+        assert!(last_backup.timestamp_seconds.is_some_and(|t| t > 0));
+    }
+
+    #[test]
+    fn keyset_already_backed_up__should_publish_the_epoch_without_a_timestamp() {
+        // Given
+        let (reporter, status) = status_channel();
+
+        // When
+        reporter.keyset_already_backed_up(EpochId::new(5));
+
+        // Then
+        let last_backup = status
+            .borrow()
+            .last_backup
+            .expect("a backup should be published");
+        assert_eq!(last_backup.epoch_id, EpochId::new(5));
+        assert_eq!(last_backup.timestamp_seconds, None);
     }
 
     #[tokio::test]
@@ -198,6 +242,23 @@ mod tests {
     }
 
     #[test]
+    fn backup_status_json__should_expose_a_backup_with_an_unknown_time_as_null() {
+        // Given
+        let status = status_after_a_restart();
+
+        // When
+        let json = serde_json::to_value(&status).unwrap();
+
+        // Then
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "last_backup": { "epoch_id": 5, "timestamp_seconds": null }
+            })
+        );
+    }
+
+    #[test]
     fn render_metrics__should_render_the_last_backup_gauges() {
         // Given
         let status = status_after_a_backup();
@@ -212,6 +273,25 @@ mod tests {
         );
         assert!(
             metrics.contains("backup_cli_last_backup_timestamp_seconds 1700000000"),
+            "{metrics}"
+        );
+    }
+
+    #[test]
+    fn render_metrics__should_render_only_the_epoch_gauge_when_the_backup_time_is_unknown() {
+        // Given
+        let status = status_after_a_restart();
+
+        // When
+        let metrics = render_metrics(&status);
+
+        // Then
+        assert!(
+            metrics.contains("backup_cli_last_backup_epoch 5"),
+            "{metrics}"
+        );
+        assert!(
+            !metrics.contains("backup_cli_last_backup_timestamp_seconds"),
             "{metrics}"
         );
     }

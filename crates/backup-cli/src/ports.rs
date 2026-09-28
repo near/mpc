@@ -7,6 +7,10 @@ use crate::types;
 
 pub trait ReportBackupStatus {
     fn keyset_backed_up(&self, epoch_id: EpochId);
+    /// Storage was found to already cover `epoch_id` on startup. Reported separately from
+    /// [`Self::keyset_backed_up`] because storage holds no record of when it was written,
+    /// so there is no backup time to publish.
+    fn keyset_already_backed_up(&self, epoch_id: EpochId);
 }
 
 pub trait WatchContractState {
