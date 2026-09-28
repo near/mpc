@@ -1,0 +1,5 @@
+---
+source: crates/threshold-signatures/src/crypto/pedersen.rs
+expression: "hex::encode(ser)"
+---
+0319e0d0e9bea87c5eb6ad165168247a0eac841986626fee086cd21db5272ac99f
