@@ -23,7 +23,7 @@ The inputs to this phase are:
 **Round 1:**
 
 1. Each $P_i$ generates two random, degree $t$ polynomials $f_{k_i}$ and $f_{a_i}$
-2. Each $P_i$ generates a random, degree $t$ polynomial $f_{\rho_i}$ with constant term zero.
+2. Each $P_i$ generates a random, degree $t$ polynomial $f_{\rho_i}$.
 3. Each $P_i$ generates three random, degree $2t$ polynomials $f_{b_i}$, $f_{d_i}$, and $f_{e_i}$ and set their constant terms to zero.
 4. Each $P_i$ generates a random, degree $2t$ polynomial $f_{\sigma_i}$ with constant term zero
 5. Each $P_i$ commits to $f_{a_i}$ and $f_{b_i}$:
