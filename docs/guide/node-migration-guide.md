@@ -247,6 +247,7 @@ backup-cli \
 Notes:
 
 - No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
+- The endpoint is probed at startup: if the contract state cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. When starting at boot, before the network is up, rely on the supervisor's restart policy.
 - Pass the encryption key through the environment as above rather than on the command line, where `ps` would expose it.
 - Keyshares already backed up are never re-fetched or overwritten, so restarting the service is safe and older epochs' files are kept.
 - It re-reads the contract every `--poll-interval-seconds` (default 60) and acts only when the state actually changed. A successful backup logs at `info`, a failed one at `warn`, and a failed backup is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.

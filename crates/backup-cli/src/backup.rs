@@ -147,7 +147,8 @@ async fn open_node_client_and_storage(
 }
 
 /// Reads the contract state once, so a misconfigured RPC endpoint fails startup with an
-/// actionable error instead of surfacing as silently retried poll failures.
+/// actionable error instead of a one-time `warn` from the poller and a service that runs
+/// without ever backing anything up.
 async fn probe_contract_state(
     contract_state: &impl ports::ReadContractState,
     read_timeout: Duration,
