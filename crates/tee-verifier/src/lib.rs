@@ -36,6 +36,7 @@ pub struct TeeVerifier {}
 
 #[near]
 impl TeeVerifier {
+    // TODO(#4558): remove once no deployed `mpc-contract` calls it.
     /// Verify a TDX quote against Intel collateral.
     ///
     /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp and
