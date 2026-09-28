@@ -17,20 +17,18 @@ use frost_core::{Group, serialization::SerializableScalar};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
-/// The public statement for this proof.
-/// This statement claims knowledge of an opening `(a, b, ρ, σ)` of `big_w` that is
-/// consistent with the Pedersen commitments `com_a` and `com_b`.
+/// Public statement: an opening `(a, b, ρ, σ)` of `big_w` consistent with `com_a` and `com_b`.
 #[derive(Clone, Copy)]
 pub struct Statement<'a, C: Ciphersuite> {
-    /// The point `W = w * G` whose opening `w = a * k + b` is being proven.
+    /// `W = w * G` for the proven opening `w = a * k + b`.
     pub big_w: &'a Element<C>,
-    /// The prover's nonce commitment `R = k * G`.
+    /// The nonce commitment `R = k * G`.
     pub big_r: &'a Element<C>,
-    /// The Pedersen commitment `a * G + ρ * H` to the prover's share `a`.
+    /// Pedersen commitment `a * G + ρ * H`.
     pub com_a: &'a Element<C>,
-    /// The Pedersen commitment `b * G + σ * H` to the prover's share `b`.
+    /// Pedersen commitment `b * G + σ * H`.
     pub com_b: &'a Element<C>,
-    /// The Pedersen generator `H` with unknown discrete logarithm.
+    /// The Pedersen generator `H` with unknown discrete log.
     pub h_ped: &'a Element<C>,
 }
 
@@ -44,16 +42,14 @@ fn element_into<C: Ciphersuite>(
             enc.extend_from_slice(label);
             enc.extend_from_slice(ser.as_ref());
         }
-        // unreachable as either the statement is locally created
-        // and thus the points are well defined, or it is received
-        // from someone and thus it is serializable.
+        // unreachable: statement points are locally built or were deserialized
         _ => return Err(ProtocolError::PointSerialization),
     }
     Ok(enc)
 }
 
 impl<C: Ciphersuite> Statement<'_, C> {
-    /// Encode into `Vec<u8>`: some sort of serialization
+    /// Encodes the statement for the transcript.
     fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut enc = Vec::new();
         enc.extend_from_slice(NEAR_W_OPENING_ENCODE_LABEL_STATEMENT);
@@ -81,8 +77,7 @@ impl<C: Ciphersuite> Statement<'_, C> {
     }
 }
 
-/// The private witness for this proof.
-/// This holds the opening `(a, b, ρ, σ)` the prover needs to know.
+/// Private witness: the opening `(a, b, ρ, σ)`.
 #[derive(Clone)]
 pub struct Witness<C: Ciphersuite>
 where
@@ -115,11 +110,10 @@ where
     }
 }
 
-/// The four nonces `(u_a, u_b, u_ρ, u_σ)` used to build the proof commitments.
-/// Each must be sampled from a cryptographically secure RNG by the caller.
+/// Nonces `(u_a, u_b, u_ρ, u_σ)`, sampled by the caller from a secure RNG.
 pub type Nonces<C> = (Scalar<C>, Scalar<C>, Scalar<C>, Scalar<C>);
 
-/// Represents a proof of the statement.
+/// Proof of the statement.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(bound = "C: Ciphersuite")]
 pub struct Proof<C: Ciphersuite> {
@@ -130,7 +124,7 @@ pub struct Proof<C: Ciphersuite> {
     z_sigma: SerializableScalar<C>,
 }
 
-/// Encodes three EC points into a vec, raising an error on the identity point.
+/// Encodes three points, erroring on the identity.
 fn encode_three_points<C: Ciphersuite>(
     point_1: &Element<C>,
     point_2: &Element<C>,
@@ -148,14 +142,8 @@ fn encode_three_points<C: Ciphersuite>(
     Ok(ser)
 }
 
-/// Computes the three proof commitments `(K0, K1, K2)` for the given per-proof
-/// scalars `(t_a, t_b, t_ρ, t_σ)`:
-///
-/// ```text
-/// K0 = t_a * R + t_b * G
-/// K1 = t_a * G + t_ρ * H
-/// K2 = t_b * G + t_σ * H
-/// ```
+/// Proof commitments: `K0 = t_a * R + t_b * G`, `K1 = t_a * G + t_ρ * H`,
+/// `K2 = t_b * G + t_σ * H`.
 fn phi<C: Ciphersuite>(
     statement: &Statement<'_, C>,
     t_a: &Scalar<C>,
@@ -171,8 +159,7 @@ fn phi<C: Ciphersuite>(
     )
 }
 
-/// Produce a proof for the given statement and witness, using caller-provided nonces.
-/// The challenge is derived via the Fiat-Shamir transform over the transcript.
+/// Proves the statement with caller-provided nonces (challenge: Fiat-Shamir over the transcript).
 pub fn prove_with_nonces<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
@@ -206,9 +193,7 @@ where
     })
 }
 
-/// Verify that a proof attesting to the validity of some statement.
-///
-/// We use a transcript in order to verify the Fiat-Shamir transformation.
+/// Verifies a proof by replaying the Fiat-Shamir transcript.
 pub fn verify<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
@@ -370,7 +355,7 @@ mod test {
         )
         .unwrap();
 
-        // a verifier whose transcript absorbed a different context (e.g. another eta)
+        // verifier absorbed a different context (e.g. another eta)
         let other_transcript = Transcript::new(b"protocol");
         let mut verifier_transcript = other_transcript.fork(b"party", &[1]);
         verifier_transcript.message(b"eta", b"different context");
@@ -390,7 +375,7 @@ mod test {
         )
         .unwrap();
 
-        // same points but com_a and com_b swapped
+        // com_a and com_b swapped
         let mut swapped_points = case.statement_points;
         swapped_points.swap(2, 3);
         let swapped = make_statement(&swapped_points);
@@ -464,7 +449,7 @@ mod test {
         )
         .unwrap();
 
-        // Snapshot values for deterministic nonces from MockCryptoRng(42)
+        // deterministic nonces from MockCryptoRng(42)
         insta::assert_snapshot!(format!(
             "e: {:?}\nz_a: {:?}\nz_b: {:?}\nz_rho: {:?}\nz_sigma: {:?}",
             proof.e.0, proof.z_a.0, proof.z_b.0, proof.z_rho.0, proof.z_sigma.0
