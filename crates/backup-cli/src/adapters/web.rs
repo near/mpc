@@ -19,13 +19,9 @@ pub struct BackupStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct LastBackup {
     pub epoch_id: EpochId,
-    /// `None` when the keyset was found already backed up on startup: storage holds no
-    /// record of when it was written.
     pub timestamp_seconds: Option<u64>,
 }
 
-/// Connects the service to the web server: the [`BackupStatusReporter`] goes to the service,
-/// the receiver to [`spawn_web_server`].
 pub fn status_channel() -> (BackupStatusReporter, watch::Receiver<BackupStatus>) {
     let (sender, receiver) = watch::channel(BackupStatus::default());
     (BackupStatusReporter { sender }, receiver)
