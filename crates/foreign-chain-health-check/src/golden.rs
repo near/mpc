@@ -134,17 +134,29 @@ const TESTNET: GoldenSet = GoldenSet {
     }),
     // BSC testnet (Chapel).
     bnb: Some(BlockHashVector {
-        tx: "3ae63e2e036f7cc4c266a9f55ab194751e0a10d4c4794ba02caa6b12cfed09bb",
-        block_hash: "20c3d3870d5d6a5a911f0e83b9d32fd1bee3cadc94294f5db913fdbf5a17fae4",
+        tx: "a6c258d7bea8d9630c25f9aad259ca78420ad644a0c52c0396efe9ad9575a33a",
+        block_hash: "399ec4d73de4fad3472dec0a112b62fba192b9ac8b19ed1a4094cac375d527f0",
     }),
     // Arbitrum Sepolia.
     arbitrum: Some(BlockHashVector {
         tx: "ff09e6c516be6285e3ae768563c4f07c3bbac59d44fedd09a805d8f5c6f492c8",
         block_hash: "b6ceb5a5655d4f028ea0e737581a98004463da326f6a6c84f18363331571099b",
     }),
-    polygon: None,
-    hyper_evm: None,
-    avalanche: None,
+    // Polygon Amoy.
+    polygon: Some(BlockHashVector {
+        tx: "1ad62eb6668faa99d8c7fd4e037ae0f1ff3241dec4c4e97aadb2cc8aefb7033b",
+        block_hash: "22967fb42be673eb0e2db84bc92eb42a201014eadae1af992cd868da56bbee19",
+    }),
+    // HyperEVM testnet.
+    hyper_evm: Some(BlockHashVector {
+        tx: "21e02e6a8b02aef9f27718aacb4a832e789a8d278ed5c42fc8f575fcef042849",
+        block_hash: "399748f03fdae8b233733fb798af62cf543570cf3a4a0d950a546f66c4b61a7e",
+    }),
+    // Avalanche Fuji.
+    avalanche: Some(BlockHashVector {
+        tx: "e75da9131889cd45c11a2d7b8f4407a82e539307eab88f3c23bb11322a32710b",
+        block_hash: "b71f94fa99c3614ff3d2d1ba49f0f1be68c442e0a9f8b4c003a11cef4a2969ef",
+    }),
     adi: None,
     abstract_chain: Some(BlockHashVector {
         tx: "497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234",
