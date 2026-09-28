@@ -1,6 +1,6 @@
 This document specifies the signing protocol described in [[DJNPO20](https://eprint.iacr.org/2020/501)].
 
-**We deviate from the original scheme in the following ways.** The protocol is a single four-round protocol whose inputs include the message hash and the tweak from round 1. The shares of $a$ and of the blinding value $b$ are dealt under Pedersen commitments in round 1, receivers verify their shares against them, and in round 3 every participant proves in zero knowledge that its $w_i$ opens consistently with its committed $a_i$ and $b_i$, so that a misbehaving dealer or participant is identified; the values $W_i = a_i \cdot R$ and the global check $W = w \cdot G$ are removed. Key derivation is applied to the secret shares before round 1, and the last round is asymmetric with a coordinator collecting the signature shares.
+**We deviate from the original scheme in the following ways.** The protocol is a single four-round protocol whose inputs include the message hash and the tweak from round 1. The shares of $a$ and of the blinding value $b$ are dealt under Pedersen commitments in round 1, receivers verify their shares against them, and in round 3 every participant proves in zero knowledge that its $w_i$ opens consistently with its committed $a_i$ and $b_i$, so that a misbehaving dealer or participant is identified by the checking party; the values $W_i = a_i \cdot R$ and the global check $W = w \cdot G$ are removed. Key derivation is applied to the secret shares before round 1, and the last round is asymmetric with a coordinator collecting the signature shares.
 
 ### Note:  We denote $\mathcal{P}$ the set of participants included the DKG and the threshold $t = \mathsf{MaxMalicious}$
 
@@ -57,7 +57,7 @@ $$
 
 1. $\bullet$ Each $P_i$ waits to receive the committed polynomials $(\hat f_{a_j}, \hat f_{b_j})$ from each party $P_j$
 2. $\bullet$ Each $P_i$ waits to receive $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji}, \rho_{ji}, \sigma_{ji})$ from each party $P_j$
-3. $\blacktriangle$ Each $P_i$ *asserts* the following identifying whether $P_j$ is honest or malicious:
+3. $\blacktriangle$ Each $P_i$ *asserts* the following, identifying $P_j$ as malicious to $P_i$ alone otherwise (the check uses $P_i$'s private shares, so the identification is not transferable):
 
 $$
 \mathsf{Com}(a_{ji}; \rho_{ji}) = \hat f_{a_j}(i) \qquad
@@ -122,7 +122,7 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 **Round 4:**
 
 1. $\bullet$ Each $P_i$ waits to receive $\pi_j$ from every party.
-2. $\blacktriangle$ For each $j$, each $P_i$ *asserts* that $\mathsf{Verify}\big(w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j;\ \pi_j\big)$ succeeds, identifying $P_j$ as malicious otherwise.
+2. $\blacktriangle$ For each $j$, each $P_i$ *asserts* that $\mathsf{Verify}\big(w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j;\ \pi_j\big)$ succeeds, identifying $P_j$ as malicious to $P_i$ otherwise ($R_j$ and $w_j$ are not echoed, so the identification is only as transferable as $P_i$'s view of them).
    * $\mathsf{Verify}$, parsing $\pi_j = (e, z_a, z_b, z_\rho, z_\sigma)$:
       * compute $K_0 \gets z_a \cdot R_j + z_b \cdot G - e \cdot (w_j \cdot G)$
       * compute $K_1 \gets z_a \cdot G + z_\rho \cdot H_{\mathsf{ped}} - e \cdot \hat f_a(j)$
@@ -175,7 +175,7 @@ Such choice can overload the network with $O(n^2)$ messages. Instead, we make th
 that each of the parties would only send their shares to the coordinator which combines them in the corresponding way.
 
 ### Identifiable check on the $w$ opening
-The shares of $a$ and $b$ are dealt under Pedersen commitments, and each participant proves that its $w_i$ is consistent with its committed $a_i$ and $b_i$. A dealer or participant failing a check is identified. This replaces the values $W_i = a_i \cdot R$ and the global check $W = w \cdot G$ of the original scheme, making a failed check attributable to a specific party. The proofs are verified against a consistent transcript: every party echoes the hash $\eta_i$ of all round-1 commitments, and the Fiat-Shamir challenge is bound to it.
+The shares of $a$ and $b$ are dealt under Pedersen commitments, and each participant proves that its $w_i$ is consistent with its committed $a_i$ and $b_i$. A dealer or participant failing a check is identified by the party running the check. This replaces the values $W_i = a_i \cdot R$ and the global check $W = w \cdot G$ of the original scheme, making a failed check attributable to a specific party instead of aborting anonymously. The identification is local and non-transferable — the share check uses the receiver's private shares, and there is no complaint or justification round. Misbehavior in the uncommitted values — the $k$, $d$, $e$ shares and the signature shares $s_i$ — is caught only by the interpolation check of round 3 and the coordinator's final assertion, which abort without attribution. The proofs are verified against a consistent transcript: every party echoes the hash $\eta_i$ of all round-1 commitments, and the Fiat-Shamir challenge is bound to it.
 
 ### Key derivation
 The key derivation is a feature that allows the holder of a secret key to derive multiple secret keys for different applications (e.g. an MPC node holding a secret key share that uses to derive several clients secret key shares).
