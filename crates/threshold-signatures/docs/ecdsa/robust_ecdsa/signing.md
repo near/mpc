@@ -186,32 +186,27 @@ Providing the signing protocol with raw hashes as inputs instead of the original
 
 # Security considerations
 
-Before implementing or using the robust ECDSA scheme implemented here,
-be aware that it is vulnerable to **split-view attacks** in the robust setting when the
-signing parameters are not globally consistent. If different subsets of size at least
-$2t + 1$ sign different $(h, \epsilon)$ values using shares derived from the same
-nonce, the resulting signatures use multiplicatively related nonces and the
-secret key can be recovered using standard ECDSA nonce-reuse attacks.
+The nonce is generated in-protocol and bound to a single $(h, \epsilon)$: the message
+hash and tweak are inputs of round 1 and all polynomials are sampled fresh per session,
+so nonce shares never exist independently of the message they sign. For the same reason
+no rerandomization ([[GS21](https://eprint.iacr.org/2021/1330)]) is needed: it protects
+a message-independent presignature, in particular combined with additive key
+derivation, against adaptively chosen messages — with no presignatures, additive key
+derivation alone is safe.
 
-Moreover, due to protocol modifications relative to [[DJNPO20](https://eprint.iacr.org/2020/501)] (notably signature-share
-linearization), **a novel split-view attack exists that can extract the secret key using as
-few as $2t + 2$ participants**, with as few as two signing sessions.
+An implementation must enforce the following:
 
-To reduce the risk of accidental misuse, enforce the following constraints:
+1. **Use exactly $N_1 = 2t + 1$ participants** (enforced at initialization). Larger
+   sets allow a coordinator to run parallel or partially overlapping views of one
+   nonce, yielding signatures with multiplicatively related nonces from which the
+   secret key can be recovered using standard ECDSA nonce-reuse attacks.
 
-1. **Use exactly $N_1 = 2t + 1$ participants.**
-   Do **not** allow any deviation from this value.
-
-   Allowing larger sets enables split-view attacks when a coordinator can run parallel or
-   partially overlapping signing sessions.
-
-2. **Ensure all participants agree on $(h, \epsilon)$ and the signing set.**
+2. **All participants must agree on $(h, \epsilon)$ and the signing set $\mathcal{P}_1$.**
    The coordinator must not be able to present different message hashes, tweaks, or
    participant lists to different signers.
 
-3. **Never reuse the nonce shares**, even across failed, aborted, or partially completed
-   signing sessions.
+3. **Never reuse the round-1 polynomials or the shares derived from them** across
+   protocol executions, including failed, aborted, or partially completed ones.
 
-4. **Do not sign with $h = 0$** (the zero message hash).
-   This input enables a related algebraic split-view attack in the modified scheme when
-   $N_1 > 2t + 1$.
+4. **Reject $h = 0$** (the zero message hash), as defense in depth against algebraic
+   split-view variants.
