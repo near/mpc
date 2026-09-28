@@ -131,10 +131,10 @@ pub struct VerifyForeignTransactionRequest {
     pub expected_payload_hash: Option<Hash256>,
 }
 
-/// Requests a [`ForeignTxSignPayload::V2`] signature. Notice there is no
-/// expected payload hash compared to V1: a hash of the V2 payload covers the
-/// NEAR block height at which the MPC network performed the checks, which is
-/// decided by the MPC network and unknown to the caller.
+/// Requests a [`ForeignTxSignPayload::V2`] signature. Unlike V1 there is no
+/// expected payload hash: the V2 payload covers the [`YieldId`] and
+/// [`NearBlockHeight`] the contract assigns to the request, which the caller
+/// only learns from the response.
 #[derive(
     Debug,
     Clone,
@@ -182,9 +182,10 @@ pub struct VerifyForeignTransactionResponse {
 /// Response to a [`VerifyForeignTransactionRequestV2`].
 ///
 /// [`Self::payload_hash`] is the hash of the [`ForeignTxSignPayload::V2`]
-/// built from the request, [`Self::verification_block_height`] and the
-/// outcome. A [`ForeignTxVerificationResponseOutcome::Verified`] response omits the
-/// extracted values; recomputing its hash takes the values the caller expects.
+/// built from the request, [`Self::request_block_height`], [`Self::yield_id`]
+/// and the outcome. A [`ForeignTxVerificationResponseOutcome::Verified`]
+/// response omits the extracted values, so recomputing its hash takes the
+/// values the caller expects.
 #[derive(
     Debug,
     Clone,
@@ -205,7 +206,8 @@ pub struct VerifyForeignTransactionResponse {
 pub struct VerifyForeignTransactionResponseV2 {
     pub payload_hash: Hash256,
     pub signature: SignatureResponse,
-    pub verification_block_height: NearBlockHeight,
+    pub request_block_height: NearBlockHeight,
+    pub yield_id: YieldId,
     pub outcome: ForeignTxVerificationResponseOutcome,
 }
 
@@ -1609,6 +1611,32 @@ pub struct BlockConfirmations(pub u64);
 )]
 pub struct NearBlockHeight(pub u64);
 
+/// Identifies the yield a V2 verification request waits on. The contract picks
+/// it, so a signature naming it answers that one request only.
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct YieldId(#[serde_as(as = "Hex")] pub [u8; 32]);
+
 #[serde_as]
 #[derive(
     Debug,
@@ -1807,7 +1835,8 @@ pub struct StarknetFelt(#[serde_as(as = "Hex")] pub [u8; 32]);
 pub struct StarknetTxId(pub StarknetFelt);
 
 /// The network's negative answer about the requested foreign chain
-/// transaction, as observed at [`ForeignTxSignPayloadV2::verification_block_height`].
+/// transaction, as observed while the request was pending, which starts at
+/// [`ForeignTxSignPayloadV2::request_block_height`].
 ///
 /// A later check may answer differently, for example once a transaction that
 /// was not found lands.
@@ -1909,7 +1938,10 @@ pub struct ForeignTxSignPayloadV1 {
 )]
 pub struct ForeignTxSignPayloadV2 {
     pub request: ForeignChainRpcRequest,
-    pub verification_block_height: NearBlockHeight,
+    /// The block the request's yield was created in.
+    pub request_block_height: NearBlockHeight,
+    /// The one yield this payload answers.
+    pub yield_id: YieldId,
     pub outcome: ForeignTxVerificationOutcome,
 }
 
@@ -2432,7 +2464,8 @@ mod tests {
             .map(|(name, outcome)| {
                 let payload = ForeignTxSignPayload::V2(ForeignTxSignPayloadV2 {
                     request: request.clone(),
-                    verification_block_height: NearBlockHeight(0x0102_0304_0506_0708),
+                    request_block_height: NearBlockHeight(0x0102_0304_0506_0708),
+                    yield_id: YieldId([0xcd; 32]),
                     outcome,
                 });
                 (name, hex::encode(payload.compute_msg_hash().unwrap().0))
@@ -2441,6 +2474,18 @@ mod tests {
 
         // Then
         insta::assert_json_snapshot!(hashes);
+    }
+
+    #[test]
+    fn yield_id__should_serialize_as_hex() {
+        // Given
+        let yield_id = YieldId([0xcd; 32]);
+
+        // When
+        let json = serde_json::to_value(yield_id).unwrap();
+
+        // Then
+        assert_eq!(json, json!("cd".repeat(32)));
     }
 
     #[rstest]
