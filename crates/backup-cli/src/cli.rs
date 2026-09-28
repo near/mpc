@@ -116,8 +116,9 @@ pub struct NodeConnectionArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct RunArgs {
-    /// NEAR JSON-RPC endpoint used to poll the contract state. A provider api key, if any, is
-    /// passed as a query parameter of this URL; only the scheme and host ever reach the logs.
+    /// NEAR JSON-RPC endpoint used to poll the contract state — a NEAR RPC provider's URL, not
+    /// the MPC node's address. A provider api key, if any, is passed as a query parameter of
+    /// this URL; only the scheme and host ever reach the logs.
     #[arg(long, env("BACKUP_RPC_URL"), hide_env_values = true)]
     pub rpc_url: String,
     /// NEAR chain id (e.g. mainnet, testnet). Required by the RPC client; the contract state
