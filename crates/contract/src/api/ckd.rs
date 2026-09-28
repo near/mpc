@@ -6,7 +6,7 @@ use crate::primitives::ckd::{app_public_key_check, ckd_output_check};
 use crate::{MpcContract, MpcContractExt, pending_requests};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
+use near_sdk::{CryptoHash, Gas, NearToken, PromiseError, PromiseOrValue, env, log, near, require};
 
 #[near]
 impl MpcContract {
@@ -41,9 +41,7 @@ impl MpcContract {
         match &request.app_public_key {
             dtos::CKDAppPublicKey::AppPublicKey(_) => {}
             dtos::CKDAppPublicKey::AppPublicKeyPV(pk) => {
-                if !app_public_key_check(pk) {
-                    env::panic_str("app public key check failed")
-                }
+                require!(app_public_key_check(pk), "app public key check failed");
             }
         }
 
@@ -96,9 +94,10 @@ impl MpcContract {
         match &request.app_public_key {
             dtos::CKDAppPublicKey::AppPublicKey(_) => {}
             dtos::CKDAppPublicKey::AppPublicKeyPV(app_pk) => {
-                if !ckd_output_check(&request.app_id, &response, app_pk, &public_key) {
-                    env::panic_str("CKD output check failed");
-                }
+                require!(
+                    ckd_output_check(&request.app_id, &response, app_pk, &public_key),
+                    "CKD output check failed"
+                );
             }
         }
 
@@ -141,14 +140,11 @@ impl MpcContract {
                     &mut self.pending_ckd_requests,
                     &request,
                 );
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                let promise = Self::ext_self()
+                    .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .with_unused_gas_weight(0)
+                    .fail_on_timeout();
+                PromiseOrValue::Promise(promise.as_return())
             }
         }
     }

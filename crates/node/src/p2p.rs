@@ -1,6 +1,7 @@
 use crate::config::MpcConfig;
 use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
+    self, INCOMING_CONNECTION, INCOMING_CONNECTIONS_REJECTED, MPC_P2P_TCP_WRITE_SIZE_BYTES,
+    OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
@@ -37,7 +38,7 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tokio_util::time::FutureExt;
-use tracing::info;
+use tracing::{error, info};
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
 /// This will send small packets immediately, reducing latency for node messages at
@@ -69,6 +70,9 @@ const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// never sends a ClientHello would hang the accept task forever.
 const TLS_ACCEPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Max concurrent incoming connections per authenticated participant with headroom for stale ones that haven't timed out yet.
+const MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT: usize = 4;
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -82,6 +86,37 @@ pub struct TlsMeshSender {
 pub struct TlsMeshReceiver {
     receiver: UnboundedReceiver<PeerMessage>,
     _incoming_connections_task: AutoAbortTask<()>,
+}
+
+/// Tracks how many incoming connections are currently open from each authenticated participant.
+#[derive(Default)]
+struct IncomingConnectionLimits {
+    per_participant: HashMap<ParticipantId, Arc<tokio::sync::Semaphore>>,
+}
+
+impl IncomingConnectionLimits {
+    fn new(participants: impl IntoIterator<Item = ParticipantId>) -> Self {
+        let per_participant = participants
+            .into_iter()
+            .map(|participant_id| {
+                (
+                    participant_id,
+                    Arc::new(tokio::sync::Semaphore::new(
+                        MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+                    )),
+                )
+            })
+            .collect();
+        Self { per_participant }
+    }
+
+    fn try_reserve(&self, peer_id: ParticipantId) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.per_participant
+            .get(&peer_id)?
+            .clone()
+            .try_acquire_owned()
+            .ok()
+    }
 }
 
 /// Maps public keys to participant IDs. Used to identify incoming connections.
@@ -276,13 +311,10 @@ impl OutgoingConnection {
                                 }
 
                                 let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
-                                    Some(size) => match size.try_into() {
-                                        Ok(size) => size,
-                                        Err(_) => {
+                                    Some(size) => size.try_into().unwrap_or_else(|_| {
                                             tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
                                             u64::MAX
-                                        }
-                                    },
+                                        }),
                                     None => {
                                         tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({payload_size})");
                                         u64::MAX
@@ -299,13 +331,10 @@ impl OutgoingConnection {
                                     .with_label_values(&metric_labels)
                                     .observe(total_message_size_bytes as f64);
 
-                                sent_bytes = match sent_bytes.checked_add(total_message_size_bytes) {
-                                    Some(size) => size,
-                                    None => {
+                                sent_bytes = sent_bytes.checked_add(total_message_size_bytes).unwrap_or_else(|| {
                                         tracing::error!("sent_bytes overflow: {sent_bytes} + {total_message_size_bytes}");
                                         u64::MAX
-                                    }
-                                };
+                                    });
                                 tracking::set_progress(&format!("sent {} bytes", sent_bytes));
                             }
                             _ = futures::StreamExt::next(&mut framed_tls_stream) => {
@@ -583,6 +612,13 @@ where
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
+    let incoming_connection_limits = Arc::new(IncomingConnectionLimits::new(
+        participant_identities
+            .key_to_participant_id
+            .values()
+            .copied(),
+    ));
+
     let (message_sender, message_receiver) = mpsc::unbounded_channel();
     let tcp_listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0),
@@ -607,6 +643,7 @@ where
                         tls_acceptor.clone(),
                         participant_identities.clone(),
                         my_id,
+                        incoming_connection_limits.clone(),
                     ),
                 );
             })
@@ -640,6 +677,7 @@ async fn incoming_connection_handler(
     tls_acceptor: TlsAcceptor,
     participant_identities: Arc<ParticipantIdentities>,
     my_id: ParticipantId,
+    incoming_connection_limits: Arc<IncomingConnectionLimits>,
 ) -> anyhow::Result<()> {
     let tcp_stream = configure_tcp_stream(tcp_stream)?;
     let mut tls_stream = timeout(TLS_ACCEPT_TIMEOUT, tls_acceptor.accept(tcp_stream))
@@ -648,6 +686,21 @@ async fn incoming_connection_handler(
 
     let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
     tracking::set_progress(&format!("Authenticated as {}", peer_id));
+
+    let Some(_connection_slot) = incoming_connection_limits.try_reserve(peer_id) else {
+        tracing::debug!(
+            peer_id = %peer_id,
+            max = MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+            "dropping incoming connection, participant at connection limit"
+        );
+        INCOMING_CONNECTIONS_REJECTED
+            .with_label_values(&[peer_id.to_string().as_str()])
+            .inc();
+        if let Err(err) = tls_stream.shutdown().await {
+            error!(err = %err, "TLS shutdown failed");
+        }
+        return Ok(());
+    };
 
     let peer = connectivities.get(peer_id)?;
     // If we have an existing connection, we require this connection attempt to
@@ -734,13 +787,10 @@ async fn incoming_connection_handler(
             };
 
             let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_bytes.len()) {
-                Some(size) => match size.try_into() {
-                    Ok(size) => size,
-                    Err(_) => {
-                        tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
-                        u64::MAX
-                    }
-                },
+                Some(size) => size.try_into().unwrap_or_else(|_| {
+                    tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
+                    u64::MAX
+                }),
                 None => {
                     tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({})", payload_bytes.len());
                     u64::MAX
@@ -776,20 +826,17 @@ async fn incoming_connection_handler(
                 .with_label_values(&metric_labels)
                 .observe(total_message_size_bytes as f64);
 
-            received_bytes = match received_bytes.checked_add(total_message_size_bytes) {
-                Some(size) => size,
-                None => {
-                    tracing::error!("received_bytes overflow: {received_bytes} + {total_message_size_bytes}");
-                    u64::MAX
-                }
-            };
+            received_bytes = received_bytes.checked_add(total_message_size_bytes).unwrap_or_else(|| {
+                tracing::error!("received_bytes overflow: {received_bytes} + {total_message_size_bytes}");
+                u64::MAX
+            });
             tracking::set_progress(&format!(
                 "Received {} bytes from {}",
                 received_bytes, peer_id
             ));
         }
     }
-    .await;
+        .await;
 
     // Peer closing without close_notify is normal in P2P networks (task aborts,
     // reconnections, process restarts). Treat it as a clean close, not an error.
@@ -1033,6 +1080,7 @@ pub mod testing {
         pub const MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST: TestPorts = TestPorts::mpc_node_tests(28);
         pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
         pub const PEER_PROTOCOL_VERSION_TEST: TestPorts = TestPorts::mpc_node_tests(30);
+        pub const ONLINE_PRESIGN_DISABLED_TEST: TestPorts = TestPorts::mpc_node_tests(31);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1083,31 +1131,35 @@ pub mod testing {
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
+        IncomingConnection, IncomingConnectionLimits, MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+        OutgoingConnection, ParticipantIdentities, PersistentConnection,
         incoming_connection_handler,
     };
     use crate::config::MpcConfig;
-    use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
-    use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
-    use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
+    use crate::network::{
+        conn::{AllNodeConnectivities, ConnectionVersion},
+        wire_format::{EcdsaTaskId, MpcTaskId},
+        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+    };
     use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
-    use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use crate::tracking::{self, testing::start_root_task_with_periodic_dump};
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
-    use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
     use rustls::ClientConfig;
-    use std::sync::{Arc, Mutex};
-    use std::time::Duration;
-    use tokio::net::{TcpListener, TcpStream};
-    use tokio::sync::mpsc;
-    use tokio::task::JoinHandle;
-    use tokio::time::timeout;
+    use std::{sync::Arc, time::Duration};
+    use tokio::{
+        io::AsyncReadExt,
+        net::{TcpListener, TcpStream},
+        sync::mpsc,
+        task::JoinHandle,
+        time::timeout,
+    };
     use tokio_rustls::TlsAcceptor;
 
     #[tokio::test]
@@ -1137,11 +1189,12 @@ mod tests {
             sender0.wait_for_ready(2, &all_participants).await.unwrap();
             sender1.wait_for_ready(2, &all_participants).await.unwrap();
 
+            let mut rng = StdRng::seed_from_u64(42);
             for _ in 0..100 {
-                // TODO: adjust test?
-                let domain_id = rand::thread_rng().r#gen();
-                let epoch_id = rand::thread_rng().r#gen();
-                let n_attempts = rand::thread_rng().r#gen::<usize>() % 100;
+                // TODO: adjust test
+                let domain_id = rng.r#gen();
+                let epoch_id = rng.r#gen();
+                let n_attempts = rng.r#gen::<usize>() % 100;
                 let mut attempt_id = AttemptId::new();
                 for _ in 0..n_attempts {
                     attempt_id = attempt_id.next();
@@ -1638,7 +1691,8 @@ mod tests {
         let client_config = make_client_config();
         let my_id = ParticipantId::from_raw(0);
         let target_id = ParticipantId::from_raw(1);
-        let resolved_address = Arc::new(Mutex::new(addr_a.clone()));
+        let (resolved_address_tx, resolved_address_rx) =
+            tokio::sync::watch::channel(addr_a.clone());
 
         start_root_task_with_periodic_dump(async move {
             let connectivities =
@@ -1646,10 +1700,7 @@ mod tests {
                     my_id,
                     &[my_id, target_id],
                 );
-            let resolve_address = {
-                let resolved_address = resolved_address.clone();
-                move || Some(resolved_address.lock().unwrap().clone())
-            };
+            let resolve_address = move || Some(resolved_address_rx.borrow().clone());
 
             let _connection = PersistentConnection::new(
                 client_config,
@@ -1668,7 +1719,7 @@ mod tests {
                 .unwrap();
 
             // When
-            *resolved_address.lock().unwrap() = addr_b.clone();
+            resolved_address_tx.send_replace(addr_b.clone());
 
             // Then
             timeout(Duration::from_secs(120), accept_b.recv())
@@ -1705,6 +1756,7 @@ mod tests {
                 tls_acceptor,
                 Arc::new(ParticipantIdentities::default()),
                 my_id,
+                Arc::new(IncomingConnectionLimits::default()),
             ),
         )
         .await
@@ -1718,5 +1770,60 @@ mod tests {
             format!("{error:#}").contains("timed out"),
             "unexpected error: {error:#}"
         );
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn incoming_connection_handler__should_close_connection_when_peer_connection_limit_is_reached()
+     {
+        start_root_task_with_periodic_dump(async move {
+            // Given
+            let my_id = ParticipantId::from_raw(0);
+            let peer_id = ParticipantId::from_raw(1);
+            let mut participant_identities = ParticipantIdentities::default();
+            participant_identities
+                .key_to_participant_id
+                .insert(make_signing_key().verifying_key(), peer_id);
+            let limits = Arc::new(IncomingConnectionLimits::new([peer_id]));
+            let _held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
+                .map(|_| limits.try_reserve(peer_id).unwrap())
+                .collect();
+            let connectivities = Arc::new(AllNodeConnectivities::<
+                OutgoingConnection,
+                IncomingConnection,
+            >::new(my_id, &[my_id, peer_id]));
+            let (message_sender, _message_receiver) = mpsc::unbounded_channel();
+            let (server_tcp, client_tcp) = must_accept_silent_connection().await;
+            let _handler = tracking::spawn(
+                "incoming connection handler",
+                incoming_connection_handler(
+                    message_sender,
+                    connectivities,
+                    server_tcp,
+                    make_tls_acceptor(),
+                    Arc::new(participant_identities),
+                    my_id,
+                    limits,
+                ),
+            );
+
+            // When
+            let mut client = tokio_rustls::TlsConnector::from(make_client_config())
+                .connect("dummy".try_into().unwrap(), client_tcp)
+                .await
+                .unwrap();
+
+            // Then
+            let mut buf = [0u8; 1];
+            let bytes_read = timeout(
+                OutgoingConnection::HANDSHAKE_TIMEOUT / 2,
+                client.read(&mut buf),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(bytes_read, 0);
+        })
+        .await;
     }
 }

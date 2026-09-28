@@ -1,3 +1,4 @@
+use crate::assets::metrics::{ASSET_METRICS_REPORTING_INTERVAL, ClearOwnedAssetGaugesOnDrop};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -73,7 +74,8 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
             EcdsaTaskId::ManyTriples { .. } | EcdsaTaskId::Presignature { .. } => true,
             EcdsaTaskId::KeyGeneration { .. }
             | EcdsaTaskId::KeyResharing { .. }
-            | EcdsaTaskId::Signature { .. } => false,
+            | EcdsaTaskId::Signature { .. }
+            | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
         MpcTaskId::RobustEcdsaTaskId(id) => match id {
             RobustEcdsaTaskId::Presignature { .. } => true,
@@ -158,6 +160,21 @@ impl MpcClient {
             }
         });
 
+        // Reads every asset store directly, so the owned-asset gauges do not
+        // depend on any generation loop iterating.
+        let asset_metrics_reporter = tracking::spawn("report asset metrics", {
+            let ecdsa = self.ecdsa_signature_provider.clone();
+            let robust_ecdsa = self.robust_ecdsa_signature_provider.clone();
+            async move {
+                let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
+                loop {
+                    ecdsa.report_asset_metrics();
+                    robust_ecdsa.report_asset_metrics();
+                    tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
+                }
+            }
+        });
+
         let monitor_passive_channels = {
             tracking::spawn(
                 "monitor passive channels",
@@ -232,6 +249,7 @@ impl MpcClient {
 
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
+        asset_metrics_reporter.await?;
         monitor_chain.await?;
         let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
@@ -717,7 +735,7 @@ mod tests {
     fn is_heavy_generation_task__should_classify_generation_vs_other_tasks() {
         // Given every task kind paired with whether it is CPU-heavy asset
         // generation that must run on the lower-priority gen runtime.
-        let cases: [(MpcTaskId, bool); 12] = [
+        let cases: [(MpcTaskId, bool); 13] = [
             // ECDSA: triples and presignatures are heavy generation.
             (
                 EcdsaTaskId::ManyTriples {
@@ -741,6 +759,14 @@ mod tests {
                 EcdsaTaskId::Signature {
                     id: CryptoHash::default(),
                     presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                EcdsaTaskId::OnlinePresignSignature {
+                    id: CryptoHash::default(),
+                    paired_triple_id: uid(),
                 }
                 .into(),
                 false,

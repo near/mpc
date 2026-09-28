@@ -115,9 +115,10 @@ pub struct Config {
     pub verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,
-    /// TTL after which a launcher image hash unused by any participant is evicted.
+    /// TTL after which a launcher image hash unused by any participant is evicted: at the later
+    /// of its last use + this TTL and the expiry of the attestation that last used it.
     /// Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on
-    /// use), not retroactively — changing it does not re-date existing entries.
+    /// use). An expiry never moves earlier, so lowering it does not shorten existing entries.
     pub launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: u64,

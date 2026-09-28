@@ -30,7 +30,6 @@ use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{
     ConfigFile, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
-use mpc_primitives::ReconstructionThreshold;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 use provider_call_metrics::ProviderCallMetrics;
 use std::sync::Arc;
@@ -197,9 +196,9 @@ pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
     supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
-    /// [`foreign_tx_reconstruction_threshold`](crate::foreign_chain_policy::foreign_tx_reconstruction_threshold)
+    /// [`foreign_tx_required_active_signers`](crate::foreign_chain_policy::foreign_tx_required_active_signers)
     /// of the running domains; `None` when there is no ForeignTx domain.
-    foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
+    foreign_tx_required_active_signers: Option<u64>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -208,7 +207,7 @@ impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
-        foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
+        foreign_tx_required_active_signers: Option<u64>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
@@ -217,7 +216,7 @@ impl VerifyForeignTxProvider {
             config,
             inspectors,
             supporters_by_foreign_chain,
-            foreign_tx_reconstruction_threshold,
+            foreign_tx_required_active_signers,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         })
@@ -226,7 +225,7 @@ impl VerifyForeignTxProvider {
     pub(crate) fn new_eligible_leaders_refiner(&self) -> ForeignChainLeadersRefiner {
         ForeignChainLeadersRefiner::new(
             self.supporters_by_foreign_chain.clone(),
-            self.foreign_tx_reconstruction_threshold,
+            self.foreign_tx_required_active_signers,
         )
     }
 

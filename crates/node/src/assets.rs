@@ -1,7 +1,9 @@
 pub mod cleanup;
+pub mod metrics;
 #[cfg(test)]
 pub mod test_utils;
 
+use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
@@ -411,13 +413,16 @@ where
         self.hot_receiver.len() + self.cold_queue.lock().unwrap().cold_available
     }
 
-    pub fn ready(&self) -> usize {
-        self.cold_queue.lock().unwrap().cold_ready
-    }
-
-    pub fn offline(&self) -> usize {
+    /// Owned counts under a single lock, so they describe the same moment:
+    /// `online + unknown == available`, and `offline` is the rest.
+    pub fn counts(&self) -> OwnedAssetCounts {
+        let hot = self.hot_receiver.len();
         let cold_queue = self.cold_queue.lock().unwrap();
-        cold_queue.cold_queue.len() - cold_queue.cold_available
+        OwnedAssetCounts {
+            available: hot + cold_queue.cold_available,
+            online: cold_queue.cold_ready,
+            offline: cold_queue.cold_queue.len() - cold_queue.cold_available,
+        }
     }
 }
 
@@ -569,16 +574,10 @@ where
         self.owned_queue.available()
     }
 
-    /// Returns the current number of owned assets in the database which
-    /// are known to have all participants alive.
-    pub fn num_owned_ready(&self) -> usize {
-        self.owned_queue.ready()
-    }
-
-    /// Returns the current number of owned assets in the database which
-    /// are known to have some participant offline.
-    pub fn num_owned_offline(&self) -> usize {
-        self.owned_queue.offline()
+    /// Available, online and offline counts, read under one lock so they are
+    /// consistent with each other.
+    pub fn owned_asset_counts(&self) -> OwnedAssetCounts {
+        self.owned_queue.counts()
     }
 
     pub async fn take_owned(&self) -> (UniqueId, T) {
@@ -1313,7 +1312,7 @@ mod tests {
         store.add_owned(id1, 1);
         store.add_owned(id1.add_to_counter(1).unwrap(), 2);
         assert_eq!(store.take_owned().now_or_never().unwrap().1, 2);
-        assert_eq!(store.num_owned_offline(), 1);
+        assert_eq!(store.owned_asset_counts().offline, 1);
 
         store.maybe_discard_owned(1).now_or_never().unwrap();
 
@@ -1529,7 +1528,7 @@ mod tests {
         // Then
         assert_eq!(taken, Some((id2, 3)));
         assert_eq!(queue.available(), 2);
-        assert_eq!(queue.offline(), 0);
+        assert_eq!(queue.counts().offline, 0);
     }
 
     // The condition value (the alive set) can change after the queue last observed it.
@@ -1571,7 +1570,7 @@ mod tests {
         // Then: the one the stale value would have allowed is skipped
         assert_eq!(taken, Some((id_fresh, online_participant)));
         // and it is parked rather than dropped, so it becomes usable again on reconnect
-        assert_eq!(queue.offline(), 1);
+        assert_eq!(queue.counts().offline, 1);
         assert_eq!(queue.available(), 0);
     }
 

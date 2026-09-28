@@ -139,7 +139,7 @@ impl FakeMpcContractState {
     }
 
     /// Mirrors the real contract's recomputation: a chain is available once the
-    /// max reconstruction threshold across ForeignTx domains is reached.
+    /// max required active signers across ForeignTx domains is reached.
     /// Deviation: no whitelisting — the fake has no provider-whitelist voting, so every
     /// registered chain counts.
     fn recompute_available_foreign_chains(&mut self) {
@@ -150,14 +150,20 @@ impl FakeMpcContractState {
         };
         // TODO(#3973): revisit threshold calculation for several ForeignTx
         // domains with different thresholds.
-        let Some(threshold) = self.state.domain_registry().ok().and_then(|registry| {
-            registry
-                .domains()
-                .iter()
-                .filter(|domain| domain.purpose == dtos::DomainPurpose::ForeignTx)
-                .map(|domain| domain.reconstruction_threshold.inner())
-                .max()
-        }) else {
+        let Some(required_active_signers) =
+            self.state.domain_registry().ok().and_then(|registry| {
+                registry
+                    .domains()
+                    .iter()
+                    .filter(|domain| domain.purpose == dtos::DomainPurpose::ForeignTx)
+                    .map(|domain| {
+                        domain
+                            .protocol
+                            .required_active_signers(domain.reconstruction_threshold)
+                    })
+                    .max()
+            })
+        else {
             return;
         };
         let mut supporters_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
@@ -171,7 +177,7 @@ impl FakeMpcContractState {
         }
         self.available_foreign_chains = supporters_count
             .into_iter()
-            .filter(|(_, count)| *count >= threshold)
+            .filter(|(_, count)| *count >= required_active_signers)
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
             .into();

@@ -5,6 +5,7 @@ use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
+use near_sdk::FunctionError;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NodeMigrationError {
@@ -279,17 +280,13 @@ pub enum DomainError {
         participants: u64,
     },
     #[error(
-        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the Robust ECDSA bound."
-    )]
-    ReconstructionThresholdOverflow { reconstruction_threshold: u64 },
-    #[error(
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]
     UnknownDomainInProposal { domain_id: DomainId },
 }
 
 /// A list specifying general categories of MPC Contract errors.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, FunctionError, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// An error occurred while node is performing respond call.
@@ -331,12 +328,6 @@ pub enum Error {
     // Tee attestation submission errors
     #[error(transparent)]
     AttestationSubmission(#[from] AttestationSubmissionError),
-}
-
-impl near_sdk::FunctionError for Error {
-    fn panic(&self) -> ! {
-        crate::env::panic_str(&self.to_string())
-    }
 }
 
 impl From<TweakNotOnCurve> for PublicKeyError {

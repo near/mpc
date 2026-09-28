@@ -400,7 +400,7 @@ logs, stderr.log any panic)
   allocator, the per-cluster artifact directory (`cluster.test_dir`), and the
   deterministic key generation rather than creating state outside the cluster.
 - Arithmetic in tests uses raw `+`/`-`/`*`/`/`; overflow panics are the
-  desired failure mode (see `CLAUDE.md`).
+  desired failure mode (see `AGENTS.md`).
 
 ---
 
