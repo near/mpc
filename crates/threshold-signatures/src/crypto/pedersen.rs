@@ -15,7 +15,7 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
 use crate::crypto::constants::{NEAR_PEDERSEN_GENERATOR_DST, NEAR_PEDERSEN_GENERATOR_MSG};
-use crate::ecdsa::{Element, Polynomial, PolynomialCommitment, Scalar};
+use crate::ecdsa::{CoefficientCommitment, Element, Polynomial, PolynomialCommitment, Scalar};
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 
@@ -40,7 +40,20 @@ pub fn commit_polynomial(
     f: &Polynomial,
     r: &Polynomial,
 ) -> Result<PolynomialCommitment, ProtocolError> {
-    f.commit_polynomial_pedersen(r, &PEDERSEN_H)
+    let f_coefficients = f.coefficients();
+    let r_coefficients = r.coefficients();
+    if f_coefficients.len() != r_coefficients.len() {
+        return Err(ProtocolError::InvalidInput(
+            "the blinding polynomial must have the same degree as the committed polynomial"
+                .to_string(),
+        ));
+    }
+    let commitments = f_coefficients
+        .iter()
+        .zip(r_coefficients)
+        .map(|(f_m, r_m)| CoefficientCommitment::new(commit(f_m, r_m)))
+        .collect::<Vec<_>>();
+    PolynomialCommitment::new(&commitments)
 }
 
 /// Checks that `(value, blinding)` opens the committed polynomial at `participant`,
