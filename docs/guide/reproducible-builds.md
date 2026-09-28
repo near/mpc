@@ -49,6 +49,87 @@ The build script is located at `deployment/build-images.sh` and must be run from
 
 The script will output the image hashes and other build information, which can be used to verify the reproducibility of the build.
 
+## Nix-built images
+
+During the transition to hermetic builds, CI also builds every image with
+[Nix](https://nixos.org/download/) (flakes enabled) and publishes it as
+`nearone/<image>:<branch>-<short-sha>-nix`. These images are not voted on yet:
+operators vote on the digests printed by the script above.
+
+Every build step runs in the Nix sandbox without network access, from inputs
+pinned by `flake.lock`, `Cargo.lock` and `rust-toolchain.toml`; only fetching
+those pinned inputs touches the network. Where the kernel refuses the
+sandbox (for example inside a container) Nix silently builds without it, so set
+`sandbox-fallback = false` in `nix.conf`, as CI does, to make such a build fail
+instead.
+
+Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
+its `manifest.json` equals the digest of the published `-nix` tag. The same
+commands work on x86_64 Linux and, with the builder below, on macOS:
+
+```bash
+nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image
+sha256sum result/manifest.json
+```
+
+Use `mpc-node-gcp-image` or `mpc-launcher-image` for the other images. From a
+checkout, `.#packages.x86_64-linux.mpc-node-image` gives the same digest only
+with a clean working tree, because the node binary embeds the commit hash.
+
+### Building on macOS
+
+The images are `x86_64-linux` derivations, so Nix needs a Linux builder. On
+Apple silicon, nixpkgs' `darwin.linux-builder-vz` runs a NixOS VM that executes
+the same derivations a Linux host does, translated by Rosetta rather than cross
+compiled, so the digests match. It needs macOS 26 or newer (older Rosetta lacks
+the x86-64-v3 instructions the build runs) with Rosetta installed
+(`softwareupdate --install-rosetta --agree-to-license`), and it exists only in
+nixpkgs-unstable, which the [nix-darwin](https://github.com/nix-darwin/nix-darwin)
+template tracks:
+
+```bash
+sudo mkdir -p /etc/nix-darwin
+sudo chown "$(id -nu):$(id -ng)" /etc/nix-darwin
+cd /etc/nix-darwin
+nix flake init -t nix-darwin/master
+sed -i '' "s/simple/$(scutil --get LocalHostName)/" flake.nix
+```
+
+Add to `configuration` in `flake.nix`:
+
+```nix
+nix.linux-builder = {
+  enable = true;
+  package = pkgs.darwin.linux-builder-vz;
+  systems = [ "aarch64-linux" "x86_64-linux" ];
+  config.virtualisation = {
+    cores = 8;
+    darwin-builder.memorySize = 16 * 1024;
+    darwin-builder.diskSize = 100 * 1024;
+  };
+};
+# Managing PAM files needs Full Disk Access on recent macOS
+security.pam.services.sudo_local.enable = false;
+```
+
+Install nix-darwin, which also starts the builder. If it reports files in
+`/etc` it did not create (such as the `/etc/bashrc` written by the Nix
+installer), rename them with a `.before-nix-darwin` suffix and rerun:
+
+```bash
+sudo nix --extra-experimental-features 'nix-command flakes' run nix-darwin/master#darwin-rebuild -- switch
+```
+
+Without a Linux builder, Docker Desktop with Rosetta enabled and at least 16 GB
+of memory runs the same build in a container:
+
+```bash
+docker run --rm --privileged --platform linux/arm64 \
+  -e NIX_CONFIG=$'experimental-features = nix-command flakes\nsandbox = true\nsandbox-fallback = false\nextra-platforms = x86_64-linux' \
+  nixos/nix:2.33.6 \
+  sh -c 'nix build github:near/mpc/<commit-hash>#packages.x86_64-linux.mpc-node-image && sha256sum result/manifest.json'
+```
+
 ## mpc-contract
 
 The MPC contract WASM is built reproducibly via two coexisting paths. Each is
@@ -67,7 +148,8 @@ build metadata in `crates/contract/Cargo.toml`
 `rust-toolchain.toml` (`1.97.1`). This metadata is embedded in the WASM, which
 lets automated third-party verifiers such as sourcescan.io and nearblocks replay
 the build and confirm the on-chain contract matches the published source. This
-is the build CI publishes as the release artifact. It requires `docker`:
+is the build CI publishes as the release artifact. It is reproducible but not
+hermetic, as its container has network access. It requires `docker`:
 
 ```bash
 cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
@@ -79,8 +161,8 @@ To verify a release artifact, compare the SHA-256 above against the
 
 ### Nix
 
-The Nix derivation at [`nix/mpc-contract.nix`](../../nix/mpc-contract.nix) provides
-a hermetic toolchain (Rust pinned by `rust-toolchain.toml`, clang/LLVM, vendored
+The Nix derivation at [`nix/mpc-contract.nix`](../../nix/mpc-contract.nix) builds the
+contract hermetically (Rust pinned by `rust-toolchain.toml`, clang/LLVM, vendored
 cargo registry), so the build does not depend on a third-party Docker image. CI
 exercises it on every change as an independent reproducible path, and it is the
 quickest way to rebuild the contract locally. It is a fallback and is not the

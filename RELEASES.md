@@ -88,6 +88,10 @@ artifact named `contract`.
 Wait for all four to finish successfully. The Release workflow refuses to
 run if any artifact is missing.
 
+[Build Nix Docker Images](.github/workflows/docker_build_nix_images.yml) also
+pushes `<branch>-<short-sha>-nix` images, which the Release workflow does not
+use yet.
+
 > **Tip:** The pre-release images are deployable. If you want to
 > smoke-test on testnet before promoting, deploy
 > `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
