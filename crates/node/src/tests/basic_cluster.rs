@@ -1,7 +1,9 @@
 use crate::indexer::participants::ContractState;
 use crate::metrics::{
+    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS,
     MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE,
-    MPC_OWNED_NUM_TRIPLES_AVAILABLE, ONLINE_PRESIGN_MODE_LABEL, STORED_PRESIGNATURE_MODE_LABEL,
+    ONLINE_PRESIGN_MODE_LABEL, STORED_PRESIGNATURE_MODE_LABEL, SUCCEEDED_OUTCOME_LABEL,
+    TRIPLE_GENERATION_TASK_LABEL,
 };
 use crate::p2p::testing::port_seed;
 use crate::tests::{
@@ -36,9 +38,20 @@ fn gauge_total(gauge: &prometheus::IntGaugeVec) -> i64 {
         .sum()
 }
 
-async fn wait_until_positive(gauge: &prometheus::IntGaugeVec, what: &str) {
+fn every_node_owns_triples() -> bool {
+    let triple_batches_led = MPC_LED_COMPUTATION_DURATION_SECONDS
+        .with_label_values(&[
+            ECDSA_PROTOCOL_SCHEME_LABEL,
+            TRIPLE_GENERATION_TASK_LABEL,
+            SUCCEEDED_OUTCOME_LABEL,
+        ])
+        .get_sample_count();
+    triple_batches_led >= NUM_PARTICIPANTS as u64
+}
+
+async fn wait_until(condition: impl Fn() -> bool, what: &str) {
     tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
-        while gauge_total(gauge) == 0 {
+        while !condition() {
             tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
         }
     })
@@ -46,11 +59,14 @@ async fn wait_until_positive(gauge: &prometheus::IntGaugeVec, what: &str) {
     .unwrap_or_else(|_| panic!("timeout waiting for {what}"));
 }
 
-// Make a cluster of four nodes, test that we can generate keyshares
-// and then produce signatures.
+async fn wait_until_positive(gauge: &prometheus::IntGaugeVec, what: &str) {
+    wait_until(|| gauge_total(gauge) > 0, what).await;
+}
+
 #[tokio::test]
 #[test_log::test]
-async fn test_basic_cluster() {
+#[expect(non_snake_case)]
+async fn cluster__should_serve_every_domain_after_keygen() {
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup: IntegrationTestSetup = IntegrationTestSetup::new(
         Clock::real(),
@@ -112,7 +128,7 @@ async fn test_basic_cluster() {
         .await
         .expect("timeout waiting for keygen to complete");
 
-    wait_until_positive(&MPC_OWNED_NUM_TRIPLES_AVAILABLE, "triples").await;
+    wait_until(every_node_owns_triples, "every node to own triples").await;
     wait_until_positive(&MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, "presignatures").await;
     let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
     assert!(
