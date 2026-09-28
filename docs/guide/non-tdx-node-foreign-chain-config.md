@@ -1,7 +1,7 @@
 # Foreign chain config for non-TDX nodes
 
 
-## TESETNET example
+## Testnet example
 
 Replace `YOUR_*` with your keys and `YOUR-SLUG` with your QuickNode endpoint name. Verify before
 deploying:
