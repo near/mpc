@@ -8,22 +8,24 @@ use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolCont
 use tokio_util::sync::CancellationToken;
 
 use crate::keyset::keyset_to_backup;
-use crate::ports::{KeyShareRepository, P2PClient, WatchContractState};
+use crate::ports::{KeyShareRepository, P2PClient, ReportBackupStatus, WatchContractState};
 
 /// Keeps local storage holding the keyshares of the contract's current keyset
-pub struct Service<Keyshares, Storage, Contract> {
+pub struct Service<Keyshares, Storage, Contract, Status> {
     keyshares: Keyshares,
     storage: Storage,
     contract_state: Contract,
+    status: Status,
     retry_delay: Duration,
     backed_up: Option<BackedUpKeyset>,
 }
 
-impl<Keyshares, Storage, Contract> Service<Keyshares, Storage, Contract>
+impl<Keyshares, Storage, Contract, Status> Service<Keyshares, Storage, Contract, Status>
 where
     Keyshares: P2PClient,
     Storage: KeyShareRepository,
     Contract: WatchContractState,
+    Status: ReportBackupStatus,
 {
     /// Reads back what local storage already holds, so a restart does not re-fetch a keyset
     /// that is already stored.
@@ -31,6 +33,7 @@ where
         keyshares: Keyshares,
         storage: Storage,
         contract_state: Contract,
+        status: Status,
         retry_delay: Duration,
     ) -> anyhow::Result<Self> {
         let stored = storage
@@ -42,6 +45,7 @@ where
             keyshares,
             storage,
             contract_state,
+            status,
             retry_delay,
             backed_up: BackedUpKeyset::from_keyshares(&stored),
         })
@@ -135,6 +139,7 @@ where
             .await
             .map_err(|err| anyhow!("failed to store keyshares: {err:?}"))?;
         self.backed_up = BackedUpKeyset::from_keyshares(&keyshares);
+        self.status.keyset_backed_up(keyset.epoch_id);
         Ok(BackupOutcome::BackedUp {
             epoch_id: keyset.epoch_id,
             num_domains: keyshares.len(),
@@ -228,7 +233,19 @@ mod tests {
     /// Only the retry test waits it out, and it does so under a paused clock.
     const TEST_RETRY_DELAY: Duration = Duration::from_secs(60);
 
-    type TestService = Service<FakeP2PClient, FakeKeyshareStorage, FakeWatchContractState>;
+    type TestService =
+        Service<FakeP2PClient, FakeKeyshareStorage, FakeWatchContractState, FakeStatusReporter>;
+
+    #[derive(Default)]
+    struct FakeStatusReporter {
+        reported: std::sync::Mutex<Vec<EpochId>>,
+    }
+
+    impl ReportBackupStatus for FakeStatusReporter {
+        fn keyset_backed_up(&self, epoch_id: EpochId) {
+            self.reported.lock().unwrap().push(epoch_id);
+        }
+    }
 
     struct FakeP2PClient {
         get_keyshares_calls: AtomicUsize,
@@ -413,9 +430,15 @@ mod tests {
         storage: FakeKeyshareStorage,
         contract_state: FakeWatchContractState,
     ) -> TestService {
-        Service::new(keyshares, storage, contract_state, TEST_RETRY_DELAY)
-            .await
-            .expect("the service should read local storage on startup")
+        Service::new(
+            keyshares,
+            storage,
+            contract_state,
+            FakeStatusReporter::default(),
+            TEST_RETRY_DELAY,
+        )
+        .await
+        .expect("the service should read local storage on startup")
     }
 
     async fn back_up_if_needed(
@@ -447,6 +470,34 @@ mod tests {
         assert_eq!(service.backed_up, backed_up(5, &FIXTURE_DOMAIN_IDS));
         let stored = service.storage.load_keyshares().await.unwrap();
         assert_eq!(stored, keyshares_for(5, &FIXTURE_DOMAIN_IDS));
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_report_the_backed_up_epoch() {
+        // Given
+        let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
+
+        // When
+        back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+
+        // Then
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![EpochId::new(5)]
+        );
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_not_report_a_skipped_backup() {
+        // Given
+        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(5, &FIXTURE_DOMAIN_IDS));
+        let mut service = service(FakeP2PClient::new(), storage).await;
+
+        // When
+        back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+
+        // Then
+        assert!(service.status.reported.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

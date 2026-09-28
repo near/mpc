@@ -1,9 +1,13 @@
 use std::future::Future;
 
 use mpc_node::keyshare::Keyshare;
-use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
+use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState};
 
 use crate::types;
+
+pub trait ReportBackupStatus {
+    fn keyset_backed_up(&self, epoch_id: EpochId);
+}
 
 pub trait WatchContractState {
     type Error: std::fmt::Debug;

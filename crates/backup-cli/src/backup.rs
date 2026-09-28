@@ -93,6 +93,13 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await;
 
+            let (status_reporter, status) = adapters::web::status_channel();
+            if let Some(listen_address) = subcommand_args.listen_address {
+                adapters::web::spawn_web_server(listen_address, status)
+                    .await
+                    .expect("failed to start the web server");
+            }
+
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
 
@@ -100,6 +107,7 @@ pub async fn run_command(args: cli::Args) {
                 mpc_p2p_client,
                 key_shares_storage,
                 contract_state,
+                status_reporter,
                 Duration::from_secs(subcommand_args.poll_interval_seconds),
                 shutdown,
             )
@@ -174,6 +182,7 @@ pub async fn run_backup_service(
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,
     contract_state: impl ports::WatchContractState,
+    status: impl ports::ReportBackupStatus,
     retry_delay: Duration,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
@@ -181,6 +190,7 @@ pub async fn run_backup_service(
         mpc_p2p_client,
         keyshares_storage,
         contract_state,
+        status,
         retry_delay,
     )
     .await?
