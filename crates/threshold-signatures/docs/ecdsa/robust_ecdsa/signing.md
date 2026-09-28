@@ -100,22 +100,22 @@ $\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1};
 6. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
 7. Each $P_i$ computes $\pi_i \gets \mathsf{Prove}\big(w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i;\ a_i, b_i, \rho_i, \sigma_i\big)$
 
-   **Proof of the $w_i$ opening** (sigma protocol, Fiat-Shamir) for the statement, with witness $(a_i, b_i, \rho_i, \sigma_i)$:
+   **Proof of the $w_j$ opening** (sigma protocol, Fiat-Shamir), stated for a proving party $P_j$ (above, $P_i$ proves for $j = i$): the statement is $\big(w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j\big)$ with witness $(a_j, b_j, \rho_j, \sigma_j)$ such that:
 
    $$
-   w_i \cdot G = a_i \cdot R_i + b_i \cdot G \qquad
-   \hat f_a(i) = a_i \cdot G + \rho_i \cdot H_{\mathsf{ped}} \qquad
-   \hat f_b(i) = b_i \cdot G + \sigma_i \cdot H_{\mathsf{ped}}
+   w_j \cdot G = a_j \cdot R_j + b_j \cdot G \qquad
+   \hat f_a(j) = a_j \cdot G + \rho_j \cdot H_{\mathsf{ped}} \qquad
+   \hat f_b(j) = b_j \cdot G + \sigma_j \cdot H_{\mathsf{ped}}
    $$
 
    * $\mathsf{Prove}$:
       * sample $(u_a, u_b, u_\rho, u_\sigma)$
-      * compute $K_0 \gets u_a \cdot R_i + u_b \cdot G$
+      * compute $K_0 \gets u_a \cdot R_j + u_b \cdot G$
       * compute $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$
       * compute $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$
-      * compute $e \gets H(\eta_i, i, w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$
-      * compute $z_a \gets u_a + e a_i$, $z_b \gets u_b + e b_i$, $z_\rho \gets u_\rho + e \rho_i$, $z_\sigma \gets u_\sigma + e \sigma_i$
-      * output $\pi_i = (e, z_a, z_b, z_\rho, z_\sigma)$
+      * compute $e \gets H(\eta_j, j, w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j, K_0, K_1, K_2)$
+      * compute $z_a \gets u_a + e a_j$, $z_b \gets u_b + e b_j$, $z_\rho \gets u_\rho + e \rho_j$, $z_\sigma \gets u_\sigma + e \sigma_j$
+      * output $\pi_j = (e, z_a, z_b, z_\rho, z_\sigma)$
 
 8. $\star$ Each $P_i$ sends $\pi_i$ to every party.
 
