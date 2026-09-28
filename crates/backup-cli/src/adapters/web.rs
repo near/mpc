@@ -11,54 +11,9 @@ use tokio::sync::watch;
 
 use crate::ports::ReportBackupStatus;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub struct BackupStatus {
-    pub last_backup: Option<LastBackup>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct LastBackup {
-    pub epoch_id: EpochId,
-    pub timestamp_seconds: Option<u64>,
-}
-
 pub fn status_channel() -> (BackupStatusReporter, watch::Receiver<BackupStatus>) {
     let (sender, receiver) = watch::channel(BackupStatus::default());
     (BackupStatusReporter { sender }, receiver)
-}
-
-pub struct BackupStatusReporter {
-    sender: watch::Sender<BackupStatus>,
-}
-
-impl ReportBackupStatus for BackupStatusReporter {
-    fn keyset_backed_up(&self, epoch_id: EpochId) {
-        self.publish(epoch_id, unix_now_seconds());
-    }
-
-    fn keyset_already_backed_up(&self, epoch_id: EpochId) {
-        self.publish(epoch_id, None);
-    }
-}
-
-impl BackupStatusReporter {
-    fn publish(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>) {
-        self.sender.send_replace(BackupStatus {
-            last_backup: Some(LastBackup {
-                epoch_id,
-                timestamp_seconds,
-            }),
-        });
-    }
-}
-
-/// `None` when the system clock is before the Unix epoch (e.g. an RTC reset before NTP
-/// sync), since no timestamp is more honest than a 1970 one.
-fn unix_now_seconds() -> Option<u64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|elapsed| elapsed.as_secs())
 }
 
 /// Serves `/health`, `/status` and `/metrics` on `listen_address` until the process exits.
@@ -138,6 +93,51 @@ fn saturating_i64(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
 
+pub struct BackupStatusReporter {
+    sender: watch::Sender<BackupStatus>,
+}
+
+impl ReportBackupStatus for BackupStatusReporter {
+    fn keyset_backed_up(&self, epoch_id: EpochId) {
+        self.publish(epoch_id, unix_now_seconds());
+    }
+
+    fn keyset_already_backed_up(&self, epoch_id: EpochId) {
+        self.publish(epoch_id, None);
+    }
+}
+
+impl BackupStatusReporter {
+    fn publish(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>) {
+        self.sender.send_replace(BackupStatus {
+            last_backup: Some(LastBackup {
+                epoch_id,
+                timestamp_seconds,
+            }),
+        });
+    }
+}
+
+/// `None` when the system clock is before the Unix epoch (e.g. an RTC reset before NTP
+/// sync), since no timestamp is more honest than a 1970 one.
+fn unix_now_seconds() -> Option<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_secs())
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct BackupStatus {
+    pub last_backup: Option<LastBackup>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct LastBackup {
+    pub epoch_id: EpochId,
+    pub timestamp_seconds: Option<u64>,
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -159,40 +159,6 @@ mod tests {
                 timestamp_seconds: None,
             }),
         }
-    }
-
-    #[test]
-    fn keyset_backed_up__should_publish_the_epoch_with_a_timestamp() {
-        // Given
-        let (reporter, status) = status_channel();
-
-        // When
-        reporter.keyset_backed_up(EpochId::new(5));
-
-        // Then
-        let last_backup = status
-            .borrow()
-            .last_backup
-            .expect("a backup should be published");
-        assert_eq!(last_backup.epoch_id, EpochId::new(5));
-        assert!(last_backup.timestamp_seconds.is_some_and(|t| t > 0));
-    }
-
-    #[test]
-    fn keyset_already_backed_up__should_publish_the_epoch_without_a_timestamp() {
-        // Given
-        let (reporter, status) = status_channel();
-
-        // When
-        reporter.keyset_already_backed_up(EpochId::new(5));
-
-        // Then
-        let last_backup = status
-            .borrow()
-            .last_backup
-            .expect("a backup should be published");
-        assert_eq!(last_backup.epoch_id, EpochId::new(5));
-        assert_eq!(last_backup.timestamp_seconds, None);
     }
 
     #[tokio::test]
@@ -217,40 +183,6 @@ mod tests {
         assert_eq!(
             response.last_backup.map(|b| b.epoch_id),
             Some(EpochId::new(5))
-        );
-    }
-
-    #[test]
-    fn backup_status_json__should_expose_the_last_backup() {
-        // Given
-        let status = status_after_a_backup();
-
-        // When
-        let json = serde_json::to_value(&status).unwrap();
-
-        // Then
-        assert_eq!(
-            json,
-            serde_json::json!({
-                "last_backup": { "epoch_id": 5, "timestamp_seconds": 1_700_000_000_u64 }
-            })
-        );
-    }
-
-    #[test]
-    fn backup_status_json__should_expose_a_backup_with_an_unknown_time_as_null() {
-        // Given
-        let status = status_after_a_restart();
-
-        // When
-        let json = serde_json::to_value(&status).unwrap();
-
-        // Then
-        assert_eq!(
-            json,
-            serde_json::json!({
-                "last_backup": { "epoch_id": 5, "timestamp_seconds": null }
-            })
         );
     }
 
@@ -302,5 +234,73 @@ mod tests {
 
         // Then
         assert_eq!(metrics, "");
+    }
+
+    #[test]
+    fn keyset_backed_up__should_publish_the_epoch_with_a_timestamp() {
+        // Given
+        let (reporter, status) = status_channel();
+
+        // When
+        reporter.keyset_backed_up(EpochId::new(5));
+
+        // Then
+        let last_backup = status
+            .borrow()
+            .last_backup
+            .expect("a backup should be published");
+        assert_eq!(last_backup.epoch_id, EpochId::new(5));
+        assert!(last_backup.timestamp_seconds.is_some_and(|t| t > 0));
+    }
+
+    #[test]
+    fn keyset_already_backed_up__should_publish_the_epoch_without_a_timestamp() {
+        // Given
+        let (reporter, status) = status_channel();
+
+        // When
+        reporter.keyset_already_backed_up(EpochId::new(5));
+
+        // Then
+        let last_backup = status
+            .borrow()
+            .last_backup
+            .expect("a backup should be published");
+        assert_eq!(last_backup.epoch_id, EpochId::new(5));
+        assert_eq!(last_backup.timestamp_seconds, None);
+    }
+
+    #[test]
+    fn backup_status_json__should_expose_the_last_backup() {
+        // Given
+        let status = status_after_a_backup();
+
+        // When
+        let json = serde_json::to_value(&status).unwrap();
+
+        // Then
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "last_backup": { "epoch_id": 5, "timestamp_seconds": 1_700_000_000_u64 }
+            })
+        );
+    }
+
+    #[test]
+    fn backup_status_json__should_expose_a_backup_with_an_unknown_time_as_null() {
+        // Given
+        let status = status_after_a_restart();
+
+        // When
+        let json = serde_json::to_value(&status).unwrap();
+
+        // Then
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "last_backup": { "epoch_id": 5, "timestamp_seconds": null }
+            })
+        );
     }
 }
