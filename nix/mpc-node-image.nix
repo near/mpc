@@ -12,7 +12,6 @@
 
 dockerTools.buildLayeredImage {
   name = if withGcloud then "mpc-node-gcp" else "mpc-node";
-  tag = "latest";
   compressor = "none";
 
   contents = [

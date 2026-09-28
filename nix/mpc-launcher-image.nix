@@ -13,11 +13,10 @@
 # digest tied to the image contents
 dockerTools.buildImage {
   name = "mpc-launcher";
-  tag = "latest";
   compressor = "none";
 
   copyToRoot = [
-    docker-client
+    (docker-client.override { buildxSupport = false; })
     bashInteractive
     coreutils
     dockerTools.fakeNss
