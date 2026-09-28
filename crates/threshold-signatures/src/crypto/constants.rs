@@ -115,6 +115,10 @@ pub const SECURITY_PARAMETER: usize = 128;
 /// Field modulus
 pub const BITS: usize = <<Secp256k1 as Curve>::Uint as Bounded>::BITS;
 
+// Robust ECDSA Constants
+/// Robust ECDSA signing transcript label.
+pub const NEAR_ROBUST_ECDSA_SIGN_LABEL: &[u8] = b"Near threshold signatures robust ecdsa sign";
+
 // Triple Generation Constants
 /// Triple generation label.
 pub const NEAR_TRIPLE_GENERATION_LABEL: &[u8] = b"Near threshold signatures triple generation";

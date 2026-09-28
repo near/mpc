@@ -20,12 +20,15 @@
 //! the module, including [`sign::sign`] and presignature rerandomization, is
 //! scheme-agnostic.
 //!
-//! TODO(#4383): replace this stub with a real robust scheme.
+//! TODO(#4383): replace this stub with a real robust scheme. The real scheme is
+//! implemented in [`presign_and_sign()`]; the stub remains until the node switches to it.
 
 pub mod presign;
+pub mod presign_and_sign;
 pub mod sign;
 
 #[cfg(test)]
 mod test;
 
 pub use presign::{PresignArguments, PresignOutput, RerandomizedPresignOutput};
+pub use presign_and_sign::presign_and_sign;
