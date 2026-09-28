@@ -229,10 +229,10 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 
 ### Keeping the Backup Up to Date
 
-`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a JSON-RPC endpoint and takes a backup whenever the contract's keyset is not the one already stored:
+`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a NEAR JSON-RPC endpoint and takes a backup whenever the contract's keyset is not the one already stored:
 
 ```bash
-export BACKUP_RPC_URL=https://rpc.mainnet.near.org   # your provider's endpoint; an api key goes in the query string
+export BACKUP_RPC_URL=https://rpc.mainnet.near.org   # a NEAR RPC provider's endpoint, not your MPC node; an api key goes in the query string
 export BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
 
 backup-cli \
