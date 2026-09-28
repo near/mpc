@@ -71,6 +71,10 @@ error, and only genuine disagreement between verdicts reports a mismatch.
 Whether the no-verdict outcome should retry while disagreement stays terminal
 is tracked in [#3477](https://github.com/near/mpc/issues/3477).
 
+This rule covers V1 requests. For V2 requests a disagreement fails only the current attempt,
+and the request ends in a signed inconclusive once its leader runs out of attempts. See
+[Signed Negative and Inconclusive Outcomes](signed-foreign-transaction-outcomes/signed-foreign-transaction-outcomes.md).
+
 ## Participant selection
 
 Foreign-tx signing must select participants that **cover** the requested chain
