@@ -1,15 +1,10 @@
-//! Pedersen commitments over secp256k1.
+//! Pedersen commitments over secp256k1: `Com(v; r) = v * G + r * H`.
 //!
-//! A commitment to a value `v` with blinding `r` is `Com(v; r) = v * G + r * H`,
-//! where [`struct@PEDERSEN_H`] is a second generator with unknown discrete logarithm,
-//! derived once by hashing a protocol-specific tag to the curve
-//! ([RFC 9380](https://www.rfc-editor.org/rfc/rfc9380)) so that no party can know
-//! its discrete logarithm.
-//!
-//! [`commit_polynomial`] extends `Com` coefficientwise to polynomials: for
-//! `f(X) = Σ f_m X^m` and `r(X) = Σ r_m X^m`, the committed polynomial has
-//! coefficients `Com(f_m; r_m)`. Since `Com` is linear,
-//! `Com(f; r)(j) = Com(f(j); r(j))`, which is what [`verify_share`] checks.
+//! [`PEDERSEN_H`] is a second generator derived by hashing a fixed tag to
+//! the curve ([RFC 9380](https://www.rfc-editor.org/rfc/rfc9380)), so that no
+//! party can know its discrete logarithm. [`commit_polynomial`] extends `Com`
+//! coefficientwise to polynomials; by linearity `Com(f; r)(j) = Com(f(j); r(j))`,
+//! which is what [`verify_share`] checks.
 
 use std::sync::LazyLock;
 
@@ -39,14 +34,7 @@ pub fn commit(value: &Scalar, blinding: &Scalar) -> Element {
     Secp256K1Group::generator() * *value + *PEDERSEN_H * *blinding
 }
 
-/// Commits to the polynomial `f` coefficientwise under the blinding polynomial `r`:
-/// coefficient `m` of the result is `Com(f_m; r_m)`.
-///
-/// The two polynomials need not have the same degree; the shorter one is treated
-/// as zero-padded, so trailing unblinded (or valueless) coefficients are allowed.
-///
-/// The caller is responsible for stripping a leading identity coefficient
-/// (when `f` and `r` both have a zero constant term) before serialization.
+/// Commits to `f` coefficientwise under the blinding `r`: coefficient `m` is `Com(f_m; r_m)`.
 pub fn commit_polynomial(
     f: &Polynomial,
     r: &Polynomial,

@@ -2,4 +2,4 @@
 source: crates/threshold-signatures/src/crypto/pedersen.rs
 expression: "hex::encode(ser)"
 ---
-0319e0d0e9bea87c5eb6ad165168247a0eac841986626fee086cd21db5272ac99f
+03e0427efae42b44da3057a4b02dcab8931b109f90542c45526374ca1299be29ea
