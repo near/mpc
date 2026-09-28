@@ -1,20 +1,5 @@
-//! Sigma protocol (Fiat-Shamir) proving that a value `w` opens consistently with
-//! Pedersen-committed values `a` and `b`.
-//!
-//! For the statement `(W, R, com_a, com_b, H)` the prover shows knowledge of a
-//! witness `(a, b, ρ, σ)` such that:
-//!
-//! ```text
-//! W     = a * R + b * G
-//! com_a = a * G + ρ * H
-//! com_b = b * G + σ * H
-//! ```
-//!
-//! Binding the challenge to the protocol context (e.g. an echoed transcript hash
-//! `η` and the prover's participant index) is the **caller's** job: absorb the
-//! context into the `Transcript` and fork it per prover before calling
-//! [`prove_with_nonces`] or [`verify`], e.g.
-//! `transcript.message(b"eta", eta)` then `transcript.fork(b"party", &me.bytes())`.
+//! Sigma protocol (Fiat-Shamir) proving `W = a * R + b * G` consistent with the Pedersen
+//! commitments to `a` and `b`. Callers bind the context (η, party index) into the transcript.
 
 use super::strobe_transcript::Transcript;
 use crate::{
