@@ -1,3 +1,4 @@
+use crate::log_throttle::{Decision, LogThrottle};
 use crate::{
     config::MpcConfig,
     metrics::networking_metrics::{
@@ -30,7 +31,6 @@ use borsh::BorshDeserialize;
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
-use log_throttle::{Decision, LogThrottle};
 use rustls::{ClientConfig, CommonState};
 use std::{
     collections::HashMap,
@@ -41,10 +41,7 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{
-        Mutex,
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
-    },
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::timeout,
 };
 use tokio_rustls::TlsAcceptor;
@@ -462,12 +459,12 @@ impl PersistentConnection {
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
         resolve_address: impl Fn() -> Option<String> + Send + 'static,
-        log_throttle: Arc<Mutex<LogThrottle>>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
+                let mut log_throttle = LogThrottle::new(Duration::from_secs(60));
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
@@ -484,7 +481,7 @@ impl PersistentConnection {
                     .await
                     {
                         Ok(new_conn) => {
-                            log_throttle.lock().await.reset();
+                            log_throttle.reset();
                             info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
@@ -494,17 +491,15 @@ impl PersistentConnection {
                             new_conn
                         }
                         Err(e) => {
-                            let decision = log_throttle
-                                .lock()
-                                .await
-                                .check(tokio::time::Instant::now().into_std());
+                            let decision =
+                                log_throttle.check(tokio::time::Instant::now().into_std());
                             match decision {
                                 Decision::Suppress => {}
-                                Decision::Emit { suppressed } => {
+                                Decision::Emit { observed } => {
                                     info!(
                                         my_id = %my_id,
                                         target_participant_id = %target_participant_id,
-                                        suppressed,
+                                        observed,
                                         error = %format_args!("{e:#}"),
                                         "could not connect",
                                     );
@@ -633,7 +628,6 @@ where
                 participant_identities.clone(),
                 connectivities.get(participant.id)?,
                 resolve_address,
-                Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60)))),
             )?),
         );
     }
@@ -1178,7 +1172,6 @@ mod tests {
         tracking::{self, testing::start_root_task_with_periodic_dump},
     };
     use ed25519_dalek::SigningKey;
-    use log_throttle::{Decision, LogThrottle};
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
     use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -1187,7 +1180,7 @@ mod tests {
     use tokio::{
         io::AsyncReadExt,
         net::{TcpListener, TcpStream},
-        sync::{Mutex, mpsc},
+        sync::mpsc,
         task::JoinHandle,
         time::timeout,
     };
@@ -1695,7 +1688,6 @@ mod tests {
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
                 || None,
-                Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60)))),
             )
             .unwrap();
 
@@ -1742,7 +1734,6 @@ mod tests {
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
                 resolve_address,
-                Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60)))),
             )
             .unwrap();
 
@@ -1803,50 +1794,6 @@ mod tests {
             format!("{error:#}").contains("timed out"),
             "unexpected error: {error:#}"
         );
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[test_log::test]
-    async fn persistent_connection__should_share_dedup_state_with_retry_loop() {
-        // Given
-        let (target_address, mut accept_rx, listener_task) = must_spawn_silent_listener().await;
-        let client_config = make_client_config();
-        let my_id = ParticipantId::from_raw(0);
-        let target_id = ParticipantId::from_raw(1);
-        let log_throttle = Arc::new(Mutex::new(LogThrottle::new(Duration::from_secs(60))));
-        start_root_task_with_periodic_dump(async move {
-            let connectivity = AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
-                my_id,
-                &[my_id, target_id],
-            );
-            // When
-            let _connection = PersistentConnection::new(
-                client_config,
-                my_id,
-                target_address,
-                target_id,
-                Arc::new(ParticipantIdentities::default()),
-                connectivity.get(target_id).unwrap(),
-                || None,
-                log_throttle.clone(),
-            )
-            .unwrap();
-
-            for _ in 0..2 {
-                timeout(Duration::from_secs(120), accept_rx.recv())
-                    .await
-                    .unwrap();
-            }
-
-            // Then
-            let decision = log_throttle
-                .lock()
-                .await
-                .check(tokio::time::Instant::now().into_std());
-            assert_eq!(decision, Decision::Suppress);
-        })
-        .await;
-        listener_task.abort();
     }
 
     #[tokio::test]
