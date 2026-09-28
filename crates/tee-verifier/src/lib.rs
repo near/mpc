@@ -82,7 +82,7 @@ impl TeeVerifier {
     ) -> VerificationResultWithCollateralDates {
         let now_seconds = now_seconds();
         let quote_bytes: Vec<u8> = quote.into_dcap_type();
-        let collateral: dcap_qvl::QuoteCollateralV3 = collateral.into_dcap_type();
+        let collateral = collateral.into_dcap_type();
         match QuoteVerifier::new_prod().verify_with_policy(
             &quote_bytes,
             collateral,
