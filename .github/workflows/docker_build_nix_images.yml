@@ -33,7 +33,7 @@ jobs:
       - name: Build images
         run: |
           for image in mpc-node mpc-node-gcp mpc-launcher; do
-            nix build --print-build-logs --out-link "result-$image" ".#$image-image"
+            nix build --print-build-logs --no-update-lock-file --out-link "result-$image" ".#$image-image"
           done
           sha256sum result-*/manifest.json
 
@@ -44,7 +44,10 @@ jobs:
           path: result-*
           if-no-files-found: error
           retention-days: 1
+          overwrite: true
 
+  # Separate from the build job, which has no secrets, so the registry
+  # credentials never reach code that runs during the build
   push-images:
     name: "Push Nix Docker images with commit hash"
     needs: build-images

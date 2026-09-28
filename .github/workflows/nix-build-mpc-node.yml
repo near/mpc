@@ -36,7 +36,7 @@ jobs:
       - name: Build images
         run: |
           for image in mpc-node mpc-node-gcp mpc-launcher; do
-            nix build --print-build-logs --out-link "result-$image" ".#$image-image"
+            nix build --print-build-logs --no-update-lock-file --out-link "result-$image" ".#$image-image"
           done
           sha256sum result-*/manifest.json
 

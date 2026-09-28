@@ -57,10 +57,11 @@ During the transition to hermetic builds, CI also builds every image with
 operators vote on the digests printed by the script above.
 
 Every build step runs in the Nix sandbox, from inputs pinned by `flake.lock`,
-`Cargo.lock` and `rust-toolchain.toml`; only fetching those pinned inputs
-touches the network. Where the kernel refuses the sandbox (for example inside a
-container) Nix silently builds without it, so set `sandbox-fallback = false` in
-`nix.conf`, as CI does, to make such a build fail instead.
+`Cargo.lock` and `rust-toolchain.toml`; only fetching those pinned inputs, or
+their signed pre-built outputs from the Nix binary cache, touches the network.
+Where the kernel refuses the sandbox (for example inside a container) Nix
+silently builds without it, so set `sandbox-fallback = false` in `nix.conf`, as
+CI does, to make such a build fail instead.
 
 Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` equals the digest of the published `-nix` tag. The same

@@ -272,7 +272,7 @@ let
   };
 
   # Build deps in a separate derivation so that they're cached across
-  # mpc-node source changes.
+  # source changes.
   cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
 in
