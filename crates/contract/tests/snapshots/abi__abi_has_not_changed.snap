@@ -2080,7 +2080,7 @@ expression: abi
       },
       {
         "name": "verify_tee",
-        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case less than `threshold` participants run in an accepted TEE State.",
+        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case less than `threshold` participants run in an accepted TEE State.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -3120,7 +3120,7 @@ expression: abi
               "minimum": 0.0
             },
             "launcher_hash_unused_ttl_seconds": {
-              "description": "TTL after which a launcher image hash unused by any participant is evicted: at the later of its last use + this TTL and the expiry of the attestation that last used it. Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on use). An expiry never moves earlier, so lowering it does not shorten existing entries.",
+              "description": "How long a launcher hash no current participant uses stays allowed after it was last voted in or last seen in use. It is removed at the first TEE verification after that; verifications run at node start and every 2 days per node, and pause outside Running. A hash in use is never removed automatically. Set it well above 2 days and above your vote-to-first-migration time; 0 retires a freshly voted launcher at the next verification.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3834,7 +3834,7 @@ expression: abi
               "minimum": 0.0
             },
             "launcher_hash_unused_ttl_seconds": {
-              "description": "TTL after which a launcher image hash unused by any participant is evicted.",
+              "description": "How long a launcher hash no current participant uses stays allowed after it was last voted in or last seen in use. It is removed at the first TEE verification after that; verifications run at node start and every 2 days per node, and pause outside Running. A hash in use is never removed automatically. Set it well above 2 days and above your vote-to-first-migration time; 0 retires a freshly voted launcher at the next verification.",
               "type": [
                 "integer",
                 "null"

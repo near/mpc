@@ -143,9 +143,8 @@ it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now t
 approach instead.*
 
 **2. Launcher-image eviction.** A launcher hash is evicted after `launcher_hash_unused_ttl_seconds`
-(14 days) without use, where "used" means an accepted attestation from a current participant
-refreshed it. `re_verify` re-checks a stored attestation's launcher hash against the current allowed
-set, so evicting a hash kicks a node whose attestation is still valid. Until
+(14 days) without use. `re_verify` re-checks a stored attestation's launcher hash against the current
+allowed set, so evicting a hash kicks a node whose attestation is still valid. Until
 [#4516](https://github.com/near/mpc/issues/4516), `Config::validate` prevented this by requiring the
 TTL to exceed the 7-day constant, which is going away.
 
@@ -153,17 +152,21 @@ Without that rule, a node that attests once with 30 days of validity and then st
 on day 14 and is kicked with 16 days left. Effective validity becomes `min(certificate expiry, 14
 days since the last attestation)`, which turns launcher cleanup into a second attestation deadline.
 
-Fix ([#4516](https://github.com/near/mpc/issues/4516)): keep the TTL, but let each refresh extend
-the hash's expiry to at least the refreshing attestation's own expiry, and never move an expiry
-earlier. A hash then outlives every current participant's attestation that refreshed it, and the TTL
-is left retiring only hashes nobody adopted. Reads and cleanup both compare against the stored expiry,
-so neither needs a reference check. The refresh stays gated on `AuthenticatedParticipantId`, so a
-joining node's hash is protected only from its first submission as a participant, which the hourly
-resubmission makes at most an hour after it joins. The rule that the list never empties stays.
+Fix ([#4516](https://github.com/near/mpc/issues/4516)): reads do not filter; `verify_tee` restamps
+in-use launchers before collecting. Each entry keeps one stamp, `now + ttl` at its last vote or at
+the last `verify_tee` that found it in use. Every allowed-set read, for admission and for `re_verify`
+alike, returns all entries. Apart from the unanimous removal vote, only `verify_tee`, which runs in
+`Running` on the current participant set, removes entries. It first restamps every entry that a
+current participant's stored attestation references, then drops the entries whose stamp has passed,
+keeping the most recently stamped one so the list never empties. A hash in use is therefore never
+removed automatically, whatever the TTL or the
+attestation's lifetime, and the TTL is left retiring only hashes nobody uses. A hash used only by a
+node that is not yet a participant, such as a joining node or a migration destination, is protected
+by its vote stamp alone; a threshold re-vote restamps it.
 
-*Considered: a reference check at cleanup. Not enough on its own: the allowed-set reads already skip
-expired entries, so `re_verify` would reject a hash that cleanup kept. Guarding the reads too would
-mean passing the participant set into every one of them.*
+*Considered: extending the stamp on each participant's submission to the attestation's own expiry,
+with reads filtering on the stamp. Correct, but the stamp then carries two meanings, every read
+has to filter, and the refresh has to be wired into both submission paths.*
 
 *Considered: dropping the TTL and evicting purely on references. Simpler config, but a newly
 voted-in hash has no references until nodes adopt it, so it would need its own grace period.*

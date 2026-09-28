@@ -3,7 +3,6 @@ use crate::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
         participants::Participants,
         proposal_hash::ToProposalHash,
-        time::Timestamp,
         votes::{VoterSet, Votes},
     },
     storage_keys::StorageKey,
@@ -170,8 +169,6 @@ impl TeeState {
         } = mock.verify(
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
-            // A `MockAttestation::WithConstraints` may reference a launcher compose hash, so
-            // apply the same expiry filtering as the dstack path.
             &self.get_allowed_launcher_compose_hashes(),
             &self.get_accepted_measurements(),
         )?;
@@ -281,10 +278,10 @@ impl TeeState {
         }
     }
 
-    /// Evicts expired entries from the allowed docker-image and launcher-image sets, then
-    /// reverifies stored participant attestations, reporting whether all still pass or, if
-    /// not, which subset does (an attestation fails when e.g. its MPC image hash is no longer
-    /// allowed, or a certificate expired).
+    /// Evicts expired entries from the allowed docker-image set, then reverifies stored
+    /// participant attestations, reporting whether all still pass or, if not, which subset
+    /// does (an attestation fails when e.g. its MPC image hash is no longer allowed, or a
+    /// certificate expired).
     ///
     /// The attestations themselves are not pruned here; reclaiming them is
     /// [`Self::clean_invalid_attestations`]'s job.
@@ -295,7 +292,6 @@ impl TeeState {
     ) -> TeeValidationResult {
         self.allowed_docker_image_hashes
             .cleanup_expired_hashes(tee_upgrade_deadline_duration);
-        self.allowed_launcher_images.cleanup_expired();
 
         let participants_with_valid_attestation: Vec<_> = participants
             .participants()
@@ -380,29 +376,26 @@ impl TeeState {
         self.allowed_launcher_images.all_compose_hashes()
     }
 
-    /// Extends the `expires_at` timestamp of the launcher image referenced by the stored
-    /// attestation for `tls_public_key` to at least `now + ttl` and the attestation's expiry. The
-    /// [`AuthenticatedParticipantId`] is an unused capability token — requiring it means only
-    /// a current participant can refresh.
-    pub(crate) fn refresh_launcher_usage(
+    /// Runs [`AllowedLauncherImages::collect_unused`] with the launchers used by the stored
+    /// attestations of the given [`Participants`]. They must be the running participants: a
+    /// launcher used only by a participant missing here can be removed, which kicks that
+    /// participant.
+    pub(crate) fn collect_unused_launchers(
         &mut self,
-        tls_public_key: &Ed25519PublicKey,
-        _authenticated_participant: &AuthenticatedParticipantId,
+        current_participants: &Participants,
         ttl: Duration,
     ) {
-        let Some(attestation) = self.stored_attestations.get(tls_public_key) else {
-            return;
-        };
-        if let Some(launcher_compose_hash) =
-            attestation.verified_attestation.launcher_compose_hash()
-        {
-            let attestation_expiry = attestation
-                .verified_attestation
-                .expiry_timestamp_seconds()
-                .map(Timestamp::from_secs);
-            self.allowed_launcher_images
-                .refresh(&launcher_compose_hash, ttl, attestation_expiry);
-        }
+        let in_use: Vec<LauncherDockerComposeHash> = current_participants
+            .participants()
+            .iter()
+            .filter_map(|(account_id, _, participant_info)| {
+                self.stored_attestations
+                    .get(&participant_info.tls_public_key)
+                    .filter(|stored| stored.node_id.account_id == *account_id)
+            })
+            .filter_map(|stored| stored.verified_attestation.launcher_compose_hash())
+            .collect();
+        self.allowed_launcher_images.collect_unused(&in_use, ttl);
     }
 
     /// Casts a vote for adding or removing a launcher image hash.
@@ -634,7 +627,10 @@ mod tests {
         authenticate_account_as, authenticate_as, bogus_ed25519_near_public_key,
         bogus_ed25519_public_key, create_node_id, gen_participant, gen_participants, node_id_for,
     };
-    use crate::tee::test_utils::{set_block_timestamp, whitelist_dstack_measurements};
+    use crate::tee::{
+        proposal::get_docker_compose_hash,
+        test_utils::{set_block_timestamp, whitelist_dstack_measurements},
+    };
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
@@ -1336,101 +1332,147 @@ mod tests {
         assert_matches!(validation_result, TeeValidationResult::Full);
     }
 
-    #[test]
-    fn reverify_and_cleanup_participants__should_evict_expired_launcher_hashes() {
-        const TTL: Duration = Duration::from_secs(100);
-        const NANOS_PER_SECOND: u64 = 1_000_000_000;
-        const LIVE_ADDED_SECONDS: u64 = 200;
-        const CHECK_SECONDS: u64 = 250;
+    const LAUNCHER_TTL: Duration = Duration::from_secs(100);
+    const NANOS_PER_SECOND: u64 = 1_000_000_000;
 
-        // Given an expired launcher (deadline 101s) and a newer live one (deadline 300s).
-        let mut tee_state = TeeState::default();
-        let mpc_hash = NodeImageHash::from([10u8; 32]);
-        let expired = LauncherImageHash::from([1u8; 32]);
-        let live = LauncherImageHash::from([2u8; 32]);
-
-        set_block_timestamp(NANOS_PER_SECOND);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(expired, &[mpc_hash], TTL);
-        set_block_timestamp(LIVE_ADDED_SECONDS * NANOS_PER_SECOND);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(live, &[mpc_hash], TTL);
-        assert!(
-            tee_state
-                .allowed_launcher_images
-                .expires_at_secs(&expired)
-                .is_some()
-        );
-
-        // When reverify runs past the expired entry's deadline.
-        set_block_timestamp(CHECK_SECONDS * NANOS_PER_SECOND);
-        let _ = tee_state.reverify_and_cleanup_participants(&gen_participants(1), Duration::MAX);
-
-        // Then the expired entry is physically evicted and the live one remains.
-        assert!(
-            tee_state
-                .allowed_launcher_images
-                .expires_at_secs(&expired)
-                .is_none()
-        );
-        assert!(
-            tee_state
-                .allowed_launcher_images
-                .expires_at_secs(&live)
-                .is_some()
-        );
+    fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
+        MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: Some(get_docker_compose_hash(launcher, mpc_hash)),
+            expiry_timestamp_seconds: Some(1_000_000),
+            expected_measurements: None,
+        }
     }
 
     #[test]
-    fn reverify_and_cleanup_participants__should_keep_launcher_of_valid_attestation() {
+    fn collect_unused_launchers__should_keep_launcher_in_use_past_its_retention() {
         // Given
-        const TTL: Duration = Duration::from_secs(100);
-        const NANOS_PER_SECOND: u64 = 1_000_000_000;
         let participants = gen_participants(1);
         let (account_id, _, participant_info) = participants.participants()[0].clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .block_timestamp(10 * NANOS_PER_SECOND)
-                .build()
-        );
-        let authenticated = AuthenticatedParticipantId::new(&participants).unwrap();
-
+        set_block_timestamp(10 * NANOS_PER_SECOND);
         let mut tee_state = TeeState::default();
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
         let unused = LauncherImageHash::from([2u8; 32]);
         tee_state
             .allowed_launcher_images
-            .add_or_refresh(adopted, &[mpc_hash], TTL);
+            .add_or_refresh(adopted, &[mpc_hash], LAUNCHER_TTL);
         tee_state
             .allowed_launcher_images
-            .add_or_refresh(unused, &[mpc_hash], TTL);
-
-        let node_id = create_node_id(&account_id, &participant_info.tls_public_key);
-        let mock = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(crate::tee::proposal::get_docker_compose_hash(
-                &adopted, &mpc_hash,
-            )),
-            expiry_timestamp_seconds: Some(1_000),
-            expected_measurements: None,
-        };
+            .add_or_refresh(unused, &[mpc_hash], LAUNCHER_TTL);
         tee_state
-            .verify_and_store_mock(node_id.clone(), mock, Duration::MAX)
+            .verify_and_store_mock(
+                create_node_id(&account_id, &participant_info.tls_public_key),
+                launcher_mock(&adopted, &mpc_hash),
+                Duration::MAX,
+            )
             .unwrap();
-        tee_state.refresh_launcher_usage(&node_id.tls_public_key, &authenticated, TTL);
 
         // When
         set_block_timestamp(500 * NANOS_PER_SECOND);
-        let validation_result =
-            tee_state.reverify_and_cleanup_participants(&participants, Duration::MAX);
+        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
 
         // Then
-        assert_matches!(validation_result, TeeValidationResult::Full);
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![adopted]);
+        assert_matches!(
+            tee_state.reverify_and_cleanup_participants(&participants, Duration::MAX),
+            TeeValidationResult::Full
+        );
+    }
+
+    #[test]
+    fn collect_unused_launchers__should_not_count_attestation_of_non_participant() {
+        // Given
+        let participants = gen_participants(1);
+        let outsider = gen_participants(1);
+        let (account_id, _, participant_info) = outsider.participants()[0].clone();
+        set_block_timestamp(10 * NANOS_PER_SECOND);
+        let mut tee_state = TeeState::default();
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let outsider_launcher = LauncherImageHash::from([1u8; 32]);
+        let newest = LauncherImageHash::from([2u8; 32]);
+        tee_state.allowed_launcher_images.add_or_refresh(
+            outsider_launcher,
+            &[mpc_hash],
+            LAUNCHER_TTL,
+        );
+        tee_state
+            .verify_and_store_mock(
+                create_node_id(&account_id, &participant_info.tls_public_key),
+                launcher_mock(&outsider_launcher, &mpc_hash),
+                Duration::MAX,
+            )
+            .unwrap();
+        set_block_timestamp(20 * NANOS_PER_SECOND);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
+
+        // When
+        set_block_timestamp(500 * NANOS_PER_SECOND);
+        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
+
+        // Then
+        assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
+    }
+
+    #[test]
+    fn collect_unused_launchers__should_not_count_attestation_stored_by_another_account_under_participant_key()
+     {
+        // Given
+        let participants = gen_participants(1);
+        let (_, _, participant_info) = participants.participants()[0].clone();
+        let other_account: AccountId = "other.near".parse().unwrap();
+        set_block_timestamp(10 * NANOS_PER_SECOND);
+        let mut tee_state = TeeState::default();
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let other_launcher = LauncherImageHash::from([1u8; 32]);
+        let newest = LauncherImageHash::from([2u8; 32]);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(other_launcher, &[mpc_hash], LAUNCHER_TTL);
+        tee_state
+            .verify_and_store_mock(
+                create_node_id(&other_account, &participant_info.tls_public_key),
+                launcher_mock(&other_launcher, &mpc_hash),
+                Duration::MAX,
+            )
+            .unwrap();
+        set_block_timestamp(20 * NANOS_PER_SECOND);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
+
+        // When
+        set_block_timestamp(500 * NANOS_PER_SECOND);
+        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
+
+        // Then
+        assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
+    }
+
+    #[test]
+    fn reverify_and_cleanup_participants__should_not_remove_lapsed_launchers() {
+        // Given
+        let mut tee_state = TeeState::default();
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let launchers = vec![
+            LauncherImageHash::from([1u8; 32]),
+            LauncherImageHash::from([2u8; 32]),
+        ];
+        set_block_timestamp(NANOS_PER_SECOND);
+        for launcher in &launchers {
+            tee_state
+                .allowed_launcher_images
+                .add_or_refresh(*launcher, &[mpc_hash], LAUNCHER_TTL);
+        }
+
+        // When
+        set_block_timestamp(500 * NANOS_PER_SECOND);
+        let _ = tee_state.reverify_and_cleanup_participants(&gen_participants(1), Duration::MAX);
+
+        // Then
+        assert_eq!(tee_state.get_allowed_launcher_hashes(), launchers);
     }
 
     #[test]
@@ -1819,147 +1861,37 @@ mod tests {
     }
 
     #[test]
-    fn refresh_launcher_usage__should_keep_attested_launcher_alive() {
-        // Given a state with launcher_1 and a newer launcher_2, plus a stored mock
-        // attestation (from a current participant) referencing launcher_1.
-        const TTL: Duration = Duration::from_secs(100);
-        let launcher_1 = LauncherImageHash::from([1u8; 32]);
-        let launcher_2 = LauncherImageHash::from([2u8; 32]);
-        let mpc_hash = crate::tee::proposal::NodeImageHash::from([10u8; 32]);
-        let compose_1 = crate::tee::proposal::get_docker_compose_hash(&launcher_1, &mpc_hash);
-
-        // Proof token for the refresh calls; its value is unused by the method — it only
-        // proves the caller authenticated a current participant.
-        let participants = crate::primitives::test_utils::gen_participants(1);
-        let signer = participants.participants()[0].0.clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer)
-                .block_timestamp(10 * 1_000_000_000)
-                .build()
-        );
-        let authenticated = AuthenticatedParticipantId::new(&participants).unwrap();
-
-        let mut tee_state = TeeState::default();
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(launcher_1, &[mpc_hash], TTL);
-
-        // A second (newer) launcher so the list is never empty — this defeats the
-        // newest-only read fallback and lets us observe real expiry.
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(20 * 1_000_000_000)
-                .build()
-        );
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(launcher_2, &[mpc_hash], TTL);
-
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-        // A mock attestation that references launcher_1's compose hash, so the stored
-        // attestation drives `refresh_launcher_usage` at launcher_1.
-        let mock = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(compose_1),
-            expiry_timestamp_seconds: Some(100),
-            expected_measurements: None,
-        };
-        tee_state
-            .verify_and_store_mock(node_id.clone(), mock, Duration::from_secs(0))
-            .unwrap();
-
-        // When launcher_1 is refreshed on use shortly before its original deadline (10 + 100).
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(90 * 1_000_000_000)
-                .build()
-        );
-        tee_state.refresh_launcher_usage(&node_id.tls_public_key, &authenticated, TTL);
-
-        // Then at t=150 launcher_1 (refreshed at 90 → deadline 190) is live while launcher_2
-        // (added at 20 → deadline 120) is expired. Without the refresh, both would be
-        // expired and the fallback would surface launcher_2 instead.
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(150 * 1_000_000_000)
-                .build()
-        );
-        let live = tee_state.get_allowed_launcher_hashes();
-        assert_eq!(live, vec![launcher_1]);
-
-        // Refreshing an unknown TLS key is a harmless no-op.
-        tee_state.refresh_launcher_usage(&bogus_ed25519_public_key(), &authenticated, TTL);
-    }
-
-    #[test]
-    fn verify_and_store_mock__should_reject_expired_launcher_hash() {
-        // Given a TEE state where launcher_1 has expired but a newer launcher_2 is still live.
-        const TTL: Duration = Duration::from_secs(100);
-        const NANOS_PER_SECOND: u64 = 1_000_000_000;
-        // launcher_1's deadline is LAUNCHER_1_ADDED + TTL = 101s; launcher_2's is 300s. We
-        // check at 250s: past launcher_1's deadline, before launcher_2's. launcher_2 is newer
-        // so the newest-only read fallback does not mask launcher_1's expiry.
-        const LAUNCHER_1_ADDED_SECONDS: u64 = 1;
-        const LAUNCHER_2_ADDED_SECONDS: u64 = 200;
-        const CHECK_SECONDS: u64 = 250;
-        // Far in the future so the mock's own expiry never fires — only launcher expiry does.
-        const MOCK_EXPIRY_FAR_FUTURE_SECONDS: u64 = 1_000_000;
-
-        let launcher_1 = LauncherImageHash::from([1u8; 32]);
-        let launcher_2 = LauncherImageHash::from([2u8; 32]);
+    fn verify_and_store_mock__should_reject_collected_launcher_hash() {
+        // Given
+        let participants = gen_participants(1);
+        let (account_id, _, participant_info) = participants.participants()[0].clone();
+        let node_id = create_node_id(&account_id, &participant_info.tls_public_key);
         let mpc_hash = NodeImageHash::from([10u8; 32]);
-        let compose_1 = crate::tee::proposal::get_docker_compose_hash(&launcher_1, &mpc_hash);
-        let compose_2 = crate::tee::proposal::get_docker_compose_hash(&launcher_2, &mpc_hash);
-
+        let collected = LauncherImageHash::from([1u8; 32]);
+        let newest = LauncherImageHash::from([2u8; 32]);
         let mut tee_state = TeeState::default();
-
-        set_block_timestamp(LAUNCHER_1_ADDED_SECONDS * NANOS_PER_SECOND);
+        set_block_timestamp(NANOS_PER_SECOND);
         tee_state
             .allowed_launcher_images
-            .add_or_refresh(launcher_1, &[mpc_hash], TTL);
-
-        set_block_timestamp(LAUNCHER_2_ADDED_SECONDS * NANOS_PER_SECOND);
+            .add_or_refresh(collected, &[mpc_hash], LAUNCHER_TTL);
+        set_block_timestamp(200 * NANOS_PER_SECOND);
         tee_state
             .allowed_launcher_images
-            .add_or_refresh(launcher_2, &[mpc_hash], TTL);
+            .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
+        set_block_timestamp(250 * NANOS_PER_SECOND);
+        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
 
-        set_block_timestamp(CHECK_SECONDS * NANOS_PER_SECOND);
-
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-
-        // When a submission references the expired launcher_1.
-        let expired_mock = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(compose_1),
-            expiry_timestamp_seconds: Some(MOCK_EXPIRY_FAR_FUTURE_SECONDS),
-            expected_measurements: None,
-        };
-        // Then it is rejected end-to-end.
-        assert_matches!(
-            tee_state.verify_and_store_mock(node_id.clone(), expired_mock, Duration::from_secs(0)),
-            Err(AttestationSubmissionError::InvalidAttestation(_))
+        // When
+        let result = tee_state.verify_and_store_mock(
+            node_id,
+            launcher_mock(&collected, &mpc_hash),
+            Duration::from_secs(0),
         );
 
-        // When the same submission references the live launcher_2 (positive control).
-        let live_mock = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(compose_2),
-            expiry_timestamp_seconds: Some(MOCK_EXPIRY_FAR_FUTURE_SECONDS),
-            expected_measurements: None,
-        };
-        // Then it succeeds.
+        // Then
         assert_matches!(
-            tee_state.verify_and_store_mock(node_id, live_mock, Duration::from_secs(0)),
-            Ok(_)
+            result,
+            Err(AttestationSubmissionError::InvalidAttestation(_))
         );
     }
 }
