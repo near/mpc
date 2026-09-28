@@ -170,18 +170,20 @@ mpc-devnet mpc $MPC_NETWORK_NAME add-keys
 Finally, initialize the contract
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2
+mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2 --tee-verifier-account-id <tee-verifier-account>
 ```
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
+`--tee-verifier-account-id` names the TEE verifier contract the MPC contract calls to
+verify Dstack attestations; see [Deploy the TEE verifier contract](../../docs/development/deploy-tee-verifier.md).
 
 ### Generating Keys
 
 When first deployed, the contract has no keys. In order to make any signatures,
 we must first generate some keys. This example generates one key for each
 supported protocol. You can specify duplicate protocols here as well if you
-wish to add multiple keys for the same protocol. Use `DamgardEtAl` to add a
+wish to add multiple keys for the same protocol. Use `RobustEcdsa` to add a
 Robust ECDSA key on Secp256k1 (distinct from `CaitSith`, which is the classic
 ECDSA protocol on the same curve).
 

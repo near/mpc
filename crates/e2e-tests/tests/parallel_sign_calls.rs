@@ -7,7 +7,7 @@ use near_mpc_contract_interface::types::{
 };
 use serde_json::json;
 
-/// 9 parallel calls (3 DamgardEtAl + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel
+/// 9 parallel calls (3 RobustEcdsa + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel
 /// contract, against a 6-node / threshold-5 cluster that carries all four signing-scheme
 /// domains. Verifies all calls succeed and both the signature and CKD queues drain.
 #[tokio::test]
@@ -25,7 +25,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 5;
             c.domains = vec![
-                common::damgard_etal_domain(0, 3),
+                common::robust_ecdsa_domain(0, 3),
                 DomainConfig {
                     id: DomainId(1),
                     protocol: Protocol::CaitSith,
@@ -78,7 +78,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         .expect("failed to sum CKD queue attempts");
 
     // when — fire all 9 calls in a single transaction with 1000 TGas.
-    // Domains: 0=DamgardEtAl(Sign), 1=CaitSith(Sign), 2=Frost(Sign), 3=ConfidentialKeyDerivation(CKD).
+    // Domains: 0=RobustEcdsa(Sign), 1=CaitSith(Sign), 2=Frost(Sign), 3=ConfidentialKeyDerivation(CKD).
     let outcome = parallel_contract
         .call(
             "make_parallel_sign_calls",

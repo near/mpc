@@ -9,7 +9,7 @@ use crate::{MpcContract, MpcContractExt, pending_requests};
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::{method_names, types as dtos};
-use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
+use near_sdk::{CryptoHash, Gas, NearToken, PromiseError, PromiseOrValue, env, log, near};
 
 #[near]
 impl MpcContract {
@@ -44,7 +44,7 @@ impl MpcContract {
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         match domain_config.protocol {
-            dtos::Protocol::CaitSith | dtos::Protocol::DamgardEtAl => {
+            dtos::Protocol::CaitSith | dtos::Protocol::RobustEcdsa => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
@@ -210,14 +210,11 @@ impl MpcContract {
                     &request,
                 );
 
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                let promise = Self::ext_self()
+                    .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .with_unused_gas_weight(0)
+                    .fail_on_timeout();
+                PromiseOrValue::Promise(promise.as_return())
             }
         }
     }
@@ -339,7 +336,7 @@ mod tests {
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists() {
-        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::DamgardEtAl] {
+        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::RobustEcdsa] {
             test_signature_common(true, false, protocol);
             test_signature_common(false, false, protocol);
         }
@@ -347,7 +344,7 @@ mod tests {
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
-        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::DamgardEtAl] {
+        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::RobustEcdsa] {
             test_signature_common(true, true, protocol);
             test_signature_common(false, true, protocol);
         }

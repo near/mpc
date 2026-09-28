@@ -12,9 +12,12 @@ pub mod bitcoin;
 pub mod bnb;
 pub mod ethereum;
 pub mod evm;
+pub mod fogo;
 pub mod hyper_evm;
 pub mod polygon;
+pub mod solana;
 pub mod starknet;
+pub mod svm;
 pub mod validation;
 
 use near_mpc_contract_interface::types::PublicKey;

@@ -1,7 +1,7 @@
 //! Integration tests asserting signing availability is gated by each domain's own
 //! reconstruction threshold `t`, not the governance threshold.
 //!
-//! Online signers needed to sign: `t` for CaitSith/Frost/CKD, `2t - 1` for DamgardEtAl.
+//! Online signers needed to sign: `t` for CaitSith/Frost/CKD, `2t - 1` for RobustEcdsa.
 
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::participants::ContractState;
@@ -25,6 +25,23 @@ const REQUEST_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(
 /// Generous budget for [`warm_up`], absorbing the one-time cold-start after each online-set change.
 const WARMUP_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// Warm-up signatures per domain. An online-set change strands most of a node's buffered
+/// presignatures on the participants that left, and the first request to find the buffer empty pays
+/// for generating a fresh one; the rest run against a buffer that generation is keeping up with.
+const WARMUP_SIGNATURES: usize = 5;
+
+/// Presignatures each node buffers per domain, raised from the default 5 so that the presignatures
+/// a departing node strands rarely leave a node with none at all. Stays within the triples a single
+/// generation batch yields.
+const PRESIGNATURES_TO_BUFFER: usize = 16;
+
+/// Deepens every node's presignature buffers. Call before the nodes are run.
+fn buffer_presignatures(setup: &mut IntegrationTestSetup) {
+    for node in &mut setup.configs {
+        node.config.presignature.desired_presignatures_to_buffer = PRESIGNATURES_TO_BUFFER;
+    }
+}
+
 /// Sign or CKD request per `domain`'s protocol; both are gated by its reconstruction threshold.
 async fn request_and_await_response(
     indexer: &mut FakeIndexerManager,
@@ -40,13 +57,15 @@ async fn request_and_await_response(
     }
 }
 
-/// Primes each domain's presignatures for the current online set with a generously-budgeted sign,
-/// whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and DamgardEtAl consume
-/// pre-generated presignatures; Frost and CKD sign directly, so pass only the block's signable
-/// CaitSith/DamgardEtAl domains after every online-set change.
+/// Primes each domain's presignatures for the current online set with [`WARMUP_SIGNATURES`]
+/// generously-budgeted signs, whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and
+/// RobustEcdsa consume pre-generated presignatures; Frost and CKD sign directly, so pass only the
+/// block's signable CaitSith/RobustEcdsa domains after every online-set change.
 async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
     for domain in domains {
-        let _ = request_and_await_response(indexer, "warmup", domain, WARMUP_WAIT_BUDGET).await;
+        for _ in 0..WARMUP_SIGNATURES {
+            let _ = request_and_await_response(indexer, "warmup", domain, WARMUP_WAIT_BUDGET).await;
+        }
     }
 }
 
@@ -134,11 +153,11 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         DEFAULT_BLOCK_TIME,
     );
 
-    // Online signers needed: low 2, high 4, robust (DamgardEtAl, 2t-1) 5, ckd_low 2,
+    // Online signers needed: low 2, high 4, robust (RobustEcdsa, 2t-1) 5, ckd_low 2,
     // ckd_high 4, frost 4. Frost/CKD are gated by `t` like CaitSith.
     let low = sign_domain(0, Protocol::CaitSith, 2);
     let high = sign_domain(1, Protocol::CaitSith, 4);
-    let robust = sign_domain(2, Protocol::DamgardEtAl, 3);
+    let robust = sign_domain(2, Protocol::RobustEcdsa, 3);
     let ckd_low = ckd_domain(3, 2);
     let ckd_high = ckd_domain(4, 4);
     let frost = sign_domain(5, Protocol::Frost, 4);
@@ -157,6 +176,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         contract.add_domains(domains.clone());
     }
 
+    buffer_presignatures(&mut setup);
     let _runs = setup
         .configs
         .into_iter()
@@ -239,7 +259,7 @@ impl ResharedDomain {
 
 /// One resharing lowers `t` from 3 to 2 on one domain per protocol while a CaitSith and a CKD
 /// sibling keep theirs: the lowered domains then work with fewer online nodes than their old
-/// sharings allowed, the DamgardEtAl one at its new `2t - 1 = 3` signers, and the kept siblings
+/// sharings allowed, the RobustEcdsa one at its new `2t - 1 = 3` signers, and the kept siblings
 /// still need their own `t`.
 ///
 /// Lowering is what makes the updates provable: a resharing that ignored the update would leave a
@@ -267,14 +287,14 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         DEFAULT_BLOCK_TIME,
     );
 
-    // Every domain starts at t=3, which the DamgardEtAl one can only sign with all `2t - 1 = 5`
+    // Every domain starts at t=3, which the RobustEcdsa one can only sign with all `2t - 1 = 5`
     // initial participants.
     let caitsith_kept = ResharedDomain::kept(sign_domain(0, Protocol::CaitSith, 3));
     let caitsith_updated = ResharedDomain::updated(sign_domain(1, Protocol::CaitSith, 3), 2);
     let frost_updated = ResharedDomain::updated(sign_domain(2, Protocol::Frost, 3), 2);
     let ckd_kept = ResharedDomain::kept(ckd_domain(3, 3));
     let ckd_updated = ResharedDomain::updated(ckd_domain(4, 3), 2);
-    let robust_updated = ResharedDomain::updated(sign_domain(5, Protocol::DamgardEtAl, 3), 2);
+    let robust_updated = ResharedDomain::updated(sign_domain(5, Protocol::RobustEcdsa, 3), 2);
     let domains = [
         &caitsith_kept,
         &caitsith_updated,
@@ -294,6 +314,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         contract.add_domains(domains.iter().map(|d| d.before.clone()).collect());
     }
 
+    buffer_presignatures(&mut setup);
     let _runs = setup
         .configs
         .into_iter()

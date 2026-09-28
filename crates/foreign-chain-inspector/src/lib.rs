@@ -137,21 +137,68 @@ pub trait NetworkFingerprintInspector {
 ///
 /// All inner inspectors are queried concurrently. Every [`Verdict`] reached must be identical;
 /// any disagreement returns [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors
-/// are tolerated as long as any inspector reached a verdict, so a single unavailable or
-/// misbehaving RPC does not take the whole node out of signing. When no inspector reached a
-/// verdict, the first error is propagated.
-#[derive(Clone, derive_more::Constructor)]
-pub struct FanOut<Inspector> {
+/// are tolerated as long as any inspector reached a verdict, so a single unavailable RPC does
+/// not take the whole node out of signing. On the other hand, a provider that answers a
+/// different verdict or different values will cause a mismatch and fail the whole extraction.
+/// A hanging one still stalls the extraction: it waits for every inspector, up to the caller's
+/// deadline. When no inspector reached a verdict, the first error is propagated.
+///
+/// With a recorder set through [`FanOut::measuring`], every provider call is observed once the
+/// provider returns, or by dropping its timer if the future is dropped first.
+#[derive(Clone)]
+pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
+    recorder: Recorder,
 }
 
-impl<Inspector> ForeignChainInspector for FanOut<Inspector>
+impl<Inspector> FanOut<Inspector> {
+    pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
+        Self {
+            inspectors,
+            recorder: (),
+        }
+    }
+
+    pub fn measuring<Recorder>(self, recorder: Recorder) -> FanOut<Inspector, Recorder> {
+        FanOut {
+            inspectors: self.inspectors,
+            recorder,
+        }
+    }
+}
+
+/// Times calls to foreign chain RPC providers.
+///
+/// [`Self::start_timer`] begins one call and [`Self::observe`] ends it with the outcome once the
+/// provider returns. Implementations must not block or panic in either, because both can run
+/// while the task is being aborted.
+pub trait TimeProviderCall: Send + Sync {
+    /// A timer dropped without being observed means the call was abandoned before the provider
+    /// returned. Implementations must record that in the timer's destructor.
+    type Timer: Send + 'static;
+
+    fn start_timer(&self, provider: &ProviderId) -> Self::Timer;
+
+    fn observe(&self, timer: Self::Timer, provider: &ProviderId, failure: Option<ProviderFailure>);
+}
+
+/// Satisfies [`FanOut`]'s recorder bounds for the unmeasured default.
+impl TimeProviderCall for () {
+    type Timer = ();
+
+    fn start_timer(&self, _: &ProviderId) {}
+
+    fn observe(&self, _: (), _: &ProviderId, _: Option<ProviderFailure>) {}
+}
+
+impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
 where
     Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
     Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
+    Recorder: TimeProviderCall + Clone + 'static,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -171,11 +218,15 @@ where
             let extractors = extractors.clone();
             let inspector = inspector.clone();
             let provider = provider.clone();
+            let recorder = self.recorder.clone();
             join_set.spawn(async move {
-                (
-                    provider,
-                    inspector.extract(tx_id, finality, extractors).await,
-                )
+                // Started inside the task so the clock excludes scheduling delay. A task aborted
+                // before its first poll makes no call and reports nothing.
+                let timer = recorder.start_timer(&provider);
+                let result = inspector.extract(tx_id, finality, extractors).await;
+                let failure = result.as_ref().err().and_then(|err| err.provider_failure());
+                recorder.observe(timer, &provider, failure);
+                (provider, result)
             });
         }
 
@@ -212,13 +263,13 @@ where
             ));
         };
 
-        let disagreeing: Vec<_> = verdicts
-            .filter(|(_, verdict)| *verdict != first_verdict)
-            .collect();
+        let (agreeing, disagreeing): (Vec<_>, Vec<_>) =
+            verdicts.partition(|(_, verdict)| *verdict == first_verdict);
         if !disagreeing.is_empty() {
             tracing::error!(
                 %first_provider,
                 ?first_verdict,
+                ?agreeing,
                 ?disagreeing,
                 "fan-out: inspectors returned mismatching verdicts",
             );
@@ -482,7 +533,17 @@ pub enum ProviderFailure {
     Rejected,
     /// The provider answered with something the caller could not use.
     Malformed,
+    /// The RPC client gave up waiting for an answer.
     TimedOut,
+}
+
+impl ProviderFailure {
+    pub const ALL: [Self; 4] = [
+        Self::Unreachable,
+        Self::Rejected,
+        Self::Malformed,
+        Self::TimedOut,
+    ];
 }
 
 #[cfg(test)]

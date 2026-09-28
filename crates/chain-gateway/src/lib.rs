@@ -1,3 +1,4 @@
+pub mod account_id_compat;
 pub mod chain_gateway;
 pub mod errors;
 pub mod event_subscriber;

@@ -1,15 +1,15 @@
+use crate::assets::metrics::{ASSET_METRICS_REPORTING_INTERVAL, ClearOwnedAssetGaugesOnDrop};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainSendTransactionRequest, SignatureRespondArgsExt, VerifyForeignTransactionRespondArgsExt,
 };
 use crate::metrics;
+use crate::network::wire_format::{EcdsaTaskId, MpcTaskId, RobustEcdsaTaskId};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
-use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTaskId};
+use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
@@ -74,7 +74,8 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
             EcdsaTaskId::ManyTriples { .. } | EcdsaTaskId::Presignature { .. } => true,
             EcdsaTaskId::KeyGeneration { .. }
             | EcdsaTaskId::KeyResharing { .. }
-            | EcdsaTaskId::Signature { .. } => false,
+            | EcdsaTaskId::Signature { .. }
+            | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
         MpcTaskId::RobustEcdsaTaskId(id) => match id {
             RobustEcdsaTaskId::Presignature { .. } => true,
@@ -94,15 +95,15 @@ async fn run_led_computation<T>(
     computation: impl Future<Output = anyhow::Result<T>>,
 ) -> anyhow::Result<T> {
     let (outcome_label, result) = match timeout(deadline, computation).await {
-        Ok(Ok(value)) => (metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL, Ok(value)),
-        Ok(Err(error)) => (metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, Err(error)),
+        Ok(Ok(value)) => (metrics::SUCCEEDED_OUTCOME_LABEL, Ok(value)),
+        Ok(Err(error)) => (metrics::FAILED_OUTCOME_LABEL, Err(error)),
         Err(elapsed) => (
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL,
             Err(elapsed.into()),
         ),
     };
     metric
-        .with_label_values(&[metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
+        .with_label_values(&[metrics::TOTAL_RESULT_LABEL])
         .inc();
     metric.with_label_values(&[outcome_label]).inc();
     result
@@ -156,6 +157,21 @@ impl MpcClient {
             loop {
                 client.emit_metrics();
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+        });
+
+        // Reads every asset store directly, so the owned-asset gauges do not
+        // depend on any generation loop iterating.
+        let asset_metrics_reporter = tracking::spawn("report asset metrics", {
+            let ecdsa = self.ecdsa_signature_provider.clone();
+            let robust_ecdsa = self.robust_ecdsa_signature_provider.clone();
+            async move {
+                let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
+                loop {
+                    ecdsa.report_asset_metrics();
+                    robust_ecdsa.report_asset_metrics();
+                    tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
+                }
             }
         });
 
@@ -233,6 +249,7 @@ impl MpcClient {
 
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
+        asset_metrics_reporter.await?;
         monitor_chain.await?;
         let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
@@ -554,7 +571,7 @@ impl MpcClient {
                 "Incorrect protocol for domain: {:?}",
                 request.domain
             )),
-            Some(Protocol::DamgardEtAl) => {
+            Some(Protocol::RobustEcdsa) => {
                 let (signature, public_key) = make_signature!(self.robust_ecdsa_signature_provider);
 
                 let response = contract_args::SignatureRespondArgs::from_ecdsa(
@@ -590,7 +607,7 @@ impl MpcClient {
 
                 Ok(response)
             }
-            Some(Protocol::CaitSith) | Some(Protocol::DamgardEtAl) | Some(Protocol::Frost) => {
+            Some(Protocol::CaitSith) | Some(Protocol::RobustEcdsa) | Some(Protocol::Frost) => {
                 Err(anyhow::anyhow!(
                     "Signature scheme is not allowed for domain: {:?}",
                     request.domain_id
@@ -625,7 +642,7 @@ impl MpcClient {
                 Ok(response)
             }
             Some(Protocol::ConfidentialKeyDerivation)
-            | Some(Protocol::DamgardEtAl)
+            | Some(Protocol::RobustEcdsa)
             | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                 "Signature scheme is not allowed for domain: {:?}",
                 request.domain_id
@@ -700,10 +717,8 @@ impl MpcClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::wire_format::{CKDTaskId, EddsaTaskId, VerifyForeignTxTaskId};
     use crate::primitives::{ParticipantId, UniqueId};
-    use crate::providers::ckd::CKDTaskId;
-    use crate::providers::eddsa::EddsaTaskId;
-    use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_indexer_primitives::CryptoHash;
 
@@ -720,7 +735,7 @@ mod tests {
     fn is_heavy_generation_task__should_classify_generation_vs_other_tasks() {
         // Given every task kind paired with whether it is CPU-heavy asset
         // generation that must run on the lower-priority gen runtime.
-        let cases: [(MpcTaskId, bool); 12] = [
+        let cases: [(MpcTaskId, bool); 13] = [
             // ECDSA: triples and presignatures are heavy generation.
             (
                 EcdsaTaskId::ManyTriples {
@@ -744,6 +759,14 @@ mod tests {
                 EcdsaTaskId::Signature {
                     id: CryptoHash::default(),
                     presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                EcdsaTaskId::OnlinePresignSignature {
+                    id: CryptoHash::default(),
+                    paired_triple_id: uid(),
                 }
                 .into(),
                 false,
@@ -856,18 +879,10 @@ mod tests {
 
         // Then
         assert_eq!(result.unwrap(), 42);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-            1,
-        );
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-            0,
-        );
+        assert_label_value(&metric, metrics::SUCCEEDED_OUTCOME_LABEL, 1);
+        assert_label_value(&metric, metrics::TOTAL_RESULT_LABEL, 1);
+        assert_label_value(&metric, metrics::FAILED_OUTCOME_LABEL, 0);
+        assert_label_value(&metric, metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL, 0);
     }
 
     #[tokio::test]
@@ -884,18 +899,10 @@ mod tests {
 
         // Then
         assert_eq!(result.unwrap_err().to_string(), "computation failed");
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 1);
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-            0,
-        );
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-            0,
-        );
+        assert_label_value(&metric, metrics::FAILED_OUTCOME_LABEL, 1);
+        assert_label_value(&metric, metrics::TOTAL_RESULT_LABEL, 1);
+        assert_label_value(&metric, metrics::SUCCEEDED_OUTCOME_LABEL, 0);
+        assert_label_value(&metric, metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL, 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -914,17 +921,9 @@ mod tests {
 
         // Then
         result.unwrap_err();
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-            1,
-        );
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
-        assert_label_value(
-            &metric,
-            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-            0,
-        );
-        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
+        assert_label_value(&metric, metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL, 1);
+        assert_label_value(&metric, metrics::TOTAL_RESULT_LABEL, 1);
+        assert_label_value(&metric, metrics::SUCCEEDED_OUTCOME_LABEL, 0);
+        assert_label_value(&metric, metrics::FAILED_OUTCOME_LABEL, 0);
     }
 }

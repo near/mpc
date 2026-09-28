@@ -34,6 +34,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
     };
 
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -105,7 +106,11 @@ async fn contract_configuration_can_be_set_on_initialization() {
         launcher_hash_unused_ttl_seconds: Some(14 * 24 * 60 * 60),
     };
 
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_init_config(init_config.clone())
         .with_number_of_participants(2)
         .build()

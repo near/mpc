@@ -561,7 +561,7 @@ mod tests {
     use mpc_contract::state::{
         ProtocolContractState as InternalContractState, test_utils::gen_resharing_state,
     };
-    use near_indexer_primitives::types::AccountId;
+    use near_account_id::AccountId;
     use near_mpc_contract_interface::types::AccountId as DtoAccountId;
     use near_mpc_contract_interface::types::{
         GovernanceThreshold, GovernanceThresholdParameters, ParticipantId, ParticipantInfo,

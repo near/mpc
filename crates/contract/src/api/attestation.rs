@@ -14,12 +14,23 @@ use crate::tee::tee_state::{
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos};
-use near_sdk::{AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
+use near_sdk::{
+    AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, ext_contract, log, near,
+};
 use std::collections::BTreeMap;
 use std::time::Duration;
-use tee_verifier_interface::{VerificationResult, VerifiedReport};
+use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifiedReport};
+
+#[ext_contract(ext_tee_verifier)]
+pub trait TeeVerifier {
+    #[result_serializer(borsh)]
+    fn verify_quote(
+        &self,
+        #[serializer(borsh)] quote: QuoteBytes,
+        #[serializer(borsh)] collateral: Collateral,
+    ) -> VerificationResult;
+}
 
 #[near]
 impl MpcContract {
@@ -163,7 +174,7 @@ impl MpcContract {
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation)?,
+                self.submit_dstack_attestation(node_id, attestation),
             )),
         }
     }
@@ -233,27 +244,19 @@ impl MpcContract {
         &mut self,
         node_id: NodeId,
         attestation: DstackAttestation,
-    ) -> Result<Promise, Error> {
-        let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
-            return Err(TeeError::VerifierNotConfigured.into());
-        };
-
-        Ok(Promise::new(verifier_account_id)
-            .function_call(
-                method_names::VERIFY_QUOTE.to_string(),
-                borsh::to_vec(&(&attestation.quote, &attestation.collateral))
-                    .expect("borsh serialization of verify_quote args must succeed"),
-                NearToken::from_near(0),
-                Gas::from_tgas(self.config.verifier_tera_gas),
-            )
+    ) -> Promise {
+        ext_tee_verifier::ext(self.tee_verifier_account_id.clone())
+            .with_static_gas(Gas::from_tgas(self.config.verifier_tera_gas))
+            .with_unused_gas_weight(0)
+            .verify_quote(attestation.quote, attestation.collateral)
             .then(
-                Self::ext(env::current_account_id())
+                Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
                     .resolve_verification(VerificationContext {
                         node_id,
                         tcb_info: attestation.tcb_info,
                     }),
-            ))
+            )
     }
 
     #[handle_result]
@@ -435,7 +438,7 @@ impl MpcContract {
             Err(err) => {
                 // Fail the submitter's transaction from a separate receipt so any prior state
                 // commits (a panic here would roll it back)
-                let promise = Self::ext(env::current_account_id())
+                let promise = Self::ext_self()
                     .with_static_gas(Gas::from_tgas(
                         self.config.fail_attestation_submission_tera_gas,
                     ))
@@ -521,7 +524,8 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id, gen_participants,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
+        create_node_id, gen_participants,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
@@ -656,7 +660,7 @@ mod tests {
         testing_env!(
             VMContextBuilder::new()
                 .predecessor_account_id("operator.near".parse().unwrap())
-                .attached_deposit(NearToken::from_yoctonear(0))
+                .attached_deposit(NearToken::ZERO)
                 .build()
         );
 
@@ -1027,6 +1031,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
@@ -1151,6 +1156,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

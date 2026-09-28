@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use anyhow::Context;
-use mpc_primitives::ReconstructionThreshold;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use tokio::sync::watch;
@@ -23,12 +22,12 @@ pub(crate) type SupportersByForeignChain = BTreeMap<dtos::ForeignChain, HashSet<
 pub(crate) fn spawn_supporters_by_foreign_chain(
     mut upstream: watch::Receiver<ForeignChainSupporters>,
     participants_config: ParticipantsConfig,
-    foreign_tx_reconstruction_threshold: ReconstructionThreshold,
+    foreign_tx_required_active_signers: u64,
 ) -> (watch::Receiver<SupportersByForeignChain>, AutoAbortTask<()>) {
     let init_value = resolve_supporters_by_foreign_chain(
         &upstream.borrow_and_update(),
         &participants_config,
-        foreign_tx_reconstruction_threshold,
+        foreign_tx_required_active_signers,
     );
     let (sender, receiver) = watch::channel(init_value);
 
@@ -38,7 +37,7 @@ pub(crate) fn spawn_supporters_by_foreign_chain(
                 res = await_updated_supporters(
                     &mut upstream,
                     &participants_config,
-                    foreign_tx_reconstruction_threshold,
+                    foreign_tx_required_active_signers,
                 ) => match res {
                     Ok(value) => value,
                     Err(e) => {
@@ -67,7 +66,7 @@ pub(crate) fn spawn_supporters_by_foreign_chain(
 async fn await_updated_supporters(
     upstream: &mut watch::Receiver<ForeignChainSupporters>,
     participants_config: &ParticipantsConfig,
-    foreign_tx_reconstruction_threshold: ReconstructionThreshold,
+    foreign_tx_required_active_signers: u64,
 ) -> anyhow::Result<SupportersByForeignChain> {
     upstream
         .changed()
@@ -77,21 +76,24 @@ async fn await_updated_supporters(
     Ok(resolve_supporters_by_foreign_chain(
         &supporters,
         participants_config,
-        foreign_tx_reconstruction_threshold,
+        foreign_tx_required_active_signers,
     ))
 }
 
-/// Mirrors the contract's availability rule: the max reconstruction threshold
+/// Mirrors the contract's availability rule: the largest
+/// [`Protocol::required_active_signers`](dtos::Protocol::required_active_signers)
 /// across ForeignTx domains.
 /// TODO(#3973): revisit threshold calculation for several ForeignTx
 /// domains with different thresholds.
-pub(crate) fn foreign_tx_reconstruction_threshold(
-    domains: &[dtos::DomainConfig],
-) -> Option<ReconstructionThreshold> {
+pub(crate) fn foreign_tx_required_active_signers(domains: &[dtos::DomainConfig]) -> Option<u64> {
     domains
         .iter()
         .filter(|domain| domain.purpose == dtos::DomainPurpose::ForeignTx)
-        .map(|domain| domain.reconstruction_threshold)
+        .map(|domain| {
+            domain
+                .protocol
+                .required_active_signers(domain.reconstruction_threshold)
+        })
         .max()
 }
 
@@ -104,14 +106,14 @@ pub(crate) fn foreign_tx_reconstruction_threshold(
 fn resolve_supporters_by_foreign_chain(
     supporters_by_tls_key: &ForeignChainSupporters,
     participants_config: &ParticipantsConfig,
-    foreign_tx_reconstruction_threshold: ReconstructionThreshold,
+    foreign_tx_required_active_signers: u64,
 ) -> SupportersByForeignChain {
     supporters_by_tls_key
         .iter()
         .filter_map(|(chain, tls_keys)| {
             let ids = resolve_participant_ids(tls_keys, participants_config);
             u64::try_from(ids.len())
-                .is_ok_and(|supporters| supporters >= foreign_tx_reconstruction_threshold.inner())
+                .is_ok_and(|supporters| supporters >= foreign_tx_required_active_signers)
                 .then_some((*chain, ids))
         })
         .collect()
@@ -138,15 +140,15 @@ fn resolve_participant_ids(
 /// presignature.
 pub(crate) struct ForeignChainLeadersRefiner {
     supporters_receiver: watch::Receiver<SupportersByForeignChain>,
-    /// [`foreign_tx_reconstruction_threshold`] of the running domains, `None`
+    /// [`foreign_tx_required_active_signers`] of the running domains, `None`
     /// when there is no ForeignTx domain (the snapshot is then always empty).
-    quorum: Option<ReconstructionThreshold>,
+    quorum: Option<u64>,
 }
 
 impl ForeignChainLeadersRefiner {
     pub(crate) fn new(
         supporters_receiver: watch::Receiver<SupportersByForeignChain>,
-        quorum: Option<ReconstructionThreshold>,
+        quorum: Option<u64>,
     ) -> Self {
         ForeignChainLeadersRefiner {
             supporters_receiver,
@@ -178,7 +180,7 @@ impl RefineEligibleLeaders<VerifyForeignTxRequest> for ForeignChainLeadersRefine
                 refined
             }
             Some(quorum) => {
-                if u64::try_from(refined.len()).is_ok_and(|count| count >= quorum.inner()) {
+                if u64::try_from(refined.len()).is_ok_and(|count| count >= quorum) {
                     refined
                 } else {
                     HashSet::new()
@@ -255,11 +257,8 @@ mod tests {
         )]);
 
         // When
-        let supporters = resolve_supporters_by_foreign_chain(
-            &supporters_by_tls_key,
-            &participants_config,
-            ReconstructionThreshold::new(2),
-        );
+        let supporters =
+            resolve_supporters_by_foreign_chain(&supporters_by_tls_key, &participants_config, 2);
 
         // Then
         assert_eq!(
@@ -293,11 +292,8 @@ mod tests {
         )]);
 
         // When
-        let supporters = resolve_supporters_by_foreign_chain(
-            &supporters_by_tls_key,
-            &participants_config,
-            ReconstructionThreshold::new(2),
-        );
+        let supporters =
+            resolve_supporters_by_foreign_chain(&supporters_by_tls_key, &participants_config, 2);
 
         // Then
         assert_eq!(supporters, SupportersByForeignChain::new());
@@ -314,18 +310,15 @@ mod tests {
         )]);
 
         // When
-        let supporters = resolve_supporters_by_foreign_chain(
-            &supporters_by_tls_key,
-            &participants_config,
-            ReconstructionThreshold::new(1),
-        );
+        let supporters =
+            resolve_supporters_by_foreign_chain(&supporters_by_tls_key, &participants_config, 1);
 
         // Then: only the ForeignTx domain threshold applies.
         assert!(supporters.contains_key(&dtos::ForeignChain::Bitcoin));
     }
 
     #[test]
-    fn foreign_tx_reconstruction_threshold__should_return_max_across_foreign_tx_domains() {
+    fn foreign_tx_required_active_signers__should_return_max_across_foreign_tx_domains() {
         // Given: two ForeignTx domains and one Sign domain with a higher threshold.
         let domain = |id: u64, purpose, threshold: u64| dtos::DomainConfig {
             id: dtos::DomainId(id),
@@ -340,14 +333,14 @@ mod tests {
         ];
 
         // When
-        let threshold = foreign_tx_reconstruction_threshold(&domains);
+        let required = foreign_tx_required_active_signers(&domains);
 
         // Then
-        assert_eq!(threshold, Some(ReconstructionThreshold::new(5)));
+        assert_eq!(required, Some(5));
     }
 
     #[test]
-    fn foreign_tx_reconstruction_threshold__should_return_none_without_foreign_tx_domain() {
+    fn foreign_tx_required_active_signers__should_return_none_without_foreign_tx_domain() {
         // Given
         let domains = vec![dtos::DomainConfig {
             id: dtos::DomainId(0),
@@ -357,10 +350,10 @@ mod tests {
         }];
 
         // When
-        let threshold = foreign_tx_reconstruction_threshold(&domains);
+        let required = foreign_tx_required_active_signers(&domains);
 
         // Then
-        assert_eq!(threshold, None);
+        assert_eq!(required, None);
     }
 
     #[tokio::test]
@@ -373,11 +366,8 @@ mod tests {
                 dtos::ForeignChain::Bitcoin,
                 BTreeSet::from([tls_key_for(&key1)]),
             )]));
-            let (mut supporters, _resolver_task) = spawn_supporters_by_foreign_chain(
-                upstream_receiver,
-                participants_config,
-                ReconstructionThreshold::new(1),
-            );
+            let (mut supporters, _resolver_task) =
+                spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, 1);
             assert!(
                 supporters
                     .borrow()
@@ -418,11 +408,8 @@ mod tests {
 
             // When
             let (_upstream_sender, upstream_receiver) = watch::channel(upstream);
-            let (supporters, _resolver_task) = spawn_supporters_by_foreign_chain(
-                upstream_receiver,
-                participants_config,
-                ReconstructionThreshold::new(2),
-            );
+            let (supporters, _resolver_task) =
+                spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, 2);
 
             // Then: the stranger's key does not count towards the quorum.
             assert_eq!(*supporters.borrow(), SupportersByForeignChain::new());
@@ -455,8 +442,7 @@ mod tests {
     fn foreign_chain_leaders_refiner__should_allow_nobody_when_chain_has_no_supporters() {
         // Given
         let (_sender, receiver) = watch::channel(SupportersByForeignChain::new());
-        let refiner =
-            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(1)));
+        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(1));
 
         // When
         let refined = refiner.refine(
@@ -476,8 +462,7 @@ mod tests {
             participant_set(&[1, 2]),
         )]);
         let (_sender, receiver) = watch::channel(supporters);
-        let refiner =
-            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(1)));
+        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(1));
 
         // When
         let refined = refiner.refine(
@@ -497,8 +482,7 @@ mod tests {
             participant_set(&[1, 2, 3]),
         )]);
         let (_sender, receiver) = watch::channel(supporters);
-        let refiner =
-            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(2)));
+        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(2));
 
         // When
         let refined = refiner.refine(
@@ -518,8 +502,7 @@ mod tests {
             participant_set(&[1, 2, 3]),
         )]);
         let (_sender, receiver) = watch::channel(supporters);
-        let refiner =
-            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(2)));
+        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(2));
 
         // When
         let refined = refiner.refine(
@@ -535,8 +518,7 @@ mod tests {
     fn foreign_chain_leaders_refiner__should_pick_up_republished_supporters() {
         // Given
         let (sender, receiver) = watch::channel(SupportersByForeignChain::new());
-        let refiner =
-            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(1)));
+        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(1));
         let eligible = participant_set(&[0, 1]);
         assert!(
             refiner

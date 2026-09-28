@@ -2,8 +2,7 @@ use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
 use crate::foreign_chain_policy::{
-    SupportersByForeignChain, foreign_tx_reconstruction_threshold,
-    spawn_supporters_by_foreign_chain,
+    SupportersByForeignChain, foreign_tx_required_active_signers, spawn_supporters_by_foreign_chain,
 };
 use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
@@ -19,17 +18,18 @@ use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::metrics::tokio_runtime_metrics::run_monitor_loop;
 use crate::mpc_client::MpcClient;
+use crate::network::wire_format::{EcdsaTaskId, EddsaTaskId, MpcTaskId};
 use crate::network::{
     MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
 };
 use crate::p2p::{new_tls_mesh_network, new_tls_mesh_network_with_address_updates};
-use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::primitives::ParticipantId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::triple;
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
-use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::{DomainKeyshare, EcdsaSignatureProvider};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
@@ -627,7 +627,7 @@ where
                                     DomainKeyshare::new(data, reconstruction_threshold),
                                 );
                             }
-                            Protocol::DamgardEtAl => {
+                            Protocol::RobustEcdsa => {
                                 robust_ecdsa_keyshares.insert(
                                     domain_id,
                                     DomainKeyshare::new(data, reconstruction_threshold),
@@ -706,15 +706,15 @@ where
                 // and remain after the reshare supports it. With no ForeignTx
                 // domain nothing can be available, so the resolver isn't
                 // spawned and the provider sees a constant empty map.
-                let foreign_tx_threshold =
-                    foreign_tx_reconstruction_threshold(&running_state.domains);
+                let foreign_tx_required_active_signers =
+                    foreign_tx_required_active_signers(&running_state.domains);
                 let (supporters_by_foreign_chain, _supporters_resolver_task) =
-                    match foreign_tx_threshold {
-                        Some(threshold) => {
+                    match foreign_tx_required_active_signers {
+                        Some(required_active_signers) => {
                             let (receiver, task) = spawn_supporters_by_foreign_chain(
                                 foreign_chain_supporters_receiver,
                                 running_mpc_config.participants.clone(),
-                                threshold,
+                                required_active_signers,
                             );
                             (receiver, Some(task))
                         }
@@ -730,7 +730,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     supporters_by_foreign_chain,
-                    foreign_tx_threshold,
+                    foreign_tx_required_active_signers,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);

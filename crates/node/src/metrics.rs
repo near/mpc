@@ -1,5 +1,10 @@
 use std::{sync::LazyLock, time::Duration};
 
+use crate::network::wire_format::{
+    CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcTaskId, RobustEcdsaTaskId, VerifyForeignTxTaskId,
+};
+use crate::providers::verify_foreign_tx::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
+
 pub(crate) mod networking_metrics;
 pub(crate) mod tokio_runtime_metrics;
 pub(crate) mod tokio_task_metrics;
@@ -53,6 +58,27 @@ pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLoc
     .unwrap()
 });
 
+pub static MPC_ONLINE_PRESIGN_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
+    LazyLock::new(|| {
+        prometheus::register_histogram!(
+            "near_mpc_online_presign_signature_time_elapsed",
+            "Time taken to generate a signature directly from a triple pair (presigning \
+             included)",
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_BAD_PEER_ONLINE_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_bad_peer_online_presign_requests",
+            "Signature-from-triples requests from a peer whose participant-set size did not \
+             match the domain's reconstruction threshold",
+            &["domain_id"]
+        )
+        .unwrap()
+    });
+
 pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     prometheus::register_histogram!(
         "near_mpc_ckd_time_elapsed",
@@ -61,58 +87,71 @@ pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new
     .unwrap()
 });
 
-pub static MPC_OWNED_NUM_TRIPLES_AVAILABLE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
-    prometheus::register_int_gauge!(
-        "mpc_owned_num_triples_available",
-        "Number of triples generated that we own, and not yet used"
-    )
-    .unwrap()
-});
+/// Label on the owned-triple gauges: the reconstruction threshold `t` of the
+/// store, since CaitSith keeps one triple store per distinct `t`.
+pub const TRIPLE_STORE_LABEL: &str = "reconstruction_threshold";
+/// Label on the owned-presignature gauges: the domain the store belongs to.
+pub const PRESIGNATURE_STORE_LABEL: &str = "domain_id";
 
-pub static MPC_OWNED_NUM_TRIPLES_ONLINE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
-    prometheus::register_int_gauge!(
+pub static MPC_OWNED_NUM_TRIPLES_AVAILABLE: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_owned_num_triples_available",
+            "Number of triples generated that we own, and not yet used",
+            &[TRIPLE_STORE_LABEL]
+        )
+        .unwrap()
+    });
+
+pub static MPC_OWNED_NUM_TRIPLES_ONLINE: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
+    prometheus::register_int_gauge_vec!(
         "mpc_owned_num_triples_online",
-        "Number of triples generated that we own, and not yet used,
-                for which the participant set is confirmed alive"
+        "Number of triples generated that we own, and not yet used, \
+         for which the participant set is confirmed alive",
+        &[TRIPLE_STORE_LABEL]
     )
     .unwrap()
 });
 
-pub static MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::IntGauge> =
+pub static MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
-        prometheus::register_int_gauge!(
+        prometheus::register_int_gauge_vec!(
             "mpc_owned_num_triples_with_offline_participant",
-            "Number of triples generated that we own, and not yet used,
-                for which some participant is offline",
+            "Number of triples generated that we own, and not yet used, \
+             for which some participant is offline",
+            &[TRIPLE_STORE_LABEL]
         )
         .unwrap()
     });
 
-pub static MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE: LazyLock<prometheus::IntGauge> =
+pub static MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
-        prometheus::register_int_gauge!(
+        prometheus::register_int_gauge_vec!(
             "mpc_owned_num_presignatures_available",
-            "Number of presignatures generated that we own, and not yet used"
+            "Number of presignatures generated that we own, and not yet used",
+            &[PRESIGNATURE_STORE_LABEL]
         )
         .unwrap()
     });
 
-pub static MPC_OWNED_NUM_PRESIGNATURES_ONLINE: LazyLock<prometheus::IntGauge> =
+pub static MPC_OWNED_NUM_PRESIGNATURES_ONLINE: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
-        prometheus::register_int_gauge!(
+        prometheus::register_int_gauge_vec!(
             "mpc_owned_num_presignatures_online",
-            "Number of presignatures generated that we own, and not yet used,
-                for which the participant set is confirmed alive"
+            "Number of presignatures generated that we own, and not yet used, \
+             for which the participant set is confirmed alive",
+            &[PRESIGNATURE_STORE_LABEL]
         )
         .unwrap()
     });
 
-pub static MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::IntGauge> =
+pub static MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
-        prometheus::register_int_gauge!(
+        prometheus::register_int_gauge_vec!(
             "mpc_owned_num_presignatures_with_offline_participant",
-            "Number of presignatures generated that we own, and not yet used,
-                for which some participant is offline",
+            "Number of presignatures generated that we own, and not yet used, \
+         for which some participant is offline",
+            &[PRESIGNATURE_STORE_LABEL]
         )
         .unwrap()
     });
@@ -122,6 +161,17 @@ pub static MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: LazyLock<prometheus::IntC
         prometheus::register_int_counter!(
             "mpc_indexer_num_receipt_execution_outcomes",
             "Number of receipt execution outcomes processed by the near indexer"
+        )
+        .unwrap()
+    });
+
+pub static MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_indexer_num_unconvertible_predecessor_ids",
+            "Number of requests dropped because the receipt's predecessor could not be \
+             converted between the two `near-account-id` versions in the dependency graph. \
+             Expected to stay at zero; a non-zero value means those versions have diverged"
         )
         .unwrap()
     });
@@ -226,6 +276,25 @@ pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> = L
         .unwrap()
     },
 );
+
+fn buckets_covering_computation_deadlines() -> Vec<f64> {
+    vec![
+        0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4, 12.8, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0,
+    ]
+}
+
+pub static MPC_LED_COMPUTATION_DURATION_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_led_computation_duration_seconds",
+            "Wall clock time a computation took, measured by the node that led it, including \
+             time spent waiting on the network. Outcomes deadline_exceeded and abandoned both \
+             mean the computation's work was lost; monitor them together.",
+            &["protocol_scheme", "task", "outcome"],
+            buckets_covering_computation_deadlines(),
+        )
+        .unwrap()
+    });
 
 pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
@@ -418,6 +487,17 @@ pub static PEERS_INDEXER_HEIGHTS: LazyLock<prometheus::IntGaugeVec> = LazyLock::
     .unwrap()
 });
 
+pub static MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_ecdsa_signatures_led_by_mode",
+            "Number of cait-sith signature computations led by this node, by signing flow \
+             (stored_presignature or online_presign)",
+            &["mode"]
+        )
+        .unwrap()
+    });
+
 pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(
         "mpc_node_build_info",
@@ -462,10 +542,88 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
         .unwrap()
 });
 
-pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
-pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";
-pub const MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL: &str = "failed";
-pub const MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL: &str = "deadline_exceeded";
+pub const TOTAL_RESULT_LABEL: &str = "total";
+pub const SUCCEEDED_OUTCOME_LABEL: &str = "succeeded";
+pub const FAILED_OUTCOME_LABEL: &str = "failed";
+pub const DEADLINE_EXCEEDED_OUTCOME_LABEL: &str = "deadline_exceeded";
+pub const ABANDONED_OUTCOME_LABEL: &str = "abandoned";
+
+pub(crate) const ECDSA_PROTOCOL_SCHEME_LABEL: &str = "ecdsa";
+pub(crate) const EDDSA_PROTOCOL_SCHEME_LABEL: &str = "eddsa";
+pub(crate) const ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL: &str = "robust_ecdsa";
+pub(crate) const CKD_PROTOCOL_SCHEME_LABEL: &str = "ckd";
+
+pub(crate) const ONLINE_PRESIGN_MODE_LABEL: &str = "online_presign";
+pub(crate) const STORED_PRESIGNATURE_MODE_LABEL: &str = "stored_presignature";
+
+pub(crate) const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
+pub(crate) const MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL: &str = "make_online_presign_signature";
+pub(crate) const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
+pub(crate) const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
+pub(crate) const KEY_GENERATION_TASK_LABEL: &str = "key_generation";
+pub(crate) const KEY_RESHARING_TASK_LABEL: &str = "key_resharing";
+pub(crate) const CKD_TASK_LABEL: &str = "ckd";
+pub(crate) const VERIFY_FOREIGN_TX_TASK_LABEL: &str = "verify_foreign_tx";
+
+pub(crate) struct ComputationLabels {
+    pub(crate) protocol_scheme: &'static str,
+    pub(crate) task: &'static str,
+}
+
+impl MpcTaskId {
+    pub(crate) fn metric_labels(&self) -> ComputationLabels {
+        let (protocol_scheme, task) = match self {
+            MpcTaskId::EcdsaTaskId(task) => (
+                ECDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    EcdsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    EcdsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    EcdsaTaskId::ManyTriples { .. } => TRIPLE_GENERATION_TASK_LABEL,
+                    EcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
+                    EcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
+                    EcdsaTaskId::OnlinePresignSignature { .. } => {
+                        MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL
+                    }
+                },
+            ),
+            MpcTaskId::EddsaTaskId(task) => (
+                EDDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    EddsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    EddsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    EddsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
+                },
+            ),
+            MpcTaskId::CKDTaskId(task) => (
+                CKD_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    CKDTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    CKDTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    CKDTaskId::Ckd { .. } => CKD_TASK_LABEL,
+                },
+            ),
+            MpcTaskId::RobustEcdsaTaskId(task) => (
+                ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    RobustEcdsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
+                    RobustEcdsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
+                    RobustEcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
+                    RobustEcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
+                },
+            ),
+            MpcTaskId::VerifyForeignTxTaskId(task) => (
+                ECDSA_PROTOCOL_SCHEME_LABEL,
+                match task {
+                    VerifyForeignTxTaskId::VerifyForeignTx { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
+                },
+            ),
+        };
+        ComputationLabels {
+            protocol_scheme,
+            task,
+        }
+    }
+}
 
 pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
@@ -551,3 +709,55 @@ pub fn init_attestation_freshness_metrics() {
     LazyLock::force(&MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS);
     LazyLock::force(&MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS);
 }
+
+/// A call cannot outlive the inspection deadline by much, so the top bucket is the deadline.
+fn foreign_chain_provider_call_buckets() -> Vec<f64> {
+    vec![
+        0.025,
+        0.05,
+        0.1,
+        0.2,
+        0.35,
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.5,
+        FOREIGN_CHAIN_INSPECTION_TIMEOUT.as_secs_f64(),
+    ]
+}
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_foreign_chain_provider_inspection_seconds",
+            "Time one foreign chain RPC provider took to return on a verify request, whether it \
+             answered or failed. Calls the node abandoned are in \
+             mpc_foreign_chain_provider_dropped_seconds",
+            &["chain", "provider", "outcome"],
+            foreign_chain_provider_call_buckets(),
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_foreign_chain_provider_dropped_seconds",
+            "Time the node waited on a foreign chain RPC provider before abandoning the call, at \
+             its deadline or at shutdown. Whether the provider answered is unknown",
+            &["chain", "provider"],
+            foreign_chain_provider_call_buckets(),
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_foreign_chain_provider_errors_total",
+            "Number of times a foreign chain RPC provider failed transaction verification requests.",
+            &["chain", "provider", "kind"],
+        )
+        .unwrap()
+    });

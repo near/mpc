@@ -1,13 +1,21 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
-use near_sdk::{env::sha256, log, near};
+use near_sdk::{env::sha256_array, log, near};
 use std::{collections::BTreeMap, time::Duration};
 
 use crate::primitives::{
-    key_state::AuthenticatedParticipantId, participants::Participants, time::Timestamp,
+    key_state::AuthenticatedParticipantId,
+    participants::Participants,
+    proposal_hash::{Identity, ToProposalHash},
+    time::Timestamp,
 };
 
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+
+impl ToProposalHash for NodeImageHash {
+    type Serializer = Identity;
+    type Hasher = Identity;
+}
 
 /// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
 /// `sha256(template(launcher_hash, mpc_hash))`. Placeholders:
@@ -15,62 +23,6 @@ pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, Nod
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
-
-/// Contract-side [`CodeHashesVotes`](near_mpc_contract_interface::types::CodeHashesVotes),
-/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
-/// the participant set.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
-}
-
-impl CodeHashesVotes {
-    /// Casts a vote for the proposal and returns the total number of participants who have voted
-    /// for the same code hash. If the participant already voted, their previous vote is replaced.
-    pub fn vote(
-        &mut self,
-        proposal: NodeImageHash,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .proposal_by_account
-            .insert(participant.clone(), proposal)
-            .is_some()
-        {
-            log!("removed old vote for signer");
-        }
-        let total = self.count_votes(&proposal);
-        log!("total votes for proposal: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given code hash.
-    fn count_votes(&self, proposal: &NodeImageHash) -> u64 {
-        self.proposal_by_account
-            .values()
-            .filter(|&prop| prop == proposal)
-            .count() as u64
-    }
-
-    /// Clears all proposals.
-    pub fn clear_votes(&mut self) {
-        self.proposal_by_account.clear();
-    }
-
-    /// Returns a new [`CodeHashesVotes`] containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .proposal_by_account
-            .iter()
-            .filter(|(participant_id, _)| participants.is_participant(*participant_id))
-            .map(|(participant_id, vote)| (participant_id.clone(), *vote))
-            .collect();
-        CodeHashesVotes {
-            proposal_by_account: remaining,
-        }
-    }
-}
 
 /// Contract-side [`LauncherHashVotes`](near_mpc_contract_interface::types::LauncherHashVotes),
 /// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
@@ -508,16 +460,7 @@ pub fn get_docker_compose_hash(
             "{{DEFAULT_IMAGE_DIGEST_HASH}}",
             &mpc_docker_image_hash.as_hex(),
         );
-    let hash = sha256(filled_yaml.as_bytes());
-    assert!(
-        hash.len() == 32,
-        "Docker compose hash must be 32 bytes long"
-    );
-
-    let mut hash_arr = [0u8; 32];
-    hash_arr.copy_from_slice(&hash);
-
-    LauncherDockerComposeHash::from(hash_arr)
+    LauncherDockerComposeHash::from(sha256_array(filled_yaml))
 }
 
 #[cfg(test)]

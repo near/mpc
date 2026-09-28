@@ -6,7 +6,9 @@ use crate::errors::Error;
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
 use crate::primitives::participants::Participants;
-use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_participants, infer_purpose_from_protocol};
+use crate::primitives::test_utils::{
+    NUM_PROTOCOLS, bogus_tee_verifier_account_id, gen_participants, infer_purpose_from_protocol,
+};
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::gen_running_state;
@@ -117,9 +119,9 @@ pub(crate) fn basic_setup_with_protocol(
         .build();
     testing_env!(context.clone());
     let domain_id = DomainId::default();
-    // DamgardEtAl requires 2t - 1 <= n; with n=4, the max valid t is 2.
+    // RobustEcdsa requires 2t - 1 <= n; with n=4, the max valid t is 2.
     let reconstruction_threshold = match protocol {
-        Protocol::DamgardEtAl => ReconstructionThreshold::new(2),
+        Protocol::RobustEcdsa => ReconstructionThreshold::new(2),
         _ => ReconstructionThreshold::new(3),
     };
     let domains = vec![DomainConfig {
@@ -144,6 +146,7 @@ pub(crate) fn basic_setup_with_protocol(
         1,
         (&keyset).into_dto_type(),
         (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
         None,
     )
     .unwrap();
@@ -203,7 +206,12 @@ pub(crate) fn setup_tee_test_contract(
 
     let threshold = GovernanceThreshold::new(threshold_value);
     let parameters = GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-    let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
+    let contract = MpcContract::init(
+        (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
+        None,
+    )
+    .unwrap();
 
     (contract, participants, first_participant_id)
 }
@@ -285,7 +293,7 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
-            tee_verifier_account_id: None,
+            tee_verifier_account_id: bogus_tee_verifier_account_id(),
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         }

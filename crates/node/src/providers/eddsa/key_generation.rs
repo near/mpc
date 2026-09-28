@@ -62,8 +62,8 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
 mod tests {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
+    use crate::network::wire_format::EddsaTaskId;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::providers::eddsa::EddsaTaskId;
     use crate::providers::eddsa::key_generation::KeyGenerationComputation;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;

@@ -33,14 +33,14 @@ and a single node. Come back here once you have one node working.
 
 ## Prerequisites
 
-In addition to the standard [hardware requirements](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements):
+In addition to the standard [hardware requirements](./node-requirements.md#resources):
 
 - **At least two routable public IPs** on the host's NIC, one per
   node. Same NIC is fine; what matters is that each CVM can be
   port-forwarded to a distinct external IP.
-- **2× the single-node hardware** ([single-node minimums](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements)
+- **2× the single-node hardware** ([single-node minimums](./node-requirements.md#resources)
   apply per CVM): ≥ 128 GB memory, ≥ 16 cores, ≥ 1 TB SSD/NVMe disk.
-- **Firewall opened on both IPs** for the [required ports](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#required-ports)
+- **Firewall opened on both IPs** for the [required ports](./node-requirements.md#ports)
   (80, 8080, 24567, 8079).
 - *(Optional)* a DNS A record per IP. Recommended if you want to
   re-IP later without rotating operator-side configuration.

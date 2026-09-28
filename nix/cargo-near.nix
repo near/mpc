@@ -29,10 +29,10 @@ rustPlatform.buildRustPackage rec {
   buildInputs = [
     openssl
   ]
-  ++ lib.optionals stdenv.isLinux [
+  ++ lib.optionals stdenv.hostPlatform.isLinux [
     udev
   ]
-  ++ lib.optionals stdenv.isDarwin [
+  ++ lib.optionals stdenv.hostPlatform.isDarwin [
     apple-sdk_14
   ];
 
@@ -40,7 +40,7 @@ rustPlatform.buildRustPackage rec {
     # Prevent the crate from trying to build its own OpenSSL
     OPENSSL_NO_VENDOR = 1;
   }
-  // lib.optionalAttrs stdenv.isDarwin {
+  // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
     # Darwin Sonoma / SDK 14 Compatibility
     SDKROOT = "${apple-sdk_14}/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
     MACOSX_DEPLOYMENT_TARGET = "14.0";

@@ -44,6 +44,7 @@ timeout_sec = 60
 
 [node.signature]
 timeout_sec = 60
+online_presign = true
 
 [node.indexer]
 validate_genesis = false

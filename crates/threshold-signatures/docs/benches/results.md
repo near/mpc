@@ -24,13 +24,11 @@ We consider this benchmarking technique to be naive for several reasons:
 
 3. A participant sending one message to all implies measuring the same send operation multiple time.
 
-The table below shows running the criterion tests for the Robust ECDSA and OT-Based ECDSA schemes when fixing the maximum number of malicious parties to 6 participants.
-One can see that the Robust ECDSA scheme seems much more performant than the OT-based ECDSA.
+The table below shows running the criterion tests for the OT-Based ECDSA scheme when fixing the maximum number of malicious parties to 6 participants.
 
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 1.4237 s  | 1.4626 ms | 191.82 µs |
-| **Robust ECDSA**   | 13 | N/A       | 66.060 ms | 278.13 µs |
 
 | **Maximum number of malicious parties: 6** | **Network Latency: 0 ms** |
 |--------------------------------------------|---------------------------|
@@ -62,7 +60,6 @@ In this section, we present a couple of results. The two following tables repres
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 198.95 ms  | 206.52 µs | 111.76 µs |
-| **Robust ECDSA**   | 13 | N/A       | 4.90 ms | 114.63 µs |
 | **Ed25519 Frost**   | 7 | N/A       | N/A | 849.67 µs |
 | **Ed25519 Frost with Presign**   | 7 | N/A       | 419.23 µs | 348.94 µs |
 | **Confidential key derivation**   | 7 | N/A       | N/A | 777.41 µs |
@@ -77,7 +74,6 @@ With a larger number of accepted malicious parties, the numbers are as follows:
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 544.94 ms  | 257.05 µs | 119.65 µs |
-| **Robust ECDSA**   | 31 | N/A       | 24.56 ms | 129.45 µs |
 | **Ed25519 Frost**   | 16 | N/A       | N/A | 1.7412 ms |
 | **Ed25519 Frost with Presign**   | 16 | N/A       | 964.76 µs | 590.34 µs |
 | **Confidential key derivation**   | 16 | N/A       | N/A | 1.4715 ms |
@@ -85,11 +81,7 @@ With a larger number of accepted malicious parties, the numbers are as follows:
 | **Maximum number of malicious parties: 15** | **Network Latency: 0 ms** |
 |---------------------------------------------|---------------------------|
 
-We notice two important results:
-
-* For a maximum number of malicious parties 6, the time taken for **Two Triple Gen** and **Presign** in the naive benchmarking is roughly the time taken in the advanced setting multiplied by the number of active participants.
-
-* The offline phase of Robust ECDSA is **40 times** faster than that of OT based ECDSA for a maximum number of malicious parties equals 6 and **22 times** faster for a maximum number of malicious parties equals 15. We estimate this difference to be due to the increasing number of necessary active participants in the Robust ECDSA setting.
+We notice an important result: for a maximum number of malicious parties 6, the time taken for **Two Triple Gen** and **Presign** in the naive benchmarking is roughly the time taken in the advanced setting multiplied by the number of active participants.
 
 #### Latency
 
@@ -98,7 +90,6 @@ Due to the fact that the computation time of both schemes is roughly small, addi
 | Scheme | Two Triples Gen | Presign | Sign |
 |:------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 8*  | 2 | 1 |
-| **Robust ECDSA**   | N/A       | 3 | 1 |
 | **Ed25519 Frost**   | N/A | N/A  | 3 |
 | **Ed25519 Frost with Presign**   | N/A       | 1 | 1 |
 | **Confidential key derivation**   | N/A | N/A  | 1 |
@@ -115,18 +106,12 @@ Thus with network latency, the numbers are computed using the formula: **network
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 1.344 s  | 200.25 ms | 100.11 ms |
-| **Robust ECDSA**   | 31 | N/A       | 324.56 ms | 100.12 ms |
 | **Ed25519 Frost**  | 16 | N/A | N/A  | 301.74 ms |
 | **Ed25519 Frost with Presign**   | 16 | N/A       | 100.96 ms  | 100.59 ms |
 | **Confidential key derivation**  | 16 | N/A | N/A  | 101.47 ms |
 
 | **Maximum number of malicious parties: 15** | **Network Latency: 100 ms** |
 |---------------------------------------------|-----------------------------|
-
-<br>
-
-Notice that the Robust ECDSA offline phase is roughly **4.7 times** faster than the OT based ECDSA offline phase.
-In fact, the higher the network latency is, the closer the performance of the Robust ECDSA offline phase would tend to **3.3 times** faster than the OT Based ECDSA offline phase. This is due to the fact that the OT Based ECDSA requires roughly **3.3 times** more rounds to complete.
 
 #### Bandwidth
 
@@ -137,7 +122,6 @@ In the case where the protocol allows distinguishing between normal participants
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 595260 Bytes  | 1416 Bytes | 557 Bytes |
-| **Robust ECDSA**   | 13 | N/A       | 6387 Bytes | 1096 Bytes |
 | **Ed25519 Frost**   | 7 | N/A       | N/A | 1510 Bytes |
 | **Ed25519 Frost with Presign**   | 7 | N/A       | 918 Bytes | 609 Bytes |
 | **Confidential key derivation**   | 7 | N/A       | N/A | 1154 Bytes |
@@ -152,7 +136,6 @@ In the case where the protocol allows distinguishing between normal participants
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 2088966 Bytes  | 3485 Bytes | 1360 Bytes |
-| **Robust ECDSA**   | 31 | N/A       | 15986 Bytes | 2752 Bytes |
 | **Ed25519 Frost**   | 16 | N/A       | N/A | 3818 Bytes |
 | **Ed25519 Frost with Presign**   | 16 | N/A       | 2274 Bytes |  1513 Bytes |
 | **Confidential key derivation**   | 16 | N/A       | N/A | 2894 Bytes |
@@ -195,6 +178,3 @@ Reproduce with:
 NUM_PARTICIPANTS=7 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
 NUM_PARTICIPANTS=15 THRESHOLD=8 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
 ```
-
-The simulation harness runs the Damgård et al. scheme alongside, which requires exactly
-`2 * (threshold - 1) + 1` participants.

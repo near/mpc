@@ -13,7 +13,11 @@ use crate::sandbox::utils::transactions::CallMpcContract;
 
 #[tokio::test]
 async fn test_key_version() -> anyhow::Result<()> {
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
@@ -31,7 +35,11 @@ async fn test_key_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_public_key() -> anyhow::Result<()> {
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
@@ -51,7 +59,11 @@ async fn test_public_key() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_derived_public_key() -> anyhow::Result<()> {
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
@@ -76,6 +88,7 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
 async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_threshold()
 -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..

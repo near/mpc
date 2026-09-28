@@ -15,7 +15,9 @@ pub mod types {
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;
-    pub use participants::{ParticipantId, ParticipantInfo, Participants};
+    pub use participants::{
+        MAX_PARTICIPANT_URL_BYTES, ParticipantId, ParticipantInfo, ParticipantUrl, Participants,
+    };
 
     pub use ckd::{CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, CkdAppId};
     pub use near_mpc_crypto_types::CKDResponse;
@@ -40,13 +42,13 @@ pub mod types {
     };
 
     pub use updates::{
-        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash, UpdateId,
+        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, Update, UpdateHash, UpdateId,
     };
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
         KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash,
-        NodeImageHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
+        NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
     };
 
     // Re-export crypto types from near-mpc-crypto-types

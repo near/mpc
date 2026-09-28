@@ -182,7 +182,7 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address**: The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view.
+- **MPC node address**: The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view. The contract rejects a `url` longer than 256 bytes.
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash

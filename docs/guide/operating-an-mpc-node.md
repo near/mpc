@@ -28,6 +28,9 @@ Subcontracting the day-to-day operation of *your* node is fine, but the same exp
 ### Keep your operator account isolated
 Use your MPC operator account only for running the node — don't call other smart contracts with it. This keeps it isolated and adds defense-in-depth against malicious contracts forwarding requests to the signer contract.
 
+## Requirements
+See [MPC node requirements](node-requirements.md) for bandwidth, memory, cores, disk, ports and public IP. TEE hosts have additional requirements, listed in the [TDX guide](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prerequisites-and-requirements).
+
 ## Staying reachable
 We have a shared Slack channel for all node operators. We expect you to be available there to coordinate network upgrades and respond to incidents.
 

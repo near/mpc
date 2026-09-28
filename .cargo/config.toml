@@ -8,3 +8,12 @@
 # explicitly there. Keep both in sync.
 [target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+# The C/C++ half of the same x86-64-v3 baseline, for the cc-crate dependencies
+# (rocksdb, snappy, zstd, jemalloc). v3 covers AVX2 but not PCLMUL or AES, and
+# rocksdb's `port/lang.h` infers `__PCLMUL__` from `__AVX__`, so without
+# `-mpclmul` its CRC32C path fails to compile. `flake.nix` reads these values
+# to give bindgen the same feature-test macros.
+[env]
+CFLAGS_x86_64_unknown_linux_gnu = "-march=x86-64-v3 -mpclmul -maes"
+CXXFLAGS_x86_64_unknown_linux_gnu = "-march=x86-64-v3 -mpclmul -maes"

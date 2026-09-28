@@ -58,14 +58,15 @@ impl MpcContract {
         let Ok(params) = self.protocol_state.threshold_parameters() else {
             return;
         };
-        // TODO(#3556): replace this with a per-scheme
-        // `required_active_signers(protocol, reconstruction_threshold)`.
-        let Some(reconstruction_threshold) =
+        let Some(required_active_signers) =
             self.protocol_state.domain_registry().ok().and_then(|r| {
                 r.domains()
                     .iter()
                     .filter(|d| d.purpose == dtos::DomainPurpose::ForeignTx)
-                    .map(|d| d.reconstruction_threshold.inner())
+                    .map(|d| {
+                        d.protocol
+                            .required_active_signers(d.reconstruction_threshold)
+                    })
                     .max()
             })
         else {
@@ -83,7 +84,7 @@ impl MpcContract {
             .collect();
         self.foreign_chains
             .get_mut()
-            .update_available_chains_config_cache(&active_tls_keys, reconstruction_threshold);
+            .update_available_chains_config_cache(&active_tls_keys, required_active_signers);
     }
 
     /// Vote on per-chain RPC provider whitelist state. The input is keyed by
@@ -199,7 +200,8 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key, gen_account_id, gen_participant, gen_participants,
+        bogus_ed25519_public_key, bogus_tee_verifier_account_id, gen_account_id, gen_participant,
+        gen_participants,
     };
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
@@ -840,6 +842,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
@@ -907,6 +910,7 @@ mod tests {
             2,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

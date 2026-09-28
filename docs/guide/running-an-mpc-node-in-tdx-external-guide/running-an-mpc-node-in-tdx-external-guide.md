@@ -35,40 +35,24 @@ For a full architecture review of the TEE-based MPC, see: [design doc](../../des
 
 ## Prerequisites and Requirements
 
+Ensure your node meets the [MPC node requirements](../node-requirements.md). In addition, the node must meet the requirements outlined below.
+
 ### Hardware Requirements
 
-* Have a TDX enabled, bare metal, server.
+* A TDX enabled, bare metal, server.
 
 Note - we currently only support bare metal and do not support virtualized TDX solutions (such as GCP).
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
 
-The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
-
-* Memory - 64GB per CVM
-* (v)Cores - 8 per CVM
-* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
+The memory, cores and disk in [MPC node requirements](../node-requirements.md#resources)
+are what a single MPC CVM consumes. Because you may need to run two CVMs concurrently while
+migrating to a new launcher version, size your TDX host for at least **2x** those values.
 
 For a non-exhaustive list of cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../cloud-providers-tdx.md).
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
-
-### Software Requirements
-
-* [`near-cli-rs`](https://github.com/near/near-cli-rs) — install per the upstream README; the `near` binary must be on your `$PATH`.
-
-### General
-
-* Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
-* Assign a static public IP for access towards machine from outside
-
-### Create DNS A record (optional)
-
-Although a node can be accessed using a public IP address, it is recommended to use a domain name instead. Using a domain name allows some flexibility in case of public IP address change/repurpose or failover scenarios. To use a domain name, one must register a DNS A record. Some recommended providers:
-
-* [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)
-* [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 
 ### TDX and Dstack Setup
 
@@ -1417,15 +1401,7 @@ deployment shapes:
 
 ---
 
-#### Required Ports
-
-| Port   | Purpose                                                                 |
-|--------|-------------------------------------------------------------------------|
-| **80** | Node-to-node communication (port override convention)                   |
-| **24567** | Decentralized state sync                                             |
-| **8080** | Debug and telemetry collection, plus the `/public_data` endpoint       |
-| **3030** | Debug and telemetry collection                                         |
-| **8079** | Migration port                    |
+See [Required ports](../node-requirements.md#ports).
 
 ### Configuring and Starting the MPC Binary in a CVM
 
@@ -2160,7 +2136,7 @@ node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721
 node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
-The `node manifest digest` is what you vote for. When submitting the `code_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
+The `node manifest digest` is what you vote for. When submitting the `mpc_node_manifest_digest` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 
@@ -2171,15 +2147,15 @@ The `node manifest digest` is what you vote for. When submitting the `code_hash`
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
-Set `MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
+Set `MPC_NODE_MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
 
 ```bash
-MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+MPC_NODE_MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
-  vote_code_hash \
-  json-args "{\"code_hash\": \"$MANIFEST_DIGEST\"}" \
+  vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -2208,13 +2184,13 @@ Returns the list of currently-accepted image hashes, most recent first.
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet \
-  code_hash_votes \
+  mpc_node_manifest_digest_votes \
   json-args '{}' \
   network-config testnet \
   now
 ```
 
-Shows per-participant votes so you can see how many more are needed to reach threshold.
+Shows the voters grouped by the image hash they voted for. May include former participants' votes, which don't count toward the threshold.
 
 ### Update the MPC Node
 

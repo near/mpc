@@ -3,7 +3,8 @@
 pub mod common;
 
 use crate::common::{
-    FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, fan_out_of,
+    mock_client_from_fixed_response,
 };
 
 use foreign_chain_inspector::{
@@ -301,6 +302,53 @@ macro_rules! evm_inspector_tests {
 
                 // then
                 assert_matches!(response, Ok(Verdict::TransactionNotFound));
+            }
+
+            #[tokio::test]
+            async fn fan_out__should_return_mismatch_when_one_provider_fabricates_a_receipt() {
+                // given: single malicious provider returns finalized, two other providers answer null
+                let tx_id = TxHash::from([3;32]);
+                let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([3;32]),
+                    block_hash: H256::from([4;32]),
+                    block_number: U64::from(90),
+                    status: U64::one(),
+                    logs: vec![test_log()],
+                };
+                let finality_block_response = GetBlockByNumberResponse {
+                    number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
+                };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
+                let malicious =  Inspector::new(
+                    SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build(),
+                );
+                let honest = || {
+                    Inspector::new(
+                        SequentialResponseMockClientBuilder::new()
+                        .with_response(&serde_json::Value::Null)
+                        .build(),
+                    )
+                };
+                let fan_out = fan_out_of(vec![honest(), malicious, honest()]);
+
+                // when
+                let response = fan_out
+                .extract(tx_id, EthereumFinality::Finalized, vec![EvmExtractor::BlockHash])
+                .await;
+
+                // then
+                assert_matches!(
+                    response,
+                    Err(ForeignChainInspectionError::InspectorResponseMismatch)
+                );
             }
 
             #[tokio::test]

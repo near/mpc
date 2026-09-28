@@ -5,6 +5,96 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.16.0] - 2026-09-18
+
+### 🚀 Features
+
+- [#4371](https://github.com/near/mpc/pull/4371)(@kevindeforth): *(contract)* ProposalHash allows for user-defined serializers and hashers (#4371)
+
+- [#4386](https://github.com/near/mpc/pull/4386)(@gilcu3): Add presign+sign online phase in Cait-Sith (#4386)
+
+- [#4417](https://github.com/near/mpc/pull/4417)(@netrome): Allow participants to remove their update proposals (#4417)
+
+- [#4137](https://github.com/near/mpc/pull/4137)(@frolvanya): *(foreign-tx)* Svm inspector (#4137)
+
+- [#4138](https://github.com/near/mpc/pull/4138)(@frolvanya): *(foreign-tx)* Wire svm chains into node (#4138)
+
+- [#4455](https://github.com/near/mpc/pull/4455)(@barakeinav1): *(contract)* Bound the participant url with a BoundedString type (#4455)
+
+- [#4258](https://github.com/near/mpc/pull/4258)(@haiyuechen-nearone): *(node)* Export foreign chain provider metrics on the verify path (#4258)
+
+
+### 🐛 Bug Fixes
+
+- [#4474](https://github.com/near/mpc/pull/4474)(@netrome): *(test)* Retain more blocks in sandbox tests to fix GC race condition (#4474)
+
+
+### 🚜 Refactor
+
+- [#4396](https://github.com/near/mpc/pull/4396)(@kevindeforth): *(contract)* Unify participant membership checks (#4396)
+
+- [#4407](https://github.com/near/mpc/pull/4407)(@kevindeforth): Typed sandbox views (#4407)
+
+- [#4403](https://github.com/near/mpc/pull/4403)(@kevindeforth): *(contract)* Use generic votes for mpc node docker hash votes (#4403)
+
+- [#4447](https://github.com/near/mpc/pull/4447)(@kevindeforth): Rename "vote_code_hash" method to "vote_mpc_node_manifest_digest" (#4447)
+
+- [#4410](https://github.com/near/mpc/pull/4410)(@kevindeforth): *(tee-context)* Subscribe to allowed hashes through MpcContractHandle (#4410)
+
+
+### 📚 Documentation
+
+- [#4368](https://github.com/near/mpc/pull/4368)(@kevindeforth): Organize docs assets and explain rules in AGENTS.md (#4368)
+
+- [#4370](https://github.com/near/mpc/pull/4370)(@netrome): Add audit reports (#4370)
+
+- [#4372](https://github.com/near/mpc/pull/4372)(@netrome): Drop repo links from audit README (#4372)
+
+- [#4394](https://github.com/near/mpc/pull/4394)(@barakeinav1): Un-archive and refresh the TDX cloud providers list (#4394)
+
+- [#4392](https://github.com/near/mpc/pull/4392)(@gilcu3): Document how host unattended upgrades should be handled in TDX  (#4392)
+
+- [#4476](https://github.com/near/mpc/pull/4476)(@kevindeforth): Formalize bandwidth requirements for node operators (#4476)
+
+
+### 🧪 Testing
+
+- [#4366](https://github.com/near/mpc/pull/4366)(@haiyuechen-nearone): *(inspector)* Cover the not found verdict in the fan out mismatch test (#4366)
+
+- [#4435](https://github.com/near/mpc/pull/4435)(@gilcu3): *(contract)* Make test check contract storage keys properly (#4435)
+
+- [#4439](https://github.com/near/mpc/pull/4439)(@gilcu3): *(node)* Make sure assets are warm before running integration tests (#4439)
+
+- [#4457](https://github.com/near/mpc/pull/4457)(@anodar): Implement test for malicious RPC provider (#4457)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4375](https://github.com/near/mpc/pull/4375)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4375)
+
+- [#4376](https://github.com/near/mpc/pull/4376)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#4376)
+
+- [#4398](https://github.com/near/mpc/pull/4398)(@barakeinav1): *(attestation)* Explain why the image hash payload is hex-decoded (#4398)
+
+- [#4400](https://github.com/near/mpc/pull/4400)(@kevindeforth): *(contract)* Update contract migrations after 3.15.0 release (#4400)
+
+- [#4409](https://github.com/near/mpc/pull/4409)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4409)
+
+- [#4412](https://github.com/near/mpc/pull/4412)(@dependabot[bot]): Bump the rust-minor-and-patch group with 7 updates (#4412)
+
+- [#4413](https://github.com/near/mpc/pull/4413)(@dependabot[bot]): Bump rstest from 0.26.1 to 0.27.0 (#4413)
+
+- [#4422](https://github.com/near/mpc/pull/4422)(@kevindeforth): *(ci)* Ignore RUSTSEC-2026-0285 (#4422)
+
+- [#4414](https://github.com/near/mpc/pull/4414)(@dependabot[bot]): Bump zstd from 0.13.3 to 0.14.0 (#4414)
+
+- [#4404](https://github.com/near/mpc/pull/4404)(@anodar): Drop legacy foreign chain API (#4404)
+
+- [#4438](https://github.com/near/mpc/pull/4438)(@gilcu3): *(contract)* Update migrations after 3.15.1 rollout (#4438)
+
+- [#4452](https://github.com/near/mpc/pull/4452)(@netrome): Bump nearcore to 2.14.0-rc.2 (#4452)
+
+
 ## [3.15.0] - 2026-09-04
 
 ### 🚀 Features

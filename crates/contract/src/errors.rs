@@ -5,6 +5,7 @@ use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
+use near_sdk::FunctionError;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NodeMigrationError {
@@ -21,6 +22,15 @@ pub enum NodeMigrationError {
         "The submitted keyset differs from the expected keyset. Found: {found:?}, expected: {expected:?}"
     )]
     KeysetMismatch { found: Keyset, expected: Keyset },
+    #[error("TLS public key {tls_public_key:?} is already claimed by account {account_id}.")]
+    TlsKeyAlreadyClaimed {
+        tls_public_key: dtos::Ed25519PublicKey,
+        account_id: AccountId,
+    },
+    #[error(
+        "The destination node carries the caller's current TLS public key. A migration must move the participant to a node with a different TLS key; use `update_participant_url` to change only the url."
+    )]
+    DestinationTlsKeyUnchanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -29,10 +39,6 @@ pub enum TeeError {
         "Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later."
     )]
     TeeValidationFailed,
-    #[error(
-        "No TEE verifier is configured yet. Participants must vote one in via vote_tee_verifier_change before Dstack attestations can be submitted."
-    )]
-    VerifierNotConfigured,
     #[error("The TEE verifier rejected the quote: {reason}")]
     QuoteRejected { reason: String },
     #[error("The TEE verifier did not answer the verify_quote call.")]
@@ -218,10 +224,14 @@ pub enum InvalidCandidateSet {
     DuplicateParticipantIds,
     #[error("Duplicate account IDs found.")]
     DuplicateAccountIds,
+    #[error("Duplicate TLS public keys found.")]
+    DuplicateTlsPublicKeys,
     #[error("New Participant ids need to be unique and contiguous.")]
     NewParticipantIdsNotContiguous,
     #[error("New Participant ids need to not skip any unused participant ids.")]
     NewParticipantIdsTooHigh,
+    #[error("Participant url is {len} bytes, exceeding the {max} byte limit.")]
+    ParticipantUrlTooLong { len: usize, max: usize },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -270,17 +280,13 @@ pub enum DomainError {
         participants: u64,
     },
     #[error(
-        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the DamgardEtAl bound."
-    )]
-    ReconstructionThresholdOverflow { reconstruction_threshold: u64 },
-    #[error(
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]
     UnknownDomainInProposal { domain_id: DomainId },
 }
 
 /// A list specifying general categories of MPC Contract errors.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, FunctionError, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// An error occurred while node is performing respond call.
@@ -322,12 +328,6 @@ pub enum Error {
     // Tee attestation submission errors
     #[error(transparent)]
     AttestationSubmission(#[from] AttestationSubmissionError),
-}
-
-impl near_sdk::FunctionError for Error {
-    fn panic(&self) -> ! {
-        crate::env::panic_str(&self.to_string())
-    }
 }
 
 impl From<TweakNotOnCurve> for PublicKeyError {

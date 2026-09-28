@@ -36,6 +36,7 @@ impl LocalNodeBuilder {
             await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
             finality: Finality::None,
             validate_genesis: true,
+            skip_broken_blocks: false,
         };
 
         let (chain_gateway, node_handle, block_update_receiver) =
