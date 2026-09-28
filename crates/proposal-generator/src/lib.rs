@@ -120,9 +120,59 @@ mod tests {
     }
 
     #[rstest]
-    #[case::testnet(include_str!("../proposals/testnet-rpc-whitelist.toml"))]
-    #[case::mainnet(include_str!("../proposals/mainnet-rpc-whitelist.toml"))]
-    fn rpc_whitelist_proposals__should_be_valid(#[case] fixture: &str) {
+    #[case::testnet(
+        include_str!("../proposals/testnet-rpc-whitelist.toml"),
+        &[
+            ForeignChain::Solana,
+            ForeignChain::Bitcoin,
+            ForeignChain::Base,
+            ForeignChain::Bnb,
+            ForeignChain::Arbitrum,
+            ForeignChain::Abstract,
+            ForeignChain::Starknet,
+            ForeignChain::Polygon,
+            ForeignChain::HyperEvm,
+            ForeignChain::Aptos,
+            ForeignChain::Sui,
+            ForeignChain::Avalanche,
+            ForeignChain::Fogo,
+        ]
+    )]
+    #[case::testnet_2026_09_23(
+        include_str!("../proposals/testnet-rpc-whitelist-2026-09-23-evm-solana.toml"),
+        &[
+            ForeignChain::Solana,
+            ForeignChain::Base,
+            ForeignChain::Bnb,
+            ForeignChain::Arbitrum,
+        ]
+    )]
+    #[case::testnet_2026_09_28(
+        include_str!(
+            "../proposals/testnet-rpc-whitelist-2026-09-28-hyperevm-polygon-avalanche-fogo.toml"
+        ),
+        &[
+            ForeignChain::Arbitrum,
+            ForeignChain::Polygon,
+            ForeignChain::HyperEvm,
+            ForeignChain::Avalanche,
+            ForeignChain::Fogo,
+        ]
+    )]
+    #[case::mainnet(
+        include_str!("../proposals/mainnet-rpc-whitelist.toml"),
+        &[
+            ForeignChain::Bitcoin,
+            ForeignChain::Abstract,
+            ForeignChain::Starknet,
+            ForeignChain::Aptos,
+            ForeignChain::Sui,
+        ]
+    )]
+    fn rpc_whitelist_proposals__should_be_valid(
+        #[case] fixture: &str,
+        #[case] expected: &[ForeignChain],
+    ) {
         // Given
         let config: ProposalConfig = toml::from_str(fixture).unwrap();
 
@@ -131,16 +181,7 @@ mod tests {
 
         // Then
         let votes = votes_of(&payload);
-        assert_eq!(
-            votes.keys().copied().collect::<Vec<_>>(),
-            vec![
-                ForeignChain::Bitcoin,
-                ForeignChain::Abstract,
-                ForeignChain::Starknet,
-                ForeignChain::Aptos,
-                ForeignChain::Sui,
-            ]
-        );
+        assert_eq!(votes.keys().copied().collect::<Vec<_>>(), expected);
     }
 
     #[rstest]

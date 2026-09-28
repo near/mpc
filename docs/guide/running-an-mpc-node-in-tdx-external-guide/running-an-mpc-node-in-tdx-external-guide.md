@@ -985,13 +985,15 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, `expected_network_fingerprint`, and one entry per provider. Keep `expected_network_fingerprint`: it pins the chain identity each provider is checked against, and the config tester reports a chain without it as unchecked. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
 
 You need your own API keys:
 
 * **Alchemy** — https://www.alchemy.com → create an App, copy the API key
 * **QuickNode** — https://www.quicknode.com → create a Multi-chain Endpoint, copy the endpoint URL (your slug and API key are embedded in it)
 * **Geomi** (Aptos only) — https://geomi.dev/login → create a project, generate a Server API key (`aptoslabs_…`)
+* **Tatum** — https://dashboard.tatum.io → generate an API key for the right network. Make sure you have "Starter" plan.
+* **Chainstack** (HyperEVM only) — https://console.chainstack.com → deploy a Hyperliquid node, copy the key from its endpoint URL. Make sure you have "Growth" plan.
 
 > **Important:**
 >
@@ -1006,6 +1008,7 @@ Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with you
 [mpc_node_config.node.foreign_chains.bitcoin]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
 
 [mpc_node_config.node.foreign_chains.bitcoin.providers.public]
 rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
@@ -1013,6 +1016,7 @@ rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "11124"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.testnet.abs.xyz"
@@ -1034,6 +1038,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "0x534e5f5345504f4c4941" # SN_SEPOLIA
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
@@ -1055,6 +1060,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "2"
 
 [mpc_node_config.node.foreign_chains.aptos.providers.public]
 rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
@@ -1085,6 +1091,7 @@ token = { val = "YOUR_GEOMI_API_KEY" }
 [mpc_node_config.node.foreign_chains.sui]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"
 
 [mpc_node_config.node.foreign_chains.sui.providers.public]
 rpc_url = "https://archive.testnet.sui.io"
@@ -1112,9 +1119,6 @@ timeout_sec = 30
 max_retries = 3
 expected_network_fingerprint = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
 
-[mpc_node_config.node.foreign_chains.solana.providers.public]
-rpc_url = "https://api.devnet.solana.com"
-
 [mpc_node_config.node.foreign_chains.solana.providers.alchemy]
 rpc_url = "https://solana-devnet.g.alchemy.com/v2/{API_KEY}"
 [mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
@@ -1128,6 +1132,167 @@ rpc_url = "https://YOUR-SLUG.solana-devnet.quiknode.pro/{api_key}"
 kind = "path"
 placeholder = "{api_key}"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.tatum]
+rpc_url = "https://solana-devnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.solana.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# BSC testnet (Chapel).
+[mpc_node_config.node.foreign_chains.bnb]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "97"
+
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy]
+rpc_url = "https://bnb-testnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.bsc-testnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum]
+rpc_url = "https://bsc-testnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Base Sepolia.
+[mpc_node_config.node.foreign_chains.base]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "84532"
+
+[mpc_node_config.node.foreign_chains.base.providers.alchemy]
+rpc_url = "https://base-sepolia.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.base.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.base-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.base.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.tatum]
+rpc_url = "https://base-sepolia.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.base.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Arbitrum Sepolia.
+[mpc_node_config.node.foreign_chains.arbitrum]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "421614"
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy]
+rpc_url = "https://arb-sepolia.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.arbitrum-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum]
+rpc_url = "https://arbitrum-one-sepolia.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Polygon Amoy.
+[mpc_node_config.node.foreign_chains.polygon]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "80002"
+
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy]
+rpc_url = "https://polygon-amoy.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.matic-amoy.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum]
+rpc_url = "https://polygon-amoy.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Avalanche Fuji. The C-chain path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.avalanche]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "43113"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.public]
+rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.avalanche-testnet.quiknode.pro/{api_key}/ext/bc/C/rpc"
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum]
+rpc_url = "https://avax-testnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# HyperEVM testnet. The `/evm` path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.hyper_evm]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "998"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.public]
+rpc_url = "https://rpc.hyperliquid-testnet.xyz/evm"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.hype-testnet.quiknode.pro/{api_key}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack]
+rpc_url = "https://hyperliquid-testnet.core.chainstack.com/{API_KEY}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_CHAINSTACK_API_KEY" }
 
 [mpc_node_config.node.foreign_chains.fogo]
 timeout_sec = 30
@@ -2178,7 +2343,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 2. Participants vote to approve the new launcher manifest digest and/or OS measurements.
 3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](../node-migration-guide.md).
-5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
+5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused and no attestation made with it is still valid; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
 
 ### Launcher Image Voting
 
@@ -2337,7 +2502,7 @@ For the migration procedure, see the [node migration guide](../node-migration-gu
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
-An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
+An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window, and no attestation made with it is still valid, it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
 
 After all operators have migrated to the new CVM, participants may vote to remove the old launcher manifest digest immediately using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration. (Old OS measurements do not auto-expire and still require this vote.)
 
