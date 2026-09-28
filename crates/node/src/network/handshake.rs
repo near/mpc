@@ -80,7 +80,9 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
             // if we get here, the connection is always accepted
             HandshakeOutcome::Dec2025(true)
         }
-        NetworkProtocolVersion::Jan2026 | NetworkProtocolVersion::Unknown(_) => {
+        NetworkProtocolVersion::Jan2026
+        | NetworkProtocolVersion::Sep2026
+        | NetworkProtocolVersion::Unknown(_) => {
             conn.write_u32(sender_connection_id).await?;
             let min_expected_connection_id = conn.read_u32().await?;
             HandshakeOutcome::Jan2026(ConnectionInfo {
@@ -165,7 +167,9 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
                 HandshakeOutcome::Dec2025(false)
             }
         }
-        NetworkProtocolVersion::Jan2026 | NetworkProtocolVersion::Unknown(_) => {
+        NetworkProtocolVersion::Jan2026
+        | NetworkProtocolVersion::Sep2026
+        | NetworkProtocolVersion::Unknown(_) => {
             write_magic_byte_protocol_version_and_expected_connection_version(
                 conn,
                 min_expected_connection_id,

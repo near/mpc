@@ -2,8 +2,7 @@ use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
 use crate::foreign_chain_policy::{
-    SupportersByForeignChain, foreign_tx_reconstruction_threshold,
-    spawn_supporters_by_foreign_chain,
+    SupportersByForeignChain, foreign_tx_required_active_signers, spawn_supporters_by_foreign_chain,
 };
 use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
@@ -707,15 +706,15 @@ where
                 // and remain after the reshare supports it. With no ForeignTx
                 // domain nothing can be available, so the resolver isn't
                 // spawned and the provider sees a constant empty map.
-                let foreign_tx_threshold =
-                    foreign_tx_reconstruction_threshold(&running_state.domains);
+                let foreign_tx_required_active_signers =
+                    foreign_tx_required_active_signers(&running_state.domains);
                 let (supporters_by_foreign_chain, _supporters_resolver_task) =
-                    match foreign_tx_threshold {
-                        Some(threshold) => {
+                    match foreign_tx_required_active_signers {
+                        Some(required_active_signers) => {
                             let (receiver, task) = spawn_supporters_by_foreign_chain(
                                 foreign_chain_supporters_receiver,
                                 running_mpc_config.participants.clone(),
-                                threshold,
+                                required_active_signers,
                             );
                             (receiver, Some(task))
                         }
@@ -731,7 +730,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     supporters_by_foreign_chain,
-                    foreign_tx_threshold,
+                    foreign_tx_required_active_signers,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);

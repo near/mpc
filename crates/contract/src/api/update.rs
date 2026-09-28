@@ -2,7 +2,6 @@
 //! updates, plus sweeping votes from departed participants.
 
 use crate::api::common::refund_to;
-use crate::config::Config;
 use crate::dto_mapping::{IntoContractType, IntoInterfaceType};
 use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::state::ProtocolContractState;
@@ -107,9 +106,10 @@ impl MpcContract {
 
         let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
 
-        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
-            return Err(InvalidParameters::UpdateNotFound.into());
-        };
+        self.proposed_updates
+            .do_update(&id, update_gas_deposit)
+            .ok_or(InvalidParameters::UpdateNotFound)?
+            .detach();
 
         Ok(true)
     }
@@ -186,9 +186,7 @@ impl MpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
-        let new_config: Config =
-            Config::try_from(config).unwrap_or_else(|e| env::panic_str(&e.to_string()));
-        self.config = new_config;
+        self.config = config.into();
     }
 }
 
@@ -276,7 +274,7 @@ mod tests {
         let code: [u8; 1000] = std::array::from_fn(|_| rand::random());
         let hash = Sha256::digest(code);
         let update = Update::Contract(code.into());
-        let expected_update_hash = dtos::UpdateHash::Code(hash.into());
+        let expected_update_hash = dtos::UpdateHash::Code(dtos::Hash256(hash.into()));
         let expected_votes = propose_and_vote(contract, update, expected_update_id);
         TestUpdate {
             update_id: expected_update_id.into_dto_type(),
@@ -324,12 +322,12 @@ mod tests {
         let mut config_update = {
             let update_config = dummy_config(1);
             let config_hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
-            let config_update_obj = Update::Config(update_config.try_into().unwrap());
+            let config_update_obj = Update::Config(update_config.into());
             let config_update_id = UpdateId(1);
             let config_votes = propose_and_vote(&mut contract, config_update_obj, config_update_id);
             TestUpdate {
                 update_id: config_update_id.into_dto_type(),
-                update_hash: dtos::UpdateHash::Config(config_hash.into()),
+                update_hash: dtos::UpdateHash::Config(dtos::Hash256(config_hash.into())),
                 votes: config_votes,
             }
         };

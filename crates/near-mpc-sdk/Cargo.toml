@@ -7,6 +7,7 @@ repository.workspace = true
 description = "SDK for requesting, verifying threshold signatures from the NEAR MPC network and validation shared between the contract and its clients."
 
 [features]
+non-contract-usage = ["dep:sha2"]
 abi = [
     "near-mpc-contract-interface/abi",
     "near-mpc-signature-verifier/abi",
@@ -20,10 +21,14 @@ derive_more = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-mpc-signature-verifier = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+hex = { workspace = true }
+test-utils = { workspace = true }
 
 [lints]
 workspace = true

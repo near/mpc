@@ -3,9 +3,10 @@ use std::sync::LazyLock;
 use tokio_metrics::{TaskIntervals, TaskMonitor};
 
 use crate::metrics::{
-    ECDSA_PROTOCOL_SCHEME_LABEL, EDDSA_PROTOCOL_SCHEME_LABEL, MAKE_SIGNATURE_TASK_LABEL,
-    MONITOR_SAMPLE_DURATION, PRESIGNATURE_GENERATION_TASK_LABEL,
-    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL, TRIPLE_GENERATION_TASK_LABEL,
+    ECDSA_PROTOCOL_SCHEME_LABEL, EDDSA_PROTOCOL_SCHEME_LABEL,
+    MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL, MAKE_SIGNATURE_TASK_LABEL, MONITOR_SAMPLE_DURATION,
+    PRESIGNATURE_GENERATION_TASK_LABEL, ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
+    TRIPLE_GENERATION_TASK_LABEL,
 };
 
 const TOKIO_TASK_LABELS: &[&str] = &["protocol_scheme", "task", "role"];
@@ -119,6 +120,8 @@ pub(crate) struct EcdsaTaskMonitors {
     pub(crate) make_signature_leader: TaskMonitor,
     pub(crate) make_signature_follower: TaskMonitor,
 
+    pub(crate) make_online_presign_signature_follower: TaskMonitor,
+
     pub(crate) triple_generation_leader: TaskMonitor,
     pub(crate) triple_generation_follower: TaskMonitor,
 
@@ -186,6 +189,14 @@ impl TaskIntervalProvider for EcdsaTaskMonitors {
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
+            ),
+            (
+                self.make_online_presign_signature_follower.intervals(),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL,
                     FOLLOWER_ROLE_LABEL,
                 ),
             ),

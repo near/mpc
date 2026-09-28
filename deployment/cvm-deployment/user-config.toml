@@ -24,6 +24,7 @@ port_mappings = [
 ]
 
 [mpc_node_config]
+# Must be /data or a path under it: the only persistent volume in the CVM.
 home_dir = "/data"
 
 # PCCS endpoints for TDX attestation collateral. The node tries each

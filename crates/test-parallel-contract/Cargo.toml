@@ -18,7 +18,6 @@ elliptic-curve = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["blstrs"] }
 near-sdk = { workspace = true }
 serde = { workspace = true }
-sha2 = { workspace = true }
 
 # k256 won't compile without settings the custom rand flag for `getrandom`
 [target.'cfg(target_arch = "wasm32")'.dependencies]
