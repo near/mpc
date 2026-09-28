@@ -1,10 +1,13 @@
 //! Deposit amounts to attach to contract methods. One shared value for node,
 //! tests, and e2e.
 
+use crate::types::{PayloadBytesError, Update};
+
 pub const SIGN_DEPOSIT_YOCTONEAR: u128 = 1;
 
 pub const STORAGE_BYTE_COST_YOCTONEAR: u128 = 10_000_000_000_000_000_000;
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 pub const PROPOSE_UPDATE_ENTRY_OVERHEAD_BYTES: u128 = 32_768;
 
 pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR: u128 = 1;
@@ -13,6 +16,7 @@ pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR: u128 = 1;
 #[error("the required deposit exceeds u128::MAX yoctoNEAR")]
 pub struct DepositOverflowError;
 
+// TODO(#4513): rename once it only serves `submit_update`.
 pub fn propose_update_required_deposit_yoctonear(
     payload_bytes: u128,
     storage_byte_cost_yoctonear: u128,
@@ -21,6 +25,15 @@ pub fn propose_update_required_deposit_yoctonear(
         .checked_add(payload_bytes)
         .and_then(|bytes| storage_byte_cost_yoctonear.checked_mul(bytes))
         .ok_or(DepositOverflowError)
+}
+
+/// The bytes `update` stores: the code, or the config's JSON.
+pub fn update_payload_bytes(update: &Update) -> Result<u128, PayloadBytesError> {
+    let bytes = match update {
+        Update::Code(code) => code.len(),
+        Update::Config(config) => serde_json::to_vec(config)?.len(),
+    };
+    u128::try_from(bytes).map_err(|_| PayloadBytesError::Overflow)
 }
 
 #[cfg(test)]

@@ -5318,7 +5318,7 @@ expression: abi
           "minItems": 32
         },
         "UpdateHash": {
-          "description": "An update hash",
+          "description": "Identifies an [`Update`] by content.",
           "oneOf": [
             {
               "type": "object",
@@ -5327,14 +5327,7 @@ expression: abi
               ],
               "properties": {
                 "Code": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/Hash256"
                 }
               },
               "additionalProperties": false
@@ -5346,14 +5339,7 @@ expression: abi
               ],
               "properties": {
                 "Config": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/Hash256"
                 }
               },
               "additionalProperties": false

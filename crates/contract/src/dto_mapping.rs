@@ -458,11 +458,14 @@ impl IntoContractType<UpdateId> for dtos::UpdateId {
 impl IntoInterfaceType<dtos::UpdateHash> for &Update {
     fn into_dto_type(self) -> dtos::UpdateHash {
         match self {
-            Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code)),
-            Update::Config(config) => dtos::UpdateHash::Config(sha256_array(
-                serde_json::to_vec(&config.into_dto_type())
-                    .expect("serde serialization must succeed"),
-            )),
+            Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code).into()),
+            Update::Config(config) => dtos::UpdateHash::Config(
+                sha256_array(
+                    serde_json::to_vec(&config.into_dto_type())
+                        .expect("serde serialization must succeed"),
+                )
+                .into(),
+            ),
         }
     }
 }

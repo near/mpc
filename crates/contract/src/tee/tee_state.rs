@@ -23,7 +23,7 @@ use near_mpc_contract_interface::types::{
     self as dtos, AccountId, Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction,
     MeasurementVoteAction,
 };
-use near_sdk::{env, near, store::IterableMap};
+use near_sdk::{env, log, near, store::IterableMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
 
@@ -548,9 +548,9 @@ impl TeeState {
         signer_account_pk: &Ed25519PublicKey,
     ) -> Result<&NodeId, AttestationCheckError> {
         self.stored_attestations
-            .iter()
-            .find(|(_, attestation)| attestation.node_id.account_public_key == *signer_account_pk)
-            .map(|(_, attestation)| &attestation.node_id)
+            .values()
+            .find(|attestation| attestation.node_id.account_public_key == *signer_account_pk)
+            .map(|attestation| &attestation.node_id)
             .ok_or(AttestationCheckError::AttestationNotFound)
     }
 
@@ -610,9 +610,7 @@ fn log_informational_advisory_ids(advisory_ids: &[String]) {
         Some(extra) if extra > 0 => format!(" (+{extra} more)"),
         _ => String::new(),
     };
-    env::log_str(&format!(
-        "attestation accepted with {total} informational advisory ID(s): {shown}{suffix}",
-    ));
+    log!("attestation accepted with {total} informational advisory ID(s): {shown}{suffix}");
 }
 
 #[derive(Debug)]

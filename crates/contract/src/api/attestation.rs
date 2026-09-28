@@ -660,7 +660,7 @@ mod tests {
         testing_env!(
             VMContextBuilder::new()
                 .predecessor_account_id("operator.near".parse().unwrap())
-                .attached_deposit(NearToken::from_yoctonear(0))
+                .attached_deposit(NearToken::ZERO)
                 .build()
         );
 

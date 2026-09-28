@@ -212,8 +212,9 @@ impl MpcContract {
 
                 let promise = Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .with_unused_gas_weight(0)
                     .fail_on_timeout();
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                PromiseOrValue::Promise(promise.as_return())
             }
         }
     }

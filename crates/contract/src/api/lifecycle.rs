@@ -15,10 +15,10 @@ use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ProposedUpdates;
-use crate::{MpcContract, MpcContractExt, v3_15_1_state};
+use crate::{MpcContract, MpcContractExt, v3_16_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
-use near_sdk::{AccountId, env, log, near};
+use near_sdk::{AccountId, env, log, near, state::ContractState};
 
 #[near]
 impl MpcContract {
@@ -180,11 +180,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_15_1_state::MpcContract>() {
+        match try_state_read::<v3_16_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.15.1 state: {:?}", err);
+                log!("failed to deserialize state into 3.16.0 state: {:?}", err);
             }
         };
 
@@ -210,7 +210,7 @@ impl MpcContract {
 }
 
 fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
-    env::storage_read(b"STATE")
+    env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
 }

@@ -88,8 +88,7 @@ impl GasThresholdsConfig {
     fn apply_buffer(&self, ggas_from_json: Gas) -> Gas {
         let ggas = ggas_from_json.as_gas(); // JSON value is in GGas, parsed as raw gas
         let buffered = (ggas as f64 * (1.0 + self.buffer_percent / 100.0)).ceil() as u64;
-        const GGAS: u64 = 1_000_000_000;
-        Gas::from_gas(buffered * GGAS)
+        Gas::from_ggas(buffered)
     }
 }
 
@@ -195,7 +194,7 @@ async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>,
         method,
         result.failures()
     );
-    let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
+    let gas_burnt = result.total_gas_burnt;
     assert_gas_within_threshold(method, gas_burnt, max_gas);
 }
 
@@ -226,7 +225,7 @@ async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
             account_id,
             result.failures()
         );
-        let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
+        let gas_burnt = result.total_gas_burnt;
         assert_gas_within_threshold(&format!("{}[{}]", method, label), gas_burnt, max_gas);
     }
 }
