@@ -750,7 +750,6 @@ mod tests {
 
         let (mut contract, context) = dstack_verification_setup();
         let ttl_secs = contract.config.launcher_hash_unused_ttl_seconds;
-        let ttl = Duration::from_secs(ttl_secs);
 
         let participant: AccountId = contract
             .protocol_state
@@ -762,25 +761,13 @@ mod tests {
             .clone();
 
         // Stamp the launcher earlier with the config TTL so its expiry is
-        // STAMPED_AT_SECONDS + ttl; a refresh on resolve (restamps to
-        // RESOLVE_AT_SECONDS + ttl) is then observable.
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(STAMPED_AT_SECONDS * 1_000_000_000)
-                .build()
-        );
-        contract.tee_state.allowed_launcher_images.add_or_refresh(
-            launcher_image_hash(),
-            &[image_digest()],
-            ttl,
-        );
-        assert_eq!(
-            contract
-                .tee_state
-                .allowed_launcher_images
-                .expires_at_secs(&launcher_image_hash()),
-            Some(STAMPED_AT_SECONDS + ttl_secs)
-        );
+        // STAMPED_AT_SECONDS + ttl; a refresh on resolve (extends to
+        // RESOLVE_AT_SECONDS + ttl, which is later than the attestation's own expiry) is then
+        // observable.
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .set_expires_at_secs(&launcher_image_hash(), STAMPED_AT_SECONDS + ttl_secs);
 
         // When resolve runs later with the signer set to a current participant. Predecessor
         // stays the contract account for the `#[private]` callback.
@@ -796,7 +783,7 @@ mod tests {
         let result = contract
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
-        // Then the launcher is refreshed by the participant: expiry restamped to
+        // Then the launcher is refreshed by the participant: expiry extended to
         // RESOLVE_AT_SECONDS + ttl.
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
@@ -818,25 +805,11 @@ mod tests {
 
         let (mut contract, context) = dstack_verification_setup();
         let ttl_secs = contract.config.launcher_hash_unused_ttl_seconds;
-        let ttl = Duration::from_secs(ttl_secs);
 
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(STAMPED_AT_SECONDS * 1_000_000_000)
-                .build()
-        );
-        contract.tee_state.allowed_launcher_images.add_or_refresh(
-            launcher_image_hash(),
-            &[image_digest()],
-            ttl,
-        );
-        assert_eq!(
-            contract
-                .tee_state
-                .allowed_launcher_images
-                .expires_at_secs(&launcher_image_hash()),
-            Some(STAMPED_AT_SECONDS + ttl_secs)
-        );
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .set_expires_at_secs(&launcher_image_hash(), STAMPED_AT_SECONDS + ttl_secs);
 
         // When resolve runs later with a non-participant signer: the submission still stores,
         // but the launcher's expiry must not be extended.
