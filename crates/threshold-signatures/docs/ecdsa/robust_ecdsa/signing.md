@@ -56,15 +56,16 @@ $$
 **Round 2:**
 
 1. $\bullet$ Each $P_i$ waits to receive the committed polynomials $(\hat f_{a_j}, \hat f_{b_j})$ from each party $P_j$
-2. $\bullet$ Each $P_i$ waits to receive $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji}, \rho_{ji}, \sigma_{ji})$ from each party $P_j$
-3. $\blacktriangle$ Each $P_i$ *asserts* the following, identifying $P_j$ as malicious to $P_i$ alone otherwise (the check uses $P_i$'s private shares, so the identification is not transferable):
+2. Each $P_i$ computes the hash $\eta_i \gets H\big(\{(\hat f_{a_j}, \hat f_{b_j})\}_{j \in \mathcal{P}_1}\big)$
+3. $\bullet$ Each $P_i$ waits to receive $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji}, \rho_{ji}, \sigma_{ji})$ from each party $P_j$
+4. $\blacktriangle$ Each $P_i$ *asserts* the following, identifying $P_j$ as malicious to $P_i$ alone otherwise (the check uses $P_i$'s private shares, so the identification is not transferable):
 
 $$
 \mathsf{Com}(a_{ji}; \rho_{ji}) = \hat f_{a_j}(i) \qquad
 \mathsf{Com}(b_{ji}; \sigma_{ji}) = \hat f_{b_j}(i)
 $$
 
-4. Each $P_i$ sums the shares received from the participants:
+5. Each $P_i$ sums the shares received from the participants:
 
 $$
 k_i \gets \sum_j k_{ji} \qquad
@@ -76,7 +77,7 @@ e_i \gets \sum_j e_{ji} \qquad
 \sigma_i \gets \sum_j \sigma_{ji}
 $$
 
-5. Each $P_i$ sums the committed polynomials:
+6. Each $P_i$ sums the committed polynomials:
 
 $$
 \hat f_a \gets \sum_j \hat f_{a_j} \qquad \hat f_b \gets \sum_j \hat f_{b_j}
@@ -84,9 +85,8 @@ $$
 
 $\quad$ *Note: it follows that* $\hat f_a(i) = \mathsf{Com}(a_i; \rho_i)$ *and* $\hat f_b(i) = \mathsf{Com}(b_i; \sigma_i)$*.*
 
-6. Each $P_i$ computes $R_i \gets k_i \cdot G$
-7. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
-8. Each $P_i$ computes the hash $\eta_i \gets H\big(\{(\hat f_{a_j}, \hat f_{b_j})\}_{j \in \mathcal{P}_1}\big)$
+7. Each $P_i$ computes $R_i \gets k_i \cdot G$
+8. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
 9. $\star$ Each $P_i$ sends $(R_i, w_i, \eta_i)$ to every party.
 
 **Round 3:**
