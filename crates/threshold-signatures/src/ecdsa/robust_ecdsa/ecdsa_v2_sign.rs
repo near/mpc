@@ -164,7 +164,10 @@ async fn do_sign(
         commitments_map.put(from, (com_a_p, com_b_p));
     }
 
-    // Steps 2.2 to 2.4: receive the share evaluations, verify them against the
+    // Step 2.2: hash the committed polynomials in canonical (sorted participant) order
+    let eta = hash(&commitments_map)?;
+
+    // Steps 2.3 to 2.5: receive the share evaluations, verify them against the
     // dealer's commitments (identifying a bad dealer to me alone), and sum them
     for (from, package) in recv_from_others::<Shares>(&chan, wait_shares, &participants, me).await?
     {
@@ -182,7 +185,7 @@ async fn do_sign(
         shares.add_shares(&package);
     }
 
-    // Step 2.5: sum the committed polynomials
+    // Step 2.6: sum the committed polynomials
     let mut commitments = commitments_map
         .to_refs_or_none()
         .ok_or(ProtocolError::InvalidInterpolationArguments)?
@@ -198,16 +201,13 @@ async fn do_sign(
     // restore the identity constant term stripped from the wire form
     let com_b_sum = com_b_sum.extend_with_identity()?;
 
-    // Step 2.6
+    // Step 2.7
     // Compute R_me = g^{k_me}
     let big_r_me = CoefficientCommitment::new(Secp256K1Group::generator() * shares.k());
 
-    // Step 2.7
+    // Step 2.8
     // Compute w_me = a_me * k_me + b_me
     let w_me = shares.a() * shares.k() + shares.b();
-
-    // Step 2.8: hash the committed polynomials in canonical (sorted participant) order
-    let eta = hash(&commitments_map)?;
 
     // Step 2.9
     // Send and receive
