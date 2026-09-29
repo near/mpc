@@ -171,7 +171,7 @@ impl StoredDockerImageHashes {
                     return true;
                 };
                 // if the grace period for this docker hash is in the past, then older hashes are no longer accepted
-                grace_period_deadline < current_time
+                attestation::has_expired(grace_period_deadline.as_secs(), current_time.as_secs())
             })
             .unwrap_or(0)
     }
@@ -676,7 +676,7 @@ mod tests {
 
         let first_entry_expiry_time_nanoseconds = second_entry_time_nano_seconds
             + TEST_TEE_UPGRADE_DEADLINE_DURATION.as_nanos() as u64
-            + 1;
+            + NANOS_IN_SECOND;
 
         testing_env!(
             VMContextBuilder::new()
