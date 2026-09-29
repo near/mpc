@@ -2502,7 +2502,7 @@ For the migration procedure, see the [node migration guide](../node-migration-gu
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
-An unused launcher manifest digest is removed automatically at the first `verify_tee` (each node calls it at start and every 2 days) once no current participant has used it for `launcher_hash_unused_ttl_seconds` (default 14 days) since its last vote or use. A digest in use is never removed automatically, so no vote is needed for routine rotation.
+An unused launcher manifest digest is removed automatically at the first `verify_tee` (each node calls it at start and every 2 days) once `launcher_hash_unused_ttl_seconds` (default 14 days) has passed since its last vote or the last `verify_tee` that saw a current participant using it. A digest in use is never removed automatically, so no vote is needed for routine rotation.
 
 After all operators have migrated to the new CVM, participants may vote to remove the old launcher manifest digest immediately using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration. (Old OS measurements do not auto-expire and still require this vote.)
 
