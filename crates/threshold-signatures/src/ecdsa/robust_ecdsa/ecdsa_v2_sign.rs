@@ -6,7 +6,7 @@ use frost_core::serialization::SerializableScalar;
 use frost_secp256k1::{Group, Secp256K1Group};
 use rand_core::CryptoRngCore;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
-use zeroize::Zeroize;
+use zeroize::ZeroizeOnDrop;
 
 use crate::crypto::{
     constants::{NEAR_ROBUST_ECDSA_ETA_LABEL, NEAR_ROBUST_ECDSA_SIGN_LABEL},
@@ -474,7 +474,7 @@ fn validate_arguments(
 
 /// The seven shares dealt in round 1
 /// (k, a, b, d, e, rho, sigma)
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, ZeroizeOnDrop)]
 struct Shares([SerializableScalar<C>; 7]);
 
 impl Shares {
@@ -525,19 +525,5 @@ impl Shares {
         for (share, other_share) in self.0.iter_mut().zip(shares.0.iter()) {
             share.0 += other_share.0;
         }
-    }
-}
-
-impl Zeroize for Shares {
-    fn zeroize(&mut self) {
-        for share in &mut self.0 {
-            share.0.zeroize();
-        }
-    }
-}
-
-impl Drop for Shares {
-    fn drop(&mut self) {
-        self.zeroize();
     }
 }
