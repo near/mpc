@@ -18,7 +18,9 @@ use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
-use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
+use foreign_chain_inspector::{
+    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
+};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
@@ -116,7 +118,8 @@ impl VerifyForeignTxProvider {
                 &foreign_tx_request.request,
                 foreign_tx_request.payload_version,
             )
-            .await?;
+            .await
+            .inspect_err(|err| count_verdict_mismatch(err, requested_chain))?;
 
         // Build and validate the request before the presignature is popped, so invalid/malicious
         // requests don't cost a presignature.
@@ -174,7 +177,8 @@ impl VerifyForeignTxProvider {
                 &foreign_tx_request.request,
                 foreign_tx_request.payload_version,
             )
-            .await?;
+            .await
+            .inspect_err(|err| count_verdict_mismatch(err, foreign_tx_request.request.chain()))?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
@@ -607,6 +611,22 @@ fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
         .map_err(|failing| anyhow::anyhow!("the transaction failed verification: {failing}"))
 }
 
+/// A mismatched verdict is a node level event, not a provider failure: an honest provider may
+/// just lag behind its peers. The node log names the disagreeing providers.
+fn count_verdict_mismatch(error: &anyhow::Error, chain: dtos::ForeignChain) {
+    if is_verdict_mismatch(error) {
+        metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
+            .with_label_values(&[chain.label()])
+            .inc();
+    }
+}
+
+fn is_verdict_mismatch(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ForeignChainInspectionError>()
+        .is_some_and(|err| matches!(err, ForeignChainInspectionError::InspectorResponseMismatch))
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -620,6 +640,30 @@ mod tests {
             dtos::ForeignChain::Bitcoin,
             HashSet::from([ParticipantId::from_raw(1)]),
         )])
+    }
+
+    #[test]
+    fn is_verdict_mismatch__should_match_an_inspector_response_mismatch() {
+        // Given
+        let error = anyhow::Error::from(ForeignChainInspectionError::InspectorResponseMismatch);
+
+        // When
+        let is_mismatch = is_verdict_mismatch(&error);
+
+        // Then
+        assert!(is_mismatch);
+    }
+
+    #[test]
+    fn is_verdict_mismatch__should_not_match_other_errors() {
+        // Given
+        let error = anyhow::Error::from(ForeignChainInspectionError::NotFinalized);
+
+        // When
+        let is_mismatch = is_verdict_mismatch(&error);
+
+        // Then
+        assert!(!is_mismatch);
     }
 
     #[test]

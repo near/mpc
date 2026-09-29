@@ -6,9 +6,10 @@ use crate::common;
 use anyhow::Context;
 use e2e_tests::cluster::placeholder_chain_entry;
 use e2e_tests::foreign_chain_mock::{
-    MOCK_BLOCK_HASH, MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock,
-    setup_starknet_mock,
+    MOCK_BLOCK_HASH, MockAuthExpectation, MockServerExt, setup_bitcoin_mock,
+    setup_bitcoin_mock_in_block, setup_evm_mock, setup_starknet_mock,
 };
+use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
 use httpmock::prelude::*;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
@@ -703,4 +704,87 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         failure.contains("not found"),
         "expected 'not found' error, got: {failure}"
     );
+}
+
+/// When a node's Bitcoin providers report different blocks for a transaction,
+/// no node signs and the leader counts the verdict mismatch.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn verify_foreign_transaction__should_count_a_verdict_mismatch_when_providers_disagree() {
+    const DISSENTING_BLOCK_HASH: &str =
+        "2020202020202020202020202020202020202020202020202020202020202020";
+
+    // Given
+    let agreeing_server = MockServer::start();
+    setup_bitcoin_mock(&agreeing_server, MockAuthExpectation::None);
+    let dissenting_server = MockServer::start();
+    setup_bitcoin_mock_in_block(
+        &dissenting_server,
+        MockAuthExpectation::None,
+        DISSENTING_BLOCK_HASH,
+    );
+    let fc_config = ForeignChainsConfig {
+        bitcoin: Some(mock_chain_with_providers(
+            common::build_providers_from_urls(
+                &[agreeing_server.url("/"), dissenting_server.url("/")],
+                "bitcoin",
+            ),
+        )),
+        ..Default::default()
+    };
+    let whitelist = BTreeMap::from([(
+        ForeignChain::Bitcoin,
+        placeholder_chain_entry(ForeignChain::Bitcoin),
+    )]);
+
+    let (cluster, running) =
+        common::must_setup_cluster(common::FOREIGN_TX_VERDICT_MISMATCH_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.domains = vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::ForeignTx,
+            }];
+            c.foreign_chains.node_configs = vec![fc_config.clone(), fc_config];
+            c.foreign_chains.whitelist = whitelist;
+        })
+        .await;
+    cluster
+        .wait_for_available_foreign_chains(&[ForeignChain::Bitcoin].into())
+        .await
+        .expect("timed out waiting for Bitcoin to become available");
+    let foreign_tx_domain_id = running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.purpose == DomainPurpose::ForeignTx)
+        .expect("no ForeignTx domain")
+        .id;
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id: BitcoinTxId([0xbb; 32]),
+            confirmations: BlockConfirmations(1),
+            extractors: [BitcoinExtractor::BlockHash].into(),
+        }),
+        domain_id: foreign_tx_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+    };
+
+    // When
+    let request_sent = cluster.send_verify_foreign_transaction(&request);
+
+    // Then
+    // No node answers the request, so it is raced against the metric instead of awaited.
+    tokio::select! {
+        result = common::wait_for_metric_sum(
+            &cluster,
+            metrics::FOREIGN_TX_VERDICT_MISMATCHES,
+            |sum| sum >= 1,
+            CLUSTER_WAIT_TIMEOUT,
+        ) => result.expect("no node counted the verdict mismatch"),
+        _ = request_sent => panic!("the request returned before a verdict mismatch was counted"),
+    }
 }

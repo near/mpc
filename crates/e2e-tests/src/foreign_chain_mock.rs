@@ -96,6 +96,15 @@ fn jsonrpc_error(id: serde_json::Value, method: &str) -> HttpMockResponse {
 }
 
 pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
+    setup_bitcoin_mock_in_block(server, auth, MOCK_BLOCK_HASH)
+}
+
+/// Like [`setup_bitcoin_mock`], but reports every transaction in block `block_hash`.
+pub fn setup_bitcoin_mock_in_block(
+    server: &MockServer,
+    auth: MockAuthExpectation,
+    block_hash: &'static str,
+) -> usize {
     let mock_id = server
         .mock(|when, then| {
             auth.apply(when.method(POST));
@@ -107,14 +116,14 @@ pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usi
 
                 let result = match method {
                     "getrawtransaction" => serde_json::json!({
-                        "blockhash": MOCK_BLOCK_HASH,
+                        "blockhash": block_hash,
                         "confirmations": MOCK_BITCOIN_CONFIRMATIONS,
                     }),
                     "getblockheader" => serde_json::json!({
-                        "hash": MOCK_BLOCK_HASH,
+                        "hash": block_hash,
                         "height": MOCK_BLOCK_HEIGHT,
                     }),
-                    "getblockhash" => serde_json::Value::String(MOCK_BLOCK_HASH.to_string()),
+                    "getblockhash" => serde_json::Value::String(block_hash.to_string()),
                     other => return jsonrpc_error(id, other),
                 };
 
