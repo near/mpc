@@ -51,10 +51,11 @@ The script will output the image hashes and other build information, which can b
 
 ## Nix-built images
 
-During the transition to hermetic builds, CI also builds every image with
-[Nix](https://nixos.org/download/) (flakes enabled) and publishes it as
-`nearone/<image>:<branch>-<short-sha>-nix`. These images are not voted on yet:
-operators vote on the digests printed by the script above.
+<!-- TODO(#4562): make this the main build once releases use these images, and remove the script above -->
+
+CI also builds every image with [Nix](https://nixos.org/download/) (flakes
+enabled), as an alternative to the script above, and publishes it as
+`nearone/<image>:<branch>-<short-sha>-nix`.
 
 Every build step runs in the Nix sandbox, from inputs pinned by `flake.lock`,
 `Cargo.lock` and `rust-toolchain.toml`; only fetching those pinned inputs, or

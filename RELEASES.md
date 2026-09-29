@@ -89,6 +89,8 @@ artifact named `contract`.
 Wait for all four to finish successfully. The Release workflow refuses to
 run if any artifact is missing.
 
+<!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
+
 [Build Nix Docker Images](.github/workflows/docker_build_nix_images.yml) also
 pushes `<branch>-<short-sha>-nix` images, which the Release workflow does not
 use yet.
