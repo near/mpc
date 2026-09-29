@@ -2,14 +2,13 @@
 //! updates, plus sweeping votes from departed participants.
 
 use crate::api::common::refund_to;
-use crate::config::Config;
 use crate::dto_mapping::{IntoContractType, IntoInterfaceType};
 use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::state::ProtocolContractState;
 use crate::update::{ProposedUpdates, Update, UpdateId};
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
-use near_sdk::{FunctionError, Gas, env, log, near};
+use near_sdk::{Gas, env, log, near};
 
 #[near]
 impl MpcContract {
@@ -187,8 +186,7 @@ impl MpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
-        let new_config: Config = Config::try_from(config).unwrap_or_else(|e| e.panic());
-        self.config = new_config;
+        self.config = config.into();
     }
 }
 
@@ -324,7 +322,7 @@ mod tests {
         let mut config_update = {
             let update_config = dummy_config(1);
             let config_hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
-            let config_update_obj = Update::Config(update_config.try_into().unwrap());
+            let config_update_obj = Update::Config(update_config.into());
             let config_update_id = UpdateId(1);
             let config_votes = propose_and_vote(&mut contract, config_update_obj, config_update_id);
             TestUpdate {
