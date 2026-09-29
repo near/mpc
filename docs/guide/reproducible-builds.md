@@ -73,10 +73,12 @@ sha256sum result/manifest.json
 ```
 
 Take the full `<commit-hash>` from `main` or the release branch, since GitHub
-also serves commits from any fork under `near/mpc`. Use `mpc-node-gcp-image`
-or `mpc-launcher-image` for the other images. From a checkout,
-`.#packages.x86_64-linux.mpc-node-image` gives the same digest only with a
-clean working tree, because the node binary embeds the commit hash.
+also serves commits from any fork under `near/mpc`. For a release that includes
+these images, the version tag works too (e.g. `github:near/mpc/3.17.0#…`):
+our releases are immutable, so their tags cannot be moved. Use
+`mpc-node-gcp-image` or `mpc-launcher-image` for the other images. From a
+checkout, `.#packages.x86_64-linux.mpc-node-image` gives the same digest only
+with a clean working tree, because the node binary embeds the commit hash.
 
 ### Building on macOS
 
