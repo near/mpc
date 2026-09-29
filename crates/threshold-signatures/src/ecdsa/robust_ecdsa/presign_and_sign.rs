@@ -6,7 +6,6 @@ use frost_core::serialization::SerializableScalar;
 use frost_secp256k1::{Group, Secp256K1Group};
 use rand_core::CryptoRngCore;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
-use zeroize::ZeroizeOnDrop;
 
 use super::presign::PresignArguments;
 use crate::crypto::{
@@ -19,7 +18,7 @@ use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
     SigningShare,
     ecdsa::{
-        AffinePoint, CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
+        CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
         Secp256K1ScalarField, Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
     },
     errors::{InitializationError, ProtocolError},
@@ -31,19 +30,6 @@ use crate::{
 };
 
 type C = Secp256K1Sha256;
-
-/// The state carried from the presigning rounds into the signing round.
-#[derive(ZeroizeOnDrop)]
-struct Presignature {
-    /// The public nonce commitment.
-    #[zeroize(skip)]
-    big_r: AffinePoint,
-
-    /// Our secret shares of the nonce.
-    e: Scalar,
-    alpha: Scalar,
-    beta: Scalar,
-}
 
 /// Maximum incoming buffer entries for the coordinator: the commitments, the share
 /// evaluations, the `(R, w, eta)` triples, the proofs, and the signature shares.
@@ -92,7 +78,7 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn do_presign_and_sign(
     mut chan: SharedChannel,
     participants: ParticipantList,
@@ -110,85 +96,7 @@ async fn do_presign_and_sign(
         .to_affine();
     args.keygen_out.private_share = tweak.derive_signing_share(&args.keygen_out.private_share);
 
-    let presignature = presign_rounds(&mut chan, &participants, me, args, &mut rng).await?;
-    chan.yield_point().await;
-
-    sign_round(
-        &mut chan,
-        &participants,
-        coordinator,
-        me,
-        public_key,
-        &presignature,
-        msg_hash,
-    )
-    .await
-}
-
-/// Validates the presigning inputs, enforcing exactly `2 * max_malicious + 1` participants.
-fn validate_arguments(
-    participants: &[Participant],
-    me: Participant,
-    args: &PresignArguments,
-) -> Result<ParticipantList, InitializationError> {
-    if participants.len() < 2 {
-        return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len(),
-        });
-    }
-
-    let participants =
-        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
-
-    if !participants.contains(me) {
-        return Err(InitializationError::MissingParticipant {
-            role: "self",
-            participant: me,
-        });
-    }
-
-    if args.max_malicious.value() > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "max_malicious must be less than or equals to participant count".to_string(),
-        ));
-    }
-
-    let robust_ecdsa_threshold = args
-        .max_malicious
-        .value()
-        .checked_mul(2)
-        .and_then(|v| v.checked_add(1))
-        .ok_or_else(|| {
-            InitializationError::BadParameters(
-                "2*max_malicious+1 must be less than usize::MAX".to_string(),
-            )
-        })?;
-    if robust_ecdsa_threshold > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
-        ));
-    }
-
-    // To prevent split-view attacks documented in docs/ecdsa/robust_ecdsa/signing.md
-    if participants.len() != robust_ecdsa_threshold {
-        return Err(InitializationError::BadParameters(
-            "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
-        ));
-    }
-
-    Ok(participants)
-}
-
-/// /!\ Warning: the threshold in this scheme is the exactly the
-///              same as the max number of malicious parties.
-#[allow(clippy::too_many_lines)]
-async fn presign_rounds(
-    chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    me: Participant,
-    args: PresignArguments,
-    rng: &mut impl CryptoRngCore,
-) -> Result<Presignature, ProtocolError> {
+    let rng = &mut rng;
     let threshold = args.max_malicious.value();
     // Round 1
     let degree = threshold
@@ -237,7 +145,7 @@ async fn presign_rounds(
 
     // Round 2
     // Step 2.1: receive the committed polynomials, checking their degrees
-    let mut commitments_map = ParticipantMap::new(participants);
+    let mut commitments_map = ParticipantMap::new(&participants);
     commitments_map.put(me, (com_a, com_b));
     while !commitments_map.full() {
         let (from, (com_a_p, com_b_p)): (_, (PolynomialCommitment, PolynomialCommitment)) =
@@ -254,7 +162,9 @@ async fn presign_rounds(
 
     // Steps 2.2 to 2.4: receive the share evaluations, verify them against the
     // dealer's commitments (identifying a bad dealer to me alone), and sum them
-    for (from, package) in recv_from_others::<Shares>(chan, wait_round_1, participants, me).await? {
+    for (from, package) in
+        recv_from_others::<Shares>(&chan, wait_round_1, &participants, me).await?
+    {
         let (com_a_p, com_b_p) = commitments_map.index(from)?;
         let valid_a = pedersen::verify_share(com_a_p, me, &package.a(), &package.rho())?;
         let valid_b = pedersen::verify_share(
@@ -286,8 +196,8 @@ async fn presign_rounds(
     )?;
 
     // Store the sent items
-    let mut signingshares_map = ParticipantMap::new(participants);
-    let mut verifyingshares_map = ParticipantMap::new(participants);
+    let mut signingshares_map = ParticipantMap::new(&participants);
+    let mut verifyingshares_map = ParticipantMap::new(&participants);
     signingshares_map.put(me, SerializableScalar(w_me));
     verifyingshares_map.put(me, big_r_me);
 
@@ -447,7 +357,7 @@ async fn presign_rounds(
     // Round 4
     // Steps 4.1 and 4.2: verify every proof, identifying a misbehaving party to me
     for (from, pi_p) in
-        recv_from_others::<w_opening::Proof<C>>(chan, wait_round_3, participants, me).await?
+        recv_from_others::<w_opening::Proof<C>>(&chan, wait_round_3, &participants, me).await?
     {
         let index = participants.index(from)?;
         let w_p = signingshares
@@ -490,106 +400,101 @@ async fn presign_rounds(
     let x_me = args.keygen_out.private_share.to_scalar();
     let beta_me = c_me * x_me;
 
-    Ok(Presignature {
-        big_r: big_r.value().to_affine(),
-        alpha: alpha_me,
-        beta: beta_me,
-        e: shares.e(),
-    })
-}
+    chan.yield_point().await;
 
-/// Runs the final signing round as either the coordinator or a participant.
-async fn sign_round(
-    chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    coordinator: Participant,
-    me: Participant,
-    public_key: AffinePoint,
-    presignature: &Presignature,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    if me == coordinator {
-        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
-    } else {
-        do_sign_participant(chan, participants, coordinator, me, presignature, msg_hash)
+    // Round 4
+    // Steps 4.6 and 4.7: compute the signature share and linearize it
+    let big_r = big_r.value().to_affine();
+    let s_me = msg_hash * alpha_me + (beta_me * x_coordinate(&big_r) + shares.e());
+    let s_me = SerializableScalar::<C>(s_me * participants.lagrange::<C>(me)?);
+
+    let wait_sign = chan.next_waitpoint();
+    if me != coordinator {
+        // Step 4.8: send the share only to the coordinator
+        chan.send_private(wait_sign, coordinator, &s_me)?;
+        return Ok(None);
     }
-}
 
-/// Performs signing from any participant's perspective (except the coordinator)
-fn do_sign_participant(
-    chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    coordinator: Participant,
-    me: Participant,
-    presignature: &Presignature,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    let s_me = compute_signature_share(presignature, msg_hash, participants, me)?;
-    let wait_round = chan.next_waitpoint();
-    chan.send_private(wait_round, coordinator, &s_me)?;
-
-    Ok(None)
-}
-
-/// Performs signing from only the coordinator's perspective
-async fn do_sign_coordinator(
-    chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    me: Participant,
-    public_key: AffinePoint,
-    presignature: &Presignature,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    let mut s = compute_signature_share(presignature, msg_hash, participants, me)?.0;
-    let wait_round = chan.next_waitpoint();
-
-    for (_, s_i) in
-        recv_from_others::<SerializableScalar<C>>(chan, wait_round, participants, me).await?
+    // Steps 4.9 and 4.10: the coordinator sums the received shares
+    let mut s = s_me.0;
+    for (_, s_p) in
+        recv_from_others::<SerializableScalar<C>>(&chan, wait_sign, &participants, me).await?
     {
-        // Sum the linearized shares
-        s += s_i.0;
+        s += s_p.0;
     }
 
-    // raise error if s is zero
+    // Step 4.11
     if s.is_zero().into() {
         return Err(ProtocolError::AssertionFailed(
             "signature part s cannot be zero".to_string(),
         ));
     }
-    // Normalize s
+    // Step 4.12: low-S normalization
     s.conditional_assign(&(-s), s.is_high());
 
-    let sig = Signature {
-        big_r: presignature.big_r,
-        s,
-    };
-
-    if !sig.verify(&public_key, &msg_hash) {
+    // Step 4.13: the coordinator asserts the signature is valid
+    let signature = Signature { big_r, s };
+    if !signature.verify(&public_key, &msg_hash) {
         return Err(ProtocolError::AssertionFailed(
             "signature failed to verify".to_string(),
         ));
     }
 
-    Ok(Some(sig))
+    Ok(Some(signature))
 }
 
-/// A common computation done by both the coordinator and the other participants
-fn compute_signature_share(
-    presignature: &Presignature,
-    msg_hash: Scalar,
-    participants: &ParticipantList,
+/// Validates the presigning inputs, enforcing exactly `2 * max_malicious + 1` participants.
+fn validate_arguments(
+    participants: &[Participant],
     me: Participant,
-) -> Result<SerializableScalar<C>, ProtocolError> {
-    // (beta_i + tweak * k_i) * delta^{-1}
-    let big_r = presignature.big_r;
-    let big_r_x_coordinate = x_coordinate(&big_r);
-    // beta * Rx + e
-    let beta = presignature.beta * big_r_x_coordinate + presignature.e;
+    args: &PresignArguments,
+) -> Result<ParticipantList, InitializationError> {
+    if participants.len() < 2 {
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len(),
+        });
+    }
 
-    let s_me = msg_hash * presignature.alpha + beta;
-    // lambda_i * s_i
-    let linearized_s_me = s_me * participants.lagrange::<C>(me)?;
-    Ok(SerializableScalar::<C>(linearized_s_me))
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
+
+    if !participants.contains(me) {
+        return Err(InitializationError::MissingParticipant {
+            role: "self",
+            participant: me,
+        });
+    }
+
+    if args.max_malicious.value() > participants.len() {
+        return Err(InitializationError::BadParameters(
+            "max_malicious must be less than or equals to participant count".to_string(),
+        ));
+    }
+
+    let robust_ecdsa_threshold = args
+        .max_malicious
+        .value()
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(1))
+        .ok_or_else(|| {
+            InitializationError::BadParameters(
+                "2*max_malicious+1 must be less than usize::MAX".to_string(),
+            )
+        })?;
+    if robust_ecdsa_threshold > participants.len() {
+        return Err(InitializationError::BadParameters(
+            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
+        ));
+    }
+
+    // To prevent split-view attacks documented in docs/ecdsa/robust_ecdsa/signing.md
+    if participants.len() != robust_ecdsa_threshold {
+        return Err(InitializationError::BadParameters(
+            "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+        ));
+    }
+
+    Ok(participants)
 }
 
 /// Generates a secret polynomial where the constant term is zero
