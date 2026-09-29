@@ -93,8 +93,8 @@ $\quad$ *Note: it follows that* $\hat f_a(i) = \mathsf{Com}(a_i; \rho_i)$ *and* 
 
 1. $\bullet$ Each $P_i$ waits to receive $(R_j, w_j, \eta_j)$ from each $P_j$, and $\blacktriangle$ *asserts* that $\eta_j = \eta_i$.
 2. $\blacktriangle$ Each $P_i$ *asserts* that:
-$\forall j \in \set{t+2.. N_1},\quad \mathsf{Interpolation}(R_1, \ldots R_{t+1}; j) =  R_j$
-3. Each $P_i$ computes $R \gets \mathsf{Interpolation}(R_1, \ldots R_{t+1}; 0)$
+$\forall j \in \set{t+2.. N_1},\quad \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; j) =  R_j$
+3. Each $P_i$ computes $R \gets \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; 0)$
 4. $\blacktriangle$ Each $P_i$ *asserts* that $R \neq Identity$
 5. Each $P_i$ computes $w \gets \mathsf{Interpolation}(w_1, \ldots w_{2 \cdot t+1}; 0)$
 6. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
