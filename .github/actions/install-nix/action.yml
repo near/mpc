@@ -17,7 +17,7 @@ runs:
         curl -fsSL -o "$RUNNER_TEMP/$nix_dir.tar.xz" "https://releases.nixos.org/nix/nix-$NIX_VERSION/$nix_dir.tar.xz"
         echo "$NIX_TARBALL_SHA256  $RUNNER_TEMP/$nix_dir.tar.xz" | sha256sum -c
         tar -xJf "$RUNNER_TEMP/$nix_dir.tar.xz" -C "$RUNNER_TEMP"
-        "$RUNNER_TEMP/$nix_dir/install" --daemon --yes --no-channel-add --no-modify-profile \
+        "$RUNNER_TEMP/$nix_dir/install" --daemon --yes --no-channel-add \
           --nix-extra-conf-file "$GITHUB_ACTION_PATH/nix.conf"
         echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
 
@@ -32,4 +32,7 @@ runs:
         nix config show trusted-public-keys | grep -xF cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
         nix config show sandbox-paths | grep -xE '/bin/sh=/nix/store/[^ ]+/bin/busybox'
         nix config show pre-build-hook | grep -x ''
+        nix config show post-build-hook | grep -x ''
+        nix config show build-hook | grep -x ''
+        nix config show plugin-files | grep -x ''
         nix config show external-builders | grep -xF '[]'

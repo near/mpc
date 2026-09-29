@@ -69,7 +69,8 @@ signed with its key `cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDSh
 which are Nix's defaults and what CI checks. Some installers add their own
 caches and keys, which could then supply any binary, including the images' own,
 so make sure `nix config show substituters` and
-`nix config show trusted-public-keys` print exactly these values.
+`nix config show trusted-public-keys` print exactly these values and
+`nix config show require-sigs` prints `true`.
 
 Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` equals the digest of the published `-nix` tag. The same
