@@ -297,24 +297,16 @@ impl TeeState {
             .participants()
             .iter()
             .filter(|(account_id, _, participant_info)| {
-                // Use the stored NodeId (keyed by TLS public key) so the real
-                // `account_public_key` participates in re-verification. If
-                // there is no stored attestation for this TLS key, the
-                // participant is invalid.
-                let Some(node_id) = self.find_node_id_by_tls_key(&participant_info.tls_public_key)
+                // Use the stored NodeId so the real `account_public_key` participates in
+                // re-verification.
+                let Some(stored) =
+                    self.attestation_stored_by(account_id, &participant_info.tls_public_key)
                 else {
                     return false;
                 };
 
-                // Compared by account alone: `with_mocked_participant_attestations` stores a
-                // placeholder `account_public_key`, so full `NodeId` equality would reject
-                // legitimate mocked entries.
-                if node_id.account_id != **account_id {
-                    return false;
-                }
-
                 let tee_status =
-                    self.reverify_participants(&node_id, tee_upgrade_deadline_duration);
+                    self.reverify_participants(&stored.node_id, tee_upgrade_deadline_duration);
 
                 matches!(tee_status, TeeQuoteStatus::Valid)
             })
@@ -388,9 +380,7 @@ impl TeeState {
             .participants()
             .iter()
             .filter_map(|(account_id, _, participant_info)| {
-                self.stored_attestations
-                    .get(&participant_info.tls_public_key)
-                    .filter(|stored| stored.node_id.account_id == *account_id)
+                self.attestation_stored_by(account_id, &participant_info.tls_public_key)
             })
             .filter_map(|stored| stored.verified_attestation.launcher_compose_hash())
             .collect();
@@ -531,11 +521,16 @@ impl TeeState {
             .collect()
     }
 
-    /// Find a NodeId by its TLS public key.
-    pub fn find_node_id_by_tls_key(&self, tls_public_key: &Ed25519PublicKey) -> Option<NodeId> {
+    /// Compared by account alone: `with_mocked_participant_attestations` stores a placeholder
+    /// `account_public_key`, so full [`NodeId`] equality would reject legitimate mocked entries.
+    fn attestation_stored_by(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Option<&NodeAttestation> {
         self.stored_attestations
             .get(tls_public_key)
-            .map(|node_attestation| node_attestation.node_id.clone())
+            .filter(|stored| stored.node_id.account_id == *account_id)
     }
 
     /// Finds the [`NodeId`] (account_id + tls_public_key) for the node whose attested
