@@ -247,7 +247,10 @@ pub fn verify_signature(
         <<BLS12381SHA256 as frost_core::Ciphersuite>::Group as frost_core::Group>::generator()
             .into();
 
-    if blstrs::pairing(&base1, &element2).eq(&blstrs::pairing(&element1, &base2)) {
+    let lhs = blstrs::pairing(&base1, &element2);
+    let rhs = blstrs::pairing(&element1, &base2);
+    // `Gt` implements no `ConstantTimeEq` and its `PartialEq` is variable time.
+    if bool::from((lhs - rhs).is_identity()) {
         Ok(())
     } else {
         Err(frost_core::Error::InvalidSignature)
@@ -371,5 +374,22 @@ mod tests {
             verify_signature(&VerifyingKey::new(g2x), b"hello world", &sigma).unwrap_err(),
             frost_core::Error::InvalidSignature
         );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn verify_signature__should_reject_signature_under_another_key() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::random(&mut rng);
+        let y = Scalar::random(&mut rng);
+        let verifying_key = VerifyingKey::new(ElementG2::generator() * x);
+        let sigma = hash_app_id_with_pk(&verifying_key, b"hello world") * y;
+
+        // When
+        let result = verify_signature(&verifying_key, b"hello world", &sigma);
+
+        // Then
+        assert_eq!(result.unwrap_err(), frost_core::Error::InvalidSignature);
     }
 }

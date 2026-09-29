@@ -16,7 +16,8 @@ pub const SEC_PARAM_8: usize = SECURITY_PARAMETER.div_ceil(8);
 ///
 /// This vector will have the size of our security parameter, which is useful
 /// for most of our OT extension protocols.
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct BitVector([u64; SEC_PARAM_64]);
 
 impl_secret_debug!(BitVector);

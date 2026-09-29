@@ -32,7 +32,9 @@ pub struct Signature {
 }
 
 impl Signature {
-    // This verification tests the signature including whether s has been normalized
+    /// Verifies the signature, including whether `s` has been normalized.
+    ///
+    /// Runs in variable time (early returns, `invert_vartime`).
     pub fn verify(&self, public_key: &AffinePoint, msg_hash: &Scalar) -> bool {
         let r: Scalar = x_coordinate(&self.big_r);
         if r.is_zero().into() || self.s.is_zero().into() {

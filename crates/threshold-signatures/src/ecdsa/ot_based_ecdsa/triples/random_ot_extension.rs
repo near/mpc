@@ -110,6 +110,8 @@ pub async fn random_ot_extension_sender(
         });
     }
 
+    // Branching once after the loop keeps the abort point independent of `delta`.
+    let mut is_consistent = Choice::from(1);
     for (j, small_t_j) in small_t.iter().enumerate() {
         let delta_j = Choice::from(delta.bit(j));
 
@@ -120,12 +122,13 @@ pub async fn random_ot_extension_sender(
 
         let delta_j_x =
             DoubleBitVector::conditional_select(&DoubleBitVector::zero(), &small_x, delta_j);
-        if !bool::from(small_q_j.ct_eq(&(small_t_j ^ delta_j_x))) {
-            return Err(ProtocolError::QMatrixConsistencyCheckFailed {
-                sid: hex::encode(params.sid),
-                participant: chan.to,
-            });
-        }
+        is_consistent &= small_q_j.ct_eq(&(small_t_j ^ delta_j_x));
+    }
+    if !bool::from(is_consistent) {
+        return Err(ProtocolError::QMatrixConsistencyCheckFailed {
+            sid: hex::encode(params.sid),
+            participant: chan.to,
+        });
     }
 
     // Step 14
