@@ -91,6 +91,14 @@ impl<C: Ciphersuite> Polynomial<C> {
         Self::new(&coefficients)
     }
 
+    /// Generates a random polynomial of the given degree with a zero constant term.
+    pub fn zero_constant_random_polynomial(
+        degree: usize,
+        rng: &mut impl CryptoRngCore,
+    ) -> Result<Self, ProtocolError> {
+        Self::generate_polynomial(Some(<C::Group as Group>::Field::zero()), degree, rng)
+    }
+
     /// Returns the constant term or error in case the polynomial is empty
     pub fn eval_at_zero(&self) -> Result<SerializableScalar<C>, ProtocolError> {
         let result = self

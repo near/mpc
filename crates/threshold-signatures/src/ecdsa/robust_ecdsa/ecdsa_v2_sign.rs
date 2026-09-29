@@ -17,8 +17,8 @@ use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
     MaxMalicious, SigningShare,
     ecdsa::{
-        CoefficientCommitment, Field, KeygenOutput, Polynomial, PolynomialCommitment, Scalar,
-        Secp256K1ScalarField, Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
+        CoefficientCommitment, KeygenOutput, Polynomial, PolynomialCommitment, Scalar,
+        Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
     },
     errors::{InitializationError, ProtocolError},
     protocol::{
@@ -114,10 +114,10 @@ async fn do_sign(
     let f_a = Polynomial::generate_polynomial(None, threshold, rng)?;
     let f_rho = Polynomial::generate_polynomial(None, threshold, rng)?;
     // Steps 1.3 and 1.4: degree 2t polynomials with zero constant term
-    let f_b = zero_secret_polynomial(degree, rng)?;
-    let f_d = zero_secret_polynomial(degree, rng)?;
-    let f_e = zero_secret_polynomial(degree, rng)?;
-    let f_sigma = zero_secret_polynomial(degree, rng)?;
+    let f_b = Polynomial::zero_constant_random_polynomial(degree, rng)?;
+    let f_d = Polynomial::zero_constant_random_polynomial(degree, rng)?;
+    let f_e = Polynomial::zero_constant_random_polynomial(degree, rng)?;
+    let f_sigma = Polynomial::zero_constant_random_polynomial(degree, rng)?;
 
     // Step 1.5: commit to fa and fb under the blinding polynomials
     let com_a = pedersen::commit_polynomial(&f_a, &f_rho)?;
@@ -501,15 +501,6 @@ fn validate_arguments(
     }
 
     Ok(participants)
-}
-
-/// Generates a secret polynomial where the constant term is zero
-fn zero_secret_polynomial(
-    degree: usize,
-    rng: &mut impl CryptoRngCore,
-) -> Result<Polynomial, ProtocolError> {
-    let secret = Secp256K1ScalarField::zero();
-    Polynomial::generate_polynomial(Some(secret), degree, rng)
 }
 
 /// Contains the seven shares used during presigning
