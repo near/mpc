@@ -75,15 +75,21 @@ pub async fn run_command(args: cli::Args) {
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
+            let contract_state_reader = adapters::contract_state_rpc::RpcContractStateReader::new(
+                &subcommand_args.rpc_url,
+                &subcommand_args.near_chain_id,
+                subcommand_args.mpc_contract_account_id,
+            );
+            let request_timeout = Duration::from_secs(subcommand_args.node.request_timeout_seconds);
+            probe_contract_state(&contract_state_reader, request_timeout)
+                .await
+                .expect("NEAR RPC endpoint probe failed");
+
             let contract_state =
                 adapters::contract_state_polling::PollingContractStateWatcher::spawn(
-                    adapters::contract_state_rpc::RpcContractStateReader::new(
-                        &subcommand_args.rpc_url,
-                        &subcommand_args.near_chain_id,
-                        subcommand_args.mpc_contract_account_id,
-                    ),
+                    contract_state_reader,
                     Duration::from_secs(subcommand_args.poll_interval_seconds),
-                    Duration::from_secs(subcommand_args.node.request_timeout_seconds),
+                    request_timeout,
                 )
                 .await;
 
@@ -138,6 +144,27 @@ async fn open_node_client_and_storage(
     .expect("failed to create keyshare storage");
 
     (mpc_p2p_client, keyshares_storage)
+}
+
+/// Reads the contract state once, so a misconfigured RPC endpoint fails startup with an
+/// actionable error instead of a one-time `warn` from the poller and a service that runs
+/// without ever backing anything up.
+async fn probe_contract_state(
+    contract_state: &impl ports::ReadContractState,
+    read_timeout: Duration,
+) -> anyhow::Result<()> {
+    match tokio::time::timeout(read_timeout, contract_state.get_contract_state()).await {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(err)) => Err(anyhow::anyhow!(
+            "could not read the MPC contract state: {err:?}; check that BACKUP_RPC_URL points \
+             to a NEAR JSON-RPC endpoint of the configured chain and that \
+             MPC_CONTRACT_ACCOUNT_ID names the MPC contract"
+        )),
+        Err(_elapsed) => Err(anyhow::anyhow!(
+            "the RPC endpoint did not answer within {read_timeout:?}; check that \
+             BACKUP_RPC_URL points to a reachable NEAR JSON-RPC endpoint"
+        )),
+    }
 }
 
 /// Backs up keyshares whenever the observed contract state stops being covered by what is
@@ -277,14 +304,16 @@ fn verifying_key_from_str(mpc_node_p2p_key: &str) -> VerifyingKey {
 #[expect(non_snake_case)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use mpc_node::keyshare::{Keyshare, test_utils::generate_dummy_keyshare};
-    use near_mpc_contract_interface::types::Keyset;
+    use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
 
-    use super::put_keyshares;
-    use crate::ports::{KeyShareRepository, P2PClient};
+    use super::{probe_contract_state, put_keyshares};
+    use crate::ports::{KeyShareRepository, P2PClient, ReadContractState};
+    use crate::test_utils::running_state_with_epoch;
 
     struct FakeP2PClient {
         put_keyshares_calls: AtomicUsize,
@@ -325,6 +354,84 @@ mod tests {
         async fn load_keyshares(&self) -> Result<Vec<Keyshare>, Self::Error> {
             Ok(self.keyshares.clone())
         }
+    }
+
+    /// Answers every read with `response`, or never answers when there is none.
+    struct FakeContractStateReader {
+        response: Option<Result<ProtocolContractState, &'static str>>,
+    }
+
+    impl FakeContractStateReader {
+        fn answering(response: Result<ProtocolContractState, &'static str>) -> Self {
+            Self {
+                response: Some(response),
+            }
+        }
+
+        fn hanging() -> Self {
+            Self { response: None }
+        }
+    }
+
+    impl ReadContractState for FakeContractStateReader {
+        type Error = &'static str;
+
+        async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
+            match &self.response {
+                Some(response) => response.clone(),
+                None => std::future::pending().await,
+            }
+        }
+    }
+
+    const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+
+    #[tokio::test]
+    async fn probe_contract_state__should_pass_when_the_contract_state_is_readable() {
+        // Given
+        let reader = FakeContractStateReader::answering(Ok(running_state_with_epoch(5)));
+
+        // When
+        let result = probe_contract_state(&reader, PROBE_TIMEOUT).await;
+
+        // Then
+        result.expect("a readable contract state should pass the probe");
+    }
+
+    #[tokio::test]
+    async fn probe_contract_state__should_fail_when_the_endpoint_cannot_be_read() {
+        // Given
+        let reader = FakeContractStateReader::answering(Err("dns error: no such host"));
+
+        // When
+        let result = probe_contract_state(&reader, PROBE_TIMEOUT).await;
+
+        // Then
+        let err = result.expect_err("an unreadable endpoint should fail the probe");
+        assert!(
+            err.to_string().contains("dns error: no such host"),
+            "the cause should be reported: {err}"
+        );
+        assert!(
+            err.to_string().contains("BACKUP_RPC_URL"),
+            "the misconfigured setting should be named: {err}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_contract_state__should_fail_when_the_endpoint_does_not_answer_in_time() {
+        // Given
+        let reader = FakeContractStateReader::hanging();
+
+        // When
+        let result = probe_contract_state(&reader, PROBE_TIMEOUT).await;
+
+        // Then
+        let err = result.expect_err("an endpoint that never answers should fail the probe");
+        assert!(
+            err.to_string().contains("BACKUP_RPC_URL"),
+            "the misconfigured setting should be named: {err}"
+        );
     }
 
     #[tokio::test]
