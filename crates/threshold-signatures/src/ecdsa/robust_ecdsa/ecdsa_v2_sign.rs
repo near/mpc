@@ -126,7 +126,7 @@ async fn do_sign(
     let com_a = pedersen::commit_polynomial(&polynomials[1], &polynomials[5])?;
     let com_b = pedersen::commit_polynomial(&polynomials[2], &polynomials[6])?;
     // the constant term of com_b is the identity and is not sent
-    let com_b = strip_identity_constant(&com_b)?;
+    let com_b = com_b.strip_identity_constant()?;
 
     // Step 1.6
     let wait_commitments = chan.next_waitpoint();
@@ -511,17 +511,6 @@ fn zero_secret_polynomial(
 ) -> Result<Polynomial, ProtocolError> {
     let secret = Secp256K1ScalarField::zero();
     Polynomial::generate_polynomial(Some(secret), degree, rng)
-}
-
-/// Removes the identity constant term of a committed polynomial before sending.
-fn strip_identity_constant(
-    commitment: &PolynomialCommitment,
-) -> Result<PolynomialCommitment, ProtocolError> {
-    let coefficients = commitment.get_coefficients();
-    let tail = coefficients
-        .get(1..)
-        .ok_or(ProtocolError::EmptyOrZeroCoefficients)?;
-    PolynomialCommitment::new(tail)
 }
 
 /// Contains the seven shares used during presigning
