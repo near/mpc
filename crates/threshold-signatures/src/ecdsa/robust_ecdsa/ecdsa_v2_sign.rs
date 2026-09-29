@@ -109,6 +109,12 @@ async fn do_sign(
     let degree = threshold
         .checked_mul(2)
         .ok_or(ProtocolError::IntegerOverflow)?;
+    let reconstruction = threshold
+        .checked_add(1)
+        .ok_or(ProtocolError::IntegerOverflow)?;
+    let wire_degree_b = degree
+        .checked_sub(1)
+        .ok_or(ProtocolError::IntegerOverflow)?;
     // Steps 1.1 and 1.2: degree t random polynomials
     let f_k = Polynomial::generate_polynomial(None, threshold, rng)?;
     let f_a = Polynomial::generate_polynomial(None, threshold, rng)?;
@@ -158,7 +164,7 @@ async fn do_sign(
         let (from, (com_a_p, com_b_p)): (_, (PolynomialCommitment, PolynomialCommitment)) =
             chan.recv(wait_commitments).await?;
         // com_b is of degree 2t - 1 on the wire as its identity constant is not sent
-        if com_a_p.degree() != threshold || com_b_p.degree() != degree - 1 {
+        if com_a_p.degree() != threshold || com_b_p.degree() != wire_degree_b {
             return Err(ProtocolError::MaliciousParticipant(from));
         }
         commitments_map.put(from, (com_a_p, com_b_p));
@@ -257,17 +263,19 @@ async fn do_sign(
         .ok_or(ProtocolError::InvalidInterpolationArguments)?;
 
     let (threshold_plus1_identifiers, _) = identifiers
-        .split_at_checked(threshold + 1)
+        .split_at_checked(reconstruction)
         .ok_or_else(|| ProtocolError::AssertionFailed("Not enough identifiers".to_string()))?;
     let (threshold_plus1_verifying_shares, _) = verifying_shares
-        .split_at_checked(threshold + 1)
-        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough verifying shares".to_string()))?;
+        .split_at_checked(reconstruction)
+        .ok_or_else(|| {
+        ProtocolError::AssertionFailed("Not enough verifying shares".to_string())
+    })?;
 
     // check that the exponent interpolations match what has been received
     for (identifier, verifying_share) in identifiers
         .iter()
-        .skip(threshold + 1)
-        .zip(verifying_shares.iter().skip(threshold + 1))
+        .skip(reconstruction)
+        .zip(verifying_shares.iter().skip(reconstruction))
     {
         // Step 3.2
         // exponent interpolation for (R0, .., Rt; i)
@@ -306,15 +314,9 @@ async fn do_sign(
         return Err(ProtocolError::IdentityElement);
     }
 
-    // Step 3.5
-    // polynomial interpolation of w
-    let (w_2tp1_identifiers, _) = identifiers
-        .split_at_checked(2 * threshold + 1)
-        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough identifiers".to_string()))?;
-    let (w_2tp1_verifying_shares, _) = signingshares
-        .split_at_checked(2 * threshold + 1)
-        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough verifying shares".to_string()))?;
-    let w = Polynomial::eval_interpolation(w_2tp1_identifiers, w_2tp1_verifying_shares, None)?;
+    // Step 3.5: polynomial interpolation of w over all the shares; identifiers and
+    // signingshares hold exactly 2t + 1 entries by construction
+    let w = Polynomial::eval_interpolation(&identifiers, &signingshares, None)?;
 
     // Step 3.6
     // check w is non-zero
