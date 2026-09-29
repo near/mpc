@@ -10,9 +10,7 @@ use crate::primitives::proposal_hash::{ProposalHash, ToProposalHash};
 use crate::state::ProtocolContractState;
 use crate::update::{ProposedUpdates, Update, UpdateId};
 use crate::{MpcContract, MpcContractExt};
-use near_mpc_contract_interface::deposits::{
-    propose_update_required_deposit_yoctonear, update_payload_bytes,
-};
+use near_mpc_contract_interface::deposits::SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, NearToken, Promise, env, log, near};
@@ -204,26 +202,15 @@ impl MpcContract {
         // but we guard the endpoint to keep control over _when_ it is applied.
         let submitter = self.voter_or_panic();
 
-        let payload_bytes =
-            update_payload_bytes(&update).map_err(|err| InvalidParameters::MalformedPayload {
-                reason: err.to_string(),
-            })?;
         let attached = env::attached_deposit();
-        let required = propose_update_required_deposit_yoctonear(
-            payload_bytes,
-            env::storage_byte_cost().as_yoctonear(),
-        )
-        .map(NearToken::from_yoctonear)
-        .map_err(|err| InvalidParameters::MalformedPayload {
-            reason: err.to_string(),
-        })?;
-        if attached < required {
-            return Err(InvalidParameters::InsufficientDeposit {
+        let surplus = attached
+            .checked_sub(NearToken::from_yoctonear(
+                SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
+            ))
+            .ok_or(InvalidParameters::InsufficientDeposit {
                 attached: attached.as_yoctonear(),
-                required: required.as_yoctonear(),
-            }
-            .into());
-        }
+                required: SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
+            })?;
 
         let update_hash =
             near_mpc_sdk::update::hash_with(&update, |bytes| env::sha256_array(bytes));
@@ -260,7 +247,7 @@ impl MpcContract {
             }
         }
         .detach();
-        refund_to(&submitter, attached.saturating_sub(required));
+        refund_to(&submitter, surplus);
         Ok(())
     }
 
@@ -958,14 +945,8 @@ mod tests {
             .collect()
     }
 
-    fn required_deposit(update: &dtos::Update) -> NearToken {
-        NearToken::from_yoctonear(
-            propose_update_required_deposit_yoctonear(
-                update_payload_bytes(update).unwrap(),
-                env::storage_byte_cost().as_yoctonear(),
-            )
-            .unwrap(),
-        )
+    fn submit_deposit() -> NearToken {
+        NearToken::from_yoctonear(SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR)
     }
 
     fn threshold(contract: &MpcContract) -> usize {
@@ -1023,7 +1004,7 @@ mod tests {
 
         // When
         env.set_signer(&participants[0]);
-        env.set_deposit(required_deposit(&update));
+        env.set_deposit(submit_deposit());
         let result = contract.submit_contract_update(update);
 
         // Then
@@ -1055,20 +1036,21 @@ mod tests {
         let mut env = Environment::new(None, None, None);
         let (mut contract, participants) = contract_with_participants(state);
         approve(&mut env, &mut contract, &participants, &code_update());
-        let required = required_deposit(&code_update());
 
         // When
         env.set_signer(&participants[0]);
-        env.set_deposit(required.saturating_sub(NearToken::from_yoctonear(1)));
+        env.set_deposit(NearToken::from_yoctonear(0));
         let result = contract.submit_contract_update(code_update());
 
         // Then
         assert_matches!(
             result,
-            Err(Error::InvalidParameters(InvalidParameters::InsufficientDeposit {
-                attached,
-                required: expected,
-            })) if attached == required.as_yoctonear() - 1 && expected == required.as_yoctonear()
+            Err(Error::InvalidParameters(
+                InvalidParameters::InsufficientDeposit {
+                    attached: 0,
+                    required: SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
+                }
+            ))
         );
     }
 
@@ -1081,7 +1063,7 @@ mod tests {
         let mut env = Environment::new(None, None, None);
         let (mut contract, participants) = contract_with_participants(state);
         env.set_signer(&participants[0]);
-        env.set_deposit(required_deposit(&code_update()));
+        env.set_deposit(submit_deposit());
 
         // When
         let result = contract.submit_contract_update(code_update());
@@ -1108,7 +1090,7 @@ mod tests {
 
         // When
         env.set_signer(&participants[0]);
-        env.set_deposit(required_deposit(&code_update()));
+        env.set_deposit(submit_deposit());
         let first = contract.submit_contract_update(code_update());
         let second = contract.submit_contract_update(code_update());
 
@@ -1226,7 +1208,7 @@ mod tests {
         contract.remove_contract_update_vote().unwrap();
 
         // Then
-        env.set_deposit(required_deposit(&code_update()));
+        env.set_deposit(submit_deposit());
         assert_matches!(
             contract.submit_contract_update(code_update()),
             Err(Error::InvalidParameters(
