@@ -1,0 +1,6 @@
+---
+source: crates/threshold-signatures/src/ecdsa/robust_ecdsa/ecdsa_v2_sign.rs
+expression: "format!(\"big_r: {:?}\\ns: {:?}\", signature.big_r, signature.s)"
+---
+big_r: AffinePoint { x: FieldElement(FieldElementImpl { value: FieldElement5x52([3139371244951770, 1031520141482248, 3702279382887005, 703755434338071, 47055059226525]), magnitude: 1, normalized: true }), y: FieldElement(FieldElementImpl { value: FieldElement5x52([2160565795707180, 503108834436725, 497253415222897, 1573594200072615, 275010623722450]), magnitude: 1, normalized: true }), infinity: 0 }
+s: Scalar(Uint(0x5FA80DDFAB53EC668A4678435982301BE9941E113510E04EC39093423B8E5C77))

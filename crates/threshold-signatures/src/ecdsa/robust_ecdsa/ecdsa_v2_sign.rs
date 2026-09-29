@@ -44,6 +44,10 @@ pub struct SignArguments {
 /// evaluations, the `(R, w, eta)` triples, the proofs, and the signature shares.
 pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 5;
 
+/// Maximum incoming buffer entries for non-coordinator participants.
+#[cfg(test)]
+pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 4;
+
 /// Runs the whole robust ECDSA signing protocol; only the coordinator obtains the signature.
 pub fn sign<R>(
     participants: &[Participant],
@@ -525,5 +529,344 @@ impl Shares {
         for (share, other_share) in self.0.iter_mut().zip(shares.0.iter()) {
             share.0 += other_share.0;
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod test {
+    use super::*;
+    use crate::test_utils::{
+        GenProtocol, MockCryptoRng, assert_buffer_capacity, assert_public_key_invariant,
+        check_one_coordinator_output, expected_buffer_by_role, generate_participants,
+        generate_participants_with_random_ids, generate_test_keys, make_keygen_output, run_keygen,
+        run_protocol,
+    };
+    use assert_matches::assert_matches;
+    use frost_secp256k1::{Field, Secp256K1ScalarField};
+    use rand::{RngCore, SeedableRng};
+    use rstest::rstest;
+
+    /// Builds one signing protocol per key holder and runs them together.
+    fn run_sign(
+        participants: &[Participant],
+        coordinator: Participant,
+        max_malicious: usize,
+        keys: Vec<(Participant, KeygenOutput)>,
+        tweak: Tweak,
+        msg_hash: Scalar,
+        rng: &mut MockCryptoRng,
+    ) -> Result<Vec<(Participant, SignatureOption)>, ProtocolError> {
+        let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(keys.len());
+        for (p, keygen_out) in keys {
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let protocol = sign(
+                participants,
+                coordinator,
+                p,
+                SignArguments {
+                    keygen_out,
+                    max_malicious: max_malicious.into(),
+                },
+                tweak,
+                msg_hash,
+                rng_p,
+            )
+            .unwrap();
+            protocols.push((p, Box::new(protocol)));
+        }
+        run_protocol(protocols)
+    }
+
+    #[test]
+    fn sign__should_produce_a_valid_signature_under_the_derived_key() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(5);
+        let max_malicious = 2;
+        let (f, pk) = generate_test_keys(max_malicious, &mut rng);
+        let coordinator = participants[0];
+        let tweak = Tweak::new(Secp256K1ScalarField::random(&mut rng));
+        let msg_hash = Secp256K1ScalarField::random(&mut rng);
+        let keys = participants
+            .iter()
+            .map(|p| (*p, make_keygen_output(&f, &pk, *p)))
+            .collect();
+
+        // When
+        let result = run_sign(
+            &participants,
+            coordinator,
+            max_malicious,
+            keys,
+            tweak,
+            msg_hash,
+            &mut rng,
+        )
+        .unwrap();
+
+        // Then
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        let derived_pk = tweak.derive_verifying_key(&pk).to_element().to_affine();
+        assert!(signature.verify(&derived_pk, &msg_hash));
+    }
+
+    #[test]
+    fn sign__should_produce_a_valid_signature_after_keygen_with_random_ids() {
+        // Given a real DKG for 7 participants with random identifiers
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants_with_random_ids(7, &mut rng);
+        let max_malicious = 3;
+        let keys = run_keygen(&participants, max_malicious + 1, &mut rng);
+        assert_public_key_invariant(&keys);
+        let pk = keys[0].1.public_key;
+        let coordinator = participants[1];
+        let tweak = Tweak::new(Secp256K1ScalarField::random(&mut rng));
+        let msg_hash = Secp256K1ScalarField::random(&mut rng);
+
+        // When
+        let result = run_sign(
+            &participants,
+            coordinator,
+            max_malicious,
+            keys,
+            tweak,
+            msg_hash,
+            &mut rng,
+        )
+        .unwrap();
+
+        // Then
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        let derived_pk = tweak.derive_verifying_key(&pk).to_element().to_affine();
+        assert!(signature.verify(&derived_pk, &msg_hash));
+    }
+
+    #[test]
+    fn sign__should_be_deterministic() {
+        // Given fixed randomness everywhere
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let max_malicious = 1;
+        let (f, pk) = generate_test_keys(max_malicious, &mut rng);
+        let coordinator = participants[0];
+        let tweak = Tweak::new(Secp256K1ScalarField::random(&mut rng));
+        let msg_hash = Secp256K1ScalarField::random(&mut rng);
+        let keys = participants
+            .iter()
+            .map(|p| (*p, make_keygen_output(&f, &pk, *p)))
+            .collect();
+
+        // When
+        let result = run_sign(
+            &participants,
+            coordinator,
+            max_malicious,
+            keys,
+            tweak,
+            msg_hash,
+            &mut rng,
+        )
+        .unwrap();
+
+        // Then the signature is reproducible
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        insta::assert_snapshot!(format!(
+            "big_r: {:?}\ns: {:?}",
+            signature.big_r, signature.s
+        ));
+    }
+
+    #[test]
+    fn sign__should_reject_a_coordinator_outside_the_participant_set() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(4);
+        let max_malicious = 1;
+        let (f, pk) = generate_test_keys(max_malicious, &mut rng);
+        let keygen_out = make_keygen_output(&f, &pk, participants[0]);
+
+        // When
+        let result = sign(
+            &participants[..3],
+            participants[3],
+            participants[0],
+            SignArguments {
+                keygen_out,
+                max_malicious: max_malicious.into(),
+            },
+            Tweak::new(Secp256K1ScalarField::random(&mut rng)),
+            Secp256K1ScalarField::random(&mut rng),
+            MockCryptoRng::seed_from_u64(0),
+        );
+
+        // Then
+        assert_matches!(
+            result.err(),
+            Some(InitializationError::MissingParticipant {
+                role: "coordinator",
+                ..
+            })
+        );
+    }
+
+    #[test]
+    fn sign__should_reject_a_zero_message_hash() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let max_malicious = 1;
+        let (f, pk) = generate_test_keys(max_malicious, &mut rng);
+        let keygen_out = make_keygen_output(&f, &pk, participants[0]);
+
+        // When
+        let result = sign(
+            &participants[..],
+            participants[0],
+            participants[0],
+            SignArguments {
+                keygen_out,
+                max_malicious: max_malicious.into(),
+            },
+            Tweak::new(Secp256K1ScalarField::random(&mut rng)),
+            Secp256K1ScalarField::zero(),
+            MockCryptoRng::seed_from_u64(0),
+        );
+
+        // Then
+        assert_matches!(result.err(), Some(InitializationError::BadParameters(_)));
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    fn sign__should_bound_message_buffer_by_role(#[case] max_malicious: usize) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let num_participants = 2 * max_malicious + 1;
+        let participants = generate_participants(num_participants);
+        let (f, pk) = generate_test_keys(max_malicious, &mut rng);
+        let coordinator = participants[0];
+        let tweak = Tweak::new(Secp256K1ScalarField::random(&mut rng));
+        let msg_hash = Secp256K1ScalarField::random(&mut rng);
+
+        // When + Then
+        assert_buffer_capacity(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, rng_p| {
+                let keygen_out = make_keygen_output(&f, &pk, p);
+                do_sign(
+                    comms.shared_channel(),
+                    p_list,
+                    coordinator,
+                    p,
+                    SignArguments {
+                        keygen_out,
+                        max_malicious: max_malicious.into(),
+                    },
+                    tweak,
+                    msg_hash,
+                    rng_p,
+                )
+            },
+            expected_buffer_by_role(
+                coordinator,
+                ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
+        );
+    }
+
+    /// Round 1 of a malicious dealer: honest commitments, but the a-share dealt to
+    /// `victim` is corrupted.
+    fn deal_bad_share(
+        mut chan: SharedChannel,
+        participants: &ParticipantList,
+        me: Participant,
+        victim: Participant,
+        mut rng: MockCryptoRng,
+    ) -> Result<SignatureOption, ProtocolError> {
+        let rng = &mut rng;
+        let threshold = 1;
+        let degree = 2;
+        let f_k = Polynomial::generate_polynomial(None, threshold, rng)?;
+        let f_a = Polynomial::generate_polynomial(None, threshold, rng)?;
+        let f_rho = Polynomial::generate_polynomial(None, threshold, rng)?;
+        let f_b = Polynomial::zero_constant_random_polynomial(degree, rng)?;
+        let f_d = Polynomial::zero_constant_random_polynomial(degree, rng)?;
+        let f_e = Polynomial::zero_constant_random_polynomial(degree, rng)?;
+        let f_sigma = Polynomial::zero_constant_random_polynomial(degree, rng)?;
+        let com_a = pedersen::commit_polynomial(&f_a, &f_rho)?;
+        let com_b = pedersen::commit_polynomial(&f_b, &f_sigma)?.strip_identity_constant()?;
+        let wait_commitments = chan.next_waitpoint();
+        chan.send_many(wait_commitments, &(&com_a, &com_b))?;
+
+        let polynomials = [f_k, f_a, f_b, f_d, f_e, f_rho, f_sigma];
+        let wait_shares = chan.next_waitpoint();
+        for p in participants.others(me) {
+            let mut package = polynomials
+                .iter()
+                .map(|poly| poly.eval_at_participant(p))
+                .collect::<Result<Vec<_>, _>>()?;
+            if p == victim {
+                package[1].0 += Secp256K1ScalarField::one();
+            }
+            chan.send_private(wait_shares, p, &package)?;
+        }
+        Ok(None)
+    }
+
+    #[test]
+    fn sign__should_identify_a_dealer_sending_a_bad_share() {
+        // Given three participants where the last deals a corrupted a-share to the first
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let max_malicious = 1usize;
+        let (f, pk) = generate_test_keys(max_malicious, &mut rng);
+        let coordinator = participants[1];
+        let evil = participants[2];
+        let victim = participants[0];
+        let tweak = Tweak::new(Secp256K1ScalarField::random(&mut rng));
+        let msg_hash = Secp256K1ScalarField::random(&mut rng);
+
+        let mut protocols: GenProtocol<SignatureOption> = Vec::new();
+        for p in [participants[0], participants[1]] {
+            let keygen_out = make_keygen_output(&f, &pk, p);
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let protocol = sign(
+                &participants,
+                coordinator,
+                p,
+                SignArguments {
+                    keygen_out,
+                    max_malicious: max_malicious.into(),
+                },
+                tweak,
+                msg_hash,
+                rng_p,
+            )
+            .unwrap();
+            protocols.push((p, Box::new(protocol)));
+        }
+        let ctx = Comms::with_buffer_capacity(ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
+        let chan = ctx.shared_channel();
+        let participant_list = ParticipantList::new(&participants).unwrap();
+        let fut = async move {
+            deal_bad_share(
+                chan,
+                &participant_list,
+                evil,
+                victim,
+                MockCryptoRng::seed_from_u64(7),
+            )
+        };
+        protocols.push((evil, Box::new(make_protocol(ctx, fut))));
+
+        // When
+        let result = run_protocol(protocols);
+
+        // Then the victim identifies the dealer
+        assert_matches!(result, Err(ProtocolError::InvalidSecretShare(p)) if p == evil);
     }
 }
