@@ -64,6 +64,13 @@ Where the kernel refuses the sandbox (for example inside a container) Nix
 silently builds without it, so set `sandbox-fallback = false` in `nix.conf`, as
 CI does, to make such a build fail instead.
 
+Pre-built outputs are accepted only from `https://cache.nixos.org/` and only if
+signed with its key `cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=`,
+which are Nix's defaults and what CI checks. Some installers add their own
+caches and keys, which could then supply any binary, including the images' own,
+so make sure `nix config show substituters` and
+`nix config show trusted-public-keys` print exactly these values.
+
 Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` equals the digest of the published `-nix` tag. The same
 commands work on x86_64 Linux and, with a Linux builder (see

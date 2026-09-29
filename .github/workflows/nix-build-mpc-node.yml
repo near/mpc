@@ -26,18 +26,10 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          extra-conf: sandbox-fallback = false
+        uses: ./.github/actions/install-nix
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
-
-      # nix.conf only warns on an unknown setting, so assert the values Nix applied
-      - name: Check the Nix sandbox is enforced
-        run: |
-          nix config show sandbox | grep -x true
-          nix config show sandbox-fallback | grep -x false
 
       - name: Build mpc-node image
         run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node .#mpc-node-image
