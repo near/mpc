@@ -199,22 +199,18 @@ async fn do_sign(
     let com_b_sum = com_b_sum.extend_with_identity()?;
 
     // Step 2.7
-    // Compute R_me = g^{k_me}
     let big_r_me = CoefficientCommitment::new(Secp256K1Group::generator() * shares.k());
 
     // Step 2.8
-    // Compute w_me = a_me * k_me + b_me
     let w_me = shares.a() * shares.k() + shares.b();
 
     // Step 2.9
-    // Send and receive
     let wait_nonces = chan.next_waitpoint();
     chan.send_many(
         wait_nonces,
         &(&big_r_me, &SerializableScalar::<C>(w_me), &eta),
     )?;
 
-    // Store the sent items
     let mut signingshares_map = ParticipantMap::new(&participants);
     let mut verifyingshares_map = ParticipantMap::new(&participants);
     signingshares_map.put(me, SerializableScalar(w_me));
@@ -228,11 +224,9 @@ async fn do_sign(
             chan.recv(wait_nonces).await?;
         if eta_p != eta {
             return Err(ProtocolError::AssertionFailed(
-                "commitment hash mismatch in robust ecdsa presign".to_string(),
+                "commitment hash mismatch in robust ecdsa sign".to_string(),
             ));
         }
-        // collect big_r_p and w_p in maps that will be later ordered
-        // if the sender has already sent elements then put will return immediately
         signingshares_map.put(from, w_p);
         verifyingshares_map.put(from, big_r_p);
     }
@@ -262,21 +256,18 @@ async fn do_sign(
         ProtocolError::AssertionFailed("Not enough verifying shares".to_string())
     })?;
 
-    // check that the exponent interpolations match what has been received
     for (identifier, verifying_share) in identifiers
         .iter()
         .skip(reconstruction)
         .zip(verifying_shares.iter().skip(reconstruction))
     {
         // Step 3.2
-        // exponent interpolation for (R0, .., Rt; i)
         let big_r_i = PolynomialCommitment::eval_exponent_interpolation(
             threshold_plus1_identifiers,
             threshold_plus1_verifying_shares,
             Some(identifier),
         )?;
 
-        // check the interpolated R values match the received ones
         if big_r_i != *verifying_share {
             return Err(ProtocolError::AssertionFailed(
                 "Exponent interpolation check failed.".to_string(),
@@ -285,10 +276,7 @@ async fn do_sign(
 
         chan.yield_point().await;
     }
-    // Step 3.3
-    // get only the first t+1 elements to interpolate
-    // we know that identifiers.len()>threshold+1
-    // evaluate the exponent interpolation on zero
+    // Step 3.3: interpolate R at zero from the first t + 1 nonce commitments
     let big_r = PolynomialCommitment::eval_exponent_interpolation(
         threshold_plus1_identifiers,
         threshold_plus1_verifying_shares,
@@ -296,7 +284,6 @@ async fn do_sign(
     )?;
 
     // Step 3.4
-    // check R is not identity
     if big_r
         .value()
         .ct_eq(&<Secp256K1Group as Group>::identity())
@@ -389,7 +376,6 @@ async fn do_sign(
     let c_me = w_inv * shares.a();
 
     // Step 4.4
-    // Some extra computation is pushed in this offline phase
     let alpha_me = c_me + shares.d();
 
     // Step 4.5
@@ -438,7 +424,7 @@ async fn do_sign(
     Ok(Some(signature))
 }
 
-/// Validates the presigning inputs, enforcing exactly `2 * max_malicious + 1` participants.
+/// Validates the signing inputs, enforcing exactly `2 * max_malicious + 1` participants.
 fn validate_arguments(
     participants: &[Participant],
     me: Participant,
@@ -479,14 +465,14 @@ fn validate_arguments(
     // To prevent split-view attacks documented in docs/ecdsa/robust_ecdsa/signing.md
     if participants.len() != robust_ecdsa_threshold {
         return Err(InitializationError::BadParameters(
-            "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+            "the number of participants during signing must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
         ));
     }
 
     Ok(participants)
 }
 
-/// Contains the seven shares used during presigning
+/// The seven shares dealt in round 1
 /// (k, a, b, d, e, rho, sigma)
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Shares([SerializableScalar<C>; 7]);
@@ -497,7 +483,6 @@ impl Shares {
         polynomials: &[Polynomial; 7],
         p: Participant,
     ) -> Result<Self, ProtocolError> {
-        // iterate over the polynomials and map them
         let shares = polynomials
             .iter()
             .map(|poly| poly.eval_at_participant(p))
@@ -507,37 +492,30 @@ impl Shares {
         Ok(Self(shares))
     }
 
-    /// Returns k element
     pub(crate) fn k(&self) -> Scalar {
         self.0[0].0
     }
 
-    /// Returns a element
     pub(crate) fn a(&self) -> Scalar {
         self.0[1].0
     }
 
-    /// Returns b element
     pub(crate) fn b(&self) -> Scalar {
         self.0[2].0
     }
 
-    /// Returns d element
     pub(crate) fn d(&self) -> Scalar {
         self.0[3].0
     }
 
-    /// Returns e element
     pub(crate) fn e(&self) -> Scalar {
         self.0[4].0
     }
 
-    /// Returns rho element
     pub(crate) fn rho(&self) -> Scalar {
         self.0[5].0
     }
 
-    /// Returns sigma element
     pub(crate) fn sigma(&self) -> Scalar {
         self.0[6].0
     }
