@@ -9,14 +9,14 @@ use subtle::{ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroize;
 
 use crate::crypto::{
-    constants::NEAR_ROBUST_ECDSA_SIGN_LABEL,
+    constants::{NEAR_ROBUST_ECDSA_ETA_LABEL, NEAR_ROBUST_ECDSA_SIGN_LABEL},
     hash::{HashOutput, hash},
     pedersen,
     proofs::{strobe_transcript::Transcript, w_opening},
 };
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
-    MaxMalicious, SigningShare,
+    MaxMalicious,
     ecdsa::{
         CoefficientCommitment, KeygenOutput, Polynomial, PolynomialCommitment, Scalar,
         Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
@@ -139,22 +139,12 @@ async fn do_sign(
     let wait_commitments = chan.next_waitpoint();
     chan.send_many(wait_commitments, &(&com_a, &com_b))?;
 
-    // send polynomial evaluations to participants
-    let wait_shares = chan.next_waitpoint();
-
     // Step 1.7
+    let wait_shares = chan.next_waitpoint();
     for p in participants.others(me) {
-        // Securely send to each other participant a secret share
-        let package = polynomials
-            .iter()
-            .map(|poly| poly.eval_at_participant(p))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // send the evaluation privately to participant p
-        chan.send_private(wait_shares, p, &package)?;
+        chan.send_private(wait_shares, p, &Shares::new(&polynomials, p)?)?;
     }
 
-    // Evaluate my secret shares for my polynomials
     let mut shares = Shares::new(&polynomials, me)?;
 
     // Round 2
@@ -221,7 +211,7 @@ async fn do_sign(
     let wait_nonces = chan.next_waitpoint();
     chan.send_many(
         wait_nonces,
-        &(&big_r_me, &SigningShare::<C>::new(w_me), &eta),
+        &(&big_r_me, &SerializableScalar::<C>(w_me), &eta),
     )?;
 
     // Store the sent items
@@ -234,7 +224,7 @@ async fn do_sign(
     // Receive and interpolate
     while !signingshares_map.full() {
         // Step 3.1: receive, asserting that the commitment transcripts match
-        let (from, (big_r_p, w_p, eta_p)): (_, (_, SigningShare<C>, HashOutput)) =
+        let (from, (big_r_p, w_p, eta_p)): (_, (_, SerializableScalar<C>, HashOutput)) =
             chan.recv(wait_nonces).await?;
         if eta_p != eta {
             return Err(ProtocolError::AssertionFailed(
@@ -243,7 +233,7 @@ async fn do_sign(
         }
         // collect big_r_p and w_p in maps that will be later ordered
         // if the sender has already sent elements then put will return immediately
-        signingshares_map.put(from, SerializableScalar(w_p.to_scalar()));
+        signingshares_map.put(from, w_p);
         verifyingshares_map.put(from, big_r_p);
     }
 
@@ -324,7 +314,7 @@ async fn do_sign(
 
     // the Fiat-Shamir challenges are bound to eta and the prover's identity
     let mut transcript = Transcript::new(NEAR_ROBUST_ECDSA_SIGN_LABEL);
-    transcript.message(b"eta", eta.as_ref());
+    transcript.message(NEAR_ROBUST_ECDSA_ETA_LABEL, eta.as_ref());
 
     // Step 3.7: prove that w_me opens consistently with the committed a_me and b_me
     let big_w_me = Secp256K1Group::generator() * w_me;
@@ -468,12 +458,6 @@ fn validate_arguments(
             role: "self",
             participant: me,
         });
-    }
-
-    if args.max_malicious.value() > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "max_malicious must be less than or equals to participant count".to_string(),
-        ));
     }
 
     let robust_ecdsa_threshold = args
