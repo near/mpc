@@ -1,3 +1,4 @@
+pub mod clock;
 pub mod contract_state_fixture;
 pub mod contract_state_polling;
 pub mod contract_state_rpc;

@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::State;
 use axum::{Json, Router, routing::get};
@@ -98,17 +97,7 @@ pub struct BackupStatusReporter {
 }
 
 impl ReportBackupStatus for BackupStatusReporter {
-    fn keyset_backed_up(&self, epoch_id: EpochId) {
-        self.publish(epoch_id, unix_now_seconds());
-    }
-
-    fn keyset_already_backed_up(&self, epoch_id: EpochId) {
-        self.publish(epoch_id, None);
-    }
-}
-
-impl BackupStatusReporter {
-    fn publish(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>) {
+    fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>) {
         self.sender.send_replace(BackupStatus {
             last_backup: Some(LastBackup {
                 epoch_id,
@@ -116,15 +105,6 @@ impl BackupStatusReporter {
             }),
         });
     }
-}
-
-/// `None` when the system clock is before the Unix epoch (e.g. an RTC reset before NTP
-/// sync), since no timestamp is more honest than a 1970 one.
-fn unix_now_seconds() -> Option<u64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|elapsed| elapsed.as_secs())
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -174,7 +154,7 @@ mod tests {
     async fn serve_status__should_answer_the_published_status_as_json() {
         // Given
         let (reporter, status) = status_channel();
-        reporter.keyset_backed_up(EpochId::new(5));
+        reporter.keyset_backed_up(EpochId::new(5), Some(1_700_000_000));
 
         // When
         let Json(response) = serve_status(State(status)).await;
@@ -237,37 +217,27 @@ mod tests {
     }
 
     #[test]
-    fn keyset_backed_up__should_publish_the_epoch_with_a_timestamp() {
+    fn keyset_backed_up__should_publish_the_last_backup() {
         // Given
         let (reporter, status) = status_channel();
 
         // When
-        reporter.keyset_backed_up(EpochId::new(5));
+        reporter.keyset_backed_up(EpochId::new(5), Some(1_700_000_000));
 
         // Then
-        let last_backup = status
-            .borrow()
-            .last_backup
-            .expect("a backup should be published");
-        assert_eq!(last_backup.epoch_id, EpochId::new(5));
-        assert!(last_backup.timestamp_seconds.is_some_and(|t| t > 0));
+        assert_eq!(*status.borrow(), status_after_a_backup());
     }
 
     #[test]
-    fn keyset_already_backed_up__should_publish_the_epoch_without_a_timestamp() {
+    fn keyset_backed_up__should_publish_a_backup_without_a_timestamp() {
         // Given
         let (reporter, status) = status_channel();
 
         // When
-        reporter.keyset_already_backed_up(EpochId::new(5));
+        reporter.keyset_backed_up(EpochId::new(5), None);
 
         // Then
-        let last_backup = status
-            .borrow()
-            .last_backup
-            .expect("a backup should be published");
-        assert_eq!(last_backup.epoch_id, EpochId::new(5));
-        assert_eq!(last_backup.timestamp_seconds, None);
+        assert_eq!(*status.borrow(), status_after_a_restart());
     }
 
     #[test]

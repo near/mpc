@@ -6,11 +6,14 @@ use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState}
 use crate::types;
 
 pub trait ReportBackupStatus {
-    fn keyset_backed_up(&self, epoch_id: EpochId);
-    /// Storage was found to already cover `epoch_id` on startup. Reported separately from
-    /// [`Self::keyset_backed_up`] because storage holds no record of when it was written,
-    /// so there is no backup time to publish.
-    fn keyset_already_backed_up(&self, epoch_id: EpochId);
+    /// `timestamp_seconds` is the Unix time the backup was taken, or `None` when that is
+    /// unknown, e.g. for a backup found already on disk.
+    fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>);
+}
+
+pub trait WallClock {
+    /// Seconds since the Unix epoch, or `None` when the clock is before it.
+    fn unix_now_seconds(&self) -> Option<u64>;
 }
 
 pub trait WatchContractState {

@@ -109,6 +109,7 @@ pub async fn run_command(args: cli::Args) {
                 key_shares_storage,
                 contract_state,
                 status_reporter,
+                adapters::clock::SystemClock,
                 Duration::from_secs(subcommand_args.poll_interval_seconds),
                 shutdown,
             )
@@ -184,6 +185,7 @@ pub async fn run_backup_service(
     keyshares_storage: impl ports::KeyShareRepository,
     contract_state: impl ports::WatchContractState,
     status: impl ports::ReportBackupStatus,
+    clock: impl ports::WallClock,
     retry_delay: Duration,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
@@ -192,6 +194,7 @@ pub async fn run_backup_service(
         keyshares_storage,
         contract_state,
         status,
+        clock,
         retry_delay,
     )
     .await?

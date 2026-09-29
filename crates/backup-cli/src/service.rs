@@ -8,24 +8,29 @@ use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolCont
 use tokio_util::sync::CancellationToken;
 
 use crate::keyset::keyset_to_backup;
-use crate::ports::{KeyShareRepository, P2PClient, ReportBackupStatus, WatchContractState};
+use crate::ports::{
+    KeyShareRepository, P2PClient, ReportBackupStatus, WallClock, WatchContractState,
+};
 
 /// Keeps local storage holding the keyshares of the contract's current keyset
-pub struct Service<Keyshares, Storage, Contract, Status> {
+pub struct Service<Keyshares, Storage, Contract, Status, Clock> {
     keyshares: Keyshares,
     storage: Storage,
     contract_state: Contract,
     status: Status,
+    clock: Clock,
     retry_delay: Duration,
     backed_up: Option<BackedUpKeyset>,
 }
 
-impl<Keyshares, Storage, Contract, Status> Service<Keyshares, Storage, Contract, Status>
+impl<Keyshares, Storage, Contract, Status, Clock>
+    Service<Keyshares, Storage, Contract, Status, Clock>
 where
     Keyshares: P2PClient,
     Storage: KeyShareRepository,
     Contract: WatchContractState,
     Status: ReportBackupStatus,
+    Clock: WallClock,
 {
     /// Reads back what local storage already holds, so a restart does not re-fetch a keyset
     /// that is already stored.
@@ -34,6 +39,7 @@ where
         storage: Storage,
         contract_state: Contract,
         status: Status,
+        clock: Clock,
         retry_delay: Duration,
     ) -> anyhow::Result<Self> {
         let stored = storage
@@ -43,9 +49,10 @@ where
 
         let backed_up = BackedUpKeyset::from_keyshares(&stored);
         // A covered keyset is skipped until the next epoch change, so without this report a
-        // restart would leave /status and /metrics claiming no backup for weeks.
+        // restart would leave /status and /metrics claiming no backup for weeks. Storage does
+        // not record when it was written, hence no timestamp.
         if let Some(backed_up) = &backed_up {
-            status.keyset_already_backed_up(backed_up.epoch_id);
+            status.keyset_backed_up(backed_up.epoch_id, None);
         }
 
         Ok(Self {
@@ -53,6 +60,7 @@ where
             storage,
             contract_state,
             status,
+            clock,
             retry_delay,
             backed_up,
         })
@@ -153,7 +161,8 @@ where
             .as_ref()
             .is_some_and(|backed_up| backed_up.covers(&keyset))
         {
-            self.status.keyset_backed_up(keyset.epoch_id);
+            self.status
+                .keyset_backed_up(keyset.epoch_id, self.clock.unix_now_seconds());
         }
         Ok(BackupOutcome::BackedUp {
             epoch_id: keyset.epoch_id,
@@ -248,22 +257,35 @@ mod tests {
     /// Only the retry test waits it out, and it does so under a paused clock.
     const TEST_RETRY_DELAY: Duration = Duration::from_secs(60);
 
-    type TestService =
-        Service<FakeP2PClient, FakeKeyshareStorage, FakeWatchContractState, FakeStatusReporter>;
+    type TestService = Service<
+        FakeP2PClient,
+        FakeKeyshareStorage,
+        FakeWatchContractState,
+        FakeStatusReporter,
+        FakeClock,
+    >;
 
     #[derive(Default)]
     struct FakeStatusReporter {
-        reported: std::sync::Mutex<Vec<EpochId>>,
-        already_backed_up: std::sync::Mutex<Vec<EpochId>>,
+        reported: std::sync::Mutex<Vec<(EpochId, Option<u64>)>>,
     }
 
     impl ReportBackupStatus for FakeStatusReporter {
-        fn keyset_backed_up(&self, epoch_id: EpochId) {
-            self.reported.lock().unwrap().push(epoch_id);
+        fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>) {
+            self.reported
+                .lock()
+                .unwrap()
+                .push((epoch_id, timestamp_seconds));
         }
+    }
 
-        fn keyset_already_backed_up(&self, epoch_id: EpochId) {
-            self.already_backed_up.lock().unwrap().push(epoch_id);
+    const TEST_UNIX_NOW_SECONDS: u64 = 1_700_000_000;
+
+    struct FakeClock;
+
+    impl WallClock for FakeClock {
+        fn unix_now_seconds(&self) -> Option<u64> {
+            Some(TEST_UNIX_NOW_SECONDS)
         }
     }
 
@@ -455,6 +477,7 @@ mod tests {
             storage,
             contract_state,
             FakeStatusReporter::default(),
+            FakeClock,
             TEST_RETRY_DELAY,
         )
         .await
@@ -481,10 +504,9 @@ mod tests {
 
         // Then
         assert_eq!(
-            *service.status.already_backed_up.lock().unwrap(),
-            vec![EpochId::new(5)]
+            *service.status.reported.lock().unwrap(),
+            vec![(EpochId::new(5), None)]
         );
-        assert!(service.status.reported.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -493,7 +515,6 @@ mod tests {
         let service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // Then
-        assert!(service.status.already_backed_up.lock().unwrap().is_empty());
         assert!(service.status.reported.lock().unwrap().is_empty());
     }
 
@@ -529,7 +550,7 @@ mod tests {
         // Then
         assert_eq!(
             *service.status.reported.lock().unwrap(),
-            vec![EpochId::new(5)]
+            vec![(EpochId::new(5), Some(TEST_UNIX_NOW_SECONDS))]
         );
     }
 
@@ -542,8 +563,11 @@ mod tests {
         // When
         back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
-        // Then
-        assert!(service.status.reported.lock().unwrap().is_empty());
+        // Then nothing is reported beyond the startup coverage
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![(EpochId::new(5), None)]
+        );
     }
 
     #[tokio::test]
