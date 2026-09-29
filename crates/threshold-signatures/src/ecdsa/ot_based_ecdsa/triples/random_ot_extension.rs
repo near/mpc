@@ -241,6 +241,7 @@ mod test {
 
     use super::*;
 
+    use assert_matches::assert_matches;
     use k256::Scalar;
     use rand::SeedableRng;
 
@@ -309,5 +310,23 @@ mod test {
         for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {
             assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, *b_i));
         }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn random_ot_extension_sender__should_reject_inconsistent_receiver() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
+
+        // When
+        // Swapped base OT keys break `q = t ^ (x & delta)` in every column.
+        let result = run_random_ot((delta, k), (k1, k0), b"test sid".to_vec(), 16, &mut rng);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ProtocolError::QMatrixConsistencyCheckFailed { .. })
+        );
     }
 }

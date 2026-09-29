@@ -242,15 +242,12 @@ pub fn verify_signature(
 
     // Concatenate the master public key (96 bytes) in the hash computation
     // H(pk || app_id) when H is a random oracle
-    let base1 = hash_app_id_with_pk(verifying_key, msg).into();
-    let base2 =
-        <<BLS12381SHA256 as frost_core::Ciphersuite>::Group as frost_core::Group>::generator()
-            .into();
+    let hash_point = hash_app_id_with_pk(verifying_key, msg);
 
-    let lhs = blstrs::pairing(&base1, &element2);
-    let rhs = blstrs::pairing(&element1, &base2);
-    // `Gt` implements no `ConstantTimeEq` and its `PartialEq` is variable time.
-    if bool::from((lhs - rhs).is_identity()) {
+    if pairing_eq(
+        &(hash_point, verifying_key.to_element()),
+        &(*signature, ElementG2::generator()),
+    ) {
         Ok(())
     } else {
         Err(frost_core::Error::InvalidSignature)
@@ -291,6 +288,11 @@ pub(crate) fn multi_miller_loop(points: &[(ElementG1, ElementG2)]) -> bool {
         .final_exponentiation()
         .is_identity()
         .into()
+}
+
+/// Checks that `e(lhs.0, lhs.1) = e(rhs.0, rhs.1)`.
+pub(crate) fn pairing_eq(lhs: &(ElementG1, ElementG2), rhs: &(ElementG1, ElementG2)) -> bool {
+    multi_miller_loop(&[*lhs, (-rhs.0, rhs.1)])
 }
 
 #[cfg(test)]

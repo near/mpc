@@ -34,7 +34,7 @@ pub struct Signature {
 impl Signature {
     /// Verifies the signature, including whether `s` has been normalized.
     ///
-    /// Runs in variable time (early returns, `invert_vartime`).
+    /// Runs in variable time (early returns, [`Invert::invert_vartime`]).
     pub fn verify(&self, public_key: &AffinePoint, msg_hash: &Scalar) -> bool {
         let r: Scalar = x_coordinate(&self.big_r);
         if r.is_zero().into() || self.s.is_zero().into() {
