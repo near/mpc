@@ -33,10 +33,10 @@ type C = Secp256K1Sha256;
 
 /// Maximum incoming buffer entries for the coordinator: the commitments, the share
 /// evaluations, the `(R, w, eta)` triples, the proofs, and the signature shares.
-pub(crate) const ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 5;
+pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 5;
 
 /// Runs the whole robust ECDSA signing protocol; only the coordinator obtains the signature.
-pub fn presign_and_sign<R>(
+pub fn sign<R>(
     participants: &[Participant],
     coordinator: Participant,
     me: Participant,
@@ -63,9 +63,8 @@ where
         ));
     }
 
-    let ctx =
-        Comms::with_buffer_capacity(ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
-    let fut = do_presign_and_sign(
+    let ctx = Comms::with_buffer_capacity(ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
+    let fut = do_sign(
         ctx.shared_channel(),
         participants,
         coordinator,
@@ -79,7 +78,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-async fn do_presign_and_sign(
+async fn do_sign(
     mut chan: SharedChannel,
     participants: ParticipantList,
     coordinator: Participant,
