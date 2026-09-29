@@ -946,6 +946,7 @@ The snippet above shows only the fields you are likely to change. Required field
 Adjust the variables as per your environment.
 
 * `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
+* `home_dir`: must be `/data` or a path under it. `/data` is the only persistent volume in the node container; anything outside it is lost when the container is recreated, and the node starts over with new keys.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](../node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
@@ -991,6 +992,8 @@ You need your own API keys:
 * **Alchemy** — https://www.alchemy.com → create an App, copy the API key
 * **QuickNode** — https://www.quicknode.com → create a Multi-chain Endpoint, copy the endpoint URL (your slug and API key are embedded in it)
 * **Geomi** (Aptos only) — https://geomi.dev/login → create a project, generate a Server API key (`aptoslabs_…`)
+* **Tatum** — https://dashboard.tatum.io → generate an API key for the right network. Make sure you have "Starter" plan.
+* **Chainstack** (HyperEVM only) — https://console.chainstack.com → deploy a Hyperliquid node, copy the key from its endpoint URL. Make sure you have "Growth" plan.
 
 > **Important:**
 >
@@ -1118,9 +1121,6 @@ timeout_sec = 30
 max_retries = 3
 expected_network_fingerprint = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
 
-[mpc_node_config.node.foreign_chains.solana.providers.public]
-rpc_url = "https://api.devnet.solana.com"
-
 [mpc_node_config.node.foreign_chains.solana.providers.alchemy]
 rpc_url = "https://solana-devnet.g.alchemy.com/v2/{API_KEY}"
 [mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
@@ -1134,6 +1134,167 @@ rpc_url = "https://YOUR-SLUG.solana-devnet.quiknode.pro/{api_key}"
 kind = "path"
 placeholder = "{api_key}"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.tatum]
+rpc_url = "https://solana-devnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.solana.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# BSC testnet (Chapel).
+[mpc_node_config.node.foreign_chains.bnb]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "97"
+
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy]
+rpc_url = "https://bnb-testnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.bsc-testnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum]
+rpc_url = "https://bsc-testnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Base Sepolia.
+[mpc_node_config.node.foreign_chains.base]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "84532"
+
+[mpc_node_config.node.foreign_chains.base.providers.alchemy]
+rpc_url = "https://base-sepolia.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.base.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.base-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.base.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.tatum]
+rpc_url = "https://base-sepolia.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.base.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Arbitrum Sepolia.
+[mpc_node_config.node.foreign_chains.arbitrum]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "421614"
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy]
+rpc_url = "https://arb-sepolia.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.arbitrum-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum]
+rpc_url = "https://arbitrum-one-sepolia.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Polygon Amoy.
+[mpc_node_config.node.foreign_chains.polygon]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "80002"
+
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy]
+rpc_url = "https://polygon-amoy.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.matic-amoy.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum]
+rpc_url = "https://polygon-amoy.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Avalanche Fuji. The C-chain path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.avalanche]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "43113"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.public]
+rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.avalanche-testnet.quiknode.pro/{api_key}/ext/bc/C/rpc"
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum]
+rpc_url = "https://avax-testnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# HyperEVM testnet. The `/evm` path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.hyper_evm]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "998"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.public]
+rpc_url = "https://rpc.hyperliquid-testnet.xyz/evm"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.hype-testnet.quiknode.pro/{api_key}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack]
+rpc_url = "https://hyperliquid-testnet.core.chainstack.com/{API_KEY}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_CHAINSTACK_API_KEY" }
 
 [mpc_node_config.node.foreign_chains.fogo]
 timeout_sec = 30
@@ -1431,12 +1592,12 @@ Use the following custom settings for MPC:
    - public sysinfo = enabled
    - pin NUMA = disabled
 6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
-   Public 0.0.0.0:80 → 80 (main node to node communication port)
-   Public 0.0.0.0:24567 → 24567 (required for decentralized state sync)
-   Public 0.0.0.0:8080 → 8080 (required for collecting debug and telemetry information)
-   Public 0.0.0.0:8079 → 8079 (required for the node-migration HTTP endpoint)
-   Local 127.0.0.1:3030 → 3030 (use a public host address if you want the debug metrics available on the internet)
-   Local 127.0.0.1:<dstack_agent_port> → 8090 (required for access CVM information and container logs)
+   - Public `0.0.0.0:80` → `80` (main node to node communication port)
+   - Public `0.0.0.0:24567` → `24567` (required for decentralized state sync)
+   - Public `0.0.0.0:8080` → `8080` (required for collecting debug and telemetry information)
+   - Public `0.0.0.0:8079` → `8079` (required for the node-migration HTTP endpoint)
+   - Local `127.0.0.1:3030` → `3030` (use a public host address if you want the debug metrics available on the internet)
+   - Local `127.0.0.1:<dstack_agent_port>` → `8090` (required to access CVM information and container logs, see [Accessing MPC (or Launcher) Docker Logs](#accessing-mpc-or-launcher-docker-logs))
 
    The **host address** is the IP qemu binds each forward to. Single-node deployments use `0.0.0.0` to bind on every host interface. **Multi-node deployments** (mainnet + testnet on one host) use a specific public IP per CVM — see [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md).
 
@@ -1499,15 +1660,17 @@ Full flag reference and `.env` field-by-field documentation:
 Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.
 More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).
 
-> **Log retention:** the MPC container is reused across **restarts**, so its
-> logs are preserved and remain viewable here after a restart. An **upgrade**
-> (new image) recreates the container, which clears its logs.
+> **Log retention:** from launcher 3.14.0, the MPC container is reused across
+> **restarts**, so its logs are preserved and remain viewable here after a
+> restart. An **upgrade** (new image) recreates the container, which clears its
+> logs. Launchers before 3.14.0 recreate the container on every restart, so they
+> clear its logs each time.
 
 ---
 
 #### Local Access
 
-The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface).
+The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface). If you deployed with `deploy-launcher.sh`, it is the host port set in `EXTERNAL_DSTACK_AGENT_PORT` in your env file (default `127.0.0.1:9208`).
 
 Open in your browser:
 
@@ -1521,10 +1684,10 @@ http://localhost:<dstack_agent_port>
 
 If you need to access the web page from another machine, set up SSH port forwarding.
 
-For example, if `dstack_agent_port = 8090`:
+For example, if `dstack_agent_port = 9208`:
 
 ```bash
-ssh -NL 17190:localhost:8090 USER_NAME@TDX_SERVER
+ssh -NL 17190:localhost:9208 USER_NAME@TDX_SERVER
 ```
 
 Then open:
@@ -1538,6 +1701,18 @@ http://localhost:17190
 #### Example / Screenshot
 
 ![CVM Web Page](attachments/CVM_web_page.png)
+
+---
+
+#### Command-Line Access
+
+The same port serves each container's logs as plain text at `/logs/<container>` (`mpc-node` or `launcher`):
+
+```bash
+curl -sS 'http://localhost:<dstack_agent_port>/logs/mpc-node?text&timestamps&bare&tail=1000'
+```
+
+`tail` is the number of lines read from the end of the log (default `1000`, or `all`). Add `&follow` to keep streaming new lines.
 
 ### Retrieve Public Keys from the MPC Node
 
@@ -2212,7 +2387,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 2. Participants vote to approve the new launcher manifest digest and/or OS measurements.
 3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](../node-migration-guide.md).
-5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
+5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused and no attestation made with it is still valid; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
 
 ### Launcher Image Voting
 
@@ -2371,7 +2546,7 @@ For the migration procedure, see the [node migration guide](../node-migration-gu
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
-An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
+An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window, and no attestation made with it is still valid, it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
 
 After all operators have migrated to the new CVM, participants may vote to remove the old launcher manifest digest immediately using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration. (Old OS measurements do not auto-expire and still require this vote.)
 
