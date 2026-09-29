@@ -58,12 +58,6 @@
             inherit crane prodCFlags;
             gitRev = self.shortRev or self.dirtyShortRev or null;
           };
-          tee-launcher = pkgs.callPackage ./nix/mpc-node.nix {
-            inherit crane prodCFlags;
-            pname = "tee-launcher";
-          };
-          registryImage = pkgs.callPackage ./nix/registry-image.nix { };
-          nodeImage = pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; };
         in
         {
           inherit mpc-node;
@@ -72,13 +66,23 @@
           };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
         }
-        // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
-          mpc-node-image = registryImage nodeImage;
-          mpc-node-gcp-image = registryImage (nodeImage.override { withGcloud = true; });
-          mpc-launcher-image = registryImage (
-            pkgs.callPackage ./nix/mpc-launcher-image.nix { inherit tee-launcher; }
-          );
-        }
+        // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+          let
+            tee-launcher = pkgs.callPackage ./nix/mpc-node.nix {
+              inherit crane prodCFlags;
+              pname = "tee-launcher";
+            };
+            registryImage = pkgs.callPackage ./nix/registry-image.nix { };
+            nodeImage = pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; };
+          in
+          {
+            mpc-node-image = registryImage nodeImage;
+            mpc-node-gcp-image = registryImage (nodeImage.override { withGcloud = true; });
+            mpc-launcher-image = registryImage (
+              pkgs.callPackage ./nix/mpc-launcher-image.nix { inherit tee-launcher; }
+            );
+          }
+        )
       );
 
       devShells = forAllSystems (
