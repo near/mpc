@@ -142,9 +142,7 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
         Ok(CoefficientCommitment::new(interpolation))
     }
 
-    /// Removes the identity constant term before sending, since the identity does
-    /// not serialize; the inverse of [`Self::extend_with_identity`].
-    /// Errors if the constant term is not the identity.
+    /// Removes the identity constant term, the inverse of [`Self::extend_with_identity`].
     pub fn strip_identity_constant(&self) -> Result<Self, ProtocolError> {
         let coefficients = self.get_coefficients();
         let (first, tail) = coefficients
