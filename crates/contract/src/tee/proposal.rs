@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_attestation::attestation;
+use mpc_attestation::attestation::UnixSeconds;
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
 use near_sdk::{env::sha256_array, log, near};
 use std::{collections::BTreeMap, time::Duration};
@@ -171,7 +171,7 @@ impl StoredDockerImageHashes {
                     return true;
                 };
                 // if the grace period for this docker hash is in the past, then older hashes are no longer accepted
-                attestation::has_expired(grace_period_deadline.as_secs(), current_time.as_secs())
+                UnixSeconds::from(grace_period_deadline).has_expired_at(current_time.into())
             })
             .unwrap_or(0)
     }
@@ -258,7 +258,7 @@ impl AllowedLauncherImage {
     }
 
     fn is_expired(&self, now: Timestamp) -> bool {
-        attestation::has_expired(self.expires_at.as_secs(), now.as_secs())
+        UnixSeconds::from(self.expires_at).has_expired_at(now.into())
     }
 }
 

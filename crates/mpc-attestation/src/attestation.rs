@@ -231,11 +231,11 @@ impl MockAttestation {
                         })?;
                 };
                 if let Some(expiry_timestamp) = expiry_timestamp_seconds {
-                    (!has_expired(*expiry_timestamp, current_timestamp_seconds)).or_err(|| {
-                        VerificationError::ExpiredCertificate {
-                            attestation_time: current_timestamp_seconds,
-                            expiry_time: *expiry_timestamp,
-                        }
+                    (!UnixSeconds(*expiry_timestamp)
+                        .has_expired_at(UnixSeconds(current_timestamp_seconds)))
+                    .or_err(|| VerificationError::ExpiredCertificate {
+                        attestation_time: current_timestamp_seconds,
+                        expiry_time: *expiry_timestamp,
                     })?;
                 };
 
@@ -304,7 +304,9 @@ impl VerifiedAttestation {
                 expiry_timestamp_seconds: expiration_timestamp_seconds,
                 measurements,
             }) => {
-                if has_expired(*expiration_timestamp_seconds, timestamp_seconds) {
+                if UnixSeconds(*expiration_timestamp_seconds)
+                    .has_expired_at(UnixSeconds(timestamp_seconds))
+                {
                     return Err(VerificationError::Custom(format!(
                         "The attestation expired at t = {:?}, time_now = {:?}",
                         expiration_timestamp_seconds, timestamp_seconds
@@ -564,9 +566,15 @@ fn verify_measurements(
     Ok(())
 }
 
-/// An item stays valid for the whole of its expiry second: `expiry == now` is not expired.
-pub fn has_expired(expiry_timestamp_seconds: u64, current_timestamp_seconds: u64) -> bool {
-    expiry_timestamp_seconds < current_timestamp_seconds
+/// A Unix timestamp in whole seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UnixSeconds(pub u64);
+
+impl UnixSeconds {
+    /// An item stays valid for the whole of its expiry second: `expiry == now` is not expired.
+    pub fn has_expired_at(self, now: UnixSeconds) -> bool {
+        self < now
+    }
 }
 
 #[cfg(test)]
