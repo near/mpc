@@ -53,7 +53,7 @@ args:     {"id":7}
 contract: mpc.near
 method:   submit_contract_update
 gas:      300.0 Tgas
-deposit:  0.32772 NEAR
+deposit:  1 yoctoNEAR
 args:     0x000400000007070707
 
 contract: mpc.near
