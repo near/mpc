@@ -29,10 +29,13 @@ runs:
         nix config show sandbox-fallback | grep -x false
         nix config show require-sigs | grep -x true
         nix config show substituters | grep -xF https://cache.nixos.org/
+        nix config show trusted-substituters | grep -x ''
         nix config show trusted-public-keys | grep -xF cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+        nix config show trusted-users | grep -x root
         nix config show sandbox-paths | grep -xE '/bin/sh=/nix/store/[^ ]+/bin/busybox'
         nix config show pre-build-hook | grep -x ''
         nix config show post-build-hook | grep -x ''
         nix config show build-hook | grep -x ''
         nix config show plugin-files | grep -x ''
         nix config show external-builders | grep -xF '[]'
+        nix config show experimental-features | grep -xF 'fetch-tree flakes nix-command'
