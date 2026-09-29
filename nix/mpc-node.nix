@@ -289,6 +289,6 @@ craneLib.buildPackage (
   }
   # Set only on the final build so a new commit does not rebuild the dependencies
   // lib.optionalAttrs (gitRev != null) {
-    BUILT_OVERRIDE_mpc_node_GIT_COMMIT_HASH_SHORT = gitRev;
+    "BUILT_OVERRIDE_${lib.replaceStrings [ "-" ] [ "_" ] pname}_GIT_COMMIT_HASH_SHORT" = gitRev;
   }
 )
