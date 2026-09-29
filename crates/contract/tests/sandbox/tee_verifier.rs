@@ -228,6 +228,20 @@ async fn assert_only_gas_spent(
     );
 }
 
+/// The receipt gets exactly `verifier_tera_gas` of static gas, so success already
+/// proves it fit. Assert headroom instead: the regression that matters is
+/// `dcap-qvl` growing until it OOGs in production.
+fn assert_verifier_gas_headroom(method: &str, burnt: Gas, budget: Gas) {
+    const HEADROOM_PERCENT: u64 = 10;
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    assert!(
+        burnt <= max_allowed,
+        "{method} burnt {burnt} of the {budget} budget, leaving less than {HEADROOM_PERCENT}% \
+         headroom. Find what grew (gas schedule or `dcap-qvl`) before raising \
+         DEFAULT_VERIFIER_TERA_GAS, or the OOG this guards against reaches mainnet",
+    );
+}
+
 #[tokio::test]
 async fn tee_verifier_account_id__should_return_the_verifier_voted_in() {
     // Given
@@ -323,24 +337,13 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
         .iter()
         .find(|outcome| outcome.executor_id == *fx.verifier.id())
         .expect("the verify_quote receipt must have executed on the verifier");
-    // The receipt gets exactly `verifier_tera_gas` of static gas, so success already
-    // proves it fit. Assert headroom instead: the regression that matters is
-    // `dcap-qvl` growing until it OOGs in production.
-    const HEADROOM_PERCENT: u64 = 10;
     let budget = Gas::from_tgas(
         get_config(&fx.setup.contract)
             .await
             .unwrap()
             .verifier_tera_gas,
     );
-    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
-    assert!(
-        verify_quote_outcome.gas_burnt <= max_allowed,
-        "verify_quote burnt {} of the {budget} budget, leaving less than {HEADROOM_PERCENT}% \
-         headroom. Find what grew (gas schedule or `dcap-qvl`) before raising \
-         DEFAULT_VERIFIER_TERA_GAS, or the OOG this guards against reaches mainnet",
-        verify_quote_outcome.gas_burnt,
-    );
+    assert_verifier_gas_headroom("verify_quote", verify_quote_outcome.gas_burnt, budget);
 }
 
 #[tokio::test]
@@ -364,17 +367,14 @@ async fn verify_quote_with_collateral_dates__should_run_within_verifier_gas_budg
         .unwrap();
 
     // Then
-    const HEADROOM_PERCENT: u64 = 10;
-    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
     let verifier_outcome = result
         .receipt_outcomes()
         .first()
         .expect("the call must have executed on the verifier");
-    assert!(
-        verifier_outcome.gas_burnt <= max_allowed,
-        "verify_quote_with_collateral_dates burnt {} of the {budget} budget, leaving less than \
-         {HEADROOM_PERCENT}% headroom",
+    assert_verifier_gas_headroom(
+        "verify_quote_with_collateral_dates",
         verifier_outcome.gas_burnt,
+        budget,
     );
     let verdict: VerificationResultWithCollateralDates = result
         .into_result()
