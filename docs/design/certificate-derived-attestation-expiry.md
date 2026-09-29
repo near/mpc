@@ -199,7 +199,7 @@ Fix: extend the pinned-clock trick to the contract side, mirroring
 
 *Considered: regenerating the fixture. Not a fix — a fresh one would have a 30-day shelf life.*
 
-**6. Gas budget.** See the next section. The config change is a governance vote of its own.
+**6. Gas budget.** See the next section. No config change is needed.
 
 ## Gas
 
@@ -218,10 +218,12 @@ The 300 is the chain's budget, not the verifier's. The submit receipt spends 16.
 roughly 220 as things stand, or roughly 270 if `resolve_verification`'s 60 is trimmed toward its
 4.6. Not 300.
 
-`claims()` parses the two JSON documents again and walks the certificate chains. Measured in
-sandbox, `verify_quote_with_collateral_dates` burns 179.0 TGas against `verify_quote`'s 173.6, about
-5.4 TGas more. That fits the current 200 TGas budget, but on mainnet's numbers it leaves slightly
-less than the 10% headroom the sandbox gas test asserts.
+`claims()` also reads the collateral dates. On `dcap-qvl` 0.6.3 it parsed the collateral a second
+time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against `verify_quote`'s
+173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
+([#4596](https://github.com/near/mpc/pull/4596)) removes the second parse and two duplicated
+signature checks, bringing them to 124.3 and 122.1. Both fit the current 200 TGas budget with room
+to spare, so `verifier_tera_gas` stays as it is.
 
 *Fallback if it does not fit: read `nextUpdate` from the two CRLs and the two JSON documents only.
 That drops the four certificate chains from the minimum, which is safe given their 7–30 year
@@ -230,19 +232,15 @@ lifetimes, but it should be a deliberate choice rather than an accident.*
 ## Rollout
 
 1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
-2. **Propose and vote the gas config**, sized from the measurement above. This document does not
-   propose numbers. The vote is `propose_update` / `vote_update`, which is
-   separate governance from the contract upgrade, and it has to land before step 4 — otherwise the
-   heavier method runs under the old budget and every submission runs out of gas.
-3. **Deploy the new verifier and vote it in**, per
+2. **Deploy the new verifier and vote it in**, per
    [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
    so nothing changes on chain yet. Reversible by voting back.
-4. **Upgrade `mpc-contract`** to call `verify_quote_with_collateral_dates`. Certificate-derived expiry takes
+3. **Upgrade `mpc-contract`** to call `verify_quote_with_collateral_dates`. Certificate-derived expiry takes
    effect here, and from this point voting back to the old verifier no longer works.
-5. **Release the node** with the near-expiry refresh rule from item 4.
+4. **Release the node** with the near-expiry refresh rule from item 4.
 
 Both verifiers are already live (`tee-verifier-2026-08-04.near`, `tee-verifier-2026-07-22.testnet`),
-so step 3 is a rotation, not a first deployment.
+so step 2 is a rotation, not a first deployment.
 
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.

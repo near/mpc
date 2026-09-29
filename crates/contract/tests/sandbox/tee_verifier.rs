@@ -364,7 +364,18 @@ async fn verify_quote_with_collateral_dates__should_run_within_verifier_gas_budg
         .unwrap();
 
     // Then
-    // TODO(#4519): assert the 10% headroom `verify_quote` has once the budget is raised.
+    const HEADROOM_PERCENT: u64 = 10;
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    let verifier_outcome = result
+        .receipt_outcomes()
+        .first()
+        .expect("the call must have executed on the verifier");
+    assert!(
+        verifier_outcome.gas_burnt <= max_allowed,
+        "verify_quote_with_collateral_dates burnt {} of the {budget} budget, leaving less than \
+         {HEADROOM_PERCENT}% headroom",
+        verifier_outcome.gas_burnt,
+    );
     let verdict: VerificationResultWithCollateralDates = result
         .into_result()
         .expect("the call must fit in the verifier gas budget")
