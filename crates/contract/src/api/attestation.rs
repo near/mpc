@@ -287,7 +287,7 @@ impl MpcContract {
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
         self.tee_state
-            .collect_unused_launchers(current_params.participants(), launcher_unused_ttl);
+            .remove_unused_launchers(current_params.participants(), launcher_unused_ttl);
 
         match self.tee_state.reverify_and_cleanup_participants(
             current_params.participants(),
@@ -964,46 +964,23 @@ mod tests {
     }
 
     #[test]
-    fn verify_tee__should_keep_participant_whose_launcher_stamp_lapsed_and_drop_never_adopted_one()
-    {
+    fn verify_tee__should_keep_used_launcher_and_drop_unused_one() {
         // Given
         const NANOS_PER_SECOND: u64 = 1_000_000_000;
         const LAUNCHER_TTL_SECONDS: u64 = 100;
-        let participants = gen_participants(2);
-        let parameters =
-            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
-                .unwrap();
-        let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
-            id: domain_id,
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: DomainPurpose::Sign,
-        }];
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let keyset = Keyset::new(
-            EpochId::new(0),
-            vec![KeyForDomain {
-                domain_id,
-                key: pk.try_into().unwrap(),
-                attempt: AttemptId::new(),
-            }],
-        );
-        let mut contract = MpcContract::init_running(
-            domains,
-            1,
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
+        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         contract.config.launcher_hash_unused_ttl_seconds = LAUNCHER_TTL_SECONDS;
         let ttl = Duration::from_secs(LAUNCHER_TTL_SECONDS);
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
         let never_adopted = LauncherImageHash::from([2u8; 32]);
-        let (account_id, _, participant_info) = participants.participants()[0].clone();
+        let (account_id, _, participant_info) = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()[0]
+            .clone();
 
         testing_env!(
             VMContextBuilder::new()

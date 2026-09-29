@@ -55,12 +55,8 @@ pub struct InitConfig {
     pub verifier_tera_gas: Option<u64>,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: Option<u64>,
-    /// How long a launcher hash no current participant uses stays allowed after it was last
-    /// voted in or last seen in use. It is removed at the first TEE verification after that;
-    /// verifications run at node start and every 2 days per node, and pause outside Running. A
-    /// hash in use is never removed automatically. Set it well above 2 days and above your
-    /// vote-to-first-migration time; 0 retires a freshly voted launcher at the next
-    /// verification.
+    /// TTL for launcher hashes no current participant uses; see
+    /// [`Config::launcher_hash_unused_ttl_seconds`].
     pub launcher_hash_unused_ttl_seconds: Option<u64>,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: Option<u64>,
@@ -120,12 +116,9 @@ pub struct Config {
     pub verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,
-    /// How long a launcher hash no current participant uses stays allowed after it was last
-    /// voted in or last seen in use. It is removed at the first TEE verification after that;
-    /// verifications run at node start and every 2 days per node, and pause outside Running. A
-    /// hash in use is never removed automatically. Set it well above 2 days and above your
-    /// vote-to-first-migration time; 0 retires a freshly voted launcher at the next
-    /// verification.
+    /// How long a launcher hash that no current participant uses stays allowed after its last vote
+    /// or last use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is
+    /// never removed automatically.
     pub launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: u64,

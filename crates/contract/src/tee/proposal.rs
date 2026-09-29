@@ -234,7 +234,8 @@ pub struct AllowedLauncherImage {
     pub(crate) launcher_hash: LauncherImageHash,
     pub(crate) compose_hashes: Vec<LauncherDockerComposeHash>,
     /// `now + ttl` at the last vote for this launcher, or at the last
-    /// [`AllowedLauncherImages::collect_unused`] that found it in use. Reads never consult it.
+    /// [`AllowedLauncherImages::remove_unused`] that found it in use. Only
+    /// [`AllowedLauncherImages::remove_unused`] reads it.
     pub(crate) retain_until: Timestamp,
 }
 
@@ -247,14 +248,12 @@ impl AllowedLauncherImage {
         Self {
             launcher_hash,
             compose_hashes,
-            retain_until: expiry_from_now(ttl),
+            retain_until: retain_until_from_now(ttl),
         }
     }
 }
 
-/// Expiry timestamp `now + ttl`, saturating at [`Timestamp::MAX`] on overflow so a bogus
-/// timestamp (or an enormous TTL) yields an entry that never expires rather than panicking.
-fn expiry_from_now(ttl: Duration) -> Timestamp {
+fn retain_until_from_now(ttl: Duration) -> Timestamp {
     Timestamp::now().checked_add(ttl).unwrap_or(Timestamp::MAX)
 }
 
@@ -294,7 +293,7 @@ impl AllowedLauncherImages {
             .iter_mut()
             .find(|e| e.launcher_hash == launcher_hash)
         {
-            existing.retain_until = expiry_from_now(ttl);
+            existing.retain_until = retain_until_from_now(ttl);
             return AllowedLauncherImageInsertion::Refreshed;
         }
 
@@ -312,12 +311,12 @@ impl AllowedLauncherImages {
         AllowedLauncherImageInsertion::Added
     }
 
-    /// Restamps the entries whose compose hashes are in use, then drops unused entries whose
+    /// Restamps the entries in use to `now + ttl`, then removes the other entries whose
     /// retention has passed. The most recently stamped entry is always kept, so the list
     /// never empties.
-    pub fn collect_unused(&mut self, in_use: &[LauncherDockerComposeHash], ttl: Duration) {
+    pub fn remove_unused(&mut self, in_use: &[LauncherDockerComposeHash], ttl: Duration) {
         let now = Timestamp::now();
-        let retain_until = expiry_from_now(ttl);
+        let retain_until = retain_until_from_now(ttl);
         for entry in &mut self.entries {
             if entry
                 .compose_hashes
@@ -705,7 +704,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_unused__should_keep_entry_in_use_past_its_retention() {
+    fn remove_unused__should_keep_entry_in_use_past_its_retention() {
         // Given
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
@@ -718,14 +717,14 @@ mod tests {
 
         // When
         set_block_secs(10_000);
-        allowed.collect_unused(&[get_docker_compose_hash(&in_use, &mpc_hash)], ttl);
+        allowed.remove_unused(&[get_docker_compose_hash(&in_use, &mpc_hash)], ttl);
 
         // Then
         assert_eq!(allowed.launcher_hashes(), vec![in_use]);
     }
 
     #[test]
-    fn collect_unused__should_keep_unused_entry_within_its_retention() {
+    fn remove_unused__should_keep_unused_entry_within_its_retention() {
         // Given
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
@@ -738,14 +737,14 @@ mod tests {
 
         // When
         set_block_secs(100);
-        allowed.collect_unused(&[], ttl);
+        allowed.remove_unused(&[], ttl);
 
         // Then
         assert_eq!(allowed.launcher_hashes(), launchers);
     }
 
     #[test]
-    fn collect_unused__should_keep_latest_stamped_entry_when_none_is_in_use() {
+    fn remove_unused__should_keep_latest_stamped_entry_when_none_is_in_use() {
         // Given
         let ttl = Duration::from_secs(10);
         let mut allowed = AllowedLauncherImages::default();
@@ -757,7 +756,7 @@ mod tests {
 
         // When
         set_block_secs(500);
-        allowed.collect_unused(&[], ttl);
+        allowed.remove_unused(&[], ttl);
 
         // Then
         assert_eq!(allowed.launcher_hashes(), vec![dummy_launcher_hash(2)]);
@@ -779,7 +778,7 @@ mod tests {
         set_block_secs(90);
         let insertion = allowed.add_or_refresh(re_voted, &mpc_hashes, ttl);
         set_block_secs(150);
-        allowed.collect_unused(&[], ttl);
+        allowed.remove_unused(&[], ttl);
 
         // Then
         assert_eq!(insertion, AllowedLauncherImageInsertion::Refreshed);

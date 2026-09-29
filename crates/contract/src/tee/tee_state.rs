@@ -376,11 +376,10 @@ impl TeeState {
         self.allowed_launcher_images.all_compose_hashes()
     }
 
-    /// Runs [`AllowedLauncherImages::collect_unused`] with the launchers used by the stored
-    /// attestations of the given [`Participants`]. They must be the running participants: a
-    /// launcher used only by a participant missing here can be removed, which kicks that
-    /// participant.
-    pub(crate) fn collect_unused_launchers(
+    /// Removes the launchers no participant in `current_participants` uses once their TTL has
+    /// passed, after restamping the ones they do use. Pass the running participants: a launcher
+    /// used only by a participant missing here can be removed, which kicks that participant.
+    pub(crate) fn remove_unused_launchers(
         &mut self,
         current_participants: &Participants,
         ttl: Duration,
@@ -395,7 +394,7 @@ impl TeeState {
             })
             .filter_map(|stored| stored.verified_attestation.launcher_compose_hash())
             .collect();
-        self.allowed_launcher_images.collect_unused(&in_use, ttl);
+        self.allowed_launcher_images.remove_unused(&in_use, ttl);
     }
 
     /// Casts a vote for adding or removing a launcher image hash.
@@ -1345,7 +1344,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_unused_launchers__should_keep_launcher_in_use_past_its_retention() {
+    fn remove_unused_launchers__should_keep_launcher_in_use_past_its_retention() {
         // Given
         let participants = gen_participants(1);
         let (account_id, _, participant_info) = participants.participants()[0].clone();
@@ -1370,7 +1369,7 @@ mod tests {
 
         // When
         set_block_timestamp(500 * NANOS_PER_SECOND);
-        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![adopted]);
@@ -1380,72 +1379,58 @@ mod tests {
         );
     }
 
-    #[test]
-    fn collect_unused_launchers__should_not_count_attestation_of_non_participant() {
-        // Given
-        let participants = gen_participants(1);
-        let outsider = gen_participants(1);
-        let (account_id, _, participant_info) = outsider.participants()[0].clone();
-        set_block_timestamp(10 * NANOS_PER_SECOND);
+    /// An older launcher attested by `node_id`, and a newer unused one.
+    fn tee_state_with_old_launcher_attested_by(node_id: NodeId) -> (TeeState, LauncherImageHash) {
         let mut tee_state = TeeState::default();
         let mpc_hash = NodeImageHash::from([10u8; 32]);
-        let outsider_launcher = LauncherImageHash::from([1u8; 32]);
+        let old = LauncherImageHash::from([1u8; 32]);
         let newest = LauncherImageHash::from([2u8; 32]);
-        tee_state.allowed_launcher_images.add_or_refresh(
-            outsider_launcher,
-            &[mpc_hash],
-            LAUNCHER_TTL,
-        );
+        set_block_timestamp(10 * NANOS_PER_SECOND);
         tee_state
-            .verify_and_store_mock(
-                create_node_id(&account_id, &participant_info.tls_public_key),
-                launcher_mock(&outsider_launcher, &mpc_hash),
-                Duration::MAX,
-            )
+            .allowed_launcher_images
+            .add_or_refresh(old, &[mpc_hash], LAUNCHER_TTL);
+        tee_state
+            .verify_and_store_mock(node_id, launcher_mock(&old, &mpc_hash), Duration::MAX)
             .unwrap();
         set_block_timestamp(20 * NANOS_PER_SECOND);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
+        (tee_state, newest)
+    }
+
+    #[test]
+    fn remove_unused_launchers__should_not_count_attestation_of_non_participant() {
+        // Given
+        let participants = gen_participants(1);
+        let (outsider, _, outsider_info) = gen_participants(1).participants()[0].clone();
+        let (mut tee_state, newest) = tee_state_with_old_launcher_attested_by(create_node_id(
+            &outsider,
+            &outsider_info.tls_public_key,
+        ));
 
         // When
         set_block_timestamp(500 * NANOS_PER_SECOND);
-        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
     }
 
     #[test]
-    fn collect_unused_launchers__should_not_count_attestation_stored_by_another_account_under_participant_key()
-     {
+    fn remove_unused_launchers__should_not_count_attestation_of_another_account() {
         // Given
         let participants = gen_participants(1);
         let (_, _, participant_info) = participants.participants()[0].clone();
         let other_account: AccountId = "other.near".parse().unwrap();
-        set_block_timestamp(10 * NANOS_PER_SECOND);
-        let mut tee_state = TeeState::default();
-        let mpc_hash = NodeImageHash::from([10u8; 32]);
-        let other_launcher = LauncherImageHash::from([1u8; 32]);
-        let newest = LauncherImageHash::from([2u8; 32]);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(other_launcher, &[mpc_hash], LAUNCHER_TTL);
-        tee_state
-            .verify_and_store_mock(
-                create_node_id(&other_account, &participant_info.tls_public_key),
-                launcher_mock(&other_launcher, &mpc_hash),
-                Duration::MAX,
-            )
-            .unwrap();
-        set_block_timestamp(20 * NANOS_PER_SECOND);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
+        let (mut tee_state, newest) = tee_state_with_old_launcher_attested_by(create_node_id(
+            &other_account,
+            &participant_info.tls_public_key,
+        ));
 
         // When
         set_block_timestamp(500 * NANOS_PER_SECOND);
-        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
@@ -1861,30 +1846,30 @@ mod tests {
     }
 
     #[test]
-    fn verify_and_store_mock__should_reject_collected_launcher_hash() {
+    fn verify_and_store_mock__should_reject_removed_launcher_hash() {
         // Given
         let participants = gen_participants(1);
         let (account_id, _, participant_info) = participants.participants()[0].clone();
         let node_id = create_node_id(&account_id, &participant_info.tls_public_key);
         let mpc_hash = NodeImageHash::from([10u8; 32]);
-        let collected = LauncherImageHash::from([1u8; 32]);
+        let removed = LauncherImageHash::from([1u8; 32]);
         let newest = LauncherImageHash::from([2u8; 32]);
         let mut tee_state = TeeState::default();
         set_block_timestamp(NANOS_PER_SECOND);
         tee_state
             .allowed_launcher_images
-            .add_or_refresh(collected, &[mpc_hash], LAUNCHER_TTL);
+            .add_or_refresh(removed, &[mpc_hash], LAUNCHER_TTL);
         set_block_timestamp(200 * NANOS_PER_SECOND);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
         set_block_timestamp(250 * NANOS_PER_SECOND);
-        tee_state.collect_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // When
         let result = tee_state.verify_and_store_mock(
             node_id,
-            launcher_mock(&collected, &mpc_hash),
+            launcher_mock(&removed, &mpc_hash),
             Duration::from_secs(0),
         );
 

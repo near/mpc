@@ -142,31 +142,30 @@ moves off 604 and the fee floor needs re-checking) and a state migration.
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
 approach instead.*
 
-**2. Launcher-image eviction.** A launcher hash is evicted after `launcher_hash_unused_ttl_seconds`
-(14 days) without use. `re_verify` re-checks a stored attestation's launcher hash against the current
-allowed set, so evicting a hash kicks a node whose attestation is still valid. Until
-[#4516](https://github.com/near/mpc/issues/4516), `Config::validate` prevented this by requiring the
-TTL to exceed the 7-day constant, which is going away.
+**2. Launcher-image eviction.** Launcher hashes nobody uses are retired after
+`launcher_hash_unused_ttl_seconds` (14 days). `re_verify` re-checks a stored attestation's launcher
+hash against the current allowed set, so retiring a hash kicks every node whose attestation uses it.
+Under a plain "unused for 14 days" rule, a node that attests once with 30 days of validity and then
+stops loses its hash on day 14 and is kicked with 16 days left, which turns launcher cleanup into a
+second attestation deadline.
 
-Without that rule, a node that attests once with 30 days of validity and then stops loses its hash
-on day 14 and is kicked with 16 days left. Effective validity becomes `min(certificate expiry, 14
-days since the last attestation)`, which turns launcher cleanup into a second attestation deadline.
+Fix: keep a hash while a current participant uses it, and remove it only in `verify_tee`. Each
+entry has one stamp, `now + ttl`, set when it is voted in and again at every `verify_tee` that finds
+a current participant's stored attestation using it. `verify_tee` restamps first, then drops the
+unused entries whose stamp has passed, always keeping the most recently stamped one so the list
+never empties. Reads return every entry, with no time filter. A hash in use is therefore never
+removed automatically, whatever the TTL or the attestation's lifetime, and the TTL only retires
+hashes nobody uses. A hash used only by a node that is not yet a participant, such as a joining node
+or a migration destination, is protected by its vote stamp alone; a threshold re-vote restamps it.
 
-Fix ([#4516](https://github.com/near/mpc/issues/4516)): reads do not filter; `verify_tee` restamps
-in-use launchers before collecting. Each entry keeps one stamp, `now + ttl` at its last vote or at
-the last `verify_tee` that found it in use. Every allowed-set read, for admission and for `re_verify`
-alike, returns all entries. Apart from the unanimous removal vote, only `verify_tee`, which runs in
-`Running` on the current participant set, removes entries. It first restamps every entry that a
-current participant's stored attestation references, then drops the entries whose stamp has passed,
-keeping the most recently stamped one so the list never empties. A hash in use is therefore never
-removed automatically, whatever the TTL or the
-attestation's lifetime, and the TTL is left retiring only hashes nobody uses. A hash used only by a
-node that is not yet a participant, such as a joining node or a migration destination, is protected
-by its vote stamp alone; a threshold re-vote restamps it.
+This removal is housekeeping, not a security control: removing a launcher immediately, for example a
+compromised one, is the unanimous `vote_remove_launcher_hash`. So removal may lag the TTL. An unused
+hash past its stamp stays accepted until the next `verify_tee`, and a current participant that
+submits with it in that window makes it in use again.
 
 *Considered: extending the stamp on each participant's submission to the attestation's own expiry,
-with reads filtering on the stamp. Correct, but the stamp then carries two meanings, every read
-has to filter, and the refresh has to be wired into both submission paths.*
+with reads filtering on the stamp. Correct, but the stamp then carries two meanings, every read has
+to filter, and the refresh has to be wired into both submission paths.*
 
 *Considered: dropping the TTL and evicting purely on references. Simpler config, but a newly
 voted-in hash has no references until nodes adopt it, so it would need its own grace period.*
