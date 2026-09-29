@@ -74,7 +74,8 @@ merge commit is what will be released.
 
 ### 2. Wait for the build workflows
 
-When the release PR merges, four workflows fire on the protected branch:
+When the release PR merges, the four workflows the release needs fire on the
+protected branch:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
 - [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
@@ -87,6 +88,12 @@ artifact named `contract`.
 
 Wait for all four to finish successfully. The Release workflow refuses to
 run if any artifact is missing.
+
+<!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
+
+[Build Nix Docker Images](.github/workflows/docker_build_nix_images.yml) also
+pushes `<branch>-<short-sha>-nix` images, which the Release workflow does not
+use yet.
 
 > **Tip:** The pre-release images are deployable. If you want to
 > smoke-test on testnet before promoting, deploy
