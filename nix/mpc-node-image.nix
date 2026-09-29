@@ -27,7 +27,10 @@ dockerTools.buildLayeredImage {
 
   extraCommands = ''
     mkdir -p app root
-    # The node writes its allowed image hashes here and nothing else creates it
+    # TODO(#2334): the image's default entrypoint runs the legacy CLI subcommand,
+    # which writes its allowed image hashes to this hard-coded directory, and a Nix
+    # image has none unless created here (the launcher configures its own path);
+    # revisit once that subcommand is removed
     mkdir -m 1777 tmp
     ln -s ${lib.getExe mpc-node} app/mpc-node
     install -m 755 ${../deployment/start.sh} app/start.sh
