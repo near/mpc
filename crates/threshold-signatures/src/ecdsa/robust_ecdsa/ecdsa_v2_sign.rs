@@ -109,22 +109,22 @@ async fn do_sign(
     let degree = threshold
         .checked_mul(2)
         .ok_or(ProtocolError::IntegerOverflow)?;
-    let polynomials = [
-        // Steps 1.1 and 1.2: degree t random polynomials
-        Polynomial::generate_polynomial(None, threshold, rng)?, // fk
-        Polynomial::generate_polynomial(None, threshold, rng)?, // fa
-        // Steps 1.3 and 1.4: degree 2t polynomials with zero constant term
-        zero_secret_polynomial(degree, rng)?, // fb
-        zero_secret_polynomial(degree, rng)?, // fd
-        zero_secret_polynomial(degree, rng)?, // fe
-        // blinding polynomials for the Pedersen commitments
-        Polynomial::generate_polynomial(None, threshold, rng)?, // frho
-        zero_secret_polynomial(degree, rng)?,                   // fsigma
-    ];
+    // Steps 1.1 and 1.2: degree t random polynomials
+    let f_k = Polynomial::generate_polynomial(None, threshold, rng)?;
+    let f_a = Polynomial::generate_polynomial(None, threshold, rng)?;
+    let f_rho = Polynomial::generate_polynomial(None, threshold, rng)?;
+    // Steps 1.3 and 1.4: degree 2t polynomials with zero constant term
+    let f_b = zero_secret_polynomial(degree, rng)?;
+    let f_d = zero_secret_polynomial(degree, rng)?;
+    let f_e = zero_secret_polynomial(degree, rng)?;
+    let f_sigma = zero_secret_polynomial(degree, rng)?;
 
     // Step 1.5: commit to fa and fb under the blinding polynomials
-    let com_a = pedersen::commit_polynomial(&polynomials[1], &polynomials[5])?;
-    let com_b = pedersen::commit_polynomial(&polynomials[2], &polynomials[6])?;
+    let com_a = pedersen::commit_polynomial(&f_a, &f_rho)?;
+    let com_b = pedersen::commit_polynomial(&f_b, &f_sigma)?;
+
+    // ordered as in the private share message (k, a, b, d, e, rho, sigma)
+    let polynomials = [f_k, f_a, f_b, f_d, f_e, f_rho, f_sigma];
     // the constant term of com_b is the identity and is not sent
     let com_b = com_b.strip_identity_constant()?;
 
@@ -164,9 +164,6 @@ async fn do_sign(
         commitments_map.put(from, (com_a_p, com_b_p));
     }
 
-    // Step 2.8: hash the committed polynomials in canonical (sorted participant) order
-    let eta = hash(&commitments_map)?;
-
     // Steps 2.2 to 2.4: receive the share evaluations, verify them against the
     // dealer's commitments (identifying a bad dealer to me alone), and sum them
     for (from, package) in recv_from_others::<Shares>(&chan, wait_shares, &participants, me).await?
@@ -185,6 +182,22 @@ async fn do_sign(
         shares.add_shares(&package);
     }
 
+    // Step 2.5: sum the committed polynomials
+    let mut commitments = commitments_map
+        .to_refs_or_none()
+        .ok_or(ProtocolError::InvalidInterpolationArguments)?
+        .into_iter();
+    let (com_a_sum, com_b_sum) = commitments
+        .next()
+        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
+    let (mut com_a_sum, mut com_b_sum) = (com_a_sum.clone(), com_b_sum.clone());
+    for (com_a_p, com_b_p) in commitments {
+        com_a_sum = com_a_sum.add(com_a_p)?;
+        com_b_sum = com_b_sum.add(com_b_p)?;
+    }
+    // restore the identity constant term stripped from the wire form
+    let com_b_sum = com_b_sum.extend_with_identity()?;
+
     // Step 2.6
     // Compute R_me = g^{k_me}
     let big_r_me = CoefficientCommitment::new(Secp256K1Group::generator() * shares.k());
@@ -192,6 +205,9 @@ async fn do_sign(
     // Step 2.7
     // Compute w_me = a_me * k_me + b_me
     let w_me = shares.a() * shares.k() + shares.b();
+
+    // Step 2.8: hash the committed polynomials in canonical (sorted participant) order
+    let eta = hash(&commitments_map)?;
 
     // Step 2.9
     // Send and receive
@@ -306,21 +322,6 @@ async fn do_sign(
         return Err(ProtocolError::ZeroScalar);
     }
 
-    // Step 2.5: sum the committed polynomials
-    let mut commitments = commitments_map
-        .into_vec_or_none()
-        .ok_or(ProtocolError::InvalidInterpolationArguments)?
-        .into_iter();
-    let (mut com_a_sum, mut com_b_sum) = commitments
-        .next()
-        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
-    for (com_a_p, com_b_p) in commitments {
-        com_a_sum = com_a_sum.add(&com_a_p)?;
-        com_b_sum = com_b_sum.add(&com_b_p)?;
-    }
-    // restore the identity constant term stripped from the wire form
-    let com_b_sum = com_b_sum.extend_with_identity()?;
-
     // the Fiat-Shamir challenges are bound to eta and the prover's identity
     let mut transcript = Transcript::new(NEAR_ROBUST_ECDSA_SIGN_LABEL);
     transcript.message(b"eta", eta.as_ref());
@@ -408,7 +409,6 @@ async fn do_sign(
 
     chan.yield_point().await;
 
-    // Round 4
     // Steps 4.6 and 4.7: compute the signature share and linearize it
     let big_r = big_r.value().to_affine();
     let s_me = msg_hash * alpha_me + (beta_me * x_coordinate(&big_r) + shares.e());
