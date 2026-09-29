@@ -7,22 +7,22 @@
   coreutils,
 }:
 
-# Not buildLayeredImage: it records every layer's store paths in the image
-# config, and the launcher's store path moves with any workspace change even
-# when its binary does not. Copying the binary into a single layer keeps the
-# digest tied to the image contents
-dockerTools.buildImage {
+dockerTools.buildLayeredImage {
   name = "mpc-launcher";
   compressor = "none";
 
-  copyToRoot = [
+  contents = [
+    tee-launcher
     (docker-client.override { buildxSupport = false; })
     bashInteractive
     coreutils
     dockerTools.fakeNss
   ];
 
-  extraCommands = "install -D ${lib.getExe tee-launcher} app/tee-launcher";
+  extraCommands = ''
+    mkdir app
+    ln -s ${lib.getExe tee-launcher} app/tee-launcher
+  '';
 
   config = {
     Cmd = [ "/app/tee-launcher" ];
