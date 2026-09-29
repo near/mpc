@@ -39,12 +39,17 @@ jobs:
           nix config show sandbox | grep -x true
           nix config show sandbox-fallback | grep -x false
 
-      - name: Build images
-        run: |
-          for image in mpc-node mpc-node-gcp mpc-launcher; do
-            nix build --print-build-logs --no-update-lock-file --out-link "result-$image" ".#$image-image"
-          done
-          sha256sum result-*/manifest.json
+      - name: Build mpc-node image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node .#mpc-node-image
+
+      - name: Build mpc-node-gcp image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node-gcp .#mpc-node-gcp-image
+
+      - name: Build mpc-launcher image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-launcher .#mpc-launcher-image
+
+      - name: Print image digests
+        run: sha256sum result-*/manifest.json
 
       - name: Check the images start
         run: |
