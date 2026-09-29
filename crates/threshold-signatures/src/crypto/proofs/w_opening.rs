@@ -15,7 +15,7 @@ use crate::{
 };
 use frost_core::{Group, serialization::SerializableScalar};
 use subtle::ConstantTimeEq;
-use zeroize::Zeroize;
+use zeroize::ZeroizeOnDrop;
 
 /// Public statement: an opening `(a, b, ρ, σ)` of `big_w` consistent with `com_a` and `com_b`.
 #[derive(Clone, Copy)]
@@ -78,36 +78,12 @@ impl<C: Ciphersuite> Statement<'_, C> {
 }
 
 /// Private witness: the opening `(a, b, ρ, σ)`.
-#[derive(Clone)]
-pub struct Witness<C: Ciphersuite>
-where
-    Scalar<C>: Zeroize,
-{
+#[derive(Clone, ZeroizeOnDrop)]
+pub struct Witness<C: Ciphersuite> {
     pub a: SerializableScalar<C>,
     pub b: SerializableScalar<C>,
     pub rho: SerializableScalar<C>,
     pub sigma: SerializableScalar<C>,
-}
-
-impl<C: Ciphersuite> Zeroize for Witness<C>
-where
-    Scalar<C>: Zeroize,
-{
-    fn zeroize(&mut self) {
-        self.a.0.zeroize();
-        self.b.0.zeroize();
-        self.rho.0.zeroize();
-        self.sigma.0.zeroize();
-    }
-}
-
-impl<C: Ciphersuite> Drop for Witness<C>
-where
-    Scalar<C>: Zeroize,
-{
-    fn drop(&mut self) {
-        self.zeroize();
-    }
 }
 
 /// Nonces `(u_a, u_b, u_ρ, u_σ)`, sampled by the caller from a secure RNG.
@@ -168,7 +144,6 @@ pub fn prove_with_nonces<C: Ciphersuite>(
 ) -> Result<Proof<C>, ProtocolError>
 where
     Element<C>: ConstantTimeEq,
-    Scalar<C>: Zeroize,
 {
     if statement.h_ped.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
