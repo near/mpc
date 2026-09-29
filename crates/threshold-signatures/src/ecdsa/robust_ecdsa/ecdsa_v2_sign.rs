@@ -7,7 +7,6 @@ use frost_secp256k1::{Group, Secp256K1Group};
 use rand_core::CryptoRngCore;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
 
-use super::presign::PresignArguments;
 use crate::crypto::{
     constants::NEAR_ROBUST_ECDSA_SIGN_LABEL,
     hash::{HashOutput, hash},
@@ -16,9 +15,9 @@ use crate::crypto::{
 };
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
-    SigningShare,
+    MaxMalicious, SigningShare,
     ecdsa::{
-        CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
+        CoefficientCommitment, Field, KeygenOutput, Polynomial, PolynomialCommitment, Scalar,
         Secp256K1ScalarField, Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
     },
     errors::{InitializationError, ProtocolError},
@@ -31,6 +30,15 @@ use crate::{
 
 type C = Secp256K1Sha256;
 
+/// The inputs of the signing protocol.
+pub struct SignArguments {
+    /// Our share of the secret key together with the public key.
+    pub keygen_out: KeygenOutput,
+    /// The maximum number of malicious parties; the protocol requires
+    /// exactly `2 * max_malicious + 1` participants.
+    pub max_malicious: MaxMalicious,
+}
+
 /// Maximum incoming buffer entries for the coordinator: the commitments, the share
 /// evaluations, the `(R, w, eta)` triples, the proofs, and the signature shares.
 pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 5;
@@ -40,7 +48,7 @@ pub fn sign<R>(
     participants: &[Participant],
     coordinator: Participant,
     me: Participant,
-    args: PresignArguments,
+    args: SignArguments,
     tweak: Tweak,
     msg_hash: Scalar,
     rng: R,
@@ -83,7 +91,7 @@ async fn do_sign(
     participants: ParticipantList,
     coordinator: Participant,
     me: Participant,
-    mut args: PresignArguments,
+    mut args: SignArguments,
     tweak: Tweak,
     msg_hash: Scalar,
     mut rng: impl CryptoRngCore,
@@ -446,7 +454,7 @@ async fn do_sign(
 fn validate_arguments(
     participants: &[Participant],
     me: Participant,
-    args: &PresignArguments,
+    args: &SignArguments,
 ) -> Result<ParticipantList, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {

@@ -30,5 +30,5 @@ pub mod sign;
 #[cfg(test)]
 mod test;
 
-pub use ecdsa_v2_sign::sign;
+pub use ecdsa_v2_sign::{SignArguments, sign};
 pub use presign::{PresignArguments, PresignOutput, RerandomizedPresignOutput};
