@@ -44,10 +44,6 @@ pub struct SignArguments {
 /// evaluations, the `(R, w, eta)` triples, the proofs, and the signature shares.
 pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 5;
 
-/// Maximum incoming buffer entries for non-coordinator participants.
-#[cfg(test)]
-pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 4;
-
 /// Runs the whole robust ECDSA signing protocol; only the coordinator obtains the signature.
 pub fn sign<R>(
     participants: &[Participant],
@@ -546,6 +542,8 @@ mod test {
     use frost_secp256k1::{Field, Secp256K1ScalarField};
     use rand::{RngCore, SeedableRng};
     use rstest::rstest;
+
+    const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 4;
 
     /// Builds one signing protocol per key holder and runs them together.
     fn run_sign(
