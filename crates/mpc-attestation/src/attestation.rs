@@ -304,9 +304,7 @@ impl VerifiedAttestation {
                 expiry_timestamp_seconds: expiration_timestamp_seconds,
                 measurements,
             }) => {
-                let attestation_has_expired = *expiration_timestamp_seconds < timestamp_seconds;
-
-                if attestation_has_expired {
+                if has_expired(*expiration_timestamp_seconds, timestamp_seconds) {
                     return Err(VerificationError::Custom(format!(
                         "The attestation expired at t = {:?}, time_now = {:?}",
                         expiration_timestamp_seconds, timestamp_seconds
@@ -564,6 +562,10 @@ fn verify_measurements(
     }
 
     Ok(())
+}
+
+pub fn has_expired(expiry_timestamp_seconds: u64, current_timestamp_seconds: u64) -> bool {
+    expiry_timestamp_seconds < current_timestamp_seconds
 }
 
 #[cfg(test)]

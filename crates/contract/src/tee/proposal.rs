@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation;
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
 use near_sdk::{env::sha256_array, log, near};
 use std::{collections::BTreeMap, time::Duration};
@@ -257,7 +258,7 @@ impl AllowedLauncherImage {
     }
 
     fn is_expired(&self, now: Timestamp) -> bool {
-        self.expires_at < now
+        attestation::has_expired(self.expires_at.as_secs(), now.as_secs())
     }
 }
 
