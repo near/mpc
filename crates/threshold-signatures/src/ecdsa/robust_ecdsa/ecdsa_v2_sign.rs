@@ -133,7 +133,7 @@ async fn do_sign(
     chan.send_many(wait_commitments, &(&com_a, &com_b))?;
 
     // send polynomial evaluations to participants
-    let wait_round_1 = chan.next_waitpoint();
+    let wait_shares = chan.next_waitpoint();
 
     // Step 1.7
     for p in participants.others(me) {
@@ -144,7 +144,7 @@ async fn do_sign(
             .collect::<Result<Vec<_>, _>>()?;
 
         // send the evaluation privately to participant p
-        chan.send_private(wait_round_1, p, &package)?;
+        chan.send_private(wait_shares, p, &package)?;
     }
 
     // Evaluate my secret shares for my polynomials
@@ -169,8 +169,7 @@ async fn do_sign(
 
     // Steps 2.2 to 2.4: receive the share evaluations, verify them against the
     // dealer's commitments (identifying a bad dealer to me alone), and sum them
-    for (from, package) in
-        recv_from_others::<Shares>(&chan, wait_round_1, &participants, me).await?
+    for (from, package) in recv_from_others::<Shares>(&chan, wait_shares, &participants, me).await?
     {
         let (com_a_p, com_b_p) = commitments_map.index(from)?;
         let valid_a = pedersen::verify_share(com_a_p, me, &package.a(), &package.rho())?;
@@ -196,9 +195,9 @@ async fn do_sign(
 
     // Step 2.9
     // Send and receive
-    let wait_round_2 = chan.next_waitpoint();
+    let wait_nonces = chan.next_waitpoint();
     chan.send_many(
-        wait_round_2,
+        wait_nonces,
         &(&big_r_me, &SigningShare::<C>::new(w_me), &eta),
     )?;
 
@@ -213,7 +212,7 @@ async fn do_sign(
     while !signingshares_map.full() {
         // Step 3.1: receive, asserting that the commitment transcripts match
         let (from, (big_r_p, w_p, eta_p)): (_, (_, SigningShare<C>, HashOutput)) =
-            chan.recv(wait_round_2).await?;
+            chan.recv(wait_nonces).await?;
         if eta_p != eta {
             return Err(ProtocolError::AssertionFailed(
                 "commitment hash mismatch in robust ecdsa presign".to_string(),
@@ -358,13 +357,13 @@ async fn do_sign(
     )?;
 
     // Step 3.8: broadcast the proof
-    let wait_round_3 = chan.next_waitpoint();
-    chan.send_many(wait_round_3, &pi)?;
+    let wait_proofs = chan.next_waitpoint();
+    chan.send_many(wait_proofs, &pi)?;
 
     // Round 4
     // Steps 4.1 and 4.2: verify every proof, identifying a misbehaving party to me
     for (from, pi_p) in
-        recv_from_others::<w_opening::Proof<C>>(&chan, wait_round_3, &participants, me).await?
+        recv_from_others::<w_opening::Proof<C>>(&chan, wait_proofs, &participants, me).await?
     {
         let index = participants.index(from)?;
         let w_p = signingshares
