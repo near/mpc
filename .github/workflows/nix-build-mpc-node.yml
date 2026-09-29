@@ -33,6 +33,12 @@ jobs:
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
 
+      # nix.conf only warns on an unknown setting, so assert the values Nix applied
+      - name: Check the Nix sandbox is enforced
+        run: |
+          nix config show sandbox | grep -x true
+          nix config show sandbox-fallback | grep -x false
+
       - name: Build images
         run: |
           for image in mpc-node mpc-node-gcp mpc-launcher; do
