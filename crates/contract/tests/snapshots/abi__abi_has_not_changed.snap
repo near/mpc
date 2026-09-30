@@ -716,189 +716,6 @@ expression: abi
         }
       },
       {
-        "name": "propose_update",
-        "doc": " Propose update to either code or config, but not both of them at the same time.",
-        "kind": "call",
-        "modifiers": [
-          "payable"
-        ],
-        "params": {
-          "serialization_type": "borsh",
-          "args": [
-            {
-              "name": "args",
-              "type_schema": {
-                "declaration": "ProposeUpdateArgs",
-                "definitions": {
-                  "()": {
-                    "Primitive": 0
-                  },
-                  "Config": {
-                    "Struct": [
-                      [
-                        "key_event_timeout_blocks",
-                        "u64"
-                      ],
-                      [
-                        "tee_upgrade_deadline_duration_seconds",
-                        "u64"
-                      ],
-                      [
-                        "contract_upgrade_deposit_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "sign_call_gas_attachment_requirement_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "ckd_call_gas_attachment_requirement_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "return_signature_and_clean_state_on_success_call_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "return_ck_and_clean_state_on_success_call_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "fail_on_timeout_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "fail_attestation_submission_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "clean_tee_status_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "clean_invalid_attestations_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "cleanup_orphaned_node_migrations_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "remove_non_participant_update_votes_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "clean_foreign_chain_data_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "remove_non_participant_tee_verifier_votes_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "verifier_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "resolve_verification_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "launcher_hash_unused_ttl_seconds",
-                        "u64"
-                      ],
-                      [
-                        "attestation_storage_fee_millinear",
-                        "u64"
-                      ]
-                    ]
-                  },
-                  "Option<Config>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "Config"
-                        ]
-                      ]
-                    }
-                  },
-                  "Option<Vec<u8>>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "Vec<u8>"
-                        ]
-                      ]
-                    }
-                  },
-                  "ProposeUpdateArgs": {
-                    "Struct": [
-                      [
-                        "code",
-                        "Option<Vec<u8>>"
-                      ],
-                      [
-                        "config",
-                        "Option<Config>"
-                      ]
-                    ]
-                  },
-                  "Vec<u8>": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "u8"
-                    }
-                  },
-                  "u64": {
-                    "Primitive": 8
-                  },
-                  "u8": {
-                    "Primitive": 1
-                  }
-                }
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/UpdateId"
-          }
-        }
-      },
-      {
-        "name": "proposed_updates",
-        "doc": " returns all proposed updates",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/ProposedUpdates"
-          }
-        }
-      },
-      {
         "name": "public_key",
         "doc": " This is the root public key combined from all the public keys of the participants.\n The domain parameter specifies which domain we're querying the public key for;\n the default is the first domain.",
         "kind": "view",
@@ -1009,44 +826,6 @@ expression: abi
             "type": "null"
           }
         }
-      },
-      {
-        "name": "remove_non_participant_update_votes",
-        "doc": " Cleans update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
-        "kind": "call",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
-        "name": "remove_update_proposal",
-        "doc": " Removes a proposed update, given the id returned by [`Self::propose_update`].\n\n The deposit attached at propose time is not refunded. Like [`Self::propose_update`], and\n unlike [`Self::remove_update_vote`], this is not restricted to the running state.\n\n Returns [`Error`] if no update with this id exists, and panics if the caller is not a\n participant.",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "id",
-              "type_schema": {
-                "$ref": "#/definitions/UpdateId"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
-        "name": "remove_update_vote",
-        "doc": " Removes an update vote by the caller\n panics if the contract is not in a running state or if the caller is not a participant",
-        "kind": "call"
       },
       {
         "name": "request_app_private_key",
@@ -2611,28 +2390,6 @@ expression: abi
         }
       },
       {
-        "name": "vote_update",
-        "doc": " Vote for a proposed update, given the id returned by [`Self::propose_update`].\n\n Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was\n executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.\n Returns [`Error`] if the update was not found or if the voter is not a participant\n in the protocol.",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "id",
-              "type_schema": {
-                "$ref": "#/definitions/UpdateId"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "boolean"
-          }
-        }
-      },
-      {
         "name": "vote_update_foreign_chain_providers",
         "doc": " Vote on per-chain RPC provider whitelist state. The input is keyed by\n [`ForeignChain`](dtos::ForeignChain); each [`ChainEntry`](dtos::ChainEntry) value carries the proposed full provider list\n and the RPC response quorum for that chain. The chain's stored state is replaced\n once the protocol's signing threshold of participants has voted the same\n `(providers, quorum)` pair. [`NonEmptyBTreeMap`](near_mpc_bounded_collections::NonEmptyBTreeMap) enforces a non-empty batch and\n at-most-one entry per chain at deserialize time.",
         "kind": "call",
@@ -3345,7 +3102,7 @@ expression: abi
               "minimum": 0.0
             },
             "remove_non_participant_update_votes_tera_gas": {
-              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "description": "Prepaid gas for a `remove_non_participant_contract_update_votes` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -4065,7 +3822,7 @@ expression: abi
               "minimum": 0.0
             },
             "remove_non_participant_update_votes_tera_gas": {
-              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "description": "Prepaid gas for a `remove_non_participant_contract_update_votes` call.",
               "type": [
                 "integer",
                 "null"
@@ -4750,27 +4507,6 @@ expression: abi
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
-              }
-            }
-          }
-        },
-        "ProposedUpdates": {
-          "type": "object",
-          "required": [
-            "updates",
-            "votes"
-          ],
-          "properties": {
-            "updates": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/UpdateHash"
-              }
-            },
-            "votes": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/UpdateId"
               }
             }
           }
@@ -5558,11 +5294,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "UpdateId": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
         },
         "VerifiedAttestation": {
           "oneOf": [

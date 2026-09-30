@@ -226,10 +226,9 @@ lifetimes, but it should be a deliberate choice rather than an accident.*
 ## Rollout
 
 1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
-2. **Measure `claims()`, then propose and vote the gas config.** This document does not propose
-   numbers; they come from the measurement. The vote is `propose_update` / `vote_update`, which is
-   separate governance from the contract upgrade, and it has to land before step 4 — otherwise the
-   heavier method runs under the old budget and every submission runs out of gas.
+2. **Measure `claims()`, then vote the gas config.** This document does not propose numbers; they
+   come from the measurement. The vote has to land before step 4 — otherwise the heavier method
+   runs under the old budget and every submission runs out of gas.
 3. **Deploy the new verifier and vote it in**, per
    [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
    so nothing changes on chain yet. Reversible by voting back.
