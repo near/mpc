@@ -45,7 +45,7 @@ pub struct InitConfig {
     pub clean_invalid_attestations_tera_gas: Option<u64>,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: Option<u64>,
-    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    /// Prepaid gas for a `remove_non_participant_contract_update_votes` call.
     pub remove_non_participant_update_votes_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
@@ -105,7 +105,7 @@ pub struct Config {
     pub clean_invalid_attestations_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: u64,
-    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    /// Prepaid gas for a `remove_non_participant_contract_update_votes` call.
     pub remove_non_participant_update_votes_tera_gas: u64,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: u64,

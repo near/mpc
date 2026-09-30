@@ -416,8 +416,8 @@ The Operator will then register the node's account key as an additional **functi
 We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chains_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
 
 > **⚠️ Security tradeoff:** Allowing all methods widens the *in-contract* blast
-> radius — a compromised node key can now call **any** contract method (e.g.
-> `propose_update`, `vote_*`), not just the previously allow-listed set. It still
+> radius — a compromised node key can now call **any** contract method,
+> not just the previously allow-listed set. It still
 > cannot transfer funds or call any other contract. We accept this because the
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
