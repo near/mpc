@@ -497,7 +497,7 @@ mod tests {
     use crate::state::resharing::ResharingContractState;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{NodeAttestation, TeeState};
-    use crate::tee::test_utils::whitelist_dstack_measurements;
+    use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
     use assert_matches::assert_matches;
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
@@ -966,8 +966,9 @@ mod tests {
     #[test]
     fn verify_tee__should_keep_used_launcher_and_drop_unused_one() {
         // Given
-        const NANOS_PER_SECOND: u64 = 1_000_000_000;
         const LAUNCHER_TTL_SECONDS: u64 = 100;
+        const ADOPTED_ADDED_AT_SECS: u64 = 1;
+        const NEVER_ADOPTED_ADDED_AT_SECS: u64 = ADOPTED_ADDED_AT_SECS + 1;
         let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         contract.config.launcher_hash_unused_ttl_seconds = LAUNCHER_TTL_SECONDS;
         let ttl = Duration::from_secs(LAUNCHER_TTL_SECONDS);
@@ -982,11 +983,7 @@ mod tests {
             .participants()[0]
             .clone();
 
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(NANOS_PER_SECOND)
-                .build()
-        );
+        set_block_secs(ADOPTED_ADDED_AT_SECS);
         contract
             .tee_state
             .allowed_launcher_images
@@ -1006,11 +1003,7 @@ mod tests {
                 Duration::MAX,
             )
             .unwrap();
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(2 * NANOS_PER_SECOND)
-                .build()
-        );
+        set_block_secs(NEVER_ADOPTED_ADDED_AT_SECS);
         contract
             .tee_state
             .allowed_launcher_images
@@ -1020,7 +1013,9 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(account_id.clone())
                 .predecessor_account_id(account_id)
-                .block_timestamp(10 * LAUNCHER_TTL_SECONDS * NANOS_PER_SECOND)
+                .block_timestamp(
+                    (NEVER_ADOPTED_ADDED_AT_SECS + LAUNCHER_TTL_SECONDS + 1) * NANOS_PER_SECOND,
+                )
                 .build()
         );
 

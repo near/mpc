@@ -623,7 +623,7 @@ mod tests {
     };
     use crate::tee::{
         proposal::get_docker_compose_hash,
-        test_utils::{set_block_timestamp, whitelist_dstack_measurements},
+        test_utils::{set_block_secs, set_block_timestamp, whitelist_dstack_measurements},
     };
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
@@ -1327,13 +1327,19 @@ mod tests {
     }
 
     const LAUNCHER_TTL: Duration = Duration::from_secs(100);
-    const NANOS_PER_SECOND: u64 = 1_000_000_000;
+    const OLD_LAUNCHER_ADDED_AT_SECS: u64 = 1;
+    const NEWEST_LAUNCHER_ADDED_AT_SECS: u64 = OLD_LAUNCHER_ADDED_AT_SECS + 1;
+    const VERY_FAR_IN_FUTURE_SECS: u64 = 1_000_000;
+
+    fn after_retention(added_at_secs: u64) -> u64 {
+        added_at_secs + LAUNCHER_TTL.as_secs() + 1
+    }
 
     fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
         MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: Some(get_docker_compose_hash(launcher, mpc_hash)),
-            expiry_timestamp_seconds: Some(1_000_000),
+            expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
             expected_measurements: None,
         }
     }
@@ -1343,7 +1349,7 @@ mod tests {
         // Given
         let participants = gen_participants(1);
         let (account_id, _, participant_info) = participants.participants()[0].clone();
-        set_block_timestamp(10 * NANOS_PER_SECOND);
+        set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
         let mut tee_state = TeeState::default();
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
@@ -1363,7 +1369,7 @@ mod tests {
             .unwrap();
 
         // When
-        set_block_timestamp(500 * NANOS_PER_SECOND);
+        set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
         tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // Then
@@ -1374,20 +1380,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn remove_unused_launchers__should_keep_every_participants_launcher() {
+        // Given
+        let participants = gen_participants(2);
+        set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
+        let mut tee_state = TeeState::default();
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let used = vec![
+            LauncherImageHash::from([1u8; 32]),
+            LauncherImageHash::from([2u8; 32]),
+        ];
+        let unused = LauncherImageHash::from([3u8; 32]);
+        for ((account_id, _, participant_info), launcher) in
+            participants.participants().iter().zip(&used)
+        {
+            tee_state
+                .allowed_launcher_images
+                .add_or_refresh(*launcher, &[mpc_hash], LAUNCHER_TTL);
+            tee_state
+                .verify_and_store_mock(
+                    create_node_id(account_id, &participant_info.tls_public_key),
+                    launcher_mock(launcher, &mpc_hash),
+                    Duration::MAX,
+                )
+                .unwrap();
+        }
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(unused, &[mpc_hash], LAUNCHER_TTL);
+
+        // When
+        set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
+        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+
+        // Then
+        assert_eq!(tee_state.get_allowed_launcher_hashes(), used);
+    }
+
     /// An older launcher attested by `node_id`, and a newer unused one.
     fn tee_state_with_old_launcher_attested_by(node_id: NodeId) -> (TeeState, LauncherImageHash) {
         let mut tee_state = TeeState::default();
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let old = LauncherImageHash::from([1u8; 32]);
         let newest = LauncherImageHash::from([2u8; 32]);
-        set_block_timestamp(10 * NANOS_PER_SECOND);
+        set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(old, &[mpc_hash], LAUNCHER_TTL);
         tee_state
             .verify_and_store_mock(node_id, launcher_mock(&old, &mpc_hash), Duration::MAX)
             .unwrap();
-        set_block_timestamp(20 * NANOS_PER_SECOND);
+        set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
@@ -1405,7 +1449,7 @@ mod tests {
         ));
 
         // When
-        set_block_timestamp(500 * NANOS_PER_SECOND);
+        set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
         tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // Then
@@ -1424,7 +1468,7 @@ mod tests {
         ));
 
         // When
-        set_block_timestamp(500 * NANOS_PER_SECOND);
+        set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
         tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // Then
@@ -1440,15 +1484,17 @@ mod tests {
             LauncherImageHash::from([1u8; 32]),
             LauncherImageHash::from([2u8; 32]),
         ];
-        set_block_timestamp(NANOS_PER_SECOND);
-        for launcher in &launchers {
-            tee_state
-                .allowed_launcher_images
-                .add_or_refresh(*launcher, &[mpc_hash], LAUNCHER_TTL);
-        }
+        set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launchers[0], &[mpc_hash], LAUNCHER_TTL);
+        set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launchers[1], &[mpc_hash], LAUNCHER_TTL);
 
         // When
-        set_block_timestamp(500 * NANOS_PER_SECOND);
+        set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
         let _ = tee_state.reverify_and_cleanup_participants(&gen_participants(1), Duration::MAX);
 
         // Then
@@ -1850,15 +1896,15 @@ mod tests {
         let removed = LauncherImageHash::from([1u8; 32]);
         let newest = LauncherImageHash::from([2u8; 32]);
         let mut tee_state = TeeState::default();
-        set_block_timestamp(NANOS_PER_SECOND);
+        set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(removed, &[mpc_hash], LAUNCHER_TTL);
-        set_block_timestamp(200 * NANOS_PER_SECOND);
+        set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
-        set_block_timestamp(250 * NANOS_PER_SECOND);
+        set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
         tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
         // When

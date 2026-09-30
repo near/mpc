@@ -418,6 +418,7 @@ mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
     use super::*;
+    use crate::tee::test_utils::set_block_secs;
     const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_secs(10 * 24 * 60 * 60); // 10 days
     const SECOND: Duration = Duration::from_secs(1);
     const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -628,14 +629,6 @@ mod tests {
 
     const BIG_TTL: Duration = Duration::from_secs(1_000_000);
 
-    fn set_block_secs(secs: u64) {
-        testing_env!(
-            VMContextBuilder::new()
-                .block_timestamp(secs * NANOS_IN_SECOND)
-                .build()
-        );
-    }
-
     #[test]
     fn test_allowed_launcher_images_add_and_remove() {
         set_block_secs(1);
@@ -740,17 +733,17 @@ mod tests {
     fn remove_unused__should_keep_unused_entry_within_its_retention() {
         // Given
         let ttl = Duration::from_secs(100);
-        let added_at_secs = 1;
-        set_block_secs(added_at_secs);
+        let first_added_at_secs = 1;
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hash = dummy_code_hash(10);
         let launchers = vec![dummy_launcher_hash(1), dummy_launcher_hash(2)];
-        for launcher in &launchers {
+        for (offset_secs, launcher) in (0..).zip(&launchers) {
+            set_block_secs(first_added_at_secs + offset_secs);
             allowed.add_or_refresh(*launcher, &[mpc_hash], ttl);
         }
 
         // When
-        set_block_secs(added_at_secs + ttl.as_secs());
+        set_block_secs(first_added_at_secs + ttl.as_secs());
         allowed.remove_unused(&[], ttl);
 
         // Then
@@ -799,7 +792,7 @@ mod tests {
         allowed.add_or_refresh(newest, &mpc_hashes, ttl);
 
         // When
-        set_block_secs(90);
+        set_block_secs(retention_end_secs);
         let insertion = allowed.add_or_refresh(re_voted, &mpc_hashes, ttl);
         set_block_secs(retention_end_secs);
         allowed.remove_unused(&[], ttl);
