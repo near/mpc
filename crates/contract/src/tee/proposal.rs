@@ -235,8 +235,7 @@ pub struct AllowedLauncherImage {
     pub(crate) launcher_hash: LauncherImageHash,
     pub(crate) compose_hashes: Vec<LauncherDockerComposeHash>,
     /// `now + ttl` at the last vote for this launcher, or at the last
-    /// [`AllowedLauncherImages::remove_unused`] that found it in use. Only
-    /// [`AllowedLauncherImages::remove_unused`] reads it.
+    /// [`AllowedLauncherImages::remove_unused`] that found it in use.
     pub(crate) retain_until: Timestamp,
 }
 
@@ -255,7 +254,10 @@ impl AllowedLauncherImage {
 }
 
 fn retain_until_from_now(ttl: Duration) -> Timestamp {
-    Timestamp::now().checked_add(ttl).unwrap_or(Timestamp::MAX)
+    Timestamp::now().checked_add(ttl).unwrap_or_else(|| {
+        log!("launcher retention overflowed for ttl {ttl:?}; retaining indefinitely");
+        Timestamp::MAX
+    })
 }
 
 /// Collection of allowed launcher images. Managed via voting (add requires threshold,
@@ -710,27 +712,36 @@ mod tests {
     fn remove_unused__should_keep_entry_in_use_past_its_retention() {
         // Given
         let ttl = Duration::from_secs(100);
-        set_block_secs(1);
+        let added_at_secs = 1;
+        let retention_end_secs = added_at_secs + ttl.as_secs();
+        set_block_secs(added_at_secs);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hash = dummy_code_hash(10);
         let in_use = dummy_launcher_hash(1);
         let unused = dummy_launcher_hash(2);
+        let in_use_compose_hashes = [get_docker_compose_hash(&in_use, &mpc_hash)];
         allowed.add_or_refresh(in_use, &[mpc_hash], ttl);
         allowed.add_or_refresh(unused, &[mpc_hash], ttl);
 
         // When
-        set_block_secs(10_000);
-        allowed.remove_unused(&[get_docker_compose_hash(&in_use, &mpc_hash)], ttl);
+        set_block_secs(retention_end_secs);
+        allowed.remove_unused(&in_use_compose_hashes, ttl);
+        let kept_at_retention_end = allowed.launcher_hashes();
+        set_block_secs(retention_end_secs + 1);
+        allowed.remove_unused(&in_use_compose_hashes, ttl);
+        let kept_after_retention_end = allowed.launcher_hashes();
 
         // Then
-        assert_eq!(allowed.launcher_hashes(), vec![in_use]);
+        assert_eq!(kept_at_retention_end, vec![in_use, unused]);
+        assert_eq!(kept_after_retention_end, vec![in_use]);
     }
 
     #[test]
     fn remove_unused__should_keep_unused_entry_within_its_retention() {
         // Given
         let ttl = Duration::from_secs(100);
-        set_block_secs(1);
+        let added_at_secs = 1;
+        set_block_secs(added_at_secs);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hash = dummy_code_hash(10);
         let launchers = vec![dummy_launcher_hash(1), dummy_launcher_hash(2)];
@@ -739,7 +750,7 @@ mod tests {
         }
 
         // When
-        set_block_secs(100);
+        set_block_secs(added_at_secs + ttl.as_secs());
         allowed.remove_unused(&[], ttl);
 
         // Then
@@ -750,42 +761,57 @@ mod tests {
     fn remove_unused__should_keep_latest_stamped_entry_when_none_is_in_use() {
         // Given
         let ttl = Duration::from_secs(10);
+        let latest_added_at_secs = 50;
+        let latest_retention_end_secs = latest_added_at_secs + ttl.as_secs();
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
+        let latest = dummy_launcher_hash(2);
         set_block_secs(1);
         allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
-        set_block_secs(50);
-        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
+        set_block_secs(latest_added_at_secs);
+        allowed.add_or_refresh(latest, &mpc_hashes, ttl);
 
         // When
-        set_block_secs(500);
+        set_block_secs(latest_retention_end_secs);
         allowed.remove_unused(&[], ttl);
+        let kept_at_retention_end = allowed.launcher_hashes();
+        set_block_secs(latest_retention_end_secs + 1);
+        allowed.remove_unused(&[], ttl);
+        let kept_after_retention_end = allowed.launcher_hashes();
 
         // Then
-        assert_eq!(allowed.launcher_hashes(), vec![dummy_launcher_hash(2)]);
+        assert_eq!(kept_at_retention_end, vec![latest]);
+        assert_eq!(kept_after_retention_end, vec![latest]);
     }
 
     #[test]
     fn add_or_refresh__should_restamp_retention_on_re_vote() {
         // Given
         let ttl = Duration::from_secs(100);
+        let added_at_secs = 1;
+        let retention_end_secs = added_at_secs + ttl.as_secs();
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
         let re_voted = dummy_launcher_hash(1);
         let newest = dummy_launcher_hash(2);
-        set_block_secs(1);
+        set_block_secs(added_at_secs);
         allowed.add_or_refresh(re_voted, &mpc_hashes, ttl);
         allowed.add_or_refresh(newest, &mpc_hashes, ttl);
 
         // When
         set_block_secs(90);
         let insertion = allowed.add_or_refresh(re_voted, &mpc_hashes, ttl);
-        set_block_secs(150);
+        set_block_secs(retention_end_secs);
         allowed.remove_unused(&[], ttl);
+        let kept_at_retention_end = allowed.launcher_hashes();
+        set_block_secs(retention_end_secs + 1);
+        allowed.remove_unused(&[], ttl);
+        let kept_after_retention_end = allowed.launcher_hashes();
 
         // Then
         assert_eq!(insertion, AllowedLauncherImageInsertion::Refreshed);
-        assert_eq!(allowed.launcher_hashes(), vec![re_voted]);
+        assert_eq!(kept_at_retention_end, vec![re_voted, newest]);
+        assert_eq!(kept_after_retention_end, vec![re_voted]);
     }
 
     #[test]
