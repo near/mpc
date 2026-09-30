@@ -53,7 +53,10 @@ async fn submit_contract_update__should_accept_a_payload_of_the_maximum_contract
         .unwrap();
 
     // Then
-    assert!(execution.is_success(), "{execution:#?}");
+    assert!(
+        execution.is_success(),
+        "failed to submit the maximum-size update: {execution:#?}"
+    );
 }
 
 #[tokio::test]
@@ -132,7 +135,10 @@ async fn submit_contract_update__should_apply_an_approved_config() {
         .unwrap();
 
     // Then
-    assert!(execution.failures().is_empty(), "{execution:#?}");
+    assert!(
+        execution.failures().is_empty(),
+        "failed to apply the approved config: {execution:#?}"
+    );
     let config: near_mpc_contract_interface::types::Config = contract
         .view(method_names::CONFIG)
         .await
@@ -181,14 +187,26 @@ async fn submit_contract_update__should_keep_the_old_code_when_the_new_binary_is
         .unwrap();
 
     // Then
-    assert!(execution.is_success(), "{execution:#?}");
-    assert!(!execution.receipt_failures().is_empty());
+    assert!(
+        execution.is_success(),
+        "submitting the invalid binary should succeed as a call: {execution:#?}"
+    );
+    assert!(
+        !execution.receipt_failures().is_empty(),
+        "the deploy receipt should have failed: {execution:#?}"
+    );
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::STATE)
         .transact()
         .await
-        .unwrap();
-    let _state: ProtocolContractState = execution.json().unwrap();
+        .unwrap()
+        .into_result()
+        .unwrap_or_else(|failure| {
+            panic!("state call failed after the rejected deploy: {failure:#?}")
+        });
+    let _state: ProtocolContractState = execution
+        .json()
+        .unwrap_or_else(|err| panic!("state does not deserialize: {err}: {execution:#?}"));
 }
 
 #[tokio::test]
@@ -213,8 +231,11 @@ async fn submit_contract_update__should_consume_the_approval() {
         .unwrap();
 
     // Then
-    dbg!(&execution);
-    assert!(execution.is_failure());
+    let failure = execution.into_result().unwrap_err().to_string();
+    assert!(
+        failure.contains("not backed by a governance threshold"),
+        "{failure}"
+    );
 }
 
 /// Contract update include some logic regarding state clean-up,

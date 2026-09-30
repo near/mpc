@@ -337,7 +337,7 @@ impl SandboxTestSetupBuilder {
     }
 }
 
-// TODO(#4513): remove once contract is deployed and call [`vote_and_submit_contract_binary`] instead
+// TODO(#4513): drop once production runs the vote-then-submit API.
 /// Upgrades the given contract to the [`current_contract`] binary.
 ///
 /// This function:
@@ -391,7 +391,7 @@ pub async fn propose_and_vote_contract_binary(
     );
 }
 
-// TODO(#4513): remove once old contract is deployed
+// TODO(#4513): drop once production runs the vote-then-submit API.
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
