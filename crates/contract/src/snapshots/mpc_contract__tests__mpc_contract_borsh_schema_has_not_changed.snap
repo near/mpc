@@ -107,6 +107,20 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "AttestationStore": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "by_tls_key",
+                        "IterableMap",
+                    ),
+                    (
+                        "by_account_key",
+                        "LookupMap",
+                    ),
+                ],
+            ),
+        },
         "AuthenticatedAccountId": Struct {
             fields: UnnamedFields(
                 [
@@ -1107,7 +1121,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "stored_attestations",
-                        "IterableMap",
+                        "AttestationStore",
                     ),
                     (
                         "allowed_measurements",

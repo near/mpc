@@ -19,6 +19,17 @@ impl MpcContract {
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
         let signer_account_id = env::signer_account_id();
+        // Resolving the node below may scan every stored attestation, so it runs only for
+        // participants.
+        let is_participant = self
+            .protocol_state
+            .is_existing_or_prospective_participant(&signer_account_id)?;
+        if !is_participant {
+            return Err(InvalidState::NotParticipant {
+                account_id: signer_account_id,
+            }
+            .into());
+        }
         let signer_account_pk = env::signer_account_pk();
         let signer_account_ed25519_pk = dtos::Ed25519PublicKey::try_from(&signer_account_pk)
             .unwrap_or_else(|_| env::panic_str("signer account key must be Ed25519"));
@@ -31,15 +42,6 @@ impl MpcContract {
         if node_id.account_id != signer_account_id {
             return Err(InvalidState::NotParticipant {
                 account_id: signer_account_id,
-            }
-            .into());
-        }
-        let is_participant = self
-            .protocol_state
-            .is_existing_or_prospective_participant(&node_id.account_id)?;
-        if !is_participant {
-            return Err(InvalidState::NotParticipant {
-                account_id: node_id.account_id.clone(),
             }
             .into());
         }
@@ -208,7 +210,7 @@ mod tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::running::RunningContractState;
-    use crate::tee::tee_state::{NodeAttestation, NodeId, TeeState};
+    use crate::tee::tee_state::{NodeId, TeeState};
     use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
     use mpc_attestation::attestation::{
         MockAttestation as MpcMockAttestation, VerifiedAttestation,
@@ -379,15 +381,12 @@ mod tests {
         let new_tls_key = dtos::Ed25519PublicKey([99u8; 32]);
         let new_signer_pk = dtos::Ed25519PublicKey([98u8; 32]);
         contract.tee_state.stored_attestations.insert(
-            new_tls_key.clone(),
-            NodeAttestation {
-                node_id: NodeId {
-                    account_id: operator4.clone(),
-                    tls_public_key: new_tls_key.clone(),
-                    account_public_key: new_signer_pk.clone(),
-                },
-                verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
+            NodeId {
+                account_id: operator4.clone(),
+                tls_public_key: new_tls_key.clone(),
+                account_public_key: new_signer_pk.clone(),
             },
+            VerifiedAttestation::Mock(MpcMockAttestation::Valid),
         );
         let foreign_chains_config: dtos::ForeignChainsConfig =
             all_chains.into_iter().collect::<BTreeSet<_>>().into();
@@ -1032,15 +1031,12 @@ mod tests {
         let tls_key_b = dtos::Ed25519PublicKey([99u8; 32]);
         let signer_pk_b = dtos::Ed25519PublicKey([98u8; 32]);
         contract.tee_state.stored_attestations.insert(
-            tls_key_b.clone(),
-            NodeAttestation {
-                node_id: NodeId {
-                    account_id: operator_account.clone(),
-                    tls_public_key: tls_key_b.clone(),
-                    account_public_key: signer_pk_b.clone(),
-                },
-                verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
+            NodeId {
+                account_id: operator_account.clone(),
+                tls_public_key: tls_key_b.clone(),
+                account_public_key: signer_pk_b.clone(),
             },
+            VerifiedAttestation::Mock(MpcMockAttestation::Valid),
         );
 
         // When: node A (the registered participant node) registers its config.
@@ -1063,5 +1059,33 @@ mod tests {
         let configs = &contract.foreign_chains.get().foreign_chains_configs;
         assert!(configs.contains_key(&tls_key_a), "node A config must exist");
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
+    }
+
+    /// A non Ed25519 signer key would panic once inspected, so getting the error proves the
+    /// participant check runs before the key is read.
+    #[test]
+    fn register_foreign_chains_config__should_reject_non_participant_before_inspecting_its_signer_key()
+     {
+        // Given
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let non_participant = gen_account_id();
+        let mut env = Environment::new(None, Some(non_participant.clone()), None);
+        env.set_pk(
+            near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1; 64]).unwrap(),
+        );
+        let foreign_chains_config: dtos::ForeignChainsConfig =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
+
+        // When
+        let result = contract.register_foreign_chains_config(foreign_chains_config);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(InvalidState::NotParticipant {
+                account_id: non_participant,
+            }
+            .into())
+        );
     }
 }

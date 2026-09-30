@@ -2,7 +2,7 @@
 
 Funding model for [#3972](https://github.com/near/mpc/issues/3972): the storage cost of an attestation entry moves off the contract's balance and onto whoever onboards the node, at the cost of one new operator step.
 
-One prepayment buys one **grant** — permission for a node account to hold one attestation entry. The grant returns when that entry is reclaimed, so it is a slot the operator keeps rather than a per-attestation charge. No NEAR is ever refunded. Fee: **0.02 NEAR**.
+One prepayment buys one **grant**: permission for a node account to hold one attestation entry. The grant returns when that entry is reclaimed, so it is a slot the operator keeps rather than a charge per attestation. No NEAR is ever refunded. Default fee: **0.025 NEAR**.
 
 ## Background
 
@@ -53,17 +53,19 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 ### Fee
 
-0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/api/attestation.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
+0.025 NEAR by default, a `Config` field that governance can vote on rather than a constant, about 2.8× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/api/attestation.rs`) insert into the real collections, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
 
 | Component | Charged bytes | Cost |
 |---|---|---|
-| Worst-case entry: a `Mock` one at 604 (`Dstack` is 599) | 604 | 0.00604 NEAR |
+| Worst case entry: a `Mock` one at 709 (`Dstack` is 704), counting its row in the account key index | 709 | 0.00709 NEAR |
 | Grants-map row, worst case (64-char account) | 194 | 0.00194 NEAR |
-| **Floor** | **798** | **0.00798 NEAR** |
+| **Floor** | **903** | **0.00903 NEAR** |
 
 Entry sizes are pinned by `stored_attestation_entry__should_have_the_pinned_size`; the grants row is measured at the time of writing. Either way the fee is held to twice the floor, so a test fails when it stops covering the layout.
 
 The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. Being a `Config` field, the fee can be re-priced without a release.
+
+The default applies to new deployments. An upgrade keeps the deployed fee, so moving a live contract to the default takes a config vote.
 
 ### Flow
 
@@ -134,7 +136,7 @@ Ask for as many grants as the operator runs nodes, plus the spare — the exampl
 | Accounting | Grant counter | Per-account NEAR balance, NEP-145 shaped | No arithmetic, no amounts stored, and a fee change cannot strand a sold grant. |
 | Multi-node / migration | Prepay per node | Free extra entry gated on `ongoing_migrations`; or a hard cap of N | Both needed a participant check or a magic number; repeating the prepayment needs neither. |
 | Grant semantics | Capacity — the grant returns when the entry is swept | Consumable ticket | The contract got the storage back, so charging again charges twice. Expiry alone does not return it, which is why an operator keeps a spare. |
-| Refunds | None | Redeem unconsumed grants | ~0.02 NEAR; recycling covers the real need without moving money. |
+| Refunds | None | Redeem unconsumed grants | About 0.025 NEAR, and recycling covers the real need without moving money. |
 | Fee source | Votable `Config` field | Derived from `storage_byte_cost` at call time; or a constant | Re-priceable without a release. Costs a state migration — the fee field and the grants map both change `MpcContract`'s borsh layout — plus `ConfigExt` DTO plumbing and regenerated borsh-schema and ABI snapshots. |
 | Consumption point | At insert | Up front, charging failures too | Nothing is stored on failure, so nothing is owed; keeps #3991 unblocked. |
 | Map hygiene | Delete row at zero; keep grants when a node is kicked | Keep zero rows; or confiscate on removal from the set | Kicks are often temporary, so confiscating would force paying again to rejoin. |

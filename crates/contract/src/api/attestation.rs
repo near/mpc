@@ -267,7 +267,7 @@ impl MpcContract {
         Ok(self
             .tee_state
             .stored_attestations
-            .get(&tls_public_key)
+            .get_by_tls(&tls_public_key)
             .map(|node_attestation| {
                 node_attestation
                     .verified_attestation
@@ -529,7 +529,7 @@ mod tests {
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
-    use crate::tee::tee_state::{NodeAttestation, TeeState};
+    use crate::tee::tee_state::TeeState;
     use crate::tee::test_utils::whitelist_dstack_measurements;
     use assert_matches::assert_matches;
     use dtos::{
@@ -736,7 +736,7 @@ mod tests {
         let stored = contract
             .tee_state
             .stored_attestations
-            .get(&node_id.tls_public_key)
+            .get_by_tls(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
     }
@@ -902,7 +902,7 @@ mod tests {
             contract
                 .tee_state
                 .stored_attestations
-                .get(&tls_key)
+                .get_by_tls(&tls_key)
                 .is_some()
         );
         // ...but the launcher's expiry was not extended.
@@ -1172,11 +1172,10 @@ mod tests {
 
     const MAX_HASH: [u8; 32] = [0xff; 32];
 
-    /// Charged storage of the largest attestation entry the contract can store, in bytes:
-    /// a 64-byte account id (NEAR's cap) plus fixed-width keys and the largest
-    /// [`VerifiedAttestation`] variant, including the
-    /// [`IterableMap`](near_sdk::store::IterableMap) record overhead.
-    const WORST_CASE_ENTRY_BYTES: u64 = 604;
+    /// Charged storage of the largest attestation entry the contract can store, in bytes: a 64
+    /// byte account id (NEAR's cap), fixed width keys, the largest [`VerifiedAttestation`]
+    /// variant and the record overhead, plus the entry's row in the account key index.
+    const WORST_CASE_ENTRY_BYTES: u64 = 709;
 
     /// Ceiling on one entry's storage cost at today's price, with headroom over
     /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
@@ -1200,9 +1199,10 @@ mod tests {
         })
     }
 
-    /// Storage the contract pays for one stored attestation entry, measured the way the runtime
-    /// charges it. NEAR caps an account id at 64 bytes; every other [`NodeId`] field is fixed-size,
-    /// so this is the worst case for the given attestation variant.
+    /// Storage the contract pays for one stored attestation entry and its account key index row,
+    /// measured the way the runtime charges it. NEAR caps an account id at 64 bytes and every
+    /// other [`NodeId`] field has a fixed size, so this is the worst case for the given
+    /// attestation variant.
     fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());
         let node_id = create_node_id(
@@ -1212,13 +1212,9 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let before = env::storage_usage();
-        tee_state.stored_attestations.insert(
-            node_id.tls_public_key.clone(),
-            NodeAttestation {
-                node_id,
-                verified_attestation,
-            },
-        );
+        tee_state
+            .stored_attestations
+            .insert(node_id, verified_attestation);
         tee_state.stored_attestations.flush();
 
         env::storage_usage() - before
@@ -1245,8 +1241,8 @@ mod tests {
     ///
     /// The prepaid-storage fee is sized from these numbers.
     #[rstest]
-    #[case::dstack(599, worst_case_dstack_attestation())]
-    #[case::mock(604, worst_case_mock_attestation())]
+    #[case::dstack(704, worst_case_dstack_attestation())]
+    #[case::mock(709, worst_case_mock_attestation())]
     fn stored_attestation_entry__should_have_the_pinned_size(
         #[case] expected_bytes: u64,
         #[case] verified_attestation: VerifiedAttestation,

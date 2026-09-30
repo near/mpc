@@ -43,7 +43,7 @@ const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
 pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
 
 /// One attestation-storage grant, in milliNEAR.
-const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 20;
+const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 25;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh])]

@@ -24,7 +24,10 @@ use near_mpc_contract_interface::types::{
     self as dtos, AccountId, Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction,
     MeasurementVoteAction,
 };
-use near_sdk::{env, log, near, store::IterableMap};
+use near_sdk::{
+    env, log, near,
+    store::{IterableMap, LookupMap},
+};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
 
@@ -78,6 +81,143 @@ pub(crate) struct NodeAttestation {
     pub(crate) verified_attestation: VerifiedAttestation,
 }
 
+/// Attestations keyed by TLS public key, with a reverse index from each account public key
+/// to the TLS key most recently written for it.
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub(crate) struct AttestationStore {
+    by_tls_key: IterableMap<Ed25519PublicKey, NodeAttestation>,
+    by_account_key: LookupMap<Ed25519PublicKey, Ed25519PublicKey>,
+}
+
+impl Default for AttestationStore {
+    fn default() -> Self {
+        Self {
+            by_tls_key: IterableMap::new(StorageKey::StoredAttestations),
+            by_account_key: LookupMap::new(StorageKey::StoredAttestationsByAccountKey),
+        }
+    }
+}
+
+impl AttestationStore {
+    /// Adopts entries written before the reverse index existed and leaves the index empty, so
+    /// the cost does not grow with the number of entries. Such an entry is found by the scan in
+    /// [`Self::get_by_account_key`] until it is next written.
+    pub(crate) fn from_unindexed_map(
+        by_tls_key: IterableMap<Ed25519PublicKey, NodeAttestation>,
+    ) -> Self {
+        Self {
+            by_tls_key,
+            by_account_key: LookupMap::new(StorageKey::StoredAttestationsByAccountKey),
+        }
+    }
+
+    /// The newest write for an account key wins its index row. Rotating the account key of a
+    /// TLS key drops the row of the previous account key.
+    pub(crate) fn insert(
+        &mut self,
+        node_id: NodeId,
+        verified_attestation: VerifiedAttestation,
+    ) -> ParticipantInsertion {
+        let tls_pk = node_id.tls_public_key.clone();
+        let account_pk = node_id.account_public_key.clone();
+
+        let previous = self.by_tls_key.insert(
+            tls_pk.clone(),
+            NodeAttestation {
+                node_id,
+                verified_attestation,
+            },
+        );
+        if let Some(previous) = &previous
+            && previous.node_id.account_public_key != account_pk
+        {
+            self.remove_row_pointing_at(&previous.node_id.account_public_key, &tls_pk);
+        }
+        // A re-attestation leaves the row as it is, so skip the storage write.
+        if self.by_account_key.get(&account_pk) != Some(&tls_pk) {
+            self.by_account_key.insert(account_pk, tls_pk);
+        }
+
+        match previous {
+            Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
+            None => ParticipantInsertion::NewlyInsertedParticipant,
+        }
+    }
+
+    pub(crate) fn get_by_tls(&self, tls_pk: &Ed25519PublicKey) -> Option<&NodeAttestation> {
+        self.by_tls_key.get(tls_pk)
+    }
+
+    /// Returns the entry most recently written for `account_pk`, or else the first entry
+    /// carrying it. The fallback scans every entry, so authorize the caller before calling
+    /// this.
+    pub(crate) fn get_by_account_key(
+        &self,
+        account_pk: &Ed25519PublicKey,
+    ) -> Option<&NodeAttestation> {
+        self.get_indexed(account_pk).or_else(|| {
+            self.by_tls_key
+                .values()
+                .find(|attestation| attestation.node_id.account_public_key == *account_pk)
+        })
+    }
+
+    fn get_indexed(&self, account_pk: &Ed25519PublicKey) -> Option<&NodeAttestation> {
+        let tls_pk = self.by_account_key.get(account_pk)?;
+        self.by_tls_key
+            .get(tls_pk)
+            .filter(|attestation| attestation.node_id.account_public_key == *account_pk)
+    }
+
+    /// Keeps the account key row when it already points at a newer entry.
+    pub(crate) fn remove(&mut self, tls_pk: &Ed25519PublicKey) -> Option<NodeAttestation> {
+        let removed = self.by_tls_key.remove(tls_pk)?;
+        self.remove_row_pointing_at(&removed.node_id.account_public_key, tls_pk);
+        Some(removed)
+    }
+
+    fn remove_row_pointing_at(&mut self, account_pk: &Ed25519PublicKey, tls_pk: &Ed25519PublicKey) {
+        if self.by_account_key.get(account_pk) == Some(tls_pk) {
+            self.by_account_key.remove(account_pk);
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Ed25519PublicKey, &NodeAttestation)> {
+        self.by_tls_key.iter()
+    }
+
+    pub(crate) fn values(&self) -> impl Iterator<Item = &NodeAttestation> {
+        self.by_tls_key.values()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_indexed(&self, account_pk: &Ed25519PublicKey) -> bool {
+        self.get_indexed(account_pk).is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn contains_key(&self, tls_pk: &Ed25519PublicKey) -> bool {
+        self.by_tls_key.contains_key(tls_pk)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> u32 {
+        self.by_tls_key.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.by_tls_key.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn flush(&mut self) {
+        self.by_tls_key.flush();
+        self.by_account_key.flush();
+    }
+}
+
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
@@ -85,11 +225,10 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: LauncherHashVotes,
-    /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
-    /// Attestations are stored for any valid participant that has submitted one, not
-    /// just for the currently active participants. Callers must not assume this map is
-    /// small; use the key-indexed accessors rather than scanning the whole collection.
-    pub(crate) stored_attestations: IterableMap<Ed25519PublicKey, NodeAttestation>,
+    /// Attestations of any node that has submitted one, not only of the active participants.
+    /// Callers must not assume the store is small, so use its key lookups rather than
+    /// iterating it.
+    pub(crate) stored_attestations: AttestationStore,
     pub(crate) allowed_measurements: AllowedMeasurements,
     pub(crate) measurement_votes: MeasurementVotes,
 }
@@ -104,7 +243,7 @@ impl Default for TeeState {
                 StorageKey::CodeHashVotesByProposal,
             ),
             launcher_votes: Default::default(),
-            stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
+            stored_attestations: AttestationStore::default(),
             allowed_measurements: Default::default(),
             measurement_votes: Default::default(),
         }
@@ -141,13 +280,8 @@ impl TeeState {
             };
 
             tee_state.stored_attestations.insert(
-                tls_public_key,
-                NodeAttestation {
-                    node_id,
-                    verified_attestation: VerifiedAttestation::Mock(
-                        attestation::MockAttestation::Valid,
-                    ),
-                },
+                node_id,
+                VerifiedAttestation::Mock(attestation::MockAttestation::Valid),
             );
         }
 
@@ -232,24 +366,15 @@ impl TeeState {
         // overwritten by a submission from a different account. Without this,
         // any caller could replace any participant's stored attestation, since
         // the entry is keyed only by `tls_public_key`.
-        if let Some(existing) = self.stored_attestations.get(&tls_pk)
+        if let Some(existing) = self.stored_attestations.get_by_tls(&tls_pk)
             && existing.node_id.account_id != node_id.account_id
         {
             return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
         }
 
-        let previous = self.stored_attestations.insert(
-            tls_pk,
-            NodeAttestation {
-                node_id,
-                verified_attestation,
-            },
-        );
-
-        Ok(match previous {
-            Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
-            None => ParticipantInsertion::NewlyInsertedParticipant,
-        })
+        Ok(self
+            .stored_attestations
+            .insert(node_id, verified_attestation))
     }
 
     /// reverifies stored participant attestations.
@@ -263,7 +388,7 @@ impl TeeState {
         let allowed_launcher_compose_hashes = self.get_allowed_launcher_compose_hashes();
         let allowed_measurements = self.get_accepted_measurements();
 
-        let participant_attestation = self.stored_attestations.get(&node_id.tls_public_key);
+        let participant_attestation = self.stored_attestations.get_by_tls(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
             return TeeQuoteStatus::Invalid("participant has no attestation".to_string());
         };
@@ -390,7 +515,7 @@ impl TeeState {
         _authenticated_participant: &AuthenticatedParticipantId,
         ttl: Duration,
     ) {
-        let Some(attestation) = self.stored_attestations.get(tls_public_key) else {
+        let Some(attestation) = self.stored_attestations.get_by_tls(tls_public_key) else {
             return;
         };
         if let Some(launcher_compose_hash) =
@@ -526,7 +651,7 @@ impl TeeState {
     /// verification work.
     pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
         self.stored_attestations
-            .get(tls_public_key)
+            .get_by_tls(tls_public_key)
             .map(|node_attestation| node_attestation.node_id.account_id.clone())
     }
 
@@ -542,19 +667,19 @@ impl TeeState {
     /// Find a NodeId by its TLS public key.
     pub fn find_node_id_by_tls_key(&self, tls_public_key: &Ed25519PublicKey) -> Option<NodeId> {
         self.stored_attestations
-            .get(tls_public_key)
+            .get_by_tls(tls_public_key)
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
-    /// Finds the [`NodeId`] (account_id + tls_public_key) for the node whose attested
-    /// account public key matches `signer_account_pk`.
+    /// Finds the [`NodeId`] of the node attested under `signer_account_pk`, as resolved by
+    /// [`AttestationStore::get_by_account_key`]. It may scan every stored attestation, so
+    /// authorize the caller before calling this.
     pub(crate) fn lookup_node_id_by_signer_pk(
         &self,
         signer_account_pk: &Ed25519PublicKey,
     ) -> Result<&NodeId, AttestationCheckError> {
         self.stored_attestations
-            .values()
-            .find(|attestation| attestation.node_id.account_public_key == *signer_account_pk)
+            .get_by_account_key(signer_account_pk)
             .map(|attestation| &attestation.node_id)
             .ok_or(AttestationCheckError::AttestationNotFound)
     }
@@ -576,7 +701,7 @@ impl TeeState {
 
         let attestation = self
             .stored_attestations
-            .get(&info.tls_public_key)
+            .get_by_tls(&info.tls_public_key)
             .ok_or(AttestationCheckError::AttestationNotFound)?;
 
         if attestation.node_id.account_id != signer_id {
@@ -1014,7 +1139,7 @@ mod tests {
         // then
         let stored_entry = tee_state
             .stored_attestations
-            .get(&node_id.tls_public_key)
+            .get_by_tls(&node_id.tls_public_key)
             .unwrap();
 
         assert_eq!(
@@ -1620,7 +1745,7 @@ mod tests {
         );
         let stored = tee_state
             .stored_attestations
-            .get(&tls_public_key)
+            .get_by_tls(&tls_public_key)
             .expect("entry must still be present");
         assert_eq!(stored.node_id, alice_node);
     }
@@ -1650,7 +1775,7 @@ mod tests {
         assert_matches!(result, Ok(ParticipantInsertion::UpdatedExistingParticipant));
         let stored = tee_state
             .stored_attestations
-            .get(&rotated_node.tls_public_key)
+            .get_by_tls(&rotated_node.tls_public_key)
             .expect("entry must be present");
         assert_eq!(stored.node_id, rotated_node);
     }
@@ -1738,7 +1863,7 @@ mod tests {
         assert_eq!(tee_state.stored_attestations.len(), 1);
         let stored = tee_state
             .stored_attestations
-            .get(&node_id.tls_public_key)
+            .get_by_tls(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
     }
@@ -1961,5 +2086,255 @@ mod tests {
             tee_state.verify_and_store_mock(node_id, live_mock, Duration::from_secs(0)),
             Ok(_)
         );
+    }
+
+    fn alice_node_id(
+        tls_public_key: &Ed25519PublicKey,
+        account_public_key: &Ed25519PublicKey,
+    ) -> NodeId {
+        NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: account_public_key.clone(),
+        }
+    }
+
+    fn valid_mock() -> VerifiedAttestation {
+        VerifiedAttestation::Mock(MockAttestation::Valid)
+    }
+
+    fn unindexed_store(node_ids: &[NodeId]) -> AttestationStore {
+        let mut by_tls_key = IterableMap::new(StorageKey::StoredAttestations);
+        for node_id in node_ids {
+            by_tls_key.insert(
+                node_id.tls_public_key.clone(),
+                NodeAttestation {
+                    node_id: node_id.clone(),
+                    verified_attestation: valid_mock(),
+                },
+            );
+        }
+        AttestationStore::from_unindexed_map(by_tls_key)
+    }
+
+    #[test]
+    fn attestation_store__should_overwrite_same_tls_key_with_same_account_key() {
+        // Given
+        let mut store = AttestationStore::default();
+        let tls_pk = bogus_ed25519_public_key();
+        let account_pk = bogus_ed25519_public_key();
+        let node = alice_node_id(&tls_pk, &account_pk);
+        store.insert(node.clone(), valid_mock());
+
+        // When
+        let insertion = store.insert(
+            node.clone(),
+            VerifiedAttestation::Mock(MockAttestation::Invalid),
+        );
+
+        // Then
+        assert_matches!(insertion, ParticipantInsertion::UpdatedExistingParticipant);
+        assert_eq!(store.len(), 1);
+        assert_matches!(
+            store.get_by_tls(&tls_pk).unwrap().verified_attestation,
+            VerifiedAttestation::Mock(MockAttestation::Invalid)
+        );
+        assert!(store.is_indexed(&account_pk));
+        assert_eq!(store.get_by_account_key(&account_pk).unwrap().node_id, node);
+    }
+
+    #[test]
+    fn attestation_store__should_reindex_when_same_tls_key_rotates_account_key() {
+        // Given
+        let mut store = AttestationStore::default();
+        let tls_pk = bogus_ed25519_public_key();
+        let old_account_pk = bogus_ed25519_public_key();
+        let new_account_pk = bogus_ed25519_public_key();
+        store.insert(alice_node_id(&tls_pk, &old_account_pk), valid_mock());
+
+        // When
+        let new_node = alice_node_id(&tls_pk, &new_account_pk);
+        store.insert(new_node.clone(), valid_mock());
+
+        // Then
+        assert!(store.by_account_key.get(&old_account_pk).is_none());
+        assert!(store.get_by_account_key(&old_account_pk).is_none());
+        assert!(store.is_indexed(&new_account_pk));
+        assert_eq!(
+            store.get_by_account_key(&new_account_pk).unwrap().node_id,
+            new_node
+        );
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn attestation_store__should_point_index_at_newest_tls_key_after_rotation() {
+        // Given
+        let mut store = AttestationStore::default();
+        let account_pk = bogus_ed25519_public_key();
+        let old_tls_pk = bogus_ed25519_public_key();
+        let new_tls_pk = bogus_ed25519_public_key();
+        store.insert(alice_node_id(&old_tls_pk, &account_pk), valid_mock());
+
+        // When
+        let new_node = alice_node_id(&new_tls_pk, &account_pk);
+        store.insert(new_node.clone(), valid_mock());
+
+        // Then
+        assert_eq!(
+            store.get_by_account_key(&account_pk).unwrap().node_id,
+            new_node
+        );
+        assert!(store.get_by_tls(&old_tls_pk).is_some());
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn attestation_store__remove__should_keep_the_row_of_a_newer_entry() {
+        // Given
+        let mut store = AttestationStore::default();
+        let account_pk = bogus_ed25519_public_key();
+        let old_tls_pk = bogus_ed25519_public_key();
+        let new_tls_pk = bogus_ed25519_public_key();
+        let old_node = alice_node_id(&old_tls_pk, &account_pk);
+        let new_node = alice_node_id(&new_tls_pk, &account_pk);
+        store.insert(old_node.clone(), valid_mock());
+        store.insert(new_node.clone(), valid_mock());
+
+        // When
+        let removed = store.remove(&old_tls_pk);
+
+        // Then
+        assert_eq!(removed.unwrap().node_id, old_node);
+        assert!(store.is_indexed(&account_pk));
+        assert_eq!(
+            store.get_by_account_key(&account_pk).unwrap().node_id,
+            new_node
+        );
+    }
+
+    #[test]
+    fn attestation_store__remove__should_drop_the_row_pointing_at_the_removed_entry() {
+        // Given
+        let mut store = AttestationStore::default();
+        let tls_pk = bogus_ed25519_public_key();
+        let account_pk = bogus_ed25519_public_key();
+        store.insert(alice_node_id(&tls_pk, &account_pk), valid_mock());
+
+        // When
+        store.remove(&tls_pk);
+
+        // Then
+        assert!(store.by_account_key.get(&account_pk).is_none());
+        assert!(store.get_by_account_key(&account_pk).is_none());
+    }
+
+    #[test]
+    fn attestation_store__get_by_account_key__should_resolve_newest_after_repeated_rotations() {
+        // Given
+        let mut store = AttestationStore::default();
+        let account_pk = bogus_ed25519_public_key();
+        let tls_keys: Vec<Ed25519PublicKey> = (0..3).map(|_| bogus_ed25519_public_key()).collect();
+
+        // When
+        for tls_pk in &tls_keys {
+            store.insert(alice_node_id(tls_pk, &account_pk), valid_mock());
+        }
+
+        // Then
+        assert_eq!(
+            store.get_by_account_key(&account_pk).unwrap().node_id,
+            alice_node_id(&tls_keys[2], &account_pk)
+        );
+        for tls_pk in &tls_keys[..2] {
+            assert!(store.get_by_tls(tls_pk).is_some());
+        }
+    }
+
+    #[test]
+    fn attestation_store__get_by_account_key__should_resolve_an_unindexed_entry_by_scanning() {
+        // Given
+        let account_pk = bogus_ed25519_public_key();
+        let node = alice_node_id(&bogus_ed25519_public_key(), &account_pk);
+        let other = alice_node_id(&bogus_ed25519_public_key(), &bogus_ed25519_public_key());
+        let store = unindexed_store(&[other, node.clone()]);
+
+        // When
+        let resolved = store.get_by_account_key(&account_pk);
+
+        // Then
+        assert!(!store.is_indexed(&account_pk));
+        assert_eq!(resolved.unwrap().node_id, node);
+    }
+
+    #[test]
+    fn attestation_store__insert__should_index_an_unindexed_entry_when_it_is_rewritten() {
+        // Given
+        let account_pk = bogus_ed25519_public_key();
+        let node = alice_node_id(&bogus_ed25519_public_key(), &account_pk);
+        let mut store = unindexed_store(std::slice::from_ref(&node));
+
+        // When
+        let insertion = store.insert(node.clone(), valid_mock());
+
+        // Then
+        assert_matches!(insertion, ParticipantInsertion::UpdatedExistingParticipant);
+        assert!(store.is_indexed(&account_pk));
+        assert_eq!(store.get_by_account_key(&account_pk).unwrap().node_id, node);
+    }
+
+    #[test]
+    fn attestation_store__get_by_account_key__should_resolve_the_older_entry_once_the_newest_is_removed()
+     {
+        // Given
+        let mut store = AttestationStore::default();
+        let account_pk = bogus_ed25519_public_key();
+        let older_node = alice_node_id(&bogus_ed25519_public_key(), &account_pk);
+        let newest_node = alice_node_id(&bogus_ed25519_public_key(), &account_pk);
+        store.insert(older_node.clone(), valid_mock());
+        store.insert(newest_node.clone(), valid_mock());
+        store.remove(&newest_node.tls_public_key);
+
+        // When
+        let resolved = store.get_by_account_key(&account_pk);
+
+        // Then
+        assert_eq!(resolved.unwrap().node_id, older_node);
+    }
+
+    #[test]
+    fn attestation_store__get_by_account_key__should_return_none_for_an_unknown_key() {
+        // Given
+        let mut store = AttestationStore::default();
+        store.insert(
+            alice_node_id(&bogus_ed25519_public_key(), &bogus_ed25519_public_key()),
+            valid_mock(),
+        );
+
+        // When
+        let resolved = store.get_by_account_key(&bogus_ed25519_public_key());
+
+        // Then
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn attestation_store__get_by_account_key__should_never_resolve_a_stale_row_to_an_entry_carrying_another_key()
+     {
+        // Given
+        let account_pk = bogus_ed25519_public_key();
+        let foreign_node = alice_node_id(&bogus_ed25519_public_key(), &bogus_ed25519_public_key());
+        let node = alice_node_id(&bogus_ed25519_public_key(), &account_pk);
+        let mut store = unindexed_store(&[foreign_node.clone(), node.clone()]);
+        store
+            .by_account_key
+            .insert(account_pk.clone(), foreign_node.tls_public_key.clone());
+
+        // When
+        let resolved = store.get_by_account_key(&account_pk);
+
+        // Then
+        assert!(!store.is_indexed(&account_pk));
+        assert_eq!(resolved.unwrap().node_id, node);
     }
 }
