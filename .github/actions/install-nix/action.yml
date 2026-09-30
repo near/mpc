@@ -10,18 +10,26 @@ runs:
     - name: Install Nix
       shell: bash
       env:
-        NIX_VERSION: 2.34.8
-        NIX_TARBALL_SHA256: 2c2e146b80834fe0ca201b51deeb939405b4f18e8d2071bf80b10f8123c50464
+        NIX_VERSION: 2.35.2
+        NIX_TARBALL_SHA256: 0c3960a9792331a22081c3c7a5d8465db9b17c50b3acdf18587fa4c6f2cb1158
       run: |
-        nix_dir="nix-$NIX_VERSION-x86_64-linux"
-        curl -fsSL -o "$RUNNER_TEMP/$nix_dir.tar.xz" "https://releases.nixos.org/nix/nix-$NIX_VERSION/$nix_dir.tar.xz"
-        echo "$NIX_TARBALL_SHA256  $RUNNER_TEMP/$nix_dir.tar.xz" | sha256sum -c
-        tar -xJf "$RUNNER_TEMP/$nix_dir.tar.xz" -C "$RUNNER_TEMP"
-        "$RUNNER_TEMP/$nix_dir/install" --daemon --yes --no-channel-add \
+        release="nix-$NIX_VERSION-x86_64-linux"
+        tarball="$RUNNER_TEMP/$release.tar.xz"
+        curl -fsSL -o "$tarball" "https://releases.nixos.org/nix/nix-$NIX_VERSION/$release.tar.xz"
+        echo "$NIX_TARBALL_SHA256  $tarball" | sha256sum -c
+        tar -xJf "$tarball" -C "$RUNNER_TEMP"
+        "$RUNNER_TEMP/$release/install" --daemon --yes --no-channel-add \
           --nix-extra-conf-file "$GITHUB_ACTION_PATH/nix.conf"
         echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
 
-    # nix.conf only warns on an unknown setting, so assert the values Nix applied
+    # Operators vote on the digests of the images built with this Nix, so a build must depend on
+    # nothing but the pinned sources: it runs in an isolated sandbox, and pre-built packages come
+    # only from the official cache (cache.nixos.org), signed with its key. Each line below reads
+    # back one setting that could weaken this (an extra cache or key, a disabled sandbox, a user
+    # other than root allowed to change settings, or a hook, plugin or remote machine taking part
+    # in builds) and fails the job unless Nix applied the expected value. Nix only warns about a
+    # misspelled setting in nix.conf, and the installer, environment variables or a newer Nix can
+    # change a value, so the applied values are checked rather than the file
     - name: Check the Nix build settings
       shell: bash
       run: |
