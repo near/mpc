@@ -133,6 +133,10 @@ pub struct RunArgs {
     /// How often to poll the contract state, in seconds.
     #[arg(long, env, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
     pub poll_interval_seconds: u64,
+    /// Address to serve /health, /status and /metrics on (e.g. 127.0.0.1:8080).
+    /// The endpoints are not served when unset.
+    #[arg(long, env("BACKUP_LISTEN_ADDRESS"))]
+    pub listen_address: Option<SocketAddr>,
 }
 
 #[cfg(test)]
@@ -205,35 +209,63 @@ mod tests {
         );
     }
 
+    const MINIMAL_RUN_ARGS: [&str; 12] = [
+        "backup-cli",
+        "--home-dir",
+        "/tmp/backup",
+        "run",
+        "--rpc-url",
+        "https://rpc.example.com",
+        "--mpc-contract-account-id",
+        "v1.signer",
+        "--mpc-node-address",
+        "node.example.com:8079",
+        "--mpc-node-p2p-key",
+        "ed25519:11111111111111111111111111111111",
+    ];
+
+    fn parse_run_args(extra: &[&str]) -> Result<RunArgs, clap::Error> {
+        let args = MINIMAL_RUN_ARGS
+            .iter()
+            .chain(["--backup-encryption-key-hex", "00"].iter())
+            .chain(extra.iter());
+        Args::try_parse_from(args).map(|args| match args.command {
+            Command::Run(run_args) => run_args,
+            command => panic!("expected the run subcommand, got {command:?}"),
+        })
+    }
+
     #[rstest]
     #[case::poll_interval("--poll-interval-seconds")]
     #[case::request_timeout("--request-timeout-seconds")]
     fn run_args__should_reject_a_zero_duration(#[case] flag: &str) {
-        // Given
-        let args = [
-            "backup-cli",
-            "--home-dir",
-            "/tmp/backup",
-            "run",
-            "--rpc-url",
-            "https://rpc.example.com",
-            "--mpc-contract-account-id",
-            "v1.signer",
-            "--mpc-node-address",
-            "node.example.com:8079",
-            "--mpc-node-p2p-key",
-            "ed25519:11111111111111111111111111111111",
-            "--backup-encryption-key-hex",
-            "00",
-            flag,
-            "0",
-        ];
-
         // When
-        let result = Args::try_parse_from(args);
+        let result = parse_run_args(&[flag, "0"]);
 
         // Then
         let err = result.expect_err(&format!("expected {flag} 0 to be rejected"));
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn run_args__should_leave_the_web_server_disabled_by_default() {
+        // When
+        let run_args = parse_run_args(&[]).expect("the minimal run args should parse");
+
+        // Then
+        assert_eq!(run_args.listen_address, None);
+    }
+
+    #[test]
+    fn run_args__should_parse_the_listen_address() {
+        // When
+        let run_args = parse_run_args(&["--listen-address", "127.0.0.1:8080"])
+            .expect("a listen address should parse");
+
+        // Then
+        assert_eq!(
+            run_args.listen_address,
+            Some(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8080)))
+        );
     }
 }

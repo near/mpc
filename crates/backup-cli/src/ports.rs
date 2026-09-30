@@ -1,9 +1,20 @@
 use std::future::Future;
 
 use mpc_node::keyshare::Keyshare;
-use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
+use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState};
 
 use crate::types;
+
+pub trait ReportBackupStatus {
+    /// `timestamp_seconds` is `None` when the backup time is unknown, e.g. for a backup
+    /// found already on disk.
+    fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>);
+}
+
+pub trait GetCurrentTime {
+    /// `None` when the system clock is before the Unix epoch.
+    fn unix_now_seconds(&self) -> Option<u64>;
+}
 
 pub trait WatchContractState {
     type Error: std::fmt::Debug;

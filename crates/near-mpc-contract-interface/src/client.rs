@@ -20,7 +20,8 @@ use crate::call_args::{
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
-    STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear, update_payload_bytes,
+    STORAGE_BYTE_COST_YOCTONEAR, SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
+    propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES,
@@ -200,10 +201,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         update: Update,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let deposit = NearToken::from_yoctonear(propose_update_required_deposit_yoctonear(
-            update_payload_bytes(&update)?,
-            STORAGE_BYTE_COST_YOCTONEAR,
-        )?);
+        let deposit = NearToken::from_yoctonear(SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR);
         let args = borsh::to_vec(&update)?;
         self.call(FunctionCallArgs::new(
             SUBMIT_CONTRACT_UPDATE,

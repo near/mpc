@@ -22,7 +22,7 @@ use crate::{
     node_migrations::NodeMigrations,
     state::ProtocolContractState,
     tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
-    update::ProposedUpdates,
+    update::{ContractUpdateVotes, ProposedUpdates},
 };
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
@@ -73,6 +73,7 @@ impl From<MpcContract> for crate::MpcContract {
             }),
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
+            contract_update_votes: ContractUpdateVotes::default(),
         }
     }
 }

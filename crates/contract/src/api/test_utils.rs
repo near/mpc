@@ -11,7 +11,7 @@ use crate::primitives::test_utils::{
 };
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
-use crate::state::test_utils::gen_running_state;
+use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
@@ -286,6 +286,7 @@ impl MpcContract {
             ),
             accept_requests: true,
             proposed_updates: Default::default(),
+            contract_update_votes: Default::default(),
             config: Default::default(),
             tee_state: Default::default(),
             node_migrations: Default::default(),
@@ -313,4 +314,26 @@ pub(crate) fn participant_account_ids(contract: &MpcContract) -> Vec<AccountId> 
         .iter()
         .map(|(account_id, _, _)| account_id.clone())
         .collect()
+}
+
+pub(crate) fn running_state() -> ProtocolContractState {
+    ProtocolContractState::Running(gen_running_state(NUM_DOMAINS))
+}
+
+pub(crate) fn resharing_state() -> ProtocolContractState {
+    ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1)
+}
+
+pub(crate) fn initializing_state() -> ProtocolContractState {
+    ProtocolContractState::Initializing(
+        gen_initializing_state(NUM_DOMAINS, NUM_GENERATED_DOMAINS).1,
+    )
+}
+
+pub(crate) fn contract_with_participants(
+    protocol_state: ProtocolContractState,
+) -> (MpcContract, Vec<AccountId>) {
+    let contract = MpcContract::new_from_protocol_state(protocol_state);
+    let participants = participant_account_ids(&contract);
+    (contract, participants)
 }
