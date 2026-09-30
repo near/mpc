@@ -1,3 +1,4 @@
+use mpc_attestation::attestation::UnixSeconds;
 use std::time::Duration;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -38,6 +39,12 @@ impl Timestamp {
 
     pub(crate) fn as_secs(self) -> u64 {
         self.duration_since_unix_epoch.as_secs()
+    }
+}
+
+impl From<Timestamp> for UnixSeconds {
+    fn from(timestamp: Timestamp) -> Self {
+        UnixSeconds(timestamp.as_secs())
     }
 }
 

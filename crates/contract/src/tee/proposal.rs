@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation::UnixSeconds;
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
 use near_sdk::{env::sha256_array, log, near};
 use std::{collections::BTreeMap, time::Duration};
@@ -170,7 +171,7 @@ impl StoredDockerImageHashes {
                     return true;
                 };
                 // if the grace period for this docker hash is in the past, then older hashes are no longer accepted
-                grace_period_deadline < current_time
+                UnixSeconds::from(grace_period_deadline).has_expired_at(current_time.into())
             })
             .unwrap_or(0)
     }
@@ -257,7 +258,7 @@ impl AllowedLauncherImage {
     }
 
     fn is_expired(&self, now: Timestamp) -> bool {
-        self.expires_at < now
+        UnixSeconds::from(self.expires_at).has_expired_at(now.into())
     }
 }
 
@@ -675,7 +676,7 @@ mod tests {
 
         let first_entry_expiry_time_nanoseconds = second_entry_time_nano_seconds
             + TEST_TEE_UPGRADE_DEADLINE_DURATION.as_nanos() as u64
-            + 1;
+            + NANOS_IN_SECOND;
 
         testing_env!(
             VMContextBuilder::new()

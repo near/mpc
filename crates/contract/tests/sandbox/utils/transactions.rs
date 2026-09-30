@@ -107,7 +107,7 @@ pub async fn execute_async_transactions(
 ///
 /// ```ignore
 /// execute_async_handle_calls(&accounts, &contract, |handle| async move {
-///     handle.vote_update(id).await
+///     handle.vote_contract_update(update_hash).await
 /// })
 /// ```
 pub async fn execute_async_handle_calls<'a, F, Fut>(
