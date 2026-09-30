@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::keyset::keyset_to_backup;
 use crate::ports::{
-    KeyShareRepository, P2PClient, ReportBackupStatus, WallClock, WatchContractState,
+    GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus, WatchContractState,
 };
 
 /// Keeps local storage holding the keyshares of the contract's current keyset
@@ -30,7 +30,7 @@ where
     Storage: KeyShareRepository,
     Contract: WatchContractState,
     Status: ReportBackupStatus,
-    Clock: WallClock,
+    Clock: GetCurrentTime,
 {
     /// Reads back what local storage already holds, so a restart does not re-fetch a keyset
     /// that is already stored.
@@ -283,7 +283,7 @@ mod tests {
 
     struct FakeClock;
 
-    impl WallClock for FakeClock {
+    impl GetCurrentTime for FakeClock {
         fn unix_now_seconds(&self) -> Option<u64> {
             Some(TEST_UNIX_NOW_SECONDS)
         }

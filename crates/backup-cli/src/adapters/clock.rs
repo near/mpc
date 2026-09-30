@@ -1,10 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::ports::WallClock;
+use crate::ports::GetCurrentTime;
 
 pub struct SystemClock;
 
-impl WallClock for SystemClock {
+impl GetCurrentTime for SystemClock {
     fn unix_now_seconds(&self) -> Option<u64> {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

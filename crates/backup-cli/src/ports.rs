@@ -6,13 +6,13 @@ use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState}
 use crate::types;
 
 pub trait ReportBackupStatus {
-    /// `timestamp_seconds` is the Unix time the backup was taken, or `None` when that is
-    /// unknown, e.g. for a backup found already on disk.
+    /// `timestamp_seconds` is `None` when the backup time is unknown, e.g. for a backup
+    /// found already on disk.
     fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>);
 }
 
-pub trait WallClock {
-    /// Seconds since the Unix epoch, or `None` when the clock is before it.
+pub trait GetCurrentTime {
+    /// `None` when the system clock is before the Unix epoch.
     fn unix_now_seconds(&self) -> Option<u64>;
 }
 

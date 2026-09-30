@@ -185,7 +185,7 @@ pub async fn run_backup_service(
     keyshares_storage: impl ports::KeyShareRepository,
     contract_state: impl ports::WatchContractState,
     status: impl ports::ReportBackupStatus,
-    clock: impl ports::WallClock,
+    clock: impl ports::GetCurrentTime,
     retry_delay: Duration,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
