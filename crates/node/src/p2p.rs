@@ -450,7 +450,6 @@ impl PersistentConnection {
     }
     const MIN_CONNECTION_ID: u32 = 0;
 
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         client_config: Arc<ClientConfig>,
         my_id: ParticipantId,
@@ -482,7 +481,7 @@ impl PersistentConnection {
                     {
                         Ok(new_conn) => {
                             log_throttle.reset();
-                            info!(
+                            tracing::info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
                                 "outgoing connection established"
@@ -496,7 +495,7 @@ impl PersistentConnection {
                             match decision {
                                 Decision::Suppress => {}
                                 Decision::Emit { observed } => {
-                                    info!(
+                                    tracing::info!(
                                         my_id = %my_id,
                                         target_participant_id = %target_participant_id,
                                         observed,
