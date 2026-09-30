@@ -36,7 +36,6 @@ jobs:
       contents: read
       pull-requests: read
       issues: read
-      id-token: write
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     outputs:
       comment: ${{ fromJSON(steps.check-title.outputs.structured_output).comment }}
@@ -72,6 +71,7 @@ jobs:
         uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
+          github_token: ${{ github.token }}
           prompt: ${{ env.TITLE_CHECK_PROMPT }}
           # Deny is evaluated before allow, so these hold whatever tools are allowed.
           # `//` anchors at the filesystem root; a single `/` would anchor at the
