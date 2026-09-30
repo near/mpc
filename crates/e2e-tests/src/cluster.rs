@@ -119,6 +119,7 @@ pub struct MpcClusterConfig {
     /// Wire format used when calling `init`. See [`ContractInitFormat`].
     pub init_format: ContractInitFormat,
     pub foreign_chains: ForeignChainsClusterConfig,
+    pub tls_trust_roots: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -210,6 +211,7 @@ impl MpcClusterConfig {
             migration_targets: vec![],
             init_format: ContractInitFormat::Current,
             foreign_chains: ForeignChainsClusterConfig::default(),
+            tls_trust_roots: None,
         }
     }
 
@@ -1482,6 +1484,7 @@ fn start_mpc_nodes(
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config,
+            tls_trust_roots: config.tls_trust_roots.clone(),
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }
@@ -1509,6 +1512,7 @@ fn start_mpc_nodes(
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config: Default::default(),
+            tls_trust_roots: config.tls_trust_roots.clone(),
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }

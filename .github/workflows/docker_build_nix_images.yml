@@ -1,0 +1,86 @@
+name: Build Nix Docker Images
+
+# Not cancelled by newer runs: an interrupted push can orphan blobs that break later pushes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/v*'
+  workflow_dispatch:
+
+jobs:
+  build-images:
+    name: "Build Nix Docker images"
+    runs-on: warp-ubuntu-2604-x64-16x
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          extra-conf: sandbox-fallback = false
+
+      # nix.conf only warns on an unknown setting, so assert the values Nix applied
+      - name: Check the Nix sandbox is enforced
+        run: |
+          nix config show sandbox | grep -x true
+          nix config show sandbox-fallback | grep -x false
+
+      - name: Build mpc-node image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node .#mpc-node-image
+
+      - name: Build mpc-node-gcp image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node-gcp .#mpc-node-gcp-image
+
+      - name: Build mpc-launcher image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-launcher .#mpc-launcher-image
+
+      - name: Print image digests
+        run: sha256sum result-*/manifest.json
+
+      - name: Upload images
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: images
+          path: result-*
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  # Separate from the build job, which has no secrets, so the registry
+  # credentials never reach code that runs during the build
+  push-images:
+    name: "Push Nix Docker images with commit hash"
+    needs: build-images
+    runs-on: warp-ubuntu-2604-x64-2x
+    environment: production
+    permissions: {}
+
+    steps:
+      - name: Download images
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: images
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: Push images
+        run: |
+          tag="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}-nix"
+          for image in mpc-node mpc-node-gcp mpc-launcher; do
+            skopeo copy --preserve-digests "dir:result-$image" "docker://docker.io/nearone/$image:$tag"
+          done
