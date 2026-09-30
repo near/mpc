@@ -10,16 +10,19 @@ use tokio::sync::watch;
 
 use crate::ports::ReportBackupStatus;
 
-pub fn status_channel() -> (BackupStatusReporter, watch::Receiver<BackupStatus>) {
+pub fn status_channel() -> (BackupStatusReporter, BackupStatusReceiver) {
     let (sender, receiver) = watch::channel(BackupStatus::default());
-    (BackupStatusReporter { sender }, receiver)
+    (
+        BackupStatusReporter { sender },
+        BackupStatusReceiver(receiver),
+    )
 }
 
 /// Serves `/health`, `/status` and `/metrics` on `listen_address` until the process exits.
 /// Returns an error when the address cannot be bound.
 pub async fn spawn_web_server(
     listen_address: SocketAddr,
-    status: watch::Receiver<BackupStatus>,
+    status: BackupStatusReceiver,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(listen_address).await?;
     tracing::info!(%listen_address, "serving /health, /status and /metrics");
@@ -31,7 +34,7 @@ pub async fn spawn_web_server(
     Ok(())
 }
 
-fn router(status: watch::Receiver<BackupStatus>) -> Router {
+fn router(status: BackupStatusReceiver) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/status", get(serve_status))
@@ -43,12 +46,12 @@ async fn health() -> &'static str {
     "OK"
 }
 
-async fn serve_status(State(status): State<watch::Receiver<BackupStatus>>) -> Json<BackupStatus> {
-    Json(status.borrow().clone())
+async fn serve_status(State(status): State<BackupStatusReceiver>) -> Json<BackupStatus> {
+    Json(status.0.borrow().clone())
 }
 
-async fn serve_metrics(State(status): State<watch::Receiver<BackupStatus>>) -> String {
-    render_metrics(&status.borrow())
+async fn serve_metrics(State(status): State<BackupStatusReceiver>) -> String {
+    render_metrics(&status.0.borrow())
 }
 
 /// Renders the Prometheus exposition of `status`. The gauges are absent until the first
@@ -106,6 +109,9 @@ impl ReportBackupStatus for BackupStatusReporter {
         });
     }
 }
+
+#[derive(Clone)]
+pub struct BackupStatusReceiver(watch::Receiver<BackupStatus>);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct BackupStatus {
@@ -225,7 +231,7 @@ mod tests {
         reporter.keyset_backed_up(EpochId::new(5), Some(1_700_000_000));
 
         // Then
-        assert_eq!(*status.borrow(), status_after_a_backup());
+        assert_eq!(*status.0.borrow(), status_after_a_backup());
     }
 
     #[test]
@@ -237,7 +243,7 @@ mod tests {
         reporter.keyset_backed_up(EpochId::new(5), None);
 
         // Then
-        assert_eq!(*status.borrow(), status_after_a_restart());
+        assert_eq!(*status.0.borrow(), status_after_a_restart());
     }
 
     #[test]
