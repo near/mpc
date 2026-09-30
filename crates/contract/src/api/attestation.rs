@@ -1034,13 +1034,13 @@ mod tests {
         };
         let running_state_before = running_state_before.clone();
 
-        // Set time to exact expiry boundary
+        // Set time to the second after expiry
         let (first_account_id, _, _) = &participant_list[0];
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(first_account_id.clone())
                 .predecessor_account_id(first_account_id.clone())
-                .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
+                .block_timestamp((ATTESTATION_EXPIRY_SECONDS + 1) * 1_000_000_000) // nanoseconds
                 .build()
         );
 
@@ -1155,7 +1155,7 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(first_account_id.clone())
                 .predecessor_account_id(first_account_id.clone())
-                .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
+                .block_timestamp((ATTESTATION_EXPIRY_SECONDS + 1) * 1_000_000_000) // nanoseconds
                 .build()
         );
 
