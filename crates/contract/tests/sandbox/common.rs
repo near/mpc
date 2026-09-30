@@ -36,7 +36,7 @@ use near_mpc_contract_interface::types::{
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
     SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
     SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
-    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, UpdateId,
+    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, Update, UpdateHash, UpdateId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -337,6 +337,7 @@ impl SandboxTestSetupBuilder {
     }
 }
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 /// Upgrades the given contract to the [`current_contract`] binary.
 ///
 /// This function:
@@ -390,6 +391,7 @@ pub async fn propose_and_vote_contract_binary(
     );
 }
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
@@ -411,6 +413,60 @@ pub async fn vote_update_till_completion(
         }
     }
     panic!("Update didn't occurred")
+}
+
+pub async fn vote_and_submit_contract_binary(
+    accounts: &[Account],
+    contract: &Contract,
+    new_contract_binary: &[u8],
+) {
+    let update = Update::Code(new_contract_binary.to_vec());
+    approve_contract_update(contract, accounts, near_mpc_sdk::update::hash(&update)).await;
+
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await
+        .expect("submit update call succeeds");
+    assert!(
+        execution.failures().is_empty(),
+        "submit update failed: {execution:#?}"
+    );
+
+    let contract_binary_post_upgrade = contract.view_code().await.unwrap();
+    assert_eq!(
+        hash(new_contract_binary),
+        hash(&contract_binary_post_upgrade),
+        "Code hash post upgrade is not matching the submitted binary."
+    );
+}
+
+pub async fn approve_contract_update(
+    contract: &Contract,
+    accounts: &[Account],
+    update_hash: UpdateHash,
+) {
+    let threshold = assert_running_return_threshold(contract).await.0 as usize;
+    let mut transactions = Vec::with_capacity(threshold);
+    for voter in &accounts[..threshold] {
+        let transaction = voter
+            .call_mpc_async(contract.id())
+            .vote_contract_update(update_hash.clone())
+            .await
+            .expect("vote transaction is sent");
+        transactions.push(transaction);
+    }
+    let mut approvals = Vec::with_capacity(threshold);
+    for transaction in transactions {
+        let execution = transaction.await.expect("vote transaction completes");
+        let approved: bool = execution.json().expect("vote returns the approval flag");
+        approvals.push(approved);
+    }
+    assert_eq!(
+        approvals.iter().filter(|approved| **approved).count(),
+        1,
+        "exactly the threshold vote approves the update: {approvals:?}"
+    );
 }
 
 /// Returns the [`dtos::Ed25519PublicKey`] corresponding to the [`Account`]'s
