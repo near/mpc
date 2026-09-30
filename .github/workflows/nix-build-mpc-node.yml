@@ -28,9 +28,6 @@ jobs:
       - name: Install Nix
         uses: ./.github/actions/install-nix
 
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
-
       - name: Build mpc-node image
         run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node .#mpc-node-image
 
