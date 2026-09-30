@@ -22,8 +22,38 @@ use crate::{
     node_migrations::NodeMigrations,
     state::ProtocolContractState,
     tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
-    update::{ContractUpdateVotes, ProposedUpdates},
+    update::ContractUpdateVotes,
 };
+
+/// A stored proposal holds a whole contract binary, so the migration clears both maps.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct ProposedUpdates {
+    vote_by_participant: IterableMap<AccountId, UpdateId>,
+    entries: IterableMap<UpdateId, UpdateEntry>,
+    id: UpdateId,
+}
+
+impl ProposedUpdates {
+    fn clear_storage(mut self) {
+        self.vote_by_participant.clear();
+        self.entries.clear();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
+struct UpdateId(u64);
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct UpdateEntry {
+    update: Update,
+    bytes_used: u128,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+enum Update {
+    Contract(Vec<u8>),
+    Config(Config),
+}
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see earlier `v*_state.rs` modules in git history
@@ -54,13 +84,13 @@ impl From<MpcContract> for crate::MpcContract {
             matches!(old.protocol_state, ProtocolContractState::Running(_)),
             "Contract must be in running state when migrating."
         );
+        old.proposed_updates.clear_storage();
 
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
-            proposed_updates: old.proposed_updates,
             config: old.config,
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,
@@ -75,5 +105,46 @@ impl From<MpcContract> for crate::MpcContract {
             available_attestation_grants: old.available_attestation_grants,
             contract_update_votes: ContractUpdateVotes::default(),
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{ProposedUpdates, Update, UpdateEntry, UpdateId};
+    use crate::storage_keys::StorageKey;
+    use near_sdk::store::IterableMap;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::{env, testing_env};
+
+    #[test]
+    fn proposed_updates__clear_storage__should_release_the_stored_proposals_and_votes() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let baseline = env::storage_usage();
+        let mut proposals = ProposedUpdates {
+            vote_by_participant: IterableMap::new(StorageKey::_DeprecatedProposedUpdatesVotesV2),
+            entries: IterableMap::new(StorageKey::_DeprecatedProposedUpdatesEntriesV2),
+            id: UpdateId(1),
+        };
+        proposals.entries.insert(
+            UpdateId(0),
+            UpdateEntry {
+                update: Update::Contract(vec![7; 4096]),
+                bytes_used: 4096,
+            },
+        );
+        proposals
+            .vote_by_participant
+            .insert("alice.near".parse().unwrap(), UpdateId(0));
+        proposals.entries.flush();
+        proposals.vote_by_participant.flush();
+        assert!(env::storage_usage() > baseline);
+
+        // When
+        proposals.clear_storage();
+
+        // Then
+        assert_eq!(env::storage_usage(), baseline);
     }
 }
