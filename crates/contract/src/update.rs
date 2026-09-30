@@ -6,16 +6,21 @@ use crate::{
     config::Config,
     dto_mapping::IntoInterfaceType,
     errors::{ConversionError, Error},
-    primitives::participants::Participants,
+    primitives::{
+        key_state::AuthenticatedAccountId,
+        participants::Participants,
+        proposal_hash::{Json, Sha256, ToProposalHash},
+        votes::Votes,
+    },
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
-use derive_more::Deref;
+use derive_more::{Deref, DerefMut};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::deposits::{
     DepositOverflowError, propose_update_required_deposit_yoctonear,
 };
-use near_mpc_contract_interface::types::{ProposeUpdateArgs, UpdateHash};
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{
     Gas, NearToken, Promise, env, log, near,
     serde::{Deserialize, Serialize},
@@ -70,11 +75,11 @@ pub(crate) enum Update {
     Config(Config),
 }
 
-impl TryFrom<ProposeUpdateArgs> for Update {
+impl TryFrom<dtos::ProposeUpdateArgs> for Update {
     type Error = Error;
 
-    fn try_from(value: ProposeUpdateArgs) -> Result<Self, Self::Error> {
-        let ProposeUpdateArgs { code, config } = value;
+    fn try_from(value: dtos::ProposeUpdateArgs) -> Result<Self, Self::Error> {
+        let dtos::ProposeUpdateArgs { code, config } = value;
         let update = match (code, config) {
             (Some(contract), None) => Update::Contract(contract),
             (None, Some(config)) => Update::Config(config.into()),
@@ -109,7 +114,7 @@ pub(crate) struct UpdateEntry {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct UpdateVotes {
     pub(super) votes: BTreeMap<AccountId, UpdateId>,
-    pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
+    pub(super) updates: BTreeMap<UpdateId, dtos::UpdateHash>,
 }
 
 #[near(serializers=[borsh ])]
@@ -282,6 +287,24 @@ fn bytes_used(update: &Update) -> u128 {
     }
 
     n_bytes_used
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug, Deref, DerefMut)]
+pub struct ContractUpdateVotes(Votes<AuthenticatedAccountId>);
+
+impl Default for ContractUpdateVotes {
+    fn default() -> Self {
+        Self(Votes::new(
+            StorageKey::ContractUpdateVotesByVoter,
+            StorageKey::ContractUpdateVotesByProposal,
+        ))
+    }
+}
+
+impl ToProposalHash for dtos::UpdateHash {
+    type Serializer = Json;
+    type Hasher = Sha256;
 }
 
 #[cfg(test)]
