@@ -48,7 +48,7 @@ The contract tracks the following information:
 
 ## Contract Updates
 
-Participants can propose and vote on contract updates (code or configuration changes). They do so by voting on the hash of the contract code or config they want to include (via `vote_contract_update`). Once a hash has received sufficient votes, any participant can submit the matching code or config (via `submit_contract_update`).
+Participants vote on contract updates (code or configuration changes). They do so by voting on the hash of the contract code or config they want to include (via `vote_contract_update`). Once a hash has received sufficient votes, any participant can submit the matching code or config (via `submit_contract_update`).
 
 ## Usage
 
@@ -311,7 +311,9 @@ These functions require the caller to be a participant or candidate.
 | `vote_reshared(key_event_id: KeyEventId)`                                           | For Resharing state only. Votes for the success of the given resharing attempt; if enough votes are collected, transitions to the next domain to reshare for, or if all domains are completed, transitions into Running.                | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_cancel_keygen(next_domain_id: u64)`                                           | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_contract_update(update_hash: UpdateHash)`                                              | Votes for the hash of the next update. Returns whether the hash is now backed by a governance threshold of current participants. | `Result<bool, Error>`     | TBD             | TBD                |
-| `submit_contract_update(update: Update)`                                                     | Applies the update whose hash currently holds threshold votes (deploys the code and runs `migrate`, or calls `update_config`), clearing every update vote. Payable: a deposit covers storage staking for larger code. | `Result<(), Error>`       | TBD             | TBD                |
+| `submit_contract_update(update: Update)`                                                     | Applies the update whose hash currently holds threshold votes (deploys the code and runs `migrate`, or calls `update_config`), clearing every update vote. Payable: requires at least 1 yoctoNEAR (full-access-key check); any surplus is refunded. The contract account must already hold the storage stake for the new code. | `Result<(), Error>`       | TBD             | TBD                |
+| `remove_contract_update_vote()`                                                              | Withdraws the caller's update vote. | `Result<(), Error>`       | TBD             | TBD                |
+| `remove_non_participant_contract_update_votes()`                                             | Drops update votes cast by accounts that are no longer participants. Callable by participants; the contract also calls it on itself when a resharing completes. | `Result<(), Error>`       | TBD             | TBD                |
 | `submit_participant_info(proposed_participant_attestation: Attestation, tls_public_key: Ed25519PublicKey)` | Submits the tee participant info for a potential candidate. c.f. TEE section. Storing a new attestation entry consumes one attestation-storage grant, so the account must have one prepaid via `prepay_attestation_storage`; re-submitting for a TLS key the account already owns does not. | `Result<(), Error>` | TBD | TBD |
 
 ### Developer API
@@ -332,6 +334,7 @@ These functions require the caller to be a participant or candidate.
 | `mpc_node_manifest_digest_votes()`                                         | Returns pending MPC node manifest digest votes, keyed by the image hash voted for.                                                                                                                       | `CodeHashesVotes`        | TBD             | TBD                |
 | `allowed_os_measurements()`                                                | Returns all currently allowed OS measurement sets.                                                                                                                                                | `Vec<ExpectedMeasurements>` | TBD  | TBD                |
 | `os_measurement_votes()`                                                   | Returns current OS measurement votes, showing each participant's vote.                                                                                                                            | `MeasurementVotes`       | TBD             | TBD                |
+| `contract_update_votes()`                                                  | Returns current update votes, keyed by the hash voted for, with the accounts backing each.                                                                                                        | `BTreeMap<ProposalHash, BTreeSet<AccountId>>` | TBD | TBD |
 | `clean_tee_status()`                                                       | Private endpoint. Cleans up TEE information for non-participants after resharing. Only callable by the contract itself via a promise.                                                              | `Result<(), Error>`      | TBD             | TBD                |
 
 ## Building the contract

@@ -1,5 +1,5 @@
-//! Contract-update proposals: proposing, voting, and applying code and config
-//! updates, plus sweeping votes from departed participants.
+//! Contract updates: voting on the hash of a code or config update, submitting it once
+//! approved, plus sweeping votes from departed participants.
 
 use crate::api::common::refund_to;
 use crate::config::Config;
