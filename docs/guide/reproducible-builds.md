@@ -72,6 +72,13 @@ so make sure `nix config show substituters` and
 `nix config show trusted-public-keys` print exactly these values and
 `nix config show require-sigs` prints `true`.
 
+A local build downloads the dependencies' pre-built outputs from this cache too,
+so a matching digest shows that CI built what anyone gets from the same sources
+and cache, not that the cache's binaries are honest. To trust no cache, add
+`--option substitute false`: Nix then builds every dependency from source, which
+takes hours, and the digest matches only if every package in the image rebuilds
+bit for bit.
+
 Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` equals the digest of the published `-nix` tag. The same
 commands work on x86_64 Linux and, with a Linux builder (see

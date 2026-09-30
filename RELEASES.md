@@ -91,9 +91,9 @@ run if any artifact is missing.
 
 <!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
 
-[Build Nix Docker Images](.github/workflows/docker_build_nix_images.yml) also
-pushes `<branch>-<short-sha>-nix` images, which the Release workflow does not
-use yet.
+[Build and Publish Nix Docker Images](.github/workflows/docker_build_nix_images.yml)
+also pushes `<branch>-<short-sha>-nix` images, which the Release workflow does
+not use yet.
 
 > **Tip:** The pre-release images are deployable. If you want to
 > smoke-test on testnet before promoting, deploy
