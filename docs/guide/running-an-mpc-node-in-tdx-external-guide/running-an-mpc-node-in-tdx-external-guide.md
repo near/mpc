@@ -843,7 +843,7 @@ For more details, please refer to the NEAR account documentation.
 
 The contract charges a one-time fee for the storage your node's attestation occupies. One prepayment buys one **grant**: permission for the node account to hold one stored attestation.
 
-**The fee is currently 20 milliNEAR (0.02 NEAR) per grant**, so a typical operator running one node pays 0.04 NEAR — one grant for the node, one spare (see below). The fee is a votable contract parameter rather than a constant, so read the current value before paying rather than trusting this number; the steps below show how.
+**The fee is currently 25 milliNEAR (0.025 NEAR) per grant**, so a typical operator running one node pays 0.05 NEAR: one grant for the node, one spare (see below). The fee is a votable contract parameter rather than a constant, so read the current value before paying rather than trusting this number; the steps below show how.
 
 The node cannot pay for this itself. Its access key is a function-call key, and the NEAR protocol forbids those from attaching a deposit — so the operator prepays, using the full-access key of the account you just created.
 
@@ -857,13 +857,13 @@ near contract call-function as-read-only \
   | jq .attestation_storage_fee_millinear
 ```
 
-Then prepay that many multiples of it. Ask for one grant per node you run plus one spare, so you can re-provision or migrate without waiting for the old attestation to expire. At the current 20 milliNEAR fee, the two grants below cost 0.04 NEAR:
+Then prepay that many multiples of it. Ask for one grant per node you run plus one spare, so you can re-provision or migrate without waiting for the old attestation to expire. At the current 25 milliNEAR fee, the two grants below cost 0.05 NEAR:
 
 ```bash
 near contract call-function as-transaction \
   v1.signer prepay_attestation_storage \
   json-args '{"account_id":"<YOUR_NODE_ACCOUNT>","grants":2}' \
-  prepaid-gas '30.0 Tgas' attached-deposit '0.04 NEAR' \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.05 NEAR' \
   sign-as <YOUR_OPERATOR_ACCOUNT> network-config mainnet sign-with-keychain send
 ```
 

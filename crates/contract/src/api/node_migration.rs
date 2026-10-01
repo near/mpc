@@ -421,7 +421,7 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::tee_state::ParticipantInsertion;
+    use crate::tee::attestation_store::ParticipantInsertion;
     use assert_matches::assert_matches;
     use dtos::Ed25519PublicKey;
     use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;

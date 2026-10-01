@@ -23,9 +23,10 @@ use crate::{
     primitives::{key_state::AuthenticatedAccountId, votes::Votes},
     state::ProtocolContractState,
     tee::{
+        attestation_store::{AttestationStore, NodeAttestation},
         measurements::{AllowedMeasurements, MeasurementVotes},
         proposal::{AllowedLauncherImages, LauncherHashVotes, StoredDockerImageHashes},
-        tee_state::{AttestationStore, NodeAttestation, TeeState},
+        tee_state::TeeState,
         verifier_votes::TeeVerifierVotes,
     },
     update::ContractUpdateVotes,
@@ -119,13 +120,26 @@ impl From<MpcContract> for crate::MpcContract {
             "Contract must be in running state when migrating."
         );
         old.proposed_updates.clear_storage();
+        let defaults = Config::default();
 
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
-            config: old.config,
+            // Each swept entry now also clears an index row and each grant now also pays for
+            // one, so both rise to at least the new defaults without a governance vote.
+            config: Config {
+                clean_invalid_attestations_tera_gas: old
+                    .config
+                    .clean_invalid_attestations_tera_gas
+                    .max(defaults.clean_invalid_attestations_tera_gas),
+                attestation_storage_fee_millinear: old
+                    .config
+                    .attestation_storage_fee_millinear
+                    .max(defaults.attestation_storage_fee_millinear),
+                ..old.config
+            },
             tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
@@ -148,7 +162,7 @@ mod tests {
     use super::*;
     use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
     use crate::primitives::key_state::{EpochId, Keyset};
-    use crate::primitives::test_utils::{bogus_ed25519_public_key, gen_participants};
+    use crate::primitives::test_utils::{gen_participants, node_id_for};
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::state::running::RunningContractState;
     use crate::storage_keys::StorageKey;
@@ -190,60 +204,41 @@ mod tests {
         assert_eq!(env::storage_usage(), baseline);
     }
 
-    struct AttestedNode {
-        account_id: AccountId,
-        tls_public_key: Ed25519PublicKey,
-        account_public_key: Ed25519PublicKey,
+    fn valid_attestation_of(node_id: &NodeId) -> NodeAttestation {
+        NodeAttestation {
+            node_id: node_id.clone(),
+            verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+        }
     }
 
-    impl AttestedNode {
-        fn new(account_id: AccountId) -> Self {
-            Self {
-                account_id,
-                tls_public_key: bogus_ed25519_public_key(),
-                account_public_key: bogus_ed25519_public_key(),
-            }
-        }
-
-        fn node_attestation(&self) -> NodeAttestation {
-            NodeAttestation {
-                node_id: NodeId {
-                    account_id: self.account_id.clone(),
-                    tls_public_key: self.tls_public_key.clone(),
-                    account_public_key: self.account_public_key.clone(),
-                },
-                verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
-            }
-        }
-
-        fn sign_as(&self) {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(self.account_id.clone())
-                    .predecessor_account_id(self.account_id.clone())
-                    .signer_account_pk(near_sdk::PublicKey::from(self.account_public_key.clone()))
-                    .build()
-            );
-        }
+    fn sign_as(node_id: &NodeId) {
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(node_id.account_id.clone())
+                .predecessor_account_id(node_id.account_id.clone())
+                .signer_account_pk(near_sdk::PublicKey::from(
+                    node_id.account_public_key.clone()
+                ))
+                .build()
+        );
     }
 
     /// A `3.16.0` contract in Running state holding the attestation of a participant and of a
     /// non participant, in that order.
-    fn contract_3_16_0_with_stored_attestations() -> (MpcContract, [AttestedNode; 2]) {
+    fn contract_3_16_0_with_stored_attestations() -> (MpcContract, [NodeId; 2]) {
         testing_env!(VMContextBuilder::new().build());
         let participants = gen_participants(2);
         let (participant_account_id, _, _) = participants.participants()[0].clone();
         let parameters =
             GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
         let nodes = [
-            AttestedNode::new(participant_account_id),
-            AttestedNode::new("other.near".parse().unwrap()),
+            node_id_for(&participant_account_id),
+            node_id_for(&"other.near".parse().unwrap()),
         ];
 
-        let mut stored_attestations =
-            IterableMap::<Ed25519PublicKey, NodeAttestation>::new(StorageKey::StoredAttestations);
+        let mut stored_attestations = IterableMap::new(StorageKey::StoredAttestations);
         for node in &nodes {
-            stored_attestations.insert(node.tls_public_key.clone(), node.node_attestation());
+            stored_attestations.insert(node.tls_public_key.clone(), valid_attestation_of(node));
         }
 
         let contract = MpcContract {
@@ -292,14 +287,60 @@ mod tests {
     }
 
     #[test]
+    fn migration__should_raise_the_sweep_budget_and_fee_to_the_new_defaults() {
+        // Given
+        let (mut old, _) = contract_3_16_0_with_stored_attestations();
+        let defaults = Config::default();
+        let deployed = Config {
+            clean_invalid_attestations_tera_gas: 15,
+            attestation_storage_fee_millinear: 20,
+            fail_on_timeout_tera_gas: defaults.fail_on_timeout_tera_gas + 1,
+            ..Config::default()
+        };
+        old.config = deployed.clone();
+
+        // When
+        let contract: crate::MpcContract = old.into();
+
+        // Then
+        assert_eq!(
+            contract.config,
+            Config {
+                clean_invalid_attestations_tera_gas: defaults.clean_invalid_attestations_tera_gas,
+                attestation_storage_fee_millinear: defaults.attestation_storage_fee_millinear,
+                ..deployed
+            }
+        );
+    }
+
+    #[test]
+    fn migration__should_keep_a_sweep_budget_and_fee_above_the_new_defaults() {
+        // Given
+        let (mut old, _) = contract_3_16_0_with_stored_attestations();
+        let defaults = Config::default();
+        let deployed = Config {
+            clean_invalid_attestations_tera_gas: defaults.clean_invalid_attestations_tera_gas + 1,
+            attestation_storage_fee_millinear: defaults.attestation_storage_fee_millinear + 1,
+            ..Config::default()
+        };
+        old.config = deployed.clone();
+
+        // When
+        let contract: crate::MpcContract = old.into();
+
+        // Then
+        assert_eq!(contract.config, deployed);
+    }
+
+    #[test]
     fn migration__should_keep_register_foreign_chains_config_working_through_the_fallback_scan() {
         // Given
         let (old, nodes) = contract_3_16_0_with_stored_attestations();
         let participant = &nodes[0];
+        let mut contract: crate::MpcContract = old.into();
+        sign_as(participant);
 
         // When
-        let mut contract: crate::MpcContract = old.into();
-        participant.sign_as();
         let result = contract
             .register_foreign_chains_config(BTreeSet::from([dtos::ForeignChain::Bitcoin]).into());
 
@@ -328,7 +369,7 @@ mod tests {
         let (old, nodes) = contract_3_16_0_with_stored_attestations();
         let participant = &nodes[0];
         let mut contract: crate::MpcContract = old.into();
-        participant.sign_as();
+        sign_as(participant);
 
         // When
         let result = contract.submit_participant_info(
