@@ -613,8 +613,8 @@ macro_rules! assert_allowed_docker_image_hashes {
 ///
 /// Verifies that when participants vote for a new image hash, the older
 /// hash remains allowed only until the successor’s grace period deadline.
-/// At the exact deadline both old and new hashes are valid, but immediately
-/// after, only the latest remains.
+/// Throughout the deadline second both old and new hashes are valid, but from
+/// the next second on, only the latest remains.
 #[test]
 fn only_latest_hash_after_grace_period() {
     const FIRST_ENTRY_TIME_NS: u64 = NANOS_IN_SECOND; // 1s
@@ -646,7 +646,7 @@ fn only_latest_hash_after_grace_period() {
     );
     assert_allowed_docker_image_hashes!(
         &setup,
-        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + 1,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + NANOS_IN_SECOND,
         &[(successor_hash, None)]
     );
 }
@@ -741,7 +741,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + 1,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + NANOS_IN_SECOND,
         &[
             (second_code_hash, second_hash_expiry),
             (third_code_hash, None),
@@ -760,7 +760,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        expiration_second_hash + 1,
+        expiration_second_hash + NANOS_IN_SECOND,
         &[(third_code_hash, None)]
     );
 }
@@ -880,7 +880,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     let expected_after_v1_expiry = [hash_v2, hash_v3];
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        v1_expiry_time + 1,
+        v1_expiry_time + NANOS_IN_SECOND,
         &[(hash_v2, v2_expiry), (hash_v3, None)]
     );
 
@@ -902,7 +902,11 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
     let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
-    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[(hash_v3, None)]);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        v2_expiry_time + NANOS_IN_SECOND,
+        &[(hash_v3, None)]
+    );
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation

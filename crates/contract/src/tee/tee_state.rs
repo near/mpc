@@ -155,7 +155,7 @@ impl TeeState {
     }
 
     pub(crate) fn current_time_seconds() -> u64 {
-        env::block_timestamp_ms() / 1_000
+        Timestamp::now().as_secs()
     }
 
     pub(crate) fn verify_and_store_mock(
@@ -1491,8 +1491,8 @@ mod tests {
             .verify_and_store_mock(node_id, expiring_attestation, tee_upgrade_duration)
             .expect("mock attestation is valid");
 
-        // Advance time to exact expiry boundary
-        set_block_timestamp(expiry_time_secs * 1_000_000_000);
+        // Advance time to the second after expiry
+        set_block_timestamp((expiry_time_secs + 1) * 1_000_000_000);
 
         let validation_result =
             tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);

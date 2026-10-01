@@ -14,7 +14,6 @@ use mpc_attestation::{
     collateral::Collateral,
 };
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::env::sha256_array;
 
 use crate::{
     config::Config,
@@ -36,7 +35,6 @@ use crate::{
         running::RunningContractState,
     },
     tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
-    update::{ProposedUpdates, Update, UpdateId},
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -443,39 +441,12 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::UpdateId> for UpdateId {
-    fn into_dto_type(self) -> dtos::UpdateId {
-        dtos::UpdateId(self.0)
-    }
-}
-
-impl IntoContractType<UpdateId> for dtos::UpdateId {
-    fn into_contract_type(self) -> UpdateId {
-        UpdateId(self.0)
-    }
-}
-
-impl IntoInterfaceType<dtos::UpdateHash> for &Update {
-    fn into_dto_type(self) -> dtos::UpdateHash {
-        match self {
-            Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code).into()),
-            Update::Config(config) => dtos::UpdateHash::Config(
-                sha256_array(
-                    serde_json::to_vec(&config.into_dto_type())
-                        .expect("serde serialization must succeed"),
-                )
-                .into(),
-            ),
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::Config> for &Config {
     fn into_dto_type(self) -> dtos::Config {
         dtos::Config {
             key_event_timeout_blocks: self.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: self.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: self.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: self.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: self
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: self
@@ -503,26 +474,6 @@ impl IntoInterfaceType<dtos::Config> for &Config {
     }
 }
 
-impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
-    fn into_dto_type(self) -> dtos::ProposedUpdates {
-        let all = self.all_updates();
-
-        let votes = all
-            .votes
-            .into_iter()
-            .map(|(account, update_id)| (account, update_id.into_dto_type()))
-            .collect();
-
-        let updates = all
-            .updates
-            .into_iter()
-            .map(|(update_id, update)| (update_id.into_dto_type(), update))
-            .collect();
-
-        dtos::ProposedUpdates { votes, updates }
-    }
-}
-
 impl From<near_mpc_contract_interface::types::InitConfig> for Config {
     fn from(config_ext: near_mpc_contract_interface::types::InitConfig) -> Self {
         let mut config = super::Config::default();
@@ -533,8 +484,8 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.tee_upgrade_deadline_duration_seconds {
             config.tee_upgrade_deadline_duration_seconds = v;
         }
-        if let Some(v) = config_ext.contract_upgrade_deposit_tera_gas {
-            config.contract_upgrade_deposit_tera_gas = v;
+        if let Some(v) = config_ext.apply_contract_update_tera_gas {
+            config.apply_contract_update_tera_gas = v;
         }
         if let Some(v) = config_ext.sign_call_gas_attachment_requirement_tera_gas {
             config.sign_call_gas_attachment_requirement_tera_gas = v;
@@ -594,7 +545,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
         near_mpc_contract_interface::types::Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: value.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: value
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: value
@@ -627,7 +578,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
         Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: value.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: value
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: value

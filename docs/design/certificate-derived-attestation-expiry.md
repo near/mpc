@@ -195,7 +195,10 @@ recedes further every day. Submission still succeeds, but anything that re-verif
 an expired entry.
 
 Fix: extend the pinned-clock trick to the contract side, mirroring
-`tee_verifier_contract_with_pinned_clock`.
+`tee_verifier_contract_with_pinned_clock`. Done in
+[#4518](https://github.com/near/mpc/issues/4518): `current_contract_with_pinned_clock` pins both
+contract clocks (`TeeState::current_time_seconds` and `Timestamp::now`, which drives launcher expiry)
+to the fixture timestamp.
 
 *Considered: regenerating the fixture. Not a fix — a fresh one would have a 30-day shelf life.*
 

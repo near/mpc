@@ -1,9 +1,9 @@
 //! Sandbox tests for the attestation flow against a real deployed `tee-verifier`.
 //!
-//! The Verified path needs a verifier build whose clock is pinned inside the
-//! fixture collateral's validity window, the fixture's compose hash patched into
-//! contract state (no vote can derive it), and signing as the fixture account,
-//! whose key the quote's report_data binds.
+//! The Verified path needs verifier and contract builds whose clocks are pinned
+//! inside the fixture collateral's validity window, the fixture's compose hash
+//! patched into contract state (no vote can derive it), and signing as the fixture
+//! account, whose key the quote's report_data binds.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -34,11 +34,12 @@ use near_workspaces::{
     result::ExecutionFinalResult,
     types::{Gas, NearToken, SecretKey},
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tee_verifier_interface::VerificationResultWithCollateralDates;
 use test_utils::attestation::{
-    account_secret_key, collateral, image_digest, launcher_compose_digest, launcher_image_hash,
-    mock_dto_dstack_attestation, p2p_tls_key, quote, verified_report,
+    VALID_ATTESTATION_TIMESTAMP, account_secret_key, collateral, image_digest,
+    launcher_compose_digest, launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, quote,
+    verified_report,
 };
 use tokio_util::time::FutureExt as _;
 
@@ -115,7 +116,11 @@ async fn setup_verified_fixture() -> VerifiedFixture {
 }
 
 async fn setup_fixture(allowed_compose_hash: Option<LauncherDockerComposeHash>) -> VerifiedFixture {
-    let setup = setup().await;
+    let setup = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_pinned_clock()
+        .build()
+        .await;
     let verifier = deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
     whitelist_fixture_dstack_hashes(&setup, allowed_compose_hash).await;
     let submitter = create_fixture_account(&setup.worker, "fixture-node-a").await;
@@ -426,10 +431,6 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given
     let fx = setup_verified_fixture().await;
     let balance_before = fx.submitter.view_account().await.unwrap().balance;
-    let submitted_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
 
     // When
     let (result, stored) = submit_dstack_verified(&fx.submitter, &fx.setup.contract).await;
@@ -438,14 +439,6 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let dtos::VerifiedAttestation::Dstack(stored) = stored else {
         panic!("expected a stored Dstack attestation, got: {stored:?}");
     };
-    let expected_expiry = submitted_at + DEFAULT_EXPIRATION_DURATION_SECONDS;
-    // The expiry is stamped from sandbox block time, which drifts from `submitted_at`
-    const MAX_CLOCK_DRIFT_SECONDS: u64 = 600;
-    assert!(
-        stored.expiry_timestamp_seconds.abs_diff(expected_expiry) < MAX_CLOCK_DRIFT_SECONDS,
-        "expiry {} should be about {expected_expiry} (submission time + default expiration)",
-        stored.expiry_timestamp_seconds,
-    );
     // The stored measurements are the allowlist entry the fixture matched; select
     // the expected entry by the fixture report's rtmrs, so the expectation stays
     // independent of what was stored.
@@ -467,7 +460,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let expected = dtos::VerifiedDstackAttestation {
         mpc_image_hash: image_digest(),
         launcher_compose_hash: launcher_compose_digest(),
-        expiry_timestamp_seconds: stored.expiry_timestamp_seconds,
+        expiry_timestamp_seconds: VALID_ATTESTATION_TIMESTAMP + DEFAULT_EXPIRATION_DURATION_SECONDS,
         measurements: dtos::VerifiedMeasurements {
             mrtd: matched.rtmrs.mrtd.into(),
             rtmr0: matched.rtmrs.rtmr0.into(),
