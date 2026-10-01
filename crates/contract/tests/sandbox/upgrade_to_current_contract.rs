@@ -9,8 +9,9 @@ use crate::sandbox::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
-            get_participants, get_state, get_tee_accounts, prepay_and_submit_participant_info,
-            tee_verifier_account_id, vote_add_launcher_hash, vote_tee_verifier_change,
+            get_participants, get_state, get_tee_accounts, prepay_attestation_grants_with_fee,
+            submit_participant_info, tee_verifier_account_id, vote_add_launcher_hash,
+            vote_tee_verifier_change,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
@@ -32,7 +33,7 @@ use near_mpc_contract_interface::types::{
     CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox, types::NearToken};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
@@ -225,6 +226,10 @@ async fn migrate__should_fail_when_no_tee_verifier_is_configured(
     Ok(())
 }
 
+/// Attestation-storage fee the released contract charges per grant. Hard-coded because the
+/// released contract's `config()` no longer deserializes into the current [`dtos::Config`].
+const RELEASED_ATTESTATION_STORAGE_FEE: NearToken = NearToken::from_millinear(20);
+
 /// Entries the upgrade under test has to carry across. Migration cost scales with this, and
 /// `stored_attestations` keeps entries for non-participants too, so it is sized past the real
 /// fleet (18 on mainnet, 19 on testnet when this was written) rather than at [`PARTICIPANT_LEN`].
@@ -243,7 +248,22 @@ async fn fill_stored_attestations(worker: &Worker<Sandbox>, contract: &Contract,
         .enumerate()
         .map(|(index, account)| async move {
             let tls_key = dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]);
-            let result = prepay_and_submit_participant_info(
+            // The fee is passed explicitly rather than read from `config()`: this runs against
+            // the released contract, whose config no longer deserializes into the current DTO.
+            let prepayment = prepay_attestation_grants_with_fee(
+                account,
+                contract,
+                account.id(),
+                1,
+                RELEASED_ATTESTATION_STORAGE_FEE,
+            )
+            .await
+            .expect("prepay_attestation_storage should not error");
+            assert!(
+                prepayment.is_success(),
+                "filler prepayment failed: {prepayment:?}"
+            );
+            let result = submit_participant_info(
                 account,
                 contract,
                 &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
