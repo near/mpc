@@ -282,7 +282,7 @@ sequenceDiagram
 4. **Operator**: Restarts the CVM (see _Node Boot Flow_ for details).
 5. **MPC Node → Contract**:
    - If the node sends an updated remote attestation **within the required time period**, the contract validates and updates the node's attestation info.
-   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node — but only if doing so does not drop the total participants below the required threshold.
+   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node, but only if the remaining participants still meet the threshold and every domain's signing protocol (robust ECDSA needs `2t - 1` participants).
 
 ## Adding a New Participant
 
@@ -614,7 +614,7 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 _Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
-Note - In case the number of remaining participants is less that the threshold. The node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
+Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
 
 # CVM Upgrades
 
