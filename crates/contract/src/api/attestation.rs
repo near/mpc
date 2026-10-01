@@ -330,7 +330,7 @@ impl MpcContract {
                     current_params.threshold(),
                 ) {
                     log!(
-                        "Kicking out participants with an invalid TEE status would break the threshold relation ({:?}); {} participants remain with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.",
+                        "Kicking out participants with an invalid TEE status would leave too few participants for the GovernanceThreshold or a domain's signing protocol ({:?}); {} participants remain with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.",
                         err,
                         remaining,
                     );
