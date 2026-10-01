@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -15,13 +15,14 @@ use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
-        AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
-        CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
-        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
-        GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
-        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
+        AccountId as ContractAccountId, Attestation, AuthScheme, AvailableForeignChains,
+        BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting,
+        DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
+        ForeignChain, ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters,
+        InitConfig, MockAttestation, NodeId, ParticipantId, ParticipantInfo, Participants, Payload,
+        ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
+        ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
+        UpdateId,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -531,8 +532,8 @@ impl MpcCluster {
     }
 
     /// Query all accounts that have TEE attestations stored in the contract.
-    pub async fn get_tee_accounts(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.contract.view(method_names::GET_TEE_ACCOUNTS).await
+    pub async fn get_tee_accounts(&self) -> anyhow::Result<Vec<NodeId>> {
+        Ok(self.contract.view_mpc().get_tee_accounts().await?.value)
     }
 
     /// Vote to add domains and wait until the contract returns to the
@@ -666,15 +667,15 @@ impl MpcCluster {
         &self,
         node_indices: &[usize],
     ) -> anyhow::Result<()> {
-        let required: Vec<String> = node_indices
+        let required: Vec<&AccountId> = node_indices
             .iter()
-            .map(|&idx| self.nodes[idx].account_id().to_string())
+            .map(|&idx| self.nodes[idx].account_id())
             .collect();
         (|| async {
             let tee_accounts = self.get_tee_accounts().await?;
-            let have: std::collections::HashSet<String> = tee_accounts
+            let have: HashSet<&AccountId> = tee_accounts
                 .iter()
-                .filter_map(|v| v.get("account_id")?.as_str().map(String::from))
+                .map(|node| &node.account_id)
                 .collect();
             anyhow::ensure!(
                 required.iter().all(|a| have.contains(a)),
@@ -875,11 +876,12 @@ impl MpcCluster {
             .context("failed to send CKD request")
     }
 
-    /// View migration info from the contract.
-    pub async fn view_migration_info<T: serde::de::DeserializeOwned + Send + 'static>(
+    pub async fn migration_info(
         &self,
-    ) -> anyhow::Result<T> {
-        self.contract.view(method_names::MIGRATION_INFO).await
+    ) -> anyhow::Result<
+        BTreeMap<ContractAccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    > {
+        Ok(self.contract.view_mpc().migration_info().await?.value)
     }
 
     /// Build a [`NearKitCaller`] for the operator key of the given node.
@@ -905,34 +907,39 @@ impl MpcCluster {
             .context("failed to register backup service")
     }
 
-    pub async fn view_available_foreign_chains(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::AvailableForeignChains> {
-        self.contract
-            .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
-            .await
+    pub async fn view_available_foreign_chains(&self) -> anyhow::Result<AvailableForeignChains> {
+        Ok(self
+            .contract
+            .view_mpc()
+            .get_available_foreign_chains()
+            .await?
+            .value)
     }
 
-    pub async fn view_foreign_chains_configs(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
-            .await
+    pub async fn view_foreign_chains_configs(&self) -> anyhow::Result<ForeignChainsConfigs> {
+        Ok(self
+            .contract
+            .view_mpc()
+            .get_foreign_chains_configs()
+            .await?
+            .value)
     }
 
     pub async fn view_allowed_foreign_chain_providers(
         &self,
     ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
-        self.contract
-            .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-            .await
+        Ok(self
+            .contract
+            .view_mpc()
+            .allowed_foreign_chain_providers()
+            .await?
+            .value)
     }
 
     /// Polls until the registered per-node configs equal `expected`.
     pub async fn wait_for_foreign_chains_registrations(
         &self,
-        expected: &near_mpc_contract_interface::types::ForeignChainsConfigs,
+        expected: &ForeignChainsConfigs,
     ) -> anyhow::Result<()> {
         (|| async {
             let registrations = self.view_foreign_chains_configs().await?;
@@ -1281,11 +1288,10 @@ async fn prepay_attestation_grants(
 }
 
 async fn attestation_storage_fee(contract: &DeployedContract) -> anyhow::Result<NearToken> {
-    let config: serde_json::Value = contract.view("config").await?;
-    let millinear = config["attestation_storage_fee_millinear"]
-        .as_u64()
-        .context("config() has no attestation_storage_fee_millinear")?;
-    Ok(NearToken::from_millinear(u128::from(millinear)))
+    let config = contract.view_mpc().config().await?.value;
+    Ok(NearToken::from_millinear(u128::from(
+        config.attestation_storage_fee_millinear,
+    )))
 }
 
 async fn init_contract(
