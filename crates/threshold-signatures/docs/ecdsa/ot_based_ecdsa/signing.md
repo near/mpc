@@ -21,9 +21,11 @@ resp. associated to the (master) Beaver triples $(a, b, c)$ and $(k, d, e)$
 
 *Note: neither* $d_i$ *nor* $C$ *are actually used in the algorithm.*
 
-**Requirement:** the two triples must be generated independently, and each is consumed by at most
-one run of presigning or of [presigning and signing](#presigning-and-signing-in-one-protocol), in
-either role, aborted runs included. Related triples leak $x$ through $e$, $\alpha$ and $\beta$,
+**Requirement:** each triple must be an unmodified output of [triple generation](./triples.md),
+used at most once: in one role of one run of presigning or of
+[presigning and signing](#presigning-and-signing-in-one-protocol), aborted runs included.
+Generation guarantees that triples are independent; the caller must guarantee that they are not
+reused. Otherwise the secret key $x$ can be extracted by solving a system of two linear equations,
 and no party can detect this.
 
 

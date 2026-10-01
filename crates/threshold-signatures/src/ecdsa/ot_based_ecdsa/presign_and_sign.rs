@@ -26,11 +26,11 @@ pub(crate) const OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usi
 ///
 /// # Safety contract
 ///
-/// The two triples must be independent and each passed to at most one run, in either slot,
-/// including across aborted runs (see [`PresignArguments`]). In particular, `big_r` is determined
-/// by `triple0` alone and is known to every participant once round 1 completes. Unlike
-/// [`sign`](super::sign::sign), no rerandomization binds `big_r` to `msg_hash`, so a second run on
-/// the same `triple0` under a different `tweak` or `msg_hash` leaks the private key.
+/// Each triple, not just the pair, must be used at most once (see [`PresignArguments`]). In
+/// particular, `big_r` is determined by `triple0` alone and is known to every participant once
+/// round 1 completes. Unlike [`sign`](super::sign::sign), no rerandomization binds `big_r` to
+/// `msg_hash`, so a second run on the same `triple0` under a different `tweak` or `msg_hash` leaks
+/// the private key.
 ///
 /// **WARNING** You must absolutely hash an actual message before passing it to
 /// this function. Allowing the signing of arbitrary scalars *is* a security risk,
