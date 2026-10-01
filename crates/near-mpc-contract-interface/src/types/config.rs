@@ -25,8 +25,8 @@ pub struct InitConfig {
     pub key_event_timeout_blocks: Option<u64>,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: Option<u64>,
-    /// Amount of gas to deposit for contract and config updates.
-    pub contract_upgrade_deposit_tera_gas: Option<u64>,
+    /// Prepaid gas for applying contract and config updates.
+    pub apply_contract_update_tera_gas: Option<u64>,
     /// Gas required for a sign request.
     pub sign_call_gas_attachment_requirement_tera_gas: Option<u64>,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
@@ -85,8 +85,8 @@ pub struct Config {
     pub key_event_timeout_blocks: u64,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: u64,
-    /// Amount of gas to deposit for contract and config updates.
-    pub contract_upgrade_deposit_tera_gas: u64,
+    /// Prepaid gas for applying contract and config updates.
+    pub apply_contract_update_tera_gas: u64,
     /// Gas required for a sign request.
     pub sign_call_gas_attachment_requirement_tera_gas: u64,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
@@ -134,7 +134,7 @@ mod tests {
         let original_config = InitConfig {
             key_event_timeout_blocks: Some(2000),
             tee_upgrade_deadline_duration_seconds: Some(3333),
-            contract_upgrade_deposit_tera_gas: Some(120),
+            apply_contract_update_tera_gas: Some(120),
             sign_call_gas_attachment_requirement_tera_gas: Some(15),
             ckd_call_gas_attachment_requirement_tera_gas: Some(15),
             return_signature_and_clean_state_on_success_call_tera_gas: Some(7),
@@ -189,7 +189,7 @@ mod tests {
         let config_with_all_values_as_none = InitConfig {
             key_event_timeout_blocks: None,
             tee_upgrade_deadline_duration_seconds: None,
-            contract_upgrade_deposit_tera_gas: None,
+            apply_contract_update_tera_gas: None,
             sign_call_gas_attachment_requirement_tera_gas: None,
             ckd_call_gas_attachment_requirement_tera_gas: None,
             return_signature_and_clean_state_on_success_call_tera_gas: None,
