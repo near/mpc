@@ -13,7 +13,7 @@ Rolling out a new foreign chain requires:
 4. every operator updating their `foreign_chains` config.
 
 Step 4 is the slowest, as it needs manual work from every operator. Yet across operators the only
-values that differ are API keys and endpoint slugs (e.g. QuickNode's `https://<slug>.<network>.quiknode.pro`). 
+values that differ are API keys and endpoint slugs (e.g. QuickNode's `https://<slug>.<network>.quiknode.pro`).
 Moreover, nodes usually use single multi-chain endpoint per provider, using the same API key.
 
 ## Goal
@@ -87,10 +87,10 @@ by field. The config from the file takes precedence.
 1. **Embedded Config pairs.** Each embedded (chain, provider) is validated during parsing that:
      - either provider's `auth` is `none` or `credentials` has an entry for that provider
      - its `rpc_url` contains `{slug}`, the entry must also have a slug which is substituted into `rpc_url`.
-     
+
      If validation fails, entry is dropped with a warning.
 1. **Node Config pairs.** Each (chain, provider) in the node config's `foreign_chains` overrides embedded config, and logs warning if it exists in both but constructed rpc_url differs.
-1. **Chain-level fields** (`timeout_sec`, `max_retries`, `expected_network_fingerprint`) come from
+1. **Chain-level fields** (`timeout_sec`, `max_retries`,`expected_network_fingerprint`) come from
    the file when it defines the chain, otherwise from the embedded config.
 1. **Empty chains** — a chain with no providers left — are dropped.
 1. `validate()` runs on the resolved config.
@@ -99,7 +99,7 @@ The resolved config lives only in memory and is never written back to disk. All 
 (inspectors, probe, `register_foreign_chains`, whitelist verifier, web UI) receive the resolved
 config instead of the file's `foreign_chains`. Since it is the same type, their code doesn't change.
 
-At startup the node logs each pair with its source (`embedded` or `node_config`), and warns 
+At startup the node logs each pair with its source (`embedded` or `node_config`), and warns
 if same pair is defined in both places but differ, so that operators can remove them.
 
 ## Migration
