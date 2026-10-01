@@ -7,8 +7,8 @@ const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 30;
 const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 7 Days
 
 // --- Gas Defaults (in TeraGas) ---
-/// Amount of gas to deposit when creating an internal upgrade transaction promise.
-const DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 50;
+/// Prepaid gas for applying contract and config updates.
+const DEFAULT_APPLY_CONTRACT_UPDATE_TERA_GAS: u64 = 50;
 /// Gas required for a sign request
 const DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS: u64 = 15;
 /// Gas required for a CKD request
@@ -54,8 +54,8 @@ pub(crate) struct Config {
     pub(crate) key_event_timeout_blocks: u64,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub(crate) tee_upgrade_deadline_duration_seconds: u64,
-    /// Amount of gas to deposit for contract and config updates.
-    pub(crate) contract_upgrade_deposit_tera_gas: u64,
+    /// Prepaid gas for applying contract and config updates.
+    pub(crate) apply_contract_update_tera_gas: u64,
     /// Gas required for a sign request.
     pub(crate) sign_call_gas_attachment_requirement_tera_gas: u64,
     /// Gas required for a CKD request.
@@ -98,7 +98,7 @@ impl Default for Config {
         Self {
             key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
             tee_upgrade_deadline_duration_seconds: DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS,
-            contract_upgrade_deposit_tera_gas: DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS,
+            apply_contract_update_tera_gas: DEFAULT_APPLY_CONTRACT_UPDATE_TERA_GAS,
             sign_call_gas_attachment_requirement_tera_gas:
                 DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS,
             ckd_call_gas_attachment_requirement_tera_gas:

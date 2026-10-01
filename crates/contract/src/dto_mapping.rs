@@ -446,7 +446,7 @@ impl IntoInterfaceType<dtos::Config> for &Config {
         dtos::Config {
             key_event_timeout_blocks: self.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: self.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: self.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: self.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: self
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: self
@@ -484,8 +484,8 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.tee_upgrade_deadline_duration_seconds {
             config.tee_upgrade_deadline_duration_seconds = v;
         }
-        if let Some(v) = config_ext.contract_upgrade_deposit_tera_gas {
-            config.contract_upgrade_deposit_tera_gas = v;
+        if let Some(v) = config_ext.apply_contract_update_tera_gas {
+            config.apply_contract_update_tera_gas = v;
         }
         if let Some(v) = config_ext.sign_call_gas_attachment_requirement_tera_gas {
             config.sign_call_gas_attachment_requirement_tera_gas = v;
@@ -545,7 +545,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
         near_mpc_contract_interface::types::Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: value.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: value
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: value
@@ -578,7 +578,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
         Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: value.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: value
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: value
