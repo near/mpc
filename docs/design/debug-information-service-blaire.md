@@ -106,7 +106,7 @@ upstream and not listed in the table below is **not** published.
 | `ForeignChainConfig::max_retries` | verbatim | As above. |
 | `ForeignChainConfig::expected_network_fingerprint` | verbatim | A mismatch here is a bug we want to detect; not a credential. |
 | `ForeignChainConfig::providers` map keys (`RpcProviderName`) | verbatim | Identifies the provider; carries no credential. |
-| `ForeignChainProviderConfig::rpc_url` | scheme and host only, path/query/userinfo dropped (`https://eth-mainnet.g.alchemy.com/v2/<key>` → `https://eth-mainnet.g.alchemy.com`) | Provider URLs frequently carry an API key in the path, and `AuthConfig::Path` places a token inside the URL by design. Host alone is enough to tell which provider a node uses. |
+| `ForeignChainProviderConfig::rpc_url` | scheme and host only, path/query/userinfo dropped (`https://eth-mainnet.g.alchemy.com/v2/<key>` → `https://eth-mainnet.g.alchemy.com`) | Provider URLs frequently carry an API key in the path, and `AuthConfig::Path` places a token inside the URL by design. Host alone is enough to tell which provider a node uses. Some providers include an MPC node operator-specific slug in the host, but this can be kept as redacting the API key will be enough. |
 | `ForeignChainProviderConfig::auth` | variant name only (`"none"` / `"header"` / `"path"`) | Knowing *how* a provider authenticates is useful for debugging; the credential never is. |
 | `TokenConfig::Val { val }` | **dropped entirely** | Literal secret. |
 | `TokenConfig` environment-variable / file-path variants | **dropped entirely** | The name or path is not itself a secret, but publishing it gives an attacker a map of where credentials live for no debugging benefit. |
@@ -334,11 +334,18 @@ CREATE INDEX idx_audit_target_time
 
 ## Authentication/security
 
-Initially, while in development, the webpage will have an authentication system between the user and service where there will only be one single user, with a username and password configured in environment variables. Once the webpage is ready for deployment, there will be a stronger authentication system in place. For these purposes we will use the SSO service provided by Okta, making it easy to maintain access to only current team members by using group permissions within the organisation.
+### Dev/operator access
+
+Initially, while in development, the webpage will have an authentication system between the dev user and service where there will only be one single user, with a username and password configured in environment variables. Once the webpage is ready for deployment, there will be a stronger authentication system in place. For these purposes we will use the SSO service provided by Okta, making it easy to maintain access to only current team members by using group permissions within the organisation.
+
+Node operators will not have access to the Blaire service when it launches, but access can be added later on if it is deemed necessary.
 
 [For reference, the Okta integration docs can be found here.](https://developer.okta.com/docs/guides/sign-in-overview/main/)
 
-There also needs to be some type of authentication for the nodes to access Blaire and report their configs. Here we could use mTLS and re-use code from the [backup-cli](https://github.com/near/mpc/tree/main/crates/backup-cli). This would require Blaire to have access to the MPC contract state, which can be fetched via the RPC nodes.
+### Node access
+
+Nodes authenticate to Blaire and report their configs using mTLS (from the start/development phase) and we can re-use code from the [backup-cli](https://github.com/near/mpc/tree/main/crates/backup-cli). Blaire will authenticate nodes by verifying their existing P2P TLS keys from the contract. This requires Blaire to have access to the MPC contract state, which can be fetched via the RPC nodes. The nodes will verify that they are communicating with the real Blaire by adding Blaire's public key to the node configuration. This key can be moved to the contract instead later on.
+
 
 ### Risks
 
