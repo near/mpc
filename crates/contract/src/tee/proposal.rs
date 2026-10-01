@@ -248,12 +248,16 @@ impl AllowedLauncherImage {
         Self {
             launcher_hash,
             compose_hashes,
-            retain_until: retain_until_from_now(ttl),
+            retain_until: compute_retain_until(ttl),
         }
+    }
+
+    fn is_expired(&self, now: Timestamp) -> bool {
+        UnixSeconds::from(self.retain_until).has_expired_at(now.into())
     }
 }
 
-fn retain_until_from_now(ttl: Duration) -> Timestamp {
+fn compute_retain_until(ttl: Duration) -> Timestamp {
     Timestamp::now().checked_add(ttl).unwrap_or_else(|| {
         log!("launcher retention overflowed for ttl {ttl:?}; retaining indefinitely");
         Timestamp::MAX
@@ -296,7 +300,7 @@ impl AllowedLauncherImages {
             .iter_mut()
             .find(|e| e.launcher_hash == launcher_hash)
         {
-            existing.retain_until = retain_until_from_now(ttl);
+            existing.retain_until = compute_retain_until(ttl);
             return AllowedLauncherImageInsertion::Refreshed;
         }
 
@@ -319,7 +323,7 @@ impl AllowedLauncherImages {
     /// never empties.
     pub fn remove_unused(&mut self, in_use: &[LauncherDockerComposeHash], ttl: Duration) {
         let now = Timestamp::now();
-        let retain_until = retain_until_from_now(ttl);
+        let retain_until = compute_retain_until(ttl);
         for entry in &mut self.entries {
             if entry
                 .compose_hashes
@@ -332,10 +336,8 @@ impl AllowedLauncherImages {
         let Some(latest) = self.entries.iter().map(|entry| entry.retain_until).max() else {
             return;
         };
-        self.entries.retain(|entry| {
-            !UnixSeconds::from(entry.retain_until).has_expired_at(now.into())
-                || entry.retain_until == latest
-        });
+        self.entries
+            .retain(|entry| !entry.is_expired(now) || entry.retain_until == latest);
     }
 
     /// Removes a launcher image hash and all its associated compose hashes.
