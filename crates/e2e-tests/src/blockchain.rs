@@ -6,8 +6,8 @@ use near_contract_transport::{
 };
 use near_kit::rpc::FinalExecutionOutcome;
 use near_kit::transaction::{ExecutedOptimistic, Final, WaitLevel};
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
-use serde::de::DeserializeOwned;
 
 use crate::conversions::ToNearKey;
 
@@ -158,18 +158,12 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }
 
-    pub async fn view<T: DeserializeOwned + Send + 'static>(
-        &self,
-        method: &str,
-    ) -> anyhow::Result<T> {
-        self.client
-            .view::<T>(&self.contract_id, method)
-            .await
-            .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
+    pub fn view_mpc(&self) -> MpcContractHandle<NearKitCaller<ExecutedOptimistic>> {
+        MpcContractHandle::new(self.client(), self.contract_id.clone())
     }
 
     pub async fn state(&self) -> anyhow::Result<ProtocolContractState> {
-        self.view("state").await
+        Ok(self.view_mpc().state().await?.value)
     }
 
     /// SHA-256 hash of the contract code currently deployed at this account.
