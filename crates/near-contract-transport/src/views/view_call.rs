@@ -72,7 +72,7 @@ where
     Viewer: ViewContract + HasPollInterval + Send + 'static,
     T: Clone + Send + Sync,
 {
-    pub async fn subscribe(self) -> impl WatchContractState<T, Viewer::Error> {
+    pub async fn subscribe(self) -> impl WatchContractState<Value = T, ViewError = Viewer::Error> {
         MonitoringTask::<T, Viewer::Error>::new(self).await
     }
 }

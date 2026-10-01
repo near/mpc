@@ -14,7 +14,21 @@ impl Timestamp {
         duration_since_unix_epoch: Duration::MAX,
     };
 
+    /// Returns the block time. Sandbox tests can build the contract with a fixed time
+    /// instead: disable the default `block-clock` feature and set
+    /// `MPC_CONTRACT_PINNED_NOW_SECONDS` (Unix seconds) at compile time. Either one
+    /// alone keeps block time. The fixed time keeps the checked-in attestation fixture
+    /// inside its collateral's validity window.
+    // TODO(#4222): drop the pin once sandbox block time can be controlled from tests.
     pub(crate) fn now() -> Self {
+        #[cfg(not(feature = "block-clock"))]
+        if let Some(pinned) = option_env!("MPC_CONTRACT_PINNED_NOW_SECONDS") {
+            return Self::from_secs(
+                pinned
+                    .parse()
+                    .expect("MPC_CONTRACT_PINNED_NOW_SECONDS must be Unix seconds"),
+            );
+        }
         let block_time_nano_seconds = near_sdk::env::block_timestamp();
 
         Self {

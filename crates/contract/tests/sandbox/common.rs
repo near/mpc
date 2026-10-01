@@ -184,7 +184,7 @@ impl SandboxTestSetup {
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
-            with_sandbox_test_methods: false,
+            contract_wasm: current_contract,
         }
     }
 
@@ -202,7 +202,7 @@ pub struct SandboxTestSetupBuilder {
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
-    with_sandbox_test_methods: bool,
+    contract_wasm: fn() -> &'static [u8],
 }
 
 impl SandboxTestSetupBuilder {
@@ -230,16 +230,18 @@ impl SandboxTestSetupBuilder {
     /// introspection view methods in [`crate::sandbox_test_methods`] (e.g. fan-out queue
     /// length).
     pub fn with_sandbox_test_methods(mut self) -> Self {
-        self.with_sandbox_test_methods = true;
+        self.contract_wasm = contract_build::current_contract_with_sandbox_test_methods;
+        self
+    }
+
+    /// Deploys [`contract_build::current_contract_with_pinned_clock`].
+    pub fn with_pinned_clock(mut self) -> Self {
+        self.contract_wasm = contract_build::current_contract_with_pinned_clock;
         self
     }
 
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = if self.with_sandbox_test_methods {
-            init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
-        } else {
-            init().await
-        };
+        let (worker, contract) = init_with_wasm((self.contract_wasm)()).await;
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 
