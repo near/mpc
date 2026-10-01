@@ -133,10 +133,10 @@ future work this design only has to keep possible. Each is listed as the problem
 a calendar date that repeats for weeks.
 
 Fix: store `attested_at_seconds` on
-[`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
-variants, so one field covers both. This restores today's semantics exactly, and gives operators a
-better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
-moves off 604 and the fee floor needs re-checking) and a state migration.
+[`NodeAttestation`](../../crates/contract/src/tee/attestation_store.rs). It wraps both the Dstack
+and Mock variants, so one field covers both. This restores today's semantics exactly, and gives
+operators a better health signal than expiry. Costs 8 bytes per entry (704 → 712, so
+`WORST_CASE_ENTRY_BYTES` moves off 709 and the fee floor needs re-checking) and a state migration.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp

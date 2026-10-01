@@ -104,6 +104,8 @@ Nothing in the contract treats these entries specially: no migration step, no pe
 
 Accepted deliberately: if such an entry is later swept, rule 3 hands its owner a grant they never bought. Negligible at 14 entries on mainnet and 31 on testnet, but check the count before deploying — thousands would mean the drain was exploited first, and those entries should be purged rather than left to become grants.
 
+The account key index gives each of these entries one more row, written on its next reattestation, and the contract pays for that row too: 105 bytes, about 0.001 NEAR per entry.
+
 ## Operator UX
 
 One new step in the [operator guide](../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md), right after [Create a NEAR Account for Your Node](../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#create-a-near-account-for-your-node) — the operator already holds that account's full-access key there, and `prepay_attestation_storage` needs only the account id. That is well before the CVM is configured and started, before the node account key is retrieved, and before it is added, so the node never starts into an ungranted state. Every other step is unchanged, including the off-chain `attestation-cli` check, which this design does not touch.
