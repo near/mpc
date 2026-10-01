@@ -90,8 +90,10 @@ impl GovernanceThresholdParameters {
     /// largest ReconstructionThreshold across all domains. Layers the cross-domain rule
     /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of `validate_governance_threshold`:
     /// the network must never be able to govern with fewer parties than are required to
-    /// reconstruct any domain's key. Call this at every point where the GovernanceThreshold,
-    /// a ReconstructionThreshold, or the participant set changes.
+    /// reconstruct any domain's key. Call this, via
+    /// [`validate_domains_against_governance`](crate::primitives::domain::validate_domains_against_governance),
+    /// at every point where the GovernanceThreshold, a ReconstructionThreshold, or the
+    /// participant set changes.
     pub fn validate_governance_against_reconstruction(
         num_participants: u64,
         governance: GovernanceThreshold,

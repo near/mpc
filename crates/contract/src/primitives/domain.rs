@@ -1,6 +1,7 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
+use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use near_mpc_contract_interface::types::{
     Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
@@ -36,10 +37,31 @@ pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
     Ok(())
 }
 
+/// Validates `domains` against a participant set of `n = num_participants` governed at
+/// `governance`: each domain's ReconstructionThreshold `t` satisfies `2 <= t <= n` and
+/// [`Protocol::required_active_signers`]` <= n`, and `governance` passes
+/// [`GovernanceThresholdParameters::validate_governance_against_reconstruction`] against the
+/// largest `t` among them. Call this at every point where the participant set, the
+/// GovernanceThreshold, or a ReconstructionThreshold changes.
+pub fn validate_domains_against_governance(
+    domains: &[DomainConfig],
+    num_participants: u64,
+    governance: GovernanceThreshold,
+) -> Result<(), Error> {
+    for domain in domains {
+        validate_domain_reconstruction_threshold(domain, num_participants)?;
+    }
+    GovernanceThresholdParameters::validate_governance_against_reconstruction(
+        num_participants,
+        governance,
+        max_reconstruction_threshold(domains),
+    )
+}
+
 /// Validates the per-domain reconstruction threshold against the participant
 /// count. Universal bound `2 <= t <= n` plus the per-scheme bound
 /// [`Protocol::required_active_signers`]` <= n`.
-pub fn validate_domain_reconstruction_threshold(
+fn validate_domain_reconstruction_threshold(
     domain: &DomainConfig,
     num_participants: u64,
 ) -> Result<(), Error> {
@@ -71,7 +93,7 @@ pub fn validate_domain_reconstruction_threshold(
 /// The largest [`ReconstructionThreshold`] across `domains`, or `None` if there are none
 /// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
 /// Feeds [`GovernanceThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::GovernanceThresholdParameters::validate_governance_against_reconstruction).
-pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
+fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
     domains
         .iter()
         .map(|domain| domain.reconstruction_threshold)
