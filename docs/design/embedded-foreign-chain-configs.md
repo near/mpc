@@ -84,10 +84,11 @@ Testnet and mainnet credentials are separate by construction, since each node ru
 The unit of resolution is a (chain, provider) pair, taken whole from one source — never merged field
 by field. The config from the file takes precedence.
 
-1. **Embedded Config pairs.** Each embedded (chain, provider) not defined in the file is added if its `auth`
-   is `none` or `credentials` has an entry for the provider. Its `auth.token` is set to the entry's
-   API key. If its `rpc_url` contains `{slug}`, the entry must also have a slug, which is substituted
-   into `rpc_url`, without one the provider is dropped with a warning. 
+1. **Embedded Config pairs.** Each embedded (chain, provider) is validated during parsing that:
+     - either its `auth` is `none` or `credentials` has an entry for the provider
+     - if its `rpc_url` contains `{slug}`, the entry must also have a slug which is substituted into `rpc_url`.
+     
+     If validation fails, entry is dropped with a warning.
 1. **Node Config pairs.** Each (chain, provider) in the node config's `foreign_chains` overrides embedded config, and logs warning if it exists in both but constructed rpc_url differs.
 1. **Chain-level fields** (`timeout_sec`, `max_retries`, `expected_network_fingerprint`) come from
    the file when it defines the chain, otherwise from the embedded config.
