@@ -99,7 +99,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
     let new_config = near_mpc_contract_interface::types::Config {
         key_event_timeout_blocks: 11,
         tee_upgrade_deadline_duration_seconds: 22,
-        contract_upgrade_deposit_tera_gas: 33,
+        apply_contract_update_tera_gas: 33,
         sign_call_gas_attachment_requirement_tera_gas: 44,
         ckd_call_gas_attachment_requirement_tera_gas: 55,
         return_signature_and_clean_state_on_success_call_tera_gas: 66,

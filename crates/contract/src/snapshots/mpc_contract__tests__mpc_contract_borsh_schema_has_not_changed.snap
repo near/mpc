@@ -175,7 +175,7 @@ BorshSchemaContainer {
                         "u64",
                     ),
                     (
-                        "contract_upgrade_deposit_tera_gas",
+                        "apply_contract_update_tera_gas",
                         "u64",
                     ),
                     (
