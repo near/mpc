@@ -94,7 +94,7 @@ impl GovernanceThresholdParameters {
     /// [`validate_domains_against_governance`](crate::primitives::domain::validate_domains_against_governance),
     /// at every point where the GovernanceThreshold, a ReconstructionThreshold, or the
     /// participant set changes.
-    pub fn validate_governance_against_reconstruction(
+    pub(super) fn validate_governance_against_reconstruction(
         num_participants: u64,
         governance: GovernanceThreshold,
         max_reconstruction_threshold: Option<ReconstructionThreshold>,

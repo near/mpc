@@ -39,10 +39,10 @@ pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
 
 /// Validates `domains` against a participant set of `n = num_participants` governed at
 /// `governance`: each domain's ReconstructionThreshold `t` satisfies `2 <= t <= n` and
-/// [`Protocol::required_active_signers`]` <= n`, and `governance` passes
-/// [`GovernanceThresholdParameters::validate_governance_against_reconstruction`] against the
-/// largest `t` among them. Call this at every point where the participant set, the
-/// GovernanceThreshold, or a ReconstructionThreshold changes.
+/// [`Protocol::required_active_signers`]` <= n`, and `governance` meets the absolute and
+/// relative bounds for `n` and is at least the largest `t` among them. Call this at every
+/// point where the participant set, the GovernanceThreshold, or a ReconstructionThreshold
+/// changes.
 pub fn validate_domains_against_governance(
     domains: &[DomainConfig],
     num_participants: u64,

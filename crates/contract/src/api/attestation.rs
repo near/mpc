@@ -322,9 +322,8 @@ impl MpcContract {
                 // exceed the remaining participant count or the upper cap) and must
                 // remain at least every domain's ReconstructionThreshold (the kickout
                 // keeps the existing per-domain thresholds). Each domain must also keep
-                // the participants its protocol needs to sign, as checked for a
-                // `vote_new_parameters` proposal. Otherwise we refuse and wait for
-                // manual intervention.
+                // the participants its protocol needs to sign. Otherwise we refuse and
+                // wait for manual intervention.
                 if let Err(err) = validate_domains_against_governance(
                     running_state.domains.domains(),
                     u64::try_from(remaining).expect("participant count fits in u64"),
@@ -1175,7 +1174,8 @@ mod tests {
         // When
         let result = contract.verify_tee();
 
-        // Then: with only 4 surviving participants the GovernanceThreshold of 5 would
+        // Then
+        // With only 4 surviving participants the GovernanceThreshold of 5 would
         // exceed the participant count, breaking the threshold relation, so verify_tee
         // refuses to reshare, stays Running, and stops accepting requests.
         assert_matches!(result, Ok(false));
