@@ -45,7 +45,7 @@ Evaluated read-only at the top of `submit_participant_info` — before any verif
 
 1. **Entry exists and this account owns it** — re-attestation. Updates in place, consumes nothing. Keys on *ownership*, not key presence: a presence-only test would classify someone else's key as "no grant needed".
 2. **New entry** — consume one grant; reject if the account has none. On the async `Dstack` path this is checked twice: once here, and again in `resolve_verification`, which runs a later receipt in which the grant may since have been consumed. Without the second check, two submissions from one account could both clear the first check and then store two entries against a single grant.
-3. **Entry reclaimed** by `clean_invalid_attestations` — return one grant to its owner. There is exactly one removal site, so the counter cannot drift. This adds a grants-map write per removed entry — a row *insert*, not an update, whenever the owner's row was deleted at zero — inside a gas-bounded sweep, which roughly triples the per-removal cost. `clean_invalid_attestations_tera_gas` and `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN` were re-validated against it in [#4035](https://github.com/near/mpc/issues/4035) and now sit at 15 TGas and 30 entries, enough for a full scan plus ~10 removals. Those two constants bound only the promise `vote_reshared` schedules: `clean_invalid_attestations` is permissionless and takes `max_scan` as a parameter, so an external caller is bound by neither.
+3. **Entry reclaimed** by `clean_invalid_attestations` — return one grant to its owner. There is exactly one removal site, so the counter cannot drift. This adds a grants-map write per removed entry — a row *insert*, not an update, whenever the owner's row was deleted at zero — inside a gas-bounded sweep, which roughly triples the per-removal cost. `clean_invalid_attestations_tera_gas` and `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN` were re-validated against it in [#4035](https://github.com/near/mpc/issues/4035). They now sit at 25 TGas and 30 entries, enough for a full scan plus about 20 removals, each of which also clears the entry's row in the account key index. Those two constants bound only the promise `vote_reshared` schedules: `clean_invalid_attestations` is permissionless and takes `max_scan` as a parameter, so an external caller is bound by neither.
 
 Consuming at insert means a failed attestation consumes nothing — nothing was stored, so nothing is owed — and keeps [#3991](https://github.com/near/mpc/issues/3991) unblocked, since no charge has to survive a failing callback.
 
@@ -64,8 +64,6 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 Entry sizes are pinned by `stored_attestation_entry__should_have_the_pinned_size`; the grants row is measured at the time of writing. Either way the fee is held to twice the floor, so a test fails when it stops covering the layout.
 
 The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. Being a `Config` field, the fee can be re-priced without a release.
-
-The default applies to new deployments. An upgrade keeps the deployed fee, so moving a live contract to the default takes a config vote.
 
 ### Flow
 
@@ -123,7 +121,7 @@ Then prepay that many multiples of it:
 near contract call-function as-transaction \
   v1.signer prepay_attestation_storage \
   json-args '{"account_id":"<your-node-account>","grants":2}' \
-  prepaid-gas '30.0 Tgas' attached-deposit '0.04 NEAR' \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.05 NEAR' \
   sign-as <your-operator-account> network-config mainnet sign-with-keychain send
 ```
 

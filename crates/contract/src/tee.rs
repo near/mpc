@@ -1,3 +1,4 @@
+pub mod attestation_store;
 pub mod measurements;
 pub mod proposal;
 pub mod tee_state;

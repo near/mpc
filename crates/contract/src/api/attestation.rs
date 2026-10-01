@@ -8,9 +8,8 @@ use crate::primitives::thresholds::{
     GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{
-    AttestationSubmissionError, NodeId, ParticipantInsertion, TeeValidationResult,
-};
+use crate::tee::attestation_store::ParticipantInsertion;
+use crate::tee::tee_state::{AttestationSubmissionError, NodeId, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
@@ -267,7 +266,7 @@ impl MpcContract {
         Ok(self
             .tee_state
             .stored_attestations
-            .get_by_tls(&tls_public_key)
+            .get_by_tls_key(&tls_public_key)
             .map(|node_attestation| {
                 node_attestation
                     .verified_attestation
@@ -736,7 +735,7 @@ mod tests {
         let stored = contract
             .tee_state
             .stored_attestations
-            .get_by_tls(&node_id.tls_public_key)
+            .get_by_tls_key(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
     }
@@ -902,7 +901,7 @@ mod tests {
             contract
                 .tee_state
                 .stored_attestations
-                .get_by_tls(&tls_key)
+                .get_by_tls_key(&tls_key)
                 .is_some()
         );
         // ...but the launcher's expiry was not extended.

@@ -19,8 +19,9 @@ impl MpcContract {
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
         let signer_account_id = env::signer_account_id();
-        // Resolving the node below may scan every stored attestation, so it runs only for
-        // participants.
+        // An index miss in the lookup below falls back to scanning every stored attestation,
+        // so only participants reach it.
+        // TODO(#4621): drop this comment when removing fallback path.
         let is_participant = self
             .protocol_state
             .is_existing_or_prospective_participant(&signer_account_id)?;
@@ -33,7 +34,7 @@ impl MpcContract {
         let signer_account_pk = env::signer_account_pk();
         let signer_account_ed25519_pk = dtos::Ed25519PublicKey::try_from(&signer_account_pk)
             .unwrap_or_else(|_| env::panic_str("signer account key must be Ed25519"));
-        let node_id = self
+        let node_id: &dtos::NodeId = self
             .tee_state
             .lookup_node_id_by_signer_pk(&signer_account_ed25519_pk)
             .map_err(|_| InvalidState::NotParticipant {
@@ -203,7 +204,7 @@ mod tests {
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key, bogus_tee_verifier_account_id, gen_account_id, gen_participant,
-        gen_participants,
+        gen_participants, node_id_for,
     };
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
@@ -1061,18 +1062,20 @@ mod tests {
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
     }
 
-    /// A non Ed25519 signer key would panic once inspected, so getting the error proves the
-    /// participant check runs before the key is read.
     #[test]
-    fn register_foreign_chains_config__should_reject_non_participant_before_inspecting_its_signer_key()
-     {
+    fn register_foreign_chains_config__should_reject_a_non_participant_who_has_stored_attestation()
+    {
         // Given
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let non_participant = gen_account_id();
-        let mut env = Environment::new(None, Some(non_participant.clone()), None);
-        env.set_pk(
-            near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1; 64]).unwrap(),
+        let non_participant = node_id_for(&gen_account_id());
+        contract.tee_state.stored_attestations.insert(
+            non_participant.clone(),
+            VerifiedAttestation::Mock(MpcMockAttestation::Valid),
         );
+        let mut env = Environment::new(None, Some(non_participant.account_id.clone()), None);
+        env.set_pk(near_sdk::PublicKey::from(
+            non_participant.account_public_key.clone(),
+        ));
         let foreign_chains_config: dtos::ForeignChainsConfig =
             BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
 
@@ -1083,9 +1086,16 @@ mod tests {
         assert_eq!(
             result,
             Err(InvalidState::NotParticipant {
-                account_id: non_participant,
+                account_id: non_participant.account_id,
             }
             .into())
+        );
+        assert!(
+            !contract
+                .foreign_chains
+                .get()
+                .foreign_chains_configs
+                .contains_key(&non_participant.tls_public_key)
         );
     }
 }
