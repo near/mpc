@@ -1,15 +1,19 @@
-use std::marker::PhantomData;
-
 use ed25519_dalek::SigningKey;
+use std::time::Duration;
+
+use near_contract_transport::{
+    CallContract, FunctionCallArgs, NearGas, NearKitCaller, NearToken, PollInterval,
+};
 use near_kit::rpc::FinalExecutionOutcome;
 use near_kit::transaction::{ExecutedOptimistic, Final, WaitLevel};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
-use crate::NearKitCaller;
 use crate::conversions::ToNearKey;
 
-const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
+const MAX_GAS: NearGas = NearGas::from_tgas(1000);
+const VIEW_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const VIEW_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -91,10 +95,7 @@ impl NearBlockchain {
         account_id: &str,
         key: &SigningKey,
     ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
-        Ok(NearKitCaller {
-            inner: self.make_client(account_id, key)?,
-            _wait_level: PhantomData,
-        })
+        Ok(near_kit_caller(self.make_client(account_id, key)?))
     }
 
     pub fn rpc_url(&self) -> &str {
@@ -121,10 +122,7 @@ impl DeployedContract {
     }
 
     pub fn client(&self) -> NearKitCaller<ExecutedOptimistic> {
-        NearKitCaller {
-            inner: self.client.clone(),
-            _wait_level: PhantomData,
-        }
+        near_kit_caller(self.client.clone())
     }
 
     pub async fn call(
@@ -132,11 +130,9 @@ impl DeployedContract {
         method: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<FinalExecutionOutcome> {
-        self.client
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .send()
+        let call_args = FunctionCallArgs::no_deposit(method, serde_json::to_vec(&args)?, MAX_GAS);
+        self.client()
+            .call_contract(&self.contract_id, call_args)
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
@@ -146,17 +142,12 @@ impl DeployedContract {
         client: &NearKitCaller<T>,
         method: &str,
         args: serde_json::Value,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
+        gas: NearGas,
+        deposit: NearToken,
     ) -> anyhow::Result<T::Response> {
+        let call_args = FunctionCallArgs::new(method, serde_json::to_vec(&args)?, gas, deposit);
         client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .wait_until::<T>()
+            .call_contract(&self.contract_id, call_args)
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }
@@ -184,4 +175,9 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("view_account for `{}` failed: {e}", self.contract_id))?;
         Ok(view.code_hash)
     }
+}
+
+fn near_kit_caller(near: near_kit::Near) -> NearKitCaller<ExecutedOptimistic> {
+    let poll_interval = PollInterval::new(VIEW_POLL_INTERVAL).expect("non-zero");
+    NearKitCaller::new(near, poll_interval, VIEW_READ_TIMEOUT)
 }

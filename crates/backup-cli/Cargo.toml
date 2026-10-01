@@ -11,6 +11,7 @@ clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }
 near-account-id = { workspace = true }
+near-contract-transport = { workspace = true, features = ["near-kit"] }
 near-kit = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 prometheus = { workspace = true }
