@@ -10,7 +10,8 @@
 //! Run explicitly, for example
 //! `nix develop -c cargo test --profile test-release -p mpc-contract --test test attestation_scan_gas_curve_sweep -- --ignored --nocapture`.
 //! Fill levels are overridable with comma separated lists in `ATTESTATION_SCAN_SWEEP_NS`,
-//! `ATTESTATION_AB_NS`, `ATTESTATION_CLEAN_NS` and `ATTESTATION_UPGRADE_NS`.
+//! `ATTESTATION_AB_NS`, `ATTESTATION_CLEAN_NS` and `ATTESTATION_UPGRADE_NS`. The expired entry
+//! counts of the cleanup bench are overridable the same way in `ATTESTATION_CLEAN_EXPIRED`.
 
 use crate::sandbox::common::{gen_accounts, init_contract_running, make_threshold_params};
 use crate::sandbox::utils::consts::GAS_FOR_INIT;
@@ -41,9 +42,10 @@ const SETUP_PARTICIPANTS: usize = 4;
 const SWEEP_NS: &[usize] = &[
     0, 10, 50, 100, 250, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000,
 ];
-const AB_NS: &[usize] = &[0, 1000];
-const UPGRADE_NS: &[usize] = &[0, 1000];
-const CLEAN_NS: &[usize] = &[0, 1000];
+const AB_NS: &[usize] = &[0, 100];
+const UPGRADE_NS: &[usize] = &[0, 100];
+const CLEAN_NS: &[usize] = &[0, 100];
+const CLEAN_EXPIRED: &[usize] = &[CLEAN_PRODUCTION_MAX_SCAN as usize];
 /// Covers every new entry submission a test measures after the fill.
 const SPARE_GRANTS: usize = 3;
 const FILL_CONCURRENCY: usize = 50;
@@ -56,6 +58,8 @@ const RUNS: usize = 3;
 /// The bound of the sweep after a reshare, so the floor row matches production.
 const CLEAN_PRODUCTION_MAX_SCAN: u32 = 30;
 const CLEAN_FULL_SCAN_MAX_SCAN: u32 = 10_000;
+/// A raised post reshare cleanup budget, tried after the configured one runs out.
+const RAISED_CLEAN_BUDGET: Gas = Gas::from_tgas(25);
 const ATTESTATION_EXPIRY_SECONDS: u64 = 60;
 const EXPIRY_FAST_FORWARD_BLOCKS: u64 = 50;
 /// `migrate` logs this first, so it marks the upgrade receipt.
@@ -310,6 +314,7 @@ async fn chain_time_seconds(worker: &SandboxWorker) -> anyhow::Result<u64> {
 struct CleanRun {
     total_gas: u64,
     receipt_gas: Option<u64>,
+    execution_gas: Option<u64>,
     removed: Option<u32>,
     error: Option<String>,
 }
@@ -405,12 +410,22 @@ impl BenchEnv {
         Ok(())
     }
 
-    /// Fills the first [`CLEAN_PRODUCTION_MAX_SCAN`] map positions with entries that expire
-    /// together, each under its own account key so every removal also drops an index row.
-    /// Returns their expiry.
-    async fn store_expiring_prefix(&self) -> anyhow::Result<u64> {
+    /// Fills the first [`CLEAN_PRODUCTION_MAX_SCAN`] map positions, the first `expired` of
+    /// them with entries that expire together. Each sits under its own account key, so every
+    /// removal also drops an index row. Returns the expiry.
+    async fn store_scan_prefix(&self, expired: usize) -> anyhow::Result<u64> {
+        anyhow::ensure!(
+            expired <= CLEAN_PRODUCTION_MAX_SCAN as usize,
+            "at most {CLEAN_PRODUCTION_MAX_SCAN} entries fit the scan bound, got {expired}"
+        );
         let expiry = chain_time_seconds(&self.worker).await? + ATTESTATION_EXPIRY_SECONDS;
-        let attestation = expiring_mock(expiry);
+        let attestation_at = |position: usize| {
+            if position < expired {
+                expiring_mock(expiry)
+            } else {
+                dtos::Attestation::Mock(dtos::MockAttestation::Valid)
+            }
+        };
 
         // The threshold entries hold the first positions, so they are overwritten in place.
         let threshold_entries = self
@@ -419,9 +434,15 @@ impl BenchEnv {
             .enumerate()
             .map(|(index, account)| (account, fabricated_tls_key(index, PARTICIPANT_TLS_MARKER)))
             .chain([(&self.victim, fabricated_tls_key(0, VICTIM_TLS_MARKER))]);
-        for (account, tls_key) in threshold_entries {
-            let result =
-                submit_participant_info(account, &self.contract, &attestation, &tls_key).await?;
+        let threshold_count = SETUP_PARTICIPANTS + 1;
+        for (position, (account, tls_key)) in threshold_entries.enumerate() {
+            let result = submit_participant_info(
+                account,
+                &self.contract,
+                &attestation_at(position),
+                &tls_key,
+            )
+            .await?;
             anyhow::ensure!(
                 result.is_success(),
                 "expiring overwrite failed for {}: {}",
@@ -430,7 +451,7 @@ impl BenchEnv {
             );
         }
 
-        let attacker_entries = CLEAN_PRODUCTION_MAX_SCAN as usize - (SETUP_PARTICIPANTS + 1);
+        let attacker_entries = CLEAN_PRODUCTION_MAX_SCAN as usize - threshold_count;
         let signing_keys: Vec<SecretKey> = (0..attacker_entries)
             .map(|_| SecretKey::from_random(KeyType::ED25519))
             .collect();
@@ -459,27 +480,35 @@ impl BenchEnv {
         .await?;
         anyhow::ensure!(prepay.is_success(), "expiring prepay failed: {prepay:?}");
 
-        let submissions: Vec<(Account, dtos::Ed25519PublicKey)> = signing_keys
+        let submissions: Vec<(Account, dtos::Ed25519PublicKey, dtos::Attestation)> = signing_keys
             .into_iter()
             .enumerate()
             .map(|(index, key)| {
                 (
                     Account::from_secret_key(self.attacker.id().clone(), key, &*self.worker),
                     fabricated_tls_key(index, EXPIRING_TLS_MARKER),
+                    attestation_at(threshold_count + index),
                 )
             })
             .collect();
-        let results = join_all(submissions.iter().map(|(signer, tls_key)| {
-            submit_participant_info(signer, &self.contract, &attestation, tls_key)
-        }))
-        .await;
-        for result in results {
-            let result = result?;
-            anyhow::ensure!(
-                result.is_success(),
-                "expiring attacker entry failed: {}",
-                failure_reason(&result.failures())
-            );
+        // Concurrent submissions land in any order, so the expiring group goes first.
+        let (expiring, valid): (Vec<_>, Vec<_>) = submissions
+            .iter()
+            .enumerate()
+            .partition(|(index, _)| threshold_count + index < expired);
+        for group in [expiring, valid] {
+            let results = join_all(group.iter().map(|(_, (signer, tls_key, attestation))| {
+                submit_participant_info(signer, &self.contract, attestation, tls_key)
+            }))
+            .await;
+            for result in results {
+                let result = result?;
+                anyhow::ensure!(
+                    result.is_success(),
+                    "attacker scan prefix entry failed: {}",
+                    failure_reason(&result.failures())
+                );
+            }
         }
         Ok(expiry)
     }
@@ -506,10 +535,20 @@ impl BenchEnv {
         let result = call.transact().await?;
         let total_gas = result.total_gas_burnt.as_gas();
         // The attached gas bounds this receipt, the one the post reshare promise creates.
-        let receipt_gas = result
-            .receipt_outcomes()
-            .first()
-            .map(|outcome| outcome.gas_burnt.as_gas());
+        let receipt = result.receipt_outcomes().first();
+        let receipt_gas = receipt.map(|outcome| outcome.gas_burnt.as_gas());
+        let execution_gas = match receipt {
+            Some(receipt) => receipt_gas_profile(
+                &self.worker,
+                result.outcome().transaction_hash.0,
+                self.attacker.id(),
+                receipt.transaction_hash.0,
+            )
+            .await
+            .ok()
+            .map(|profile| profile.execution),
+            None => None,
+        };
         let (removed, error) = match result.into_result() {
             Ok(success) => (Some(success.json::<u32>()?), None),
             Err(failure) => (None, Some(failure_reason(&failure.failures()))),
@@ -517,6 +556,7 @@ impl BenchEnv {
         Ok(CleanRun {
             total_gas,
             receipt_gas,
+            execution_gas,
             removed,
             error,
         })
@@ -676,10 +716,10 @@ impl BenchEnv {
     }
 }
 
-/// Covers the `migrate` execution only. The deploy and function call fees the receipt
-/// burns for its own actions fall outside it.
+/// Covers the receipt's function call execution, the part its attached gas bounds. The fees
+/// the receipt burns for its own actions fall outside it.
 struct GasProfile {
-    migrate_execution: u64,
+    execution: u64,
     /// Largest entries first.
     entries: Vec<(String, u64)>,
 }
@@ -721,7 +761,7 @@ async fn receipt_gas_profile(
         .collect();
     entries.sort_by_key(|(_, gas)| std::cmp::Reverse(*gas));
     Ok(GasProfile {
-        migrate_execution: entries.iter().map(|(_, gas)| gas).sum(),
+        execution: entries.iter().map(|(_, gas)| gas).sum(),
         entries,
     })
 }
@@ -1025,12 +1065,36 @@ async fn attestation_ab_gas_curve() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_clean_row(n: usize, attached_gas: Option<Gas>, run: &CleanRun) {
+struct CleanCase {
+    n: usize,
+    expired: usize,
+    /// Every attempt in order, the last one being the first that completed.
+    attempts: Vec<(Option<Gas>, CleanRun)>,
+}
+
+impl CleanCase {
+    fn completed(&self) -> Option<&CleanRun> {
+        self.attempts
+            .last()
+            .map(|(_, run)| run)
+            .filter(|run| run.error.is_none())
+    }
+
+    fn fits(&self, budget: Gas) -> bool {
+        self.attempts.iter().any(|(attached, run)| {
+            run.error.is_none() && attached.is_some_and(|attached| attached <= budget)
+        })
+    }
+}
+
+fn print_clean_row(n: usize, expired: usize, attached_gas: Option<Gas>, run: &CleanRun) {
     println!(
-        "| {:>5} | {:>6} | {:>6} | {:>6} | {} | {} |",
+        "| {:>5} | {:>2} | {:>6} | {:>6} | {:>6} | {:>6} | {} | {} |",
         n,
+        expired,
         attached_gas.map_or("max".to_string(), |gas| tgas(Some(gas.as_gas()))),
         tgas(run.receipt_gas),
+        tgas(run.execution_gas),
         tgas(Some(run.total_gas)),
         run.removed
             .map_or("-".to_string(), |removed| removed.to_string()),
@@ -1040,47 +1104,84 @@ fn print_clean_row(n: usize, attached_gas: Option<Gas>, run: &CleanRun) {
     );
 }
 
-/// Cleanup at the production scan bound with every scanned entry expired, first under the
-/// gas the post reshare promise attaches and, only if that runs out, under max gas.
+/// Cleanup at the production scan bound with the first K scanned entries expired. Each case
+/// runs under the configured post reshare budget, then [`RAISED_CLEAN_BUDGET`], then max gas,
+/// stopping at the first that completes. A run that runs out of gas rolls back, so every
+/// attempt sees the same state.
 #[tokio::test]
 #[ignore = "sandbox benchmark; run explicitly"]
-async fn clean_invalid_attestations__should_remove_every_scanned_entry_when_all_have_expired()
+async fn clean_invalid_attestations__should_remove_the_expired_entries_within_the_scan_bound()
 -> anyhow::Result<()> {
-    println!("|     N | attached | receipt | total | removed | status |");
-    println!("|---|---|---|---|---|---|");
-    let mut rows = Vec::new();
-    for n in ns_from_env("ATTESTATION_CLEAN_NS", CLEAN_NS) {
-        // Given
-        let env = setup_bench_env(InitialContract::Current).await?;
-        let expiry = env.store_expiring_prefix().await?;
-        env.fill(n).await?;
-        env.wait_until_expired(expiry).await?;
-        let budget = Gas::from_tgas(
-            get_config(&env.contract)
-                .await?
-                .clean_invalid_attestations_tera_gas,
-        );
+    println!("|     N |  K | attached | receipt | execution | total | removed | status |");
+    println!("|---|---|---|---|---|---|---|---|");
+    let mut cases = Vec::new();
+    let mut configured_budget = None;
+    for expired in ns_from_env("ATTESTATION_CLEAN_EXPIRED", CLEAN_EXPIRED) {
+        for n in ns_from_env("ATTESTATION_CLEAN_NS", CLEAN_NS) {
+            // Given
+            let env = setup_bench_env(InitialContract::Current).await?;
+            let expiry = env.store_scan_prefix(expired).await?;
+            env.fill(n).await?;
+            env.wait_until_expired(expiry).await?;
+            let budget = Gas::from_tgas(
+                get_config(&env.contract)
+                    .await?
+                    .clean_invalid_attestations_tera_gas,
+            );
+            configured_budget = Some(budget);
 
-        // When
-        let under_budget = env.clean_at_production_bound(Some(budget)).await?;
-        print_clean_row(n, Some(budget), &under_budget);
-        let completed = if under_budget.error.is_some() {
-            let under_max_gas = env.clean_at_production_bound(None).await?;
-            print_clean_row(n, None, &under_max_gas);
-            under_max_gas
-        } else {
-            under_budget
-        };
-        rows.push((n, completed));
+            // When
+            let mut attachments = vec![Some(budget)];
+            if RAISED_CLEAN_BUDGET > budget {
+                attachments.push(Some(RAISED_CLEAN_BUDGET));
+            }
+            attachments.push(None);
+            let mut attempts = Vec::new();
+            for attached_gas in attachments {
+                let run = env.clean_at_production_bound(attached_gas).await?;
+                print_clean_row(n, expired, attached_gas, &run);
+                let completed = run.error.is_none();
+                attempts.push((attached_gas, run));
+                if completed {
+                    break;
+                }
+            }
+            cases.push(CleanCase {
+                n,
+                expired,
+                attempts,
+            });
+        }
+    }
+
+    let configured_budget = configured_budget.expect("at least one case ran");
+    println!(
+        "\n|     N |  K | needed receipt | needed execution | fits {} | fits {} |",
+        tgas(Some(configured_budget.as_gas())),
+        tgas(Some(RAISED_CLEAN_BUDGET.as_gas()))
+    );
+    println!("|---|---|---|---|---|---|");
+    for case in &cases {
+        let completed = case.completed();
+        println!(
+            "| {:>5} | {:>2} | {:>6} | {:>6} | {} | {} |",
+            case.n,
+            case.expired,
+            tgas(completed.and_then(|run| run.receipt_gas)),
+            tgas(completed.and_then(|run| run.execution_gas)),
+            case.fits(configured_budget),
+            case.fits(RAISED_CLEAN_BUDGET),
+        );
     }
 
     // Then
-    for (n, completed) in &rows {
+    for case in &cases {
+        let removed = case.completed().and_then(|run| run.removed);
         anyhow::ensure!(
-            completed.removed == Some(CLEAN_PRODUCTION_MAX_SCAN),
-            "at N={n} the sweep removed {:?} of {CLEAN_PRODUCTION_MAX_SCAN} entries: {:?}",
-            completed.removed,
-            completed.error
+            removed == Some(case.expired as u32),
+            "at N={} the sweep removed {removed:?} of {} expired entries",
+            case.n,
+            case.expired
         );
     }
     Ok(())
@@ -1172,11 +1273,7 @@ fn print_upgrade_header() {
 }
 
 fn print_upgrade_row(m: &UpgradeMeasurement) {
-    let migrate_execution = m
-        .upgrade
-        .profile
-        .as_ref()
-        .map(|profile| profile.migrate_execution);
+    let migrate_execution = m.upgrade.profile.as_ref().map(|profile| profile.execution);
     let action_fees = m
         .upgrade
         .receipt_gas
