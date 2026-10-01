@@ -568,11 +568,15 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     pub fn derived_public_key(
         &self,
         path: String,
-        predecessor: Option<AccountId>,
+        predecessor: AccountId,
         domain_id: Option<DomainId>,
     ) -> ViewCall<C, PublicKey> {
-        let args = serde_json::to_vec(&DerivedPublicKeyArgs::new(path, predecessor, domain_id))
-            .expect("plain-data args; JSON serialization cannot fail");
+        let args = serde_json::to_vec(&DerivedPublicKeyArgs::new(
+            path,
+            Some(predecessor),
+            domain_id,
+        ))
+        .expect("plain-data args; JSON serialization cannot fail");
         self.view(ViewArgs::new(DERIVED_PUBLIC_KEY, args))
     }
 
@@ -948,7 +952,7 @@ mod tests {
         let _ = handle
             .derived_public_key(
                 "test".to_string(),
-                Some("alice.near".parse().unwrap()),
+                "alice.near".parse().unwrap(),
                 Some(DomainId(0)),
             )
             .await;
