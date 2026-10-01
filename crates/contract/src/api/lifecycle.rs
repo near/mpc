@@ -6,7 +6,9 @@ use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
-use crate::primitives::domain::{AddDomainsVotes, DomainRegistry, max_reconstruction_threshold};
+use crate::primitives::domain::{
+    AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
+};
 use crate::primitives::key_state::{EpochId, Keyset};
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
@@ -14,7 +16,7 @@ use crate::state::running::RunningContractState;
 use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
-use crate::update::{ContractUpdateVotes, ProposedUpdates};
+use crate::update::ContractUpdateVotes;
 use crate::{MpcContract, MpcContractExt, v3_16_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
@@ -61,7 +63,6 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: ProposedUpdates::default(),
             contract_update_votes: ContractUpdateVotes::default(),
             config,
             tee_state,
@@ -106,18 +107,11 @@ impl MpcContract {
         );
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
-        let num_participants = parameters.participants().len() as u64;
-        for domain in domains.domains() {
-            crate::primitives::domain::validate_domain_reconstruction_threshold(
-                domain,
-                num_participants,
-            )?;
-        }
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
-        GovernanceThresholdParameters::validate_governance_against_reconstruction(
-            num_participants,
+        validate_domains_against_governance(
+            domains.domains(),
+            parameters.participants().len() as u64,
             parameters.threshold(),
-            max_reconstruction_threshold(domains.domains()),
         )?;
 
         // Check that the domains match exactly those in the keyset.
@@ -149,7 +143,6 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: Default::default(),
             contract_update_votes: Default::default(),
             tee_state,
             accept_requests: true,

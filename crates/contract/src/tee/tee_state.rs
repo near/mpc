@@ -3,6 +3,7 @@ use crate::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
         participants::Participants,
         proposal_hash::ToProposalHash,
+        time::Timestamp,
         votes::{VoterSet, Votes},
     },
     storage_keys::StorageKey,
@@ -154,7 +155,7 @@ impl TeeState {
     }
 
     pub(crate) fn current_time_seconds() -> u64 {
-        env::block_timestamp_ms() / 1_000
+        Timestamp::now().as_secs()
     }
 
     pub(crate) fn verify_and_store_mock(

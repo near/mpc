@@ -46,6 +46,10 @@ container_build_command = [
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["block-clock"]
+# Read time from the block. Pinning the clock (sandbox tests only) takes both
+# disabling this default feature and setting `MPC_CONTRACT_PINNED_NOW_SECONDS`.
+block-clock = []
 test-utils = [
     "rand",
     "threshold-signatures",

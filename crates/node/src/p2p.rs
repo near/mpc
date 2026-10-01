@@ -1,25 +1,30 @@
-use crate::config::MpcConfig;
-use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, INCOMING_CONNECTIONS_REJECTED, MPC_P2P_TCP_WRITE_SIZE_BYTES,
-    OUTGOING_CONNECTION,
+use crate::log_throttle::{Decision, LogThrottle};
+use crate::{
+    config::MpcConfig,
+    metrics::networking_metrics::{
+        self, INCOMING_CONNECTION, INCOMING_CONNECTIONS_REJECTED, MPC_P2P_TCP_WRITE_SIZE_BYTES,
+        OUTGOING_CONNECTION,
+    },
+    network::conn::{
+        AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
+        NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
+    },
+    network::{
+        constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION},
+        handshake::{
+            DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID,
+            p2p_handshake_dialer, p2p_handshake_listener,
+        },
+        wire_format::{MpcMessageKind, Packet},
+        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+    },
+    primitives::{
+        IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
+        PeerMessage,
+    },
+    protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
+    tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
 };
-use crate::network::conn::{
-    AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
-    NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
-};
-use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
-use crate::network::handshake::{
-    DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID, p2p_handshake_dialer,
-    p2p_handshake_listener,
-};
-use crate::network::wire_format::{MpcMessageKind, Packet};
-use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
-    PeerMessage,
-};
-use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
-use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
@@ -27,17 +32,24 @@ use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
 use rustls::{ClientConfig, CommonState};
-use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::time::timeout;
+use std::{
+    collections::HashMap,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    time::timeout,
+};
 use tokio_rustls::TlsAcceptor;
-use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
-use tokio_util::sync::CancellationToken;
-use tokio_util::time::FutureExt;
+use tokio_util::{
+    codec::{Decoder, Framed, LengthDelimitedCodec},
+    sync::CancellationToken,
+    time::FutureExt,
+};
 use tracing::{error, info};
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
@@ -451,6 +463,7 @@ impl PersistentConnection {
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
+                let mut log_throttle = LogThrottle::new(Duration::from_secs(60));
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
@@ -467,6 +480,7 @@ impl PersistentConnection {
                     .await
                     {
                         Ok(new_conn) => {
+                            log_throttle.reset();
                             tracing::info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
@@ -476,13 +490,20 @@ impl PersistentConnection {
                             new_conn
                         }
                         Err(e) => {
-                            tracing::info!(
-                                my_id = %my_id,
-                                target_participant_id = %target_participant_id,
-                                error = %format_args!("{e:#}"),
-                                "could not connect, retrying"
-                            );
-
+                            let decision =
+                                log_throttle.check(tokio::time::Instant::now().into_std());
+                            match decision {
+                                Decision::Suppress => {}
+                                Decision::Emit { observed } => {
+                                    tracing::info!(
+                                        my_id = %my_id,
+                                        target_participant_id = %target_participant_id,
+                                        observed,
+                                        error = %format_args!("{e:#}"),
+                                        "could not connect",
+                                    );
+                                }
+                            }
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
@@ -1135,18 +1156,20 @@ mod tests {
         OutgoingConnection, ParticipantIdentities, PersistentConnection,
         incoming_connection_handler,
     };
-    use crate::config::MpcConfig;
-    use crate::network::{
-        conn::{AllNodeConnectivities, ConnectionVersion},
-        wire_format::{EcdsaTaskId, MpcTaskId},
-        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+    use crate::{
+        config::MpcConfig,
+        network::{
+            conn::{AllNodeConnectivities, ConnectionVersion},
+            wire_format::{EcdsaTaskId, MpcTaskId},
+            {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+        },
+        p2p::testing::{generate_test_p2p_configs, port_seed},
+        primitives::{
+            ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
+        },
+        protocol_version::CURRENT_PROTOCOL_VERSION,
+        tracking::{self, testing::start_root_task_with_periodic_dump},
     };
-    use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
-    use crate::primitives::{
-        ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
-    };
-    use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
-    use crate::tracking::{self, testing::start_root_task_with_periodic_dump};
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
