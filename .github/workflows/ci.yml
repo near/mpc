@@ -4,9 +4,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Only jobs that declare it can write the GitHub Actions cache, so a job that runs third-party
-# build scripts can't poison what other jobs restore from it
-cache-mode: read
+# A job can use the GitHub Actions cache only if it declares so, which keeps a job that runs
+# third-party build scripts from poisoning what the image checks restore from it
+cache-mode: none
 
 on:
   workflow_dispatch:
@@ -84,6 +84,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    cache-mode: read
 
     steps:
       - name: Checkout repository
@@ -148,11 +149,8 @@ jobs:
       - name: Install Nix
         if: needs.changes.outputs.code_changed != 'false'
         uses: ./.github/actions/install-nix
-
-      - name: Restore /nix from cache
-        id: nix-cache
-        if: needs.changes.outputs.code_changed != 'false'
-        uses: ./.github/actions/restore-nix-cache
+        with:
+          project-cache: true
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
         if: needs.changes.outputs.code_changed != 'false'
@@ -162,7 +160,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
+          prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}-nix-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}
 
       - name: Run cargo-nextest
         if: needs.changes.outputs.code_changed != 'false'
@@ -176,7 +174,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-    cache-mode: write
 
     steps:
       - name: Checkout repository
@@ -186,12 +183,20 @@ jobs:
 
       - name: Install Nix
         uses: ./.github/actions/install-nix
-
-      # only save nix cache in this single job to avoid duplicate cache saves from other jobs
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
         with:
-          save: ${{ github.ref == 'refs/heads/main' }}
+          project-cache: true
+
+      # Only this job pushes to the project cache, before anything but Nix's sandboxed builds has
+      # run on the runner, so nothing else can shape what it signs
+      - name: Push the dev shells to the project cache
+        if: github.ref == 'refs/heads/main'
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          CACHIX_SIGNING_KEY: ${{ secrets.CACHIX_SIGNING_KEY }}
+        run: |
+          nix develop --no-update-lock-file --profile "$RUNNER_TEMP/dev-shell" --command true
+          nix develop --no-update-lock-file --profile "$RUNNER_TEMP/contract-shell" .#contract --command true
+          nix run --inputs-from . nixpkgs#cachix -- push near-mpc "$RUNNER_TEMP/dev-shell" "$RUNNER_TEMP/contract-shell"
 
       # Reproducible build that carries NEP-330 metadata; this is what the
       # release artifact uses and what sourcescan.io / nearblocks replay.
@@ -221,9 +226,8 @@ jobs:
 
       - name: Install Nix
         uses: ./.github/actions/install-nix
-
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
+        with:
+          project-cache: true
 
       - name: Build mpc-contract (Nix)
         run: nix build -L .#mpc-contract
@@ -249,10 +253,8 @@ jobs:
 
       - name: Install Nix
         uses: ./.github/actions/install-nix
-
-      - name: Restore /nix from cache
-        id: nix-cache
-        uses: ./.github/actions/restore-nix-cache
+        with:
+          project-cache: true
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -260,7 +262,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
+          prefix-key: v1-rust-week-${{ env.WEEK }}-nix-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}
 
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
@@ -282,10 +284,8 @@ jobs:
 
       - name: Install Nix
         uses: ./.github/actions/install-nix
-
-      - name: Restore /nix from cache
-        id: nix-cache
-        uses: ./.github/actions/restore-nix-cache
+        with:
+          project-cache: true
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -293,7 +293,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
+          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}-nix-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}
 
       - name: Build mpc-node
         run: nix develop --command cargo make build-mpc-node-network-hardship-simulation
@@ -338,9 +338,8 @@ jobs:
 
       - name: Install Nix
         uses: ./.github/actions/install-nix
-
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
+        with:
+          project-cache: true
 
       - name: Run cargo-make extra checks
         run: nix develop --command cargo make check-extra

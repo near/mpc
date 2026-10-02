@@ -72,7 +72,9 @@ could then supply any binary, including the images' own, so make sure
 `nix config show substituters` and `nix config show trusted-public-keys` print
 exactly these values and `nix config show require-sigs` prints `true`. CI's
 complete settings, with the reason for each, are in its
-[`nix.conf`](../../.github/actions/install-nix/nix.conf).
+[`nix.conf`](../../.github/actions/install-nix/nix.conf). The CI checks, whose
+results nobody votes on, also use the project's own cache, listed in
+[`project-cache.conf`](../../.github/actions/install-nix/project-cache.conf).
 
 A local build downloads the dependencies' pre-built outputs from this cache too,
 so a matching digest shows that CI built what anyone gets from the same sources

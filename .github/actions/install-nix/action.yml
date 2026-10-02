@@ -2,18 +2,25 @@ name: Install Nix
 description: |
   Install Nix from its official release tarball, checked against a pinned
   hash, and fail unless it applies exactly the settings in nix.conf. It
-  refuses a runner that already has Nix. Packages restored into /nix from a
-  cache afterwards skip the signature check, so the jobs that build the
-  published images and the release contract restore none. The Determinate
-  Systems installer action is not used: by default it runs its installer as
-  root without a pinned hash, installs Determinate Nix with a closed-source
-  daemon, and trusts FlakeHub's cache and signing keys, which its extra-conf
-  input can't remove.
+  refuses a runner that already has Nix, and no job restores /nix from a
+  cache afterwards, as restored packages would skip the signature check. The
+  Determinate Systems installer action is not used: by default it runs its
+  installer as root without a pinned hash, installs Determinate Nix with a
+  closed-source daemon, and trusts FlakeHub's cache and signing keys, which
+  its extra-conf input can't remove.
+inputs:
+  project-cache:
+    description: |
+      Also take pre-built packages from the project's own cache, signed with
+      its key. Only for the CI checks, never for a build operators vote on.
+    default: "false"
 runs:
   using: composite
   steps:
     - name: Install Nix
       shell: bash
+      env:
+        PROJECT_CACHE: ${{ inputs.project-cache }}
       run: |
         "$GITHUB_ACTION_PATH/install.sh"
         echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
