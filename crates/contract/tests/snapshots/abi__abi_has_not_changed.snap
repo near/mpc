@@ -621,34 +621,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": [
-                {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/BackupServiceInfo"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/DestinationNodeInfo"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            }
+            "$ref": "#/definitions/MigrationInfo"
           }
         }
       },
@@ -4200,6 +4173,36 @@ expression: abi
                 "$ref": "#/definitions/MeasurementVoteAction"
               }
             }
+          }
+        },
+        "MigrationInfo": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/BackupServiceInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/DestinationNodeInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
           }
         },
         "MockAttestation": {

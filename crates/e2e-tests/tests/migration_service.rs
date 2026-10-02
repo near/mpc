@@ -4,25 +4,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use std::collections::BTreeMap;
-
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::ProcessGuard;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
-    ProtocolContractState,
+    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
+    ParticipantInfo, ProtocolContractState,
 };
 use rand::SeedableRng;
-
-/// Mirror of the production [`node::indexer::migrations::ContractMigrationInfo`]
-/// type. Used to deserialize the `/debug/migrations` response strictly so the
-/// readiness asserts compare typed fields rather than substring-match the
-/// JSON body.
-type ContractMigrationInfo =
-    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
 const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
 const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -229,25 +220,25 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
 }
 
 /// Fetch one node's `/debug/migrations` endpoint and deserialize the body
-/// into the typed [`ContractMigrationInfo`] map (the second element of the
-/// `(indexer_height, ContractMigrationInfo)` tuple the endpoint returns).
+/// into the typed [`MigrationInfo`] map (the second element of the
+/// `(indexer_height, MigrationInfo)` tuple the endpoint returns).
 async fn fetch_debug_migration_info(
     http_client: &reqwest::Client,
     web_addr: &str,
-) -> anyhow::Result<ContractMigrationInfo> {
+) -> anyhow::Result<MigrationInfo> {
     let body = http_client
         .get(format!("http://{web_addr}/debug/migrations"))
         .send()
         .await?
         .text()
         .await?;
-    let (_indexer_height, info) = serde_json::from_str::<(u64, ContractMigrationInfo)>(&body)
+    let (_indexer_height, info) = serde_json::from_str::<(u64, MigrationInfo)>(&body)
         .with_context(|| format!("failed to parse /debug/migrations: {body}"))?;
     Ok(info)
 }
 
 /// Poll a node's `/debug/migrations` endpoint with `INDEXER_SYNC_TIMEOUT`,
-/// re-running `check` against the typed [`ContractMigrationInfo`] until it
+/// re-running `check` against the typed [`MigrationInfo`] until it
 /// returns `Ok` (or the timeout elapses). `description` is interpolated
 /// into the timeout error.
 async fn wait_for_debug_migration<F>(
@@ -256,7 +247,7 @@ async fn wait_for_debug_migration<F>(
     check: F,
 ) -> anyhow::Result<()>
 where
-    F: Fn(&ContractMigrationInfo) -> anyhow::Result<()>,
+    F: Fn(&MigrationInfo) -> anyhow::Result<()>,
 {
     let http_client = reqwest::Client::new();
     (|| async {
