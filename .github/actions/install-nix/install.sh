@@ -26,17 +26,24 @@ for path in /nix /etc/nix "${XDG_CACHE_HOME:-$HOME/.cache}/nix"; do
   [[ ! -e "$path" ]] || die "$path already exists on this runner"
 done
 
+# The CI checks also take pre-built packages from the project's own cache, so their config adds it
+CONF_DIR="$TMP_DIR/conf"
+mkdir "$CONF_DIR"
+cat "$SCRIPT_DIR/nix.conf" > "$CONF_DIR/nix.conf"
+[[ "${PROJECT_CACHE:-false}" != true ]] ||
+  cat "$SCRIPT_DIR/project-cache.conf" >> "$CONF_DIR/nix.conf"
+
 curl -fsSL --retry 3 -o "$TMP_DIR/$RELEASE.tar.xz" \
   "https://releases.nixos.org/nix/nix-$NIX_VERSION/$RELEASE.tar.xz"
 sha256sum --check --quiet <<< "$NIX_TARBALL_SHA256  $TMP_DIR/$RELEASE.tar.xz" ||
   die "The Nix tarball doesn't match its pinned hash"
 tar -xf "$TMP_DIR/$RELEASE.tar.xz" -C "$TMP_DIR"
 
-# The installer writes this folder's nix.conf into Nix's system config, which every Nix process
-# reads, and starts the daemon that builds for the runner. A channel would be an unpinned source of
-# packages, so none is added
+# The installer writes this config into Nix's system config, which every Nix process reads, and
+# starts the daemon that builds for the runner. A channel would be an unpinned source of packages,
+# so none is added
 "$TMP_DIR/$RELEASE/install" --daemon --yes --no-channel-add \
-  --nix-extra-conf-file "$SCRIPT_DIR/nix.conf"
+  --nix-extra-conf-file "$CONF_DIR/nix.conf"
 
 # The installer's systemd service can get options or environment variables from the runner's
 # systemd configuration, so the script replaces it with a service that runs the daemon with no
@@ -59,11 +66,11 @@ done
 # doesn't know with only a warning. So the script compares the settings each process ends up with
 # against what nix.conf alone gives, and fails on any difference
 
-# The settings both the client and the daemon are expected to have: what Nix prints with this
-# folder's nix.conf as its system config file, no user config files and an otherwise empty
+# The settings both the client and the daemon are expected to have: what Nix prints with the
+# config above as its system config file, no user config files and an otherwise empty
 # environment. Its warnings are left out, so that a setting in nix.conf that Nix doesn't know
 # shows up as a difference
-EXPECTED_SETTINGS="$(env -i NIX_CONF_DIR="$SCRIPT_DIR" NIX_USER_CONF_FILES= "$NIX" config show)"
+EXPECTED_SETTINGS="$(env -i NIX_CONF_DIR="$CONF_DIR" NIX_USER_CONF_FILES= "$NIX" config show)"
 
 expect_nix_conf_settings() {
   local nix_process="$1" actual_settings="$2"
