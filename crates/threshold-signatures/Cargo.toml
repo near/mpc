@@ -77,6 +77,16 @@ harness = false
 required-features = ["test-utils"]
 
 [[bench]]
+name = "naive_ecdsa_v2_sign"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "advanced_ecdsa_v2_sign"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
 name = "naive_ot_based_ecdsa"
 harness = false
 required-features = ["test-utils"]
