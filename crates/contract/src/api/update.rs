@@ -62,12 +62,12 @@ impl MpcContract {
                     method_names::MIGRATE,
                     Vec::new(),
                     NearToken::from_near(0),
-                    Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas),
+                    Gas::from_tgas(self.config.apply_contract_update_tera_gas),
                 ),
             dtos::Update::Config(config) => {
                 let config: Config = config.into();
                 Self::ext_self()
-                    .with_static_gas(Gas::from_tgas(config.contract_upgrade_deposit_tera_gas))
+                    .with_static_gas(Gas::from_tgas(config.apply_contract_update_tera_gas))
                     .with_unused_gas_weight(0)
                     .update_config(config.into_dto_type())
             }
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[rstest]
-    fn submit_contract_update__should_attach_the_configured_upgrade_gas(
+    fn submit_contract_update__should_attach_the_configured_apply_contract_update_gas(
         #[values(code_update(), config_update())] update: dtos::Update,
     ) {
         // Given
@@ -295,8 +295,8 @@ mod tests {
         let (mut contract, participants) = contract_with_participants(running_state());
         approve(&mut env, &mut contract, &participants, &update);
         let configured_tera_gas = match &update {
-            dtos::Update::Code(_) => contract.config.contract_upgrade_deposit_tera_gas,
-            dtos::Update::Config(config) => config.contract_upgrade_deposit_tera_gas,
+            dtos::Update::Code(_) => contract.config.apply_contract_update_tera_gas,
+            dtos::Update::Config(config) => config.apply_contract_update_tera_gas,
         };
 
         // When

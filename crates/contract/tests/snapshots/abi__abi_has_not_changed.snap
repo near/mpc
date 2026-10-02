@@ -1804,7 +1804,7 @@ expression: abi
                         "u64"
                       ],
                       [
-                        "contract_upgrade_deposit_tera_gas",
+                        "apply_contract_update_tera_gas",
                         "u64"
                       ],
                       [
@@ -2050,7 +2050,7 @@ expression: abi
       },
       {
         "name": "verify_tee",
-        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case less than `threshold` participants run in an accepted TEE State.",
+        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case the participants running in an accepted TEE State are too few for the\n GovernanceThreshold or for any domain's signing protocol.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -3008,13 +3008,13 @@ expression: abi
           "description": "Configuration parameters of the contract.",
           "type": "object",
           "required": [
+            "apply_contract_update_tera_gas",
             "attestation_storage_fee_millinear",
             "ckd_call_gas_attachment_requirement_tera_gas",
             "clean_foreign_chain_data_tera_gas",
             "clean_invalid_attestations_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
-            "contract_upgrade_deposit_tera_gas",
             "fail_attestation_submission_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
@@ -3029,6 +3029,12 @@ expression: abi
             "verifier_tera_gas"
           ],
           "properties": {
+            "apply_contract_update_tera_gas": {
+              "description": "Prepaid gas for applying contract and config updates.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "attestation_storage_fee_millinear": {
               "description": "Fee, in milliNEAR, for one attestation-storage grant.",
               "type": "integer",
@@ -3061,12 +3067,6 @@ expression: abi
             },
             "cleanup_orphaned_node_migrations_tera_gas": {
               "description": "Prepaid gas for a `cleanup_orphaned_node_migrations` call.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "contract_upgrade_deposit_tera_gas": {
-              "description": "Amount of gas to deposit for contract and config updates.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3713,6 +3713,15 @@ expression: abi
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
+            "apply_contract_update_tera_gas": {
+              "description": "Prepaid gas for applying contract and config updates.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "attestation_storage_fee_millinear": {
               "description": "Fee, in milliNEAR, for one attestation-storage grant.",
               "type": [
@@ -3760,15 +3769,6 @@ expression: abi
             },
             "cleanup_orphaned_node_migrations_tera_gas": {
               "description": "Prepaid gas for a `cleanup_orphaned_node_migrations` call.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "contract_upgrade_deposit_tera_gas": {
-              "description": "Amount of gas to deposit for contract and config updates.",
               "type": [
                 "integer",
                 "null"
