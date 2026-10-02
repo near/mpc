@@ -53,36 +53,44 @@ until "$NIX" store info &> /dev/null; do
   sleep 0.1
 done
 
-# Installing nix.conf doesn't guarantee that the builds use it: user config files and environment
-# variables override it, and Nix ignores a setting it doesn't know with only a warning. So the
-# checks below ask Nix to print the settings it uses, warnings included, and expect exactly what it
-# prints when this folder's nix.conf is its only config. Any difference is a setting that came from
-# somewhere else, or a line of nix.conf that Nix didn't understand. Two Nix processes take part in
-# a build and are checked in turn: the runner's Nix, which evaluates what to build, and the daemon,
-# which runs as root and builds it
+# Nix runs in two processes: the client, which the job's steps call to work out what to build, and
+# the daemon, which runs as root and runs the builds. Installing nix.conf doesn't make either use
+# only it: other config files and environment variables override it, and Nix skips a setting it
+# doesn't know with only a warning. So the script compares the settings each process ends up with
+# against what nix.conf alone gives, and fails on any difference
 
-# Without Nix's stderr, so that such a warning becomes a difference instead of appearing on both
-# sides
-EXPECTED_SETTINGS="$TMP_DIR/expected-settings"
-env -i NIX_CONF_DIR="$SCRIPT_DIR" NIX_USER_CONF_FILES= "$NIX" config show > "$EXPECTED_SETTINGS"
+# The settings both the client and the daemon are expected to have: what Nix prints with this
+# folder's nix.conf as its system config file, no user config files and an otherwise empty
+# environment. Its warnings are left out, so that a setting in nix.conf that Nix doesn't know
+# shows up as a difference
+EXPECTED_SETTINGS="$(env -i NIX_CONF_DIR="$SCRIPT_DIR" NIX_USER_CONF_FILES= "$NIX" config show)"
 
-# Some of Nix's environment variables aren't settings, such as those locating its store or daemon
-# socket, so the runner must have none of Nix's variables, internal ones included
-compgen -e | grep -E '^_?NIX_' &&
-  die "The runner's environment sets the Nix variables above"
-diff -u --label nix.conf --label "the runner's Nix" \
-  "$EXPECTED_SETTINGS" <("$NIX" config show 2>&1) ||
-  die "The runner's Nix settings differ from nix.conf"
+expect_nix_conf_settings() {
+  local nix_process="$1" actual_settings="$2"
+  diff -u --label nix.conf --label "$nix_process" \
+    <(echo "$EXPECTED_SETTINGS") <(echo "$actual_settings") ||
+    die "The settings of $nix_process differ from nix.conf"
+}
 
-# The runner's Nix must build through the daemon as an untrusted user: the daemon then ignores most
-# of the settings it sends, so the options and environment of later Nix commands can't loosen the
-# settings the daemon builds with
+# Checks of the Nix client, which runs as the runner's user in the job's environment
+
+# Some of Nix's environment variables aren't settings, such as those that locate its store or the
+# daemon's socket, so comparing settings would miss them. The job's environment must have none of
+# Nix's variables, including the internal ones that start with an underscore
+compgen -e | grep -E '^_?NIX_' && die "The Nix client's environment sets the Nix variables above"
+expect_nix_conf_settings "the Nix client" "$("$NIX" config show 2>&1)"
+
+# If the runner's user were trusted, any later Nix call could make the daemon use another cache
+# and key, or build without the sandbox, just by passing its own settings for that call. So the
+# client must build through the daemon as an untrusted user: the daemon then accepts only a few
+# harmless settings from it, such as how many builds to run at once, and ignores the rest
 STORE_INFO="$("$NIX" store info --json)"
 jq --exit-status '.url == "daemon" and .trusted == false' <<< "$STORE_INFO" > /dev/null ||
-  die "The runner must use the daemon as an untrusted user, but its store is $STORE_INFO"
+  die "The Nix client must use the daemon as an untrusted user, but its store is $STORE_INFO"
 
-# The daemon can't be asked for its settings, but it runs as root with no options and an empty
-# environment, so running Nix the same way prints them
-diff -u --label nix.conf --label "the daemon" \
-  "$EXPECTED_SETTINGS" <(sudo env -i "$NIX" config show 2>&1) ||
-  die "The daemon's settings differ from nix.conf"
+# Checks of the Nix daemon, which runs as root with no options and an empty environment
+
+# A running daemon can't be asked for its settings. The client, run as root with an empty
+# environment like the daemon, reads the same config files, including root's own and any that
+# only root can read, so it prints the settings the daemon uses
+expect_nix_conf_settings "the Nix daemon" "$(sudo env -i "$NIX" config show 2>&1)"
