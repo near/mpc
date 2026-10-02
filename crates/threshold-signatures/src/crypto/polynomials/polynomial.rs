@@ -180,6 +180,11 @@ impl<C: Ciphersuite> Polynomial<C> {
         PolynomialCommitment::new(&coef_commitment)
     }
 
+    /// Borrows the coefficients of the polynomial without copying the secrets.
+    pub(crate) fn coefficients(&self) -> &[Scalar<C>] {
+        &self.coefficients
+    }
+
     /// Set the constant value of this polynomial to a new scalar
     /// Abort if the output polynomial would be zero or empty
     pub fn set_nonzero_constant(&mut self, v: Scalar<C>) -> Result<(), ProtocolError> {
