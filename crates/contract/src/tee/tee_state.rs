@@ -546,17 +546,33 @@ impl TeeState {
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
-    /// Finds the [`NodeId`] (account_id + tls_public_key) for the node whose attested
-    /// account public key matches `signer_account_pk`.
-    pub(crate) fn lookup_node_id_by_signer_pk(
+    /// The [`NodeId`] attested under `tls_public_key`, if `signer_id` owns that entry and
+    /// `signer_pk` is its attested account key.
+    pub(crate) fn attested_node_for(
         &self,
-        signer_account_pk: &Ed25519PublicKey,
+        tls_public_key: &Ed25519PublicKey,
+        signer_id: &AccountId,
+        signer_pk: &near_sdk::PublicKey,
     ) -> Result<&NodeId, AttestationCheckError> {
-        self.stored_attestations
-            .values()
-            .find(|attestation| attestation.node_id.account_public_key == *signer_account_pk)
-            .map(|attestation| &attestation.node_id)
-            .ok_or(AttestationCheckError::AttestationNotFound)
+        let node_id = &self
+            .stored_attestations
+            .get(tls_public_key)
+            .ok_or(AttestationCheckError::AttestationNotFound)?
+            .node_id;
+
+        if node_id.account_id != *signer_id {
+            return Err(AttestationCheckError::AttestationOwnerMismatch);
+        }
+
+        // Stored account keys are Ed25519 by construction; a non-Ed25519
+        // signer necessarily mismatches.
+        let signer_ed25519 = Ed25519PublicKey::try_from(signer_pk)
+            .map_err(|_| AttestationCheckError::AttestationKeyMismatch)?;
+        if node_id.account_public_key != signer_ed25519 {
+            return Err(AttestationCheckError::AttestationKeyMismatch);
+        }
+
+        Ok(node_id)
     }
 
     /// Returns Ok(()) if the caller has at least one participant entry
@@ -567,31 +583,14 @@ impl TeeState {
         &self,
         participants: &Participants,
     ) -> Result<(), AttestationCheckError> {
-        let signer_account_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id();
 
         let info = participants
             .info(&signer_id)
             .ok_or(AttestationCheckError::CallerNotParticipant)?;
 
-        let attestation = self
-            .stored_attestations
-            .get(&info.tls_public_key)
-            .ok_or(AttestationCheckError::AttestationNotFound)?;
-
-        if attestation.node_id.account_id != signer_id {
-            return Err(AttestationCheckError::AttestationOwnerMismatch);
-        }
-
-        // Stored account keys are Ed25519 by construction; a non-Ed25519
-        // signer necessarily mismatches.
-        let signer_ed25519 = Ed25519PublicKey::try_from(&signer_account_pk)
-            .map_err(|_| AttestationCheckError::AttestationKeyMismatch)?;
-        if attestation.node_id.account_public_key != signer_ed25519 {
-            return Err(AttestationCheckError::AttestationKeyMismatch);
-        }
-
-        Ok(())
+        self.attested_node_for(&info.tls_public_key, &signer_id, &env::signer_account_pk())
+            .map(|_| ())
     }
 }
 

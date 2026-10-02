@@ -95,9 +95,9 @@ impl FakeMpcContractState {
         &self.foreign_chains_configs
     }
 
-    /// The real endpoint authenticates via the TEE registry, which is
-    /// phase-independent; the fake resolves the signer against the current
-    /// phase's participant sets instead (prospective participants included).
+    /// Resolves the signer against the current phase's participant sets
+    /// (prospective participants included), like the real endpoint, which
+    /// additionally accepts the destination of an ongoing node migration.
     pub fn register_foreign_chains_config(
         &mut self,
         account_id: AccountId,

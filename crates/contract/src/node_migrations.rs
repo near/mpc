@@ -44,6 +44,10 @@ impl NodeMigrations {
         self.ongoing_migrations.remove(account_id);
     }
 
+    pub fn ongoing_migration(&self, account_id: &AccountId) -> Option<&DestinationNodeInfo> {
+        self.ongoing_migrations.get(account_id)
+    }
+
     pub fn remove_migration(&mut self, account_id: &AccountId) -> Option<DestinationNodeInfo> {
         self.ongoing_migrations.remove(account_id)
     }
