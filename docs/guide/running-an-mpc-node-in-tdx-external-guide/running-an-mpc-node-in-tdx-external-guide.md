@@ -2387,7 +2387,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 2. Participants vote to approve the new launcher manifest digest and/or OS measurements.
 3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](../node-migration-guide.md).
-5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused and no attestation made with it is still valid; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
+5. The old launcher manifest digest is retired at the first TEE verification after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once no current participant uses it; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
 
 ### Launcher Image Voting
 
@@ -2456,7 +2456,7 @@ near contract call-function as-transaction \
 
 #### Query allowed launcher manifest digests
 
-The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests. The query returns only non-expired digests; digests that have aged out past their TTL are hidden from this view (and physically removed later, during routine `verify_tee` housekeeping).
+The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests. The query returns the exact allowed set: a digest stays in it, and is accepted, until a unanimous vote removes it or a routine `verify_tee` retires it (see [Remove Old Launcher Manifest Digest / OS Measurements](#remove-old-launcher-manifest-digest--os-measurements)).
 
 ```bash
 near contract call-function as-read-only \
@@ -2546,7 +2546,7 @@ For the migration procedure, see the [node migration guide](../node-migration-gu
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
-An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window, and no attestation made with it is still valid, it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
+An unused launcher manifest digest is removed automatically at the first `verify_tee` (each node calls it at start and every 2 days) once `launcher_hash_unused_ttl_seconds` (default 14 days) has passed since its last vote or the last `verify_tee` that saw a current participant using it. A digest in use is never removed automatically, so no vote is needed for routine rotation.
 
 After all operators have migrated to the new CVM, participants may vote to remove the old launcher manifest digest immediately using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration. (Old OS measurements do not auto-expire and still require this vote.)
 
