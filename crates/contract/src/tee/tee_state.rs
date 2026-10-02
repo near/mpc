@@ -546,14 +546,14 @@ impl TeeState {
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
-    /// The [`NodeId`] attested under `tls_public_key`, if `signer_id` owns that entry and
-    /// `signer_pk` is its attested account key.
-    pub(crate) fn attested_node_for(
+    /// Checks that the attestation stored under `tls_public_key` belongs to `signer_id` and
+    /// was submitted with `signer_pk`.
+    pub(crate) fn verify_signer_attestation(
         &self,
         tls_public_key: &Ed25519PublicKey,
         signer_id: &AccountId,
-        signer_pk: &near_sdk::PublicKey,
-    ) -> Result<&NodeId, AttestationCheckError> {
+        signer_pk: &Ed25519PublicKey,
+    ) -> Result<(), AttestationCheckError> {
         let node_id = &self
             .stored_attestations
             .get(tls_public_key)
@@ -563,16 +563,11 @@ impl TeeState {
         if node_id.account_id != *signer_id {
             return Err(AttestationCheckError::AttestationOwnerMismatch);
         }
-
-        // Stored account keys are Ed25519 by construction; a non-Ed25519
-        // signer necessarily mismatches.
-        let signer_ed25519 = Ed25519PublicKey::try_from(signer_pk)
-            .map_err(|_| AttestationCheckError::AttestationKeyMismatch)?;
-        if node_id.account_public_key != signer_ed25519 {
+        if node_id.account_public_key != *signer_pk {
             return Err(AttestationCheckError::AttestationKeyMismatch);
         }
 
-        Ok(node_id)
+        Ok(())
     }
 
     /// Returns Ok(()) if the caller has at least one participant entry
@@ -589,8 +584,12 @@ impl TeeState {
             .info(&signer_id)
             .ok_or(AttestationCheckError::CallerNotParticipant)?;
 
-        self.attested_node_for(&info.tls_public_key, &signer_id, &env::signer_account_pk())
-            .map(|_| ())
+        // Stored account keys are Ed25519 by construction; a non-Ed25519
+        // signer necessarily mismatches.
+        let signer_pk = Ed25519PublicKey::try_from(&env::signer_account_pk())
+            .map_err(|_| AttestationCheckError::AttestationKeyMismatch)?;
+
+        self.verify_signer_attestation(&info.tls_public_key, &signer_id, &signer_pk)
     }
 }
 

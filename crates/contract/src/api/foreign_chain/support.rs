@@ -6,7 +6,7 @@ use crate::primitives::key_state::AuthenticatedParticipantId;
 use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
-use near_sdk::{AccountId, env, log, near};
+use near_sdk::{env, log, near};
 use std::collections::BTreeSet;
 
 #[near]
@@ -18,7 +18,11 @@ impl MpcContract {
         foreign_chains_config: dtos::ForeignChainsConfig,
     ) -> Result<(), Error> {
         let signer_account_id = Self::assert_caller_is_signer();
-        let tls_key = self.signer_node_tls_key(&signer_account_id)?;
+        let tls_key =
+            self.signer_node_tls_key(&signer_account_id)
+                .ok_or(InvalidState::NotParticipant {
+                    account_id: signer_account_id,
+                })?;
 
         self.foreign_chains
             .get_mut()
@@ -26,44 +30,6 @@ impl MpcContract {
         self.recompute_available_foreign_chains();
 
         Ok(())
-    }
-
-    /// TLS key of the attested node the signer calls from: the account's node in the current
-    /// or proposed participant set, or the destination of its ongoing node migration.
-    fn signer_node_tls_key(
-        &self,
-        signer_account_id: &AccountId,
-    ) -> Result<dtos::Ed25519PublicKey, Error> {
-        let not_participant = || -> Error {
-            InvalidState::NotParticipant {
-                account_id: signer_account_id.clone(),
-            }
-            .into()
-        };
-        let mut participant_tls_keys = self
-            .protocol_state
-            .existing_or_prospective_participant_infos(signer_account_id)?
-            .map(|info| &info.tls_public_key)
-            .peekable();
-        // An ongoing migration can outlive its account's participation.
-        if participant_tls_keys.peek().is_none() {
-            return Err(not_participant());
-        }
-        let migration_tls_key = self
-            .node_migrations
-            .ongoing_migration(signer_account_id)
-            .map(|migration| &migration.destination_node_info.tls_public_key);
-
-        let signer_account_pk = env::signer_account_pk();
-        participant_tls_keys
-            .chain(migration_tls_key)
-            .find_map(|tls_key| {
-                self.tee_state
-                    .attested_node_for(tls_key, signer_account_id, &signer_account_pk)
-                    .ok()
-            })
-            .map(|node_id| node_id.tls_public_key.clone())
-            .ok_or_else(not_participant)
     }
 
     /// No-op when outside [`ProtocolContractState::Running`] and [`ProtocolContractState::Resharing`].
@@ -222,11 +188,9 @@ mod tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::running::RunningContractState;
-    use crate::tee::tee_state::{NodeAttestation, NodeId, TeeState};
+    use crate::tee::tee_state::{NodeId, TeeState};
     use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
-    use mpc_attestation::attestation::{
-        MockAttestation as MpcMockAttestation, VerifiedAttestation,
-    };
+    use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::DestinationNodeInfo;
     use near_sdk::test_utils::VMContextBuilder;
@@ -392,34 +356,14 @@ mod tests {
         register_foreign_chains_config_for(&mut contract, operator4, partial_chains);
 
         // Operator 4's new migration node (not yet a participant) covers all 4 chains and registers.
-        let new_tls_key = dtos::Ed25519PublicKey([99u8; 32]);
-        let new_signer_pk = dtos::Ed25519PublicKey([98u8; 32]);
-        contract.tee_state.stored_attestations.insert(
-            new_tls_key.clone(),
-            NodeAttestation {
-                node_id: NodeId {
-                    account_id: operator4.clone(),
-                    tls_public_key: new_tls_key.clone(),
-                    account_public_key: new_signer_pk.clone(),
-                },
-                verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
-            },
-        );
-        contract.node_migrations.set_destination_node_info(
-            operator4.clone(),
-            DestinationNodeInfo {
-                signer_account_pk: new_signer_pk.clone(),
-                destination_node_info: ParticipantInfo {
-                    tls_public_key: new_tls_key.clone(),
-                    ..participants.info(operator4).unwrap().clone()
-                }
-                .into(),
-            },
-        );
+        let new_node = must_attest_new_node(&mut contract, operator4);
+        contract
+            .node_migrations
+            .set_destination_node_info(operator4.clone(), destination_of(&new_node));
         let foreign_chains_config: dtos::ForeignChainsConfig =
             all_chains.into_iter().collect::<BTreeSet<_>>().into();
         let mut env = Environment::new(None, Some(operator4.clone()), None);
-        env.set_pk(near_sdk::PublicKey::from(new_signer_pk));
+        env.set_pk(near_sdk::PublicKey::from(new_node.account_public_key));
         contract
             .register_foreign_chains_config(foreign_chains_config)
             .expect("declared migration target should be able to register");
@@ -433,7 +377,7 @@ mod tests {
         // When: migration completes — participant 4's TLS key is updated to the new node.
         let old_info = participants.info(operator4).unwrap().clone();
         let new_info = ParticipantInfo {
-            tls_public_key: new_tls_key,
+            tls_public_key: new_node.tls_public_key,
             ..old_info
         };
         {
@@ -509,31 +453,11 @@ mod tests {
         );
 
         // When: operator 4 migrates to a new node that supports all 4 chains.
-        let (_, new_participant_info) = gen_participant(100);
-        let new_tls_key = new_participant_info.tls_public_key.clone();
-        let new_signer_pk = bogus_ed25519_public_key();
-        let new_signer_near_pk = near_sdk::PublicKey::from(new_signer_pk.clone());
-        let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: new_signer_pk.clone(),
-            destination_node_info: new_participant_info.into(),
-        };
-
-        // Add attestation for the new node (mirrors what ConcludeNodeMigrationTestSetup::setup does).
-        contract
-            .tee_state
-            .verify_and_store_mock(
-                NodeId {
-                    account_id: operator4.clone(),
-                    tls_public_key: new_tls_key.clone(),
-                    account_public_key: new_signer_pk.clone(),
-                },
-                MpcMockAttestation::Valid,
-                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
-            )
-            .expect("attestation insertion should succeed");
+        let new_node = must_attest_new_node(&mut contract, operator4);
+        let new_signer_near_pk = near_sdk::PublicKey::from(new_node.account_public_key.clone());
         contract
             .node_migrations
-            .set_destination_node_info(operator4.clone(), destination_node_info);
+            .set_destination_node_info(operator4.clone(), destination_of(&new_node));
 
         // New node pre-registers its config.
         let mut env = Environment::new(None, Some(operator4.clone()), None);
@@ -1086,6 +1010,21 @@ mod tests {
         .into())
     }
 
+    fn must_participant_tls_key(
+        contract: &MpcContract,
+        account_id: &AccountId,
+    ) -> dtos::Ed25519PublicKey {
+        contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .info(account_id)
+            .unwrap()
+            .tls_public_key
+            .clone()
+    }
+
     fn has_config(contract: &MpcContract, tls_public_key: &dtos::Ed25519PublicKey) -> bool {
         contract
             .foreign_chains
@@ -1100,15 +1039,7 @@ mod tests {
         // Given
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let operator = participant_account_ids(&contract)[0].clone();
-        let current_tls_key = contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .info(&operator)
-            .unwrap()
-            .tls_public_key
-            .clone();
+        let current_tls_key = must_participant_tls_key(&contract, &operator);
         register_foreign_chains_config_for(&mut contract, &operator, [dtos::ForeignChain::Bitcoin]);
         let destination = must_attest_new_node(&mut contract, &operator);
         let mut env = Environment::new(None, Some(operator.clone()), None);
@@ -1221,15 +1152,7 @@ mod tests {
         // Given
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let operator = participant_account_ids(&contract)[0].clone();
-        let previous_tls_key = contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .info(&operator)
-            .unwrap()
-            .tls_public_key
-            .clone();
+        let previous_tls_key = must_participant_tls_key(&contract, &operator);
         let destination = must_attest_new_node(&mut contract, &operator);
         contract
             .node_migrations
@@ -1259,7 +1182,7 @@ mod tests {
     }
 
     #[test]
-    fn register_foreign_chains_config__should_succeed_for_departing_participant_during_resharing() {
+    fn register_foreign_chains_config__should_reject_departing_participant_during_resharing() {
         // Given
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let participants = contract
@@ -1286,14 +1209,15 @@ mod tests {
         let (departing, _, departing_info) = participants.participants()[3].clone();
 
         // When
-        register_foreign_chains_config_for(
+        let result = register_bitcoin_as(
             &mut contract,
             &departing,
-            [dtos::ForeignChain::Bitcoin],
+            near_sdk::PublicKey::from(departing_info.tls_public_key.clone()),
         );
 
         // Then
-        assert!(has_config(&contract, &departing_info.tls_public_key));
+        assert_eq!(result, not_participant(&departing));
+        assert!(!has_config(&contract, &departing_info.tls_public_key));
     }
 
     #[rstest]

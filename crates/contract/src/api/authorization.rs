@@ -2,6 +2,7 @@
 
 use crate::MpcContract;
 use crate::errors::{Error, InvalidParameters};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{AccountId, env};
 
 impl MpcContract {
@@ -77,5 +78,36 @@ impl MpcContract {
         );
 
         signer_id
+    }
+
+    /// TLS key of the node that signed the current transaction, which must be one of the
+    /// account's
+    /// 1. active participant node, or
+    /// 2. new node, while the account migrates to it.
+    ///
+    /// A node counts as the signer when its attestation was submitted under the transaction's
+    /// signer key.
+    pub(crate) fn signer_node_tls_key(
+        &self,
+        signer_account_id: &AccountId,
+    ) -> Option<Ed25519PublicKey> {
+        // An ongoing migration can outlive its account's participation.
+        let participant_info = self
+            .protocol_state
+            .active_participants()
+            .info(signer_account_id)?;
+        let signer_pk = Ed25519PublicKey::try_from(&env::signer_account_pk()).ok()?;
+        let is_signers_node = |tls_key: &Ed25519PublicKey| {
+            self.tee_state
+                .verify_signer_attestation(tls_key, signer_account_id, &signer_pk)
+                .is_ok()
+        };
+
+        if is_signers_node(&participant_info.tls_public_key) {
+            return Some(participant_info.tls_public_key.clone());
+        }
+        let migration = self.node_migrations.ongoing_migration(signer_account_id)?;
+        let destination_tls_key = &migration.destination_node_info.tls_public_key;
+        is_signers_node(destination_tls_key).then(|| destination_tls_key.clone())
     }
 }

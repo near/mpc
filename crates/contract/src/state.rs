@@ -10,7 +10,7 @@ use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
-    participants::{ParticipantInfo, Participants},
+    participants::Participants,
     thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     },
@@ -289,34 +289,6 @@ impl ProtocolContractState {
             }
         };
         Ok(is_existing_or_prospective_participant)
-    }
-
-    /// `account_id`'s [`ParticipantInfo`] in the current participant set and, during
-    /// [`Resharing`](ProtocolContractState::Resharing), in the proposed one.
-    pub(crate) fn existing_or_prospective_participant_infos<'a>(
-        &'a self,
-        account_id: &'a AccountId,
-    ) -> Result<impl Iterator<Item = &'a ParticipantInfo>, Error> {
-        let (current, proposed) = match self {
-            ProtocolContractState::Initializing(state) => (
-                state.generating_key.proposed_parameters().participants(),
-                None,
-            ),
-            ProtocolContractState::Running(state) => (state.parameters.participants(), None),
-            ProtocolContractState::Resharing(state) => (
-                state.previous_running_state.parameters.participants(),
-                Some(state.resharing_key.proposed_parameters().participants()),
-            ),
-            ProtocolContractState::NotInitialized => {
-                return Err(InvalidState::UnexpectedProtocolState {
-                    state_name: self.name(),
-                }
-                .into());
-            }
-        };
-        Ok(std::iter::once(current)
-            .chain(proposed)
-            .filter_map(move |participants| participants.info(account_id)))
     }
 }
 
