@@ -4,6 +4,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Only jobs that declare it can write the GitHub Actions cache, so a job that runs third-party
+# build scripts can't poison what other jobs restore from it
+cache-mode: read
+
 on:
   workflow_dispatch:
   pull_request:
@@ -41,6 +45,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    cache-mode: write
 
     steps:
       - name: Checkout repository
@@ -142,7 +147,7 @@ jobs:
 
       - name: Install Nix
         if: needs.changes.outputs.code_changed != 'false'
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        uses: ./.github/actions/install-nix
 
       - name: Restore /nix from cache
         id: nix-cache
@@ -171,6 +176,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    cache-mode: write
 
     steps:
       - name: Checkout repository
@@ -179,7 +185,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        uses: ./.github/actions/install-nix
 
       # only save nix cache in this single job to avoid duplicate cache saves from other jobs
       - name: Restore /nix from cache
@@ -190,10 +196,10 @@ jobs:
       # Reproducible build that carries NEP-330 metadata; this is what the
       # release artifact uses and what sourcescan.io / nearblocks replay.
       - name: Build mpc-contract (reproducible, cargo-near)
-        run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+        run: nix develop --no-update-lock-file .#contract --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
       - name: Check contract WASM size
-        run: nix develop --command bash scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
+        run: bash scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
 
   # Independent reproducible path: the Nix derivation produces the contract WASM
   # without a third-party Docker image. Kept exercised alongside the cargo-near
@@ -214,7 +220,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        uses: ./.github/actions/install-nix
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -242,7 +248,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        uses: ./.github/actions/install-nix
 
       - name: Restore /nix from cache
         id: nix-cache
@@ -275,7 +281,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        uses: ./.github/actions/install-nix
 
       - name: Restore /nix from cache
         id: nix-cache
@@ -331,7 +337,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        uses: ./.github/actions/install-nix
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
