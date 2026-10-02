@@ -1000,6 +1000,26 @@ You need your own API keys:
 > * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
 > * Before deploying, verify your config with the [foreign chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml`. It runs the same provider probe the node runs after startup and reports the same verdicts.
 
+#### Credentials only
+
+The node ships the testnet and mainnet provider configs below; `rpc_network` selects one and must match `near_init.chain_id`. Instead of the full `foreign_chains` block, you can give one credentials entry per provider. The node then enables every embedded (chain, provider) pair whose provider has credentials, plus the providers that need none, including chains added in later releases:
+
+```toml
+[mpc_node_config.node.foreign_chains]
+rpc_network = "testnet"  # or "mainnet"
+
+[mpc_node_config.node.foreign_chains.credentials]
+alchemy    = { val = "YOUR_ALCHEMY_API_KEY" }
+quicknode  = { val = "YOUR_QUICKNODE_API_KEY", slug = "YOUR-SLUG" }
+geomi      = { val = "YOUR_GEOMI_API_KEY" }
+tatum      = { val = "YOUR_TATUM_API_KEY" }
+chainstack = { val = "YOUR_CHAINSTACK_API_KEY" }
+```
+
+A (chain, provider) pair you also configure in full takes precedence over the embedded one, and so do the chain-level fields of a chain you configure. At startup the node logs where each pair came from and warns about embedded providers it skipped.
+
+#### Full config
+
 Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
 
 **Testnet:**

@@ -63,6 +63,8 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         avalanche: None,
         adi: None,
         fogo: None,
+        rpc_network: None,
+        credentials: Default::default(),
     };
     for config in &mut setup.configs {
         config.config.foreign_chains = foreign_chains.clone();

@@ -330,6 +330,8 @@ mod tests {
             adi: chain_config(Adi),
             solana: chain_config(Solana),
             fogo: chain_config(Fogo),
+            rpc_network: None,
+            credentials: Default::default(),
         };
 
         // When
