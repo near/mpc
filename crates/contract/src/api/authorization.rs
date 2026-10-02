@@ -91,7 +91,8 @@ impl MpcContract {
         &self,
         signer_account_id: &AccountId,
     ) -> Option<Ed25519PublicKey> {
-        // An ongoing migration can outlive its account's participation.
+        // Checked before the migration record: an account voted out between
+        // `start_node_migration` and `conclude_node_migration` keeps its record.
         let participant_info = self
             .protocol_state
             .active_participants()
