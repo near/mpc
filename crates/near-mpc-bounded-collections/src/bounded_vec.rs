@@ -693,7 +693,7 @@ mod serde_impl {
 
     #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
     mod schema {
-        use super::{BoundedVec, TryFrom};
+        use super::BoundedVec;
         use schemars::JsonSchema;
 
         impl<T: JsonSchema, const L: usize, const U: usize, W> JsonSchema for BoundedVec<T, L, U, W> {
