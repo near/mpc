@@ -212,7 +212,7 @@ async fn test_web_endpoints() {
         // transaction's outcome, which takes a few seconds.
         let row = vote_pk_row_regex(
             node.setup().account_id().as_ref(),
-            &node.setup().near_signer_public_key_str(),
+            &String::from(&node.setup().near_signer_public_key()),
         );
         let expected_vote_pk_rows = running.domains.domains.len();
         wait_for_body(

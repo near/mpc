@@ -19,16 +19,17 @@ jobs:
        (contains(github.event.comment.body, '@claude review') ||
         contains(github.event.comment.body, '@claude code review')))
 
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
       pull-requests: read
       issues: read
-      id-token: write
+    outputs:
+      review: ${{ fromJSON(steps.claude-review.outputs.structured_output).review }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -77,9 +78,10 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
+        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
+          github_token: ${{ github.token }}
           prompt: ${{ env.REVIEW_PROMPT }}
           # Deny is evaluated before allow, so these bound the allow-list below.
           # `//` anchors at the filesystem root; a single `/` would anchor at the
@@ -103,6 +105,31 @@ jobs:
               }
             }
           claude_args: >-
-            --model claude-opus-5
+            --model claude-fable-5-1
             --effort xhigh
-            --allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
+            --allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
+            --json-schema '{"type":"object","properties":{"review":{"type":"string","description":"The review body in the required output structure, as GitHub-flavored Markdown"}},"required":["review"],"additionalProperties":false}'
+
+  # Posting runs in its own job so the write-scoped token never reaches the
+  # agent's environment, and so the runner withholds a review that contains a
+  # registered secret instead of passing it on.
+  post-review:
+    needs: claude-review
+    runs-on: warp-ubuntu-2604-x64-2x
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REVIEW: ${{ needs.claude-review.outputs.review }}
+        run: |
+          if [ -z "$REVIEW" ]; then
+            echo "::error::The review is empty: either the agent returned no text, or the runner withheld it for containing a secret (look for a 'Skip output' warning in the claude-review job)."
+            exit 1
+          fi
+          printf '%s\n' "$REVIEW" > "$RUNNER_TEMP/review.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"

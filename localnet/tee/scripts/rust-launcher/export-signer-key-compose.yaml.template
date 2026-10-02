@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  launcher:
+    image: nearone/mpc-launcher@sha256:{{LAUNCHER_IMAGE_HASH}}
+
+    container_name: launcher
+
+    environment:
+      - PLATFORM=TEE
+      - DOCKER_CONTENT_TRUST=1
+      - DEFAULT_IMAGE_DIGEST=sha256:{{DEFAULT_IMAGE_DIGEST_HASH}}
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared:rw
+
+    security_opt:
+      - no-new-privileges:true
+
+    read_only: true
+
+    tmpfs:
+      - /tmp
+
+  # Prints the node's in-enclave signer key so fixture collection can commit it. Reuses the launcher
+  # image to avoid pulling anything unpinned.
+  signer-key-export:
+    image: nearone/mpc-launcher@sha256:{{LAUNCHER_IMAGE_HASH}}
+
+    container_name: signer-key-export
+
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'while :; do for f in /volumes/*/_data/secrets.json; do [ -f "$$f" ] && cat "$$f" && exit 0; done; sleep 2; done'
+
+    volumes:
+      - /var/lib/docker/volumes:/volumes:ro
+
+volumes:
+  shared-volume:
+    name: shared-volume

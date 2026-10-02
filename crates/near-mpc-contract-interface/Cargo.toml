@@ -47,6 +47,7 @@ assert_matches = { workspace = true }
 borsh = { workspace = true }
 hex = { workspace = true }
 insta = { workspace = true }
+near-contract-transport = { workspace = true, features = ["test-utils"] }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
 rstest = { workspace = true }
 serde_json = { workspace = true }

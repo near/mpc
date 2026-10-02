@@ -26,27 +26,19 @@ pub fn update_own_image_hash_gauges(
 /// - last value indicates expiry timestamp (-1 if no expiry timestamp is given,
 ///   0 if `current_image` is not allowed)
 ///
-/// Expects `allowed_images` to be newest-first, as returned by the contract view.
+/// Expects the newest allowed image to be the only one the contract reports without
+/// an expiry timestamp.
 fn infer_image_status(
     current_image: &NodeImageHash,
     allowed_images: &[AllowedMpcDockerImageHash],
 ) -> (bool, bool, i64) {
-    // TODO(#3751): simplify this function after updating the contract
-    let is_most_recent = allowed_images
-        .first()
-        .is_some_and(|newest| newest.image_hash == *current_image);
-
     match allowed_images
         .iter()
         .find(|entry| entry.image_hash == *current_image)
     {
         Some(entry) => match entry.expiry_timestamp_seconds {
-            Some(expires_at) => (
-                true,
-                is_most_recent,
-                i64::try_from(expires_at).unwrap_or(i64::MAX),
-            ),
-            None => (true, is_most_recent, NO_EXPIRY),
+            Some(expires_at) => (true, false, i64::try_from(expires_at).unwrap_or(i64::MAX)),
+            None => (true, true, NO_EXPIRY),
         },
         None => (false, false, 0),
     }

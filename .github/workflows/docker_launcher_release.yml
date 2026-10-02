@@ -28,22 +28,17 @@ on:
 jobs:
   retag-launcher-image:
     name: "Retag launcher image for release"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2604-x64-2x
     environment: production
     permissions:
       contents: read
 
     steps:
       - name: Login to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PAT }}
-
-      - name: Install skopeo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
 
       - name: Verify source image exists
         env:

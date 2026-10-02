@@ -12,7 +12,8 @@ use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::ProcessGuard;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ProtocolContractState,
+    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
+    ProtocolContractState,
 };
 use rand::SeedableRng;
 
@@ -29,14 +30,15 @@ const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
 const BACKUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct BackupService {
-    home_dir: tempfile::TempDir,
+    home_dir: e2e_tests::TestDir,
     binary_path: PathBuf,
 }
 
 impl BackupService {
     fn must_get_new(binary_path: PathBuf) -> Self {
         Self {
-            home_dir: tempfile::tempdir().expect("failed to create backup service home dir"),
+            home_dir: e2e_tests::TestDir::new(None)
+                .expect("failed to create backup service home dir"),
             binary_path,
         }
     }
@@ -304,7 +306,9 @@ async fn register_backup_service_and_wait(
     let outcome = cluster
         .register_backup_service(
             source_idx,
-            serde_json::json!({ "public_key": backup_public_key }),
+            BackupServiceInfo {
+                public_key: backup_public_key.clone(),
+            },
         )
         .await
         .context("failed to register backup service")?;
@@ -397,15 +401,15 @@ async fn start_migration_and_wait(
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
-    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key_str();
+    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
 
-    let destination_node_info = serde_json::json!({
-        "signer_account_pk": target_signer_pk,
-        "destination_node_info": {
-            "url": target_p2p_url,
-            "tls_public_key": target_p2p_key,
+    let destination_node_info = DestinationNodeInfo {
+        signer_account_pk: target_signer_pk,
+        destination_node_info: ParticipantInfo {
+            url: target_p2p_url,
+            tls_public_key: target_p2p_key.clone(),
         },
-    });
+    };
     let outcome = cluster
         .start_node_migration(source_idx, destination_node_info)
         .await
@@ -786,7 +790,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
         .run(RunArgs {
             rpc_url: &cluster.sandbox.rpc_url(),
             chain_id: &cluster.sandbox.chain_id().expect("sandbox chain id"),
-            contract_account_id: &cluster.contract.contract_id(),
+            contract_account_id: cluster.contract.account_id().as_str(),
             node_migration_address: &source_migration_addr,
             node_p2p_key: &cluster.nodes[source_idx].p2p_public_key_str(),
             backup_encryption_key_hex: cluster.nodes[source_idx].backup_encryption_key_hex(),
@@ -992,4 +996,97 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await
         .expect("ckd request failed after back-migration");
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn migration_service__cancel_node_migration_clears_ongoing_migration_info() {
+    // Given: a cluster with 2 participants and 2 migration targets.
+    let (cluster, _running) =
+        common::must_setup_cluster(common::CANCEL_NODE_MIGRATION_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.migration_targets = vec![0, 1];
+        })
+        .await;
+    let source_idx = 0;
+    let target_idx = 2;
+    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    assert_eq!(
+        cluster.nodes[target_idx].account_id().to_string(),
+        source_account_id,
+        "migration target must share the source account"
+    );
+
+    // When: the source registers a migration destination.
+    start_migration_and_wait(&cluster, source_idx, target_idx)
+        .await
+        .expect("start_migration_and_wait failed");
+
+    // Then: migration_info reports a pending destination for the source.
+    (|| async {
+        let info: serde_json::Value = cluster
+            .view_migration_info()
+            .await
+            .context("failed to view migration info")?;
+        let entry = info.get(&source_account_id);
+        anyhow::ensure!(
+            entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
+            "contract has not indexed migration information yet"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .expect("timed out waiting for migration info");
+
+    // When: the source cancels the migration.
+    let outcome = cluster
+        .cancel_node_migration(source_idx)
+        .await
+        .expect("failed to call cancel_node_migration");
+    assert!(
+        outcome.is_success(),
+        "cancel_node_migration failed: {:?}",
+        outcome.failure_message()
+    );
+
+    // Then: migration_info no longer shows a destination for that account.
+    (|| async {
+        let info: serde_json::Value = cluster
+            .view_migration_info()
+            .await
+            .context("failed to view migration info")?;
+        let entry = info.get(&source_account_id);
+        anyhow::ensure!(
+            entry.is_none(),
+            "expected destination to be cleared after cancel, got {entry:?}"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .expect("timed out waiting for contract to reflect cancelled migration");
+
+    // And: cancelling again fails — the record was already removed
+    let outcome = cluster
+        .cancel_node_migration(source_idx)
+        .await
+        .expect("failed to call cancel_node_migration a second time");
+    assert!(
+        !outcome.is_success(),
+        "expected the second cancel_node_migration call to fail, but it succeeded"
+    );
 }

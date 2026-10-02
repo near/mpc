@@ -27,6 +27,7 @@ container_build_command = [
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["block-clock"]
 # Enabled by `cargo near build` (via `--features near-sdk/__abi-generate`)
 # and required for ABI / Borsh schema generation. Pulls in
 # `borsh/unstable__schema` and `BorshSchema` derives on the wire types.
@@ -34,6 +35,9 @@ abi = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
 # Enables `near_sdk::testing_env!` for tests; the workspace `near-sdk`
 # dependency no longer turns on `unit-testing` by default.
 test-utils = ["near-sdk/unit-testing"]
+# Verify quotes against block time. Pinning the clock (sandbox tests only) takes
+# both disabling this default feature and a build-time environment variable.
+block-clock = []
 
 [dependencies]
 borsh = { workspace = true }

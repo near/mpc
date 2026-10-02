@@ -2,7 +2,7 @@ use super::domain::DomainRegistry;
 use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
-        key_state::AuthenticatedParticipantId,
+        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
         participants::{ParticipantInfo, Participants},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
@@ -26,14 +26,14 @@ const ALL_PROTOCOLS: [Protocol; 4] = [
     Protocol::CaitSith,
     Protocol::Frost,
     Protocol::ConfidentialKeyDerivation,
-    Protocol::DamgardEtAl,
+    Protocol::RobustEcdsa,
 ];
 pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 
 /// Default per-domain reconstruction threshold used by test fixtures. `2` is
 /// the minimum valid value (`validate_domain_reconstruction_threshold` requires `t >= 2`).
 /// Works for participant counts `>= 3`, which is what `gen_threshold_params`
-/// produces — needed because fixtures may include [`DamgardEtAl`](Protocol::DamgardEtAl) domains,
+/// produces — needed because fixtures may include [`RobustEcdsa`](Protocol::RobustEcdsa) domains,
 /// whose `2t - 1 <= n` bound becomes `n >= 3` at `t = 2`.
 pub const DEFAULT_TEST_RECONSTRUCTION_THRESHOLD: ReconstructionThreshold =
     ReconstructionThreshold::new(2);
@@ -75,14 +75,9 @@ fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) 
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let (edwards_point, compressed_edwards_point) = gen_random_edwards_point();
-    let near_public_key_compressed = near_sdk::PublicKey::from_parts(
-        near_sdk::CurveType::ED25519,
-        compressed_edwards_point.as_bytes().into(),
-    )
-    .unwrap();
 
     PublicKeyExtended::Ed25519 {
-        near_public_key_compressed,
+        near_public_key_compressed: Ed25519PublicKey::from(compressed_edwards_point),
         edwards_point,
     }
 }
@@ -99,6 +94,10 @@ pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
         compressed_edwards_point.as_bytes().into(),
     )
     .unwrap()
+}
+
+pub fn bogus_tee_verifier_account_id() -> AccountId {
+    "tee-verifier.near".parse().unwrap()
 }
 
 #[test]
@@ -130,7 +129,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: format!("https://www.near{}.com", i),
+            url: format!("https://www.near{}.com", i).try_into().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
         },
     )
@@ -171,6 +170,16 @@ pub fn authenticate_as(
     AuthenticatedParticipantId::new(participants).unwrap()
 }
 
+pub fn authenticate_account_as(
+    account_id: &AccountId,
+    participants: &Participants,
+) -> AuthenticatedAccountId {
+    let mut ctx = VMContextBuilder::new();
+    ctx.signer_account_id(account_id.clone());
+    testing_env!(ctx.build());
+    AuthenticatedAccountId::new(participants).unwrap()
+}
+
 /// Build `n` participants and pre-authenticate each, returning the set alongside
 /// each participant's [`AuthenticatedParticipantId`].
 pub fn gen_authenticated_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
@@ -192,7 +201,7 @@ pub fn gen_seed() -> [u8; 32] {
 
 pub fn gen_threshold_params(max_n: usize) -> GovernanceThresholdParameters {
     // Lower bound is 3 (not 2) so the produced parameters are compatible with
-    // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
+    // every protocol — `RobustEcdsa` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`.
     let mut rng = StdRng::seed_from_u64(42);
     let n: usize = rng.gen_range(3..max_n + 1);
@@ -215,6 +224,6 @@ pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedGovernanceThreshol
 pub fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
     match protocol {
         Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
-        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
+        Protocol::CaitSith | Protocol::Frost | Protocol::RobustEcdsa => DomainPurpose::Sign,
     }
 }

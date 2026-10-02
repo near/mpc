@@ -259,11 +259,6 @@ impl<'a, T> ParticipantMap<'a, T> {
             .collect::<Option<Vec<_>>>()
     }
 
-    // Returns the set of included participants
-    pub fn participants(&self) -> &[Participant] {
-        self.participants.participants()
-    }
-
     pub fn index(&self, index: Participant) -> Result<&T, ProtocolError> {
         let index = self.participants.index(index)?;
         self.data

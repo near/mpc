@@ -27,7 +27,7 @@ pub(crate) fn governance_threshold_upper_relative_bound(n: u64) -> u64 {
 /// Stores the governance parameters: the current `participants` and the
 /// governance `threshold` (the number of participants that must agree to
 /// approve a governance action). This is the stored, always-current shape.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct GovernanceThresholdParameters {
     participants: Participants,
@@ -90,9 +90,11 @@ impl GovernanceThresholdParameters {
     /// largest ReconstructionThreshold across all domains. Layers the cross-domain rule
     /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of `validate_governance_threshold`:
     /// the network must never be able to govern with fewer parties than are required to
-    /// reconstruct any domain's key. Call this at every point where the GovernanceThreshold,
-    /// a ReconstructionThreshold, or the participant set changes.
-    pub fn validate_governance_against_reconstruction(
+    /// reconstruct any domain's key. Call this, via
+    /// [`validate_domains_against_governance`](crate::primitives::domain::validate_domains_against_governance),
+    /// at every point where the GovernanceThreshold, a ReconstructionThreshold, or the
+    /// participant set changes.
+    pub(super) fn validate_governance_against_reconstruction(
         num_participants: u64,
         governance: GovernanceThreshold,
         max_reconstruction_threshold: Option<ReconstructionThreshold>,
@@ -229,11 +231,10 @@ impl GovernanceThresholdParameters {
 /// [`super::domain::DomainRegistry`] when resharing completes. An empty map keeps
 /// the current thresholds; a populated map must reference only existing domains
 /// (validated in [`RunningContractState::process_new_parameters_proposal`](crate::state::running::RunningContractState::process_new_parameters_proposal)).
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ProposedGovernanceThresholdParameters {
     parameters: GovernanceThresholdParameters,
-    #[serde(default)]
     per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
@@ -369,7 +370,7 @@ mod tests {
             assert_eq!(participants, *tp.participants());
             // probably overkill to test below
             for (account_id, _, _) in participants.participants() {
-                assert!(tp.participants.is_participant_given_account_id(account_id));
+                assert!(tp.participants.is_participant(account_id));
                 let expected_id = participants.id(account_id).unwrap();
                 assert_eq!(expected_id, tp.participants.id(account_id).unwrap());
                 assert_eq!(
@@ -650,6 +651,36 @@ mod tests {
     }
 
     #[test]
+    fn validate_incoming_proposal__should_reject_a_new_participant_reusing_an_existing_tls_public_key()
+     {
+        // Given: a proposal adding one participant that carries an existing participant's TLS
+        // key. Ids and accounts stay unique, so only the TLS-key rule can reject it.
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(5))
+                .unwrap();
+        let existing_tls_key = params.participants.participants()[0]
+            .2
+            .tls_public_key
+            .clone();
+        let (new_account, mut new_info) = gen_participant(999);
+        new_info.tls_public_key = existing_tls_key;
+
+        let mut tampered_participants = params.participants.clone();
+        tampered_participants.insert(new_account, new_info).unwrap();
+        let tampered_params =
+            GovernanceThresholdParameters::new_unvalidated(tampered_participants, params.threshold);
+
+        // When
+        let result = params.validate_incoming_proposal(&tampered_params);
+
+        // Then
+        assert_eq!(
+            result.unwrap_err(),
+            Error::from(InvalidCandidateSet::DuplicateTlsPublicKeys)
+        );
+    }
+
+    #[test]
     fn test_remove_only() {
         let params =
             GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
@@ -728,46 +759,6 @@ mod tests {
         assert_eq!(proposal.participants(), params.participants());
         assert_eq!(proposal.threshold(), params.threshold());
         assert_eq!(proposal.per_domain_thresholds(), &updates);
-    }
-
-    #[test]
-    fn proposed_threshold_parameters__should_default_per_domain_thresholds_when_field_absent_in_json()
-     {
-        // Given a serialized proposal with the `per_domain_thresholds` field
-        // stripped out — the shape an older client predating per-domain
-        // reconstruction thresholds would submit to `vote_new_parameters`.
-        let params = gen_threshold_params(10);
-        let proposal = ProposedGovernanceThresholdParameters::new(params, BTreeMap::new());
-        let mut json = serde_json::to_value(&proposal).unwrap();
-        json.as_object_mut()
-            .unwrap()
-            .remove("per_domain_thresholds")
-            .expect("empty map should still serialize as a field");
-
-        // When deserializing the field-less JSON
-        let parsed: ProposedGovernanceThresholdParameters = serde_json::from_value(json).unwrap();
-
-        // Then the missing field defaults to an empty (no-change) map and the
-        // rest of the proposal is preserved.
-        assert!(parsed.per_domain_thresholds().is_empty());
-        assert_eq!(parsed.parameters(), proposal.parameters());
-    }
-
-    #[test]
-    fn proposed_threshold_parameters__should_round_trip_per_domain_thresholds_through_json() {
-        // Given a proposal with a populated per-domain threshold map
-        let params = gen_threshold_params(10);
-        let mut updates = BTreeMap::new();
-        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
-        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
-        let proposal = ProposedGovernanceThresholdParameters::new(params, updates);
-
-        // When serializing to JSON and back
-        let json = serde_json::to_string(&proposal).unwrap();
-        let parsed: ProposedGovernanceThresholdParameters = serde_json::from_str(&json).unwrap();
-
-        // Then the proposal round-trips unchanged
-        assert_eq!(parsed, proposal);
     }
 
     #[test]

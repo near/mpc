@@ -5,7 +5,11 @@ use std::collections::BTreeMap;
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, ParticipantInfo};
+use ed25519_dalek::SigningKey;
+use near_mpc_contract_interface::types::{
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
+};
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Per-account migration entry: (backup_service_info, destination_node_info).
 type AccountEntry = (Option<BackupServiceInfo>, Option<DestinationNodeInfo>);
@@ -32,6 +36,7 @@ async fn migration_endpoint__should_track_migration_state() {
 
     let client = reqwest::Client::new();
     let mut expected_migrations = MigrationState::new();
+    let mut rng = StdRng::seed_from_u64(0);
 
     for (i, node_state) in cluster.nodes.iter().enumerate() {
         let node = match node_state {
@@ -40,7 +45,6 @@ async fn migration_endpoint__should_track_migration_state() {
         };
         let web_addr = node.web_address();
         let account_id = node_state.account_id().to_string();
-        let p2p_public_key = node_state.p2p_public_key_str();
 
         // Given: the migration state carried over from prior iterations
         //         (empty on the first iteration).
@@ -53,9 +57,11 @@ async fn migration_endpoint__should_track_migration_state() {
             .expect("endpoint state mismatch");
 
         // When: register a bogus backup service for this node.
-        let backup_service_info = serde_json::json!({ "public_key": p2p_public_key });
+        let backup_info = BackupServiceInfo {
+            public_key: node_state.p2p_public_key(),
+        };
         let outcome = cluster
-            .register_backup_service(i, backup_service_info)
+            .register_backup_service(i, backup_info.clone())
             .await
             .expect("failed to register backup service");
         assert!(
@@ -63,9 +69,6 @@ async fn migration_endpoint__should_track_migration_state() {
             "register_backup_service failed: {:?}",
             outcome.failure_message()
         );
-        let backup_info = BackupServiceInfo {
-            public_key: node_state.p2p_public_key(),
-        };
         expected_migrations.insert(account_id.clone(), (Some(backup_info.clone()), None));
 
         // Then: contract and endpoint both expose the backup registration.
@@ -76,16 +79,17 @@ async fn migration_endpoint__should_track_migration_state() {
             .await
             .expect("endpoint state mismatch after backup registration");
 
-        // When: start node migration with a bogus destination.
-        let destination_node_info = serde_json::json!({
-            "signer_account_pk": p2p_public_key,
-            "destination_node_info": {
-                "url": "http://bogus:1234",
-                "tls_public_key": p2p_public_key,
+        let destination_tls_public_key =
+            Ed25519PublicKey::from(&SigningKey::generate(&mut rng).verifying_key());
+        let destination_node_info = DestinationNodeInfo {
+            signer_account_pk: node_state.p2p_public_key(),
+            destination_node_info: ParticipantInfo {
+                url: "http://bogus:1234".to_string(),
+                tls_public_key: destination_tls_public_key,
             },
-        });
+        };
         let outcome = cluster
-            .start_node_migration(i, destination_node_info)
+            .start_node_migration(i, destination_node_info.clone())
             .await
             .expect("failed to start node migration");
         assert!(
@@ -93,14 +97,7 @@ async fn migration_endpoint__should_track_migration_state() {
             "start_node_migration failed: {:?}",
             outcome.failure_message()
         );
-        let dest_info = DestinationNodeInfo {
-            signer_account_pk: node_state.p2p_public_key(),
-            destination_node_info: ParticipantInfo {
-                url: "http://bogus:1234".to_string(),
-                tls_public_key: node_state.p2p_public_key(),
-            },
-        };
-        expected_migrations.insert(account_id, (Some(backup_info), Some(dest_info)));
+        expected_migrations.insert(account_id, (Some(backup_info), Some(destination_node_info)));
 
         // Then: contract and endpoint both expose the destination entry.
         ensure_contract_matches(&cluster, &expected_migrations)

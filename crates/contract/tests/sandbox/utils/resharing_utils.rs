@@ -1,7 +1,7 @@
 use crate::sandbox::utils::{
-    consts::{GAS_FOR_VOTE_CANCEL_RESHARING, GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_RESHARED},
+    consts::GAS_FOR_VOTE_RESHARED,
     mpc_contract::get_state,
-    transactions::execute_async_transactions,
+    transactions::{execute_async_handle_calls, execute_async_transactions},
 };
 use dtos::{AttemptId, EpochId, KeyEventId};
 use mpc_contract::primitives::thresholds::{
@@ -47,13 +47,9 @@ pub async fn conclude_resharing(
 }
 
 pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> anyhow::Result<()> {
-    execute_async_transactions(
-        accounts,
-        contract,
-        method_names::VOTE_CANCEL_RESHARING,
-        &json!({}),
-        GAS_FOR_VOTE_CANCEL_RESHARING,
-    )
+    execute_async_handle_calls(accounts, contract, |handle| async move {
+        handle.vote_cancel_resharing().await
+    })
     .await
 }
 
@@ -64,30 +60,29 @@ pub async fn vote_new_parameters(
     persistent_participants: &[Account],
     new_participants: &[Account],
 ) -> anyhow::Result<()> {
-    let proposal = ProposedGovernanceThresholdParameters::new(proposal.clone(), BTreeMap::new());
-    let json_args = json!({
-        "prospective_epoch_id": prospective_epoch_id,
-        "proposal": proposal,
-    });
+    let proposal: dtos::ProposedGovernanceThresholdParameters =
+        ProposedGovernanceThresholdParameters::new(proposal.clone(), BTreeMap::new()).into();
     // At least threshold old participants need to vote first,
     // here we are just using all of them
-    execute_async_transactions(
-        persistent_participants,
-        contract,
-        method_names::VOTE_NEW_PARAMETERS,
-        &json_args,
-        GAS_FOR_VOTE_NEW_PARAMETERS,
-    )
+    execute_async_handle_calls(persistent_participants, contract, |handle| {
+        let proposal = proposal.clone();
+        async move {
+            handle
+                .vote_new_parameters(EpochId::new(prospective_epoch_id), proposal)
+                .await
+        }
+    })
     .await?;
 
     // then new participant can vote
-    execute_async_transactions(
-        new_participants,
-        contract,
-        method_names::VOTE_NEW_PARAMETERS,
-        &json_args,
-        GAS_FOR_VOTE_NEW_PARAMETERS,
-    )
+    execute_async_handle_calls(new_participants, contract, |handle| {
+        let proposal = proposal.clone();
+        async move {
+            handle
+                .vote_new_parameters(EpochId::new(prospective_epoch_id), proposal)
+                .await
+        }
+    })
     .await?;
     Ok(())
 }

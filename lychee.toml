@@ -9,4 +9,6 @@ offline = true
 # Check fragment links: anchors (e.g., #section-name) and text fragments (#:~:text=).
 include_fragments = "full"
 
-exclude_path = ["target", ".git"]
+# The trailing slash matters: `.git` is matched as a prefix and would also
+# exclude `.github`, silently skipping every Markdown file in there.
+exclude_path = ["target", ".git/"]

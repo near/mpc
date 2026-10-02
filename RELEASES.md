@@ -53,19 +53,19 @@ with whatever version you're releasing.
 ### 1. Prepare the release PR
 
 Create a working branch off the release-source branch, then run
-[`scripts/ops/prepare-release.sh`](./scripts/ops/prepare-release.sh) to apply the
+[`scripts/ops/prepare-github-release.sh`](./scripts/ops/prepare-github-release.sh) to apply the
 release boilerplate (changelog, version bump, ABI snapshot, licenses):
 
 ```sh
 # For a minor/major release:
 git checkout main && git pull
 git checkout -b release-prep/v3.11.0
-./scripts/ops/prepare-release.sh 3.11.0
+./scripts/ops/prepare-github-release.sh 3.11.0
 
 # For a patch release:
 git checkout release/v3.11 && git pull
 git checkout -b release-prep/v3.11.1
-./scripts/ops/prepare-release.sh 3.11.1
+./scripts/ops/prepare-github-release.sh 3.11.1
 ```
 
 Push the working branch and open a PR against `main` (for minor releases)
@@ -74,7 +74,8 @@ merge commit is what will be released.
 
 ### 2. Wait for the build workflows
 
-When the release PR merges, four workflows fire on the protected branch:
+When the release PR merges, the four workflows the release needs fire on the
+protected branch:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
 - [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
@@ -87,6 +88,12 @@ artifact named `contract`.
 
 Wait for all four to finish successfully. The Release workflow refuses to
 run if any artifact is missing.
+
+<!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
+
+[Build Nix Docker Images](.github/workflows/docker_build_nix_images.yml) also
+pushes `<branch>-<short-sha>-nix` images, which the Release workflow does not
+use yet.
 
 > **Tip:** The pre-release images are deployable. If you want to
 > smoke-test on testnet before promoting, deploy
@@ -111,7 +118,7 @@ exactly what the source produces:
   ./deployment/build-images.sh
   ```
 
-See [reproducible builds](./docs/reproducible-builds.md) for the full
+See [reproducible builds](./docs/guide/reproducible-builds.md) for the full
 procedure. If any hash/digest differs, do **not** publish — investigate first.
 
 ### 4. Run the Release workflow
@@ -233,7 +240,7 @@ We follow [Semantic Versioning](https://semver.org/) with these compatibility ru
 ## Changelog conventions
 
 We use [`git-cliff`](https://git-cliff.org/) to maintain `CHANGELOG.md`.
-The `scripts/ops/prepare-release.sh` script invokes `git-cliff -t <VERSION>
+The `scripts/ops/prepare-github-release.sh` script invokes `git-cliff -t <VERSION>
 <BASE_TAG>..<HEAD-SHA>`, where `BASE_TAG` is the most recent **semver**
 tag (`X.Y.Z`) reachable from `HEAD`, found via `git describe` with a
 `--match` glob that skips stray non-semver tags. The range head is a

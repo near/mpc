@@ -100,7 +100,7 @@ mod tests {
         caller.call_contract(&contract, test_call()).await.unwrap();
 
         // Then
-        let submitted = mock.signed_transactions().await;
+        let submitted = mock.signed_transactions();
         assert_eq!(submitted.len(), 3);
         assert!(signed_by(&submitted[0], &key0));
         assert!(signed_by(&submitted[1], &key1));

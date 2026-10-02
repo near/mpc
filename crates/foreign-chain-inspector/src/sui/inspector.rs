@@ -1,5 +1,8 @@
 use crate::sui::{SuiExtractedValue, SuiTransactionDigest};
-use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
+use crate::{
+    ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector, HexBytes,
+    NetworkFingerprint, NetworkFingerprintInspector, Verdict,
+};
 use foreign_chain_rpc_interfaces::sui::proto::ExecutedTransaction;
 use foreign_chain_rpc_interfaces::sui::{Code, Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
@@ -28,6 +31,27 @@ pub enum SuiExtractor {
     Event { event_index: usize },
 }
 
+impl<Client> NetworkFingerprintInspector for SuiInspector<Client>
+where
+    Client: SuiRpcClient,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let service_info = self.client.get_service_info().await.classified()?;
+        let Some(chain_id) = service_info.chain_id else {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(
+                "service info is missing the chain id".to_string(),
+            ));
+        };
+        Ok(self.canonical_fingerprint(&chain_id))
+    }
+
+    /// Unlike inspectors for other chains, we do not need to normalize the input string here.
+    /// Base58 is case sensitive and does not permit prefix or padding.
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(fingerprint)
+    }
+}
+
 /// The gRPC [`Event`](foreign_chain_rpc_interfaces::sui::proto::Event) carries no per-event
 /// sequence number or transaction digest, so the event array order is the certified order as
 /// served. The type name embedded in the event's BCS message is cross-checked against the
@@ -46,14 +70,17 @@ where
         tx_id: SuiTransactionDigest,
         finality: SuiFinality,
         extractors: Vec<SuiExtractor>,
-    ) -> Result<Vec<SuiExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<SuiExtractedValue>, ForeignChainInspectionError> {
         let digest = sui_sdk_types::Digest::new(*tx_id).to_base58();
 
-        let response = self
-            .client
-            .get_transaction(&digest)
-            .await
-            .map_err(classify_status)?;
+        // A NotFound status on the Sui transaction lookup call means the transaction does not
+        // exist or has been pruned.
+        let response = match self.client.get_transaction(&digest).await {
+            Err(status) if status.code() == Code::NotFound => {
+                return Ok(Verdict::TransactionNotFound);
+            }
+            other => other.classified()?,
+        };
         let Some(tx) = response.transaction else {
             return Err(ForeignChainInspectionError::MalformedRpcResponse(
                 "response is missing the transaction".to_string(),
@@ -88,33 +115,43 @@ where
                 )
             })?;
         if !success {
-            return Err(ForeignChainInspectionError::TransactionFailed);
+            return Ok(Verdict::TransactionFailed);
         }
 
-        let extracted_values = extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&tx))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(extracted_values)
+        let mut extracted_values = Vec::with_capacity(extractors.len());
+        for extractor in &extractors {
+            let Some(value) = extractor.extract_value(&tx)? else {
+                return Ok(Verdict::LogIndexOutOfBounds);
+            };
+            extracted_values.push(value);
+        }
+        Ok(Verdict::Extracted(extracted_values))
     }
 }
 
-/// gRPC status codes carry the verdict semantics directly: [`NotFound`](Code::NotFound) is the node's
-/// deterministic answer for an unknown (or pruned) digest, other deterministic rejections
-/// (bad request, auth, unimplemented method) must count as substantive verdicts in the
-/// fan-out, and only genuine provider hiccups stay transient.
-fn classify_status(status: Status) -> ForeignChainInspectionError {
-    match status.code() {
-        Code::NotFound => ForeignChainInspectionError::TransactionNotFound,
-        Code::DeadlineExceeded
-        | Code::Unavailable
-        | Code::ResourceExhausted
-        | Code::Internal
-        | Code::Unknown
-        | Code::Cancelled
-        | Code::Aborted => ForeignChainInspectionError::RpcRequestFailed(status.to_string()),
-        _ => ForeignChainInspectionError::RpcRequestRejected(status.to_string()),
+impl<T> ClassifyRpcOutcome for Result<T, Status> {
+    type Response = T;
+
+    fn classified(self) -> Result<T, ForeignChainInspectionError> {
+        let status = match self {
+            Ok(response) => return Ok(response),
+            Err(status) => status,
+        };
+
+        let message = status.to_string();
+        Err(match status.code() {
+            // NotFound classifies as a rejection by default. A call site where it means
+            // something else, like the transaction lookup, must intercept it before classifying.
+            Code::NotFound => ForeignChainInspectionError::RpcRequestRejected(message),
+            Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
+            Code::Unavailable
+            | Code::ResourceExhausted
+            | Code::Internal
+            | Code::Unknown
+            | Code::Cancelled
+            | Code::Aborted => ForeignChainInspectionError::RpcRequestFailed(message),
+            _ => ForeignChainInspectionError::RpcRequestRejected(message),
+        })
     }
 }
 
@@ -144,7 +181,7 @@ impl SuiExtractor {
     fn extract_value(
         &self,
         tx: &ExecutedTransaction,
-    ) -> Result<SuiExtractedValue, ForeignChainInspectionError> {
+    ) -> Result<Option<SuiExtractedValue>, ForeignChainInspectionError> {
         match self {
             SuiExtractor::Event { event_index } => {
                 let events = tx
@@ -152,9 +189,9 @@ impl SuiExtractor {
                     .as_ref()
                     .map(|events| events.events.as_slice())
                     .unwrap_or_default();
-                let event = events
-                    .get(*event_index)
-                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+                let Some(event) = events.get(*event_index) else {
+                    return Ok(None);
+                };
 
                 let package_id = event
                     .package_id
@@ -209,13 +246,13 @@ impl SuiExtractor {
                     .map(|value| value.to_vec())
                     .ok_or_else(|| malformed_event_field("bcs contents value"))?;
 
-                Ok(SuiExtractedValue::Event(SuiEvent {
+                Ok(Some(SuiExtractedValue::Event(SuiEvent {
                     package_id,
                     transaction_module,
                     sender,
                     type_tag,
                     bcs,
-                }))
+                })))
             }
         }
     }
@@ -252,29 +289,28 @@ mod tests {
     use assert_matches::assert_matches;
     use rstest::rstest;
 
+    fn classify(status: Status) -> ForeignChainInspectionError {
+        Result::<(), _>::Err(status).classified().unwrap_err()
+    }
+
     #[test]
-    fn classify_status__should_map_not_found_to_transaction_not_found() {
-        // Given — the status a node returns for an unknown or pruned digest.
-        let status =
-            Status::not_found("Transaction 88XKXHJRmGzkfwJa8PhoeDkqt4kxz8AEsB1UTzAbtd29 not found");
+    fn classified__should_name_a_deadline_exceeded_as_a_timeout() {
+        // Given / When
+        let classified = classify(Status::new(Code::DeadlineExceeded, "too slow"));
 
-        // When
-        let classified = classify_status(status);
-
-        // Then — a substantive (non-transient) verdict.
-        assert_matches!(classified, ForeignChainInspectionError::TransactionNotFound);
-        assert!(!classified.is_transient());
+        // Then
+        assert_matches!(classified, ForeignChainInspectionError::Timeout);
+        assert!(classified.is_transient());
     }
 
     #[rstest]
-    #[case::deadline_exceeded(Code::DeadlineExceeded)]
     #[case::unavailable(Code::Unavailable)]
     #[case::resource_exhausted(Code::ResourceExhausted)]
     #[case::internal(Code::Internal)]
     #[case::unknown(Code::Unknown)]
-    fn classify_status__should_keep_provider_hiccups_transient(#[case] code: Code) {
+    fn classified__should_keep_provider_hiccups_transient(#[case] code: Code) {
         // Given / When
-        let classified = classify_status(Status::new(code, "provider hiccup"));
+        let classified = classify(Status::new(code, "provider hiccup"));
 
         // Then — the provider is dropped from the quorum instead of blocking it.
         assert_matches!(classified, ForeignChainInspectionError::RpcRequestFailed(_));
@@ -282,16 +318,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case::not_found(Code::NotFound)]
     #[case::invalid_argument(Code::InvalidArgument)]
     #[case::unauthenticated(Code::Unauthenticated)]
     #[case::permission_denied(Code::PermissionDenied)]
     #[case::unimplemented(Code::Unimplemented)]
-    fn classify_status__should_reject_deterministic_errors(#[case] code: Code) {
+    fn classified__should_reject_deterministic_errors(#[case] code: Code) {
         // Given / When
-        let classified = classify_status(Status::new(code, "deterministic rejection"));
+        let classified = classify(Status::new(code, "deterministic rejection"));
 
-        // Then — non-transient: retrying cannot change it, and the fan-out must not
-        // validate on the remaining providers alone.
+        // Then: not transient, since retrying cannot change a deterministic rejection. The
+        // fan out tolerates it as the provider's own fault rather than a verdict.
         assert_matches!(
             classified,
             ForeignChainInspectionError::RpcRequestRejected(_)

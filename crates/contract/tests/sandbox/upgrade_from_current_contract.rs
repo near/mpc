@@ -1,54 +1,40 @@
+#![expect(non_snake_case)]
+
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, execute_key_generation_and_add_random_state,
-        propose_and_vote_contract_binary, vote_update_till_completion,
+        SandboxTestSetup, approve_contract_update, execute_key_generation_and_add_random_state,
+        vote_and_submit_contract_binary,
     },
     utils::{
-        consts::{
-            ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
-            GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
-        },
+        consts::{ALL_PROTOCOLS, PARTICIPANT_LEN},
         contract_build::{current_contract, migration_contract},
         interface::IntoContractType,
-        mpc_contract::{
-            assert_running_return_participants, assert_running_return_threshold, get_state,
-        },
+        mpc_contract::assert_running_return_participants,
+        transactions::CallMpcContract,
     },
 };
-use mpc_contract::update::UpdateId;
-use near_mpc_contract_interface::deposits::{
-    STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
-};
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{ProposeUpdateArgs, ProtocolContractState};
-use near_workspaces::types::NearToken;
+use near_mpc_contract_interface::types::{ProtocolContractState, Update};
+use near_mpc_sdk::update::hash;
 use rand_core::OsRng;
 
-pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
-    ProposeUpdateArgs {
-        code: Some(vec![1, 2, 3]),
-        config: None,
-    }
+pub fn dummy_contract_update() -> Update {
+    Update::Code(vec![1, 2, 3])
 }
 
-pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
-    let new_wasm = b"invalid wasm".to_vec();
-    ProposeUpdateArgs {
-        code: Some(new_wasm),
-        config: None,
-    }
+pub fn invalid_contract_update() -> Update {
+    Update::Code(b"invalid wasm".to_vec())
 }
 
-pub fn current_contract_proposal() -> ProposeUpdateArgs {
-    ProposeUpdateArgs {
-        code: Some(current_contract().to_vec()),
-        config: None,
-    }
+pub fn current_contract_update() -> Update {
+    Update::Code(current_contract().to_vec())
 }
 
 #[tokio::test]
-async fn test_propose_contract_max_size_upload() {
+async fn submit_contract_update__should_accept_a_payload_of_the_maximum_contract_size() {
+    // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -56,30 +42,53 @@ async fn test_propose_contract_max_size_upload() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    dbg!(contract.id());
+    let update = Update::Code(vec![0; 1536 * 1024 - 400]); //3900 seems to not work locally
+    approve_contract_update(&contract, &mpc_signer_accounts, hash(&update)).await;
 
-    // check that we can propose an update with the maximum contract size.
+    // When
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((ProposeUpdateArgs {
-            code: Some(vec![0; 1536 * 1024 - 400]), //3900 seems to not work locally
-            config: None,
-        },))
-        .max_gas()
-        .deposit(NearToken::from_near(40))
-        .transact()
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
         .await
         .unwrap();
-    dbg!(&execution);
+
+    // Then
     assert!(
         execution.is_success(),
-        "Failed to propose update with our highest contract size"
+        "failed to submit the maximum-size update: {execution:#?}"
     );
 }
 
 #[tokio::test]
-async fn test_propose_update_config() {
+async fn vote_contract_update__should_reject_a_non_participant() {
+    // Given
     let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+
+    // When
+    let execution = contract
+        .as_account()
+        .call_mpc(contract.id())
+        .vote_contract_update(hash(&dummy_contract_update()))
+        .await
+        .unwrap();
+
+    // Then
+    let failure = execution.into_result().unwrap_err().to_string();
+    assert!(failure.contains("Not a participant"), "{failure}");
+}
+
+#[tokio::test]
+async fn submit_contract_update__should_apply_an_approved_config() {
+    // Given
+    let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -87,30 +96,10 @@ async fn test_propose_update_config() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let threshold = assert_running_return_threshold(&contract).await;
-    dbg!(contract.id());
-
-    // contract should not be able to propose updates unless it's a part of the participant/voter set.
-    let execution = contract
-        .call(method_names::PROPOSE_UPDATE)
-        .args_borsh((dummy_contract_proposal(),))
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(
-        execution
-            .into_result()
-            .unwrap_err()
-            .to_string()
-            .contains("not a voter")
-    );
-
-    // have each participant propose a new update:
     let new_config = near_mpc_contract_interface::types::Config {
         key_event_timeout_blocks: 11,
         tee_upgrade_deadline_duration_seconds: 22,
-        contract_upgrade_deposit_tera_gas: 33,
+        apply_contract_update_tera_gas: 33,
         sign_call_gas_attachment_requirement_tera_gas: 44,
         ckd_call_gas_attachment_requirement_tera_gas: 55,
         return_signature_and_clean_state_on_success_call_tera_gas: 66,
@@ -126,77 +115,30 @@ async fn test_propose_update_config() {
         verifier_tera_gas: 15,
         resolve_verification_tera_gas: 16,
         attestation_storage_fee_millinear: 20,
-        // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
         launcher_hash_unused_ttl_seconds: 14 * 24 * 60 * 60,
     };
 
-    let propose_args = ProposeUpdateArgs {
-        code: None,
-        config: Some(new_config.clone()),
-    };
-    let deposit = NearToken::from_yoctonear(
-        propose_update_required_deposit_yoctonear(
-            propose_args
-                .payload_bytes()
-                .expect("config serializes to JSON"),
-            STORAGE_BYTE_COST_YOCTONEAR,
-        )
-        .expect("the deposit for a config proposal fits in u128"),
-    );
-
-    let mut proposals = Vec::with_capacity(mpc_signer_accounts.len());
-    for account in &mpc_signer_accounts {
-        let propose_execution = account
-            .call(contract.id(), method_names::PROPOSE_UPDATE)
-            .args_borsh((propose_args.clone(),))
-            .deposit(deposit)
-            .transact()
-            .await
-            .unwrap();
-        dbg!(&propose_execution);
-        assert!(propose_execution.is_success());
-        let proposal_id: UpdateId = propose_execution.json().unwrap();
-        dbg!(&proposal_id);
-        proposals.push(proposal_id);
-    }
-
+    let update = Update::Config(new_config.clone());
     let old_config: near_mpc_contract_interface::types::Config = contract
         .view(method_names::CONFIG)
         .await
         .unwrap()
         .json()
         .unwrap();
-    let state: ProtocolContractState = get_state(&contract).await;
+    approve_contract_update(&contract, &mpc_signer_accounts, hash(&update)).await;
 
-    // check that each participant can vote on a singular proposal and have it reflect changes:
-    let first_proposal = &proposals[0];
-    for (i, voter) in mpc_signer_accounts.iter().enumerate() {
-        dbg!(voter.id());
-        let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": first_proposal,
-            }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
-            .await
-            .unwrap();
+    // When
+    let execution = mpc_signer_accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await
+        .unwrap();
 
-        // NOTE: since threshold out of total participants are required to pass a proposal, having the `threshold+1` one also
-        // vote should fail.
-        if i < threshold.0 as usize {
-            assert!(
-                execution.is_success(),
-                "execution should have succeeded: {state:#?}\n{execution:#?}"
-            );
-        } else {
-            assert!(
-                execution.is_failure(),
-                "execution should have failed: {state:#?}\n{execution:#?}"
-            );
-        }
-    }
-    // check that the proposal executed since the threshold got changed.
+    // Then
+    assert!(
+        execution.failures().is_empty(),
+        "failed to apply the approved config: {execution:#?}"
+    );
     let config: near_mpc_contract_interface::types::Config = contract
         .view(method_names::CONFIG)
         .await
@@ -209,8 +151,9 @@ async fn test_propose_update_config() {
 }
 
 #[tokio::test]
-async fn test_propose_update_contract() {
+async fn submit_contract_update__should_apply_an_approved_code_update() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -218,12 +161,14 @@ async fn test_propose_update_contract() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
+    vote_and_submit_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
-async fn test_invalid_contract_deploy() {
+async fn submit_contract_update__should_keep_the_old_code_when_the_new_binary_is_invalid() {
+    // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -231,42 +176,44 @@ async fn test_invalid_contract_deploy() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    dbg!(contract.id());
+    let update = invalid_contract_update();
+    approve_contract_update(&contract, &mpc_signer_accounts, hash(&update)).await;
 
-    const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
-
-    // Let's propose a contract update instead now.
+    // When
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((invalid_contract_proposal(),))
-        .max_gas()
-        .deposit(CONTRACT_DEPLOY)
-        .transact()
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
         .await
         .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
-    vote_update_till_completion(&contract, &mpc_signer_accounts, &proposal_id).await;
 
-    // Try calling into state and see if it works after the contract updates with an invalid
-    // contract. It will fail in `migrate` so a state rollback on the contract code should have
-    // happened.
+    // Then
+    assert!(
+        execution.is_success(),
+        "submitting the invalid binary should succeed as a call: {execution:#?}"
+    );
+    assert!(
+        !execution.receipt_failures().is_empty(),
+        "the deploy receipt should have failed: {execution:#?}"
+    );
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::STATE)
         .transact()
         .await
-        .unwrap();
-
-    dbg!(&execution);
-    let state: ProtocolContractState = execution.json().unwrap();
-    dbg!(state);
+        .unwrap()
+        .into_result()
+        .unwrap_or_else(|failure| {
+            panic!("state call failed after the rejected deploy: {failure:#?}")
+        });
+    let _state: ProtocolContractState = execution
+        .json()
+        .unwrap_or_else(|err| panic!("state does not deserialize: {err}: {execution:#?}"));
 }
 
-// TODO(#496): Investigate flakiness of this test
 #[tokio::test]
-async fn test_propose_update_contract_many() {
+async fn submit_contract_update__should_consume_the_approval() {
+    // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -274,179 +221,30 @@ async fn test_propose_update_contract_many() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    dbg!(contract.id());
+    vote_and_submit_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 
-    const PROPOSAL_COUNT: usize = 2;
-    let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
-    // Try to propose multiple updates to check if they are being proposed correctly
-    // and that we can have many at once living in the contract state.
-    for i in 0..PROPOSAL_COUNT {
-        let execution = mpc_signer_accounts[i % mpc_signer_accounts.len()]
-            .call(contract.id(), method_names::PROPOSE_UPDATE)
-            .args_borsh(current_contract_proposal())
-            .max_gas()
-            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-            .transact()
-            .await
-            .unwrap();
-
-        assert!(
-            execution.is_success(),
-            "failed to propose update [i={i}]; {execution:#?}"
-        );
-        let proposal_id = execution.json().expect("unable to convert into UpdateId");
-        proposals.push(proposal_id);
-    }
-
-    // Vote for the last proposal
-    vote_update_till_completion(&contract, &mpc_signer_accounts, proposals.last().unwrap()).await;
-
-    // Ensure all proposals are removed after update
-    for proposal in proposals {
-        let voter = mpc_signer_accounts.first().unwrap();
-        let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": proposal,
-            }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
-            .await
-            .unwrap();
-        dbg!(&execution);
-
-        assert!(execution.is_failure());
-    }
-
-    // Let's check that we can call into the state and see all the proposals.
-    let state: ProtocolContractState = get_state(&contract).await;
-    dbg!(state);
-}
-
-/// Regression test for issue #1617: ensures that voting on contract updates (before reaching
-/// threshold) is cheap.
-#[tokio::test]
-async fn test_vote_update_gas_before_threshold() {
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-
+    // When
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
+        .call_mpc(contract.id())
+        .submit_contract_update(current_contract_update())
         .await
         .unwrap();
 
-    assert!(execution.is_success(), "failed to propose update");
-    let proposal_id: UpdateId = execution.json().unwrap();
-
-    // Cast votes until threshold is reached (need 6 total votes)
-    for (idx, account) in mpc_signer_accounts[1..=5].iter().enumerate() {
-        let execution = account
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": proposal_id,
-            }))
-            .gas(GAS_FOR_VOTE_BEFORE_THRESHOLD)
-            .transact()
-            .await
-            .unwrap();
-
-        let gas_burnt = execution.total_gas_burnt;
-
-        assert!(execution.is_success());
-
-        let update_occurred: bool = execution.json().unwrap();
-        assert!(!update_occurred);
-
-        assert!(
-            gas_burnt.as_tgas() <= GAS_FOR_VOTE_BEFORE_THRESHOLD.as_tgas(),
-            "Gas usage for vote {} ({} TGas) should be <= {} TGas",
-            idx + 1,
-            gas_burnt.as_tgas(),
-            GAS_FOR_VOTE_BEFORE_THRESHOLD.as_tgas()
-        );
-    }
-
-    // Cast the threshold vote (6th vote) that will trigger the update
-    let threshold_execution = mpc_signer_accounts[6]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_id,
-        }))
-        .max_gas()
-        .transact()
-        .await
-        .unwrap();
-
-    let threshold_gas_burnt = threshold_execution.total_gas_burnt;
-
-    assert!(threshold_execution.is_success());
-
-    let update_occurred: bool = threshold_execution.json().unwrap();
-    assert!(update_occurred);
-
+    // Then
+    let failure = execution.into_result().unwrap_err().to_string();
     assert!(
-        threshold_gas_burnt.as_tgas() <= MAX_GAS_FOR_THRESHOLD_VOTE.as_tgas(),
-        "Gas usage for threshold vote ({} TGas) should be <= {} TGas",
-        threshold_gas_burnt.as_tgas(),
-        MAX_GAS_FOR_THRESHOLD_VOTE.as_tgas()
+        failure.contains("not backed by a governance threshold"),
+        "{failure}"
     );
-}
-
-#[tokio::test]
-async fn test_propose_incorrect_updates() {
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-    dbg!(contract.id());
-
-    let dummy_config = near_mpc_contract_interface::types::InitConfig::default();
-
-    // Can not propose update both to code and config
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((dummy_contract_proposal(), dummy_config))
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_failure());
-
-    // Should propose something
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_failure());
 }
 
 /// Contract update include some logic regarding state clean-up,
 /// thus we want to test whether some problem builds up eventually.
 #[tokio::test]
-async fn many_sequential_updates() {
+async fn submit_contract_update__should_apply_several_updates_in_sequence() {
     let number_of_participants = PARTICIPANT_LEN;
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -458,117 +256,67 @@ async fn many_sequential_updates() {
     dbg!(contract.id());
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
-        propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
+        vote_and_submit_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
     }
 }
 
 /// There are:
-///     * two proposals: A and B
+///     * two update hashes: A and B
 ///     * three participants (Alice, Bob, Carl), with a threshold two
 /// What happens:
 ///     1. Alice votes for A
 ///     2. Alice votes for B
-///     3. Bob votes for A -> Update for A _should not_ be triggered
-///     4. Bob votes for B -> Update for B is triggered
+///     3. Bob votes for A -> A _should not_ be approved
+///     4. Bob votes for B -> B is approved
 #[tokio::test]
-async fn only_one_vote_from_participant() {
-    let number_of_participants = 3;
+async fn vote_contract_update__should_replace_the_participants_earlier_vote() {
+    // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
-        .with_number_of_participants(number_of_participants)
+        .with_number_of_participants(3)
         .build()
         .await;
-    dbg!(contract.id());
+    let hash_a = hash(&dummy_contract_update());
+    let hash_b = hash(&current_contract_update());
+    let alice = mpc_signer_accounts[0].call_mpc(contract.id());
+    let bob = mpc_signer_accounts[1].call_mpc(contract.id());
+    for update_hash in [hash_a.clone(), hash_b.clone()] {
+        alice
+            .vote_contract_update(update_hash)
+            .await
+            .unwrap()
+            .into_result()
+            .unwrap();
+    }
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
+    // When
+    let approved_a: bool = bob
+        .vote_contract_update(hash_a)
         .await
+        .unwrap()
+        .json()
         .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_a: UpdateId = execution.json().unwrap();
+    let approved_b: bool = bob
+        .vote_contract_update(hash_b)
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_b: UpdateId = execution.json().unwrap();
-
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_a,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let update_occurred: bool = execution.json().unwrap();
-    assert!(!update_occurred);
-
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_b,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let update_occurred: bool = execution.json().unwrap();
-    assert!(!update_occurred);
-
-    let execution = mpc_signer_accounts[1]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_a,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let update_occurred: bool = execution.json().unwrap();
-    assert!(!update_occurred);
-
-    let execution = mpc_signer_accounts[1]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_b,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let update_occurred: bool = execution.json().unwrap();
-    assert!(update_occurred);
+    // Then
+    assert!(!approved_a);
+    assert!(approved_b);
 }
 
 /// Tests that we can upgrade the current contract to a new binary. The new contract binary used is
 /// the migration contract, [`migration_contract`].
 #[tokio::test]
-async fn update_from_current_contract_to_migration_contract() {
+async fn submit_contract_update__should_apply_a_code_update_that_migrates_state() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
     let SandboxTestSetup {
@@ -590,12 +338,13 @@ async fn update_from_current_contract_to_migration_contract() {
         &mut OsRng,
     )
     .await;
-    propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, migration_contract()).await;
+    vote_and_submit_contract_binary(&mpc_signer_accounts, &contract, migration_contract()).await;
 }
 
 #[tokio::test]
 async fn migration_function_rejects_external_callers() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..

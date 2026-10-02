@@ -37,25 +37,29 @@ jobs:
     name: "Build MPC Node TEE Docker image"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+      - name: Allow unprivileged user namespaces (needed by repro-env)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install repro-env
         run: |
-          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
-          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
-          sudo install -m755 repro-env -t /usr/bin
+          sudo apt-get update
+          sudo apt-get install -y repro-env
+
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
+        with:
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build MPC Node binary and image
         run: |
@@ -71,35 +75,32 @@ jobs:
     name: "Build Rust Launcher Docker image and verify"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-8x
+    runs-on: warp-ubuntu-2604-x64-8x
     timeout-minutes: 60
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+      - name: Allow unprivileged user namespaces (needed by repro-env)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo liblzma-dev podman
+          sudo apt-get install -y liblzma-dev repro-env
 
-      - name: Install repro-env
-        run: |
-          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
-          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
-          sudo install -m755 repro-env -t /usr/bin
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
 
-      - name: Build Rust launcher docker image and verify its hash
+      - name: Build Rust launcher docker image
         shell: bash
         run: |
-          ./scripts/build-and-verify-rust-launcher-docker-image.sh
+          ./deployment/build-images.sh --rust-launcher
 
       - name: Run Rust launcher non-TEE runtime check
         shell: bash
@@ -114,7 +115,7 @@ jobs:
     # Skipping at the job level only registers unexpanded template name and
     # required checks will be stuck.
     if: ${{ !cancelled() }}
-    runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
+    runs-on: ${{ matrix.runner || 'warp-ubuntu-2604-x64-16x' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -127,7 +128,7 @@ jobs:
           - group: "contract"
             nextest-args: "--profile=ci-contract -p mpc-contract"
             extra-tools: true
-            runner: warp-ubuntu-2404-x64-32x
+            runner: warp-ubuntu-2604-x64-32x
           - group: "other"
             nextest-args: "--profile=ci-other"
             extra-tools: true
@@ -135,13 +136,13 @@ jobs:
     steps:
       - name: Checkout repository
         if: needs.changes.outputs.code_changed != 'false'
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
         if: needs.changes.outputs.code_changed != 'false'
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       - name: Restore /nix from cache
         id: nix-cache
@@ -152,7 +153,7 @@ jobs:
         if: needs.changes.outputs.code_changed != 'false'
       - name: Cache Rust dependencies
         if: needs.changes.outputs.code_changed != 'false'
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -166,19 +167,19 @@ jobs:
     name: "MPC contract reproducible build"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       # only save nix cache in this single job to avoid duplicate cache saves from other jobs
       - name: Restore /nix from cache
@@ -196,24 +197,24 @@ jobs:
 
   # Independent reproducible path: the Nix derivation produces the contract WASM
   # without a third-party Docker image. Kept exercised alongside the cargo-near
-  # build; see docs/reproducible-builds.md.
+  # build; see docs/guide/reproducible-builds.md.
   nix-build-mpc-contract:
     name: "Nix build mpc-contract"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -231,17 +232,17 @@ jobs:
 
   fast-ci-checks:
     name: "Fast CI checks"
-    runs-on: warp-ubuntu-2404-x64-8x
+    runs-on: warp-ubuntu-2604-x64-8x
     permissions:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       - name: Restore /nix from cache
         id: nix-cache
@@ -249,7 +250,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -262,19 +263,19 @@ jobs:
     name: "MPC E2E tests"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-32x
+    runs-on: warp-ubuntu-2604-x64-32x
     timeout-minutes: 60
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       - name: Restore /nix from cache
         id: nix-cache
@@ -282,7 +283,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -302,11 +303,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
+      - name: Build tee-verifier
+        run: nix develop --command cargo make build-tee-verifier-optimized
+
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
-        run: nix develop --command cargo build -p backup-cli --release --locked
+        run: nix develop --command cargo make build-backup-cli
 
       - name: Run E2E tests
         run: nix develop --command cargo make e2e-tests-skip-build
@@ -317,17 +321,17 @@ jobs:
     name: "Extra CI checks"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -338,13 +342,13 @@ jobs:
   check-todo-closed-issues:
     name: "Check TODOs for issues closed by this PR"
     if: github.event_name == 'pull_request'
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
       pull-requests: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

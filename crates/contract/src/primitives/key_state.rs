@@ -1,4 +1,4 @@
-use super::participants::{ParticipantId, Participants};
+use super::participants::{IdentifiesParticipant, ParticipantId, Participants};
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use near_account_id::AccountId;
@@ -13,10 +13,10 @@ pub use mpc_primitives::{AttemptId, EpochId, KeyEventId};
 //
 // This is the contract-internal storage type, distinct from the DTO
 // [`near_mpc_contract_interface::types::KeyForDomain`] used over the wire.
-// They are kept separate because the contract stores public keys as
-// [`PublicKeyExtended`] (`near_sdk::PublicKey` plus a decompressed Edwards
-// point), while the DTO uses the JSON-friendly string/byte form.
-#[near(serializers=[borsh, json])]
+// They are kept separate because the contract stores keys as typed DTO key
+// structs plus a decompressed [`SerializableEdwardsPoint`] for curve
+// arithmetic, while the DTO uses the JSON-friendly string/byte form.
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeyForDomain {
     /// Identifies the domain this key is intended for.
@@ -33,7 +33,7 @@ pub struct KeyForDomain {
 /// Represents a key for every domain in a specific epoch.
 //
 // Contract-internal counterpart to [`near_mpc_contract_interface::types::Keyset`].
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Keyset {
     pub epoch_id: EpochId,
@@ -64,7 +64,7 @@ impl Keyset {
 /// but is only constructible given a set of participants that includes the signer, thus acting as
 /// a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the
 /// signer.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthenticatedParticipantId(ParticipantId);
 impl AuthenticatedParticipantId {
@@ -83,10 +83,16 @@ impl AuthenticatedParticipantId {
     }
 }
 
+impl IdentifiesParticipant for AuthenticatedParticipantId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        self.get().identifies_participant_in(participants)
+    }
+}
+
 /// This struct contains the account [`env::signer_account_id()`], but is only constructible given a
 /// set of participants that include the signer, thus acting as a typesystem-based enforcement
 /// mechanism (albeit a best-effort one) for authenticating the signer.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AuthenticatedAccountId(AccountId);
 impl AuthenticatedAccountId {
@@ -96,15 +102,17 @@ impl AuthenticatedAccountId {
 
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
-        if participants
-            .participants()
-            .iter()
-            .any(|(a_id, _, _)| *a_id == signer)
-        {
+        if participants.is_participant(&signer) {
             Ok(AuthenticatedAccountId(signer))
         } else {
             Err(InvalidState::NotParticipant { account_id: signer }.into())
         }
+    }
+}
+
+impl IdentifiesParticipant for AuthenticatedAccountId {
+    fn identifies_participant_in(&self, participants: &Participants) -> bool {
+        self.get().identifies_participant_in(participants)
     }
 }
 

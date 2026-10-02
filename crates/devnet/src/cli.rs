@@ -40,7 +40,7 @@ impl Cli {
                     MpcNetworkSubCmd::ViewContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
-                    MpcNetworkSubCmd::ProposeUpdateContract(cmd) => {
+                    MpcNetworkSubCmd::SubmitUpdate(cmd) => {
                         cmd.run(&name, config).await;
                     }
                     MpcNetworkSubCmd::VoteUpdate(cmd) => {
@@ -150,15 +150,15 @@ pub enum MpcNetworkSubCmd {
     RemoveContract(RemoveContractCmd),
     /// View the contract state.
     ViewContract(MpcViewContractCmd),
-    /// Send a propose_update() transaction to propose an update to the contract.
-    ProposeUpdateContract(MpcProposeUpdateContractCmd),
-    /// Send vote_update() transactions to the contract to vote on an update.
+    /// Send a submit_contract_update() transaction deploying a contract binary whose hash was voted in.
+    SubmitUpdate(MpcSubmitUpdateCmd),
+    /// Send vote_contract_update() transactions to vote for the hash of a new contract binary.
     VoteUpdate(MpcVoteUpdateCmd),
     /// Send vote_add_domains() transactions to vote for adding domains.
     VoteAddDomains(MpcVoteAddDomainsCmd),
     /// Send vote_new_parameters() transactions to vote for new parameters.
     VoteNewParameters(MpcVoteNewParametersCmd),
-    /// Send `vote_code_hash()` transactions to vote for a new approved MPC image hash.
+    /// Send `vote_mpc_node_manifest_digest()` transactions to vote for a new approved MPC image hash.
     VoteCodeHash(MpcVoteApprovedHashCmd),
     /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
@@ -238,6 +238,9 @@ pub struct MpcInitContractCmd {
     /// The threshold to initialize with.
     #[clap(long)]
     pub threshold: u64,
+    /// The TEE verifier contract account the MPC contract trusts.
+    #[clap(long)]
+    pub tee_verifier_account_id: AccountId,
 }
 
 #[derive(clap::Parser)]
@@ -258,23 +261,20 @@ pub struct RemoveContractCmd {}
 pub struct MpcViewContractCmd {}
 
 #[derive(clap::Parser)]
-pub struct MpcProposeUpdateContractCmd {
-    /// The index of the participant that proposes the update.
+pub struct MpcSubmitUpdateCmd {
+    /// The index of the participant that submits the update.
     #[clap(long, default_value = "0")]
-    pub proposer_index: usize,
-    /// The file path to the new contract wasm code.
+    pub submitter_index: usize,
+    /// The file path to the new contract wasm code, whose hash must have been voted in.
     #[clap(long)]
     pub path: String,
-    /// The deposit to send along with the proposal.
-    #[clap(long, default_value = "8")]
-    pub deposit_near: u128,
 }
 
 #[derive(clap::Parser)]
 pub struct MpcVoteUpdateCmd {
-    /// The ID of the update, as printed by the propose-update-contract command.
+    /// The file path to the new contract wasm code; its hash is voted for.
     #[clap(long)]
-    pub update_id: u64,
+    pub path: String,
     /// The indices of the voters; leave empty to vote from every other participant.
     #[clap(long, value_delimiter = ',')]
     pub voters: Vec<usize>,
@@ -282,7 +282,7 @@ pub struct MpcVoteUpdateCmd {
 
 #[derive(clap::Parser)]
 pub struct MpcVoteAddDomainsCmd {
-    /// The protocols to add domains for, e.g. `CaitSith,Frost,DamgardEtAl,ConfidentialKeyDerivation`.
+    /// The protocols to add domains for, e.g. `CaitSith,Frost,RobustEcdsa,ConfidentialKeyDerivation`.
     #[clap(long, value_delimiter = ',')]
     pub protocols: Vec<String>,
     /// The indices of the voters; leave empty to vote from every other participant.

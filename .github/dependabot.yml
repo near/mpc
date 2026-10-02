@@ -26,8 +26,13 @@ updates:
       - dependency-name: "httpmock"
       # This cannot be upgraded because it conflicts the prometheus version required by nearcore
       - dependency-name: "prometheus"
-      # TODO(#690): This cannot be upgraded until nearcore does
+      # Must match nearcore's `librocksdb-sys`; see the workspace Cargo.toml
       - dependency-name: "rocksdb"
+      # Capped by nearcore's jemalloc version; see the workspace Cargo.toml
+      - dependency-name: "tikv-jemallocator"
+      - dependency-name: "jemalloc_pprof"
+      - dependency-name: "pprof_util"
+      - dependency-name: "mappings"
       # This version needs to be exactly the same as in `near_sdk::schemars`
       - dependency-name: "schemars"
       # This is deprecated, we should find an alterantive
@@ -59,3 +64,22 @@ updates:
       - dependency-name: "near-store"
       - dependency-name: "near-time"
       - dependency-name: "nearcore"
+
+  - package-ecosystem: "github-actions"
+    target-branch: "main"
+    # `/` covers `.github/workflows`; composite actions need their own entry.
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    schedule:
+      interval: "weekly"
+
+    open-pull-requests-limit: 5
+
+    cooldown:
+      default-days: 7
+
+    groups:
+      github-actions:
+        patterns:
+          - "*"

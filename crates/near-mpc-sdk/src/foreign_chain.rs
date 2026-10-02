@@ -1,16 +1,24 @@
 use crate::sign::NotSet;
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_bounded_collections::BoundedVecOutOfBounds;
 pub use near_mpc_contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
+pub mod adi;
 pub mod arbitrum;
+pub mod avalanche;
 pub mod base;
 pub mod bitcoin;
 pub mod bnb;
+pub mod ethereum;
 pub mod evm;
+pub mod fogo;
 pub mod hyper_evm;
 pub mod polygon;
+pub mod solana;
 pub mod starknet;
+pub mod svm;
+pub mod validation;
 
 use near_mpc_contract_interface::types::PublicKey;
 // response types
@@ -22,7 +30,7 @@ pub use near_mpc_contract_interface::types::{
 pub use near_mpc_contract_interface::types::{
     BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainRpcRequest,
     ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
-    VerifyForeignTransactionRequestArgs,
+    MAX_EXTRACTORS_PER_REQUEST, VerifyForeignTransactionRequestArgs,
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
@@ -45,14 +53,9 @@ impl ForeignChainSignatureVerifier {
         // TODO(#2232): don't use interface API types for public keys
         public_key: &PublicKey,
     ) -> Result<(), VerifyForeignChainError> {
-        let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: self.request,
-            values: self.expected_extracted_values,
-        });
-
-        let expected_payload_hash = expected_payload
-            .compute_msg_hash()
-            .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
+        let expected_payload_hash =
+            expected_payload_hash(self.request, self.expected_extracted_values)
+                .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
 
         let payload_is_correct = expected_payload_hash == response.payload_hash;
 
@@ -97,8 +100,9 @@ pub struct ForeignChainRequestBuilder<Request, DomainId> {
     domain_id: DomainId,
 }
 
-impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
-    ForeignChainRequestBuilder<Request, NotSet>
+impl<Request> ForeignChainRequestBuilder<Request, NotSet>
+where
+    Request: TryInto<ForeignChainRpcRequestWithExpectations, Error = BoundedVecOutOfBounds>,
 {
     pub fn with_domain_id(
         self,
@@ -111,36 +115,65 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
     }
 }
 
-impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
-    ForeignChainRequestBuilder<Request, DomainId>
+impl<Request> ForeignChainRequestBuilder<Request, DomainId>
+where
+    Request: TryInto<ForeignChainRpcRequestWithExpectations, Error = BoundedVecOutOfBounds>,
 {
+    /// Errors if the request holds more than [`MAX_EXTRACTORS_PER_REQUEST`] extractors, or
+    /// if borsh serializing the expected payload for hashing fails.
     pub fn build(
         self,
-    ) -> (
-        ForeignChainSignatureVerifier,
-        VerifyForeignTransactionRequestArgs,
-    ) {
+    ) -> Result<
+        (
+            ForeignChainSignatureVerifier,
+            VerifyForeignTransactionRequestArgs,
+        ),
+        BuildRequestError,
+    > {
         let ForeignChainRpcRequestWithExpectations {
             request,
             expected_values,
-        } = self.request.into();
+        } = self.request.try_into()?;
 
         let verifier = ForeignChainSignatureVerifier {
             expected_extracted_values: expected_values,
             request: request.clone(),
         };
 
+        let expected_payload_hash = expected_payload_hash(
+            verifier.request.clone(),
+            verifier.expected_extracted_values.clone(),
+        )?;
+
         let request_args = VerifyForeignTransactionRequestArgs {
             request,
             domain_id: self.domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
+            expected_payload_hash: Some(expected_payload_hash),
         };
 
-        (verifier, request_args)
+        Ok((verifier, request_args))
     }
+}
+
+fn expected_payload_hash(
+    request: ForeignChainRpcRequest,
+    expected_values: Vec<ExtractedValue>,
+) -> std::io::Result<Hash256> {
+    ForeignTxSignPayload::new(DEFAULT_PAYLOAD_VERSION, request, expected_values).compute_msg_hash()
 }
 
 pub struct ForeignChainRpcRequestWithExpectations {
     request: ForeignChainRpcRequest,
     expected_values: Vec<ExtractedValue>,
 }
+
+#[derive(Debug, derive_more::Display, derive_more::From)]
+pub enum BuildRequestError {
+    #[display("the request holds too many extractors: {_0}")]
+    TooManyExtractors(BoundedVecOutOfBounds),
+    #[display("failed to hash the expected payload: {_0}")]
+    PayloadHash(std::io::Error),
+}
+
+impl std::error::Error for BuildRequestError {}

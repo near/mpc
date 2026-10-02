@@ -96,3 +96,81 @@ impl Serialize for GetBlockHashArgs {
 impl ToRpcParams for &GetBlockHashArgs {
     to_rpc_params_impl!();
 }
+
+/// RPC response for `getblockhash`: a block hash in the byte order block explorers render.
+/// <https://developer.bitcoin.org/reference/rpc/getblockhash.html>
+///
+/// Kept as text since we need to preserve the exact provider response, which might not be a
+/// [`TransportBitcoinBlockHash`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(transparent)]
+pub struct GetBlockHashResponse(pub String);
+
+impl GetBlockHashResponse {
+    /// Lowercase, with a `0x` at the beginning stripped. Leading zeros are digits of the hash, so
+    /// nothing is trimmed. Text that is not a 32 byte hash is returned unchanged.
+    pub fn canonical_text(self) -> String {
+        const HASH_CHARS: usize = 64;
+
+        let digits = self
+            .0
+            .strip_prefix("0x")
+            .or_else(|| self.0.strip_prefix("0X"))
+            .unwrap_or(&self.0);
+        let is_hash =
+            digits.len() == HASH_CHARS && digits.chars().all(|digit| digit.is_ascii_hexdigit());
+        if is_hash {
+            digits.to_ascii_lowercase()
+        } else {
+            self.0
+        }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::GetBlockHashResponse;
+    use rstest::rstest;
+
+    /// Bitcoin mainnet's genesis block hash, as block explorers render it.
+    const GENESIS_HASH: &str = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+    const UPPER_CASED_GENESIS_HASH: &str =
+        "000000000019D6689C085AE165831E934FF763AE46A2A6C172B3F1B60A8CE26F";
+
+    #[rstest]
+    #[case::canonical(GENESIS_HASH, GENESIS_HASH)]
+    #[case::upper_cased(UPPER_CASED_GENESIS_HASH, GENESIS_HASH)]
+    // Spellings only an operator writes: the RPC never prefixes a hash.
+    #[case::prefixed(
+        "0x000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+        GENESIS_HASH
+    )]
+    #[case::upper_cased_prefix(
+        "0X000000000019D6689C085AE165831E934FF763AE46A2A6C172B3F1B60A8CE26F",
+        GENESIS_HASH
+    )]
+    // Reported as answered by the provider.
+    #[case::not_a_hash("mainnet", "mainnet")]
+    #[case::too_short(
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26",
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26"
+    )]
+    #[case::not_hex(
+        "00000000zz19d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+        "00000000zz19d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+    )]
+    fn get_block_hash_response__should_canonicalize_what_a_provider_answers(
+        #[case] answered: &str,
+        #[case] expected: &str,
+    ) {
+        // Given
+        let json = serde_json::json!(answered);
+
+        // When
+        let response: GetBlockHashResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(response.canonical_text(), expected);
+    }
+}

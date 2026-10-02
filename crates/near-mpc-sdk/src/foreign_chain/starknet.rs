@@ -3,6 +3,7 @@ use crate::{
     sign::NotSet,
 };
 
+use near_mpc_bounded_collections::BoundedVecOutOfBounds;
 use near_mpc_contract_interface::types::ExtractedValue;
 
 // API types
@@ -27,8 +28,10 @@ pub struct StarknetRequest<TxId, Finality> {
     expected_block_hash: Option<StarknetBlockHash>,
 }
 
-impl From<BuildableStarknetRequest> for ForeignChainRpcRequestWithExpectations {
-    fn from(built_request: BuildableStarknetRequest) -> Self {
+impl TryFrom<BuildableStarknetRequest> for ForeignChainRpcRequestWithExpectations {
+    type Error = BoundedVecOutOfBounds;
+
+    fn try_from(built_request: BuildableStarknetRequest) -> Result<Self, Self::Error> {
         let mut extractors = vec![];
         let mut expected_values = vec![];
 
@@ -39,14 +42,14 @@ impl From<BuildableStarknetRequest> for ForeignChainRpcRequestWithExpectations {
             ));
         }
 
-        ForeignChainRpcRequestWithExpectations {
+        Ok(ForeignChainRpcRequestWithExpectations {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id: built_request.tx_id,
                 finality: built_request.finality,
-                extractors,
+                extractors: extractors.try_into()?,
             }),
             expected_values,
-        }
+        })
     }
 }
 
@@ -117,7 +120,10 @@ mod test {
     use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
 
-    use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
+    use crate::foreign_chain::{
+        DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier, ForeignTxSignPayload,
+        ForeignTxSignPayloadV1,
+    };
 
     use super::*;
 
@@ -179,18 +185,28 @@ mod test {
             .with_finality(StarknetFinality::AcceptedOnL1)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(domain_id)
-            .build();
+            .build()
+            .unwrap();
 
         // then
+        let expected_request = ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+            tx_id,
+            finality: StarknetFinality::AcceptedOnL1,
+            extractors: [StarknetExtractor::BlockHash].into(),
+        });
+        let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: expected_request.clone(),
+            values: vec![ExtractedValue::StarknetExtractedValue(
+                StarknetExtractedValue::BlockHash(StarknetFelt(expected_hash)),
+            )],
+        })
+        .compute_msg_hash()
+        .unwrap();
         let expected = VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
-                tx_id,
-                finality: StarknetFinality::AcceptedOnL1,
-                extractors: vec![StarknetExtractor::BlockHash],
-            }),
-
+            request: expected_request,
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
+            expected_payload_hash: Some(expected_payload_hash),
         };
 
         assert_eq!(request_args, expected);
@@ -208,7 +224,8 @@ mod test {
             .with_finality(StarknetFinality::AcceptedOnL1)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_verifier = ForeignChainSignatureVerifier {
@@ -218,7 +235,7 @@ mod test {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id,
                 finality: StarknetFinality::AcceptedOnL1,
-                extractors: vec![StarknetExtractor::BlockHash],
+                extractors: [StarknetExtractor::BlockHash].into(),
             }),
         };
 
@@ -233,7 +250,8 @@ mod test {
             .with_finality(StarknetFinality::AcceptedOnL2)
             .with_domain_id(DomainId::from(1))
             // when
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_eq!(verifier.request, request_args.request);
@@ -246,11 +264,12 @@ mod test {
             .with_tx_id(StarknetTxId::from(StarknetFelt([42; 32])))
             .with_finality(StarknetFinality::AcceptedOnL2)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Starknet(rpc_request) => {
-            assert_eq!(rpc_request.extractors, vec![]);
+            assert!(rpc_request.extractors.is_empty());
         });
     }
 }

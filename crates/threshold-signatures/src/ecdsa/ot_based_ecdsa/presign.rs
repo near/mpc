@@ -2,6 +2,7 @@ use crate::ReconstructionThreshold;
 use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
 use crate::ecdsa::{
     AffinePoint, KeygenOutput, ProjectivePoint, RerandomizationArguments, Scalar, Secp256K1Sha256,
+    Tweak,
 };
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
@@ -62,6 +63,20 @@ impl PartialEq for PresignOutput {
     }
 }
 impl Eq for PresignOutput {}
+
+impl PresignOutput {
+    /// The same presignature under the key derived with `tweak`: `sigma' = sigma + tweak * k`.
+    ///
+    /// Only sound when the presignature is consumed by the computation that produced it; a
+    /// stored one must go through [`RerandomizedPresignOutput::rerandomize_presign`].
+    pub(crate) fn with_tweak(&self, tweak: &Tweak) -> Self {
+        Self {
+            big_r: self.big_r,
+            k: self.k,
+            sigma: self.sigma + tweak.value() * self.k,
+        }
+    }
+}
 
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
@@ -127,6 +142,17 @@ impl RerandomizedPresignOutput {
     }
 }
 
+/// A rerandomized presignature is consumed by the same signing round as a plain one.
+impl From<RerandomizedPresignOutput> for PresignOutput {
+    fn from(presignature: RerandomizedPresignOutput) -> Self {
+        Self {
+            big_r: presignature.big_r,
+            k: presignature.k,
+            sigma: presignature.sigma,
+        }
+    }
+}
+
 /// Maximum incoming buffer entries for the OT-based ECDSA presign protocol.
 pub(crate) const OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 2;
 
@@ -142,6 +168,19 @@ pub fn presign(
     me: Participant,
     args: PresignArguments,
 ) -> Result<impl Protocol<Output = PresignOutput> + use<>, InitializationError> {
+    let participants = validate_presign_arguments(participants, me, &args)?;
+
+    let ctx = Comms::with_buffer_capacity(OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
+    let fut = do_presign(ctx.shared_channel(), participants, me, args);
+    Ok(make_protocol(ctx, fut))
+}
+
+/// Checks the participant set against `args` and returns it as a [`ParticipantList`].
+pub(crate) fn validate_presign_arguments(
+    participants: &[Participant],
+    me: Participant,
+    args: &PresignArguments,
+) -> Result<ParticipantList, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -176,14 +215,23 @@ pub fn presign(
         });
     }
 
-    let ctx = Comms::with_buffer_capacity(OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
-    let fut = do_presign(ctx.shared_channel(), participants, me, args);
-    Ok(make_protocol(ctx, fut))
+    Ok(participants)
 }
 
 async fn do_presign(
     mut chan: SharedChannel,
     participants: ParticipantList,
+    me: Participant,
+    args: PresignArguments,
+) -> Result<PresignOutput, ProtocolError> {
+    presign_rounds(&mut chan, &participants, me, args).await
+}
+
+/// The two presigning rounds, run on a caller-owned channel so that a longer protocol can
+/// continue on the same channel with further waitpoints.
+pub(crate) async fn presign_rounds(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
     me: Participant,
     args: PresignArguments,
 ) -> Result<PresignOutput, ProtocolError> {
@@ -231,7 +279,7 @@ async fn do_presign(
     // Spec 1.3
     let mut e = e_i;
 
-    for (_, e_j) in recv_from_others::<Scalar>(&chan, wait0, &participants, me).await? {
+    for (_, e_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
         if e_j.is_zero().into() {
             return Err(ProtocolError::AssertionFailed(
                 "Received zero share of kd, indicating a triple wasn't available.".to_string(),
@@ -269,7 +317,7 @@ async fn do_presign(
     let mut beta = beta_i;
 
     for (_, (alpha_j, beta_j)) in
-        recv_from_others::<(Scalar, Scalar)>(&chan, wait1, &participants, me).await?
+        recv_from_others::<(Scalar, Scalar)>(chan, wait1, participants, me).await?
     {
         // Spec 2.4
         alpha += alpha_j;
@@ -306,14 +354,12 @@ async fn do_presign(
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
     use super::*;
-    use crate::{
-        ecdsa::ot_based_ecdsa::triples::test::deal,
-        test_utils::{
-            GenProtocol, MockCryptoRng, generate_participants, generate_test_keys,
-            make_keygen_output, run_protocol,
-        },
+    use crate::test_utils::{
+        GenProtocol, MockCryptoRng, deal_triple, generate_participants, generate_test_keys,
+        make_keygen_output, run_protocol,
     };
     use rand_core::SeedableRng;
     use rstest::rstest;
@@ -329,9 +375,9 @@ mod test {
         let threshold = 2;
 
         let (triple0_pub, triple0_shares) =
-            deal(&mut rng, &participants, original_threshold.into()).unwrap();
+            deal_triple(&mut rng, &participants, original_threshold.into()).unwrap();
         let (triple1_pub, triple1_shares) =
-            deal(&mut rng, &participants, original_threshold.into()).unwrap();
+            deal_triple(&mut rng, &participants, original_threshold.into()).unwrap();
 
         let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
@@ -389,18 +435,10 @@ mod test {
         let participants = generate_participants(num_participants);
         let (f, pk) = generate_test_keys(threshold - 1, &mut rng);
 
-        let (triple0_pub, triple0_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
-            &mut rng,
-            &participants,
-            threshold.into(),
-        )
-        .unwrap();
-        let (triple1_pub, triple1_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
-            &mut rng,
-            &participants,
-            threshold.into(),
-        )
-        .unwrap();
+        let (triple0_pub, triple0_shares) =
+            deal_triple(&mut rng, &participants, threshold.into()).unwrap();
+        let (triple1_pub, triple1_shares) =
+            deal_triple(&mut rng, &participants, threshold.into()).unwrap();
 
         let triple0_map: std::collections::HashMap<_, _> =
             participants.iter().copied().zip(triple0_shares).collect();
@@ -427,5 +465,26 @@ mod test {
             },
             |_| OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES,
         );
+    }
+
+    #[test]
+    fn with_tweak__should_shift_sigma_by_tweak_times_k() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let k = frost_core::random_nonzero::<Secp256, _>(&mut rng);
+        let presignature = PresignOutput {
+            big_r: (ProjectivePoint::GENERATOR * k.invert().unwrap()).into(),
+            k,
+            sigma: frost_core::random_nonzero::<Secp256, _>(&mut rng),
+        };
+        let tweak = Tweak::new(frost_core::random_nonzero::<Secp256, _>(&mut rng));
+
+        // When
+        let tweaked = presignature.with_tweak(&tweak);
+
+        // Then
+        assert_eq!(tweaked.big_r, presignature.big_r);
+        assert_eq!(tweaked.k, presignature.k);
+        assert_eq!(tweaked.sigma - presignature.sigma, tweak.value() * k);
     }
 }

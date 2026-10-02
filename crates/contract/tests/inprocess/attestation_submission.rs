@@ -3,7 +3,7 @@
 use super::common;
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidParameters, InvalidState, TeeError},
+    errors::{Error, InvalidParameters, InvalidState},
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
@@ -25,7 +25,6 @@ use near_account_id::AccountId;
 use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
-use test_utils::attestation::mock_dto_dstack_attestation;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -205,7 +204,9 @@ impl TestSetup {
     fn vote_with_all_participants(&mut self, hash: [u8; 32], timestamp: u64) {
         for (account_id, _, _) in &self.participants_list.clone() {
             self.with_env(account_id, timestamp);
-            self.contract.vote_code_hash(hash.into()).unwrap();
+            self.contract
+                .vote_mpc_node_manifest_digest(hash.into())
+                .unwrap();
         }
     }
     /// Returns the list of NodeIds for all participants. The
@@ -465,23 +466,6 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
     assert_eq!(stored_before, stored_after);
 }
 
-/// Test that a [`Dstack`] submission is rejected when no verifier is configured.
-#[test]
-fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
-    // Given
-    let mut setup = TestSetupBuilder::new().build();
-    let node = setup.get_participant_node_ids()[0].clone();
-
-    // When
-    let result = setup.try_submit_attestation_for_node(&node, mock_dto_dstack_attestation());
-
-    // Then
-    assert_matches!(
-        &result,
-        Err(Error::TeeError(TeeError::VerifierNotConfigured))
-    );
-}
-
 /// **Test that [`clean_tee_status()`] is vote-only** — attestations for non-participants
 /// remain in `stored_attestations` after the call. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
@@ -629,8 +613,8 @@ macro_rules! assert_allowed_docker_image_hashes {
 ///
 /// Verifies that when participants vote for a new image hash, the older
 /// hash remains allowed only until the successor’s grace period deadline.
-/// At the exact deadline both old and new hashes are valid, but immediately
-/// after, only the latest remains.
+/// Throughout the deadline second both old and new hashes are valid, but from
+/// the next second on, only the latest remains.
 #[test]
 fn only_latest_hash_after_grace_period() {
     const FIRST_ENTRY_TIME_NS: u64 = NANOS_IN_SECOND; // 1s
@@ -662,7 +646,7 @@ fn only_latest_hash_after_grace_period() {
     );
     assert_allowed_docker_image_hashes!(
         &setup,
-        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + 1,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + NANOS_IN_SECOND,
         &[(successor_hash, None)]
     );
 }
@@ -757,7 +741,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + 1,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + NANOS_IN_SECOND,
         &[
             (second_code_hash, second_hash_expiry),
             (third_code_hash, None),
@@ -776,7 +760,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        expiration_second_hash + 1,
+        expiration_second_hash + NANOS_IN_SECOND,
         &[(third_code_hash, None)]
     );
 }
@@ -896,7 +880,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     let expected_after_v1_expiry = [hash_v2, hash_v3];
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        v1_expiry_time + 1,
+        v1_expiry_time + NANOS_IN_SECOND,
         &[(hash_v2, v2_expiry), (hash_v3, None)]
     );
 
@@ -918,7 +902,11 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
     let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
-    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[(hash_v3, None)]);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        v2_expiry_time + NANOS_IN_SECOND,
+        &[(hash_v3, None)]
+    );
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation
@@ -931,7 +919,9 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 #[case(ContractProtocolState::Running)]
 #[case(ContractProtocolState::Initializing)]
 #[case(ContractProtocolState::Resharing)]
-fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProtocolState) {
+fn vote_mpc_node_manifest_digest_works_in_contract_protocol_states(
+    #[case] state: ContractProtocolState,
+) {
     let mut setup = TestSetupBuilder::new()
         .with_contract_protocol_state(state)
         .build();

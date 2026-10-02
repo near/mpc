@@ -36,9 +36,6 @@ jq -j '.near_signer_public_key' "$INPUT_FILE" > "$OUTPUT_DIR/near_account_public
 # Extract app_compose.json. We set 4 width indentation, and remove trailing newline, so it matches the original string in tests.
 printf '%s' "$(jq -r --indent 4 '.tee_participant_info.Dstack.tcb_info.app_compose' "$INPUT_FILE")" > "$OUTPUT_DIR/app_compose.json"
 
-# Extract collateral
-jq -r '.tee_participant_info.Dstack.collateral' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
-
 # Extract quote
 jq -c '.tee_participant_info.Dstack.quote' "$INPUT_FILE" > "$OUTPUT_DIR/quote.json"
 
@@ -54,3 +51,8 @@ printf "%s" "$(grep 'DEFAULT_IMAGE_DIGEST' "$OUTPUT_DIR/launcher_image_compose.y
 
 echo "Extraction complete. Files written to '$OUTPUT_DIR':"
 ls -la "$OUTPUT_DIR"
+
+echo ""
+echo "REMINDER: replace '$OUTPUT_DIR/near_account_secret_key' with the secret key of"
+echo "the node you just extracted from (ed25519:<base58>, one line). It must pair with"
+echo "the freshly written near_account_public_key.pub."

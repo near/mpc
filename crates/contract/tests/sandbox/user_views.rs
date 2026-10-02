@@ -3,17 +3,21 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AuthScheme, ChainEntry, ChainRouting, ForeignChain, Protocol, ProviderConfig, ProviderId,
 };
-use near_sdk::borsh;
 use near_sdk::{CurveType, PublicKey};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use crate::sandbox::common::SandboxTestSetup;
+use crate::sandbox::utils::transactions::CallMpcContract;
 
 #[tokio::test]
 async fn test_key_version() -> anyhow::Result<()> {
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
@@ -31,7 +35,11 @@ async fn test_key_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_public_key() -> anyhow::Result<()> {
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
@@ -51,7 +59,11 @@ async fn test_public_key() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_derived_public_key() -> anyhow::Result<()> {
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
@@ -76,6 +88,7 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
 async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_threshold()
 -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -98,19 +111,13 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         },
     );
 
-    // Entry-point args are borsh-encoded.
-    let args = borsh::to_vec(&votes)?;
     // Gating matches the protocol signing threshold (`self.threshold()?.value()` in
     // the contract). Sandbox setup uses 10 participants with a 60% threshold = 6.
     // First 5 votes — should not yet apply.
     for (i, account) in mpc_signer_accounts.iter().take(5).enumerate() {
         let result = account
-            .call(
-                contract.id(),
-                method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
-            )
-            .args(args.clone())
-            .transact()
+            .call_mpc(contract.id())
+            .vote_update_foreign_chain_providers(votes.clone())
             .await?;
         assert!(
             result.is_success(),
@@ -124,7 +131,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
         .args_json(json!({}))
         .await?
-        .borsh()?;
+        .json()?;
     assert!(
         whitelist_before.is_empty(),
         "chain should not be applied yet (only 5 of 6 threshold votes cast)"
@@ -132,24 +139,20 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
 
     // 6th vote — crosses the threshold and applies the chain.
     let result = mpc_signer_accounts[5]
-        .call(
-            contract.id(),
-            method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
-        )
-        .args(args.clone())
-        .transact()
+        .call_mpc(contract.id())
+        .vote_update_foreign_chain_providers(votes.clone())
         .await?;
     assert!(
         result.is_success(),
         "vote_update_foreign_chain_providers (vote 6) failed: {result:?}"
     );
 
-    // Then: chain entry is applied (result is borsh-encoded — see the view fn's doc).
+    // Then
     let whitelist: BTreeMap<ForeignChain, ChainEntry> = contract
         .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
         .args_json(json!({}))
         .await?
-        .borsh()?;
+        .json()?;
     let stored = whitelist
         .get(&ForeignChain::Ethereum)
         .expect("Ethereum entry should be present after 6 matching votes");

@@ -4,7 +4,7 @@
 
 use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
-use attestation::measurements::{ExpectedMeasurements, Measurements};
+use attestation::{ExpectedMeasurements, Measurements};
 use mpc_attestation::attestation::{
     AcceptedAttestation, Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation,
     VerifiedAttestation, default_measurements,

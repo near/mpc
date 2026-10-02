@@ -126,7 +126,7 @@ mod tests {
             }
         );
         // ensure the transaction was not submitted
-        assert_eq!(mock_chain_state.signed_transactions().await, vec![]);
+        assert_eq!(mock_chain_state.signed_transactions(), vec![]);
     }
 
     #[tokio::test]
@@ -158,7 +158,7 @@ mod tests {
 
         assert_eq!(expected.transaction.get_hash_and_size().0, res);
 
-        let found = mock_chain_state.signed_transactions().await;
+        let found = mock_chain_state.signed_transactions();
         assert_eq!(found, vec![expected]);
     }
 
@@ -199,6 +199,6 @@ mod tests {
             }
         );
         // ensure the transaction was submitted
-        assert_eq!(mock_chain_state.signed_transactions().await.len(), 1);
+        assert_eq!(mock_chain_state.signed_transactions().len(), 1);
     }
 }

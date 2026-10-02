@@ -163,6 +163,7 @@ pub struct VerifyForeignTxRequest {
     pub receipt_id: CryptoHash,
     pub request: dtos::ForeignChainRpcRequest,
     pub payload_version: dtos::ForeignTxPayloadVersion,
+    pub expected_payload_hash: Option<dtos::Hash256>,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain_id: DomainId,
@@ -181,6 +182,7 @@ impl FromChain<VerifyForeignTxRequestFromChain> for VerifyForeignTxRequest {
             domain_id: request.domain_id,
             entropy: block.entropy.clone().into(),
             payload_version: request.payload_version,
+            expected_payload_hash: request.expected_payload_hash,
             request: request.request,
             timestamp_nanosec: block.timestamp_nanosec,
         }

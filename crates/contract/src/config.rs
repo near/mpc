@@ -7,10 +7,8 @@ const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 30;
 const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 7 Days
 
 // --- Gas Defaults (in TeraGas) ---
-/// Amount of gas to deposit when creating an internal upgrade transaction promise.
-/// Note this deposit must be less than 300, as the total gas usage including the
-/// initial call itself to vote for the update can not exceed 300 Tgas.
-const DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 50;
+/// Prepaid gas for applying contract and config updates.
+const DEFAULT_APPLY_CONTRACT_UPDATE_TERA_GAS: u64 = 50;
 /// Gas required for a sign request
 const DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS: u64 = 15;
 /// Gas required for a CKD request
@@ -26,11 +24,11 @@ const DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS: u64 = 2;
 /// Prepaid gas for a `clean_tee_status` call
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
-const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 10;
+const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 15;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// TODO(#1164): benchmark
 const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 4;
-/// Prepaid gas for a `remove_non_participant_update_votes` call
+/// Prepaid gas for a `remove_non_participant_contract_update_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `clean_foreign_chain_data` call
 const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 5;
@@ -48,7 +46,7 @@ pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 
 const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 20;
 
 /// Config for V2 of the contract.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Config {
     /// If a key event attempt has not successfully completed within this many blocks,
@@ -56,8 +54,8 @@ pub(crate) struct Config {
     pub(crate) key_event_timeout_blocks: u64,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub(crate) tee_upgrade_deadline_duration_seconds: u64,
-    /// Amount of gas to deposit for contract and config updates.
-    pub(crate) contract_upgrade_deposit_tera_gas: u64,
+    /// Prepaid gas for applying contract and config updates.
+    pub(crate) apply_contract_update_tera_gas: u64,
     /// Gas required for a sign request.
     pub(crate) sign_call_gas_attachment_requirement_tera_gas: u64,
     /// Gas required for a CKD request.
@@ -76,7 +74,7 @@ pub(crate) struct Config {
     pub(crate) clean_invalid_attestations_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub(crate) cleanup_orphaned_node_migrations_tera_gas: u64,
-    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    /// Prepaid gas for a `remove_non_participant_contract_update_votes` call.
     pub(crate) remove_non_participant_update_votes_tera_gas: u64,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub(crate) clean_foreign_chain_data_tera_gas: u64,
@@ -86,9 +84,10 @@ pub(crate) struct Config {
     pub(crate) verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub(crate) resolve_verification_tera_gas: u64,
-    /// TTL after which a launcher image hash unused by any participant is evicted.
+    /// TTL after which a launcher image hash unused by any participant is evicted: at the later
+    /// of its last use + this TTL and the expiry of the attestation that last used it.
     /// Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on
-    /// use), not retroactively — changing it does not re-date existing entries.
+    /// use). An expiry never moves earlier, so lowering it does not shorten existing entries.
     pub(crate) launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, charged for one attestation-storage grant.
     pub(crate) attestation_storage_fee_millinear: u64,
@@ -99,7 +98,7 @@ impl Default for Config {
         Self {
             key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
             tee_upgrade_deadline_duration_seconds: DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS,
-            contract_upgrade_deposit_tera_gas: DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS,
+            apply_contract_update_tera_gas: DEFAULT_APPLY_CONTRACT_UPDATE_TERA_GAS,
             sign_call_gas_attachment_requirement_tera_gas:
                 DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS,
             ckd_call_gas_attachment_requirement_tera_gas:
@@ -124,20 +123,5 @@ impl Default for Config {
             launcher_hash_unused_ttl_seconds: DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS,
             attestation_storage_fee_millinear: DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR,
         }
-    }
-}
-
-impl Config {
-    /// Invariant: a launcher hash backing a still-valid attestation must never expire,
-    /// so its unused-TTL must be at least the attestation validity window.
-    pub(crate) fn validate(&self) -> Result<(), &'static str> {
-        if self.launcher_hash_unused_ttl_seconds
-            < mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS
-        {
-            return Err(
-                "launcher_hash_unused_ttl_seconds must be >= DEFAULT_EXPIRATION_DURATION_SECONDS",
-            );
-        }
-        Ok(())
     }
 }

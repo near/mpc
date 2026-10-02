@@ -6,9 +6,9 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 
 use super::{
-    consts::{GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_PK},
+    consts::GAS_FOR_VOTE_PK,
     mpc_contract::get_state,
-    transactions::execute_async_transactions,
+    transactions::{execute_async_handle_calls, execute_async_transactions},
 };
 
 pub async fn vote_add_domains(
@@ -16,16 +16,10 @@ pub async fn vote_add_domains(
     accounts: &[Account],
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
-    let args = json!({
-        "domains": domains,
-    });
-    execute_async_transactions(
-        accounts,
-        contract,
-        method_names::VOTE_ADD_DOMAINS,
-        &args,
-        GAS_FOR_VOTE_NEW_DOMAIN,
-    )
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let domains = domains.to_vec();
+        async move { handle.vote_add_domains(domains).await }
+    })
     .await
 }
 

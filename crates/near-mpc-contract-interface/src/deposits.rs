@@ -3,14 +3,20 @@
 
 pub const SIGN_DEPOSIT_YOCTONEAR: u128 = 1;
 
+pub const SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR: u128 = 1;
+
 pub const STORAGE_BYTE_COST_YOCTONEAR: u128 = 10_000_000_000_000_000_000;
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 pub const PROPOSE_UPDATE_ENTRY_OVERHEAD_BYTES: u128 = 32_768;
+
+pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR: u128 = 1;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error("the required deposit exceeds u128::MAX yoctoNEAR")]
 pub struct DepositOverflowError;
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 pub fn propose_update_required_deposit_yoctonear(
     payload_bytes: u128,
     storage_byte_cost_yoctonear: u128,

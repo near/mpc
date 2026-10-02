@@ -76,7 +76,7 @@ impl MockServerExt {
 }
 
 pub const MOCK_BLOCK_HASH: &str =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 pub const MOCK_STARKNET_BLOCK_NUMBER: u64 = 6_868_546;
 pub const MOCK_BLOCK_HEIGHT: u64 = 800_000;
@@ -134,6 +134,28 @@ pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usi
         .id;
     register_unauthorized_catch_all(server, &auth);
     mock_id
+}
+
+pub fn setup_evm_chain_id_mock(server: &MockServer, chain_id: u64) -> usize {
+    server
+        .mock(|when, then| {
+            when.method(POST);
+            then.respond_with(move |req: &HttpMockRequest| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
+                let response_body = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "result": format!("{chain_id:#x}"),
+                    "id": body["id"].clone(),
+                });
+                HttpMockResponse::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .body(serde_json::to_string(&response_body).unwrap())
+                    .build()
+            });
+        })
+        .id
 }
 
 pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {

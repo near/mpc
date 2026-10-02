@@ -1,6 +1,6 @@
 use crate::common::{
-    REQUEST_DURING_RESHARING_PORT_SEED, damgard_etal_domain, generate_ckd_app_public_key,
-    must_get_domain, must_setup_cluster, sign_all_domains,
+    REQUEST_DURING_RESHARING_PORT_SEED, generate_ckd_app_public_key, must_get_domain,
+    must_setup_cluster, robust_ecdsa_domain, sign_all_domains,
 };
 use near_mpc_contract_interface::types::{Protocol, ProtocolContractState};
 
@@ -10,8 +10,8 @@ use rand::{SeedableRng, rngs::StdRng};
 /// running state's threshold while resharing is in progress.
 ///
 /// Setup: 6 nodes, 5 initial participants (threshold 5). Domains cover
-/// classic ECDSA (CaitSith), DamgardEtAl, EdDSA (Frost) and
-/// CKD (ConfidentialKeyDerivation). The DamgardEtAl domain uses a
+/// classic ECDSA (CaitSith), RobustEcdsa, EdDSA (Frost) and
+/// CKD (ConfidentialKeyDerivation). The RobustEcdsa domain uses a
 /// reconstruction threshold of `t = 3`, which requires `2t - 1 = 5` signers,
 /// so we need at least 5 participants. Begin resharing to all 6 with threshold
 /// 6, then kill node 5 so resharing can't complete. Requests should still
@@ -27,7 +27,7 @@ async fn test_request_during_resharing() {
             c.triples_to_buffer = 2;
             c.presignatures_to_buffer = 2;
             c.domains
-                .push(damgard_etal_domain(c.domains.len() as u64, 3));
+                .push(robust_ecdsa_domain(c.domains.len() as u64, 3));
         })
         .await;
 

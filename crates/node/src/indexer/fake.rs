@@ -1,6 +1,5 @@
 use super::IndexerAPI;
 use super::ReadAttestationExpiry;
-use super::ReadSupportedForeignChain;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
@@ -10,7 +9,6 @@ use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::migration_service::types::MigrationInfo;
 use crate::tests::common::MockTransactionSender;
-use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
@@ -51,18 +49,9 @@ pub struct FakeMpcContractState {
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
-    // Legacy foreign-chain model, fed by the legacy registration; the node's
-    // read path still depends on it. TODO(#3630): drop with the legacy API.
-    supported_foreign_chains: dtos::SupportedForeignChains,
-    supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
     pub migration_service: NodeMigrations,
-}
-
-#[derive(Clone)]
-pub struct FakeReadSupportedForeignChain {
-    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 }
 
 struct FakeAttestationExpiryReader;
@@ -74,17 +63,6 @@ impl ReadAttestationExpiry for FakeAttestationExpiryReader {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
     {
         Box::pin(async { Ok(None) })
-    }
-}
-
-impl ReadSupportedForeignChain for FakeReadSupportedForeignChain {
-    async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
-        Ok(self
-            .contract
-            .lock()
-            .await
-            .supported_foreign_chains()
-            .clone())
     }
 }
 
@@ -103,20 +81,10 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
-            supported_foreign_chains: dtos::SupportedForeignChains::default(),
-            supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
             migration_service: NodeMigrations::default(),
         }
-    }
-
-    pub fn supported_foreign_chains(&self) -> &dtos::SupportedForeignChains {
-        &self.supported_foreign_chains
-    }
-
-    pub fn supported_foreign_chains_by_node(&self) -> &dtos::ForeignChainSupportByNode {
-        &self.supported_foreign_chains_by_node
     }
 
     pub fn available_foreign_chains(&self) -> &dtos::AvailableForeignChains {
@@ -125,71 +93,6 @@ impl FakeMpcContractState {
 
     pub fn foreign_chains_configs(&self) -> &dtos::ForeignChainsConfigs {
         &self.foreign_chains_configs
-    }
-
-    /// Legacy registration, mirroring the old contract rule: a chain is
-    /// supported only when every active participant registered it.
-    /// TODO(#3630): drop with the legacy API.
-    #[expect(deprecated)]
-    pub fn register_foreign_chain_config(
-        &mut self,
-        account_id: AccountId,
-        local_foreign_chain_config: dtos::ForeignChainConfiguration,
-    ) {
-        let ProtocolContractState::Running(state) = &self.state else {
-            tracing::info!(
-                "register_foreign_chain_config transaction ignored because the contract is not in running state"
-            );
-            return;
-        };
-
-        let participants = state.parameters.participants().participants();
-
-        let is_participant = participants
-            .iter()
-            .any(|(participant_id, _, _)| participant_id == &account_id);
-
-        if !is_participant {
-            tracing::info!(
-                "register_foreign_chain_config transaction ignored because signer is not a participant"
-            );
-            return;
-        }
-
-        let local_foreign_chain_support: dtos::SupportedForeignChains = local_foreign_chain_config
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>()
-            .into();
-
-        self.supported_foreign_chains_by_node
-            .foreign_chain_support_by_node
-            .insert(account_id, local_foreign_chain_support);
-
-        // Derive supported_foreign_chains as intersection of all active participants' votes
-        let active_participant_account_ids: BTreeSet<dtos::AccountId> =
-            participants.iter().map(|(id, _, _)| id.clone()).collect();
-
-        let mut chain_to_supporters: BTreeMap<dtos::ForeignChain, BTreeSet<dtos::AccountId>> =
-            BTreeMap::new();
-        for (voter_id, chains) in &self
-            .supported_foreign_chains_by_node
-            .foreign_chain_support_by_node
-        {
-            for chain in chains.iter().copied() {
-                chain_to_supporters
-                    .entry(chain)
-                    .or_default()
-                    .insert(voter_id.clone());
-            }
-        }
-
-        self.supported_foreign_chains = chain_to_supporters
-            .into_iter()
-            .filter(|(_, supporters)| supporters.is_superset(&active_participant_account_ids))
-            .map(|(chain, _)| chain)
-            .collect::<BTreeSet<_>>()
-            .into();
     }
 
     /// The real endpoint authenticates via the TEE registry, which is
@@ -236,7 +139,7 @@ impl FakeMpcContractState {
     }
 
     /// Mirrors the real contract's recomputation: a chain is available once the
-    /// max reconstruction threshold across ForeignTx domains is reached.
+    /// max required active signers across ForeignTx domains is reached.
     /// Deviation: no whitelisting — the fake has no provider-whitelist voting, so every
     /// registered chain counts.
     fn recompute_available_foreign_chains(&mut self) {
@@ -245,14 +148,22 @@ impl FakeMpcContractState {
             ProtocolContractState::Resharing(state) => &state.previous_running_state.parameters,
             _ => return,
         };
-        let Some(threshold) = self.state.domain_registry().ok().and_then(|registry| {
-            registry
-                .domains()
-                .iter()
-                .filter(|domain| domain.purpose == dtos::DomainPurpose::ForeignTx)
-                .map(|domain| domain.reconstruction_threshold.inner())
-                .max()
-        }) else {
+        // TODO(#3973): revisit threshold calculation for several ForeignTx
+        // domains with different thresholds.
+        let Some(required_active_signers) =
+            self.state.domain_registry().ok().and_then(|registry| {
+                registry
+                    .domains()
+                    .iter()
+                    .filter(|domain| domain.purpose == dtos::DomainPurpose::ForeignTx)
+                    .map(|domain| {
+                        domain
+                            .protocol
+                            .required_active_signers(domain.reconstruction_threshold)
+                    })
+                    .max()
+            })
+        else {
             return;
         };
         let mut supporters_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
@@ -266,7 +177,7 @@ impl FakeMpcContractState {
         }
         self.available_foreign_chains = supporters_count
             .into_iter()
-            .filter(|(_, count)| *count >= threshold)
+            .filter(|(_, count)| *count >= required_active_signers)
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
             .into();
@@ -506,7 +417,7 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(running_state) = &self.state else {
             panic!("only allow calling this in `running_state`");
         };
-        let dto_keyset = keyset_to_dto(&running_state.keyset);
+        let dto_keyset = dtos::Keyset::from(&running_state.keyset);
         if dto_keyset != args.keyset {
             panic!("keyset mismatch");
         }
@@ -518,7 +429,9 @@ impl FakeMpcContractState {
 pub fn participant_info_from_config(info: &config::ParticipantInfo) -> ParticipantInfo {
     ParticipantInfo {
         tls_public_key: (&info.p2p_public_key).into(),
-        url: format!("http://{}:{}", info.address, info.port),
+        url: format!("http://{}:{}", info.address, info.port)
+            .try_into()
+            .expect("test fixture url must fit the bound"),
     }
 }
 
@@ -818,13 +731,6 @@ impl FakeIndexerCore {
                         let mut contract = contract.lock().await;
                         contract.vote_reshared(account_id, Into::into(reshared.key_event_id));
                     }
-                    ChainSendTransactionRequest::RegisterForeignChainConfig(args) => {
-                        let mut contract = contract.lock().await;
-                        contract.register_foreign_chain_config(
-                            account_id,
-                            args.foreign_chain_configuration,
-                        );
-                    }
                     ChainSendTransactionRequest::RegisterForeignChainsConfig(args) => {
                         let mut contract = contract.lock().await;
                         contract
@@ -1093,9 +999,13 @@ impl FakeIndexerManager {
             mpsc::unbounded_channel();
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
+        let contract_state = FakeMpcContractState::new();
         let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
-            watch::channel(Default::default());
-        let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
+            watch::channel(supporters_by_available_chain(
+                contract_state.available_foreign_chains(),
+                contract_state.foreign_chains_configs(),
+            ));
+        let contract = Arc::new(tokio::sync::Mutex::new(contract_state));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
@@ -1156,6 +1066,11 @@ impl FakeIndexerManager {
             .unwrap()
     }
 
+    /// The supporters channel every node's `IndexerAPI` receives.
+    pub fn subscribe_foreign_chain_supporters(&self) -> watch::Receiver<ForeignChainSupporters> {
+        self.foreign_chain_supporters_receiver.clone()
+    }
+
     /// Sends a signature request to the fake blockchain.
     pub fn request_signature(&self, request: SignatureRequestFromChain) {
         self.signature_request_sender.send(request).unwrap();
@@ -1179,7 +1094,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
+        IndexerAPI<MockTransactionSender>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -1201,9 +1116,6 @@ impl FakeIndexerManager {
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
-        let foreign_chain_policy_reader = FakeReadSupportedForeignChain {
-            contract: self.contract.clone(),
-        };
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
@@ -1212,9 +1124,7 @@ impl FakeIndexerManager {
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
             allowed_launcher_compose_receiver,
-            attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
-            foreign_chain_policy_reader,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };

@@ -44,6 +44,9 @@ export OS_IMAGE=dstack-0.5.8
 # Custom NEAR accounts
 export NODE_ACCOUNT=frodo.test.near
 export CONTRACT_ACCOUNT=mpc-contract.test.near
+
+# Launcher compose to deploy. This variant exports the node's in-enclave signer key.
+export COMPOSE_TEMPLATE=$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-compose.yaml.template
 ```
 
 ## Run
@@ -67,7 +70,7 @@ After collecting `public_data.json`, update test assets:
 ```bash
 cp <WORKDIR>/public_data.json crates/test-utils/assets/public_data.json
 cd crates/test-utils/assets && bash ./create-assets.sh public_data.json .
-cp crates/test-utils/assets/tcb_info.json crates/attestation/assets/tcb_info.json
+cp crates/test-utils/assets/tcb_info.json crates/attestation-types/assets/tcb_info.json
 ```
 
 Then update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs`.

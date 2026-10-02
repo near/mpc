@@ -1,12 +1,16 @@
 use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
+use crate::foreign_chain_policy::{
+    SupportersByForeignChain, foreign_tx_required_active_signers, spawn_supporters_by_foreign_chain,
+};
+use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::ChainSendTransactionRequest;
-use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
+use crate::indexer::{IndexerAPI, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
 };
@@ -14,17 +18,18 @@ use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::metrics::tokio_runtime_metrics::run_monitor_loop;
 use crate::mpc_client::MpcClient;
+use crate::network::wire_format::{EcdsaTaskId, EddsaTaskId, MpcTaskId};
 use crate::network::{
     MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
 };
 use crate::p2p::{new_tls_mesh_network, new_tls_mesh_network_with_address_updates};
-use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::primitives::ParticipantId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::triple;
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
-use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::{DomainKeyshare, EcdsaSignatureProvider};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
@@ -55,7 +60,7 @@ use tracing::{error, info};
 /// accordingly: if the contract says we need to generate keys, we generate
 /// keys; if the contract says we're running, we run the MPC protocol; if the
 /// contract says we need to perform key resharing, we perform key resharing.
-pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
+pub struct Coordinator<TransactionSender> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
@@ -65,7 +70,7 @@ pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
     /// Storage for keyshares.
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     /// For interaction with the indexer.
-    pub indexer: IndexerAPI<TransactionSender, ForeignChainPolicyReader>,
+    pub indexer: IndexerAPI<TransactionSender>,
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
@@ -101,11 +106,9 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
-impl<TransactionSender, ForeignChainPolicyReader>
-    Coordinator<TransactionSender, ForeignChainPolicyReader>
+impl<TransactionSender> Coordinator<TransactionSender>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
@@ -176,7 +179,7 @@ where
                                 self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
-                                self.indexer.foreign_chain_policy_reader.clone(),
+                                self.indexer.foreign_chain_supporters_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -339,12 +342,14 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
+        let expected_participant_ids = mpc_config.participants.participant_id_set();
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
+                expected_participant_ids,
             )
             .await?;
         } else {
@@ -353,6 +358,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
+                expected_participant_ids,
             )
             .await?;
         }
@@ -371,7 +377,7 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
+        foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -621,7 +627,7 @@ where
                                     DomainKeyshare::new(data, reconstruction_threshold),
                                 );
                             }
-                            Protocol::DamgardEtAl => {
+                            Protocol::RobustEcdsa => {
                                 robust_ecdsa_keyshares.insert(
                                     domain_id,
                                     DomainKeyshare::new(data, reconstruction_threshold),
@@ -694,9 +700,37 @@ where
                     ckd_keyshares,
                 ));
 
+                // `running_mpc_config.participants` is the running set retained
+                // to resharing survivors (active ∩ prospective), so a chain only
+                // counts as available when a quorum of nodes that can sign now
+                // and remain after the reshare supports it. With no ForeignTx
+                // domain nothing can be available, so the resolver isn't
+                // spawned and the provider sees a constant empty map.
+                let foreign_tx_required_active_signers =
+                    foreign_tx_required_active_signers(&running_state.domains);
+                let (supporters_by_foreign_chain, _supporters_resolver_task) =
+                    match foreign_tx_required_active_signers {
+                        Some(required_active_signers) => {
+                            let (receiver, task) = spawn_supporters_by_foreign_chain(
+                                foreign_chain_supporters_receiver,
+                                running_mpc_config.participants.clone(),
+                                required_active_signers,
+                            );
+                            (receiver, Some(task))
+                        }
+                        None => {
+                            // No resolver to feed it: the sender is dropped on
+                            // purpose and the provider sees a constant empty map.
+                            let (_sender, receiver) =
+                                watch::channel(SupportersByForeignChain::new());
+                            (receiver, None)
+                        }
+                    };
+
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
-                    foreign_chain_policy_reader.clone(),
+                    supporters_by_foreign_chain,
+                    foreign_tx_required_active_signers,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);
@@ -801,6 +835,7 @@ where
             existing_keyshares,
             old_reconstruction_thresholds,
             old_participants: current_running_state.participants,
+            new_participant_ids: mpc_config.participants.participant_id_set(),
         });
 
         if mpc_config.is_leader_for_key_event() {
@@ -1041,22 +1076,11 @@ fn stop_initializing(
     }
 }
 
-/// Dual-writes the node's foreign-chain registration (legacy + new endpoint);
-/// an empty config still registers so that dropping every chain propagates.
-/// TODO(#3630): drop the legacy RegisterForeignChainConfig half.
+/// An empty config still registers so that dropping every chain propagates.
 async fn register_foreign_chains(
     chain_txn_sender: &impl tx_sender::TransactionSender,
     foreign_chains: &mpc_node_config::ForeignChainsConfig,
 ) {
-    let foreign_chain_configuration = foreign_chains.configured_chains();
-    if let Err(err) = chain_txn_sender
-        .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-            contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
-        ))
-        .await
-    {
-        tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
-    }
     let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
         .iter_chains()
         .map(|(chain, _)| chain)
@@ -1310,10 +1334,8 @@ mod tests {
         assert_eq!(joining_peer, Some("carol.example.com:7000".to_string()));
     }
 
-    /// Guards the upgrade-window dual-write: the legacy registration must keep
-    /// being emitted alongside the new one until #3630 drops it.
     #[tokio::test]
-    async fn register_foreign_chains__should_send_legacy_and_new_registrations() {
+    async fn register_foreign_chains__should_send_registration() {
         // Given: a node config covering Solana.
         let foreign_chains = ForeignChainsConfig {
             solana: Some(ForeignChainConfig {
@@ -1338,13 +1360,7 @@ mod tests {
         // When
         register_foreign_chains(&txn_sender, &foreign_chains).await;
 
-        // Then: the legacy registration is emitted first, then the new one.
-        let expected_legacy = foreign_chains.configured_chains();
-        assert_matches!(
-            receiver.try_recv(),
-            Ok(ChainSendTransactionRequest::RegisterForeignChainConfig(args))
-                if args.foreign_chain_configuration == expected_legacy
-        );
+        // Then
         let expected: dtos::ForeignChainsConfig =
             BTreeSet::from([dtos::ForeignChain::Solana]).into();
         assert_matches!(

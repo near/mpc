@@ -1,7 +1,7 @@
 use crate::common::{
-    DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, ckd_domain, damgard_etal_domain,
-    generate_ckd_app_public_key, generate_ecdsa_payload, generate_eddsa_payload, must_get_domain,
-    must_setup_cluster, wait_metric_on_nodes,
+    DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, ckd_domain, generate_ckd_app_public_key,
+    generate_ecdsa_payload, generate_eddsa_payload, must_get_domain, must_setup_cluster,
+    robust_ecdsa_domain, wait_metric_on_nodes,
 };
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
@@ -12,7 +12,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 /// Each domain signs under its own reconstruction threshold, not the governance
 /// threshold. With 6 nodes and 1 killed, Cait-Sith (needs all 6) can no longer sign
-/// while Damgard et al. (`2t - 1 = 5`), CKD (`t = 5`) and Frost (`t = 5`) still can.
+/// while Robust ECDSA (`2t - 1 = 5`), CKD (`t = 5`) and Frost (`t = 5`) still can.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_when_nodes_are_down() {
@@ -32,7 +32,7 @@ async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_whe
                     reconstruction_threshold: ReconstructionThreshold::new(6),
                     purpose: DomainPurpose::Sign,
                 },
-                damgard_etal_domain(1, 3),
+                robust_ecdsa_domain(1, 3),
                 ckd_domain(2, 5),
                 DomainConfig {
                     id: DomainId(3),
@@ -45,25 +45,25 @@ async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_whe
         .await;
 
     let caitsith_domain = must_get_domain(&contract_state, Protocol::CaitSith);
-    let damgard_domain = must_get_domain(&contract_state, Protocol::DamgardEtAl);
+    let robust_ecdsa_domain = must_get_domain(&contract_state, Protocol::RobustEcdsa);
     let ckd_domain = must_get_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
     let frost_domain = must_get_domain(&contract_state, Protocol::Frost);
 
     // When
     cluster.kill_nodes(&[5]).expect("failed to kill node 5");
 
-    // Then Damgard et al. (needs 5 signers) still signs.
+    // Then Robust ECDSA (needs 5 signers) still signs.
     let outcome = cluster
         .send_sign_request(
-            damgard_domain.id,
+            robust_ecdsa_domain.id,
             generate_ecdsa_payload(&mut rng),
             cluster.default_user_account(),
         )
         .await
-        .expect("failed to submit Damgard et al. sign request");
+        .expect("failed to submit Robust ECDSA sign request");
     assert!(
         outcome.is_success(),
-        "Damgard et al. sign request failed with 5 of 6 nodes alive: {:?}",
+        "Robust ECDSA sign request failed with 5 of 6 nodes alive: {:?}",
         outcome.failure_message()
     );
 

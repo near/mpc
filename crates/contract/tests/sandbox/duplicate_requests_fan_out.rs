@@ -3,7 +3,7 @@
 //! Items are declared in order of occurrence: every function (or type) is defined
 //! before any helper it transitively depends on.
 
-#![allow(non_snake_case)] // Tests use the `<sut>__should_<assertion>` form mandated by CLAUDE.md.
+#![allow(non_snake_case)] // Tests use the `<sut>__should_<assertion>` form mandated by AGENTS.md.
 
 use crate::sandbox::{
     common::SandboxTestSetup,
@@ -22,7 +22,7 @@ use mpc_contract::MAX_PENDING_REQUEST_FAN_OUT;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args::SignatureRespondArgs;
 use near_mpc_contract_interface::types::{
-    Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, Protocol, SignRequestArgs,
+    Bls12381G1PublicKey, CKDAppPublicKey, CKDRequest, CKDRequestArgs, Protocol, SignRequestArgs,
 };
 use near_workspaces::operations::TransactionStatus;
 use serde::Serialize;
@@ -79,7 +79,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
         let scheme_tag = format!("fanout-{:?}-{}", key.domain_config.protocol, domain_id.0);
 
         let statuses = match (&key.domain_config.protocol, &key.domain_secret_key) {
-            (Protocol::CaitSith | Protocol::DamgardEtAl, SharedSecretKey::Secp256k1(sk)) => {
+            (Protocol::CaitSith | Protocol::RobustEcdsa, SharedSecretKey::Secp256k1(sk)) => {
                 let (payload, request, response) =
                     create_response_secp256k1(domain_id, &parallel_id, &scheme_tag, "", sk);
                 let response_args = SignatureRespondArgs { request, response };
@@ -229,7 +229,7 @@ struct MakeDuplicateSignCallsArgs<'a> {
 /// [`crate::sandbox::common::SandboxTestSetupBuilder::with_sandbox_test_methods`]).
 async fn wait_for_pending_signature_queue(
     contract: &near_workspaces::Contract,
-    request: &mpc_contract::primitives::signature::SignatureRequest,
+    request: &near_mpc_contract_interface::types::SignatureRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
@@ -319,7 +319,7 @@ struct MakeDuplicateCkdCallsArgs<'a> {
 /// CKD counterpart to [`wait_for_pending_signature_queue`]; same rationale.
 async fn wait_for_pending_ckd_queue(
     contract: &near_workspaces::Contract,
-    request: &mpc_contract::primitives::ckd::CKDRequest,
+    request: &CKDRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);

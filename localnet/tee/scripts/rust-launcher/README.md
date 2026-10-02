@@ -32,17 +32,36 @@ The node env template `../node.env.tpl` also lives here (one level up) and is sh
 
 ## Collecting Test Assets
 
-To regenerate test assets from real TDX attestation:
+To regenerate test assets from real TDX attestation, from the repo root on the TDX host, with the
+prerequisites and required variables from [single-node-readme.md](single-node-readme.md) set up.
 
 ```bash
-# Deploy single node
-bash localnet/tee/scripts/rust-launcher/single-node.sh
+export BASE_PATH=/path/to/meta-dstack/dstack
+export WORKDIR=/tmp/mpc-fixture-collection
 
-# Extract assets
-cp <WORKDIR>/public_data.json crates/test-utils/assets/public_data.json
-cd crates/test-utils/assets && bash ./create-assets.sh public_data.json .
-cp crates/test-utils/assets/tcb_info.json crates/attestation/assets/tcb_info.json
-# Update VALID_ATTESTATION_TIMESTAMP in crates/test-utils/src/attestation.rs
+# Reuse the fixture's current image digests unless changing images: measurements then stay put.
+COMPOSE_TEMPLATE="$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-compose.yaml.template" \
+  bash localnet/tee/scripts/rust-launcher/single-node.sh
+
+cp "$WORKDIR/public_data.json" crates/test-utils/assets/public_data.json
 ```
 
-See [single-node-readme.md](single-node-readme.md) for details.
+Then follow [the asset regeneration steps](../../../../crates/test-utils/assets/README.md#steps),
+which own the rest of the procedure.
+
+### Exporting the node's signer key
+
+The node generates its NEAR signer key inside the CVM, and sandbox tests need it to sign as the fixture
+node. Handing the node a key instead does not work: the measured compose mounts only `mpc-data`.
+
+[export-signer-key-compose.yaml.template](export-signer-key-compose.yaml.template) is the production
+launcher compose plus one service that prints the node's `secrets.json`. Read the key from that
+service's log, on the agent port `single-node.sh` prints:
+
+```bash
+curl -s "http://127.0.0.1:<AGENT_PORT>/logs/signer-key-export?text&bare" \
+  | grep -o '"near_signer_key":"[^"]*"'
+```
+
+Put the value into `crates/test-utils/assets/near_account_secret_key` (one line, `ed25519:<base58>`).
+Only ever do this for a throwaway localnet node: the key ends up in the repo.

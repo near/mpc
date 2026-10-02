@@ -1,14 +1,15 @@
 use std::collections::BTreeSet;
 
-use super::transactions::{SandboxCaller, all_receipts_successful};
+use crate::sandbox::utils::transactions::CallMpcContract;
+
+use super::transactions::{all_receipts_successful, execute_async_handle_calls};
 use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::{
-    client::MpcContractHandle,
     method_names,
     types::{
         Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
-        ProtocolContractState,
+        ProtocolContractState, VerifiedAttestation,
     },
 };
 use near_workspaces::{
@@ -20,7 +21,11 @@ pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
         .outcomes()
         .iter()
         .map(|outcome| outcome.tokens_burnt)
-        .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+        .fold(NearToken::ZERO, NearToken::saturating_add)
+}
+
+pub async fn get_config(contract: &Contract) -> anyhow::Result<Config> {
+    Ok(contract.view(method_names::CONFIG).await?.json()?)
 }
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
@@ -32,15 +37,6 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
         .unwrap()
 }
 
-pub async fn get_allowed_launcher_image_hashes(
-    contract: &Contract,
-) -> anyhow::Result<Vec<LauncherImageHash>> {
-    Ok(contract
-        .view(method_names::ALLOWED_LAUNCHER_IMAGE_HASHES)
-        .await?
-        .json()?)
-}
-
 pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
     let state = get_state(contract).await;
     let ProtocolContractState::Running(running) = state else {
@@ -50,17 +46,24 @@ pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participant
     Ok(running.parameters.participants)
 }
 
-/// Helper function to get TEE participants from contract.
 pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeId>> {
     Ok(contract
-        .call(method_names::GET_TEE_ACCOUNTS)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .view(method_names::GET_TEE_ACCOUNTS)
         .await?
         .json::<Vec<NodeId>>()?
         .into_iter()
         .collect())
+}
+
+pub async fn available_attestation_grants(
+    contract: &Contract,
+    account_id: &AccountId,
+) -> anyhow::Result<u32> {
+    Ok(contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": account_id }))
+        .await?
+        .json()?)
 }
 
 pub async fn prepay_attestation_grants(
@@ -70,11 +73,7 @@ pub async fn prepay_attestation_grants(
     grants: u32,
 ) -> anyhow::Result<ExecutionFinalResult> {
     // The fee is read from `config()`, the way an operator reads it.
-    let config: Config = contract
-        .view(method_names::CONFIG)
-        .args_json(serde_json::json!({}))
-        .await?
-        .json()?;
+    let config = get_config(contract).await?;
     let total = NearToken::from_millinear(
         u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
     );
@@ -108,33 +107,14 @@ pub async fn submit_participant_info(
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
     // TODO(#3906): check if inlining is nicer once we ported the entire contract interface.
-    let contract_handle = MpcContractHandle::new(SandboxCaller(account), contract.id().clone());
+    let contract_handle = account.call_mpc(contract.id());
     contract_handle
         .submit_participant_info(attestation.clone(), tls_key.clone())
         .await
         .map_err(Into::into)
 }
 
-pub async fn vote_tee_verifier_change(
-    account: &Account,
-    contract: &Contract,
-    candidate_account_id: &AccountId,
-    expected_code_hash: [u8; 32],
-) -> anyhow::Result<()> {
-    let expected_code_hash = TeeVerifierCodeHash::new(expected_code_hash);
-    all_receipts_successful(
-        account
-            .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
-            .args_json(serde_json::json!({
-                "candidate_account_id": candidate_account_id,
-                "expected_code_hash": expected_code_hash,
-            }))
-            .transact()
-            .await?,
-    )
-}
-
-pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
+pub async fn tee_verifier_account_id(contract: &Contract) -> AccountId {
     contract
         .view(method_names::TEE_VERIFIER_ACCOUNT_ID)
         .await
@@ -146,18 +126,14 @@ pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<Attestation>> {
-    let result = contract
-        .as_account()
-        .call(contract.id(), method_names::GET_ATTESTATION)
+) -> anyhow::Result<Option<VerifiedAttestation>> {
+    Ok(contract
+        .view(method_names::GET_ATTESTATION)
         .args_json(serde_json::json!({
             "tls_public_key": tls_key
         }))
-        .max_gas()
-        .transact()
-        .await?;
-
-    Ok(result.json()?)
+        .await?
+        .json()?)
 }
 
 pub async fn assert_running_return_participants(
@@ -191,9 +167,8 @@ pub async fn vote_for_hash(
     image_hash: &NodeImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
-        .args_json(serde_json::json!({"code_hash": image_hash}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_mpc_node_manifest_digest(*image_hash)
         .await?;
     all_receipts_successful(result)?;
     Ok(())
@@ -211,4 +186,23 @@ pub async fn vote_add_launcher_hash(
         .await?;
     all_receipts_successful(result)?;
     Ok(())
+}
+
+pub async fn vote_tee_verifier_change(
+    accounts: &[Account],
+    contract: &Contract,
+    verifier: &AccountId,
+) -> anyhow::Result<()> {
+    // Arbitrary: the hash only buckets votes (voters must commit to the same
+    // value), the contract never compares it to the deployed verifier code.
+    let expected_code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let verifier = verifier.clone();
+        async move {
+            handle
+                .vote_tee_verifier_change(verifier, expected_code_hash)
+                .await
+        }
+    })
+    .await
 }

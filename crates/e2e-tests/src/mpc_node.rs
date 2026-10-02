@@ -116,8 +116,9 @@ impl MpcNode {
     }
 
     /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
-    /// the named metric, parsed as `i64`. Returns `None` if the metric is not
-    /// found or the node is unreachable.
+    /// the named metric, parsed as `i64`. A labelled metric has one line per
+    /// series; their values are summed, so callers get the per-node total.
+    /// Returns `None` if the metric is not found or the node is unreachable.
     pub async fn get_metric(&self, name: &str) -> anyhow::Result<Option<i64>> {
         let url = format!("http://{}/metrics", self.web_address());
         let body = match reqwest::get(&url).await {
@@ -125,6 +126,7 @@ impl MpcNode {
             Err(_) => return Ok(None),
         };
 
+        let mut total: Option<i64> = None;
         for line in body.lines() {
             if line.starts_with('#') {
                 continue;
@@ -134,11 +136,11 @@ impl MpcNode {
             if metric_key == name {
                 let value_str = line.rsplit_once(' ').map(|(_, v)| v).unwrap_or("0");
                 if let Ok(v) = value_str.parse::<f64>() {
-                    return Ok(Some(v as i64));
+                    total = Some(total.unwrap_or(0) + v as i64);
                 }
             }
         }
-        Ok(None)
+        Ok(total)
     }
 
     /// Writes a flag file that controls block ingestion. Requires the
@@ -150,6 +152,7 @@ impl MpcNode {
     }
 }
 
+pub const STDOUT_LOG: &str = "stdout.log";
 pub const STDERR_LOG: &str = "stderr.log";
 
 /// Guard that kills the child process on drop.
@@ -200,6 +203,8 @@ pub struct MpcNodeSetup {
     // Foreign chains configuration
     foreign_chains_config: mpc_node_config::ForeignChainsConfig,
 
+    tls_trust_roots: Option<PathBuf>,
+
     // Config file path (written on creation)
     config_path: PathBuf,
 }
@@ -240,6 +245,7 @@ impl MpcNodeSetup {
             triples_to_buffer: args.triples_to_buffer,
             presignatures_to_buffer: args.presignatures_to_buffer,
             foreign_chains_config: args.foreign_chains_config,
+            tls_trust_roots: args.tls_trust_roots,
             config_path,
         };
 
@@ -283,11 +289,8 @@ impl MpcNodeSetup {
         &self.near_signer_key
     }
 
-    /// The NEAR signer public key formatted as `"ed25519:<base58>"`.
-    pub fn near_signer_public_key_str(&self) -> String {
-        String::from(&Ed25519PublicKey::from(
-            &self.near_signer_key.verifying_key(),
-        ))
+    pub fn near_signer_public_key(&self) -> Ed25519PublicKey {
+        Ed25519PublicKey::from(&self.near_signer_key.verifying_key())
     }
 
     /// Path to the mpc-node binary.
@@ -365,12 +368,13 @@ impl MpcNodeSetup {
             "starting mpc-node"
         );
 
-        let stdout_file = std::fs::File::create(self.home_dir.join("stdout.log"))
+        let stdout_file = std::fs::File::create(self.home_dir.join(STDOUT_LOG))
             .context("failed to create stdout log")?;
-        let stderr_file = std::fs::File::create(self.home_dir.join("stderr.log"))
+        let stderr_file = std::fs::File::create(self.home_dir.join(STDERR_LOG))
             .context("failed to create stderr log")?;
 
-        let child = Command::new(&self.binary_path)
+        let mut command = Command::new(&self.binary_path);
+        command
             .arg("start-with-config-file")
             .arg(&self.config_path)
             .env(
@@ -380,7 +384,11 @@ impl MpcNodeSetup {
             .env(
                 "RUST_BACKTRACE",
                 std::env::var("MPC_NODE_BACKTRACE").unwrap_or_else(|_| "1".to_string()),
-            )
+            );
+        if let Some(tls_trust_roots) = &self.tls_trust_roots {
+            command.env("SSL_CERT_FILE", tls_trust_roots);
+        }
+        let child = command
             .stdout(Stdio::from(stdout_file))
             .stderr(Stdio::from(stderr_file))
             .spawn()
@@ -484,7 +492,10 @@ impl MpcNodeSetup {
                     desired_presignatures_to_buffer: self.presignatures_to_buffer,
                     timeout_sec: 60,
                 },
-                signature: SignatureConfig { timeout_sec: 60 },
+                signature: SignatureConfig {
+                    timeout_sec: 60,
+                    online_presign: true,
+                },
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),
@@ -522,6 +533,8 @@ pub struct MpcNodeSetupArgs {
     pub near_boot_nodes: String,
     /// Foreign chains configuration for this node.
     pub foreign_chains_config: mpc_node_config::ForeignChainsConfig,
+    /// PEM file the node trusts for outbound TLS, passed as `SSL_CERT_FILE`.
+    pub tls_trust_roots: Option<PathBuf>,
 }
 
 /// Ports allocated for a single MPC node.

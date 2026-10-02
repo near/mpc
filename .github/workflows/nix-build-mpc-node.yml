@@ -14,27 +14,51 @@ on:
 jobs:
   nix-build-mpc-node:
     name: "Nix build mpc-node"
-    runs-on: warp-ubuntu-2404-x64-32x
+    runs-on: warp-ubuntu-2604-x64-32x
     timeout-minutes: 60
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          extra-conf: sandbox-fallback = false
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
 
-      - name: Build mpc-node
-        run: nix build --print-build-logs .#mpc-node
-
-      - name: Print mpc-node binary hash
+      # nix.conf only warns on an unknown setting, so assert the values Nix applied
+      - name: Check the Nix sandbox is enforced
         run: |
-          echo "Store path: $(readlink -f result)"
-          sha256sum result/bin/mpc-node
+          nix config show sandbox | grep -x true
+          nix config show sandbox-fallback | grep -x false
+
+      - name: Build mpc-node image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node .#mpc-node-image
+
+      - name: Build mpc-node-gcp image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node-gcp .#mpc-node-gcp-image
+
+      - name: Build mpc-launcher image
+        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-launcher .#mpc-launcher-image
+
+      - name: Print image digests
+        run: sha256sum result-*/manifest.json
+
+      - name: Check the images start
+        run: |
+          skopeo copy dir:result-mpc-node docker-daemon:mpc-node:latest
+          skopeo copy dir:result-mpc-node-gcp docker-daemon:mpc-node-gcp:latest
+          skopeo copy dir:result-mpc-launcher docker-daemon:mpc-rust-launcher:latest
+          docker run --rm mpc-node /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
+          docker run --rm mpc-node-gcp /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
+          docker run --rm mpc-node-gcp gcloud --version
+          ./scripts/check-mpc-node-docker-starts.sh
+          NODE_IMAGE_NAME=mpc-node-gcp ./scripts/check-mpc-node-docker-starts.sh
+          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher

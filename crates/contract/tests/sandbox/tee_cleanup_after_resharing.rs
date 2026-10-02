@@ -63,7 +63,6 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     assert_eq!(nodes_with_tees, expected_node_ids);
 
     // Add two prospective Participants
-    // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids =
         build_sandbox_node_ids(&non_participants, &env_non_participant_accounts);
@@ -112,7 +111,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
+                    url: participant_info.url.clone().try_into().unwrap(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
@@ -223,7 +222,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
+                    url: participant_info.url.clone().try_into().unwrap(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),

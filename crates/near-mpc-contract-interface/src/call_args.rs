@@ -1,12 +1,22 @@
 //! Argument types for the NEAR MPC signer contract function calls.
 
 use crate::types::{
-    Attestation, CKDRequest, CKDRequestArgs, CKDResponse, Ed25519PublicKey, KeyEventId, Keyset,
-    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
+    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
+    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
+    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
+    SignatureResponse, TeeVerifierCodeHash, UpdateHash, UpdateId, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct InitArgs {
+    pub parameters: GovernanceThresholdParameters,
+    pub tee_verifier_account_id: AccountId,
+    pub init_config: Option<InitConfig>,
+}
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct SignArgs {
@@ -21,6 +31,48 @@ pub struct RequestAppPrivateKeyArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VerifyForeignTransactionArgs {
     pub request: VerifyForeignTransactionRequestArgs,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddDomainsArgs {
+    pub domains: Vec<DomainConfig>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteNewParametersArgs {
+    pub prospective_epoch_id: EpochId,
+    pub proposal: ProposedGovernanceThresholdParameters,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteCancelKeygenArgs {
+    pub next_domain_id: u64,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteMpcNodeManifestDigestArgs {
+    pub mpc_node_manifest_digest: NodeImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteTeeVerifierChangeArgs {
+    pub candidate_account_id: AccountId,
+    pub expected_code_hash: TeeVerifierCodeHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct UpdateParticipantUrlArgs {
+    pub url: String,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RegisterBackupServiceArgs {
+    pub backup_service_info: BackupServiceInfo,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct StartNodeMigrationArgs {
+    pub destination_node_info: DestinationNodeInfo,
 }
 
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
@@ -72,29 +124,31 @@ pub struct VoteResharedArgs {
     pub key_event_id: KeyEventId,
 }
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteUpdateArgs {
-    pub id: u64,
+    pub id: UpdateId,
 }
 
-#[derive(Serialize, Debug)]
-pub struct RegisterForeignChainConfigArgs {
-    #[expect(deprecated)]
-    pub foreign_chain_configuration: crate::types::ForeignChainConfiguration,
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteContractUpdateArgs {
+    pub update_hash: UpdateHash,
 }
 
-impl RegisterForeignChainConfigArgs {
-    #[expect(deprecated)]
-    pub fn new(foreign_chain_configuration: crate::types::ForeignChainConfiguration) -> Self {
-        Self {
-            foreign_chain_configuration,
-        }
-    }
+// TODO(#4513): drop once production runs the vote-then-submit API.
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RemoveUpdateProposalArgs {
+    pub id: UpdateId,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct RegisterForeignChainsConfigArgs {
     pub foreign_chains_config: crate::types::ForeignChainsConfig,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteUpdateForeignChainProvidersArgs {
+    pub votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

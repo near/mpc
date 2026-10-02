@@ -15,12 +15,13 @@ fn no_extractor_added() {
         .with_tx_id(tx_id)
         .with_block_confirmations(10)
         .with_domain_id(domain_id)
-        .build();
+        .build()
+        .unwrap();
 
     // then
     let no_extractors = vec![];
 
     assert_matches!(built_sign_request_args.request, ForeignChainRpcRequest::Bitcoin(bitcoin_rpc_request) => {
-        assert_eq!(bitcoin_rpc_request.extractors, no_extractors);
+        assert_eq!(bitcoin_rpc_request.extractors.to_vec(), no_extractors);
     });
 }

@@ -8,6 +8,7 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeSet,
     fs,
     io::Write,
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
@@ -152,6 +153,10 @@ impl ParticipantsConfig {
             return Some(participant_info.id);
         };
         None
+    }
+
+    pub fn participant_id_set(&self) -> BTreeSet<ParticipantId> {
+        self.participants.iter().map(|p| p.id).collect()
     }
 }
 

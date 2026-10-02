@@ -14,7 +14,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-COMPOSE_TEMPLATE="$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
+COMPOSE_TEMPLATE="${COMPOSE_TEMPLATE:-$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template}"
 
 check_ports_in_use() {
     PORT_VARS="

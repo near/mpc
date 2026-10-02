@@ -1,12 +1,15 @@
 # OT-based Threshold ECDSA (`src/ecdsa/ot_based_ecdsa/`)
 
-This module implements the Cait-Sith OT-based threshold ECDSA scheme over Secp256k1. The signing workflow is split into three phases, each of which can involve different participant sets and thresholds.
+This module implements the Cait-Sith OT-based threshold ECDSA scheme over Secp256k1. Signing runs either as three phases, each of which can involve different participant sets and thresholds, or as triple generation followed by a single merged online protocol.
 
 ## Pipeline
 
 ```
 Triple Generation (offline)  -->  Presigning (offline)  -->  Signing (online)
    2 triples per presig              1 presignature              1 signature
+
+Triple Generation (offline)  -->  Presigning and signing (online)
+   2 triples per signature                1 signature
 ```
 
 Each output is consumed **exactly once** (one-time use).
@@ -26,6 +29,10 @@ Two-round presigning protocol. Consumes two Beaver triples to produce a `Presign
 ### `sign.rs`
 
 One-round online signing protocol. Takes a `RerandomizedPresignOutput` (produced by rerandomizing a presignature with HKDF-SHA3-256) and the message hash, then produces the final ECDSA `Signature`. The coordinator aggregates partial signatures and returns the result. See the [signing specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
+
+### `presign_and_sign.rs`
+
+Merged online protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally rather than through rerandomization, so a triple pair must never be fed to it twice. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
 
 ## Types
 

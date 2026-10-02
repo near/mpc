@@ -53,7 +53,7 @@ pub fn parse_hash<const N: usize>(s: &str) -> Result<[u8; N], HashParseError> {
 /// [`BorshSchema`](borsh::BorshSchema) / [`JsonSchema`](schemars::JsonSchema).
 #[macro_export]
 macro_rules! define_hash {
-    ($(#[$meta:meta])* $name:ident, $n:literal) => {
+    ($(#[$meta:meta])* $name:ident, $n:expr) => {
         $(#[$meta])*
         #[derive(
             Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
@@ -84,7 +84,7 @@ macro_rules! define_hash {
 
         impl<'de> $crate::_macro_deps::serde::Deserialize<'de> for $name {
             fn deserialize<D: $crate::_macro_deps::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                $crate::hash::deserialize_hash::<$n, D>(deserializer).map(Self::new)
+                $crate::hash::deserialize_hash::<{ $n }, D>(deserializer).map(Self::new)
             }
         }
 
@@ -158,7 +158,7 @@ macro_rules! define_hash {
             type Err = $crate::hash::HashParseError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                $crate::hash::parse_hash::<$n>(s).map(Self::new)
+                $crate::hash::parse_hash::<{ $n }>(s).map(Self::new)
             }
         }
 
@@ -209,9 +209,42 @@ define_hash!(
 );
 
 define_hash!(
-    /// A SHA-384 digest used for TDX measurements (MRTD, RTMRs, event digests).
-    Sha384Digest,
+    /// SHA-384 digest of the MRTD (Measurement Register for the Trust Domain), the
+    /// build-time measurement of the TD image.
+    MrtdHash,
     48
+);
+
+define_hash!(
+    /// SHA-384 digest of the RTMR0 TDX measurement.
+    Rtmr0Hash,
+    48
+);
+
+define_hash!(
+    /// SHA-384 digest of the RTMR1 TDX measurement.
+    Rtmr1Hash,
+    48
+);
+
+define_hash!(
+    /// SHA-384 digest of the RTMR2 TDX measurement.
+    Rtmr2Hash,
+    48
+);
+
+define_hash!(
+    /// SHA-384 digest of the key provider event.
+    KeyProviderEventDigest,
+    48
+);
+
+pub const PROPOSAL_HASH_BYTES: usize = 32;
+
+define_hash!(
+    /// SHA-256 digest identifying a governance proposal by its encoded content.
+    ProposalHash,
+    PROPOSAL_HASH_BYTES
 );
 
 #[cfg(test)]

@@ -1,13 +1,49 @@
 use std::path::PathBuf;
 
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 use mpc_primitives::hash::NodeImageHash;
+
+use crate::tcb_status::EvaluationDataSet;
 
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
 #[command(about = "Standalone verification tool for MPC node TEE attestations")]
-#[command(group(ArgGroup::new("source").required(true)))]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand)]
+pub enum Command {
+    /// Verify a node's attestation the way the MPC contract does.
+    Verify(VerifyArgs),
+
+    /// Report where a node's platform stands against Intel's TCB requirements.
+    TcbStatus(TcbStatusArgs),
+}
+
+#[derive(Args)]
+pub struct TcbStatusArgs {
+    #[command(flatten)]
+    pub source: Source,
+
+    /// Evaluate only this Intel TCB evaluation data set. Left out, every set is
+    /// evaluated.
+    #[arg(long = "evaluation-data-set", value_name = "SET")]
+    pub evaluation_data_set: Option<EvaluationDataSet>,
+
+    /// Evaluate collateral validity as of this UNIX timestamp instead of now.
+    /// Intel serves only current collateral, so this makes the served row
+    /// readable for a saved quote whose snapshot has expired; the Intel rows and
+    /// the exit code stay present-day verdicts and are not meaningful with it set.
+    #[arg(long = "as-of")]
+    pub as_of: Option<u64>,
+}
+
+/// Where to read the node's `/public_data` payload from.
+#[derive(Args)]
+#[command(group(ArgGroup::new("source").required(true)))]
+pub struct Source {
     /// Fetch attestation data from a node's /public_data HTTP endpoint
     #[arg(long, group = "source")]
     pub url: Option<url::Url>,
@@ -15,6 +51,12 @@ pub struct Cli {
     /// Read attestation data from a saved JSON file (same format as /public_data response)
     #[arg(long, group = "source")]
     pub file: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub struct VerifyArgs {
+    #[command(flatten)]
+    pub source: Source,
 
     /// Allowed MPC Docker image hash (hex-encoded SHA256, repeatable)
     #[arg(long = "allowed-image-hash", required = true)]

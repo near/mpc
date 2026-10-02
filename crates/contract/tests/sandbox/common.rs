@@ -1,5 +1,5 @@
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
+    consts::{GAS_FOR_INIT, PARTICIPANT_LEN},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{
@@ -8,6 +8,7 @@ use crate::sandbox::utils::{
     },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
+    transactions::{CallMpcContract, execute_async_handle_calls},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -15,24 +16,27 @@ use k256::ecdsa::SigningKey;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::{AttemptId, EpochId},
         participants::{ParticipantInfo, Participants},
-        test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
+        test_utils::{
+            bogus_ed25519_public_key, bogus_tee_verifier_account_id, infer_purpose_from_protocol,
+        },
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
             ProposedGovernanceThresholdParameters,
         },
     },
     tee::tee_state::NodeId,
-    update::UpdateId,
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
-    SuiRpcRequest, SuiTxId, SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue,
-    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
+    SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
+    SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
+    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, Update, UpdateHash, UpdateId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -52,6 +56,7 @@ use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
+use test_utils::sandbox::SandboxWorker;
 use tokio_util::time::FutureExt as _;
 
 use super::utils::contract_build;
@@ -66,7 +71,7 @@ pub async fn create_account_given_id(
 
 pub fn gen_participant_info() -> ParticipantInfo {
     ParticipantInfo {
-        url: "127.0.0.1".into(),
+        url: "127.0.0.1".try_into().unwrap(),
         tls_public_key: bogus_ed25519_public_key(),
     }
 }
@@ -106,14 +111,12 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
     (accounts, candidates)
 }
 
-pub async fn init() -> (Worker<Sandbox>, Contract) {
+pub async fn init() -> (SandboxWorker, Contract) {
     init_with_wasm(current_contract()).await
 }
 
-pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+pub async fn init_with_wasm(wasm: &[u8]) -> (SandboxWorker, Contract) {
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
@@ -131,13 +134,9 @@ pub async fn init_contract(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call(method_names::INIT)
-        .args_json(json!({
-            "parameters": params,
-            "init_config": init_config,
-        }))
-        .gas(GAS_FOR_INIT)
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(params.into(), bogus_tee_verifier_account_id(), init_config)
         .await
         .unwrap();
     assert!(result.is_success(), "init failed: {:?}", result);
@@ -149,7 +148,7 @@ pub async fn init_contract_running(
     contract: &Contract,
     domains: Vec<DomainConfig>,
     next_domain_id: u64,
-    keyset: Keyset,
+    keyset: dtos::Keyset,
     params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
@@ -159,7 +158,8 @@ pub async fn init_contract_running(
             "domains": domains,
             "next_domain_id": next_domain_id,
             "keyset": keyset,
-            "parameters": params,
+            "parameters": dtos::GovernanceThresholdParameters::from(params),
+            "tee_verifier_account_id": bogus_tee_verifier_account_id(),
             "init_config": init_config,
         }))
         .gas(GAS_FOR_INIT)
@@ -171,7 +171,7 @@ pub async fn init_contract_running(
 }
 
 pub struct SandboxTestSetup {
-    pub worker: Worker<Sandbox>,
+    pub worker: SandboxWorker,
     pub contract: Contract,
     pub mpc_signer_accounts: Vec<Account>,
     pub keys: Vec<DomainKey>,
@@ -184,7 +184,7 @@ impl SandboxTestSetup {
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
-            with_sandbox_test_methods: false,
+            contract_wasm: current_contract,
         }
     }
 
@@ -202,7 +202,7 @@ pub struct SandboxTestSetupBuilder {
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
-    with_sandbox_test_methods: bool,
+    contract_wasm: fn() -> &'static [u8],
 }
 
 impl SandboxTestSetupBuilder {
@@ -230,16 +230,18 @@ impl SandboxTestSetupBuilder {
     /// introspection view methods in [`crate::sandbox_test_methods`] (e.g. fan-out queue
     /// length).
     pub fn with_sandbox_test_methods(mut self) -> Self {
-        self.with_sandbox_test_methods = true;
+        self.contract_wasm = contract_build::current_contract_with_sandbox_test_methods;
+        self
+    }
+
+    /// Deploys [`contract_build::current_contract_with_pinned_clock`].
+    pub fn with_pinned_clock(mut self) -> Self {
+        self.contract_wasm = contract_build::current_contract_with_pinned_clock;
         self
     }
 
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = if self.with_sandbox_test_methods {
-            init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
-        } else {
-            init().await
-        };
+        let (worker, contract) = init_with_wasm((self.contract_wasm)()).await;
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 
@@ -248,7 +250,7 @@ impl SandboxTestSetupBuilder {
         let mut key_for_domains = Vec::new();
 
         // Match the per-domain reconstruction threshold to the cluster
-        // threshold by default. DamgardEtAl additionally requires
+        // threshold by default. RobustEcdsa additionally requires
         // `2t - 1 <= n`, so cap t at `n.div_ceil(2)`.
         let n = self.number_of_participants as u64;
         let cluster_threshold = threshold_parameters.threshold().value();
@@ -260,12 +262,12 @@ impl SandboxTestSetupBuilder {
             let domain_id = DomainId(domain_configs.len() as u64);
 
             let reconstruction_threshold = match *protocol {
-                Protocol::DamgardEtAl => {
+                Protocol::RobustEcdsa => {
                     ReconstructionThreshold::new(cluster_threshold.min(n.div_ceil(2)))
                 }
                 _ => ReconstructionThreshold::new(cluster_threshold),
             };
-            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let key: PublicKeyExtended = pk.clone().try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
                 protocol: *protocol,
@@ -275,13 +277,13 @@ impl SandboxTestSetupBuilder {
             keys.push(DomainKey {
                 domain_config: config.clone(),
                 domain_secret_key: sk,
-                domain_public_key: key.clone(),
+                domain_public_key: key,
             });
             domain_configs.push(config);
-            key_for_domains.push(KeyForDomain {
+            key_for_domains.push(dtos::KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
-                key,
+                key: pk.into(),
             });
         }
 
@@ -290,7 +292,7 @@ impl SandboxTestSetupBuilder {
             let (pk, sk) = make_key_for_domain(Curve::Secp256k1);
             let domain_id = DomainId(domain_configs.len() as u64);
 
-            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let key: PublicKeyExtended = pk.clone().try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
                 protocol: Protocol::CaitSith,
@@ -300,19 +302,19 @@ impl SandboxTestSetupBuilder {
             keys.push(DomainKey {
                 domain_config: config.clone(),
                 domain_secret_key: sk,
-                domain_public_key: key.clone(),
+                domain_public_key: key,
             });
             domain_configs.push(config);
-            key_for_domains.push(KeyForDomain {
+            key_for_domains.push(dtos::KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
-                key,
+                key: pk.into(),
             });
         }
 
         if !domain_configs.is_empty() {
             let next_domain_id = domain_configs.len() as u64;
-            let keyset = Keyset::new(EpochId::new(5), key_for_domains);
+            let keyset = dtos::Keyset::new(EpochId::new(5), key_for_domains);
             init_contract_running(
                 &contract,
                 domain_configs,
@@ -337,6 +339,7 @@ impl SandboxTestSetupBuilder {
     }
 }
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
 /// Upgrades the given contract to the [`current_contract`] binary.
 ///
 /// This function:
@@ -348,20 +351,20 @@ impl SandboxTestSetupBuilder {
 /// - The proposal transaction fails,
 /// - The state call is not deserializable,
 /// - Or the post-upgrade code does not match the expected binary.
+///
+/// Only contracts running the production binary take this flow.
+#[expect(deprecated)]
 pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
     contract: &Contract,
     new_contract_binary: &[u8],
 ) {
     let propose_update_execution = accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
             code: Some(new_contract_binary.to_vec()),
             config: None,
         })
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
         .await
         .expect("propose update call succeeds");
 
@@ -383,7 +386,7 @@ pub async fn propose_and_vote_contract_binary(
         .json()
         .expect("state is deserializable.");
 
-    vote_update_till_completion(contract, accounts, &proposal_id).await;
+    vote_update_till_completion(contract, accounts, proposal_id).await;
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
@@ -393,19 +396,17 @@ pub async fn propose_and_vote_contract_binary(
     );
 }
 
+// TODO(#4513): drop once production runs the vote-then-submit API.
+#[expect(deprecated)]
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
-    proposal_id: &UpdateId,
+    proposal_id: UpdateId,
 ) {
     for voter in accounts {
         let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": proposal_id,
-            }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
+            .call_mpc(contract.id())
+            .vote_update(proposal_id)
             .await
             .unwrap();
 
@@ -418,6 +419,60 @@ pub async fn vote_update_till_completion(
         }
     }
     panic!("Update didn't occurred")
+}
+
+pub async fn vote_and_submit_contract_binary(
+    accounts: &[Account],
+    contract: &Contract,
+    new_contract_binary: &[u8],
+) {
+    let update = Update::Code(new_contract_binary.to_vec());
+    approve_contract_update(contract, accounts, near_mpc_sdk::update::hash(&update)).await;
+
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await
+        .expect("submit update call succeeds");
+    assert!(
+        execution.failures().is_empty(),
+        "submit update failed: {execution:#?}"
+    );
+
+    let contract_binary_post_upgrade = contract.view_code().await.unwrap();
+    assert_eq!(
+        hash(new_contract_binary),
+        hash(&contract_binary_post_upgrade),
+        "Code hash post upgrade is not matching the submitted binary."
+    );
+}
+
+pub async fn approve_contract_update(
+    contract: &Contract,
+    accounts: &[Account],
+    update_hash: UpdateHash,
+) {
+    let threshold = assert_running_return_threshold(contract).await.0 as usize;
+    let mut transactions = Vec::with_capacity(threshold);
+    for voter in &accounts[..threshold] {
+        let transaction = voter
+            .call_mpc_async(contract.id())
+            .vote_contract_update(update_hash.clone())
+            .await
+            .expect("vote transaction is sent");
+        transactions.push(transaction);
+    }
+    let mut approvals = Vec::with_capacity(threshold);
+    for transaction in transactions {
+        let execution = transaction.await.expect("vote transaction completes");
+        let approved: bool = execution.json().expect("vote returns the approval flag");
+        approvals.push(approved);
+    }
+    assert_eq!(
+        approvals.iter().filter(|approved| **approved).count(),
+        1,
+        "exactly the threshold vote approves the update: {approvals:?}"
+    );
 }
 
 /// Returns the [`dtos::Ed25519PublicKey`] corresponding to the [`Account`]'s
@@ -623,18 +678,11 @@ pub async fn execute_key_generation_and_add_random_state(
     let dummy_threshold_parameters =
         GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(threshold.0 + 1))
             .unwrap();
-    let dummy_proposal = json!({
-        "prospective_epoch_id": 1,
-        "proposal": ProposedGovernanceThresholdParameters::new(
-            dummy_threshold_parameters,
-            BTreeMap::new(),
-        ),
-    });
+    let dummy_proposal =
+        ProposedGovernanceThresholdParameters::new(dummy_threshold_parameters, BTreeMap::new());
     accounts[0]
-        .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
-        .args_json(dummy_proposal)
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .vote_new_parameters(dtos::EpochId::new(1), dummy_proposal.into())
         .await
         .unwrap()
         .unwrap();
@@ -679,27 +727,37 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// registers a foreign chain configuration so the foreign chains are supported
-pub async fn register_foreign_chain_configuration(
-    chain: near_mpc_contract_interface::types::ForeignChain,
+/// Whitelists `chain` and registers it as covered by every node, making it available.
+pub async fn make_foreign_chain_available(
+    chain: dtos::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
-    for account in accounts {
-        let result = account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_SUPPORT)
-            .args_json(json!({ "foreign_chain_support": node_foreign_chain_support }))
-            .transact()
-            .await
-            .unwrap()
-            .into_result();
-        assert!(
-            result.is_ok(),
-            "{} should succeed",
-            method_names::REGISTER_FOREIGN_CHAIN_SUPPORT
-        );
-    }
+    let batch = NonEmptyBTreeMap::new(chain, test_utils::contract_types::dummy_chain_entry());
+    let threshold = assert_running_return_threshold(contract).await.0 as usize;
+    assert!(
+        accounts.len() >= threshold,
+        "need at least {threshold} accounts to whitelist a chain, got {}",
+        accounts.len()
+    );
+    execute_async_handle_calls(&accounts[..threshold], contract, |handle| {
+        let batch = batch.clone();
+        async move { handle.vote_update_foreign_chain_providers(batch).await }
+    })
+    .await
+    .expect("whitelist vote should succeed");
+
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let foreign_chains_config: dtos::ForeignChainsConfig = BTreeSet::from([chain]).into();
+        let foreign_chains_config = foreign_chains_config.clone();
+        async move {
+            handle
+                .register_foreign_chains_config(foreign_chains_config)
+                .await
+        }
+    })
+    .await
+    .expect("foreign chains config registration should succeed");
 }
 
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).
@@ -789,7 +847,7 @@ pub async fn generate_participant_and_submit_attestation(
 pub fn ethereum_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
+        extractors: [EvmExtractor::BlockHash].into(),
         finality: EvmFinality::Finalized,
     })
 }
@@ -797,7 +855,7 @@ pub fn ethereum_evm_request() -> ForeignChainRpcRequest {
 pub fn abstract_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Abstract(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
+        extractors: [EvmExtractor::BlockHash].into(),
         finality: EvmFinality::Finalized,
     })
 }
@@ -806,7 +864,7 @@ pub fn bitcoin_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
         tx_id: BitcoinTxId([0xdd; 32]),
         confirmations: BlockConfirmations(6),
-        extractors: vec![BitcoinExtractor::BlockHash],
+        extractors: [BitcoinExtractor::BlockHash].into(),
     })
 }
 
@@ -814,7 +872,7 @@ pub fn starknet_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
         tx_id: StarknetTxId(StarknetFelt([0xee; 32])),
         finality: StarknetFinality::AcceptedOnL1,
-        extractors: vec![StarknetExtractor::BlockHash],
+        extractors: [StarknetExtractor::BlockHash].into(),
     })
 }
 
@@ -875,7 +933,7 @@ pub fn sui_extracted_values() -> Vec<ExtractedValue> {
 pub fn bnb_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Bnb(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
+        extractors: [EvmExtractor::BlockHash].into(),
         finality: EvmFinality::Finalized,
     })
 }
@@ -883,7 +941,7 @@ pub fn bnb_evm_request() -> ForeignChainRpcRequest {
 pub fn base_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Base(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
+        extractors: [EvmExtractor::BlockHash].into(),
         finality: EvmFinality::Finalized,
     })
 }
@@ -891,7 +949,7 @@ pub fn base_evm_request() -> ForeignChainRpcRequest {
 pub fn arbitrum_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
+        extractors: [EvmExtractor::BlockHash].into(),
         finality: EvmFinality::Finalized,
     })
 }
@@ -899,7 +957,7 @@ pub fn arbitrum_evm_request() -> ForeignChainRpcRequest {
 pub fn hyper_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::HyperEvm(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
+        extractors: [EvmExtractor::BlockHash].into(),
         finality: EvmFinality::Finalized,
     })
 }
@@ -907,7 +965,23 @@ pub fn hyper_evm_request() -> ForeignChainRpcRequest {
 pub fn polygon_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Polygon(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
+        extractors: [EvmExtractor::BlockHash].into(),
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn avalanche_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: [EvmExtractor::BlockHash].into(),
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn adi_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Adi(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: [EvmExtractor::BlockHash].into(),
         finality: EvmFinality::Finalized,
     })
 }
@@ -915,7 +989,7 @@ pub fn polygon_evm_request() -> ForeignChainRpcRequest {
 pub fn ton_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Ton(TonRpcRequest {
         tx_id: TonTxId([0xbb; 32]),
-        extractors: vec![TonExtractor::Log { message_index: 0 }],
+        extractors: [TonExtractor::Log { message_index: 0 }].into(),
         finality: TonFinality::MasterchainIncluded,
         account: TonAddress {
             workchain: 0,
@@ -928,7 +1002,7 @@ pub fn aptos_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Aptos(AptosRpcRequest {
         tx_id: AptosTxId([0xbb; 32]),
         finality: AptosFinality::Committed,
-        extractors: vec![AptosExtractor::Event { event_index: 0 }],
+        extractors: [AptosExtractor::Event { event_index: 0 }].into(),
     })
 }
 
@@ -936,6 +1010,36 @@ pub fn sui_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Sui(SuiRpcRequest {
         tx_id: SuiTxId([0xbb; 32]),
         finality: SuiFinality::Checkpointed,
-        extractors: vec![SuiExtractor::Event { event_index: 0 }],
+        extractors: [SuiExtractor::Event { event_index: 0 }].into(),
     })
+}
+
+pub fn solana_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Solana(svm_rpc_request())
+}
+
+pub fn fogo_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Fogo(svm_rpc_request())
+}
+
+fn svm_rpc_request() -> SvmRpcRequest {
+    SvmRpcRequest {
+        tx_id: SvmTxId([0xbb; 64]),
+        finality: SvmFinality::Finalized,
+        extractors: [SvmExtractor::InnerInstruction {
+            instruction_index: 0,
+            inner_instruction_index: 0,
+        }]
+        .into(),
+    }
+}
+
+pub fn svm_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::SvmExtractedValue(
+        SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
+            program_id: SvmAddress([1; 32]),
+            accounts: vec![SvmAddress([2; 32]), SvmAddress([3; 32])],
+            data: vec![0xde, 0xad, 0xbe, 0xef],
+        }),
+    )]
 }

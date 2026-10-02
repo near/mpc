@@ -25,7 +25,7 @@ test-group = 'e2e'
 max-threads = 2
 
 [profile.ci-other]
-default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^registry::integration_tests::/) and package(tee-launcher))'
+default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^registry::integration_tests::/) and package(tee-launcher)) and not (test(fetch_from_intel) and package(attestation-cli))'
 
 [[profile.ci-other.overrides]]
 filter = 'package(chain-gateway) and binary(test)'

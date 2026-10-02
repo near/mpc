@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
@@ -7,20 +9,22 @@ use crate::sandbox::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
-            get_allowed_launcher_image_hashes, get_participants, get_state, get_tee_accounts,
-            vote_add_launcher_hash,
+            get_participants, get_state, get_tee_accounts, tee_verifier_account_id,
+            vote_add_launcher_hash, vote_tee_verifier_change,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
+        transactions::CallMpcContract,
+        views::ViewMpcContract,
     },
 };
 use mpc_contract::primitives::{
-    key_state::{EpochId, Keyset},
+    key_state::EpochId,
     participants::Participants,
+    test_utils::bogus_tee_verifier_account_id,
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -32,7 +36,6 @@ use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
-use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -47,7 +50,9 @@ fn contract_code(network: Network) -> &'static [u8] {
     }
 }
 
-async fn init_old_contract(
+/// The production contract predates the verifier argument and ignores it, so the verifier
+/// stays unset.
+async fn init_old_contract_without_tee_verifier(
     worker: &Worker<Sandbox>,
     contract: &Contract,
     number_of_participants: usize,
@@ -56,17 +61,27 @@ async fn init_old_contract(
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
     let threshold = GovernanceThreshold::new(threshold);
-    let threshold_parameters =
-        GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-
+    let threshold_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
+        GovernanceThresholdParameters::new(participants.clone(), threshold)
+            .unwrap()
+            .into();
     contract
-        .call(method_names::INIT)
-        .args_json(serde_json::json!({
-            "parameters": &threshold_parameters,
-        }))
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(threshold_parameters, bogus_tee_verifier_account_id(), None)
         .await?
         .into_result()?;
+    Ok((accounts, participants))
+}
+
+async fn init_old_contract(
+    worker: &Worker<Sandbox>,
+    contract: &Contract,
+    number_of_participants: usize,
+) -> anyhow::Result<(Vec<Account>, Participants)> {
+    let (accounts, participants) =
+        init_old_contract_without_tee_verifier(worker, contract, number_of_participants).await?;
+    vote_tee_verifier_change(&accounts, contract, &bogus_tee_verifier_account_id()).await?;
     Ok((accounts, participants))
 }
 
@@ -123,7 +138,7 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
 async fn back_compatibility_without_state(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) -> anyhow::Result<()> {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
+    let worker = test_utils::sandbox::start_sandbox().await?;
 
     let contract = deploy_old(&worker, network).await?;
 
@@ -155,6 +170,61 @@ async fn back_compatibility_without_state(
     )
 }
 
+#[rstest]
+#[tokio::test]
+async fn migrate__should_carry_over_the_voted_in_tee_verifier(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) -> anyhow::Result<()> {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await?;
+    let contract = deploy_old(&worker, network).await?;
+    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
+
+    // When
+    let contract = upgrade_to_new(contract).await?;
+    migrate_and_assert_contract_code(&contract).await?;
+
+    // Then
+    assert_eq!(
+        tee_verifier_account_id(&contract).await,
+        bogus_tee_verifier_account_id()
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn migrate__should_fail_when_no_tee_verifier_is_configured(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) -> anyhow::Result<()> {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await?;
+    let contract = deploy_old(&worker, network).await?;
+    init_old_contract_without_tee_verifier(&worker, &contract, PARTICIPANT_LEN).await?;
+
+    // When
+    let contract = upgrade_to_new(contract).await?;
+    let err = contract
+        .call(method_names::MIGRATE)
+        .transact()
+        .await?
+        .into_result()
+        .expect_err("migrate must fail without a configured TEE verifier");
+
+    // Then
+    assert!(
+        err.to_string().contains("No TEE verifier is configured"),
+        "unexpected migrate failure: {err}"
+    );
+    let contract = contract
+        .as_account()
+        .deploy(contract_code(network))
+        .await?
+        .into_result()?;
+    assert!(healthcheck(&contract).await?);
+    Ok(())
+}
+
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
 /// can be upgraded to the [`current_contract`] binary using the proposal-and-vote flow.
 #[rstest]
@@ -162,13 +232,12 @@ async fn back_compatibility_without_state(
 async fn propose_upgrade_from_production_to_current_binary(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
+    let mpc_contract = worker.view_mpc(contract.id());
 
     submit_attestations(&contract, &accounts, &participants).await;
 
@@ -191,15 +260,19 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap();
     }
     assert!(
-        get_allowed_launcher_image_hashes(&contract)
+        mpc_contract
+            .allowed_launcher_image_hashes()
             .await
             .unwrap()
+            .value
             .contains(&launcher_hash),
         "launcher hash should be voted in before the upgrade"
     );
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    // TODO(#4513): switch to `vote_and_submit_contract_binary` once production runs the
+    // vote-then-submit API.
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
@@ -210,9 +283,11 @@ async fn propose_upgrade_from_production_to_current_binary(
     );
 
     assert!(
-        get_allowed_launcher_image_hashes(&contract)
+        mpc_contract
+            .allowed_launcher_image_hashes()
             .await
             .unwrap()
+            .value
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
     );
@@ -236,9 +311,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 async fn upgrade_preserves_state_and_requests(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
@@ -297,7 +370,7 @@ async fn upgrade_preserves_state_and_requests(
 #[tokio::test]
 async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -> anyhow::Result<()>
 {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
+    let worker = test_utils::sandbox::start_sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
@@ -361,9 +434,7 @@ async fn upgrade_allows_new_request_types(
 ) {
     let rng = &mut OsRng;
 
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
@@ -468,16 +539,18 @@ async fn init_running_rejects_external_callers_pre_initialization() {
     let number_of_participants = 2;
     let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
 
-    let threshold_parameters = GovernanceThresholdParameters::new(
-        participants.clone(),
-        GovernanceThreshold::new(number_of_participants as u64),
-    )
-    .unwrap();
+    let threshold_parameters: dtos::GovernanceThresholdParameters =
+        GovernanceThresholdParameters::new(
+            participants.clone(),
+            GovernanceThreshold::new(number_of_participants as u64),
+        )
+        .unwrap()
+        .into();
 
     let init_running_args = serde_json::json!({
             "domains": [],
             "next_domain_id": 0,
-            "keyset": Keyset::new(EpochId::new(2), vec![]),
+            "keyset": dtos::Keyset::new(EpochId::new(2), vec![]),
             "parameters": threshold_parameters,
     });
 
@@ -500,86 +573,4 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         "init_running call was accepted by external caller. expected method to be private. {:?}",
         error_message
     )
-}
-
-/// Verifies that per-node foreign chain configurations registered on the old
-/// contract via the deprecated `register_foreign_chain_config` are migrated to
-/// the new `node_foreign_chain_support` layout: each node's full
-/// [`ForeignChainConfiguration`] (chain → RPC providers) collapses to the set of
-/// supported chains, and per-node entries are preserved (not merged).
-#[rstest]
-#[tokio::test]
-async fn upgrade_preserves_per_node_foreign_chain_support(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
-) -> anyhow::Result<()> {
-    // Three participants, each registering a distinct chain configuration. The
-    // chosen sets are deliberately overlapping but not equal so the test can
-    // detect any per-node merging or loss.
-    let per_node_chains: [&[dtos::ForeignChain]; 3] = [
-        &[dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum],
-        &[dtos::ForeignChain::Bitcoin],
-        &[dtos::ForeignChain::Solana],
-    ];
-
-    // Given: an old contract with participants and per-node foreign chain
-    // configurations registered through the deprecated method.
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
-    let contract = deploy_old(&worker, network).await?;
-    let (accounts, _participants) =
-        init_old_contract(&worker, &contract, per_node_chains.len()).await?;
-
-    for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
-        #[expect(deprecated)]
-        let configuration: dtos::ForeignChainConfiguration = chains
-            .iter()
-            .map(|chain| {
-                (
-                    *chain,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: format!("https://{:?}.{}.example.near", chain, account.id()),
-                    }),
-                )
-            })
-            .collect::<BTreeMap<_, _>>()
-            .into();
-
-        #[expect(deprecated)]
-        account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_CONFIG)
-            .args_json(serde_json::json!({
-                "foreign_chain_configuration": configuration,
-            }))
-            .transact()
-            .await?
-            .into_result()?;
-    }
-
-    // When: we upgrade the contract and run migrate.
-    let contract = upgrade_to_new(contract).await?;
-    migrate_and_assert_contract_code(&contract)
-        .await
-        .expect("❌ migration() failed");
-
-    // Then: each node's supported-chain set matches the chains it originally
-    // registered (RPC providers are dropped by the new layout).
-    let support: dtos::ForeignChainSupportByNode = contract
-        .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-        .await?
-        .json()?;
-
-    for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
-        let actual = support
-            .foreign_chain_support_by_node
-            .get(account.id())
-            .unwrap_or_else(|| panic!("entry for {} preserved post-upgrade", account.id()));
-        let expected: dtos::SupportedForeignChains =
-            chains.iter().copied().collect::<BTreeSet<_>>().into();
-        assert_eq!(
-            *actual,
-            expected,
-            "supported chains for {} should match what was registered pre-upgrade",
-            account.id(),
-        );
-    }
-    Ok(())
 }

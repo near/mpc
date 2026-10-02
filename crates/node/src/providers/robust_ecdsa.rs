@@ -1,15 +1,27 @@
+//! Provider for [`Protocol::RobustEcdsa`]
+//! domains.
+//!
+//! # Do not enable this in production
+//!
+//! The underlying scheme in
+//! [`threshold_signatures::ecdsa::robust_ecdsa`] is an insecure stub that leaks the
+//! signing key, kept so this plumbing stays exercised until a real robust scheme
+//! replaces it. Read that module's docs before enabling a domain for this protocol
+//! anywhere. Everything in this module is scheme-agnostic and is expected to survive
+//! that replacement unchanged.
+
 pub mod presign;
 mod sign;
 
-use near_mpc_contract_interface::types::KeyEventId;
+use crate::network::wire_format::{MpcTaskId, RobustEcdsaTaskId};
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 
+use crate::assets::metrics::{PRESIGNATURE_GAUGES, report_store};
 use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::ecdsa_common;
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
@@ -17,9 +29,8 @@ use crate::tracking;
 use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
-use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::ReconstructionThreshold;
-use mpc_primitives::domain::DomainId;
+use mpc_primitives::domain::{DomainId, Protocol};
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::MaxMalicious;
@@ -60,7 +71,7 @@ impl RobustEcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
 
         Ok(Self {
             config,
@@ -74,29 +85,17 @@ impl RobustEcdsaSignatureProvider {
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
         ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum RobustEcdsaTaskId {
-    KeyGeneration {
-        key_event: KeyEventId,
-    },
-    KeyResharing {
-        key_event: KeyEventId,
-    },
-    Presignature {
-        id: UniqueId,
-        domain_id: DomainId,
-    },
-    Signature {
-        id: SignatureId,
-        presignature_id: UniqueId,
-    },
-}
-
-impl From<RobustEcdsaTaskId> for MpcTaskId {
-    fn from(val: RobustEcdsaTaskId) -> Self {
-        MpcTaskId::RobustEcdsaTaskId(val)
+    /// Reports the owned-asset gauges for every presignature store of this
+    /// provider, labelled by domain. Robust ECDSA uses no triples.
+    pub fn report_asset_metrics(&self) {
+        for (domain_id, keyshare) in &self.keyshares {
+            report_store(
+                &PRESIGNATURE_GAUGES,
+                domain_id,
+                &keyshare.presignature_store,
+            );
+        }
     }
 }
 
@@ -203,7 +202,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
         for Err(join_error) in futures::future::join_all(generate_presignatures).await {
             tracing::error!(
-                "Damgard et al background presignature task ended unexpectedly: {join_error}"
+                "Robust ECDSA background presignature task ended unexpectedly: {join_error}"
             );
         }
 
@@ -212,8 +211,10 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 }
 
 /// Derives `(num_signers, max_malicious)` for robust-ECDSA from the domain's
-/// reconstruction threshold `t`. Returns an error if `t < 2`,
-/// which the contract's threshold validation already rejects.
+/// reconstruction threshold `t`, with `num_signers` taken from
+/// [`Protocol::required_active_signers`] so node and contract agree on it.
+/// Returns an error if `t < 2`, which the contract's threshold validation
+/// already rejects.
 pub(super) fn compute_thresholds(
     reconstruction_threshold: ReconstructionThreshold,
 ) -> anyhow::Result<(usize, MaxMalicious)> {
@@ -225,10 +226,9 @@ pub(super) fn compute_thresholds(
     let max_malicious = t
         .checked_sub(1)
         .ok_or_else(|| anyhow::anyhow!("robust-ECDSA max_malicious underflow for t={t}"))?;
-    let num_signers = t
-        .checked_mul(2)
-        .and_then(|two_t| two_t.checked_sub(1))
-        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA signer count overflow for t={t}"))?;
+    let num_signers: usize = Protocol::RobustEcdsa
+        .required_active_signers(reconstruction_threshold)
+        .try_into()?;
     Ok((num_signers, MaxMalicious::from(max_malicious)))
 }
 

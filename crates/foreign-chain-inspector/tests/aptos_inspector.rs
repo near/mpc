@@ -1,12 +1,13 @@
 #![allow(non_snake_case)]
 
+use foreign_chain_inspector::Verdict;
 use std::time::Duration;
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    ForeignChainInspectionError, ForeignChainInspector,
+    ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     aptos::{
-        AptosExtractedValue, AptosTransactionHash,
+        AptosExtractedValue, AptosTransactionHash, MAINNET_CHAIN_ID,
         inspector::{AptosExtractor, AptosFinality, AptosInspector},
     },
 };
@@ -86,12 +87,12 @@ async fn extract__should_return_normalized_event_via_rest_client() {
     framework_address[31] = 1;
     assert_eq!(
         extracted_values,
-        vec![AptosExtractedValue::Event(AptosEvent {
+        Verdict::Extracted(vec![AptosExtractedValue::Event(AptosEvent {
             account_address: AptosAddress(framework_address),
             sequence_number: 5,
             type_tag: "0xdeadbeef::bridge::InitTransfer".to_string(),
             data: r#"{"a_recipient":"alice.near","z_amount":"100"}"#.to_string(),
-        })],
+        })]),
     );
     mock.assert();
 }
@@ -173,10 +174,7 @@ async fn extract__should_return_transaction_not_found_on_404() {
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionNotFound)
-    );
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
 }
 
 #[rstest]
@@ -210,6 +208,29 @@ async fn extract__should_classify_http_errors_by_status(
 }
 
 #[tokio::test]
+async fn extract__should_reject_a_response_that_does_not_carry_the_resource() {
+    // Given
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path(tx_path());
+        then.status(200)
+            .header("content-type", "text/html")
+            .body("<html><body>Sign in to continue</body></html>");
+    });
+    let inspector = inspector_for(&server);
+
+    // When
+    let response = inspector
+        .extract(tx_id(), AptosFinality::Committed, vec![])
+        .await;
+
+    // Then
+    let error = response.expect_err("extract should fail");
+    assert_matches!(error, ForeignChainInspectionError::MalformedRpcResponse(_));
+    assert!(!error.is_transient());
+}
+
+#[tokio::test]
 async fn extract__should_reject_response_with_mismatched_hash() {
     // Given — the backend echoes a different transaction than queried.
     let server = MockServer::start();
@@ -236,4 +257,30 @@ async fn extract__should_reject_response_with_mismatched_hash() {
         response,
         Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
     );
+}
+
+#[tokio::test]
+async fn network_fingerprint__should_ask_the_rest_root_for_the_ledger_chain_id() {
+    // Given
+    let server = MockServer::start_async().await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/v1");
+            then.status(200).json_body(serde_json::json!({
+                "chain_id": MAINNET_CHAIN_ID,
+                "ledger_version": "2915317",
+            }));
+        })
+        .await;
+    let inspector = inspector_for(&server);
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    mock.assert_async().await;
+    assert_eq!(fingerprint.to_string(), "1");
 }
