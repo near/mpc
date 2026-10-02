@@ -115,8 +115,10 @@ and serves two roles:
 
 Registration reflects each node's *current* config.
 
-Registrations are keyed by the node's TLS public key rather than its NEAR account, so an
-operator running several nodes gets one entry per node.
+Registrations are keyed by the node's TLS public key rather than its NEAR account. The
+contract accepts a registration only from the account's node in the current participant set,
+in the proposed set during a resharing, or from the destination of its ongoing node migration,
+so a migrating operator's new node can register before it becomes active.
 
 ## Guarantees preserved
 
