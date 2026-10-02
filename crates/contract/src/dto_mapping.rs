@@ -617,8 +617,8 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 #[cfg(feature = "test-utils")]
 mod test_conversions {
     use super::{
-        GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, ParticipantInfo,
-        ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
+        GovernanceThresholdParameters, IntoInterfaceType, Keyset, ParticipantInfo,
+        ProposedGovernanceThresholdParameters, ProtocolContractState, TryIntoContractType, dtos,
     };
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {

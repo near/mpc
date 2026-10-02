@@ -656,7 +656,7 @@ mod borsh_impl {
 }
 
 mod serde_impl {
-    use super::{BoundedVec, TryFrom, UpperBoundedVec};
+    use super::{BoundedVec, UpperBoundedVec};
     use serde::{Deserialize, Serialize};
 
     // direct impl to unify serde in one place instead of doing attribute on declaration and deserialize here
