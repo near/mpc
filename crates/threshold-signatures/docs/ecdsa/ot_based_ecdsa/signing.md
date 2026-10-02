@@ -21,6 +21,13 @@ resp. associated to the (master) Beaver triples $(a, b, c)$ and $(k, d, e)$
 
 *Note: neither* $d_i$ *nor* $C$ *are actually used in the algorithm.*
 
+**Requirement:** each triple must be an unmodified output of [triple generation](./triples.md),
+used at most once: in one role of one run of presigning or of
+[presigning and signing](#presigning-and-signing-in-one-protocol), aborted runs included.
+Generation guarantees that triples are independent; the caller must guarantee that they are not
+reused. Otherwise the secret key $x$ can be extracted by solving a system of two linear equations,
+and no party can detect this.
+
 
 **Round 1:**
 
@@ -116,10 +123,9 @@ $h$; there is no entropy input.
 **Key derivation (local):** each $P_i$ sets $\sigma_i \gets \sigma_i + \epsilon \cdot k_i$. This is
 the $\delta = 1$ case of the rerandomization step above. Rerandomization exists to bind a stored
 presignature's $R$ to the message; here $R$ is instead consumed immediately by the run that
-produced it, so that binding is replaced by a caller obligation: a triple pair must never be fed to
-this protocol twice, aborted runs included. $R$ is a deterministic function of $\mathsf{triple}_0$
-and is known to every party after round 1, so two runs over the same pair with different $h$ reveal
-the private key.
+produced it, so that binding is replaced by the triple [requirement](#presigning) of presigning.
+$R$ is a deterministic function of $\mathsf{triple}_0$ and is known to every party after round 1,
+so two runs sharing it with different $h$ reveal the private key.
 
 **Round 3:** as in [Signing](#signing) Round 1, with the coordinator verifying $(R, s)$ against the
 derived key $X + \epsilon \cdot G$.
