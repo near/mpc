@@ -570,10 +570,8 @@ impl TeeState {
         Ok(())
     }
 
-    /// Returns Ok(()) if the caller has at least one participant entry
-    /// whose TLS key matches an attested node belonging to the caller account.
-    ///
-    /// Handles multiple participants per account and supports legacy mock nodes.
+    /// Returns Ok(()) if the caller's participant entry names a TLS key whose stored attestation
+    /// was submitted by the caller under the transaction's signer key.
     pub(crate) fn is_caller_an_attested_participant(
         &self,
         participants: &Participants,

@@ -95,9 +95,8 @@ impl FakeMpcContractState {
         &self.foreign_chains_configs
     }
 
-    /// Resolves the signer against the current phase's participant sets
-    /// (prospective participants included), like the real endpoint, which
-    /// additionally accepts the destination of an ongoing node migration.
+    /// Resolves the signer through the active participant set like the real endpoint,
+    /// which additionally accepts the destination of an ongoing node migration.
     pub fn register_foreign_chains_config(
         &mut self,
         account_id: AccountId,
@@ -115,27 +114,14 @@ impl FakeMpcContractState {
         self.recompute_available_foreign_chains();
     }
 
-    /// TLS key of `account_id` in any participant set of the current phase.
     fn participant_tls_key(&self, account_id: &AccountId) -> Option<dtos::Ed25519PublicKey> {
-        let parameter_sets: Vec<&GovernanceThresholdParameters> = match &self.state {
-            ProtocolContractState::NotInitialized => vec![],
-            ProtocolContractState::Initializing(state) => {
-                vec![state.generating_key.proposed_parameters()]
-            }
-            ProtocolContractState::Running(state) => vec![&state.parameters],
-            ProtocolContractState::Resharing(state) => vec![
-                &state.previous_running_state.parameters,
-                state.resharing_key.proposed_parameters(),
-            ],
-        };
-        parameter_sets.iter().find_map(|parameters| {
-            parameters
-                .participants()
-                .participants()
-                .iter()
-                .find(|(id, _, _)| id == account_id)
-                .map(|(_, _, info)| info.tls_public_key.clone())
-        })
+        if matches!(self.state, ProtocolContractState::NotInitialized) {
+            return None;
+        }
+        self.state
+            .active_participants()
+            .info(account_id)
+            .map(|info| info.tls_public_key.clone())
     }
 
     /// Mirrors the real contract's recomputation: a chain is available once the
