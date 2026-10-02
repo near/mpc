@@ -79,33 +79,35 @@ sequenceDiagram
     participant Verifier as tee-verifier
 
     Node->>Contract: submit_participant_info(attestation)
-    Contract->>Verifier: verify_quote_with_claims(quote, collateral)
-    Verifier-->>Contract: report + earliest_expiration_seconds
+    Contract->>Verifier: verify_quote_with_collateral_dates(quote, collateral)
+    Verifier-->>Contract: report + collateral_dates
     Note over Contract: resolve_verification:<br/>post-DCAP checks
-    Note over Contract: store expiry =<br/>earliest_expiration_seconds
+    Note over Contract: store expiry =<br/>earliest_expiration_date
 ```
 
-`tee-verifier` gains one method, `verify_quote_with_claims`. `verify_quote` is untouched.
+`tee-verifier` gains one method, `verify_quote_with_collateral_dates`. `verify_quote` is untouched.
 
 ```rust
 #[result_serializer(borsh)]
-pub fn verify_quote_with_claims(
+pub fn verify_quote_with_collateral_dates(
     &self,
     #[serializer(borsh)] quote: QuoteBytes,
     #[serializer(borsh)] collateral: Collateral,
-) -> VerificationResultWithClaims;
+) -> VerificationResultWithCollateralDates;
 
-pub enum VerificationResultWithClaims {
+pub enum VerificationResultWithCollateralDates {
     Verified {
         report: VerifiedReport,
-        earliest_expiration_seconds: u64,
+        collateral_dates: CollateralDates,
     },
     Rejected(VerifierError),
 }
 ```
 
-This keeps the verifier 1:1 with `dcap-qvl`. `QuoteClaims` is `dcap-qvl`'s own type, so the new
-method exposes more of the upstream API rather than a shape of our own.
+`CollateralDates` mirrors all six date fields of `QuoteClaims`, not just the one this design reads,
+so the method stays generic: it returns the collateral's whole validity window, as `dcap-qvl`
+computes it. The full `QuoteClaims` was considered and not mirrored, since it would add a Borsh
+mirror for every nested type and couple the wire format to more of upstream than any caller needs.
 
 A second method, rather than a new field on `verify_quote`, is for the upgrade path. The verifier
 account is key-locked, so changing the return type means a new account and a
@@ -200,7 +202,7 @@ to the fixture timestamp.
 
 *Considered: regenerating the fixture. Not a fix — a fresh one would have a 30-day shelf life.*
 
-**6. Gas budget.** See the next section. The config change is a governance vote of its own.
+**6. Gas budget.** See the next section. No config change is needed.
 
 ## Gas
 
@@ -219,8 +221,12 @@ The 300 is the chain's budget, not the verifier's. The submit receipt spends 16.
 roughly 220 as things stand, or roughly 270 if `resolve_verification`'s 60 is trimmed toward its
 4.6. Not 300.
 
-`claims()` parses the two JSON documents again and walks the certificate chains, so its cost has to
-be measured before the split is chosen.
+`claims()` also reads the collateral dates. On `dcap-qvl` 0.6.3 it parsed the collateral a second
+time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against `verify_quote`'s
+173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
+([#4596](https://github.com/near/mpc/pull/4596)) removes the second parse and two duplicated
+signature checks, bringing them to 124.3 and 122.1. Both fit the current 200 TGas budget with room
+to spare, so `verifier_tera_gas` stays as it is.
 
 *Fallback if it does not fit: read `nextUpdate` from the two CRLs and the two JSON documents only.
 That drops the four certificate chains from the minimum, which is safe given their 7–30 year
@@ -229,18 +235,15 @@ lifetimes, but it should be a deliberate choice rather than an accident.*
 ## Rollout
 
 1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
-2. **Measure `claims()`, then vote the gas config.** This document does not propose numbers; they
-   come from the measurement. The vote has to land before step 4 — otherwise the heavier method
-   runs under the old budget and every submission runs out of gas.
-3. **Deploy the new verifier and vote it in**, per
+2. **Deploy the new verifier and vote it in**, per
    [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
    so nothing changes on chain yet. Reversible by voting back.
-4. **Upgrade `mpc-contract`** to call `verify_quote_with_claims`. Certificate-derived expiry takes
+3. **Upgrade `mpc-contract`** to call `verify_quote_with_collateral_dates`. Certificate-derived expiry takes
    effect here, and from this point voting back to the old verifier no longer works.
-5. **Release the node** with the near-expiry refresh rule from item 4.
+4. **Release the node** with the near-expiry refresh rule from item 4.
 
 Both verifiers are already live (`tee-verifier-2026-08-04.near`, `tee-verifier-2026-07-22.testnet`),
-so step 3 is a rotation, not a first deployment.
+so step 2 is a rotation, not a first deployment.
 
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
@@ -251,6 +254,4 @@ needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` descript
 
 ## Open questions
 
-- **How much gas does `claims()` add?** Measure, then choose between re-balancing against
-  `resolve_verification` and the lean fallback.
 - **How early should a node refuse to submit collateral** (item 4)? Needs a number.
