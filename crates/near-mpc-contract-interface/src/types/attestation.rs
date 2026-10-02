@@ -94,6 +94,65 @@ impl VerifiedAttestation {
     }
 }
 
+/// An attestation as the contract stores it.
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StoredAttestation {
+    pub attestation: VerifiedAttestation,
+    /// Block time at which the contract accepted this attestation. Every accepted submission
+    /// restamps it, including a resubmission of an identical attestation, so a submitter can
+    /// tell whether its own submission landed.
+    ///
+    /// `None` for an entry stored before the contract recorded this, which no submission has
+    /// replaced yet.
+    pub attested_at_seconds: Option<u64>,
+}
+
+/// A `get_attestation` response, over the contract versions a node may be talking to. Nodes are
+/// upgraded before the contract, so a node also has to read one that returns the bare
+/// attestation, with no [`StoredAttestation::attested_at_seconds`].
+///
+/// TODO(#4498): collapse into [`StoredAttestation`] once every deployed contract stamps it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetAttestationResponse {
+    Stamped(StoredAttestation),
+    Unstamped(VerifiedAttestation),
+}
+
+impl GetAttestationResponse {
+    pub fn attestation(&self) -> &VerifiedAttestation {
+        match self {
+            GetAttestationResponse::Stamped(stored) => &stored.attestation,
+            GetAttestationResponse::Unstamped(attestation) => attestation,
+        }
+    }
+
+    /// `None` when the contract reports no acceptance time for the entry, and when it reports
+    /// none at all.
+    pub fn attested_at_seconds(&self) -> Option<u64> {
+        match self {
+            GetAttestationResponse::Stamped(stored) => stored.attested_at_seconds,
+            GetAttestationResponse::Unstamped(_) => None,
+        }
+    }
+}
+
 #[derive(
     Clone,
     Debug,
@@ -345,4 +404,94 @@ pub struct EventLog {
     pub event: String,
     /// The payload data associated with the event
     pub event_payload: String,
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    const ATTESTED_AT_SECONDS: u64 = 1_800_000_000;
+
+    fn mock() -> VerifiedAttestation {
+        VerifiedAttestation::Mock(MockAttestation::Valid)
+    }
+
+    /// The variant that ships. Its hash fields serialize as hex strings through a hand-written
+    /// impl, which `#[serde(untagged)]` replays out of a buffered `Content` rather than straight
+    /// off the wire.
+    fn dstack() -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(VerifiedDstackAttestation {
+            mpc_image_hash: [0x11; 32].into(),
+            launcher_compose_hash: [0x22; 32].into(),
+            expiry_timestamp_seconds: 1_800_604_800,
+            measurements: VerifiedMeasurements {
+                mrtd: [0x33; 48].into(),
+                rtmr0: [0x44; 48].into(),
+                rtmr1: [0x55; 48].into(),
+                rtmr2: [0x66; 48].into(),
+                key_provider_event_digest: [0x77; 48].into(),
+            },
+        })
+    }
+
+    #[rstest]
+    #[case::mock(mock())]
+    #[case::dstack(dstack())]
+    fn get_attestation_response__should_read_a_stamped_response(
+        #[case] attestation: VerifiedAttestation,
+    ) {
+        // Given
+        let response = serde_json::to_string(&StoredAttestation {
+            attestation: attestation.clone(),
+            attested_at_seconds: Some(ATTESTED_AT_SECONDS),
+        })
+        .unwrap();
+
+        // When
+        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
+
+        // Then
+        assert_eq!(parsed.attestation(), &attestation);
+        assert_eq!(parsed.attested_at_seconds(), Some(ATTESTED_AT_SECONDS));
+    }
+
+    #[rstest]
+    #[case::mock(mock())]
+    #[case::dstack(dstack())]
+    fn get_attestation_response__should_read_an_entry_stored_before_the_timestamp_existed(
+        #[case] attestation: VerifiedAttestation,
+    ) {
+        // Given: an entry the migration left without an acceptance time
+        let response = serde_json::to_string(&StoredAttestation {
+            attestation: attestation.clone(),
+            attested_at_seconds: None,
+        })
+        .unwrap();
+
+        // When
+        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
+
+        // Then
+        assert_eq!(parsed.attestation(), &attestation);
+        assert_eq!(parsed.attested_at_seconds(), None);
+    }
+
+    #[rstest]
+    #[case::mock(mock())]
+    #[case::dstack(dstack())]
+    fn get_attestation_response__should_read_a_response_from_a_contract_without_the_timestamp(
+        #[case] attestation: VerifiedAttestation,
+    ) {
+        // Given: what a contract predating the stored timestamp returns
+        let response = serde_json::to_string(&attestation).unwrap();
+
+        // When
+        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
+
+        // Then
+        assert_eq!(parsed.attestation(), &attestation);
+        assert_eq!(parsed.attested_at_seconds(), None);
+    }
 }
