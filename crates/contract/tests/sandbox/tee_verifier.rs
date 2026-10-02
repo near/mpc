@@ -35,9 +35,11 @@ use near_workspaces::{
     types::{Gas, NearToken, SecretKey},
 };
 use std::time::Duration;
+use tee_verifier_interface::VerificationResultWithCollateralDates;
 use test_utils::attestation::{
-    VALID_ATTESTATION_TIMESTAMP, account_secret_key, image_digest, launcher_compose_digest,
-    launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, verified_report,
+    VALID_ATTESTATION_TIMESTAMP, account_secret_key, collateral, image_digest,
+    launcher_compose_digest, launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, quote,
+    verified_report,
 };
 use tokio_util::time::FutureExt as _;
 
@@ -231,6 +233,20 @@ async fn assert_only_gas_spent(
     );
 }
 
+/// The receipt gets exactly `verifier_tera_gas` of static gas, so success already
+/// proves it fit. Assert headroom instead: the regression that matters is
+/// `dcap-qvl` growing until it OOGs in production.
+fn assert_verifier_gas_headroom(method: &str, burnt: Gas, budget: Gas) {
+    const HEADROOM_PERCENT: u64 = 10;
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    assert!(
+        burnt <= max_allowed,
+        "{method} burnt {burnt} of the {budget} budget, leaving less than {HEADROOM_PERCENT}% \
+         headroom. Find what grew (gas schedule or `dcap-qvl`) before raising \
+         DEFAULT_VERIFIER_TERA_GAS, or the OOG this guards against reaches mainnet",
+    );
+}
+
 #[tokio::test]
 async fn tee_verifier_account_id__should_return_the_verifier_voted_in() {
     // Given
@@ -326,23 +342,56 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
         .iter()
         .find(|outcome| outcome.executor_id == *fx.verifier.id())
         .expect("the verify_quote receipt must have executed on the verifier");
-    // The receipt gets exactly `verifier_tera_gas` of static gas, so success already
-    // proves it fit. Assert headroom instead: the regression that matters is
-    // `dcap-qvl` growing until it OOGs in production.
-    const HEADROOM_PERCENT: u64 = 10;
     let budget = Gas::from_tgas(
         get_config(&fx.setup.contract)
             .await
             .unwrap()
             .verifier_tera_gas,
     );
-    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    assert_verifier_gas_headroom("verify_quote", verify_quote_outcome.gas_burnt, budget);
+}
+
+#[tokio::test]
+async fn verify_quote_with_collateral_dates__should_run_within_verifier_gas_budget() {
+    // Given
+    let setup = setup().await;
+    let verifier = setup
+        .worker
+        .dev_deploy(tee_verifier_contract_with_pinned_clock())
+        .await
+        .unwrap();
+    let budget = Gas::from_tgas(get_config(&setup.contract).await.unwrap().verifier_tera_gas);
+
+    // When
+    let result = verifier
+        .call("verify_quote_with_collateral_dates")
+        .args_borsh((quote(), collateral()))
+        .gas(budget)
+        .transact()
+        .await
+        .unwrap();
+
+    // Then
+    let verifier_outcome = result
+        .receipt_outcomes()
+        .first()
+        .expect("the call must have executed on the verifier");
+    assert_verifier_gas_headroom(
+        "verify_quote_with_collateral_dates",
+        verifier_outcome.gas_burnt,
+        budget,
+    );
+    let verdict: VerificationResultWithCollateralDates = result
+        .into_result()
+        .expect("the call must fit in the verifier gas budget")
+        .borsh()
+        .unwrap();
     assert!(
-        verify_quote_outcome.gas_burnt <= max_allowed,
-        "verify_quote burnt {} of the {budget} budget, leaving less than {HEADROOM_PERCENT}% \
-         headroom. Find what grew (gas schedule or `dcap-qvl`) before raising \
-         DEFAULT_VERIFIER_TERA_GAS, or the OOG this guards against reaches mainnet",
-        verify_quote_outcome.gas_burnt,
+        matches!(
+            verdict,
+            VerificationResultWithCollateralDates::Verified { .. }
+        ),
+        "expected a Verified verdict, got {verdict:?}"
     );
 }
 
