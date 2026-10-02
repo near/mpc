@@ -64,20 +64,26 @@ Where the kernel refuses the sandbox (for example inside a container) Nix
 silently builds without it, so set `sandbox-fallback = false` in `nix.conf`, as
 CI does, to make such a build fail instead.
 
-Pre-built outputs are accepted only from `https://cache.nixos.org/` and only if
-signed with its key `cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=`,
-which are Nix's defaults and what CI checks. Some installers add their own
-caches and keys, which could then supply any binary, including the images' own,
-so make sure `nix config show substituters` and
-`nix config show trusted-public-keys` print exactly these values and
-`nix config show require-sigs` prints `true`.
+Pre-built outputs are accepted only from `https://cache.nixos.org/`, and only if
+signed with its key `cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=`
+or named by the hash of their content, which Nix verifies. These are Nix's
+defaults and what CI uses. Some installers add their own caches and keys, which
+could then supply any binary, including the images' own, so make sure
+`nix config show substituters` and `nix config show trusted-public-keys` print
+exactly these values and `nix config show require-sigs` prints `true`. CI's
+complete settings, with the reason for each, are in its
+[`nix.conf`](../../.github/actions/install-nix/nix.conf).
 
 A local build downloads the dependencies' pre-built outputs from this cache too,
 so a matching digest shows that CI built what anyone gets from the same sources
-and cache, not that the cache's binaries are honest. To trust no cache, add
-`--option substitute false`: Nix then builds every dependency from source, which
-takes hours, and the digest matches only if every package in the image rebuilds
-bit for bit.
+and cache, not that the cache's binaries are honest. The project's code and its
+Cargo dependencies are always built from source, since the cache doesn't have
+them. To trust no cache at all, add `--option substitute false`: Nix then builds
+every other package too, which takes hours, and the digest matches only if every
+package in the image rebuilds bit for bit. Even then, some inputs remain
+pre-built binaries, pinned by their hash, such as the Rust toolchain from the
+Rust project, the Google Cloud CLI in the GCP image, and the bootstrap tools and
+compilers that nixpkgs builds the rest with.
 
 Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` equals the digest of the published `-nix` tag. The same
@@ -117,7 +123,10 @@ build metadata in `crates/contract/Cargo.toml`
 lets automated third-party verifiers such as sourcescan.io and nearblocks replay
 the build and confirm the on-chain contract matches the published source. This
 is the build CI publishes as the release artifact. It is reproducible but not
-hermetic, as its container has network access. It requires `docker`:
+hermetic, as its container has network access. It requires `docker` and
+`cargo-near`; CI runs it in the flake's `contract` shell
+(`nix develop .#contract`), which provides a `cargo-near` built from pinned
+sources:
 
 ```bash
 cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
