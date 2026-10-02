@@ -13,7 +13,7 @@ mpc-node = { workspace = true }
 near-account-id = { workspace = true }
 near-contract-transport = { workspace = true, features = ["near-kit"] }
 near-kit = { workspace = true }
-near-mpc-contract-interface = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["client"] }
 prometheus = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
@@ -28,6 +28,7 @@ tracing-subscriber = { workspace = true }
 [dev-dependencies]
 assert_matches = { workspace = true }
 mpc-node = { workspace = true, features = ["test-utils"] }
+near-contract-transport = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 
