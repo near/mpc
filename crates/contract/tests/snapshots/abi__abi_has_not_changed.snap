@@ -621,34 +621,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": [
-                {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/BackupServiceInfo"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/DestinationNodeInfo"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            }
+            "$ref": "#/definitions/MigrationInfo"
           }
         }
       },
@@ -2050,7 +2023,7 @@ expression: abi
       },
       {
         "name": "verify_tee",
-        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case the participants running in an accepted TEE State are too few for the\n GovernanceThreshold or for any domain's signing protocol.",
+        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case the participants running in an accepted TEE State are too few for the\n GovernanceThreshold or for any domain's signing protocol.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -3090,7 +3063,7 @@ expression: abi
               "minimum": 0.0
             },
             "launcher_hash_unused_ttl_seconds": {
-              "description": "TTL after which a launcher image hash unused by any participant is evicted: at the later of its last use + this TTL and the expiry of the attestation that last used it. Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on use). An expiry never moves earlier, so lowering it does not shorten existing entries.",
+              "description": "How long a launcher hash that no current participant uses stays allowed after its last vote or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is never removed automatically.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3804,7 +3777,7 @@ expression: abi
               "minimum": 0.0
             },
             "launcher_hash_unused_ttl_seconds": {
-              "description": "TTL after which a launcher image hash unused by any participant is evicted.",
+              "description": "TTL for launcher hashes no current participant uses; see [`Config::launcher_hash_unused_ttl_seconds`].",
               "type": [
                 "integer",
                 "null"
@@ -4200,6 +4173,36 @@ expression: abi
                 "$ref": "#/definitions/MeasurementVoteAction"
               }
             }
+          }
+        },
+        "MigrationInfo": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/BackupServiceInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/DestinationNodeInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
           }
         },
         "MockAttestation": {

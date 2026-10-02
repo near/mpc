@@ -26,36 +26,25 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          extra-conf: sandbox-fallback = false
-
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
-
-      # nix.conf only warns on an unknown setting, so assert the values Nix applied
-      - name: Check the Nix sandbox is enforced
-        run: |
-          nix config show sandbox | grep -x true
-          nix config show sandbox-fallback | grep -x false
+        uses: ./.github/actions/install-nix
 
       - name: Build mpc-node image
-        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node .#mpc-node-image
+        run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-node .#mpc-node-image
 
       - name: Build mpc-node-gcp image
-        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-node-gcp .#mpc-node-gcp-image
+        run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-node-gcp .#mpc-node-gcp-image
 
       - name: Build mpc-launcher image
-        run: nix build --print-build-logs --no-update-lock-file --out-link result-mpc-launcher .#mpc-launcher-image
+        run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-launcher .#mpc-launcher-image
 
       - name: Print image digests
-        run: sha256sum result-*/manifest.json
+        run: sha256sum out/*/manifest.json
 
       - name: Check the images start
         run: |
-          skopeo copy dir:result-mpc-node docker-daemon:mpc-node:latest
-          skopeo copy dir:result-mpc-node-gcp docker-daemon:mpc-node-gcp:latest
-          skopeo copy dir:result-mpc-launcher docker-daemon:mpc-rust-launcher:latest
+          skopeo copy dir:out/mpc-node docker-daemon:mpc-node:latest
+          skopeo copy dir:out/mpc-node-gcp docker-daemon:mpc-node-gcp:latest
+          skopeo copy dir:out/mpc-launcher docker-daemon:mpc-rust-launcher:latest
           docker run --rm mpc-node /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
           docker run --rm mpc-node-gcp /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
           docker run --rm mpc-node-gcp gcloud --version

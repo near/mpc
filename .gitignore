@@ -20,6 +20,7 @@ venv
 .direnv/
 result
 result-*
+/out/
 
 .envrc
 

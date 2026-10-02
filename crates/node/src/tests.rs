@@ -7,7 +7,6 @@ use near_mpc_contract_interface::types::{
     ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
-use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 
 use tokio::sync::{RwLock, watch};
@@ -114,7 +113,7 @@ impl OneNodeTestConfig {
 
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
-                let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+                let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(

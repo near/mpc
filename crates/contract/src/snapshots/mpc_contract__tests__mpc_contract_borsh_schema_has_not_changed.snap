@@ -74,7 +74,7 @@ BorshSchemaContainer {
                         "Vec<LauncherDockerComposeHash>",
                     ),
                     (
-                        "expires_at",
+                        "retain_until",
                         "Timestamp",
                     ),
                 ],
