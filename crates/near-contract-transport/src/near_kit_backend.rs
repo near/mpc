@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use near_account_id::AccountId;
-use near_kit::rpc::{BlockReference, RpcError};
+use near_kit::rpc::{BlockReference, Finality, RpcError};
 use near_kit::transaction::WaitLevel;
 
 use crate::{
@@ -11,17 +11,17 @@ use crate::{
     SerializedObservation, ViewArgs, ViewContract,
 };
 
-/// [`near_kit::Near`] as a call and view backend. `W` is the wait level a call blocks on
+/// [`near_kit::Near`] as a call and view backend. `T` is the wait level a call blocks on
 /// before returning, which decides its [`CallContract::Output`]; `poll_interval` paces
 /// subscriptions and `read_timeout` bounds each view.
-pub struct NearKitCaller<W> {
+pub struct NearKitCaller<T> {
     inner: near_kit::Near,
     poll_interval: PollInterval,
     read_timeout: Duration,
-    _wait_level: PhantomData<fn() -> W>,
+    _wait_level: PhantomData<fn() -> T>,
 }
 
-impl<W> NearKitCaller<W> {
+impl<T> NearKitCaller<T> {
     pub fn new(near: near_kit::Near, poll_interval: PollInterval, read_timeout: Duration) -> Self {
         Self {
             inner: near,
@@ -41,7 +41,7 @@ impl<W> NearKitCaller<W> {
     }
 }
 
-impl<W> Clone for NearKitCaller<W> {
+impl<T> Clone for NearKitCaller<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -52,15 +52,15 @@ impl<W> Clone for NearKitCaller<W> {
     }
 }
 
-impl<W> HasPollInterval for NearKitCaller<W> {
+impl<T> HasPollInterval for NearKitCaller<T> {
     fn poll_interval(&self) -> PollInterval {
         self.poll_interval
     }
 }
 
-impl<W: WaitLevel> CallContract for NearKitCaller<W> {
-    type Output = W::Response;
-    type Error = near_kit::Error;
+impl<T: WaitLevel> CallContract for NearKitCaller<T> {
+    type Output = T::Response;
+    type Error = NearKitCallError;
 
     async fn call_contract(
         &self,
@@ -73,12 +73,13 @@ impl<W: WaitLevel> CallContract for NearKitCaller<W> {
             .gas(call_args.gas)
             .deposit(call_args.deposit)
             .finish()
-            .wait_until::<W>()
+            .wait_until::<T>()
             .await
+            .map_err(Into::into)
     }
 }
 
-impl<W> ViewContract for NearKitCaller<W> {
+impl<T> ViewContract for NearKitCaller<T> {
     type Error = NearKitViewError;
 
     async fn view_contract(
@@ -109,13 +110,26 @@ impl ViewContract for near_kit::Near {
                 contract_id,
                 &view_args.method_name,
                 &view_args.args,
-                BlockReference::default(),
+                BlockReference::Finality(Finality::Final),
             )
             .await?;
         Ok(ObservedState {
             observed_at: result.block_height.into(),
             value: result.result,
         })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct NearKitCallError(String);
+
+impl From<near_kit::Error> for NearKitCallError {
+    fn from(err: near_kit::Error) -> Self {
+        match err {
+            near_kit::Error::Rpc(rpc) => Self(describe(&rpc)),
+            other => Self(other.to_string()),
+        }
     }
 }
 
@@ -128,20 +142,23 @@ pub enum NearKitViewError {
     Timeout(Duration),
 }
 
+impl From<RpcError> for NearKitViewError {
+    fn from(err: RpcError) -> Self {
+        Self::Rpc(describe(&err))
+    }
+}
+
 /// `reqwest` writes the request url, which is where an api key lives, into both the
 /// [`Display`](std::fmt::Display) and the [`Debug`] of its errors, so its own text is dropped
 /// in favour of the causes below it, which do not know the url. Every other variant carries
 /// text `near_kit` authored itself.
-impl From<RpcError> for NearKitViewError {
-    fn from(err: RpcError) -> Self {
-        let text = match &err {
-            RpcError::Http(_) => match Error::source(&err).and_then(Error::source) {
-                Some(cause) => format!("http transport error: {cause:?}"),
-                None => "http transport error".to_owned(),
-            },
-            _ => err.to_string(),
-        };
-        Self::Rpc(text)
+fn describe(err: &RpcError) -> String {
+    match err {
+        RpcError::Http(_) => match Error::source(err).and_then(Error::source) {
+            Some(cause) => format!("http transport error: {cause:?}"),
+            None => "http transport error".to_owned(),
+        },
+        _ => err.to_string(),
     }
 }
 
@@ -151,19 +168,24 @@ mod tests {
     use std::time::Duration;
 
     use near_kit::Near;
+    use near_kit::signer::{InMemorySigner, SecretKey};
     use near_kit::transaction::Final;
+    use rstest::rstest;
     use tokio::net::TcpListener;
 
-    use crate::{PollInterval, ViewArgs, ViewContract};
+    use crate::{CallContract, FunctionCallArgs, NearGas, PollInterval, ViewArgs, ViewContract};
 
     use super::{NearKitCaller, NearKitViewError};
 
     const API_KEY: &str = "d0n0tl0gme";
     const READ_TIMEOUT: Duration = Duration::from_millis(100);
 
-    #[tokio::test]
-    async fn view_contract__should_not_report_the_api_key_of_a_failing_endpoint() {
-        // Given
+    enum Operation {
+        View,
+        Call,
+    }
+
+    async fn must_make_caller_into_hung_up_keyed_endpoint() -> NearKitCaller<Final> {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
@@ -171,26 +193,70 @@ mod tests {
                 drop(stream);
             }
         });
+        let signer =
+            InMemorySigner::from_secret_key("alice.near", SecretKey::ed25519_from_bytes([7u8; 32]))
+                .unwrap();
         let near = Near::custom(
             format!("http://127.0.0.1:{port}/?apikey={API_KEY}"),
             "mainnet",
         )
+        .signer(signer)
         .build();
+        NearKitCaller::new(
+            near,
+            PollInterval::new(Duration::from_secs(1)).unwrap(),
+            READ_TIMEOUT,
+        )
+    }
+
+    #[rstest]
+    #[case::view(Operation::View)]
+    #[case::call(Operation::Call)]
+    #[tokio::test]
+    async fn near_kit_caller__should_not_report_the_api_key_of_a_failing_endpoint(
+        #[case] operation: Operation,
+    ) {
+        // Given
+        let caller = must_make_caller_into_hung_up_keyed_endpoint().await;
+        let contract_id = "v1.signer".parse().unwrap();
 
         // When
-        let err = near
-            .view_contract(&"v1.signer".parse().unwrap(), ViewArgs::no_args("state"))
-            .await
-            .expect_err("a hung up endpoint should fail the read");
+        let (display, debug) = match operation {
+            Operation::View => {
+                let err = caller
+                    .view_contract(&contract_id, ViewArgs::no_args("state"))
+                    .await
+                    .expect_err("a hung up endpoint should fail the view");
+                (format!("{err}"), format!("{err:?}"))
+            }
+            Operation::Call => {
+                let err = caller
+                    .call_contract(
+                        &contract_id,
+                        FunctionCallArgs::no_deposit(
+                            "state",
+                            b"{}".to_vec(),
+                            NearGas::from_tgas(1),
+                        ),
+                    )
+                    .await
+                    .expect_err("a hung up endpoint should fail the call");
+                (format!("{err}"), format!("{err:?}"))
+            }
+        };
 
         // Then
         assert!(
-            !format!("{err}").contains(API_KEY),
-            "api key must not be rendered: {err}"
+            display.starts_with("http transport error"),
+            "the failure should be the scrubbed http error: {display}"
         );
         assert!(
-            !format!("{err:?}").contains(API_KEY),
-            "api key must not be rendered: {err:?}"
+            !display.contains(API_KEY),
+            "api key must not be rendered: {display}"
+        );
+        assert!(
+            !debug.contains(API_KEY),
+            "api key must not be rendered: {debug}"
         );
     }
 

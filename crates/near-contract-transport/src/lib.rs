@@ -25,5 +25,5 @@ pub use views::{
 };
 
 #[cfg(feature = "near-kit")]
-pub use near_kit_backend::{NearKitCaller, NearKitViewError};
+pub use near_kit_backend::{NearKitCallError, NearKitCaller, NearKitViewError};
 pub use types::{BlockHeight, FunctionCallArgs, NearGas, NearToken};
