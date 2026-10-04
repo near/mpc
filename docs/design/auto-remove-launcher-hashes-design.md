@@ -87,7 +87,7 @@ sequenceDiagram
 
 | Scenario | Behavior |
 |---|---|
-| **Normal rotation** | Vote in `B`, migrate nodes. `A` is removed at the first `verify_tee` at least 14 days after the last one that saw a participant on it. No removal vote. |
+| **Normal rotation** | Vote in `B`, migrate nodes. `A` is removed at the first `verify_tee` after its `retain_until` (the last `verify_tee` that saw a participant on it, plus the TTL). No removal vote. |
 | **Rollback** | `B` broken; revert to `A` while it is still in the list. `B` is then removed like any unused hash. |
 | **Slow rollout** (vote → migration > 14d) | `B` may be removed before anyone uses it, unless it holds the latest stamp. Re-vote it (threshold) to restamp. |
 | **Participant offline on an old launcher** | Its stored attestation counts while it is a participant, so its hash stays. |
