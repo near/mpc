@@ -20,8 +20,8 @@ expected_network_fingerprint = "11124"
 rpc_url = "https://api.testnet.abs.xyz"
 
 [abstract.providers.alchemy]
-rpc_url = "https://abstract-testnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://abstract-testnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [abstract.providers.quicknode]
 rpc_url = "https://{slug}.abstract-testnet.quiknode.pro/{api_key}"
@@ -36,8 +36,8 @@ expected_network_fingerprint = "0x534e5f5345504f4c4941"  # SN_SEPOLIA
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
 
 [starknet.providers.alchemy]
-rpc_url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [starknet.providers.quicknode]
 rpc_url = "https://{slug}.strk-sepolia.quiknode.pro/{api_key}"
@@ -52,8 +52,8 @@ expected_network_fingerprint = "2"  # Aptos ledger chain id
 rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
 
 [aptos.providers.alchemy]
-rpc_url = "https://aptos-testnet.g.alchemy.com/v2/{API_KEY}/v1"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://aptos-testnet.g.alchemy.com/v2/{api_key}/v1"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [aptos.providers.quicknode]
 rpc_url = "https://{slug}.aptos-testnet.quiknode.pro/{api_key}/v1"
@@ -85,8 +85,8 @@ max_retries = 3
 expected_network_fingerprint = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"  # devnet genesis hash
 
 [solana.providers.alchemy]
-rpc_url = "https://solana-devnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://solana-devnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [solana.providers.quicknode]
 rpc_url = "https://{slug}.solana-devnet.quiknode.pro/{api_key}"
@@ -102,8 +102,8 @@ max_retries = 3
 expected_network_fingerprint = "97"
 
 [bnb.providers.alchemy]
-rpc_url = "https://bnb-testnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://bnb-testnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [bnb.providers.quicknode]
 rpc_url = "https://{slug}.bsc-testnet.quiknode.pro/{api_key}"
@@ -119,8 +119,8 @@ max_retries = 3
 expected_network_fingerprint = "84532"
 
 [base.providers.alchemy]
-rpc_url = "https://base-sepolia.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://base-sepolia.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [base.providers.quicknode]
 rpc_url = "https://{slug}.base-sepolia.quiknode.pro/{api_key}"
@@ -136,8 +136,8 @@ max_retries = 3
 expected_network_fingerprint = "421614"
 
 [arbitrum.providers.alchemy]
-rpc_url = "https://arb-sepolia.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://arb-sepolia.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [arbitrum.providers.quicknode]
 rpc_url = "https://{slug}.arbitrum-sepolia.quiknode.pro/{api_key}"
@@ -153,8 +153,8 @@ max_retries = 3
 expected_network_fingerprint = "80002"
 
 [polygon.providers.alchemy]
-rpc_url = "https://polygon-amoy.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://polygon-amoy.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [polygon.providers.quicknode]
 rpc_url = "https://{slug}.matic-amoy.quiknode.pro/{api_key}"
@@ -193,8 +193,8 @@ rpc_url = "https://{slug}.hype-testnet.quiknode.pro/{api_key}/evm"
 auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [hyper_evm.providers.chainstack]
-rpc_url = "https://hyperliquid-testnet.core.chainstack.com/{API_KEY}/evm"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://hyperliquid-testnet.core.chainstack.com/{api_key}/evm"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [fogo]
 timeout_sec = 30

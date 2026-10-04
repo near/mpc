@@ -20,8 +20,8 @@ expected_network_fingerprint = "2741"
 rpc_url = "https://api.mainnet.abs.xyz"
 
 [abstract.providers.alchemy]
-rpc_url = "https://abstract-mainnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://abstract-mainnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [abstract.providers.quicknode]
 rpc_url = "https://{slug}.abstract-mainnet.quiknode.pro/{api_key}"
@@ -36,8 +36,8 @@ expected_network_fingerprint = "0x534e5f4d41494e"  # SN_MAIN
 rpc_url = "https://starknet-rpc.publicnode.com"
 
 [starknet.providers.alchemy]
-rpc_url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [starknet.providers.quicknode]
 rpc_url = "https://{slug}.strk-mainnet.quiknode.pro/{api_key}"
@@ -52,8 +52,8 @@ expected_network_fingerprint = "1"  # Aptos ledger chain id
 rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
 
 [aptos.providers.alchemy]
-rpc_url = "https://aptos-mainnet.g.alchemy.com/v2/{API_KEY}/v1"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://aptos-mainnet.g.alchemy.com/v2/{api_key}/v1"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [aptos.providers.quicknode]
 rpc_url = "https://{slug}.aptos-mainnet.quiknode.pro/{api_key}/v1"
@@ -88,8 +88,8 @@ expected_network_fingerprint = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"  #
 rpc_url = "https://api.mainnet-beta.solana.com"
 
 [solana.providers.alchemy]
-rpc_url = "https://solana-mainnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://solana-mainnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [solana.providers.quicknode]
 rpc_url = "https://{slug}.solana-mainnet.quiknode.pro/{api_key}"
@@ -105,8 +105,8 @@ max_retries = 3
 expected_network_fingerprint = "56"
 
 [bnb.providers.alchemy]
-rpc_url = "https://bnb-mainnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://bnb-mainnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [bnb.providers.quicknode]
 rpc_url = "https://{slug}.bsc.quiknode.pro/{api_key}"
@@ -122,8 +122,8 @@ max_retries = 3
 expected_network_fingerprint = "8453"
 
 [base.providers.alchemy]
-rpc_url = "https://base-mainnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://base-mainnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [base.providers.quicknode]
 rpc_url = "https://{slug}.base-mainnet.quiknode.pro/{api_key}"
@@ -139,8 +139,8 @@ max_retries = 3
 expected_network_fingerprint = "42161"
 
 [arbitrum.providers.alchemy]
-rpc_url = "https://arb-mainnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://arb-mainnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [arbitrum.providers.quicknode]
 rpc_url = "https://{slug}.arbitrum-mainnet.quiknode.pro/{api_key}"
@@ -156,8 +156,8 @@ max_retries = 3
 expected_network_fingerprint = "137"
 
 [polygon.providers.alchemy]
-rpc_url = "https://polygon-mainnet.g.alchemy.com/v2/{API_KEY}"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://polygon-mainnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [polygon.providers.quicknode]
 rpc_url = "https://{slug}.matic.quiknode.pro/{api_key}"
@@ -196,8 +196,8 @@ rpc_url = "https://{slug}.hype-mainnet.quiknode.pro/{api_key}/evm"
 auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [hyper_evm.providers.chainstack]
-rpc_url = "https://hyperliquid-mainnet.core.chainstack.com/{API_KEY}/evm"
-auth = { kind = "path", placeholder = "{API_KEY}", token = { val = "" } }
+rpc_url = "https://hyperliquid-mainnet.core.chainstack.com/{api_key}/evm"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
 
 [fogo]
 timeout_sec = 30
@@ -206,3 +206,7 @@ expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"  #
 
 [fogo.providers.public]
 rpc_url = "https://mainnet.fogo.io"
+
+[fogo.providers.fluxrpc]
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+rpc_url="https://eu.fogo.fluxrpc.com?key={api_key}"
