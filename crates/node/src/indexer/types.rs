@@ -315,7 +315,7 @@ mod request_serialization_tests {
         let request = ChainSendTransactionRequest::SubmitParticipantInfo {
             args: Box::new(mock_submit_args()),
             baseline: SubmissionBaseline {
-                attested_at_seconds: Some(123),
+                accepted_at_seconds: Some(123),
                 expiry_timestamp_seconds: Some(456),
             },
         };

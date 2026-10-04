@@ -2033,7 +2033,7 @@ near contract call-function as-read-only \
   network-config testnet now
 ```
 
-The response wraps the stored attestation with `attested_at_seconds`, the block time at which the contract accepted it. The `attestation` shape tells you what it accepted:
+The response wraps the stored attestation with `accepted_at_seconds`, the block time at which the contract accepted it. The `attestation` shape tells you what it accepted:
 
 - `{ "Dstack": { ... } }` — a real TEE attestation. This is what a production operator should see.
 - `{ "Mock": "Valid" }` — a mock attestation. Acceptable on testnet during the [transition phase](#transition-phase), but means the node is **not** running in a TEE. Many existing testnet entries are in this state.
@@ -2043,7 +2043,7 @@ Example `Dstack` response from `v1.signer-prod.testnet` for an existing particip
 
 ```json
 {
-  "attested_at_seconds": 1779013269,
+  "accepted_at_seconds": 1779013269,
   "attestation": {
     "Dstack": {
       "expiry_timestamp_seconds": 1779618069,

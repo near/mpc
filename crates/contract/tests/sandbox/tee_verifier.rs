@@ -388,7 +388,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 
     // Then
     assert_eq!(
-        stored.attested_at_seconds,
+        stored.accepted_at_seconds,
         Some(VALID_ATTESTATION_TIMESTAMP),
         "the acceptance time is the pinned block time"
     );

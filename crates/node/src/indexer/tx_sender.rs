@@ -189,7 +189,7 @@ async fn submit_tx(
 /// Whether the attestation we submitted is now the one stored on chain.
 ///
 /// Every accepted submission restamps the entry's
-/// [`attested_at_seconds`](near_mpc_contract_interface::types::StoredAttestation::attested_at_seconds),
+/// [`accepted_at_seconds`](near_mpc_contract_interface::types::StoredAttestation::accepted_at_seconds),
 /// and only the owning account may rewrite the entry, so a changed timestamp is our own
 /// submission landing. An entry the migration carried over is still unstamped, which means no
 /// submission of ours has been accepted since.
@@ -199,8 +199,8 @@ fn submitted_attestation_landed(
     submitted: &Attestation,
 ) -> bool {
     match stored {
-        GetAttestationResponse::Stamped(stored) => match stored.attested_at_seconds {
-            Some(attested_at) => baseline.attested_at_seconds != Some(attested_at),
+        GetAttestationResponse::Stamped(stored) => match stored.accepted_at_seconds {
+            Some(accepted_at) => baseline.accepted_at_seconds != Some(accepted_at),
             None => false,
         },
         // TODO(#4498): remove once every deployed contract stamps the acceptance time.
@@ -324,7 +324,7 @@ async fn observe_tx_result(
 
             tracing::info!(
                 ?baseline,
-                stored_attested_at = ?stored_attestation.attested_at_seconds(),
+                stored_accepted_at = ?stored_attestation.accepted_at_seconds(),
                 stored_expiry = ?stored_attestation.attestation().expiry_timestamp_seconds(),
                 attestation_landed,
                 "checked attestation submission on chain"
@@ -549,16 +549,16 @@ mod tests {
         assert!(!landed);
     }
 
-    fn stamped(attested_at_seconds: u64) -> GetAttestationResponse {
+    fn stamped(accepted_at_seconds: u64) -> GetAttestationResponse {
         GetAttestationResponse::Stamped(StoredAttestation {
             attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
-            attested_at_seconds: Some(attested_at_seconds),
+            accepted_at_seconds: Some(accepted_at_seconds),
         })
     }
 
-    fn baseline_attested_at(attested_at_seconds: Option<u64>) -> SubmissionBaseline {
+    fn baseline_accepted_at(accepted_at_seconds: Option<u64>) -> SubmissionBaseline {
         SubmissionBaseline {
-            attested_at_seconds,
+            accepted_at_seconds,
             expiry_timestamp_seconds: None,
         }
     }
@@ -567,7 +567,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_confirm_when_the_timestamp_moved() {
         // Given: an entry stored before our submit
-        let baseline = baseline_attested_at(Some(100));
+        let baseline = baseline_accepted_at(Some(100));
 
         // When: the contract reports a later acceptance
         let landed = submitted_attestation_landed(
@@ -584,7 +584,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_reject_when_the_timestamp_is_unchanged() {
         // Given: an entry stored before our submit
-        let baseline = baseline_attested_at(Some(200));
+        let baseline = baseline_accepted_at(Some(200));
 
         // When: the stored entry is still the one we read before submitting
         let landed = submitted_attestation_landed(
@@ -601,7 +601,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_confirm_when_nothing_was_stored_before() {
         // Given: no attestation was stored before submitting
-        let baseline = baseline_attested_at(None);
+        let baseline = baseline_accepted_at(None);
 
         // When
         let landed = submitted_attestation_landed(
@@ -618,10 +618,10 @@ mod tests {
     #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_reject_while_the_entry_is_still_unstamped() {
         // Given: an entry the migration carried over, which no submission has replaced
-        let baseline = baseline_attested_at(None);
+        let baseline = baseline_accepted_at(None);
         let stored = GetAttestationResponse::Stamped(StoredAttestation {
             attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
-            attested_at_seconds: None,
+            accepted_at_seconds: None,
         });
 
         // When
@@ -641,7 +641,7 @@ mod tests {
         // Given: a contract that does not report an acceptance timestamp, and an entry whose
         // expiry is unchanged since before our submit
         let baseline = SubmissionBaseline {
-            attested_at_seconds: None,
+            accepted_at_seconds: None,
             expiry_timestamp_seconds: Some(200),
         };
         let stored =

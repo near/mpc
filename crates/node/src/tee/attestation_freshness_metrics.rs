@@ -58,7 +58,7 @@ mod tests {
     fn stamped(attestation: VerifiedAttestation) -> GetAttestationResponse {
         GetAttestationResponse::Stamped(StoredAttestation {
             attestation,
-            attested_at_seconds: Some(EXPIRES_AT),
+            accepted_at_seconds: Some(EXPIRES_AT),
         })
     }
 

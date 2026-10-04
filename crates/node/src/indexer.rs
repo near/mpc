@@ -369,7 +369,7 @@ impl IndexerViewClient {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SubmissionBaseline {
     /// `None` when nothing is stored, or no acceptance time is known for it.
-    pub attested_at_seconds: Option<u64>,
+    pub accepted_at_seconds: Option<u64>,
     /// TODO(#4498): remove along with the expiry fallback it feeds.
     pub expiry_timestamp_seconds: Option<u64>,
 }
@@ -377,7 +377,7 @@ pub struct SubmissionBaseline {
 impl SubmissionBaseline {
     pub(crate) fn from_stored(stored: Option<&dtos::GetAttestationResponse>) -> Self {
         Self {
-            attested_at_seconds: stored.and_then(dtos::GetAttestationResponse::attested_at_seconds),
+            accepted_at_seconds: stored.and_then(dtos::GetAttestationResponse::accepted_at_seconds),
             expiry_timestamp_seconds: stored
                 .and_then(|stored| stored.attestation().expiry_timestamp_seconds()),
         }

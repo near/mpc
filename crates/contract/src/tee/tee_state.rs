@@ -80,7 +80,7 @@ pub(crate) struct NodeAttestation {
     /// a submitter can recognize its own on chain. `None` for an entry stored before the contract
     /// recorded this, and the init block time for a mocked entry nobody submitted (see
     /// [`TeeState::with_mocked_participant_attestations`]).
-    pub(crate) attested_at_seconds: Option<u64>,
+    pub(crate) accepted_at_seconds: Option<u64>,
 }
 
 #[near(serializers=[borsh])]
@@ -152,7 +152,7 @@ impl TeeState {
                     verified_attestation: VerifiedAttestation::Mock(
                         attestation::MockAttestation::Valid,
                     ),
-                    attested_at_seconds: Some(Self::current_time_seconds()),
+                    accepted_at_seconds: Some(Self::current_time_seconds()),
                 },
             );
         }
@@ -249,7 +249,7 @@ impl TeeState {
             NodeAttestation {
                 node_id,
                 verified_attestation,
-                attested_at_seconds: Some(Self::current_time_seconds()),
+                accepted_at_seconds: Some(Self::current_time_seconds()),
             },
         );
 
@@ -1970,19 +1970,19 @@ mod tests {
         );
     }
 
-    fn stamped_attested_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
+    fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
         tee_state
             .stored_attestations
             .get(&node_id.tls_public_key)
             .expect("the attestation was stored")
-            .attested_at_seconds
+            .accepted_at_seconds
     }
 
     #[test]
     fn verify_and_store_mock__should_stamp_the_block_time() {
         // Given
-        const ATTESTED_AT_SECONDS: u64 = 1_800_000_000;
-        set_block_timestamp(ATTESTED_AT_SECONDS * 1_000_000_000);
+        const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+        set_block_timestamp(ACCEPTED_AT_SECONDS * 1_000_000_000);
         let mut tee_state = TeeState::default();
         let node_id = node_id_for(&"alice.near".parse().unwrap());
 
@@ -1997,16 +1997,16 @@ mod tests {
 
         // Then
         assert_eq!(
-            stamped_attested_at(&tee_state, &node_id),
-            Some(ATTESTED_AT_SECONDS)
+            stamped_accepted_at(&tee_state, &node_id),
+            Some(ACCEPTED_AT_SECONDS)
         );
     }
 
     #[test]
     fn verify_and_store_mock__should_leave_the_stamp_alone_when_the_attestation_is_rejected() {
         // Given: an entry stored by an accepted submission
-        const ATTESTED_AT_SECONDS: u64 = 1_800_000_000;
-        set_block_timestamp(ATTESTED_AT_SECONDS * 1_000_000_000);
+        const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+        set_block_timestamp(ACCEPTED_AT_SECONDS * 1_000_000_000);
         let mut tee_state = TeeState::default();
         let node_id = node_id_for(&"alice.near".parse().unwrap());
         tee_state
@@ -2018,7 +2018,7 @@ mod tests {
             .unwrap();
 
         // When: a later submission fails verification
-        set_block_timestamp((ATTESTED_AT_SECONDS + 3600) * 1_000_000_000);
+        set_block_timestamp((ACCEPTED_AT_SECONDS + 3600) * 1_000_000_000);
         let result = tee_state.verify_and_store_mock(
             node_id.clone(),
             MockAttestation::Invalid,
@@ -2029,8 +2029,8 @@ mod tests {
         // tell a rejection from a landing
         assert_matches!(result, Err(_));
         assert_eq!(
-            stamped_attested_at(&tee_state, &node_id),
-            Some(ATTESTED_AT_SECONDS)
+            stamped_accepted_at(&tee_state, &node_id),
+            Some(ACCEPTED_AT_SECONDS)
         );
     }
 
@@ -2062,7 +2062,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            stamped_attested_at(&tee_state, &node_id),
+            stamped_accepted_at(&tee_state, &node_id),
             Some(SECOND_SUBMISSION_SECONDS)
         );
     }

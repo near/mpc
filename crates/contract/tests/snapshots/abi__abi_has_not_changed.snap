@@ -4979,10 +4979,7 @@ expression: abi
             "attestation"
           ],
           "properties": {
-            "attestation": {
-              "$ref": "#/definitions/VerifiedAttestation"
-            },
-            "attested_at_seconds": {
+            "accepted_at_seconds": {
               "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it, including a resubmission of an identical attestation, so a submitter can tell whether its own submission landed.\n\n`None` for an entry stored before the contract recorded this, which no submission has replaced yet.",
               "type": [
                 "integer",
@@ -4990,6 +4987,9 @@ expression: abi
               ],
               "format": "uint64",
               "minimum": 0.0
+            },
+            "attestation": {
+              "$ref": "#/definitions/VerifiedAttestation"
             }
           }
         },

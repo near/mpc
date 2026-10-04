@@ -120,12 +120,12 @@ pub struct StoredAttestation {
     ///
     /// `None` for an entry stored before the contract recorded this, which no submission has
     /// replaced yet.
-    pub attested_at_seconds: Option<u64>,
+    pub accepted_at_seconds: Option<u64>,
 }
 
 /// A `get_attestation` response, over the contract versions a node may be talking to. Nodes are
 /// upgraded before the contract, so a node also has to read one that returns the bare
-/// attestation, with no [`StoredAttestation::attested_at_seconds`].
+/// attestation, with no [`StoredAttestation::accepted_at_seconds`].
 ///
 /// TODO(#4498): collapse into [`StoredAttestation`] once every deployed contract stamps it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -145,9 +145,9 @@ impl GetAttestationResponse {
 
     /// `None` when the contract reports no acceptance time for the entry, and when it reports
     /// none at all.
-    pub fn attested_at_seconds(&self) -> Option<u64> {
+    pub fn accepted_at_seconds(&self) -> Option<u64> {
         match self {
-            GetAttestationResponse::Stamped(stored) => stored.attested_at_seconds,
+            GetAttestationResponse::Stamped(stored) => stored.accepted_at_seconds,
             GetAttestationResponse::Unstamped(_) => None,
         }
     }
@@ -412,7 +412,7 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    const ATTESTED_AT_SECONDS: u64 = 1_800_000_000;
+    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
 
     fn mock() -> VerifiedAttestation {
         VerifiedAttestation::Mock(MockAttestation::Valid)
@@ -445,7 +445,7 @@ mod tests {
         // Given
         let response = serde_json::to_string(&StoredAttestation {
             attestation: attestation.clone(),
-            attested_at_seconds: Some(ATTESTED_AT_SECONDS),
+            accepted_at_seconds: Some(ACCEPTED_AT_SECONDS),
         })
         .unwrap();
 
@@ -454,7 +454,7 @@ mod tests {
 
         // Then
         assert_eq!(parsed.attestation(), &attestation);
-        assert_eq!(parsed.attested_at_seconds(), Some(ATTESTED_AT_SECONDS));
+        assert_eq!(parsed.accepted_at_seconds(), Some(ACCEPTED_AT_SECONDS));
     }
 
     #[rstest]
@@ -466,7 +466,7 @@ mod tests {
         // Given: an entry the migration left without an acceptance time
         let response = serde_json::to_string(&StoredAttestation {
             attestation: attestation.clone(),
-            attested_at_seconds: None,
+            accepted_at_seconds: None,
         })
         .unwrap();
 
@@ -475,7 +475,7 @@ mod tests {
 
         // Then
         assert_eq!(parsed.attestation(), &attestation);
-        assert_eq!(parsed.attested_at_seconds(), None);
+        assert_eq!(parsed.accepted_at_seconds(), None);
     }
 
     #[rstest]
@@ -492,6 +492,6 @@ mod tests {
 
         // Then
         assert_eq!(parsed.attestation(), &attestation);
-        assert_eq!(parsed.attested_at_seconds(), None);
+        assert_eq!(parsed.accepted_at_seconds(), None);
     }
 }

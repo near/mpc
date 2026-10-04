@@ -33,7 +33,7 @@ use crate::{
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_mpc_contract_interface::types as dtos;
 
-/// Shadow of the entry layout from before [`NodeAttestation::attested_at_seconds`] existed.
+/// Shadow of the entry layout from before [`NodeAttestation::accepted_at_seconds`] existed.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldNodeAttestation {
     node_id: NodeId,
@@ -65,12 +65,12 @@ impl From<OldTeeState> for TeeState {
     }
 }
 
-/// Adds the [`NodeAttestation::attested_at_seconds`] the old entries lack, as `None`: the
+/// Adds the [`NodeAttestation::accepted_at_seconds`] the old entries lack, as `None`: the
 /// contract never recorded when it accepted them, and the upgrade block time would read as a
 /// submission that never happened. Each node's next accepted submission stamps a real value.
 ///
 /// This is a one-off for the layout that predates the field. A later migration must carry
-/// [`NodeAttestation::attested_at_seconds`] across untouched, since rewriting it would restamp
+/// [`NodeAttestation::accepted_at_seconds`] across untouched, since rewriting it would restamp
 /// every node's entry.
 fn migrate_stored_attestations(
     mut old: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
@@ -87,7 +87,7 @@ fn migrate_stored_attestations(
             NodeAttestation {
                 node_id: entry.node_id,
                 verified_attestation: entry.verified_attestation,
-                attested_at_seconds: None,
+                accepted_at_seconds: None,
             },
         );
     }
@@ -258,7 +258,7 @@ mod tests {
                 entry.verified_attestation,
                 VerifiedAttestation::Mock(MockAttestation::Valid)
             );
-            assert_eq!(entry.attested_at_seconds, None);
+            assert_eq!(entry.accepted_at_seconds, None);
         }
     }
 }

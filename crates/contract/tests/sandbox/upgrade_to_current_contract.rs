@@ -354,7 +354,7 @@ async fn propose_upgrade_from_production_to_current_binary(
         .unwrap()
         .expect("a migrated attestation should still be readable");
     assert_eq!(
-        migrated.attested_at_seconds, None,
+        migrated.accepted_at_seconds, None,
         "migration must not stamp an entry the contract never accepted"
     );
 }

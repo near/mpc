@@ -275,7 +275,7 @@ impl MpcContract {
                     .verified_attestation
                     .clone()
                     .into_dto_type(),
-                attested_at_seconds: node_attestation.attested_at_seconds,
+                accepted_at_seconds: node_attestation.accepted_at_seconds,
             }))
     }
 
@@ -1260,7 +1260,7 @@ mod tests {
             NodeAttestation {
                 node_id,
                 verified_attestation,
-                attested_at_seconds: Some(u64::MAX),
+                accepted_at_seconds: Some(u64::MAX),
             },
         );
         tee_state.stored_attestations.flush();
