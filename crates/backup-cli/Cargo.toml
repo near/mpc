@@ -6,12 +6,14 @@ edition = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
+axum = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }
 near-account-id = { workspace = true }
 near-kit = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
+prometheus = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }

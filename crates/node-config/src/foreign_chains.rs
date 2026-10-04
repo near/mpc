@@ -109,6 +109,30 @@ impl ForeignChainsConfig {
         self.all_configured_chains().is_empty()
     }
 
+    /// Every chain this config has a key for, configured or not, in a fixed order.
+    pub fn chain_slots(
+        &self,
+    ) -> impl Iterator<Item = (dtos::ForeignChain, Option<&ForeignChainConfig>)> + '_ {
+        [
+            (dtos::ForeignChain::Solana, self.solana.as_ref()),
+            (dtos::ForeignChain::Bitcoin, self.bitcoin.as_ref()),
+            (dtos::ForeignChain::Ethereum, self.ethereum.as_ref()),
+            (dtos::ForeignChain::Abstract, self.abstract_chain.as_ref()),
+            (dtos::ForeignChain::Starknet, self.starknet.as_ref()),
+            (dtos::ForeignChain::Bnb, self.bnb.as_ref()),
+            (dtos::ForeignChain::Base, self.base.as_ref()),
+            (dtos::ForeignChain::Arbitrum, self.arbitrum.as_ref()),
+            (dtos::ForeignChain::HyperEvm, self.hyper_evm.as_ref()),
+            (dtos::ForeignChain::Polygon, self.polygon.as_ref()),
+            (dtos::ForeignChain::Aptos, self.aptos.as_ref()),
+            (dtos::ForeignChain::Sui, self.sui.as_ref()),
+            (dtos::ForeignChain::Avalanche, self.avalanche.as_ref()),
+            (dtos::ForeignChain::Adi, self.adi.as_ref()),
+            (dtos::ForeignChain::Fogo, self.fogo.as_ref()),
+        ]
+        .into_iter()
+    }
+
     /// Iterate over every chain that has a local config, paired with its DTO identifier.
     pub fn iter_chains(
         &self,
@@ -149,26 +173,9 @@ impl ForeignChainsConfig {
     }
 
     fn all_configured_chains(&self) -> Vec<(&ForeignChainConfig, dtos::ForeignChain)> {
-        [
-            (self.solana.as_ref(), dtos::ForeignChain::Solana),
-            (self.bitcoin.as_ref(), dtos::ForeignChain::Bitcoin),
-            (self.ethereum.as_ref(), dtos::ForeignChain::Ethereum),
-            (self.abstract_chain.as_ref(), dtos::ForeignChain::Abstract),
-            (self.starknet.as_ref(), dtos::ForeignChain::Starknet),
-            (self.bnb.as_ref(), dtos::ForeignChain::Bnb),
-            (self.base.as_ref(), dtos::ForeignChain::Base),
-            (self.arbitrum.as_ref(), dtos::ForeignChain::Arbitrum),
-            (self.hyper_evm.as_ref(), dtos::ForeignChain::HyperEvm),
-            (self.polygon.as_ref(), dtos::ForeignChain::Polygon),
-            (self.aptos.as_ref(), dtos::ForeignChain::Aptos),
-            (self.sui.as_ref(), dtos::ForeignChain::Sui),
-            (self.avalanche.as_ref(), dtos::ForeignChain::Avalanche),
-            (self.adi.as_ref(), dtos::ForeignChain::Adi),
-            (self.fogo.as_ref(), dtos::ForeignChain::Fogo),
-        ]
-        .into_iter()
-        .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
-        .collect()
+        self.chain_slots()
+            .filter_map(|(chain, config)| config.map(|config| (config, chain)))
+            .collect()
     }
 }
 
@@ -688,5 +695,39 @@ ckd:
             .map(|(chain, _)| chain.label())
             .collect();
         assert_eq!(written_keys, labels);
+    }
+
+    #[test]
+    fn chain_slots__should_pair_every_chain_with_its_section() {
+        // Given
+        let config = ForeignChainsConfig {
+            bitcoin: Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(30).unwrap(),
+                max_retries: NonZeroU64::new(1).unwrap(),
+                expected_network_fingerprint: None,
+                providers: NonEmptyBTreeMap::new(
+                    "only".to_string().into(),
+                    ForeignChainProviderConfig {
+                        rpc_url: "https://rpc.example.com".to_string(),
+                        auth: AuthConfig::None,
+                    },
+                ),
+            }),
+            ..Default::default()
+        };
+
+        // When
+        let slots: Vec<_> = config.chain_slots().collect();
+
+        // Then
+        let slots_when_empty = ForeignChainsConfig::default().chain_slots().count();
+        assert_eq!(slots.len(), slots_when_empty);
+        let distinct: BTreeSet<_> = slots.iter().map(|(chain, _)| *chain).collect();
+        assert_eq!(distinct.len(), slots.len());
+        let configured: Vec<_> = slots
+            .iter()
+            .filter_map(|(chain, section)| section.map(|_| *chain))
+            .collect();
+        assert_eq!(configured, vec![dtos::ForeignChain::Bitcoin]);
     }
 }

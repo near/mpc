@@ -175,8 +175,8 @@ sequenceDiagram
 
 Two new crates, plus an existing one that picks up a new dependency:
 
-- **`tee-verifier-interface`** (new). Wire DTOs only — `QuoteBytes`, `Collateral`, `VerifiedReport`, and the nested report / TCB-status types as Borsh-serializable mirrors of the corresponding `dcap-qvl` types, plus the two verifier-outcome types `VerifierError` and `VerificationResult` (`Verified` / `Rejected`) that `verify_quote` returns. No `dcap-qvl` dependency, no MPC-specific types. This is what every caller of the verifier links against.
-- **`tee-verifier`** (new). The verifier contract WASM. Exposes a single method, `verify_quote`, which wraps `dcap_qvl::verify::verify`.
+- **`tee-verifier-interface`** (new). Wire DTOs only — `QuoteBytes`, `Collateral`, `VerifiedReport`, and the nested report / TCB-status types as Borsh-serializable mirrors of the corresponding `dcap-qvl` types, plus the verifier-outcome types `VerifierError` and `VerificationResult` (`Verified` / `Rejected`) that `verify_quote` returns, and `CollateralDates` / `VerificationResultWithCollateralDates` for `verify_quote_with_collateral_dates`. No `dcap-qvl` dependency, no MPC-specific types. This is what every caller of the verifier links against.
+- **`tee-verifier`** (new). The verifier contract WASM. Exposes `verify_quote`, which wraps `dcap_qvl::verify::verify`, and `verify_quote_with_collateral_dates`, which also returns the collateral's validity window (added for [certificate-derived expiry](certificate-derived-attestation-expiry.md)).
 - **`attestation`** (existing). TDX domain types and the post-DCAP verification logic. This is the crate that currently holds the `dcap-qvl` dependency on `main` — `Collateral` is a re-export of `dcap_qvl::QuoteCollateralV3`, the post-DCAP helpers take `dcap_qvl::verify::VerifiedReport` and `dcap_qvl::quote::TDReport10` as arguments, and `Attestation::verify` calls `dcap_qvl::verify::verify`. Under this design those references are replaced with the Borsh-mirror equivalents from `tee-verifier-interface`, `Collateral` becomes a real DTO, and `Attestation::verify` moves out to an off-chain helper. After that `attestation/Cargo.toml` no longer lists `dcap-qvl`.
 - **`mpc-attestation`** (existing). MPC-specific framing on top of `attestation`: the `Attestation { Dstack, Mock }` enum, the `(tls_pk, account_pk)` binding, mock attestation verification. On `main` this crate has no `dcap-qvl` in its `[dependencies]` — it inherits the dep transitively through `attestation`, so once `attestation` is cleaned up `mpc-attestation` is dcap-qvl-free without any of its own code changing. `mpc-contract` and `mpc-node` keep depending on it exactly as they do today.
 
@@ -245,7 +245,7 @@ A CLI helper that runs all four deterministically (for example `attestation-cli 
 
 ### The Verifier Contract
 
-The verifier exposes exactly one method:
+The verifier exposes two methods:
 
 ```rust
 #[near]
@@ -265,10 +265,19 @@ impl TeeVerifier {
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResult;
+
+    /// `verify_quote` plus the collateral's validity window. Added for
+    /// [certificate-derived expiry](certificate-derived-attestation-expiry.md#getting-it-on-chain).
+    #[result_serializer(borsh)]
+    pub fn verify_quote_with_collateral_dates(
+        &self,
+        #[serializer(borsh)] quote: QuoteBytes,
+        #[serializer(borsh)] collateral: Collateral,
+    ) -> VerificationResultWithCollateralDates;
 }
 ```
 
-The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `VerifierError`, `VerificationResult`, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. Most are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types; the two verifier-outcome types are:
+The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `CollateralDates`, `VerifierError`, the two result types, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. Most are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types; `CollateralDates` mirrors the six date fields of `dcap_qvl::QuoteClaims`. The verifier-outcome types are:
 
 ```rust
 pub enum VerifierError {
@@ -277,6 +286,14 @@ pub enum VerifierError {
 
 pub enum VerificationResult {
     Verified(VerifiedReport),
+    Rejected(VerifierError),
+}
+
+pub enum VerificationResultWithCollateralDates {
+    Verified {
+        report: VerifiedReport,
+        collateral_dates: CollateralDates,
+    },
     Rejected(VerifierError),
 }
 ```
@@ -612,7 +629,7 @@ The verifier-rotation design changes the test surface in three ways. First, the 
 
 Status: the stub verifier this section originally proposed was dropped during implementation, because a second contract mirroring the real one duplicated it for little gain. What shipped:
 
-Sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs` deploy the real `tee-verifier` WASM and drive each verdict through `vote_tee_verifier_change` + `submit_participant_info`: `Rejected` with a malformed quote, no-verdict with an undeployed verifier account, and `Verified` with the fixture quote. `Verified` needs the verifier built with its clock pinned to the fixture instant, which takes two deliberate switches: disabling the default `block-clock` feature and setting the `TEE_VERIFIER_PINNED_NOW_SECONDS` build-time environment variable (the fixture collateral is valid only inside a fixed window, while sandbox time is wall-clock and forward-only). Either switch alone leaves block time in place, and the reproducible release build uses the default feature set and passes no environment through (`passed_env = []`), so no release artifact can carry the pin.
+Sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs` deploy the real `tee-verifier` WASM and drive each verdict through `vote_tee_verifier_change` + `submit_participant_info`: `Rejected` with a malformed quote, no-verdict with an undeployed verifier account, and `Verified` with the fixture quote. `Verified` needs the verifier built with its clock pinned to the fixture instant, which takes two deliberate switches: disabling the default `block-clock` feature and setting the `TEE_VERIFIER_PINNED_NOW_SECONDS` build-time environment variable (the fixture collateral is valid only inside a fixed window, while sandbox time is wall-clock and forward-only). Either switch alone leaves block time in place, and the reproducible release build uses the default feature set and passes no environment through (`passed_env = []`), so no release artifact can carry the pin. The contract takes the same two switches (its own `block-clock` feature and `MPC_CONTRACT_PINNED_NOW_SECONDS`), so the fixture's expiry and launcher entries are judged against the same instant the verifier used.
 
 E2E tests in `crates/e2e-tests` deploy the real `tee-verifier` and vote it in during cluster startup for topology parity; nodes there submit mock attestations, which the MPC contract verifies without calling the verifier, so the cross-contract flow is covered at the sandbox layer.
 

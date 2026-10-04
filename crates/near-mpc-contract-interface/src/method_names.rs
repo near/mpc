@@ -27,14 +27,13 @@ pub const VOTE_REMOVE_OS_MEASUREMENT: &str = "vote_remove_os_measurement";
 pub const VOTE_CANCEL_KEYGEN: &str = "vote_cancel_keygen";
 pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
+// TODO(#4513): drop once production runs the vote-then-submit API.
 pub const VOTE_UPDATE: &str = "vote_update";
 pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
 pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
 pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
-pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
 // TODO(#4513): drop once production runs the vote-then-submit API.
 pub const REMOVE_UPDATE_PROPOSAL: &str = "remove_update_proposal";
-pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 pub const VOTE_CONTRACT_UPDATE: &str = "vote_contract_update";
 pub const REMOVE_CONTRACT_UPDATE_VOTE: &str = "remove_contract_update_vote";
 pub const REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES: &str =
@@ -77,8 +76,6 @@ pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
 pub const VERSION: &str = "version";
 pub const LATEST_KEY_VERSION: &str = "latest_key_version";
-// TODO(#4513): drop once production runs the vote-then-submit API.
-pub const PROPOSED_UPDATES: &str = "proposed_updates";
 pub const CONTRACT_UPDATE_VOTES: &str = "contract_update_votes";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
@@ -86,6 +83,7 @@ pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_fore
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const AVAILABLE_ATTESTATION_GRANTS: &str = "available_attestation_grants";
 pub const TEE_VERIFIER_ACCOUNT_ID: &str = "tee_verifier_account_id";
+pub const TEE_VERIFIER_VOTES: &str = "tee_verifier_votes";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_AVAILABLE_FOREIGN_CHAINS: &str = "get_available_foreign_chains";
 pub const GET_FOREIGN_CHAINS_CONFIGS: &str = "get_foreign_chains_configs";

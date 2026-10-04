@@ -15,8 +15,8 @@ use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use std::time::Duration;
 use tee_verifier::TeeVerifier;
 use tee_verifier_interface::{
-    QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory, VerificationResult,
-    VerifiedReport, VerifierError,
+    CollateralDates, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory,
+    VerificationResult, VerificationResultWithCollateralDates, VerifiedReport, VerifierError,
 };
 use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral, quote};
 
@@ -168,6 +168,110 @@ fn verify_quote__should_reject_valid_quote_with_mismatched_collateral() {
         matches!(
             result,
             VerificationResult::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected Rejected(DcapVerification(_)), got {result:?}"
+    );
+}
+
+#[test]
+fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fixture_dates() {
+    // Given
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let VerificationResult::Verified(expected_report) =
+        contract.verify_quote(make_quote_bytes(), collateral())
+    else {
+        panic!("verify_quote must accept the valid fixture");
+    };
+
+    // When
+    let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral());
+
+    // Then
+    let expected_dates = CollateralDates {
+        earliest_issue_date: 1_526_899_510,
+        latest_issue_date: 1_786_617_938,
+        earliest_expiration_date: 1_789_171_031,
+        qe_iden_earliest_issue_date: 1_526_899_510,
+        qe_iden_latest_issue_date: 1_786_579_063,
+        qe_iden_earliest_expiration_date: 1_789_171_063,
+    };
+    assert_eq!(
+        result,
+        VerificationResultWithCollateralDates::Verified {
+            report: expected_report,
+            collateral_dates: expected_dates,
+        }
+    );
+}
+
+#[test]
+fn verify_quote_with_collateral_dates__should_reject_valid_fixture_when_block_time_is_past_collateral_validity()
+ {
+    // Given
+    let ten_years = Duration::from_secs(10 * 365 * 24 * 60 * 60);
+    set_timestamp_context(Duration::from_secs(VALID_ATTESTATION_TIMESTAMP) + ten_years);
+    let contract = TeeVerifier::default();
+
+    // When
+    let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral());
+
+    // Then
+    let VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(reason)) =
+        result
+    else {
+        panic!("expected Rejected(DcapVerification(_)), got {result:?}");
+    };
+    assert!(
+        reason.to_lowercase().contains("expired"),
+        "expected a time-driven rejection, got: {reason}"
+    );
+}
+
+#[test]
+fn verify_quote_with_collateral_dates__should_reject_without_panicking_for_invalid_quote() {
+    // Given
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let invalid_quote = QuoteBytes(vec![0u8; 16]);
+
+    // When
+    let result = contract.verify_quote_with_collateral_dates(invalid_quote, collateral());
+
+    // Then
+    assert!(
+        matches!(
+            result,
+            VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected Rejected(DcapVerification(_)), got {result:?}"
+    );
+}
+
+#[test]
+fn verify_quote_with_collateral_dates__should_reject_mismatched_collateral_like_verify_quote() {
+    // Given
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let mut collateral = collateral();
+    collateral.tcb_info = String::from("{}");
+
+    // When
+    let verify_quote_result = contract.verify_quote(make_quote_bytes(), collateral.clone());
+    let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral);
+
+    // Then
+    assert!(
+        matches!(
+            verify_quote_result,
+            VerificationResult::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected verify_quote to reject, got {verify_quote_result:?}"
+    );
+    assert!(
+        matches!(
+            result,
+            VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(_))
         ),
         "expected Rejected(DcapVerification(_)), got {result:?}"
     );

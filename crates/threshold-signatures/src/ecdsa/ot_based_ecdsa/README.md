@@ -32,7 +32,7 @@ One-round online signing protocol. Takes a `RerandomizedPresignOutput` (produced
 
 ### `presign_and_sign.rs`
 
-Merged online protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally rather than through rerandomization, so a triple pair must never be fed to it twice. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
+Merged online protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally rather than through rerandomization, so each triple, not just the pair, must be used at most once (see the [requirement](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning)). See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
 
 ## Types
 

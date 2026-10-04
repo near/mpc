@@ -8,11 +8,13 @@ const TEE_VERIFIER_MANIFEST: &str = "crates/tee-verifier/Cargo.toml";
 const MPC_CONTRACT_OUT_DIR: &str = "target/near/contract-noabi";
 const MPC_CONTRACT_BENCH_OUT_DIR: &str = "target/near/contract-noabi-bench";
 const MPC_CONTRACT_SANDBOX_OUT_DIR: &str = "target/near/contract-noabi-sandbox";
+const MPC_CONTRACT_PINNED_CLOCK_OUT_DIR: &str = "target/near/contract-noabi-pinned-clock";
 const TEE_VERIFIER_PINNED_CLOCK_OUT_DIR: &str = "target/near/tee-verifier-pinned-clock";
 
 static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static CONTRACT_WITH_BENCH_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
 static CONTRACT_WITH_SANDBOX_TEST_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
+static CONTRACT_WITH_PINNED_CLOCK: OnceLock<Vec<u8>> = OnceLock::new();
 static MIGRATION_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static PARALLEL_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static TEE_VERIFIER_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
@@ -47,6 +49,22 @@ pub fn current_contract_with_sandbox_test_methods() -> &'static [u8] {
         ContractBuilder::new(MPC_CONTRACT_MANIFEST)
             .out_dir(MPC_CONTRACT_SANDBOX_OUT_DIR)
             .features(&["sandbox-test-methods"])
+            .build()
+    })
+}
+
+/// Returns the current contract WASM with its clock pinned to the fixture timestamp,
+/// matching [`tee_verifier_contract_with_pinned_clock`]. Use this for tests that store
+/// the fixture attestation and rely on it staying valid; time never advances in it.
+pub fn current_contract_with_pinned_clock() -> &'static [u8] {
+    CONTRACT_WITH_PINNED_CLOCK.get_or_init(|| {
+        ContractBuilder::new(MPC_CONTRACT_MANIFEST)
+            .out_dir(MPC_CONTRACT_PINNED_CLOCK_OUT_DIR)
+            .no_default_features()
+            .env(
+                "MPC_CONTRACT_PINNED_NOW_SECONDS",
+                &VALID_ATTESTATION_TIMESTAMP.to_string(),
+            )
             .build()
     })
 }

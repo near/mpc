@@ -33,6 +33,9 @@ ignore = [
   # shares a Store across Engines and does not depend on `wasmtime-wasi`.
   "RUSTSEC-2026-0222", # wasmtime stores can mix up type indices between engines
   "RUSTSEC-2026-0269", # wasmtime-wasi filesystem sandbox escape via trailing slashes
+  # Fixed in wasmtime >= 48.0.3, with no patched 45.x release. Affects only the component-model
+  # `Val` API; no crate in the workspace enables wasmtime's `component-model` feature.
+  "RUSTSEC-2026-0316", # wasmtime `Val` record lifting allocates beyond the fuel limit
   # TODO(#4423): remove once nearcore's aws-lc-rs pin lets cargo resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore pins aws-lc-rs to
   # =1.16.2 (2.14.0-rc.2 and master), so the fix cannot be resolved until that pin moves. The
