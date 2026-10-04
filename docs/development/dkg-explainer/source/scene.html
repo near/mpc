@@ -1,0 +1,434 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DKG explainer</title>
+<style>
+  html,body{margin:0;padding:0;background:#0a0f1e;}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;
+    background:radial-gradient(ellipse at 50% 35%, #142042 0%, #0a0f1e 70%);
+    font-family:"DejaVu Sans","Liberation Sans",sans-serif;color:#e8edf8;}
+  svg{position:absolute;left:0;top:0;}
+  #cap{position:absolute;left:160px;right:160px;bottom:36px;text-align:center;font-size:31px;line-height:1.38;
+    color:#f3f6fc;text-shadow:0 2px 6px #000a;}
+  #cap span{background:rgba(6,10,22,.72);padding:6px 16px;border-radius:10px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
+  #hdr{position:absolute;left:56px;top:38px;font-size:24px;letter-spacing:.06em;color:#8fa3cc;text-transform:uppercase;}
+  #hdr b{color:#ffc542;font-weight:700;margin-right:14px}
+  #bar{position:absolute;left:0;bottom:0;height:5px;background:linear-gradient(90deg,#4f8cff,#c58bff);}
+</style></head>
+<body>
+<div id="stage"><svg id="svg" width="1920" height="1080" viewBox="0 0 1920 1080"></svg>
+<div id="hdr"></div><div id="cap"></div><div id="bar"></div></div>
+<script>
+const TL = window.TIMELINE;
+const COL = ["#4f8cff","#ff7a59","#36c98a","#c58bff","#ffc542"];
+const GOLD="#ffc542", RED="#ff5470", GREEN="#36c98a", DIM="#5b6b8f", INK="#e8edf8", PANEL="#16213f", LINE="#2b3a63";
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const ease=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;};
+const lerp=(a,b,p)=>a+(b-a)*p;
+
+// math markup: a_i, a_{ij}, x^m, x^{m}
+function m(s){
+  s=s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return s.replace(/([_^])(\{([^}]*)\}|(.))/g,(_,k,__,g,c)=>{
+    const t=g!==undefined?g:c;
+    return k==="_"?`<tspan dy="0.28em" font-size="72%">${t}</tspan><tspan dy="-0.28em">​</tspan>`
+                  :`<tspan dy="-0.45em" font-size="68%">${t}</tspan><tspan dy="0.45em">​</tspan>`;
+  });
+}
+function T(x,y,s,o={}){
+  const sz=o.size||32, fill=o.fill||INK, anc=o.anchor||"middle", w=o.weight||"normal", op=o.op??1;
+  const fam=o.mono?'"DejaVu Sans Mono",monospace':(o.serif?'"DejaVu Serif",serif':'inherit');
+  const st=o.italic?'font-style="italic"':"";
+  return `<text x="${x}" y="${y}" font-size="${sz}" fill="${fill}" text-anchor="${anc}" font-weight="${w}" opacity="${op}" font-family='${fam}' ${st} dominant-baseline="middle">${o.raw?s:m(s)}</text>`;
+}
+function g(op,inner,tr=""){ if(op<=0.001) return ""; return `<g opacity="${op}" ${tr?`transform="${tr}"`:""}>${inner}</g>`; }
+function rect(x,y,w,h,o={}){return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${o.rx??14}" fill="${o.fill||PANEL}" stroke="${o.stroke||LINE}" stroke-width="${o.sw||2}" ${o.dash?`stroke-dasharray="${o.dash}"`:""} opacity="${o.op??1}"/>`;}
+function circ(x,y,r,o={}){return `<circle cx="${x}" cy="${y}" r="${r}" fill="${o.fill||"none"}" stroke="${o.stroke||"none"}" stroke-width="${o.sw||3}" ${o.dash?`stroke-dasharray="${o.dash}"`:""} opacity="${o.op??1}"/>`;}
+function line(x1,y1,x2,y2,o={}){return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${o.stroke||LINE}" stroke-width="${o.sw||3}" ${o.dash?`stroke-dasharray="${o.dash}"`:""} opacity="${o.op??1}" stroke-linecap="round"/>`;}
+function arrow(x1,y1,x2,y2,p=1,o={}){
+  if(p<=0) return "";
+  const c=o.stroke||INK, sw=o.sw||4;
+  const ex=lerp(x1,x2,p), ey=lerp(y1,y2,p);
+  const a=Math.atan2(y2-y1,x2-x1), h=o.head||16;
+  const hx1=ex-h*Math.cos(a-0.45), hy1=ey-h*Math.sin(a-0.45), hx2=ex-h*Math.cos(a+0.45), hy2=ey-h*Math.sin(a+0.45);
+  return `<g opacity="${o.op??1}"><line x1="${x1}" y1="${y1}" x2="${ex}" y2="${ey}" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" ${o.dash?`stroke-dasharray="${o.dash}"`:""}/>`+
+    `<path d="M${hx1},${hy1} L${ex},${ey} L${hx2},${hy2}" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+}
+function node(x,y,i,o={}){
+  const r=o.r||46, c=o.color||COL[i%5];
+  return `<g opacity="${o.op??1}">${circ(x,y,r+8,{fill:c,op:.13})}${circ(x,y,r,{fill:"#0f1730",stroke:c,sw:4})}`+
+    T(x,y+1,o.label??`P_${i+1}`,{size:o.fs||30,fill:c,weight:"bold"})+`</g>`;
+}
+function keyIcon(x,y,s,c){
+  return `<g transform="translate(${x},${y}) scale(${s})"><circle cx="-38" cy="0" r="26" fill="none" stroke="${c}" stroke-width="10"/>`+
+   `<path d="M-12,0 H52 M30,0 V20 M46,0 V16" stroke="${c}" stroke-width="10" stroke-linecap="round" fill="none"/></g>`;
+}
+function lockIcon(x,y,s,c){
+  return `<g transform="translate(${x},${y}) scale(${s})"><rect x="-26" y="-6" width="52" height="40" rx="7" fill="${c}"/>`+
+   `<path d="M-16,-6 V-20 A16,16 0 0 1 16,-20 V-6" fill="none" stroke="${c}" stroke-width="8"/></g>`;
+}
+function check(x,y,s,c=GREEN,p=1){ if(p<=0)return ""; const L=60*s;
+  return `<path d="M${x-22*s},${y} L${x-6*s},${y+16*s} L${x+24*s},${y-18*s}" fill="none" stroke="${c}" stroke-width="${7*s}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${L}" stroke-dashoffset="${L*(1-p)}"/>`;}
+function cross(x,y,s,c=RED,op=1){return `<g opacity="${op}"><path d="M${x-18*s},${y-18*s} L${x+18*s},${y+18*s} M${x+18*s},${y-18*s} L${x-18*s},${y+18*s}" stroke="${c}" stroke-width="${7*s}" stroke-linecap="round"/></g>`;}
+function chip(x,y,w,h,txt,c,o={}){
+  return `<g opacity="${o.op??1}">${rect(x-w/2,y-h/2,w,h,{fill:o.fill||"#0f1730",stroke:c,sw:o.sw||3,rx:o.rx??h/2,dash:o.dash})}${T(x,y+1,txt,{size:o.size||26,fill:o.tc||c,weight:o.weight||"bold",mono:o.mono,raw:o.raw})}</g>`;
+}
+function badge(x,y,txt,c,op=1){const w=txt.length*13+40; return chip(x,y,w,38,txt,c,{size:20,op,fill:c+"22"});}
+function packet(x1,y1,x2,y2,p,c,r=8){ if(p<=0||p>=1) return ""; return circ(lerp(x1,x2,p),lerp(y1,y2,p),r,{fill:c}); }
+function pulse(t,per=1.6){return .5+.5*Math.sin(t*2*Math.PI/per);}
+
+// ---------- scenes ----------
+const S=[];
+// 0 title
+S.push(c=>{
+  let o="";
+  const pts=[[960,150],[1740,260],[1600,800],[320,800],[180,260]];
+  for(let a=0;a<5;a++)for(let b=a+1;b<5;b++){ o+=line(...pts[a],...pts[b],{stroke:"#3a4f86",sw:2,op:.35*c.rv(0,0,1.2)});
+    const ph=((c.T*0.35+a*0.17+b*0.29)%1); o+=g(.55*c.rv(0,0,1.2),packet(...pts[a],...pts[b],ph,COL[a],5)); }
+  pts.forEach((p,k)=>o+=node(p[0],p[1],k,{op:.9*c.rv(0,k*.15)}));
+  const p0=ease(c.rv(0,0.2,1));
+  o+=g(p0,T(960,400,"Distributed Key Generation",{size:92,weight:"bold"}),`translate(0,${(1-p0)*30})`);
+  o+=g(ease(c.rv(0,.7,1)),T(960,490,"How near/mpc creates a key that nobody holds",{size:40,fill:"#a9b8d9"}));
+  o+=g(ease(c.rv(0,1.2,1)),T(960,560,"PedPop+  ·  crates/threshold-signatures",{size:28,fill:GOLD,mono:true}));
+  // key splitting into fragments
+  const k1=c.rv(1,0.2,.8), k2=ease(c.rv(1,1.6,2.2));
+  if(k1>0){
+    o+=g(k1*(1-k2*.9),keyIcon(960,700,1.4,GOLD));
+    pts.forEach((p,k)=>{ if(k2>0){ const x=lerp(960,p[0],k2), y=lerp(700,p[1],k2);
+      o+=g(k2,chip(x,y+ (k2>.98?72:0),110,40,`sk_${k+1}`,COL[k],{size:22}));}});
+  }
+  return o;
+});
+// 1 problem
+S.push(c=>{
+  let o="";
+  const up=ease(c.rv(2,0,1.0));
+  const yb=lerp(420,250,up), sc=lerp(1,.78,up);
+  const pA=ease(c.rv(0,.3)), pB=ease(c.rv(0,.9));
+  // pk card
+  o+=g(pA,`<g transform="translate(600,${yb}) scale(${sc})">${rect(-260,-130,520,260,{fill:"#10233a",stroke:GREEN,sw:4,rx:24})}${keyIcon(-150,0,1.1,GREEN)}`+
+     T(60,-35,"Public key",{size:40,fill:GREEN,weight:"bold"})+T(60,25,"pk",{size:44,serif:true,italic:true})+
+     g(ease(c.rv(1,.2)),T(0,95,"known to everyone",{size:28,fill:"#a9d9c2"}))+`</g>`);
+  const strike=ease(c.rv(1,2.6,1));
+  o+=g(pB,`<g transform="translate(1320,${yb}) scale(${sc})">${rect(-260,-130,520,260,{fill:strike>0?"#1a1424":"#2a1626",stroke:RED,sw:4,rx:24,dash:strike>.5?"14 10":null})}`+
+     g(1-0.6*strike,keyIcon(-150,0,1.1,RED))+
+     T(60,-35,"Private key",{size:40,fill:RED,weight:"bold"})+T(60,25,"sk",{size:44,serif:true,italic:true})+
+     g(strike,`<line x1="-220" y1="80" x2="220" y2="-80" stroke="${RED}" stroke-width="8" stroke-linecap="round" opacity=".85"/>`+T(0,100,"never assembled anywhere",{size:28,fill:"#ff9fb0"}))+`</g>`);
+  // shares
+  const N=5, xs=[...Array(N)].map((_,i)=>460+i*250), y=640;
+  const hl3=ease(c.rv(2,2.8)), hl2=ease(c.rv(2,c.d(2)*0.62));
+  xs.forEach((x,i)=>{
+    const p=ease(c.rv(2,.6+i*.15));
+    const on3=[0,2,3].includes(i)?hl3*(1-hl2):0, on2=[1,4].includes(i)?hl2:0;
+    o+=g(p,node(x,y,i,{op:1-0.55*(hl3*(1-hl2)>0&&!on3?1:0)-0.55*(hl2>0&&!on2?hl2:0)})+chip(x,y+90,110,42,`sk_${i+1}`,COL[i],{size:24}));
+    if(on3>0) o+=circ(x,y,66,{stroke:GOLD,sw:5,op:on3});
+    if(on2>0) o+=circ(x,y,66,{stroke:RED,sw:5,op:on2,dash:"10 8"});
+  });
+  o+=g(ease(c.rv(2,1.6)),T(960,830,"N = 5 nodes   ·   threshold t = 3",{size:34,fill:"#a9b8d9",serif:true,italic:true}));
+  o+=g(hl3*(1-hl2),T(960,890,"any t shares  →  can sign together",{size:32,fill:GOLD}));
+  o+=g(hl2,T(960,890,"t − 1 shares  →  learn nothing about sk",{size:32,fill:"#ff9fb0"}));
+  return o;
+});
+// 2 shamir
+const F=x=>2.2+1.9*x-0.42*x*x;
+S.push(c=>{
+  let o="", dl="";
+  const X0=330, Y0=800, UX=230, UY=105;
+  const P=(x,y)=>[X0+x*UX, Y0-y*UY];
+  const pAx=ease(c.rv(0,0,.8));
+  o+=g(pAx,arrow(X0-40,Y0,X0+5.6*UX,Y0,1,{stroke:"#6b7cab",sw:3})+arrow(X0,Y0+30,X0,Y0-5.8*UY,1,{stroke:"#6b7cab",sw:3})+
+     T(X0+5.6*UX+28,Y0,"x",{size:30,fill:"#8fa3cc",serif:true,italic:true})+
+     [1,2,3,4,5].map(k=>line(X0+k*UX,Y0-8,X0+k*UX,Y0+8,{stroke:"#6b7cab"})+T(X0+k*UX,Y0+34,String(k),{size:24,fill:"#8fa3cc"})).join("")+T(X0,Y0+34,"0",{size:24,fill:"#8fa3cc"}));
+  const altP=ease(c.rv(2,c.d(2)*0.5));
+  const curveP=ease(c.rv(0,.6,2.2));
+  const curveOp=1-0.75*altP;
+  if(curveP>0){ let d=""; const xe=lerp(-0.05,5.3,curveP); for(let x=-0.05;x<=xe+1e-9;x+=0.05){const [px,py]=P(x,F(x)); d+=(d?"L":"M")+px.toFixed(1)+","+py.toFixed(1);}
+    o+=`<path d="${d}" fill="none" stroke="${INK}" stroke-width="5" opacity="${curveOp}"/>`; }
+  o+=g(ease(c.rv(0,1.6)),`<g>${rect(1150,120,640,70,{fill:"#0f1730"})}${T(1470,156,"f(x) = a_0 + a_1x + a_2x^2",{size:32,serif:true,italic:true})}</g>`+T(1470,225,"degree t − 1 = 2",{size:26,fill:"#8fa3cc"}));
+  // secret & shares
+  const pS=ease(c.rv(1,.3)); const [sx,sy]=P(0,F(0));
+  const hl=ease(c.rv(2,.4))*(1-altP);
+  o+=g(pS*(1-0.6*altP),circ(sx,sy,16,{fill:GOLD})+circ(sx,sy,28,{stroke:GOLD,sw:3,op:.6})+T(sx+40,sy-36,"secret = f(0)",{size:30,fill:GOLD,anchor:"start",weight:"bold"}));
+  [1,2,3,4,5].forEach((k,i)=>{ const [px,py]=P(k,F(k)); const p=ease(c.rv(1,1.6+i*.25));
+    const chosen=[2,3,5].includes(k), kept2=[1,4].includes(k);
+    const op=p*(altP>0? (kept2?1:1-0.8*altP) : (hl>0&&!chosen?1-0.6*hl:1));
+    o+=g(op,circ(px,py,13,{fill:COL[i]})+line(px,py+16,px,Y0,{stroke:COL[i],sw:2,dash:"6 6",op:.6})+T(px,py-36,`sk_${k} = f(${k})`,{size:24,fill:COL[i],weight:"bold"}));
+    if(chosen&&hl>0) o+=circ(px,py,26,{stroke:GOLD,sw:4,op:hl});
+  });
+  o+=g(hl,`${rect(1150,250,640,64,{fill:"#2a2410",stroke:GOLD})}`+T(1470,283,"t = 3 points → unique curve",{size:28,fill:GOLD}));
+  // alternatives through 2 points
+  if(altP>0){
+    [-0.35,0.3,0.62].forEach((kk,j)=>{ let d=""; for(let x=-0.05;x<=5.1;x+=0.05){const y=F(x)+kk*(x-1)*(x-4); const [px,py]=P(x,y); d+=(d?"L":"M")+px.toFixed(1)+","+py.toFixed(1);}
+      o+=`<path d="${d}" fill="none" stroke="#9fb3ff" stroke-width="3" stroke-dasharray="10 8" opacity="${altP*.85}"/>`;
+      const [qx,qy]=P(0,F(0)+4*kk); o+=g(altP,circ(qx,qy,10,{fill:"#9fb3ff"})+T(qx-34,qy,"?",{size:30,fill:"#9fb3ff",weight:"bold"}));
+    });
+    o+=g(altP,`${rect(1150,250,640,64,{fill:"#151d3a",stroke:"#9fb3ff"})}`+T(1470,283,"t − 1 = 2 points → any secret fits",{size:28,fill:"#9fb3ff"}));
+  }
+  // dealer
+  const pd=ease(c.rv(3,.2)), px=ease(c.rv(3,2.6));
+  o=g(1-0.7*pd,o);
+  o+=g(pd,`${rect(1290,380,420,250,{fill:"#1f1830",stroke:"#c58bff",sw:3,rx:20})}`+
+     `<circle cx="1500" cy="450" r="34" fill="#c58bff"/><path d="M1440,540 Q1500,470 1560,540 Z" fill="#c58bff"/>`+
+     T(1500,585,"dealer knows f(0)",{size:28,fill:"#e5d2ff"})+cross(1500,505,3.2,RED,px)+
+     g(px,T(1500,665,"DKG: no trusted dealer",{size:30,fill:"#ff9fb0",weight:"bold"})));
+  return o;
+});
+// 3 everyone deals
+S.push(c=>{
+  let o="";
+  const cx0=470, cw=200, cy0=270, rh=92;
+  const X=j=>cx0+j*cw, Y=i=>cy0+i*rh;
+  const pCol0=ease(c.rv(3,.3));
+  // column headers
+  for(let j=1;j<=5;j++) o+=g(ease(c.rv(1,0)),node(X(j),232,j-1,{r:30,fs:22})+T(X(j),282,"receives",{size:16,fill:DIM}));
+  o+=g(pCol0,T(X(0),232,"x = 0",{size:26,fill:GOLD,serif:true,italic:true}));
+  for(let i=0;i<5;i++){
+    const p=ease(c.rv(0,.4+i*.3));
+    o+=g(p,node(150,Y(i+1)-rh+92,i,{r:30,fs:22}));
+    // mini curve
+    let d=""; for(let x=0;x<=1.0001;x+=0.05){const yy=Math.sin((x*2.4+i*1.3))*12+ (i%2?-6:6)*x; d+=(d?"L":"M")+(205+x*130).toFixed(1)+","+(Y(i+1)-rh+92-yy).toFixed(1);}
+    o+=g(p,`<path d="${d}" fill="none" stroke="${COL[i]}" stroke-width="4"/>`+T(270,Y(i+1)-rh+92+34,`f_${i+1}(x)`,{size:22,fill:COL[i],serif:true,italic:true}));
+  }
+  // cells
+  for(let i=1;i<=5;i++) for(let j=1;j<=5;j++){
+    const del=((i-1)*5+(j-1))*0.16+0.3, p=ease(c.rv(1,del,.5));
+    const x=X(j), y=Y(i);
+    o+=g(p, rect(x-80,y-32,160,64,{fill:i===j?COL[i-1]+"33":"#0f1730",stroke:COL[i-1],sw:2,rx:10})+T(x,y+1,`f_${i}(${j})`,{size:24,fill:COL[i-1],serif:true,italic:true}));
+    if(i!==j && p>0 && p<1) {}
+  }
+  // flying packets during beat 1
+  const tb=c.tb(1);
+  if(tb>0 && tb<6){ for(let i=1;i<=5;i++) for(let j=1;j<=5;j++){ if(i===j)continue; const del=((i-1)*5+(j-1))*0.16+0.3; const pp=(tb-del+0.5)/0.5;
+      o+=packet(180,Y(i),X(j),Y(i),clamp(pp,0,1)<1&&pp>0?ease(pp):-1,COL[i-1],7);} }
+  // sums
+  const pSum=ease(c.rv(2,.5));
+  const ys=Y(5)+95;
+  for(let j=1;j<=5;j++){
+    const p=ease(c.rv(2,.5+(j-1)*.25));
+    o+=g(p, rect(X(j)-90,Y(1)-44,180,Y(5)-Y(1)+88,{fill:"none",stroke:COL[j-1],sw:3,rx:16,op:.7}) + T(X(j),ys-28,"Σ",{size:30,fill:"#8fa3cc"}) + chip(X(j),ys+12,150,48,`sk_${j} = F(${j})`,COL[j-1],{size:22}));
+  }
+  o+=g(ease(c.rv(2,3.2)),`${rect(1310,950-55,0,0)}`);
+  // column 0
+  if(pCol0>0){
+    for(let i=1;i<=5;i++){ const x=X(0), y=Y(i); o+=g(pCol0*(c.rv(3,.3+i*.15)), rect(x-80,y-32,160,64,{fill:"#211b0a",stroke:GOLD,sw:2,rx:10,dash:"8 6"})+T(x,y+1,`f_${i}(0)`,{size:24,fill:GOLD,serif:true,italic:true})); }
+    const pS=ease(c.rv(3,1.6));
+    o+=g(pS, rect(X(0)-90,Y(1)-44,180,Y(5)-Y(1)+88,{fill:"none",stroke:GOLD,sw:3,rx:16,dash:"10 8"})+ T(X(0),ys-28,"Σ",{size:30,fill:"#8fa3cc"}) + chip(X(0),ys+12,170,48,"F(0) = sk",GOLD,{size:22,dash:"8 6"}));
+    const pN=ease(c.rv(3,3.2));
+    o+=g(pN, T(X(0),ys+70,"never computed",{size:24,fill:"#ff9fb0",weight:"bold"}));
+  }
+  o+=g(pSum*(1-0.0),T(1700, 90, "F(x) = Σ_i f_i(x)",{size:34,serif:true,italic:true,fill:INK}));
+  return o;
+});
+// 4 commitments
+S.push(c=>{
+  let o="";
+  const y1=230;
+  const p0=ease(c.rv(0,.3));
+  o+=g(p0,node(170,y1,0,{r:34,fs:24})+T(170,y1+62,"node i",{size:20,fill:DIM}));
+  const coef=["a_0","a_1","a_2"];
+  coef.forEach((a,k)=>{const p=ease(c.rv(0,.6+k*.2)); o+=g(p,chip(330+k*130,y1,110,56,a,COL[0],{size:28,rx:10}));});
+  o+=g(ease(c.rv(0,1.5)),T(460,y1-58,"secret coefficients of f_i",{size:22,fill:"#8fa3cc"}));
+  o+=arrow(640,y1,830,y1,ease(c.rv(0,2.0,.8)),{stroke:GOLD});
+  o+=g(ease(c.rv(0,2.2)),T(735,y1-32,"· G",{size:34,fill:GOLD,serif:true,italic:true}));
+  coef.forEach((a,k)=>{const p=ease(c.rv(0,2.8+k*.2)); o+=g(p,chip(920+k*150,y1,130,56,`a_${k}·G`,GREEN,{size:26,rx:10}));});
+  o+=g(ease(c.rv(0,3.6)),T(1070,y1-58,"public commitment C_i (curve points)",{size:22,fill:"#8fa3cc"}));
+  o+=g(ease(c.rv(0,4.2)),T(1530,y1,"easy →, infeasible ←",{size:24,fill:"#8fa3cc",anchor:"start"}));
+  // pk sum
+  const y2=500;
+  for(let i=0;i<5;i++){ const p=ease(c.rv(1,.3+i*.25));
+    o+=g(p,chip(260+i*230,y2,170,62,`C_${i+1}(0)`,COL[i],{size:26,rx:12}) + (i<4?T(375+i*230,y2,"+",{size:36,fill:"#8fa3cc"}):""));}
+  const pp=ease(c.rv(1,1.8));
+  o+=g(pp,T(1395,y2,"=",{size:44,fill:"#8fa3cc"})+chip(1560,y2,230,76,"pk",GREEN,{size:38,rx:16})+keyIcon(1740,y2,.6,GREEN));
+  o+=g(ease(c.rv(1,2.6)),T(960,y2+70,"= (Σ f_i(0)) · G = sk · G",{size:28,fill:"#a9d9c2",serif:true,italic:true}));
+  // verification
+  const y3=760;
+  const pv=ease(c.rv(2,.3));
+  const bad=ease(c.rv(2,c.d(2)*0.62));
+  o+=g(pv,rect(260,y3-70,1400,140,{fill:"#0f1730",stroke:bad>0?RED:GREEN,sw:3,rx:20})+
+     T(860,y3,"f_j(i) · G   =?   Σ_m i^m · C_j[m]",{size:38,serif:true,italic:true}));
+  o+=g(pv*(1-bad),check(1430,y3,1.6,GREEN,ease(c.rv(2,1.8,.6)))+T(1530,y3,"valid",{size:28,fill:GREEN,anchor:"start"}));
+  o+=g(bad,cross(1430,y3,1.3,RED)+T(1490,y3,"bad share",{size:28,fill:RED,anchor:"start"}));
+  o+=g(bad,T(960,y3+105,"mismatch → protocol aborts, cheater exposed",{size:26,fill:"#ff9fb0"}));
+  return o;
+});
+// 5 defenses
+S.push(c=>{
+  let o="";
+  // header: last mover
+  const ph=ease(c.rv(0,.3));
+  const fadeHdr=1-0.5*ease(c.rv(1,0));
+  for(let i=0;i<4;i++) o+=g(ph*fadeHdr,node(640+i*130,175,i,{r:34,fs:22}));
+  o+=g(ph*fadeHdr,node(1180,175,4,{r:34,fs:22,color:RED,label:"P_?"})+T(1250,175,"waits, then picks C last…",{size:24,fill:"#ff9fb0",anchor:"start"}));
+  o+=g(ph*fadeHdr,T(400,175,"naive DKG:",{size:28,fill:"#8fa3cc",anchor:"end"}));
+  const cards=[["1 · Proof of knowledge","#4f8cff"],["2 · Commit, then reveal","#36c98a"],["3 · Echo broadcast","#c58bff"]];
+  cards.forEach(([t,col],k)=>{
+    const x=110+k*580, y=290, w=540, h=470;
+    const p=ease(c.rv(k+1,.1));
+    o+=g(.25+.75*p, rect(x,y,w,h,{fill:p>0?"#0f1730":"#0d1328",stroke:p>0?col:LINE,sw:3,rx:22,dash:p>0?null:"10 8"})+T(x+w/2,y+44,t,{size:30,fill:p>0?col:DIM,weight:"bold"}));
+    if(p<=0) return;
+    const cx=x+w/2;
+    if(k===0){
+      o+=g(p,T(cx,y+110,"rogue key attack:",{size:22,fill:"#ff9fb0"})+T(cx,y+152,"C_?(0) = X − Σ_{i≠?} C_i(0)",{size:26,fill:"#ff9fb0",serif:true,italic:true}));
+      o+=g(ease(c.rv(1,1.2)),T(cx,y+192,"⇒ pk = X, attacker controls key",{size:21,fill:"#ff9fb0",raw:true}));
+      const q=ease(c.rv(1,c.d(1)*0.45));
+      o+=g(q,line(x+40,y+232,x+w-40,y+232,{stroke:LINE,sw:2})+T(cx,y+270,"Schnorr proof of f_i(0):",{size:22,fill:"#9fc2ff"})+
+         T(cx,y+310,"R_i = k_i·G",{size:24,serif:true,italic:true})+
+         T(cx,y+348,"c_i = H(sid, i, C_i(0), R_i)",{size:24,serif:true,italic:true})+
+         T(cx,y+386,"s_i = k_i + f_i(0)·c_i",{size:24,serif:true,italic:true})+
+         g(ease(c.rv(1,c.d(1)*0.7)),T(cx,y+432,"can't prove a key you don't know ✓",{size:21,fill:GREEN,raw:true})));
+    }
+    if(k===1){
+      const q1=ease(c.rv(2,.6)), q2=ease(c.rv(2,c.d(2)*0.55));
+      o+=g(q1,lockIcon(cx-120,y+150,1.1,col)+T(cx+30,y+140,"h_i = H(i, C_i, sid)",{size:26,serif:true,italic:true})+T(cx+30,y+182,"sent first (Round 2)",{size:20,fill:"#8fa3cc"}));
+      o+=arrow(cx,y+225,cx,y+285,q2,{stroke:col});
+      o+=g(q2,chip(cx,y+325,240,54,"reveal C_i",col,{size:24,rx:12})+T(cx,y+372,"(Round 3)",{size:20,fill:"#8fa3cc"})+
+        g(ease(c.rv(2,c.d(2)*0.72)),T(cx,y+425,"H(i, C_i, sid) = h_i ✓",{size:23,fill:GREEN,serif:true,italic:true})));
+    }
+    if(k===2){
+      const q=ease(c.rv(3,.5));
+      const ph=["send","echo","ready"];
+      const nx=[cx-170,cx,cx+170];
+      ph.forEach((n,i)=>{const qq=ease(c.rv(3,.6+i*.7)); o+=g(qq,chip(nx[i],y+130,140,46,n,col,{size:22,rx:12})+(i<2?arrow(nx[i]+75,y+130,nx[i+1]-75,y+130,qq,{stroke:col,sw:3,head:10}):""));});
+      // mini network
+      const cy=y+290, pts=[[cx-130,cy-50],[cx+130,cy-50],[cx-160,cy+70],[cx+160,cy+70],[cx,cy+120]];
+      pts.forEach((a,i)=>pts.forEach((b,j)=>{ if(j>i) { o+=line(...a,...b,{stroke:col,sw:2,op:.3*q}); o+=g(q,packet(...a,...b,(c.T*.6+i*.2+j*.13)%1,col,5)); }}));
+      pts.forEach((a,i)=>o+=g(q,circ(...a,18,{fill:"#0f1730",stroke:COL[i],sw:3})));
+      o+=g(ease(c.rv(3,c.d(3)*0.55)),T(cx,y+440,"all honest nodes agree ✓",{size:22,fill:GREEN,raw:true}));
+    }
+  });
+  // sid banner
+  const ps=ease(c.rv(4,.3));
+  for(let i=0;i<5;i++){ const p=ease(c.rv(4,.3+i*.15)); const m2=ease(c.rv(4,2.4,1.2));
+    o+=g(p*(1-m2), chip(lerp(520+i*130,960,0),840,110,44,`sid_${i+1}`,COL[i],{size:20,rx:10}),`translate(${(960-(520+i*130))*m2},0)`); }
+  o+=g(ps,T(380,840,"session ID:",{size:26,fill:"#8fa3cc",anchor:"end"}));
+  const pm=ease(c.rv(4,2.6));
+  o+=g(pm,chip(960,840,520,54,"sid = H(sid_1, …, sid_N)",GOLD,{size:26,rx:14}) + T(1290,840,"→ bound into every hash",{size:24,fill:"#8fa3cc",anchor:"start"}));
+  return o;
+});
+// 6 rounds
+S.push(c=>{
+  let o="";
+  const ph=ease(c.rv(0,.2));
+  o+=g(ph,T(960,130,"do_keyshare()   ·   crates/threshold-signatures/src/dkg.rs",{size:28,fill:GOLD,mono:true,raw:true}));
+  const R=[
+    ["Round 1",["random sid_i"],"echo broadcast","#c58bff",1],
+    ["Round 2",["sid = H(sid_1…sid_N)","sample f_i","C_i = f_i · G","PoK (R_i, s_i)","send h_i"],"send to all","#4f8cff",1],
+    ["Round 3",["(C_i, R_i, s_i)"],"echo broadcast","#c58bff",2],
+    ["Round 4",["verify PoKs","verify h_j","pk = Σ C_j(0)","send f_i(j)"],"private","#ff7a59",2],
+    ["Round 5",["check f_j(i)·G","sk_i = Σ f_j(i)","success"],"echo broadcast","#c58bff",3],
+    ["Round 5.5",["wait for all","success votes","output (sk_i, pk)"],"","#36c98a",3],
+  ];
+  const x0=100, w=270, gap=20, y0=200;
+  o+=g(ph,line(x0,y0+20,x0+6*w+5*gap,y0+20,{stroke:LINE,sw:4}));
+  R.forEach(([t,items,ch,col,bt],k)=>{
+    const x=x0+k*(w+gap); const half=k%2;
+    const p=ease(c.rv(bt, half? c.d(bt)*0.45 : 0.3));
+    o+=g(.25+.75*p, circ(x+w/2,y0+20,12,{fill:p>0?col:LINE}));
+    o+=g(p, rect(x,y0+60,w,560,{fill:"#0f1730",stroke:col,sw:3,rx:18})+T(x+w/2,y0+105,t,{size:30,fill:col,weight:"bold"})+
+      items.map((s,i)=>T(x+w/2,y0+175+i*62,s,{size:23,serif:/[=Σ_]/.test(s),italic:/[=Σ_]/.test(s)})).join("")+
+      (ch?badge(x+w/2,y0+580,ch,col):""), `translate(0,${(1-p)*20})`);
+  });
+  const p4=ease(c.rv(4,.3));
+  o+=g(p4,rect(330,860,1260,0,{}));
+  const n=Math.round(lerp(0,11.5,ease(c.rv(4,1.4,2.5)))*2)/2;
+  o+=g(p4, T(960,870,`3 × echo broadcast (send · echo · ready) + direct messages  ≈  ${n.toFixed(1)} rounds`,{size:30,fill:INK,raw:true}));
+  return o;
+});
+// 7 production
+S.push(c=>{
+  let o="";
+  const done=ease(c.rv(3,c.d(3)*0.8));
+  o+=rect(160,110,1600,300,{fill:"#121a35",stroke:"#6b7cab",sw:3,rx:24});
+  o+=T(240,150,"MPC contract",{size:28,fill:"#a9b8d9",anchor:"start",weight:"bold"});
+  const states=["NotInitialized","Initializing","Running"];
+  states.forEach((s,i)=>{const y=210+i*62; const active=(i===1)*(1-done)+(i===2)*done;
+    o+=chip(380,y,300,48,s,active>0.5?(i===2?GREEN:GOLD):DIM,{size:22,rx:12,fill:active>0.5?(i===2?GREEN+"22":GOLD+"22"):"#0f1730"});});
+  // nodes
+  const xs=[400,680,960,1240,1520], ny=760;
+  // mesh
+  const pm=ease(c.rv(1,.3));
+  xs.forEach((a,i)=>xs.forEach((b,j)=>{ if(j>i){ const bend=-60-(j-i)*40; const d=`M${a},${ny} Q${(a+b)/2},${ny+(j-i)*45} ${b},${ny}`;
+     o+=`<path d="${d}" fill="none" stroke="#3a4f86" stroke-width="2" opacity="${pm*.6}"/>`; } }));
+  if(pm>0 && c.T<c.beatEnd(2)) xs.forEach((a,i)=>xs.forEach((b,j)=>{ if(j>i){ const t=(c.T*.7+i*.3+j*.11)%1; const mx=(a+b)/2, my=ny+(j-i)*45;
+     const px=(1-t)*(1-t)*a+2*(1-t)*t*mx+t*t*b, py=(1-t)*(1-t)*ny+2*(1-t)*t*my+t*t*ny; o+=g(pm,circ(px,py,6,{fill:COL[i]})); }}));
+  o+=g(pm,T(960,ny+128,"TLS peer-to-peer mesh  ·  PedPop+",{size:22,fill:"#8fa3cc"}));
+  xs.forEach((x,i)=>o+=g(ease(c.rv(0,.2+i*.1)),node(x,ny,i)));
+  // leader
+  const pl=ease(c.rv(0,1.4)), sk=1-ease(c.rv(1,0));
+  o+=g(pl,`<path d="M${xs[0]-26},${ny-62} l10,-28 l16,18 l16,-18 l10,28 z" fill="${GOLD}"/>`+T(xs[0]-50,ny-78,"leader",{size:22,fill:GOLD,anchor:"end"}));
+  o+=g(sk,arrow(xs[0],ny-100,xs[0],420,ease(c.rv(0,2.4,1)),{stroke:GOLD,sw:5}));
+  o+=g(ease(c.rv(0,3.0))*sk,T(xs[0]+24,560,"start_keygen()",{size:28,fill:GOLD,mono:true,raw:true,anchor:"start"}));
+  // storage + votes
+  xs.forEach((x,i)=>{ const p=ease(c.rv(1,c.d(1)*0.35+i*.15));
+    o+=g(p,`<g transform="translate(${x+70},${ny+60})"><ellipse cx="0" cy="-14" rx="26" ry="9" fill="#1d2a52" stroke="${COL[i]}" stroke-width="2"/><path d="M-26,-14 V14 A26,9 0 0 0 26,14 V-14" fill="#1d2a52" stroke="${COL[i]}" stroke-width="2"/></g>`+T(x+70,ny+105,`sk_${i+1}`,{size:20,fill:COL[i]}));
+    const pv=ease(c.rv(1,c.d(1)*0.62+i*.15,1.1));
+    o+=arrow(x,ny-56,lerp(x,1100+i*40,0.0)+ (1100+i*40-x)*0,420,pv,{stroke:COL[i],sw:3,head:12});
+  });
+  o+=g(ease(c.rv(1,c.d(1)*0.7)),T(1650,590,"vote_pk(pk)",{size:26,fill:INK,mono:true,raw:true}));
+  // tally
+  const pt=ease(c.rv(2,.3));
+  const votes=Math.min(5,Math.floor(lerp(0,5.99,ease(c.rv(2,.4,2.5)))));
+  o+=g(pt,T(1000,175,`votes for pk:  ${votes} / 5`,{size:30,anchor:"start"})+[0,1,2,3,4].map(i=>circ(1020+i*44,225,15,{fill:i<votes?COL[i]:"none",stroke:COL[i],sw:2})).join(""));
+  o+=g(pt*(votes===5?1:0),check(1270,225,1.0,GREEN,1)+T(1310,225,"all identical",{size:24,fill:GREEN,anchor:"start"}));
+  const pa=ease(c.rv(2,c.d(2)*0.55));
+  o+=g(pa*(1-ease(c.rv(3,0))),T(1000,290,"any mismatch → abort attempt → leader retries",{size:24,fill:"#ff9fb0",anchor:"start"}));
+  // domains
+  const D=[["domain 0","secp256k1","ECDSA"],["domain 1","Ed25519","EdDSA"],["domain 2","BLS12-381","CKD"]];
+  D.forEach((d,i)=>{const p=ease(c.rv(3,.8+i*1.6)); const y=270+i*44;
+    o+=g(p*(1),T(1000,y+ (i===0?0:0) +60-40,`${d[0]} · ${d[1]} · ${d[2]}`,{size:24,anchor:"start",fill:"#cfd8ef",raw:true})+check(1540,y+20,.7,GREEN,ease(c.rv(3,1.0+i*1.6,.5))));
+  });
+  return o;
+});
+// 8 reshare
+S.push(c=>{
+  let o="";
+  const oldIds=[1,2,3,4,5], newIds=[1,2,3,4,6];
+  const xo=360, xn=1560, y0=230, dy=130;
+  const p0=ease(c.rv(0,.2));
+  o+=g(p0,T(xo,140,"old set · t = 3",{size:28,fill:"#8fa3cc"})+T(xn,140,"new set · t′ = 4",{size:28,fill:"#8fa3cc"}));
+  oldIds.forEach((id,k)=>{ const p=ease(c.rv(0,.4+k*.12)); const leaving=id===5;
+    o+=g(p*(leaving?0.45:1),node(xo,y0+k*dy,id-1,{r:40,fs:26})+(leaving?T(xo-80,y0+k*dy,"leaves",{size:20,fill:DIM,anchor:"end"}):T(xo-80,y0+k*dy,`secret_${id}`,{size:22,fill:COL[id-1],anchor:"end",serif:true,italic:true})));});
+  newIds.forEach((id,k)=>{ const p=ease(c.rv(0,1.4+k*.12)); const joiner=id===6;
+    o+=g(p,node(xn,y0+k*dy,id-1,{r:40,fs:26,color:joiner?"#7ee0ff":COL[id-1],label:`P_${id}`})+(joiner?T(xn+80,y0+k*dy,"joins",{size:22,fill:"#7ee0ff",anchor:"start"}):""));});
+  for(let k=0;k<4;k++){ const pa=ease(c.rv(0,2.2+k*.2,1.2)); o+=arrow(xo+60,y0+k*dy,xn-60,y0+k*dy,pa,{stroke:"#3a4f86",sw:2,head:10,op:.8}); }
+  // formulas
+  const p1=ease(c.rv(1,.3)), p2=ease(c.rv(1,c.d(1)*0.42)), p3=ease(c.rv(1,c.d(1)*0.7));
+  o+=g(p1,rect(560,250,800,120,{fill:"#0f1730",stroke:GOLD,sw:3,rx:18})+T(960,290,"old holder i ∈ I:",{size:24,fill:"#8fa3cc"})+T(960,335,"f_i(0) = λ_i(I) · secret_i",{size:34,serif:true,italic:true,fill:GOLD}));
+  o+=g(p2,rect(560,400,800,100,{fill:"#0f1730",stroke:"#7ee0ff",sw:3,rx:18})+T(960,450,"new joiner:   f_i(0) = 0",{size:32,serif:true,italic:true,fill:"#7ee0ff"}));
+  o+=g(p3,T(960,560,"Σ_i f_i(0) = Σ_{i∈I} λ_i · secret_i = sk",{size:32,serif:true,italic:true}));
+  // pk check + refresh
+  const q=ease(c.rv(2,.3)), r=ease(c.rv(2,c.d(2)*0.45));
+  o+=g(q,rect(560,640,800,90,{fill:"#10233a",stroke:GREEN,sw:3,rx:18})+T(920,685,"assert  pk = OldPK",{size:34,fill:GREEN,serif:true,italic:true})+check(1240,685,1.1,GREEN,ease(c.rv(2,1.2,.6))));
+  o+=g(r,`<path d="M780,820 A60,40 0 1 1 790,860" fill="none" stroke="#c58bff" stroke-width="4"/>`+arrow(786,852,792,862,1,{stroke:"#c58bff",sw:4,head:12})+
+     T(920,840,"refresh: same participants, same t → fresh shares, same pk",{size:26,fill:"#e5d2ff",anchor:"start"}));
+  return o;
+});
+// 9 recap
+S.push(c=>{
+  let o="";
+  const L=[["Every node contributes randomness","f_i",COL[0]],["Shares travel privately","f_i(j)",COL[1]],["Commitments make them verifiable","C_i",COL[2]],["Proofs + echo broadcast stop cheaters","PoK",COL[3]],["The contract confirms the result","vote_pk",COL[4]]];
+  const out=ease(c.rv(1,.2));
+  L.forEach(([t,k,col],i)=>{ const p=ease(c.rv(0,.3+i*c.d(0)*0.17)); const y=200+i*95;
+    o+=g(p*(1-0.6*out), chip(470,y,170,56,k,col,{size:24,rx:12,raw:k==="vote_pk"})+T(600,y,t,{size:36,anchor:"start"}), `translate(${(1-p)*-30},0)`);});
+  o+=g(out, rect(360,700,560,150,{fill:"#10233a",stroke:GREEN,sw:4,rx:22})+keyIcon(460,775,.9,GREEN)+T(700,755,"public key",{size:32,fill:GREEN,weight:"bold"})+T(700,800,"known to all",{size:26,fill:"#a9d9c2"}));
+  o+=g(ease(c.rv(1,1.2)), rect(1000,700,560,150,{fill:"#1a1424",stroke:RED,sw:4,rx:22,dash:"14 10"})+g(.4,keyIcon(1100,775,.9,RED))+T(1340,755,"private key",{size:32,fill:RED,weight:"bold"})+T(1340,800,"exists nowhere",{size:26,fill:"#ff9fb0"}));
+  o+=g(ease(c.rv(1,2.6)),T(960,900,"crates/threshold-signatures/docs/dkg.md",{size:28,fill:GOLD,mono:true}));
+  return o;
+});
+
+function renderAt(Tg){
+  const sc=TL.scenes; let si=sc.findIndex(s=>Tg>=s.start&&Tg<s.end); if(si<0) si=Tg<0?0:sc.length-1;
+  const s=sc[si], B=s.beats;
+  const ctx={T:Tg,
+    rv:(k,delay=0,dur=.7)=>clamp((Tg-(B[k].start+delay))/dur),
+    tb:k=>Tg-B[k].start, d:k=>B[k].dur, beatEnd:k=>B[k].start+B[k].dur};
+  const env=Math.min(clamp((Tg-s.start)/0.5), clamp((s.end-Tg)/0.4));
+  document.getElementById("svg").innerHTML=`<g opacity="${env}">${S[si](ctx)}</g>`;
+  let bi=B.findIndex(b=>Tg>=b.start&&Tg<b.start+b.dur); if(bi<0) bi=B.length-1;
+  const b=B[bi]; const cop=Math.min(clamp((Tg-b.speechStart+0.15)/0.25), clamp((b.speechEnd+0.35-Tg)/0.25));
+  document.getElementById("cap").innerHTML=`<span style="opacity:${cop}">${b.caption}</span>`;
+  document.getElementById("cap").style.opacity=cop;
+  document.getElementById("hdr").innerHTML=si===0?"":`<b>${String(si).padStart(2,"0")}</b>${s.title}`;
+  document.getElementById("hdr").style.opacity=env;
+  document.getElementById("bar").style.width=(100*Tg/TL.total)+"%";
+}
+window.renderAt=renderAt;
+</script></body></html>
