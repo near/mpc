@@ -73,8 +73,7 @@ impl TeeVerifier {
     ///
     /// Applies no policy ([`QuotePolicy::claims_only`]), so an accepted quote
     /// gets the same report as from [`Self::verify_quote`]. It can also reject
-    /// collateral whose dates do not parse, and costs slightly more gas: reading
-    /// the dates parses the CRLs and certificates again.
+    /// collateral whose dates do not parse, and costs slightly more gas.
     #[result_serializer(borsh)]
     pub fn verify_quote_with_collateral_dates(
         &self,

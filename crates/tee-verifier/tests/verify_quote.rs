@@ -7,8 +7,9 @@
 //!
 //! - a valid quote yields `Verified` carrying the parsed report (and, for the
 //!   second method, the fixture's collateral dates);
-//! - an invalid quote yields `Rejected`, returned as the value of a successful
-//!   call rather than a panic, with the same error from both methods.
+//! - a rejected quote or collateral yields `Rejected`, returned as the value of
+//!   a successful call rather than a panic, with the same error from both
+//!   methods.
 
 #![expect(non_snake_case)]
 
@@ -112,8 +113,7 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
 #[test]
 fn verify_quote__should_reject_valid_fixture_when_block_time_is_past_collateral_validity() {
     // Given: block time far past the fixture collateral's validity window
-    let ten_years = Duration::from_secs(10 * 365 * 24 * 60 * 60);
-    set_timestamp_context(Duration::from_secs(VALID_ATTESTATION_TIMESTAMP) + ten_years);
+    set_timestamp_context(ten_years_after_fixture());
     let contract = TeeVerifier::default();
     let quote = make_quote_bytes();
     let collateral = collateral();
