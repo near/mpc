@@ -10,19 +10,11 @@ Node migration allows you to move your MPC node from one host to another without
 
 **Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](../archive/design/migration-service.md).
 
-## Prerequisites
-
-Before starting a migration, ensure you have:
-
-1. **An active MPC node** that is a current participant in the network
-2. **A new host/machine** ready to run the migrated node
-3. **The backup-cli tool** installed on a secure machine (can be your local machine or a dedicated backup server)
-4. **NEAR CLI** installed for contract interactions
-5. **Access to both nodes** (old and new) during the migration process
-
 ## Environment Variables Setup
 
-Set up the following environment variables at the beginning of your migration process. These will be used throughout the guide:
+All commands in this guide run on the machine where `backup-cli` and NEAR CLI are installed. Set these variables there at the beginning of your migration; every code example below uses them.
+
+Known up front:
 
 ```bash
 # Your NEAR account ID that operates the MPC node
@@ -33,9 +25,80 @@ export MPC_CONTRACT_ACCOUNT_ID=v1.signer-prod.testnet
 
 # NEAR network configuration (testnet or mainnet)
 export NEAR_NETWORK=testnet
+
+# Where backup-cli keeps its keys and the backed-up keyshares (Step 1)
+export BACKUP_HOME_DIR=/path/to/backup/home
+
+# The old node's migration endpoint, as bare host:port — no http:// (Step 4)
+export OLD_NODE_ADDRESS=node.example.com:8079
+
+# The new node's migration endpoint, as bare host:port — no http:// (Step 7)
+export NEW_NODE_ADDRESS=new-node.example.com:8079
+
+# The new node's public URL to register on the contract — http:// prefix required (Step 6)
+export NEW_NODE_URL=http://new-node.example.com:80
+```
+
+Filled in as you go — each one is set by a command in the step shown:
+
+```bash
+# The shared transport encryption key, 64 hex characters (Step 3)
+export BACKUP_ENCRYPTION_KEY=...
+
+# The old node's P2P (TLS) public key (Step 4)
+export OLD_NODE_P2P_KEY=...
+
+# The new node's P2P (TLS) public key (Step 5)
+export NEW_NODE_P2P_KEY=...
+
+# The new node's NEAR signer public key (Step 5)
+export NEW_NODE_SIGNER_PUBLIC_KEY=...
 ```
 
 **Note:** Adjust these values based on your specific setup. For mainnet deployments, use `mainnet` for `NEAR_NETWORK` and `v1.signer` for `MPC_CONTRACT_ACCOUNT_ID`.
+
+The nodes themselves need one value configured on them: the backup encryption key — in `user-config.toml` on a TDX/CVM node, or as `MPC_BACKUP_ENCRYPTION_KEY_HEX` in `.env` on a non-TEE node. [Step 3](#step-3-generate-and-set-encryption-key) and [Step 5](#step-5-prepare-the-new-node) cover where to set it.
+
+## Prerequisites
+
+Before starting a migration, ensure you have:
+
+1. **An active MPC node** that is a current participant in the network
+2. **A new host/machine** ready to run the migrated node
+3. **The backup-cli tool** installed on a secure machine (can be your local machine or a dedicated backup server)
+4. **NEAR CLI** installed for contract interactions
+5. **Access to both nodes** (old and new) during the migration process
+6. **An available attestation grant** for your node account — the new node's attestation consumes one (see below)
+
+### Prepay the New Node's Attestation Storage
+
+During a migration your account briefly holds two attestations — the old node's and the new node's — and each stored attestation consumes one prepaid **grant**. The old node's grant is returned only after its attestation expires (7 days) and is swept, so the new node needs a grant of its own. Without one, the new node's attestation submission is rejected and it retries in a loop, stalling the migration at [Step 5](#step-5-prepare-the-new-node).
+
+Do this before you start the migration — it needs only your account's full-access key, nothing from the new node. Check whether a grant is available:
+
+```bash
+near contract call-function as-read-only \
+  $MPC_CONTRACT_ACCOUNT_ID \
+  available_attestation_grants \
+  json-args "{\"account_id\":\"$SIGNER_ACCOUNT_ID\"}" \
+  network-config $NEAR_NETWORK \
+  now
+```
+
+If it returns `0`, prepay one grant. The fee is a votable contract parameter (currently 20 milliNEAR = 0.02 NEAR per grant) and the attached deposit must equal fee × grants exactly — read the current fee and see the full details in [Prepay Your Node's Attestation Storage](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepay-your-nodes-attestation-storage) in the operator guide:
+
+```bash
+near contract call-function as-transaction \
+  $MPC_CONTRACT_ACCOUNT_ID \
+  prepay_attestation_storage \
+  json-args "{\"account_id\":\"$SIGNER_ACCOUNT_ID\",\"grants\":1}" \
+  prepaid-gas '30.0 Tgas' \
+  attached-deposit '0.02 NEAR' \
+  sign-as $SIGNER_ACCOUNT_ID \
+  network-config $NEAR_NETWORK \
+  sign-with-keychain \
+  send
+```
 
 ## Step 1: Setup the Backup CLI
 
@@ -53,12 +116,15 @@ This installs the `backup-cli` binary to your cargo bin directory (typically `~/
 
 ### Generate Backup Service Keys
 
-Create a home directory for the backup-cli and generate its keys:
+Create the backup home directory (`$BACKUP_HOME_DIR` from [Environment Variables Setup](#environment-variables-setup)):
 
 ```bash
-export BACKUP_HOME_DIR=/path/to/backup/home
 mkdir -p $BACKUP_HOME_DIR
+```
 
+Then generate the backup service keys:
+
+```bash
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   generate-keys
@@ -182,11 +248,11 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address**: The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view. The contract rejects a `url` longer than 256 bytes.
-- **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
+- **MPC node address** (`$OLD_NODE_ADDRESS`): The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view. The contract rejects a `url` longer than 256 bytes.
+- **MPC node P2P public key** (`$OLD_NODE_P2P_KEY`): The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash
-  export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+  export OLD_NODE_P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
   ```
 
 ### Get Contract State
@@ -206,7 +272,7 @@ This saves the contract state to `contract_state.json`, which the backup-cli use
 
 ### Run the Backup
 
-The migration endpoint listens on the node's `migration_web_ui` port. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
+The migration endpoint listens on the node's `migration_web_ui` port — the port in `$OLD_NODE_ADDRESS`. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
 
 ```bash
 curl -s http://<IP>:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
@@ -216,8 +282,8 @@ curl -s http://<IP>:8080/debug/node_config | jq -r '.migration_web_ui | split(":
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   get-keyshares \
-  --mpc-node-address node.example.com:8079 \
-  --mpc-node-p2p-key "ed25519:YourNodeP2PPublicKey..." \
+  --mpc-node-address $OLD_NODE_ADDRESS \
+  --mpc-node-p2p-key $OLD_NODE_P2P_KEY \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
@@ -240,8 +306,8 @@ backup-cli \
   run \
   --near-chain-id $NEAR_NETWORK \
   --mpc-contract-account-id $MPC_CONTRACT_ACCOUNT_ID \
-  --mpc-node-address node.example.com:8079 \
-  --mpc-node-p2p-key "ed25519:YourNodeP2PPublicKey..."
+  --mpc-node-address $OLD_NODE_ADDRESS \
+  --mpc-node-p2p-key $OLD_NODE_P2P_KEY
 ```
 
 Notes:
@@ -285,8 +351,8 @@ See more details on extracting key from the node and adding the keys to your acc
 **Note:** The keys can be retrieved using the node's public data endpoint:
 
 ```bash
-export near_signer_public_key=$(curl -s http://<IP>:8080/public_data | jq -r ".near_signer_public_key")
-export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+export NEW_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_signer_public_key")
+export NEW_NODE_P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
 ```
 
 ### Check that the new node's attestation is registered on the contract
@@ -300,7 +366,7 @@ near contract call-function as-read-only \
   now
 ```
 
-**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node.
+**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs show rejected attestation submissions, the account has no available attestation grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage).
 
 Output should look like this:
 
@@ -324,9 +390,9 @@ Output should look like this:
 ### Collect New Node Information
 
 You'll need:
-- **New node's P2P public key**: $P2P_KEY from step above.
-- **New node's signer account public key**: $near_signer_public_key from step above.
-- **New node's address**: The URL where the new node will be accessible (e.g., `new-node.example.com:80`)
+- **New node's P2P public key**: `$NEW_NODE_P2P_KEY` from the step above.
+- **New node's signer account public key**: `$NEW_NODE_SIGNER_PUBLIC_KEY` from the step above.
+- **New node's public URL**: `$NEW_NODE_URL` — where peers will reach the new node (e.g. `http://new-node.example.com:80`). Note this is the node's public URL with an `http://` prefix, not the bare migration endpoint in `$NEW_NODE_ADDRESS`.
 
 ### start_node_migration on contract
 
@@ -338,10 +404,10 @@ near contract call-function as-transaction \
   start_node_migration \
   json-args "{
     \"destination_node_info\": {
-      \"signer_account_pk\": \"$near_signer_public_key\",
+      \"signer_account_pk\": \"$NEW_NODE_SIGNER_PUBLIC_KEY\",
       \"destination_node_info\": {
-        \"url\": \"http://new-node.example.com:80\",
-        \"tls_public_key\": \"$P2P_KEY\"
+        \"url\": \"$NEW_NODE_URL\",
+        \"tls_public_key\": \"$NEW_NODE_P2P_KEY\"
       }
     }
   }" \
@@ -353,7 +419,7 @@ near contract call-function as-transaction \
   send
 ```
 
-**Note:** The `url` in `destination_node_info` above must contain the `http://` prefix, please do not forget adding it.
+**Note:** The `url` in `destination_node_info` above (`$NEW_NODE_URL`) must contain the `http://` prefix, please do not forget adding it.
 
 ### Verify Migration Was Registered on the Contract
 
@@ -377,8 +443,8 @@ This will return migration information for all accounts, including your backup s
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   put-keyshares \
-  --mpc-node-address new-node.example.com:8079 \
-  --mpc-node-p2p-key "ed25519:NewNodeP2PPublicKey..." \
+  --mpc-node-address $NEW_NODE_ADDRESS \
+  --mpc-node-p2p-key $NEW_NODE_P2P_KEY \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
