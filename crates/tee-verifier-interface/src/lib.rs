@@ -190,22 +190,6 @@ pub enum VerificationResult {
     Rejected(VerifierError),
 }
 
-/// Validity window of the collateral a quote was verified against, mirroring
-/// the date fields of `dcap_qvl::QuoteClaims`. Unix seconds.
-///
-/// The unprefixed window spans all eight collateral sources; the `qe_iden_*`
-/// window only the QE Identity JSON and its issuer chain.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
-pub struct CollateralDates {
-    pub earliest_issue_date: u64,
-    pub latest_issue_date: u64,
-    pub earliest_expiration_date: u64,
-    pub qe_iden_earliest_issue_date: u64,
-    pub qe_iden_latest_issue_date: u64,
-    pub qe_iden_earliest_expiration_date: u64,
-}
-
 /// Outcome of `verify_quote_with_collateral_dates`: [`VerificationResult`] plus
 /// the collateral's [`CollateralDates`].
 #[expect(clippy::large_enum_variant)]
@@ -217,6 +201,24 @@ pub enum VerificationResultWithCollateralDates {
         collateral_dates: CollateralDates,
     },
     Rejected(VerifierError),
+}
+
+/// Validity window of the collateral a quote was verified against, from
+/// `dcap_qvl::QuoteClaims`. Unix seconds.
+///
+/// A caller typically uses [`Self::earliest_expiration_date`] as the
+/// attestation's expiry. The unprefixed fields span all of the collateral (TCB
+/// Info, QE Identity, both CRLs, the four certificate chains); the `qe_iden_*`
+/// fields only QE Identity and its issuer chain.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+pub struct CollateralDates {
+    pub earliest_issue_date: u64,
+    pub latest_issue_date: u64,
+    pub earliest_expiration_date: u64,
+    pub qe_iden_earliest_issue_date: u64,
+    pub qe_iden_latest_issue_date: u64,
+    pub qe_iden_earliest_expiration_date: u64,
 }
 
 #[cfg(test)]
