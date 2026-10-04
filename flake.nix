@@ -249,6 +249,17 @@
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';
           };
+
+          # The release contract build runs in a pinned Docker image, so its shell holds only the
+          # tools that start it and the release job skips the default shell's other packages
+          contract = pkgs.mkShell {
+            packages = with pkgs; [
+              rustToolchain
+              cargo-near
+              git
+              docker-client
+            ];
+          };
         }
       );
     };

@@ -11,12 +11,14 @@ use near_contract_transport::{
 use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
-    RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
-    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
-    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs,
-    VoteNewParametersArgs, VoteTeeVerifierChangeArgs, VoteUpdateArgs,
-    VoteUpdateForeignChainProvidersArgs,
+    AvailableAttestationGrantsArgs, DerivedPublicKeyArgs, GetAttestationArgs,
+    GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs,
+    InitArgs, LatestKeyVersionArgs, PublicKeyArgs, RegisterBackupServiceArgs,
+    RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs, RequestAppPrivateKeyArgs, SignArgs,
+    StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
+    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
+    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
+    VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -24,25 +26,33 @@ use crate::deposits::{
     propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES,
-    ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, CONTRACT_UPDATE_VOTES, INIT,
-    LAUNCHER_HASH_VOTES, MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PROPOSE_UPDATE,
-    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
+    ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS, AVAILABLE_ATTESTATION_GRANTS,
+    CANCEL_NODE_MIGRATION, CONFIG, CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION,
+    GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
+    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
+    LATEST_KEY_VERSION, LAUNCHER_HASH_VOTES, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
+    OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
+    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY,
-    SIGN, START_NODE_MIGRATION, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
-    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
-    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST,
+    SIGN, START_NODE_MIGRATION, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
+    TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
+    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
+    VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST,
     VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
     VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, CKDAppPublicKey,
-    CKDRequestArgs, ChainEntry, CodeHashesVotes, DestinationNodeInfo, DomainConfig,
+    AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
+    AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
+    ChainEntry, CodeHashesVotes, Config, Curve, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    GovernanceThresholdParameters, InitConfig, LauncherDockerComposeHash, LauncherHashVotes,
-    LauncherImageHash, MeasurementVotes, NodeImageHash, PayloadBytesError, ProposalHash,
-    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs, TeeVerifierCodeHash,
-    Update, UpdateHash, UpdateId, VerifyForeignTransactionRequestArgs,
+    ForeignChainsConfigs, GovernanceThresholdParameters, InitConfig, LauncherDockerComposeHash,
+    LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeId, NodeImageHash,
+    PayloadBytesError, ProposalHash, ProposeUpdateArgs, ProposedGovernanceThresholdParameters,
+    ProtocolContractState, PublicKey, SignRequestArgs, SignatureRequest, TeeVerifierCodeHash,
+    Update, UpdateHash, UpdateId, VerifiedAttestation, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -505,6 +515,116 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(CONTRACT_UPDATE_VOTES))
     }
 
+    pub fn state(&self) -> ViewCall<C, ProtocolContractState> {
+        self.view(ViewArgs::no_args(STATE))
+    }
+
+    pub fn config(&self) -> ViewCall<C, Config> {
+        self.view(ViewArgs::no_args(CONFIG))
+    }
+
+    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeId>> {
+        self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
+    }
+
+    pub fn migration_info(&self) -> ViewCall<C, MigrationInfo> {
+        self.view(ViewArgs::no_args(MIGRATION_INFO))
+    }
+
+    pub fn get_available_foreign_chains(&self) -> ViewCall<C, AvailableForeignChains> {
+        self.view(ViewArgs::no_args(GET_AVAILABLE_FOREIGN_CHAINS))
+    }
+
+    pub fn get_foreign_chains_configs(&self) -> ViewCall<C, ForeignChainsConfigs> {
+        self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
+    }
+
+    pub fn allowed_foreign_chain_providers(
+        &self,
+    ) -> ViewCall<C, BTreeMap<ForeignChain, ChainEntry>> {
+        self.view(ViewArgs::no_args(ALLOWED_FOREIGN_CHAIN_PROVIDERS))
+    }
+
+    pub fn version(&self) -> ViewCall<C, String> {
+        self.view(ViewArgs::no_args(VERSION))
+    }
+
+    pub fn tee_verifier_account_id(&self) -> ViewCall<C, AccountId> {
+        self.view(ViewArgs::no_args(TEE_VERIFIER_ACCOUNT_ID))
+    }
+
+    pub fn tee_verifier_votes(
+        &self,
+    ) -> ViewCall<C, BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>> {
+        self.view(ViewArgs::no_args(TEE_VERIFIER_VOTES))
+    }
+
+    pub fn public_key(&self, domain_id: Option<DomainId>) -> ViewCall<C, PublicKey> {
+        let args = serde_json::to_vec(&PublicKeyArgs::new(domain_id))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(PUBLIC_KEY, args))
+    }
+
+    pub fn derived_public_key(
+        &self,
+        path: String,
+        predecessor: AccountId,
+        domain_id: Option<DomainId>,
+    ) -> ViewCall<C, PublicKey> {
+        let args = serde_json::to_vec(&DerivedPublicKeyArgs::new(
+            path,
+            Some(predecessor),
+            domain_id,
+        ))
+        .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(DERIVED_PUBLIC_KEY, args))
+    }
+
+    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> ViewCall<C, u32> {
+        let args = serde_json::to_vec(&LatestKeyVersionArgs::new(signature_scheme))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(LATEST_KEY_VERSION, args))
+    }
+
+    pub fn available_attestation_grants(&self, account_id: AccountId) -> ViewCall<C, u32> {
+        let args = serde_json::to_vec(&AvailableAttestationGrantsArgs::new(account_id))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(AVAILABLE_ATTESTATION_GRANTS, args))
+    }
+
+    pub fn get_attestation(
+        &self,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> ViewCall<C, Option<VerifiedAttestation>> {
+        let args = serde_json::to_vec(&GetAttestationArgs::new(tls_public_key))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(GET_ATTESTATION, args))
+    }
+
+    pub fn get_pending_request(
+        &self,
+        request: SignatureRequest,
+    ) -> ViewCall<C, Option<YieldIndex>> {
+        let args = serde_json::to_vec(&GetPendingSignatureRequestArgs::new(request))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(GET_PENDING_REQUEST, args))
+    }
+
+    pub fn get_pending_ckd_request(&self, request: CKDRequest) -> ViewCall<C, Option<YieldIndex>> {
+        let args = serde_json::to_vec(&GetPendingCKDRequestArgs::new(request))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(GET_PENDING_CKD_REQUEST, args))
+    }
+
+    pub fn get_pending_verify_foreign_tx_request(
+        &self,
+        request: VerifyForeignTransactionRequest,
+    ) -> ViewCall<C, Option<YieldIndex>> {
+        let args = serde_json::to_vec(&GetPendingVerifyForeignTxRequestArgs::new(request))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, args))
+    }
+
     fn view<T: DeserializeOwned>(&self, args: ViewArgs) -> ViewCall<C, T> {
         self.caller.view::<T, Json>(self.contract_id.clone(), args)
     }
@@ -537,14 +657,15 @@ mod tests {
     use super::MpcContractHandle;
     use crate::types::{
         AccountId, Attestation, AuthScheme, BackupServiceInfo, BitcoinExtractor, BitcoinRpcRequest,
-        BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
-        ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose,
-        Ed25519PublicKey, EpochId, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, MockAttestation,
-        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
-        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
-        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, Update, UpdateHash,
-        UpdateId, VerifyForeignTransactionRequestArgs,
+        BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequest,
+        CKDRequestArgs, ChainEntry, ChainRouting, Curve, DestinationNodeInfo, DomainConfig,
+        DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, ForeignChainRpcRequest,
+        ForeignTxPayloadVersion, GovernanceThreshold, GovernanceThresholdParameters, Hash256,
+        InitConfig, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
+        ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, SignatureRequest,
+        TeeVerifierCodeHash, Update, UpdateHash, UpdateId, VerifyForeignTransactionRequest,
+        VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{
         CallContract, FunctionCallArgs, ObservedState, mock::MockViewContract,
@@ -817,6 +938,59 @@ mod tests {
         let _ = handle.launcher_hash_votes().await;
         let _ = handle.os_measurement_votes().await;
         let _ = handle.contract_update_votes().await;
+        let _ = handle.state().await;
+        let _ = handle.config().await;
+        let _ = handle.get_tee_accounts().await;
+        let _ = handle.migration_info().await;
+        let _ = handle.get_available_foreign_chains().await;
+        let _ = handle.get_foreign_chains_configs().await;
+        let _ = handle.allowed_foreign_chain_providers().await;
+        let _ = handle.version().await;
+        let _ = handle.tee_verifier_account_id().await;
+        let _ = handle.tee_verifier_votes().await;
+        let _ = handle.public_key(Some(DomainId(0))).await;
+        let _ = handle
+            .derived_public_key(
+                "test".to_string(),
+                "alice.near".parse().unwrap(),
+                Some(DomainId(0)),
+            )
+            .await;
+        let _ = handle.latest_key_version(Some(Curve::Secp256k1)).await;
+        let _ = handle
+            .available_attestation_grants("alice.near".parse().unwrap())
+            .await;
+        let _ = handle
+            .get_attestation(&Ed25519PublicKey::from([7u8; 32]))
+            .await;
+        let _ = handle
+            .get_pending_request(SignatureRequest::new(
+                DomainId(0),
+                Payload::Ecdsa([7u8; 32].into()),
+                &"alice.near".parse().unwrap(),
+                "test",
+            ))
+            .await;
+        let _ = handle
+            .get_pending_ckd_request(CKDRequest::new(
+                CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey([7u8; 48])),
+                DomainId(0),
+                &"alice.near".parse().unwrap(),
+                "test",
+            ))
+            .await;
+        let _ = handle
+            .get_pending_verify_foreign_tx_request(VerifyForeignTransactionRequest {
+                request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                    tx_id: BitcoinTxId([7u8; 32]),
+                    confirmations: BlockConfirmations(1),
+                    extractors: [BitcoinExtractor::BlockHash].into(),
+                }),
+                domain_id: DomainId(0),
+                payload_version: ForeignTxPayloadVersion::V1,
+                expected_payload_hash: None,
+            })
+            .await;
 
         // Then
         let catalog = viewer

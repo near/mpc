@@ -23,22 +23,18 @@ impl Timestamp {
     pub(crate) fn now() -> Self {
         #[cfg(not(feature = "block-clock"))]
         if let Some(pinned) = option_env!("MPC_CONTRACT_PINNED_NOW_SECONDS") {
-            return Self::from_secs(
-                pinned
-                    .parse()
-                    .expect("MPC_CONTRACT_PINNED_NOW_SECONDS must be Unix seconds"),
-            );
+            return Self {
+                duration_since_unix_epoch: Duration::from_secs(
+                    pinned
+                        .parse()
+                        .expect("MPC_CONTRACT_PINNED_NOW_SECONDS must be Unix seconds"),
+                ),
+            };
         }
         let block_time_nano_seconds = near_sdk::env::block_timestamp();
 
         Self {
             duration_since_unix_epoch: Duration::from_nanos(block_time_nano_seconds),
-        }
-    }
-
-    pub(crate) fn from_secs(secs: u64) -> Self {
-        Self {
-            duration_since_unix_epoch: Duration::from_secs(secs),
         }
     }
 
