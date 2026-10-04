@@ -74,7 +74,7 @@ BorshSchemaContainer {
                         "Vec<LauncherDockerComposeHash>",
                     ),
                     (
-                        "expires_at",
+                        "retain_until",
                         "Timestamp",
                     ),
                 ],
@@ -175,7 +175,7 @@ BorshSchemaContainer {
                         "u64",
                     ),
                     (
-                        "contract_upgrade_deposit_tera_gas",
+                        "apply_contract_update_tera_gas",
                         "u64",
                     ),
                     (
@@ -242,6 +242,13 @@ BorshSchemaContainer {
                         "attestation_storage_fee_millinear",
                         "u64",
                     ),
+                ],
+            ),
+        },
+        "ContractUpdateVotes": Struct {
+            fields: UnnamedFields(
+                [
+                    "Votes<AuthenticatedAccountId>",
                 ],
             ),
         },
@@ -673,8 +680,8 @@ BorshSchemaContainer {
                         "LookupMap",
                     ),
                     (
-                        "proposed_updates",
-                        "ProposedUpdates",
+                        "contract_update_votes",
+                        "ContractUpdateVotes",
                     ),
                     (
                         "config",
@@ -822,24 +829,6 @@ BorshSchemaContainer {
                     (
                         "per_domain_thresholds",
                         "BTreeMap<DomainId, ReconstructionThreshold>",
-                    ),
-                ],
-            ),
-        },
-        "ProposedUpdates": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_participant",
-                        "IterableMap",
-                    ),
-                    (
-                        "entries",
-                        "IterableMap",
-                    ),
-                    (
-                        "id",
-                        "UpdateId",
                     ),
                 ],
             ),
@@ -1145,13 +1134,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 8]",
-                ],
-            ),
-        },
-        "UpdateId": Struct {
-            fields: UnnamedFields(
-                [
-                    "u64",
                 ],
             ),
         },

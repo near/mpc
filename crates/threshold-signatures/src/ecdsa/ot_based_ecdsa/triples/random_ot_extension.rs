@@ -110,6 +110,8 @@ pub async fn random_ot_extension_sender(
         });
     }
 
+    // Branching once after the loop keeps the abort point independent of `delta`.
+    let mut is_consistent = Choice::from(1);
     for (j, small_t_j) in small_t.iter().enumerate() {
         let delta_j = Choice::from(delta.bit(j));
 
@@ -120,12 +122,13 @@ pub async fn random_ot_extension_sender(
 
         let delta_j_x =
             DoubleBitVector::conditional_select(&DoubleBitVector::zero(), &small_x, delta_j);
-        if !bool::from(small_q_j.ct_eq(&(small_t_j ^ delta_j_x))) {
-            return Err(ProtocolError::QMatrixConsistencyCheckFailed {
-                sid: hex::encode(params.sid),
-                participant: chan.to,
-            });
-        }
+        is_consistent &= small_q_j.ct_eq(&(small_t_j ^ delta_j_x));
+    }
+    if !bool::from(is_consistent) {
+        return Err(ProtocolError::QMatrixConsistencyCheckFailed {
+            sid: hex::encode(params.sid),
+            participant: chan.to,
+        });
     }
 
     // Step 14
@@ -238,6 +241,7 @@ mod test {
 
     use super::*;
 
+    use assert_matches::assert_matches;
     use k256::Scalar;
     use rand::SeedableRng;
 
@@ -306,5 +310,23 @@ mod test {
         for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {
             assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, *b_i));
         }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn random_ot_extension_sender__should_reject_inconsistent_receiver() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
+
+        // When
+        // Swapped base OT keys break `q = t ^ (x & delta)` in every column.
+        let result = run_random_ot((delta, k), (k1, k0), b"test sid".to_vec(), 16, &mut rng);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ProtocolError::QMatrixConsistencyCheckFailed { .. })
+        );
     }
 }

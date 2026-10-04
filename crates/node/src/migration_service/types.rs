@@ -192,7 +192,7 @@ pub mod tests {
 
     #[test]
     fn test_migration_status_constructor_empty() {
-        let state = ContractMigrationInfo::new();
+        let state = ContractMigrationInfo::default();
         let (account_id, _) = gen_participant(0);
         let p2p_public_key =
             ed25519_dalek::VerifyingKey::try_from(&bogus_ed25519_public_key()).unwrap();
@@ -204,7 +204,7 @@ pub mod tests {
 
     #[test]
     fn test_migration_status_constructor_populated() {
-        let mut state = ContractMigrationInfo::new();
+        let mut state = ContractMigrationInfo::default();
         let (account_id_0, participant_info_0) = gen_participant(0);
         let (account_id_1, _) = gen_participant(1);
         let signer_account_pk = bogus_ed25519_public_key();

@@ -277,20 +277,21 @@ This will kick off a resharing operation to reshare all keys.
 
 #### Upgrading the contract
 
-To upgrade the contract, first propose the upgrade (suppose we wish to use the newly compiled
-contract code for the upgrade):
+To upgrade the contract, first have the participants vote for the hash of the new contract
+code (suppose we wish to use the newly compiled contract code for the upgrade):
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME propose-update-contract --path ../../target/near/mpc_contract/mpc_contract.wasm
+mpc-devnet mpc $MPC_NETWORK_NAME vote-update --path ../../target/near/mpc_contract/mpc_contract.wasm
 ```
 
-This will print out a command to run for voting for the upgrade:
+Once the hash is approved (a governance threshold of participants voted for it), submit the
+code:
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-update --update-id=0
+mpc-devnet mpc $MPC_NETWORK_NAME submit-update --path ../../target/near/mpc_contract/mpc_contract.wasm
 ```
 
-That will trigger a migration to use the new contract.
+That will deploy the new contract and trigger its migration.
 
 #### Using a different MPC node binary
 

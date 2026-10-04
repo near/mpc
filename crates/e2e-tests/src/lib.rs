@@ -3,6 +3,7 @@ pub mod caller;
 pub mod cluster;
 pub mod conversions;
 pub mod foreign_chain_mock;
+pub mod https_proxy;
 pub mod metrics;
 pub mod mpc_node;
 pub mod near_sandbox;

@@ -55,7 +55,7 @@ impl<const U: usize> From<BoundedString<U>> for String {
 }
 
 mod borsh_impl {
-    use super::*;
+    use super::BoundedString;
     use borsh::{BorshDeserialize, BorshSerialize};
 
     impl<const U: usize> BorshSerialize for BoundedString<U> {
@@ -74,7 +74,7 @@ mod borsh_impl {
 
     #[cfg(feature = "abi")]
     mod schema {
-        use super::*;
+        use super::BoundedString;
         use borsh::BorshSchema;
         use borsh::schema::{Declaration, Definition, add_definition};
         use std::collections::BTreeMap;
@@ -98,7 +98,7 @@ mod borsh_impl {
 }
 
 mod serde_impl {
-    use super::*;
+    use super::BoundedString;
     use serde::{Deserialize, Serialize};
 
     impl<const U: usize> Serialize for BoundedString<U> {
@@ -116,7 +116,7 @@ mod serde_impl {
 
     #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
     mod schema {
-        use super::*;
+        use super::BoundedString;
         use schemars::JsonSchema;
         use schemars::r#gen::SchemaGenerator;
         use schemars::schema::Schema;

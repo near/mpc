@@ -2,7 +2,7 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
+    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ForeignChain,
     GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
     ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
     SignatureResponse, TeeVerifierCodeHash, UpdateHash, UpdateId, VerifyForeignTransactionRequest,
@@ -175,4 +175,26 @@ pub struct VoteAbortKeyEventInstanceArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct PublicKeyArgs {
+    pub domain_id: Option<DomainId>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct DerivedPublicKeyArgs {
+    pub path: String,
+    pub predecessor: Option<AccountId>,
+    pub domain_id: Option<DomainId>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct LatestKeyVersionArgs {
+    pub signature_scheme: Option<Curve>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct AvailableAttestationGrantsArgs {
+    pub account_id: AccountId,
 }

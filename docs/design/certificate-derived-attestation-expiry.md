@@ -79,33 +79,35 @@ sequenceDiagram
     participant Verifier as tee-verifier
 
     Node->>Contract: submit_participant_info(attestation)
-    Contract->>Verifier: verify_quote_with_claims(quote, collateral)
-    Verifier-->>Contract: report + earliest_expiration_seconds
+    Contract->>Verifier: verify_quote_with_collateral_dates(quote, collateral)
+    Verifier-->>Contract: report + collateral_dates
     Note over Contract: resolve_verification:<br/>post-DCAP checks
-    Note over Contract: store expiry =<br/>earliest_expiration_seconds
+    Note over Contract: store expiry =<br/>earliest_expiration_date
 ```
 
-`tee-verifier` gains one method, `verify_quote_with_claims`. `verify_quote` is untouched.
+`tee-verifier` gains one method, `verify_quote_with_collateral_dates`. `verify_quote` is untouched.
 
 ```rust
 #[result_serializer(borsh)]
-pub fn verify_quote_with_claims(
+pub fn verify_quote_with_collateral_dates(
     &self,
     #[serializer(borsh)] quote: QuoteBytes,
     #[serializer(borsh)] collateral: Collateral,
-) -> VerificationResultWithClaims;
+) -> VerificationResultWithCollateralDates;
 
-pub enum VerificationResultWithClaims {
+pub enum VerificationResultWithCollateralDates {
     Verified {
         report: VerifiedReport,
-        earliest_expiration_seconds: u64,
+        collateral_dates: CollateralDates,
     },
     Rejected(VerifierError),
 }
 ```
 
-This keeps the verifier 1:1 with `dcap-qvl`. `QuoteClaims` is `dcap-qvl`'s own type, so the new
-method exposes more of the upstream API rather than a shape of our own.
+`CollateralDates` mirrors all six date fields of `QuoteClaims`, not just the one this design reads,
+so the method stays generic: it returns the collateral's whole validity window, as `dcap-qvl`
+computes it. The full `QuoteClaims` was considered and not mirrored, since it would add a Borsh
+mirror for every nested type and couple the wire format to more of upstream than any caller needs.
 
 A second method, rather than a new field on `verify_quote`, is for the upgrade path. The verifier
 account is key-locked, so changing the return type means a new account and a
@@ -142,28 +144,30 @@ moves off 604 and the fee floor needs re-checking) and a state migration.
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
 approach instead.*
 
-**2. Launcher-image eviction.** A launcher hash is evicted after `launcher_hash_unused_ttl_seconds`
-(14 days) without use, where "used" means an accepted attestation from a current participant
-refreshed it. `re_verify` re-checks a stored attestation's launcher hash against the current allowed
-set, so evicting a hash kicks a node whose attestation is still valid. Until
-[#4516](https://github.com/near/mpc/issues/4516), `Config::validate` prevented this by requiring the
-TTL to exceed the 7-day constant, which is going away.
+**2. Launcher-image eviction.** Launcher hashes nobody uses are retired after
+`launcher_hash_unused_ttl_seconds` (14 days). `re_verify` re-checks a stored attestation's launcher
+hash against the current allowed set, so retiring a hash kicks every node whose attestation uses it.
+Under a plain "unused for 14 days" rule, a node that attests once with 30 days of validity and then
+stops loses its hash on day 14 and is kicked with 16 days left, which turns launcher cleanup into a
+second attestation deadline.
 
-Without that rule, a node that attests once with 30 days of validity and then stops loses its hash
-on day 14 and is kicked with 16 days left. Effective validity becomes `min(certificate expiry, 14
-days since the last attestation)`, which turns launcher cleanup into a second attestation deadline.
+Fix: keep a hash while a current participant uses it, and remove it only in `verify_tee`. Each
+entry has one stamp, `now + ttl`, set when it is voted in and again at every `verify_tee` that finds
+a current participant's stored attestation using it. `verify_tee` restamps first, then drops the
+unused entries whose stamp has passed, always keeping the most recently stamped one so the list
+never empties. Reads return every entry, with no time filter. A hash in use is therefore never
+removed automatically, whatever the TTL or the attestation's lifetime, and the TTL only retires
+hashes nobody uses. A hash used only by a node that is not yet a participant, such as a joining node
+or a migration destination, is protected by its vote stamp alone; a threshold re-vote restamps it.
 
-Fix ([#4516](https://github.com/near/mpc/issues/4516)): keep the TTL, but let each refresh extend
-the hash's expiry to at least the refreshing attestation's own expiry, and never move an expiry
-earlier. A hash then outlives every current participant's attestation that refreshed it, and the TTL
-is left retiring only hashes nobody adopted. Reads and cleanup both compare against the stored expiry,
-so neither needs a reference check. The refresh stays gated on `AuthenticatedParticipantId`, so a
-joining node's hash is protected only from its first submission as a participant, which the hourly
-resubmission makes at most an hour after it joins. The rule that the list never empties stays.
+This removal is housekeeping, not a security control: removing a launcher immediately, for example a
+compromised one, is the unanimous `vote_remove_launcher_hash`. So removal may lag the TTL. An unused
+hash past its stamp stays accepted until the next `verify_tee`, and a current participant that
+submits with it in that window makes it in use again.
 
-*Considered: a reference check at cleanup. Not enough on its own: the allowed-set reads already skip
-expired entries, so `re_verify` would reject a hash that cleanup kept. Guarding the reads too would
-mean passing the participant set into every one of them.*
+*Considered: extending the stamp on each participant's submission to the attestation's own expiry,
+with reads filtering on the stamp. Correct, but the stamp then carries two meanings, every read has
+to filter, and the refresh has to be wired into both submission paths.*
 
 *Considered: dropping the TTL and evicting purely on references. Simpler config, but a newly
 voted-in hash has no references until nodes adopt it, so it would need its own grace period.*
@@ -193,11 +197,14 @@ recedes further every day. Submission still succeeds, but anything that re-verif
 an expired entry.
 
 Fix: extend the pinned-clock trick to the contract side, mirroring
-`tee_verifier_contract_with_pinned_clock`.
+`tee_verifier_contract_with_pinned_clock`. Done in
+[#4518](https://github.com/near/mpc/issues/4518): `current_contract_with_pinned_clock` pins both
+contract clocks (`TeeState::current_time_seconds` and `Timestamp::now`, which drives launcher expiry)
+to the fixture timestamp.
 
 *Considered: regenerating the fixture. Not a fix — a fresh one would have a 30-day shelf life.*
 
-**6. Gas budget.** See the next section. The config change is a governance vote of its own.
+**6. Gas budget.** See the next section. No config change is needed.
 
 ## Gas
 
@@ -216,8 +223,12 @@ The 300 is the chain's budget, not the verifier's. The submit receipt spends 16.
 roughly 220 as things stand, or roughly 270 if `resolve_verification`'s 60 is trimmed toward its
 4.6. Not 300.
 
-`claims()` parses the two JSON documents again and walks the certificate chains, so its cost has to
-be measured before the split is chosen.
+`claims()` also reads the collateral dates. On `dcap-qvl` 0.6.3 it parsed the collateral a second
+time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against `verify_quote`'s
+173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
+([#4596](https://github.com/near/mpc/pull/4596)) removes the second parse and two duplicated
+signature checks, bringing them to 124.3 and 122.1. Both fit the current 200 TGas budget with room
+to spare, so `verifier_tera_gas` stays as it is.
 
 *Fallback if it does not fit: read `nextUpdate` from the two CRLs and the two JSON documents only.
 That drops the four certificate chains from the minimum, which is safe given their 7–30 year
@@ -226,19 +237,15 @@ lifetimes, but it should be a deliberate choice rather than an accident.*
 ## Rollout
 
 1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
-2. **Measure `claims()`, then propose and vote the gas config.** This document does not propose
-   numbers; they come from the measurement. The vote is `propose_update` / `vote_update`, which is
-   separate governance from the contract upgrade, and it has to land before step 4 — otherwise the
-   heavier method runs under the old budget and every submission runs out of gas.
-3. **Deploy the new verifier and vote it in**, per
+2. **Deploy the new verifier and vote it in**, per
    [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
    so nothing changes on chain yet. Reversible by voting back.
-4. **Upgrade `mpc-contract`** to call `verify_quote_with_claims`. Certificate-derived expiry takes
+3. **Upgrade `mpc-contract`** to call `verify_quote_with_collateral_dates`. Certificate-derived expiry takes
    effect here, and from this point voting back to the old verifier no longer works.
-5. **Release the node** with the near-expiry refresh rule from item 4.
+4. **Release the node** with the near-expiry refresh rule from item 4.
 
 Both verifiers are already live (`tee-verifier-2026-08-04.near`, `tee-verifier-2026-07-22.testnet`),
-so step 3 is a rotation, not a first deployment.
+so step 2 is a rotation, not a first deployment.
 
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
@@ -249,6 +256,4 @@ needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` descript
 
 ## Open questions
 
-- **How much gas does `claims()` add?** Measure, then choose between re-balancing against
-  `resolve_verification` and the lean fallback.
 - **How early should a node refuse to submit collateral** (item 4)? Needs a number.

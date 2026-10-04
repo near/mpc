@@ -282,7 +282,7 @@ sequenceDiagram
 4. **Operator**: Restarts the CVM (see _Node Boot Flow_ for details).
 5. **MPC Node → Contract**:
    - If the node sends an updated remote attestation **within the required time period**, the contract validates and updates the node's attestation info.
-   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node — but only if doing so does not drop the total participants below the required threshold.
+   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node, but only if the remaining participants still meet the threshold and every domain's signing protocol (robust ECDSA needs `2t - 1` participants).
 
 ## Adding a New Participant
 
@@ -416,8 +416,8 @@ The Operator will then register the node's account key as an additional **functi
 We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chains_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
 
 > **⚠️ Security tradeoff:** Allowing all methods widens the *in-contract* blast
-> radius — a compromised node key can now call **any** contract method (e.g.
-> `propose_update`, `vote_*`), not just the previously allow-listed set. It still
+> radius — a compromised node key can now call **any** contract method,
+> not just the previously allow-listed set. It still
 > cannot transfer funds or call any other contract. We accept this because the
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
@@ -614,7 +614,7 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 _Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
-Note - In case the number of remaining participants is less that the threshold. The node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
+Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
 
 # CVM Upgrades
 
@@ -699,8 +699,8 @@ Once the voting threshold is reached:
     new Launcher measurement.
 -   Multiple Launcher versions may temporarily coexist during migration.
 
-> Launcher hashes left unused past a TTL are now auto-removed without a unanimous
-> vote — see [auto-removal of unused launcher hashes](../../archive/design/auto-remove-launcher-hashes-design.md).
+> Launcher hashes no current participant uses are removed automatically after a TTL, without a
+> unanimous vote — see [launcher-image eviction](../certificate-derived-attestation-expiry.md#what-else-has-to-change).
 
 ### OS Measurement Upgrade
 

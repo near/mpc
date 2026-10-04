@@ -12,20 +12,11 @@ use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{AccountId, NearToken, env, log, near};
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 #[near]
 impl MpcContract {
-    pub fn migration_info(
-        &self,
-    ) -> BTreeMap<
-        AccountId,
-        (
-            Option<dtos::BackupServiceInfo>,
-            Option<dtos::DestinationNodeInfo>,
-        ),
-    > {
+    pub fn migration_info(&self) -> dtos::MigrationInfo {
         log!("migration_info");
         self.node_migrations.get_all()
     }
@@ -426,6 +417,7 @@ mod tests {
     use dtos::Ed25519PublicKey;
     use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;
     use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+    use std::collections::BTreeMap;
     use std::panic;
 
     pub fn migration_info(
@@ -490,7 +482,7 @@ mod tests {
 
         let result = contract.migration_info();
 
-        assert_eq!(result, expected_migration_state);
+        assert_eq!(*result, expected_migration_state);
     }
 
     fn gen_random_destination_info() -> DestinationNodeInfo {
@@ -654,7 +646,7 @@ mod tests {
 
         let result = contract.migration_info();
 
-        assert_eq!(result, expected_migration_state);
+        assert_eq!(*result, expected_migration_state);
     }
 
     #[test]
@@ -1343,6 +1335,6 @@ mod tests {
             .expect("Cleanup should succeed for valid migrations");
 
         let result = contract.migration_info();
-        assert_eq!(result, expected_vals);
+        assert_eq!(*result, expected_vals);
     }
 }
