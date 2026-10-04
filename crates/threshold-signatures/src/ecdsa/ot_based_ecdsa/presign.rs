@@ -18,6 +18,13 @@ use zeroize::ZeroizeOnDrop;
 type Secp256 = Secp256K1Sha256;
 
 /// The arguments needed to create a presignature.
+///
+/// Each of [`triple0`](Self::triple0) and [`triple1`](Self::triple1) must be an unmodified output
+/// of [`generate_triple`](super::triples::generate_triple) or
+/// [`generate_triple_many`](super::triples::generate_triple_many), used at most once: in one slot
+/// of one run of [`presign`] or [`presign_and_sign`](super::presign_and_sign::presign_and_sign),
+/// aborted runs included. A reused or modified triple leaks the private key, and no participant
+/// can detect this.
 #[derive(Debug, Clone)]
 pub struct PresignArguments {
     /// The first triple's public information, and our share.
@@ -162,7 +169,8 @@ pub(crate) const OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 2;
 /// all the work we can do without yet knowing the message to be signed.
 ///
 /// This work does depend on the private key though, and it's crucial
-/// that a presignature is never reused.
+/// that a presignature is never reused, and that each triple is used at most once (see
+/// [`PresignArguments`]).
 pub fn presign(
     participants: &[Participant],
     me: Participant,

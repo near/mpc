@@ -34,10 +34,11 @@ jobs:
     runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
       issues: read
-      id-token: write
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    outputs:
+      comment: ${{ fromJSON(steps.check-title.outputs.structured_output).comment }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,7 +58,6 @@ jobs:
           {
             echo "TITLE_CHECK_PROMPT<<$DELIM"
             printf 'PR TITLE: %s\n' "$PR_TITLE"
-            printf 'PR NUMBER: %s\n' "$PR_NUMBER"
             echo ""
             echo "CHANGED FILES:"
             echo "$FILES"
@@ -67,10 +67,54 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Validate title type matches changes
-        env:
-          GH_TOKEN: ${{ github.token }}
+        id: check-title
         uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
+          github_token: ${{ github.token }}
           prompt: ${{ env.TITLE_CHECK_PROMPT }}
-          claude_args: '--model claude-haiku-4-5 --allowed-tools "Bash(gh pr comment:*)"'
+          # Deny is evaluated before allow, so these hold whatever tools are allowed.
+          # `//` anchors at the filesystem root; a single `/` would anchor at the
+          # settings source. Read rules also cover Grep and Glob.
+          settings: |
+            {
+              "permissions": {
+                "deny": [
+                  "Read(//proc/**)",
+                  "Read(//sys/**)",
+                  "Read(//root/**)",
+                  "Read(//home/runner/work/_temp/**)",
+                  "Read(//home/runner/.claude/**)",
+                  "Read(//home/runner/.config/**)",
+                  "Read(//home/runner/.netrc)",
+                  "Read(//home/runner/.git-credentials)",
+                  "Bash(*ANTHROPIC_API_KEY*)",
+                  "Bash(*GITHUB_TOKEN*)",
+                  "Bash(*GH_TOKEN*)"
+                ]
+              }
+            }
+          claude_args: >-
+            --model claude-haiku-4-5
+            --json-schema '{"type":"object","properties":{"comment":{"type":"string","description":"The PR comment suggesting a title type, or the empty string when the type fits"}},"required":["comment"],"additionalProperties":false}'
+
+  # Posting runs in its own job so the write-scoped token never reaches the
+  # agent's environment, and so the runner withholds a comment that contains a
+  # registered secret instead of passing it on.
+  post-title-suggestion:
+    name: "Post title type suggestion"
+    needs: check-pr-title-type
+    if: needs.check-pr-title-type.outputs.comment != ''
+    runs-on: warp-ubuntu-2604-x64-2x
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post title type suggestion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMENT: ${{ needs.check-pr-title-type.outputs.comment }}
+        run: |
+          printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/comment.md"

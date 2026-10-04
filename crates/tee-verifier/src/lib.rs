@@ -1,15 +1,21 @@
 //! Stateless TEE attestation verifier contract.
 //!
-//! Wraps [`dcap_qvl::verify::verify`] in a single `verify_quote` method. The
-//! contract holds no state and has no admin; verifier-internal policy (the
-//! `dcap-qvl` version, Intel root certs, etc.) is bound to the deployed
-//! code hash. Per-team allowlists, report-data binding, and other
+//! Wraps [`dcap_qvl::verify::verify`] in [`TeeVerifier::verify_quote`], and
+//! [`dcap_qvl::verify::QuoteVerifier::verify_with_policy`] in
+//! [`TeeVerifier::verify_quote_with_collateral_dates`], which also returns the
+//! collateral's validity window. The contract holds no state and has no admin;
+//! verifier-internal policy (the `dcap-qvl` version, Intel root certs, etc.) is
+//! bound to the deployed code hash. Per-team allowlists, report-data binding, and other
 //! post-DCAP checks live in the caller, not here.
 //!
 //! See `docs/design/attestation-verifier-contract.md` for the design.
 
+use dcap_qvl::{QuotePolicy, verify::QuoteVerifier};
 use near_sdk::{env, near};
-use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};
+use tee_verifier_interface::{
+    Collateral, QuoteBytes, VerificationResult, VerificationResultWithCollateralDates,
+    VerifierError,
+};
 
 use tee_verifier_conversions::{IntoDcapType as _, IntoInterfaceType as _};
 
@@ -30,6 +36,7 @@ pub struct TeeVerifier {}
 
 #[near]
 impl TeeVerifier {
+    // TODO(#4558): remove once no deployed `mpc-contract` calls it.
     /// Verify a TDX quote against Intel collateral.
     ///
     /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp and
@@ -59,6 +66,40 @@ impl TeeVerifier {
             Err(err) => {
                 VerificationResult::Rejected(VerifierError::DcapVerification(err.to_string()))
             }
+        }
+    }
+
+    /// [`Self::verify_quote`] plus the collateral's validity window.
+    ///
+    /// Applies no policy ([`QuotePolicy::claims_only`]), so an accepted quote
+    /// gets the same report as from [`Self::verify_quote`]. It can also reject
+    /// collateral whose dates do not parse, and costs more gas: reading the
+    /// dates parses the collateral a second time.
+    #[result_serializer(borsh)]
+    pub fn verify_quote_with_collateral_dates(
+        &self,
+        #[serializer(borsh)] quote: QuoteBytes,
+        #[serializer(borsh)] collateral: Collateral,
+    ) -> VerificationResultWithCollateralDates {
+        let now_seconds = now_seconds();
+        let quote_bytes: Vec<u8> = quote.into_dcap_type();
+        let collateral = collateral.into_dcap_type();
+        match QuoteVerifier::new_prod().verify_with_policy(
+            &quote_bytes,
+            collateral,
+            now_seconds,
+            &QuotePolicy::claims_only(now_seconds),
+        ) {
+            Ok(claims) => {
+                let (report, collateral_dates) = claims.into_interface_type();
+                VerificationResultWithCollateralDates::Verified {
+                    report,
+                    collateral_dates,
+                }
+            }
+            Err(err) => VerificationResultWithCollateralDates::Rejected(
+                VerifierError::DcapVerification(err.to_string()),
+            ),
         }
     }
 }

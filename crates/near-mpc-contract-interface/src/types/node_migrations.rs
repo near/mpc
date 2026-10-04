@@ -1,4 +1,6 @@
-use crate::types::{Ed25519PublicKey, ParticipantInfo};
+use std::collections::BTreeMap;
+
+use crate::types::{AccountId, Ed25519PublicKey, ParticipantInfo};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -22,3 +24,24 @@ pub struct DestinationNodeInfo {
     pub signer_account_pk: Ed25519PublicKey,
     pub destination_node_info: ParticipantInfo,
 }
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct MigrationInfo(
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+);

@@ -5,8 +5,8 @@ use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::participants::IdentifiesParticipant;
 use crate::primitives::{
     domain::{
-        AddDomainsVotes, DomainRegistry, max_reconstruction_threshold, validate_domain_purpose,
-        validate_domain_reconstruction_threshold,
+        AddDomainsVotes, DomainRegistry, validate_domain_purpose,
+        validate_domains_against_governance,
     },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::GovernanceThresholdParametersVotes,
@@ -176,16 +176,13 @@ impl RunningContractState {
                 }
             })
             .collect();
-        for domain in &effective_domains {
-            validate_domain_reconstruction_threshold(domain, new_num_participants)?;
-        }
 
         // The GovernanceThreshold must dominate every domain's effective ReconstructionThreshold;
         // enforced here so the state transition is self-contained (single source of truth).
-        GovernanceThresholdParameters::validate_governance_against_reconstruction(
+        validate_domains_against_governance(
+            &effective_domains,
             new_num_participants,
             proposal.threshold(),
-            max_reconstruction_threshold(&effective_domains),
         )?;
 
         // ensure the signer is a proposed participant
@@ -222,15 +219,14 @@ impl RunningContractState {
             .expect("participant count fits in u64");
         for domain in &domains {
             validate_domain_purpose(domain)?;
-            validate_domain_reconstruction_threshold(domain, num_participants)?;
         }
         // Keep trust assumptions consistent: a domain must never require more shares to
         // reconstruct than the GovernanceThreshold demands to govern. Route through the
         // canonical helper so the cross-domain invariant has a single source of truth.
-        GovernanceThresholdParameters::validate_governance_against_reconstruction(
+        validate_domains_against_governance(
+            &domains,
             num_participants,
             self.parameters.threshold(),
-            max_reconstruction_threshold(&domains),
         )?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);

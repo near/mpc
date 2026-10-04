@@ -225,6 +225,25 @@ expression: abi
         "kind": "view"
       },
       {
+        "name": "contract_update_votes",
+        "doc": " Returns all currently stored votes.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "derived_public_key",
         "doc": " This is the derived public key of the caller given path and predecessor\n if predecessor is not provided, it will be the caller of the contract.\n\n The domain parameter specifies which domain we're deriving the public key for;\n the default is the first domain.",
         "kind": "view",
@@ -602,34 +621,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": [
-                {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/BackupServiceInfo"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/DestinationNodeInfo"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            }
+            "$ref": "#/definitions/MigrationInfo"
           }
         }
       },
@@ -693,189 +685,6 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
-          }
-        }
-      },
-      {
-        "name": "propose_update",
-        "doc": " Propose update to either code or config, but not both of them at the same time.",
-        "kind": "call",
-        "modifiers": [
-          "payable"
-        ],
-        "params": {
-          "serialization_type": "borsh",
-          "args": [
-            {
-              "name": "args",
-              "type_schema": {
-                "declaration": "ProposeUpdateArgs",
-                "definitions": {
-                  "()": {
-                    "Primitive": 0
-                  },
-                  "Config": {
-                    "Struct": [
-                      [
-                        "key_event_timeout_blocks",
-                        "u64"
-                      ],
-                      [
-                        "tee_upgrade_deadline_duration_seconds",
-                        "u64"
-                      ],
-                      [
-                        "contract_upgrade_deposit_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "sign_call_gas_attachment_requirement_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "ckd_call_gas_attachment_requirement_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "return_signature_and_clean_state_on_success_call_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "return_ck_and_clean_state_on_success_call_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "fail_on_timeout_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "fail_attestation_submission_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "clean_tee_status_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "clean_invalid_attestations_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "cleanup_orphaned_node_migrations_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "remove_non_participant_update_votes_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "clean_foreign_chain_data_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "remove_non_participant_tee_verifier_votes_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "verifier_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "resolve_verification_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "launcher_hash_unused_ttl_seconds",
-                        "u64"
-                      ],
-                      [
-                        "attestation_storage_fee_millinear",
-                        "u64"
-                      ]
-                    ]
-                  },
-                  "Option<Config>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "Config"
-                        ]
-                      ]
-                    }
-                  },
-                  "Option<Vec<u8>>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "Vec<u8>"
-                        ]
-                      ]
-                    }
-                  },
-                  "ProposeUpdateArgs": {
-                    "Struct": [
-                      [
-                        "code",
-                        "Option<Vec<u8>>"
-                      ],
-                      [
-                        "config",
-                        "Option<Config>"
-                      ]
-                    ]
-                  },
-                  "Vec<u8>": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "u8"
-                    }
-                  },
-                  "u64": {
-                    "Primitive": 8
-                  },
-                  "u8": {
-                    "Primitive": 1
-                  }
-                }
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/UpdateId"
-          }
-        }
-      },
-      {
-        "name": "proposed_updates",
-        "doc": " returns all proposed updates",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/ProposedUpdates"
           }
         }
       },
@@ -956,6 +765,28 @@ expression: abi
         }
       },
       {
+        "name": "remove_contract_update_vote",
+        "doc": " Withdraws the caller's update vote.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "remove_non_participant_contract_update_votes",
+        "doc": " Removes update votes from non-participants.\n Can only be called by participants or by the contract itself.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "remove_non_participant_tee_verifier_votes",
         "doc": " Private endpoint to drop verifier-change votes cast by non-participants\n after resharing.",
         "kind": "call",
@@ -968,44 +799,6 @@ expression: abi
             "type": "null"
           }
         }
-      },
-      {
-        "name": "remove_non_participant_update_votes",
-        "doc": " Cleans update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
-        "kind": "call",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
-        "name": "remove_update_proposal",
-        "doc": " Removes a proposed update, given the id returned by [`Self::propose_update`].\n\n The deposit attached at propose time is not refunded. Like [`Self::propose_update`], and\n unlike [`Self::remove_update_vote`], this is not restricted to the running state.\n\n Returns [`Error`] if no update with this id exists, and panics if the caller is not a\n participant.",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "id",
-              "type_schema": {
-                "$ref": "#/definitions/UpdateId"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
-        "name": "remove_update_vote",
-        "doc": " Removes an update vote by the caller\n panics if the contract is not in a running state or if the caller is not a participant",
-        "kind": "call"
       },
       {
         "name": "request_app_private_key",
@@ -1959,6 +1752,156 @@ expression: abi
         }
       },
       {
+        "name": "submit_contract_update",
+        "doc": " Submits an update and applies it. Fails if the update doesn't yet have enough\n participant votes.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "update",
+              "type_schema": {
+                "declaration": "Update",
+                "definitions": {
+                  "Config": {
+                    "Struct": [
+                      [
+                        "key_event_timeout_blocks",
+                        "u64"
+                      ],
+                      [
+                        "tee_upgrade_deadline_duration_seconds",
+                        "u64"
+                      ],
+                      [
+                        "apply_contract_update_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "sign_call_gas_attachment_requirement_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "ckd_call_gas_attachment_requirement_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "return_signature_and_clean_state_on_success_call_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "return_ck_and_clean_state_on_success_call_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "fail_on_timeout_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "fail_attestation_submission_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_tee_status_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_invalid_attestations_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "cleanup_orphaned_node_migrations_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "remove_non_participant_update_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_foreign_chain_data_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "verifier_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "resolve_verification_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "launcher_hash_unused_ttl_seconds",
+                        "u64"
+                      ],
+                      [
+                        "attestation_storage_fee_millinear",
+                        "u64"
+                      ]
+                    ]
+                  },
+                  "Update": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Code",
+                          "Update__Code"
+                        ],
+                        [
+                          1,
+                          "Config",
+                          "Update__Config"
+                        ]
+                      ]
+                    }
+                  },
+                  "Update__Code": {
+                    "Struct": [
+                      "Vec<u8>"
+                    ]
+                  },
+                  "Update__Config": {
+                    "Struct": [
+                      "Config"
+                    ]
+                  },
+                  "Vec<u8>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u64": {
+                    "Primitive": 8
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "submit_participant_info",
         "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
         "kind": "call",
@@ -2080,7 +2023,7 @@ expression: abi
       },
       {
         "name": "verify_tee",
-        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case less than `threshold` participants run in an accepted TEE State.",
+        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case the participants running in an accepted TEE State are too few for the\n GovernanceThreshold or for any domain's signing protocol.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -2222,6 +2165,28 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_contract_update",
+        "doc": " Replaces the caller's earlier vote, if any. Returns whether `update_hash` is approved.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "update_hash",
+              "type_schema": {
+                "$ref": "#/definitions/UpdateHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
           }
         }
       },
@@ -2394,28 +2359,6 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
-          }
-        }
-      },
-      {
-        "name": "vote_update",
-        "doc": " Vote for a proposed update, given the id returned by [`Self::propose_update`].\n\n Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was\n executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.\n Returns [`Error`] if the update was not found or if the voter is not a participant\n in the protocol.",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "id",
-              "type_schema": {
-                "$ref": "#/definitions/UpdateId"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "boolean"
           }
         }
       },
@@ -3038,13 +2981,13 @@ expression: abi
           "description": "Configuration parameters of the contract.",
           "type": "object",
           "required": [
+            "apply_contract_update_tera_gas",
             "attestation_storage_fee_millinear",
             "ckd_call_gas_attachment_requirement_tera_gas",
             "clean_foreign_chain_data_tera_gas",
             "clean_invalid_attestations_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
-            "contract_upgrade_deposit_tera_gas",
             "fail_attestation_submission_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
@@ -3059,6 +3002,12 @@ expression: abi
             "verifier_tera_gas"
           ],
           "properties": {
+            "apply_contract_update_tera_gas": {
+              "description": "Prepaid gas for applying contract and config updates.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "attestation_storage_fee_millinear": {
               "description": "Fee, in milliNEAR, for one attestation-storage grant.",
               "type": "integer",
@@ -3095,12 +3044,6 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
-            "contract_upgrade_deposit_tera_gas": {
-              "description": "Amount of gas to deposit for contract and config updates.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
             "fail_attestation_submission_tera_gas": {
               "description": "Prepaid gas for a `fail_attestation_submission` call.",
               "type": "integer",
@@ -3120,7 +3063,7 @@ expression: abi
               "minimum": 0.0
             },
             "launcher_hash_unused_ttl_seconds": {
-              "description": "TTL after which a launcher image hash unused by any participant is evicted: at the later of its last use + this TTL and the expiry of the attestation that last used it. Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on use). An expiry never moves earlier, so lowering it does not shorten existing entries.",
+              "description": "How long a launcher hash that no current participant uses stays allowed after its last vote or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is never removed automatically.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3132,7 +3075,7 @@ expression: abi
               "minimum": 0.0
             },
             "remove_non_participant_update_votes_tera_gas": {
-              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "description": "Prepaid gas for a `remove_non_participant_contract_update_votes` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3743,6 +3686,15 @@ expression: abi
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
+            "apply_contract_update_tera_gas": {
+              "description": "Prepaid gas for applying contract and config updates.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "attestation_storage_fee_millinear": {
               "description": "Fee, in milliNEAR, for one attestation-storage grant.",
               "type": [
@@ -3797,15 +3749,6 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
-            "contract_upgrade_deposit_tera_gas": {
-              "description": "Amount of gas to deposit for contract and config updates.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
             "fail_attestation_submission_tera_gas": {
               "description": "Prepaid gas for a `fail_attestation_submission` call.",
               "type": [
@@ -3834,7 +3777,7 @@ expression: abi
               "minimum": 0.0
             },
             "launcher_hash_unused_ttl_seconds": {
-              "description": "TTL after which a launcher image hash unused by any participant is evicted.",
+              "description": "TTL for launcher hashes no current participant uses; see [`Config::launcher_hash_unused_ttl_seconds`].",
               "type": [
                 "integer",
                 "null"
@@ -3852,7 +3795,7 @@ expression: abi
               "minimum": 0.0
             },
             "remove_non_participant_update_votes_tera_gas": {
-              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "description": "Prepaid gas for a `remove_non_participant_contract_update_votes` call.",
               "type": [
                 "integer",
                 "null"
@@ -4232,6 +4175,36 @@ expression: abi
             }
           }
         },
+        "MigrationInfo": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/BackupServiceInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/DestinationNodeInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
         "MockAttestation": {
           "oneOf": [
             {
@@ -4537,27 +4510,6 @@ expression: abi
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
-              }
-            }
-          }
-        },
-        "ProposedUpdates": {
-          "type": "object",
-          "required": [
-            "updates",
-            "votes"
-          ],
-          "properties": {
-            "updates": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/UpdateHash"
-              }
-            },
-            "votes": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/UpdateId"
               }
             }
           }
@@ -5345,11 +5297,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "UpdateId": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
         },
         "VerifiedAttestation": {
           "oneOf": [
