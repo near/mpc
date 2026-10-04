@@ -71,7 +71,10 @@ impl IndexerState {
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            view_client: IndexerViewClient { view_client },
+            view_client: IndexerViewClient {
+                view_client,
+                mpc_contract_id: mpc_contract_id.clone(),
+            },
             client: IndexerClient { client },
             rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
@@ -83,21 +86,14 @@ impl IndexerState {
 #[derive(Clone)]
 pub(crate) struct IndexerViewClient {
     view_client: MultithreadRuntimeHandle<ViewClientActor>,
+    /// AccountId for the mpc contract.
+    mpc_contract_id: AccountId,
 }
 
-// TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
-// We should remove this account_id parameter...
-//
-// example:
-// indexer_state.view_client.get_mpc_tee_accounts(indexer_state.mpc_contract_id.clone()).await
-// =>
-// indexer_state.view_client.get_mpc_tee_accounts().await
-// This pattern repeats for all the methods.
 // TODO(#1956): There is a lot of duplicate code here that could be simplified
 impl IndexerViewClient {
     pub(crate) async fn get_pending_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_signature_request: &dtos::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> = serde_json::to_string(
@@ -107,7 +103,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: to_near_internal(mpc_contract_id),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_PENDING_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -137,7 +133,6 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_pending_ckd_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_ckd_request: &dtos::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> = serde_json::to_string(
@@ -147,7 +142,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: to_near_internal(mpc_contract_id),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_PENDING_CKD_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -177,7 +172,6 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_pending_verify_foreign_tx_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
@@ -188,7 +182,7 @@ impl IndexerViewClient {
             .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: to_near_internal(mpc_contract_id),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -218,7 +212,6 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_participant_attestation(
         &self,
-        mpc_contract_id: &AccountId,
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
     ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
         let get_attestation_args: Vec<u8> = serde_json::to_string(
@@ -228,7 +221,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: to_near_internal(mpc_contract_id),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_ATTESTATION.to_string(),
             args: get_attestation_args.into(),
         };
@@ -258,27 +251,21 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_foreign_chains_configs(
         &self,
-        mpc_contract_id: &AccountId,
     ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
-        self.get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAINS_CONFIGS)
-            .await
+        self.get_mpc_state(GET_FOREIGN_CHAINS_CONFIGS).await
     }
 
     pub(crate) async fn get_available_chains(
         &self,
-        mpc_contract_id: &AccountId,
     ) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
-        self.get_mpc_state(mpc_contract_id.clone(), GET_AVAILABLE_FOREIGN_CHAINS)
-            .await
+        self.get_mpc_state(GET_AVAILABLE_FOREIGN_CHAINS).await
     }
 
     pub(crate) async fn get_allowed_foreign_chain_providers(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
-        let (_block_height, whitelist) = self
-            .get_mpc_state(mpc_contract_id, ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-            .await?;
+        let (_block_height, whitelist) =
+            self.get_mpc_state(ALLOWED_FOREIGN_CHAIN_PROVIDERS).await?;
 
         Ok(whitelist)
     }
@@ -293,46 +280,36 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_mpc_contract_state_dto(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
-        self.get_mpc_state(mpc_contract_id, STATE).await
+        self.get_mpc_state(STATE).await
     }
 
     pub(crate) async fn get_mpc_allowed_image_hashes(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<dtos::AllowedMpcDockerImageHash>)> {
-        let (block_height, entries): (u64, AllowedDockerImageHashesResponse) = self
-            .get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
-            .await?;
+        let (block_height, entries): (u64, AllowedDockerImageHashesResponse) =
+            self.get_mpc_state(ALLOWED_DOCKER_IMAGE_HASHES).await?;
 
         Ok((block_height, entries))
     }
     pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES)
-            .await
+        self.get_mpc_state(ALLOWED_LAUNCHER_COMPOSE_HASHES).await
     }
 
     pub(crate) async fn get_mpc_migration_info(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
-        self.get_mpc_state(mpc_contract_id, MIGRATION_INFO).await
+        self.get_mpc_state(MIGRATION_INFO).await
     }
 
-    async fn get_mpc_state<State>(
-        &self,
-        mpc_contract_id: AccountId,
-        endpoint: &str,
-    ) -> anyhow::Result<(u64, State)>
+    async fn get_mpc_state<State>(&self, endpoint: &str) -> anyhow::Result<(u64, State)>
     where
         State: for<'de> Deserialize<'de>,
     {
         let request = QueryRequest::CallFunction {
-            account_id: to_near_internal(&mpc_contract_id),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: endpoint.to_string(),
             args: vec![].into(),
         };
@@ -386,7 +363,7 @@ impl ReadAttestationExpiry for RealAttestationExpiryReader {
             let stored = self
                 .indexer_state
                 .view_client
-                .get_participant_attestation(&self.indexer_state.mpc_contract_id, tls_public_key)
+                .get_participant_attestation(tls_public_key)
                 .await?;
             Ok(stored.and_then(|attestation| attestation.expiry_timestamp_seconds()))
         })

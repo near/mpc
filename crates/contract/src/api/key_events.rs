@@ -110,13 +110,13 @@ impl MpcContract {
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.
-            // Note: MpcContract::vote_update uses filtering to ensure correctness even if this cleanup fails.
+            // Note: MpcContract::vote_contract_update uses filtering to ensure correctness even if this cleanup fails.
             Self::ext_self()
                 .with_static_gas(Gas::from_tgas(
                     self.config.remove_non_participant_update_votes_tera_gas,
                 ))
                 .with_unused_gas_weight(0)
-                .remove_non_participant_update_votes()
+                .remove_non_participant_contract_update_votes()
                 .detach();
             // Spawn a promise to drop votes cast by non-participants.
             Self::ext_self()

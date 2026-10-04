@@ -98,6 +98,8 @@ impl Environment {
     }
 }
 
+pub const NANOS_PER_SECOND: u64 = 1_000_000_000;
+
 /// Sets the blockchain timestamp for testing time-dependent behavior.
 pub fn set_block_timestamp(timestamp_nanos: u64) {
     testing_env!(
@@ -105,6 +107,10 @@ pub fn set_block_timestamp(timestamp_nanos: u64) {
             .block_timestamp(timestamp_nanos)
             .build()
     );
+}
+
+pub fn set_block_secs(secs: u64) {
+    set_block_timestamp(secs * NANOS_PER_SECOND);
 }
 
 /// Fills the allowlists a Dstack submission is checked against: MPC image,

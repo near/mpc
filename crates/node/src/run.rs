@@ -32,7 +32,6 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
 use std::{
-    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
@@ -181,7 +180,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let (protocol_state_sender, protocol_state_receiver) =
         watch::channel(ProtocolContractState::NotInitialized);
 
-    let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+    let (migration_state_sender, migration_state_receiver) =
+        watch::channel((0, Default::default()));
 
     // Buffer behind the recent-transactions debug page. The indexer forwards
     // records over `recent_tx_sender`; the drain task records them into the

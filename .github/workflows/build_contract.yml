@@ -26,17 +26,14 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
+        uses: ./.github/actions/install-nix
 
       # Reproducible build via cargo-near so the released WASM carries NEP-330
       # build metadata that third-party verifiers (sourcescan.io, nearblocks)
-      # replay. cargo-near is provided by the dev shell; the build itself runs
-      # in the pinned sourcescan/cargo-near Docker image.
+      # replay. cargo-near is provided by the contract dev shell; the build
+      # itself runs in the pinned sourcescan/cargo-near Docker image.
       - name: Build contract
-        run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+        run: nix develop --no-update-lock-file .#contract --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
       - name: Stage contract artifact
         run: cp target/near/mpc_contract/mpc_contract.wasm ./mpc_contract.wasm

@@ -1,10 +1,13 @@
 use crate::{ObservedState, TransportError, WatchContractState, views::monitoring::MonitoringTask};
 
-impl<T, ViewError> WatchContractState<T, ViewError> for MonitoringTask<T, ViewError>
+impl<T, ViewError> WatchContractState for MonitoringTask<T, ViewError>
 where
     T: Clone + Send + Sync,
     ViewError: Clone + Send + Sync,
 {
+    type Value = T;
+    type ViewError = ViewError;
+
     /// The initial observation counts as already seen: this future completes only if a new value
     /// is seen.
     async fn changed(&mut self) -> Result<(), TransportError<ViewError>> {

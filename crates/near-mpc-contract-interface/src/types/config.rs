@@ -25,8 +25,8 @@ pub struct InitConfig {
     pub key_event_timeout_blocks: Option<u64>,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: Option<u64>,
-    /// Amount of gas to deposit for contract and config updates.
-    pub contract_upgrade_deposit_tera_gas: Option<u64>,
+    /// Prepaid gas for applying contract and config updates.
+    pub apply_contract_update_tera_gas: Option<u64>,
     /// Gas required for a sign request.
     pub sign_call_gas_attachment_requirement_tera_gas: Option<u64>,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
@@ -45,7 +45,7 @@ pub struct InitConfig {
     pub clean_invalid_attestations_tera_gas: Option<u64>,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: Option<u64>,
-    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    /// Prepaid gas for a `remove_non_participant_contract_update_votes` call.
     pub remove_non_participant_update_votes_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
@@ -55,7 +55,8 @@ pub struct InitConfig {
     pub verifier_tera_gas: Option<u64>,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: Option<u64>,
-    /// TTL after which a launcher image hash unused by any participant is evicted.
+    /// TTL for launcher hashes no current participant uses; see
+    /// [`Config::launcher_hash_unused_ttl_seconds`].
     pub launcher_hash_unused_ttl_seconds: Option<u64>,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: Option<u64>,
@@ -85,8 +86,8 @@ pub struct Config {
     pub key_event_timeout_blocks: u64,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: u64,
-    /// Amount of gas to deposit for contract and config updates.
-    pub contract_upgrade_deposit_tera_gas: u64,
+    /// Prepaid gas for applying contract and config updates.
+    pub apply_contract_update_tera_gas: u64,
     /// Gas required for a sign request.
     pub sign_call_gas_attachment_requirement_tera_gas: u64,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
@@ -105,7 +106,7 @@ pub struct Config {
     pub clean_invalid_attestations_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: u64,
-    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    /// Prepaid gas for a `remove_non_participant_contract_update_votes` call.
     pub remove_non_participant_update_votes_tera_gas: u64,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: u64,
@@ -115,10 +116,9 @@ pub struct Config {
     pub verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,
-    /// TTL after which a launcher image hash unused by any participant is evicted: at the later
-    /// of its last use + this TTL and the expiry of the attestation that last used it.
-    /// Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on
-    /// use). An expiry never moves earlier, so lowering it does not shorten existing entries.
+    /// How long a launcher hash that no current participant uses stays allowed after its last vote
+    /// or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can
+    /// lag this TTL; a hash in use is never removed automatically.
     pub launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: u64,
@@ -134,7 +134,7 @@ mod tests {
         let original_config = InitConfig {
             key_event_timeout_blocks: Some(2000),
             tee_upgrade_deadline_duration_seconds: Some(3333),
-            contract_upgrade_deposit_tera_gas: Some(120),
+            apply_contract_update_tera_gas: Some(120),
             sign_call_gas_attachment_requirement_tera_gas: Some(15),
             ckd_call_gas_attachment_requirement_tera_gas: Some(15),
             return_signature_and_clean_state_on_success_call_tera_gas: Some(7),
@@ -189,7 +189,7 @@ mod tests {
         let config_with_all_values_as_none = InitConfig {
             key_event_timeout_blocks: None,
             tee_upgrade_deadline_duration_seconds: None,
-            contract_upgrade_deposit_tera_gas: None,
+            apply_contract_update_tera_gas: None,
             sign_call_gas_attachment_requirement_tera_gas: None,
             ckd_call_gas_attachment_requirement_tera_gas: None,
             return_signature_and_clean_state_on_success_call_tera_gas: None,

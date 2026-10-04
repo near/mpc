@@ -46,6 +46,10 @@ container_build_command = [
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["block-clock"]
+# Read time from the block. Pinning the clock (sandbox tests only) takes both
+# disabling this default feature and setting `MPC_CONTRACT_PINNED_NOW_SECONDS`.
+block-clock = []
 test-utils = [
     "rand",
     "threshold-signatures",
@@ -135,6 +139,7 @@ near-contract-transport = { workspace = true, features = ["traits"] }
 near-jsonrpc-client = { workspace = true }
 near-jsonrpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
+near-mpc-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-primitives = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
