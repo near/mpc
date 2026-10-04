@@ -64,12 +64,17 @@ pub trait HasPollInterval {
 /// and [`changed()`](WatchContractState::changed) to wait for the next update.
 ///
 /// The returned block-height in [`ObservedState`] is the height at which this value was first seen.
-pub trait WatchContractState<T, ViewError> {
+pub trait WatchContractState {
+    type Value;
+    type ViewError;
+
     /// Returns the last value observed on chain and the block height at which it was first
     /// observed.
-    fn latest(&mut self) -> Result<ObservedState<T>, TransportError<ViewError>>;
+    fn latest(&mut self) -> Result<ObservedState<Self::Value>, TransportError<Self::ViewError>>;
     /// Waits until the observed value changes.
-    fn changed(&mut self) -> impl Future<Output = Result<(), TransportError<ViewError>>> + Send;
+    fn changed(
+        &mut self,
+    ) -> impl Future<Output = Result<(), TransportError<Self::ViewError>>> + Send;
 }
 
 #[cfg(test)]

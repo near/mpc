@@ -33,3 +33,75 @@ args:     {}
 contract: mpc.near
 method:   contract_update_votes
 args:     {}
+
+contract: mpc.near
+method:   state
+args:     {}
+
+contract: mpc.near
+method:   config
+args:     {}
+
+contract: mpc.near
+method:   get_tee_accounts
+args:     {}
+
+contract: mpc.near
+method:   migration_info
+args:     {}
+
+contract: mpc.near
+method:   get_available_foreign_chains
+args:     {}
+
+contract: mpc.near
+method:   get_foreign_chains_configs
+args:     {}
+
+contract: mpc.near
+method:   allowed_foreign_chain_providers
+args:     {}
+
+contract: mpc.near
+method:   version
+args:     {}
+
+contract: mpc.near
+method:   tee_verifier_account_id
+args:     {}
+
+contract: mpc.near
+method:   tee_verifier_votes
+args:     {}
+
+contract: mpc.near
+method:   public_key
+args:     {"domain_id":0}
+
+contract: mpc.near
+method:   derived_public_key
+args:     {"path":"test","predecessor":"alice.near","domain_id":0}
+
+contract: mpc.near
+method:   latest_key_version
+args:     {"signature_scheme":"Secp256k1"}
+
+contract: mpc.near
+method:   available_attestation_grants
+args:     {"account_id":"alice.near"}
+
+contract: mpc.near
+method:   get_attestation
+args:     {"tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}
+
+contract: mpc.near
+method:   get_pending_request
+args:     {"request":{"tweak":[100,10,115,5,122,198,165,83,30,151,116,69,245,215,110,31,115,165,30,162,189,16,229,117,213,171,51,108,9,138,171,241],"payload":{"Ecdsa":"0707070707070707070707070707070707070707070707070707070707070707"},"domain_id":0}}
+
+contract: mpc.near
+method:   get_pending_ckd_request
+args:     {"request":{"app_public_key":{"AppPublicKey":"bls12381g1:FxBq18owLGrqcS3FKniTZAU8RRA3qqPBsp3AJNKX2nM52MxAEUuiwXK5AJ9sYXqJE"},"app_id":[15,21,17,171,145,120,221,41,74,37,50,20,84,208,201,64,97,55,99,24,110,117,198,140,115,60,31,96,139,54,219,207],"domain_id":0}}
+
+contract: mpc.near
+method:   get_pending_verify_foreign_tx_request
+args:     {"request":{"request":{"Bitcoin":{"tx_id":"0707070707070707070707070707070707070707070707070707070707070707","confirmations":1,"extractors":["BlockHash"]}},"domain_id":0,"payload_version":1}}

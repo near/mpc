@@ -1,14 +1,11 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+pub use near_mpc_contract_interface::types::MigrationInfo as ContractMigrationInfo;
 use tokio::sync::watch;
 
 use crate::{indexer::IndexerState, migration_service::types::MigrationInfo};
-
-pub type ContractMigrationInfo =
-    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
 const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -88,11 +85,7 @@ async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, Contra
 
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match indexer_state
-            .view_client
-            .get_mpc_migration_info(indexer_state.mpc_contract_id.clone())
-            .await
-        {
+        match indexer_state.view_client.get_mpc_migration_info().await {
             Ok(res) => {
                 return res;
             }

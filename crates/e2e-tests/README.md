@@ -236,6 +236,7 @@ pub struct MpcClusterConfig {
     pub migration_targets: Vec<usize>,          // source node indices
     pub init_format: ContractInitFormat,
     pub foreign_chains: ForeignChainsClusterConfig,
+    pub tls_trust_roots: Option<PathBuf>,       // nodes' TLS roots, via SSL_CERT_FILE
 }
 
 pub struct ForeignChainsClusterConfig {

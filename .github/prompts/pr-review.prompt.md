@@ -102,8 +102,7 @@ The review body must follow this layout:
 Anchor every finding with a `file:line` reference so reviewers can jump to the location.
 
 Consult the repository's [AGENTS.md] and [CONTRIBUTING.md] for project-specific conventions.
-Don't try to use `gh pr review` you don't have permissions for that and it will fail.
-Please always use `gh pr comment` to post your review instead.
+You cannot post to GitHub. Return the review body, in the structure above, as the `review` field of your structured output; a later workflow step posts it as a PR comment.
 
 [AGENTS.md]: ../../AGENTS.md
 [CONTRIBUTING.md]: ../../CONTRIBUTING.md

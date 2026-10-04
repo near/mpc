@@ -119,6 +119,7 @@ pub struct MpcClusterConfig {
     /// Wire format used when calling `init`. See [`ContractInitFormat`].
     pub init_format: ContractInitFormat,
     pub foreign_chains: ForeignChainsClusterConfig,
+    pub tls_trust_roots: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -210,6 +211,7 @@ impl MpcClusterConfig {
             migration_targets: vec![],
             init_format: ContractInitFormat::Current,
             foreign_chains: ForeignChainsClusterConfig::default(),
+            tls_trust_roots: None,
         }
     }
 
@@ -1038,10 +1040,12 @@ impl MpcCluster {
             .context("failed to send verify_foreign_transaction request")
     }
 
-    /// Propose a contract code update and cast votes until `vote_update` reports
-    /// the threshold reached. Pair with [`Self::ensure_deployed_code`]: the deploy
+    /// Propose a contract code update through the update API of the production binary the
+    /// cluster runs, and cast votes until `vote_update` reports the threshold reached.
+    /// Pair with [`Self::ensure_deployed_code`]: the deploy
     /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
     /// rolls the deploy back without changing the threshold-reached signal.
+    #[expect(deprecated)]
     pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
         anyhow::ensure!(
             !self.nodes.is_empty(),
@@ -1482,6 +1486,7 @@ fn start_mpc_nodes(
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config,
+            tls_trust_roots: config.tls_trust_roots.clone(),
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }
@@ -1509,6 +1514,7 @@ fn start_mpc_nodes(
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config: Default::default(),
+            tls_trust_roots: config.tls_trust_roots.clone(),
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }

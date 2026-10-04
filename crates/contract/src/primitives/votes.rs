@@ -122,6 +122,10 @@ where
         self.votes_by_proposal.clear();
     }
 
+    pub fn voters_for(&self, proposal: &ProposalHash) -> Option<&VoterSet<V>> {
+        self.votes_by_proposal.get(proposal)
+    }
+
     pub fn all(&self) -> BTreeMap<ProposalHash, BTreeSet<V>> {
         self.votes_by_proposal
             .iter()

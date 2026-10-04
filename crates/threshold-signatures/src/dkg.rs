@@ -25,6 +25,8 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
     secret: &Scalar<C>,
     old_reshare_package: Option<(VerifyingKey<C>, ParticipantList)>,
 ) -> Result<(Option<VerifyingKey<C>>, Option<ParticipantList>), ProtocolError> {
+    // Branching on a zero secret is intentional: only a new joiner in resharing holds
+    // one, and the public participant sets already reveal who that is.
     let is_zero_secret = *secret == <C::Group as Group>::Field::zero();
 
     if let Some((old_key, old_participants)) = old_reshare_package {
@@ -63,7 +65,9 @@ fn generate_coefficient_commitment<C: Ciphersuite>(
 ) -> Result<PolynomialCommitment<C>, ProtocolError> {
     let mut secret_coefficients = secret_coefficients.get_coefficients();
     // we skip the zero share as neither zero scalar
-    // nor identity group element are serializable
+    // nor identity group element are serializable.
+    // As in `assert_keyshare_inputs`, the secret compare only reveals whether this
+    // is a new joiner in resharing, which is public.
     if secret_coefficients.first() == Some(&<C::Group as Group>::Field::zero()) {
         secret_coefficients.remove(0);
     }
