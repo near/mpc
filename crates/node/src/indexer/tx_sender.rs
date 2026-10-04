@@ -191,18 +191,22 @@ async fn submit_tx(
 /// Every accepted submission restamps the entry's
 /// [`attested_at_seconds`](near_mpc_contract_interface::types::StoredAttestation::attested_at_seconds),
 /// and only the owning account may rewrite the entry, so a changed timestamp is our own
-/// submission landing. A contract that reports no timestamp falls back to
-/// [`submitted_attestation_landed_by_expiry`].
+/// submission landing. An entry the migration carried over is still unstamped, which means no
+/// submission of ours has been accepted since.
 fn submitted_attestation_landed(
     baseline: SubmissionBaseline,
     stored: &GetAttestationResponse,
     submitted: &Attestation,
 ) -> bool {
-    match stored.attested_at_seconds() {
-        Some(attested_at) => baseline.attested_at_seconds != Some(attested_at),
-        None => submitted_attestation_landed_by_expiry(
+    match stored {
+        GetAttestationResponse::Stamped(stored) => match stored.attested_at_seconds {
+            Some(attested_at) => baseline.attested_at_seconds != Some(attested_at),
+            None => false,
+        },
+        // TODO(#4498): remove once every deployed contract stamps the acceptance time.
+        GetAttestationResponse::Unstamped(stored) => submitted_attestation_landed_by_expiry(
             baseline.expiry_timestamp_seconds,
-            stored.attestation(),
+            stored,
             submitted,
         ),
     }
@@ -218,7 +222,6 @@ fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64
 /// Landing check against a contract that stores no acceptance time: it re-stamps the entry's
 /// expiry on every accepted submit, so a changed expiry means ours landed. A legacy mock with no
 /// stored expiry falls back to an equality check.
-// TODO(#4498): remove once every deployed contract stamps `attested_at_seconds`.
 fn submitted_attestation_landed_by_expiry(
     pre_submit_expiry: Option<u64>,
     stored: &VerifiedAttestation,
@@ -609,6 +612,27 @@ mod tests {
 
         // Then
         assert!(landed);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn submitted_attestation_landed__should_reject_while_the_entry_is_still_unstamped() {
+        // Given: an entry the migration carried over, which no submission has replaced
+        let baseline = baseline_attested_at(None);
+        let stored = GetAttestationResponse::Stamped(StoredAttestation {
+            attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+            attested_at_seconds: None,
+        });
+
+        // When
+        let landed = submitted_attestation_landed(
+            baseline,
+            &stored,
+            &Attestation::Mock(MockAttestation::Valid),
+        );
+
+        // Then: an accepted submission would have stamped it
+        assert!(!landed);
     }
 
     #[test]

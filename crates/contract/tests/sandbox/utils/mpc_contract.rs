@@ -72,21 +72,7 @@ pub async fn prepay_attestation_grants(
     beneficiary: &AccountId,
     grants: u32,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // The fee is read from `config()`, the way an operator reads it.
-    let config = get_config(contract).await?;
-    let fee = NearToken::from_millinear(u128::from(config.attestation_storage_fee_millinear));
-    prepay_attestation_grants_with_fee(payer, contract, beneficiary, grants, fee).await
-}
-
-/// Prepays at a caller-supplied fee, for the one case `config()` cannot serve: a contract whose
-/// released `Config` no longer deserializes into the current DTO.
-pub async fn prepay_attestation_grants_with_fee(
-    payer: &Account,
-    contract: &Contract,
-    beneficiary: &AccountId,
-    grants: u32,
-    fee: NearToken,
-) -> anyhow::Result<ExecutionFinalResult> {
+    let fee = attestation_storage_fee(contract).await?;
     let total = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
     Ok(payer
         .call(contract.id(), method_names::PREPAY_ATTESTATION_STORAGE)
@@ -95,6 +81,16 @@ pub async fn prepay_attestation_grants_with_fee(
         .max_gas()
         .transact()
         .await?)
+}
+
+/// Reads the fee the way an operator does, but untyped, so this serves a released binary whose
+/// `Config` no longer deserializes into the current DTO.
+async fn attestation_storage_fee(contract: &Contract) -> anyhow::Result<NearToken> {
+    let config: serde_json::Value = contract.view(method_names::CONFIG).await?.json()?;
+    let millinear = config["attestation_storage_fee_millinear"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("no attestation_storage_fee_millinear in {config}"))?;
+    Ok(NearToken::from_millinear(u128::from(millinear)))
 }
 
 /// Prepays one grant, then submits. For a first submission; a re-attestation of a key the

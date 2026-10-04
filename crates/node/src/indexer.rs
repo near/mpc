@@ -216,10 +216,6 @@ impl IndexerViewClient {
         }
     }
 
-    /// Caps how much of an unparsable response reaches the error, since the attestation it
-    /// carries is externally sized.
-    const MAX_RENDERED_RESPONSE_CHARS: usize = 512;
-
     pub(crate) async fn get_participant_attestation(
         &self,
         mpc_contract_id: &AccountId,
@@ -254,13 +250,13 @@ impl IndexerViewClient {
                 Option<near_mpc_contract_interface::types::GetAttestationResponse>,
             >(&call_result.result)
             .with_context(|| {
-                // An untagged enum reports only that nothing matched, naming no field, so the
-                // response itself is the only clue to the shape the contract returned.
-                let rendered: String = String::from_utf8_lossy(&call_result.result)
+                // An untagged enum names no field when nothing matches, so carry the response
+                // itself, capped since the attestation it holds is externally sized.
+                let response: String = String::from_utf8_lossy(&call_result.result)
                     .chars()
-                    .take(Self::MAX_RENDERED_RESPONSE_CHARS)
+                    .take(512)
                     .collect();
-                format!("failed to deserialize get_attestation response: {rendered}")
+                format!("failed to deserialize get_attestation response: {response}")
             }),
             _ => {
                 anyhow::bail!("Unexpected result from a view client function call");
@@ -389,7 +385,8 @@ impl SubmissionBaseline {
 }
 
 pub(crate) trait ReadSubmissionBaseline: Send + Sync {
-    /// An empty baseline means nothing is stored.
+    /// An empty baseline is not proof that nothing is stored: an entry can be stored with
+    /// neither an acceptance time nor an expiry.
     fn read_submission_baseline<'a>(
         &'a self,
         tls_public_key: &'a dtos::Ed25519PublicKey,

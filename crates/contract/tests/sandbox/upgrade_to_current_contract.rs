@@ -9,9 +9,9 @@ use crate::sandbox::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
-            get_participants, get_state, get_tee_accounts, prepay_attestation_grants_with_fee,
-            submit_participant_info, tee_verifier_account_id, vote_add_launcher_hash,
-            vote_tee_verifier_change,
+            get_participant_attestation, get_participants, get_state, get_tee_accounts,
+            prepay_attestation_grants, submit_participant_info, tee_verifier_account_id,
+            vote_add_launcher_hash, vote_tee_verifier_change,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
@@ -33,7 +33,7 @@ use near_mpc_contract_interface::types::{
     CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{Account, Contract, Worker, network::Sandbox, types::NearToken};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
@@ -226,18 +226,18 @@ async fn migrate__should_fail_when_no_tee_verifier_is_configured(
     Ok(())
 }
 
-/// Attestation-storage fee the released contract charges per grant. Hard-coded because the
-/// released contract's `config()` no longer deserializes into the current [`dtos::Config`].
-const RELEASED_ATTESTATION_STORAGE_FEE: NearToken = NearToken::from_millinear(20);
-
 /// Entries the upgrade under test has to carry across. Migration cost scales with this, and
 /// `stored_attestations` keeps entries for non-participants too, so it is sized past the real
-/// fleet (18 on mainnet, 19 on testnet when this was written) rather than at [`PARTICIPANT_LEN`].
+/// fleet rather than at [`PARTICIPANT_LEN`].
 const STORED_ATTESTATION_ENTRIES: usize = 25;
 
 /// Tops the stored attestations up to `total` with entries owned by non-participants, the way a
 /// prospective node's submission would.
-async fn fill_stored_attestations(worker: &Worker<Sandbox>, contract: &Contract, total: usize) {
+async fn fill_stored_attestations(
+    worker: &Worker<Sandbox>,
+    contract: &Contract,
+    total: usize,
+) -> Vec<dtos::Ed25519PublicKey> {
     let mut accounts = Vec::with_capacity(total - PARTICIPANT_LEN);
     for _ in PARTICIPANT_LEN..total {
         accounts.push(gen_account(worker).await.0);
@@ -248,17 +248,9 @@ async fn fill_stored_attestations(worker: &Worker<Sandbox>, contract: &Contract,
         .enumerate()
         .map(|(index, account)| async move {
             let tls_key = dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]);
-            // The fee is passed explicitly rather than read from `config()`: this runs against
-            // the released contract, whose config no longer deserializes into the current DTO.
-            let prepayment = prepay_attestation_grants_with_fee(
-                account,
-                contract,
-                account.id(),
-                1,
-                RELEASED_ATTESTATION_STORAGE_FEE,
-            )
-            .await
-            .expect("prepay_attestation_storage should not error");
+            let prepayment = prepay_attestation_grants(account, contract, account.id(), 1)
+                .await
+                .expect("prepay_attestation_storage should not error");
             assert!(
                 prepayment.is_success(),
                 "filler prepayment failed: {prepayment:?}"
@@ -277,6 +269,10 @@ async fn fill_stored_attestations(worker: &Worker<Sandbox>, contract: &Contract,
 
     let stored = get_tee_accounts(contract).await.unwrap();
     assert_eq!(stored.len(), total, "stored attestation count");
+
+    (0..accounts.len())
+        .map(|index| dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]))
+        .collect()
 }
 
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
@@ -294,7 +290,8 @@ async fn propose_upgrade_from_production_to_current_binary(
     let mpc_contract = worker.view_mpc(contract.id());
 
     submit_attestations(&contract, &accounts, &participants).await;
-    fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
+    let filler_keys =
+        fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(
@@ -345,6 +342,20 @@ async fn propose_upgrade_from_production_to_current_binary(
             .value
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
+    );
+
+    assert_eq!(
+        get_tee_accounts(&contract).await.unwrap().len(),
+        STORED_ATTESTATION_ENTRIES,
+        "every stored attestation should survive migration"
+    );
+    let migrated = get_participant_attestation(&contract, &filler_keys[0])
+        .await
+        .unwrap()
+        .expect("a migrated attestation should still be readable");
+    assert_eq!(
+        migrated.attested_at_seconds, None,
+        "migration must not stamp an entry the contract never accepted"
     );
 }
 

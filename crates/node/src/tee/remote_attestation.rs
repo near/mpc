@@ -475,9 +475,9 @@ mod tests {
     #[tokio::test]
     #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_submit_when_baseline_read_fails() {
-        // Given: reading the stored attestation's expiry (used only to confirm the submission
-        // landed) fails; the submission must still go out, otherwise a broken read path would
-        // stop the node from refreshing its attestation until the contract evicts it
+        // Given: reading the pre-submit baseline (used only to confirm the submission landed)
+        // fails; the submission must still go out, otherwise a broken read path would stop the
+        // node from refreshing its attestation until the contract evicts it
         let mut setup = test_setup();
         setup.submitter.attestation_reader = Arc::new(StubSubmissionBaselineReader { fail: true });
         let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);

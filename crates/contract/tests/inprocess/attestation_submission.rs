@@ -450,9 +450,9 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
         .expect("participant attestation should be stored");
 
     // When: the same participant re-attests with no attached deposit, an hour later.
-    const ONE_HOUR_NANOS: u64 = 3600 * 1_000_000_000;
+    const ONE_HOUR_SECONDS: u64 = 3600;
     testing_env!(VMContext {
-        block_timestamp: near_sdk::env::block_timestamp() + ONE_HOUR_NANOS,
+        block_timestamp: near_sdk::env::block_timestamp() + ONE_HOUR_SECONDS * 1_000_000_000,
         ..common::participant_context(&node.account_id)
     });
     let result = setup
@@ -474,7 +474,7 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
         .expect("an accepted submission stamps its acceptance time");
     assert_eq!(
         stored_after.attested_at_seconds,
-        Some(attested_at_before + 3600)
+        Some(attested_at_before + ONE_HOUR_SECONDS)
     );
 }
 

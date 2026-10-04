@@ -2003,6 +2003,38 @@ mod tests {
     }
 
     #[test]
+    fn verify_and_store_mock__should_leave_the_stamp_alone_when_the_attestation_is_rejected() {
+        // Given: an entry stored by an accepted submission
+        const ATTESTED_AT_SECONDS: u64 = 1_800_000_000;
+        set_block_timestamp(ATTESTED_AT_SECONDS * 1_000_000_000);
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+        tee_state
+            .verify_and_store_mock(
+                node_id.clone(),
+                MockAttestation::Valid,
+                Duration::from_secs(0),
+            )
+            .unwrap();
+
+        // When: a later submission fails verification
+        set_block_timestamp((ATTESTED_AT_SECONDS + 3600) * 1_000_000_000);
+        let result = tee_state.verify_and_store_mock(
+            node_id.clone(),
+            MockAttestation::Invalid,
+            Duration::from_secs(0),
+        );
+
+        // Then: the stored stamp is the accepted submission's, which is what lets a submitter
+        // tell a rejection from a landing
+        assert_matches!(result, Err(_));
+        assert_eq!(
+            stamped_attested_at(&tee_state, &node_id),
+            Some(ATTESTED_AT_SECONDS)
+        );
+    }
+
+    #[test]
     fn verify_and_store_mock__should_restamp_a_resubmission() {
         // Given: an entry stored earlier by the same node
         const FIRST_SUBMISSION_SECONDS: u64 = 1_800_000_000;

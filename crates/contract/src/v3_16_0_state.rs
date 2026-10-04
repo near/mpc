@@ -33,8 +33,7 @@ use crate::{
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_mpc_contract_interface::types as dtos;
 
-/// Shadow of the pre-[#4301](https://github.com/near/mpc/issues/4301) entry, which carries no
-/// [`NodeAttestation::attested_at_seconds`].
+/// Shadow of the entry layout from before [`NodeAttestation::attested_at_seconds`] existed.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldNodeAttestation {
     node_id: NodeId,
@@ -71,13 +70,14 @@ impl From<OldTeeState> for TeeState {
 /// submission that never happened. Each node's next accepted submission stamps a real value.
 ///
 /// This is a one-off for the layout that predates the field. A later migration must carry
-/// [`NodeAttestation::attested_at_seconds`] across untouched — rewriting it would restamp every
-/// node's entry.
+/// [`NodeAttestation::attested_at_seconds`] across untouched, since rewriting it would restamp
+/// every node's entry.
 fn migrate_stored_attestations(
     mut old: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
 ) -> IterableMap<dtos::Ed25519PublicKey, NodeAttestation> {
     let entries: Vec<_> = old.drain().collect();
-    // Commit the removals before the new map writes under the same prefix.
+    // The new map writes under the same prefix, and an insert reads the slot before writing it.
+    // Leave the old layout in storage and that read panics on it.
     old.flush();
 
     let mut migrated = IterableMap::new(StorageKey::StoredAttestations);
@@ -244,9 +244,8 @@ mod tests {
         let mut migrated = migrate_stored_attestations(old);
         migrated.flush();
 
-        // Then: read back the way the next contract call would — through a handle rebuilt from
-        // the borsh form, whose cache is empty — so the assertions come from storage and would
-        // catch the new map's writes being undone by the old map's removals.
+        // Then: read back the way the next contract call would, through a handle rebuilt from
+        // the borsh form, whose cache is empty, so the assertions come from storage.
         let reread: IterableMap<dtos::Ed25519PublicKey, NodeAttestation> =
             borsh::from_slice(&borsh::to_vec(&migrated).unwrap()).unwrap();
         assert_eq!(reread.len() as usize, node_ids.len());
