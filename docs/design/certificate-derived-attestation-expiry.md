@@ -151,26 +151,11 @@ Under a plain "unused for 14 days" rule, a node that attests once with 30 days o
 stops loses its hash on day 14 and is kicked with 16 days left, which turns launcher cleanup into a
 second attestation deadline.
 
-Fix: keep a hash while a current participant uses it, and remove it only in `verify_tee`. Each
-entry has one stamp, `now + ttl`, set when it is voted in and again at every `verify_tee` that finds
-a current participant's stored attestation using it. `verify_tee` restamps first, then drops the
-unused entries whose stamp has passed, always keeping the most recently stamped one so the list
-never empties. Reads return every entry, with no time filter. A hash in use is therefore never
-removed automatically, whatever the TTL or the attestation's lifetime, and the TTL only retires
-hashes nobody uses. A hash used only by a node that is not yet a participant, such as a joining node
-or a migration destination, is protected by its vote stamp alone; a threshold re-vote restamps it.
-
-This removal is housekeeping, not a security control: removing a launcher immediately, for example a
-compromised one, is the unanimous `vote_remove_launcher_hash`. So removal may lag the TTL. An unused
-hash past its stamp stays accepted until the next `verify_tee`, and a current participant that
-submits with it in that window makes it in use again.
-
-*Considered: extending the stamp on each participant's submission to the attestation's own expiry,
-with reads filtering on the stamp. Correct, but the stamp then carries two meanings, every read has
-to filter, and the refresh has to be wired into both submission paths.*
-
-*Considered: dropping the TTL and evicting purely on references. Simpler config, but a newly
-voted-in hash has no references until nodes adopt it, so it would need its own grace period.*
+Fix: keep a hash while a current participant uses it, and remove it only in `verify_tee`, which
+restamps the hashes in use before dropping the unused ones past their TTL. A hash in use is
+therefore never removed automatically, whatever the attestation's lifetime. Done in
+[#4527](https://github.com/near/mpc/pull/4527) and [#4572](https://github.com/near/mpc/pull/4572);
+see [Auto-Removal of Unused Launcher Image Hashes](auto-remove-launcher-hashes-design.md).
 
 **3. Shortening after a verifier rotation — future work.** Nothing to build here. This design just
 has to leave it possible. [#3734](https://github.com/near/mpc/issues/3734) wants a short window
@@ -199,7 +184,7 @@ an expired entry.
 Fix: extend the pinned-clock trick to the contract side, mirroring
 `tee_verifier_contract_with_pinned_clock`. Done in
 [#4518](https://github.com/near/mpc/issues/4518): `current_contract_with_pinned_clock` pins both
-contract clocks (`TeeState::current_time_seconds` and `Timestamp::now`, which drives launcher expiry)
+contract clocks (`TeeState::current_time_seconds` and `Timestamp::now`, which stamps launcher retention)
 to the fixture timestamp.
 
 *Considered: regenerating the fixture. Not a fix — a fresh one would have a 30-day shelf life.*
