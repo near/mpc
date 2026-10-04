@@ -12,7 +12,7 @@ Node migration allows you to move your MPC node from one host to another without
 
 ## Environment Variables Setup
 
-All commands in this guide run on the machine where `backup-cli` and NEAR CLI are installed. Set these variables there at the beginning of your migration; every code example below uses them.
+Set these variables on the machine where you run `backup-cli` and NEAR CLI, at the beginning of your migration; the code examples below use them.
 
 Known up front:
 
@@ -39,25 +39,14 @@ export NEW_NODE_ADDRESS=new-node.example.com:8079
 export NEW_NODE_URL=http://new-node.example.com:80
 ```
 
-Filled in as you go — each one is set by a command in the step shown:
+Four more variables are filled in as you go — each is set by a command in the step shown:
 
-```bash
-# The shared transport encryption key, 64 hex characters (Step 3)
-export BACKUP_ENCRYPTION_KEY=...
-
-# The old node's P2P (TLS) public key (Step 4)
-export OLD_NODE_P2P_KEY=...
-
-# The new node's P2P (TLS) public key (Step 5)
-export NEW_NODE_P2P_KEY=...
-
-# The new node's NEAR signer public key (Step 5)
-export NEW_NODE_SIGNER_PUBLIC_KEY=...
-```
+- `BACKUP_ENCRYPTION_KEY` — the shared transport encryption key, 64 hex characters (Step 3)
+- `OLD_NODE_P2P_KEY` — the old node's P2P (TLS) public key (Step 4)
+- `NEW_NODE_P2P_KEY` — the new node's P2P (TLS) public key (Step 5)
+- `NEW_NODE_SIGNER_PUBLIC_KEY` — the new node's NEAR signer public key (Step 5)
 
 **Note:** Adjust these values based on your specific setup. For mainnet deployments, use `mainnet` for `NEAR_NETWORK` and `v1.signer` for `MPC_CONTRACT_ACCOUNT_ID`.
-
-The nodes themselves need one value configured on them: the backup encryption key — in `user-config.toml` on a TDX/CVM node, or as `MPC_BACKUP_ENCRYPTION_KEY_HEX` in `.env` on a non-TEE node. [Step 3](#step-3-generate-and-set-encryption-key) and [Step 5](#step-5-prepare-the-new-node) cover where to set it.
 
 ## Prerequisites
 
@@ -72,9 +61,9 @@ Before starting a migration, ensure you have:
 
 ### Prepay the New Node's Attestation Storage
 
-During a migration your account briefly holds two attestations — the old node's and the new node's — and each stored attestation consumes one prepaid **grant**. The old node's grant is returned only after its attestation expires (7 days) and is swept, so the new node needs a grant of its own. Without one, the new node's attestation submission is rejected and it retries in a loop, stalling the migration at [Step 5](#step-5-prepare-the-new-node).
+During a migration your account briefly holds two attestations — the old node's and the new node's — and each stored attestation consumes one prepaid **grant**. The old node's grant remains occupied until its attestation is removed, so the new node needs an available grant of its own.
 
-Do this before you start the migration — it needs only your account's full-access key, nothing from the new node. Check whether a grant is available:
+Do this before you start the migration. Check whether a grant is available:
 
 ```bash
 near contract call-function as-read-only \
@@ -366,7 +355,7 @@ near contract call-function as-read-only \
   now
 ```
 
-**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs show rejected attestation submissions, the account has no available attestation grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage).
+**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs report `no attestation storage grant available`, prepay a grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage). The node retries the submission on its own once a grant exists.
 
 Output should look like this:
 
@@ -392,7 +381,7 @@ Output should look like this:
 You'll need:
 - **New node's P2P public key**: `$NEW_NODE_P2P_KEY` from the step above.
 - **New node's signer account public key**: `$NEW_NODE_SIGNER_PUBLIC_KEY` from the step above.
-- **New node's public URL**: `$NEW_NODE_URL` — where peers will reach the new node (e.g. `http://new-node.example.com:80`). Note this is the node's public URL with an `http://` prefix, not the bare migration endpoint in `$NEW_NODE_ADDRESS`.
+- **New node's public URL**: `$NEW_NODE_URL` — where peers will reach the new node, not the migration endpoint in `$NEW_NODE_ADDRESS`.
 
 ### start_node_migration on contract
 
@@ -418,8 +407,6 @@ near contract call-function as-transaction \
   sign-with-keychain \
   send
 ```
-
-**Note:** The `url` in `destination_node_info` above (`$NEW_NODE_URL`) must contain the `http://` prefix, please do not forget adding it.
 
 ### Verify Migration Was Registered on the Contract
 
