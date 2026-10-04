@@ -21,43 +21,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=common.sh
+source "${REPO_ROOT}/scripts/ops/common.sh"
 
 # --- Argument parsing ---
 
-usage() {
-    echo "Usage: $0 <VERSION>  (e.g. 3.6.0)"
-    exit 1
-}
-
-if [[ $# -ne 1 ]]; then
-    echo "Error: Expected exactly one argument, got $#."
-    usage
-fi
-
+[[ $# -eq 1 ]] || die "Usage: $0 <VERSION>  (e.g. 3.6.0)"
 VERSION="$1"
-
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "Error: '$VERSION' is not valid semver (expected MAJOR.MINOR.PATCH)."
-    exit 1
-fi
-
-# --- Helper functions ---
-
-die() {
-    printf 'Error: %s\n' "$1" >&2
-    exit 1
-}
-
-require_cmds() {
-    local missing=0
-    for cmd in "$@"; do
-        command -v "$cmd" >/dev/null 2>&1 || {
-            printf 'Missing dependency: %s\n' "$cmd" >&2
-            missing=1
-        }
-    done
-    [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above (hint: run from within 'nix develop')."
-}
+check_version "$VERSION"
 
 # --- Dependency checks ---
 
@@ -87,16 +58,8 @@ fi
 
 # --- Generate changelog ---
 
-# Use --prepend so the new release section is added on top of CHANGELOG.md,
-# preserving any manually authored sections (e.g. for releases whose tag does not
-# live on main, like 3.9.1 on release/v3.9.1). When new sections need to be
-# hand-written, append the relevant duplicate cherry-pick commits to .cliffignore
-# so they don't reappear in the next auto-generated release block.
-#
-# git-cliff fetches PR/author metadata for the ref at the range head. The literal
-# `HEAD` resolves to the default branch (main), missing PRs merged only into a
-# release branch, so we pass an explicit range ending at a concrete SHA. The base
-# is the latest semver tag reachable from HEAD; --match skips stray non-semver tags.
+# See RELEASES.md § Changelog conventions for why the range head is a concrete
+# SHA rather than HEAD, and when to append cherry-picks to .cliffignore.
 echo "==> Generating changelog..."
 BASE_TAG=$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' HEAD) \
     || die "Could not find a previous semver tag reachable from HEAD."
@@ -104,20 +67,22 @@ git-cliff --prepend CHANGELOG.md -t "$VERSION" "${BASE_TAG}..$(git rev-parse HEA
 
 # --- Bump workspace version in Cargo.toml ---
 
-# `grep -P` (PCRE) and `sed -i` without a suffix are GNU-only; use POSIX
-# forms so this works on both Linux and macOS (BSD userland).
-
 CARGO_TOML="${REPO_ROOT}/Cargo.toml"
-OLD_VERSION=$(awk -F'"' '/^version = "[0-9]+\.[0-9]+\.[0-9]+"/ {print $2; exit}' "$CARGO_TOML")
+# Matches release.yml, which stops at the patch digit so an -rc suffix is read
+# back rather than silently missed.
+OLD_VERSION=$(awk -F'"' '/^version = "[0-9]+\.[0-9]+\.[0-9]+/ {print $2; exit}' "$CARGO_TOML")
 [[ -n "$OLD_VERSION" ]] || die "Could not find a workspace 'version = \"X.Y.Z\"' line in $CARGO_TOML."
 
 echo "==> Bumping workspace version: ${OLD_VERSION} -> ${VERSION}"
-sed -i.bak -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"${VERSION}\"/" "$CARGO_TOML" && rm "${CARGO_TOML}.bak"
+# macOS ships BSD userland, where bare `sed -i` is invalid; the .bak suffix
+# works on both.
+sed -i.bak -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?\"/version = \"${VERSION}\"/" \
+    "$CARGO_TOML" && rm "${CARGO_TOML}.bak"
 
 # --- Verify contract ABI has changed ---
 
-# The version bump should cause the ABI snapshot to differ. We expect
-# the test to fail — if it passes, the ABI was not affected.
+# A version bump must change the ABI, so this snapshot test is expected to
+# fail here; passing means the bump did not reach the contract.
 echo "==> Verifying contract ABI changed after version bump..."
 if cargo nextest run --cargo-profile=test-release -p mpc-contract abi_has_not_changed 2>/dev/null; then
     die "abi_has_not_changed test passed unexpectedly — ABI was not affected by version bump."
