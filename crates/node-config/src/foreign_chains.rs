@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub use auth::{AuthConfig, TokenConfig};
 pub use embedded::{RpcNetwork, embedded_foreign_chains};
 
+pub mod provider_identity;
+
 mod auth;
 mod embedded;
 
