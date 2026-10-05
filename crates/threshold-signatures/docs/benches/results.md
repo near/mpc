@@ -147,6 +147,55 @@ In the case where the protocol allows distinguishing between normal participants
 
 <br>
 
+## Distributed Key Generation
+
+The tables below show the DKG results for the crypto layer, measured with the advanced
+technique (`advanced_dkg` bench) and without network latency. As before, the numbers are
+from the perspective of a single participant: the time a participant takes to complete a
+DKG run and the size of the data it receives during that run. Each measurement uses 10
+samples, and the received data size was stable across iterations (zero variance).
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 8 | 86.604 µs | 135355 Bytes |
+| **ed25519**   | 8 | 92.441 µs | 133679 Bytes |
+| **bls12381**  | 8 | 103.26 µs | 285258 Bytes |
+
+| **Maximum number of malicious parties: 7** | **Network Latency: 0 ms** |
+|--------------------------------------------|---------------------------|
+
+<br>
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 16 | 309.03 µs | 874932 Bytes |
+| **ed25519**   | 16 | 361.70 µs | 863278 Bytes |
+| **bls12381**  | 16 | 377.58 µs | 2065196 Bytes |
+
+| **Maximum number of malicious parties: 15** | **Network Latency: 0 ms** |
+|---------------------------------------------|---------------------------|
+
+<br>
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 41 | 6.1931 ms | 12337129 Bytes |
+| **ed25519**   | 41 | 10.477 ms | 12156567 Bytes |
+| **bls12381**  | 41 | pending | pending |
+
+| **Maximum number of malicious parties: 40** | **Network Latency: 0 ms** |
+|---------------------------------------------|---------------------------|
+
+Our DKG is PedPop+, which effectively takes eleven and a half rounds of communication to
+complete (see [dkg.md](../dkg.md)). Thus with 100 ms of RTT latency, one needs to add
+roughly **+1.1 s** to each of the numbers above.
+
+Reproduce with:
+
+```sh
+MAX_MALICIOUS=7 SAMPLE_SIZE=10 cargo bench -p threshold-signatures --features test-utils --bench advanced_dkg
+```
+
 ## Signing without presignatures
 
 `presign_and_sign` folds the two presigning rounds into the online phase, consuming a triple pair
