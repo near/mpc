@@ -11,7 +11,7 @@ use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
+    ForeignChainWhitelist, monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
     monitor_allowed_launcher_compose_hashes,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
@@ -65,6 +65,7 @@ pub fn spawn_real_indexer(
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
+    foreign_chain_whitelist_sender: watch::Sender<Option<ForeignChainWhitelist>>,
     tls_public_key: VerifyingKey,
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
@@ -73,8 +74,6 @@ pub fn spawn_real_indexer(
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
-        oneshot::channel();
-    let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
         oneshot::channel();
     let (attestation_reader_sender, attestation_reader_receiver) = oneshot::channel();
 
@@ -220,20 +219,14 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            let foreign_chain_whitelist_receiver =
-                monitor_allowed_foreign_chain_providers(indexer_state.clone()).await;
             tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver.clone(),
+                foreign_chain_whitelist_sender.subscribe(),
                 foreign_chains.clone(),
             ));
-            if foreign_chain_whitelist_sender_oneshot
-                .send(foreign_chain_whitelist_receiver)
-                .is_err()
-            {
-                tracing::error!(
-                    "Indexer thread could not send foreign chain whitelist receiver back to main driver."
-                )
-            };
+            tokio::spawn(monitor_allowed_foreign_chain_providers(
+                foreign_chain_whitelist_sender,
+                indexer_state.clone(),
+            ));
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
@@ -332,10 +325,6 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain supporters receiver must be returned by indexer");
 
-    let foreign_chain_whitelist_receiver = foreign_chain_whitelist_receiver_oneshot
-        .blocking_recv()
-        .expect("foreign chain whitelist receiver must be returned by indexer");
-
     let attestation_reader = attestation_reader_receiver
         .blocking_recv()
         .expect("attestation reader must be returned by indexer");
@@ -348,7 +337,6 @@ pub fn spawn_real_indexer(
         allowed_launcher_compose_receiver,
         my_migration_info_receiver,
         foreign_chain_supporters_receiver,
-        foreign_chain_whitelist_receiver,
         attestation_reader,
     }
 }

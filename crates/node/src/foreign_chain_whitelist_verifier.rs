@@ -16,29 +16,33 @@ use near_mpc_contract_interface::types::{
 };
 use tokio::sync::watch;
 
+use crate::indexer::tee::ForeignChainWhitelist;
+
 /// Subscribes to the contract's `allowed_foreign_chain_providers` whitelist (published by
 /// `monitor_allowed_foreign_chain_providers` in [`crate::indexer::tee`]) and logs any divergence
-/// from the local config. Processes the current value immediately, then reacts to each change.
+/// from the local config. Processes the whitelist once it is first read, then reacts to each change.
 ///
 /// `run` owns no I/O: the polling and retry live in the monitor adapter, so when the chain gateway
 /// exposes a native subscription only the adapter changes, and `run` can be driven from an
 /// in-memory [`watch::channel`] in tests.
 pub(crate) async fn run(
-    mut whitelist_rx: watch::Receiver<BTreeMap<dtos::ForeignChain, ChainEntry>>,
+    mut whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     local: ForeignChainsConfig,
 ) {
     loop {
-        let diagnostics = {
-            let whitelist = whitelist_rx.borrow_and_update();
-            compare(&local, &whitelist)
-        };
-        if diagnostics.is_empty() {
-            tracing::info!(
-                "foreign-chain whitelist verifier: local config matches contract whitelist"
-            );
-        } else {
-            for d in &diagnostics {
-                log_diagnostic(d);
+        let diagnostics = whitelist_rx
+            .borrow_and_update()
+            .as_ref()
+            .map(|whitelist| compare(&local, whitelist));
+        if let Some(diagnostics) = diagnostics {
+            if diagnostics.is_empty() {
+                tracing::info!(
+                    "foreign-chain whitelist verifier: local config matches contract whitelist"
+                );
+            } else {
+                for d in &diagnostics {
+                    log_diagnostic(d);
+                }
             }
         }
         if whitelist_rx.changed().await.is_err() {

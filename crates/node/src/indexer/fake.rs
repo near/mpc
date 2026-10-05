@@ -1106,8 +1106,6 @@ impl FakeIndexerManager {
             watch::channel(vec![]);
         let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
             watch::channel(vec![]);
-        let (_foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-            watch::channel(BTreeMap::new());
 
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
@@ -1128,7 +1126,6 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            foreign_chain_whitelist_receiver,
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
 

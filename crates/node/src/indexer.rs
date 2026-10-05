@@ -511,10 +511,6 @@ pub struct IndexerAPI<TransactionSender> {
     /// before the indexer hands it back, so it always holds a real value.
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
 
-    /// Watcher that tracks the contract's foreign chain provider whitelist. Seeded with the first
-    /// successful read before the indexer hands it back, so it always holds a real value.
-    pub foreign_chain_whitelist_receiver: watch::Receiver<tee::ForeignChainWhitelist>,
-
     pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }
 

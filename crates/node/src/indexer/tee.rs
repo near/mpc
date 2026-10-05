@@ -125,28 +125,26 @@ async fn fetch_allowed_foreign_chain_providers_with_retry(
     }
 }
 
-/// Returns once the first foreign chain provider whitelist is read from the contract, then keeps it
-/// updated in the background.
+/// Publishes the allowed foreign-chain providers whitelist stored in the contract on `sender` once
+/// it is first read, then on every change. Consumed by
+/// [`crate::foreign_chain_whitelist_verifier::run`] and
+/// [`crate::foreign_chain_probe::run_periodic_probe`].
 pub async fn monitor_allowed_foreign_chain_providers(
+    sender: watch::Sender<Option<ForeignChainWhitelist>>,
     indexer_state: Arc<IndexerState>,
-) -> watch::Receiver<ForeignChainWhitelist> {
+) {
     indexer_state.client.wait_for_full_sync().await;
 
-    let initial = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
-    let (sender, receiver) = watch::channel(initial);
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
-            let whitelist = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
-            sender.send_if_modified(|previous| {
-                if *previous != whitelist {
-                    *previous = whitelist;
-                    true
-                } else {
-                    false
-                }
-            });
-        }
-    });
-    receiver
+    loop {
+        let whitelist = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
+        sender.send_if_modified(|previous| {
+            if previous.as_ref() != Some(&whitelist) {
+                *previous = Some(whitelist);
+                true
+            } else {
+                false
+            }
+        });
+        tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
+    }
 }

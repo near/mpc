@@ -121,10 +121,9 @@ Reading the numbers:
 
 ### The hourly probe
 
-Once the node has synced and read the provider whitelist from the contract, it
-asks each configured provider for the network it serves, and repeats every hour
-even without traffic. It compares the answer with the chain's
-`expected_network_fingerprint` from your config:
+At startup and then once per hour, whether or not any traffic exists, the node
+asks each configured provider which network it is serving and compares the
+answer with the chain's `expected_network_fingerprint` from your config:
 
 | Metric | What it tracks |
 | --- | --- |
@@ -136,15 +135,19 @@ could not confirm: unreachable, refusing, too slow, serving a different
 network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
-After each round the node also judges every configured chain against the
-provider whitelist and logs the verdict. A chain is healthy when at least its
-quorum of whitelisted providers is configured and all of them passed. Fewer
-than the quorum, or a whitelisted provider that failed, logs a warning. A
-provider counts as whitelisted when the name it is configured under is the
-provider id the whitelist lists for that chain, and the node warns separately
-when its URL or auth differs from the voted entry. Providers missing from the
-whitelist are probed and counted in the gauges, but not toward the quorum. A
-chain missing from the whitelist is probed but not judged.
+After each round the node also judges every probed chain against the provider
+whitelist and logs the verdict. Until the node has synced and read the
+whitelist from the contract, it logs that chain health is unknown. It probes
+again as soon as the whitelist is read, and whenever the whitelist changes.
+
+A chain is healthy when at least its quorum of whitelisted providers is
+configured and all of them passed. Fewer than the quorum, or a whitelisted
+provider that failed, logs a warning. A provider counts as whitelisted when the
+name it is configured under is the provider id the whitelist lists for that
+chain, and the node warns separately when its URL or auth differs from the
+voted entry. Providers missing from the whitelist are probed and counted in the
+gauges, but not toward the quorum. A chain missing from the whitelist is probed
+but not judged.
 
 ## Recommended alerts
 

@@ -203,6 +203,14 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
 
+    let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) = watch::channel(None);
+    // Detached: the report is diagnostic, nothing downstream waits on it.
+    root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
+        node_config.foreign_chains.clone(),
+        foreign_chain_whitelist_receiver,
+        tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
+    ));
+
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
     // Dedicated cancellation token for the indexer thread. Cancelled after
@@ -220,18 +228,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         indexer_exit_sender,
         protocol_state_sender,
         migration_state_sender,
+        foreign_chain_whitelist_sender,
         *tls_public_key,
         node_config.foreign_chains.clone(),
         RecentTransactionsLogger::new(recent_tx_sender),
         indexer_shutdown_token.clone(),
     );
-
-    // Detached: the report is diagnostic, nothing downstream waits on it.
-    root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
-        node_config.foreign_chains.clone(),
-        indexer_api.foreign_chain_whitelist_receiver.clone(),
-        tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
-    ));
 
     let cancellation_token = CancellationToken::new();
 
