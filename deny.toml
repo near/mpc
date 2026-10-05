@@ -42,6 +42,9 @@ ignore = [
   # handshake transcript stays authenticated: the flaw only lets a peer send handshake
   # messages that should be encrypted in plaintext without rustls rejecting them.
   "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
+  # Remove once nearcore's wasmtime pin is >= 48.0.4 (or >= 49.0.2).
+  # nearcore 2.14.0-rc.2 pins wasmtime 45.0.0, which has no patched release.
+  "RUSTSEC-2026-0327", # wasmtime async-lifted callback result count unvalidated
 ]
 
 [bans]
@@ -59,6 +62,4 @@ skip-tree = [
 
 [sources]
 unknown-git = "deny"
-allow-git = [
-  "https://github.com/near/nearcore",
-]
+allow-git = ["https://github.com/near/nearcore"]
