@@ -559,7 +559,7 @@ mod tests {
                 )),
                 adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
                 fogo: Some(test_chain(PROVIDER_PUBLIC, FOGO_RPC_URL, AuthConfig::None)),
-                rpc_network: None,
+                rpc_preset: None,
                 credentials: BTreeMap::from([(
                     CREDENTIALS_PROVIDER.to_string().into(),
                     ProviderCredentials {

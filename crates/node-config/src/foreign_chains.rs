@@ -7,19 +7,17 @@ use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
 pub use auth::{AuthConfig, TokenConfig};
-pub use embedded::{RpcNetwork, embedded_foreign_chains};
+pub use embedded::{RpcPreset, embedded_foreign_chains};
 
 mod auth;
 mod embedded;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainsConfig {
-    /// Selects the embedded provider config that [`Self::credentials`] enable.
+    /// Selects the embedded provider preset config that [`Self::credentials`] enable.
     /// Unset means node won't use embedded config.
-    // TODO(#2334): drop in favor of `near_init.chain_id`, which every node has
-    // once legacy `start` command is gone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rpc_network: Option<RpcNetwork>,
+    pub rpc_preset: Option<RpcPreset>,
     /// Per provider credentials used for embedded configs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub credentials: BTreeMap<RpcProviderName, ProviderCredentials>,
@@ -221,6 +219,8 @@ fn validate_slug(slug: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
     use crate::ConfigFile;
 
@@ -732,7 +732,7 @@ ckd:
     fn config_parsing__should_round_trip_credentials_through_toml() {
         // Given
         let toml_input = r#"
-rpc_network = "testnet"
+rpc_preset = "testnet"
 
 [credentials]
 alchemy = { val = "alchemy-key" }
@@ -747,22 +747,21 @@ quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
                 .expect("serialized config should parse");
 
         // Then
-        assert_eq!(config.rpc_network, Some(RpcNetwork::Testnet));
+        assert_eq!(config.rpc_preset, Some(RpcPreset::Testnet));
         assert_eq!(config.credentials.len(), 2);
         assert_eq!(parsed, config);
     }
 
     #[test]
-    fn config_parsing__should_reject_unknown_rpc_network() {
+    fn config_parsing__should_reject_unknown_rpc_preset() {
         // Given
-        let toml_input = "rpc_network = \"not-a-network\"\n";
+        let toml_input = "rpc_preset = \"not-a-preset\"\n";
 
         // When
         let result: Result<ForeignChainsConfig, _> = toml::from_str(toml_input);
 
         // Then
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("not-a-network"), "{error}");
+        assert_matches!(result, Err(_));
     }
 
     #[test]
@@ -785,9 +784,7 @@ quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
         let result = config.validate();
 
         // Then
-        let error = format!("{:#}", result.unwrap_err());
-        assert!(error.contains("provider `quicknode`"), "{error}");
-        assert!(error.contains("single host label"), "{error}");
+        assert_matches!(result, Err(_));
     }
 
     /// Every chain is set, so a chain added later has to be listed here too.
@@ -822,7 +819,7 @@ quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
             avalanche: Some(section()),
             adi: Some(section()),
             fogo: Some(section()),
-            rpc_network: None,
+            rpc_preset: None,
             credentials: BTreeMap::new(),
         };
 

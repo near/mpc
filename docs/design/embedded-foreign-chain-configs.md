@@ -48,7 +48,7 @@ The proposal can be summarized in 2 steps below:
 
 ```rust
 pub struct ForeignChainsConfig {
-    pub rpc_network: Option<RpcNetwork>,
+    pub rpc_preset: Option<RpcPreset>,
     // ...existing per-chain fields unchanged...
     pub credentials: BTreeMap<RpcProviderName, ProviderCredentials>,
 }
@@ -63,11 +63,9 @@ pub struct ProviderCredentials {
 ### Embedded config
 
 `crates/node-config/foreign_chains/{mainnet,testnet}.toml`, loaded with `include_str!` and parsed
-into `ForeignChainsConfig` using today's schema. `foreign_chains.rpc_network` (`mainnet` or
-`testnet`) selects the file, unset means no embedded config. When `near_init.chain_id` is present
-it must agree, otherwise the node refuses to start. Once the legacy `start` command, which has no
-`near_init`, is removed ([#2334](https://github.com/near/mpc/issues/2334)), `rpc_network` collapses
-into `near_init.chain_id`.
+into `ForeignChainsConfig` using today's schema. `foreign_chains.rpc_preset` selects the preset
+(today `mainnet` or `testnet`); unset means no embedded config. Each preset is built for one NEAR
+network, and when `near_init.chain_id` is present it must match, otherwise the node refuses to start.
 
 Being part of the binary, the embedded config is covered by the image hash vote.
 
@@ -77,7 +75,7 @@ Once migrated, the operator's foreign chain config is only:
 
 ```toml
 [mpc_node_config.node.foreign_chains]
-rpc_network = "testnet"
+rpc_preset = "testnet"
 
 [mpc_node_config.node.foreign_chains.credentials]
 alchemy   = { val = "..." }
@@ -114,15 +112,17 @@ if same pair is defined in both places but differ, so that operators can remove 
 
 | Operator config | Result |
 |---|---|
-| Legacy `foreign_chains`, no `rpc_network` | Unchanged: no embedded config is used. |
-| Legacy + `rpc_network`, no `credentials` | File pairs and chain-level fields kept as written. Embedded no-auth providers added for pairs the file doesn't define. |
-| Legacy + `rpc_network` + `credentials` | File pairs kept as written. Embedded pairs for providers with credentials added for pairs the file doesn't define. |
-| `rpc_network` + `credentials` only | Embedded config only — the target state. |
+| Legacy `foreign_chains`, no `rpc_preset` | Unchanged: no embedded config is used. |
+| Legacy + `rpc_preset`, no `credentials` | File pairs and chain-level fields kept as written. Embedded no-auth providers added for pairs the file doesn't define. |
+| Legacy + `rpc_preset` + `credentials` | File pairs kept as written. Embedded pairs for providers with credentials added for pairs the file doesn't define. |
+| `rpc_preset` + `credentials` only | Embedded config only — the target state. |
 
 ## Tradeoffs
 
 The current proposal allows node operators to configure RPC provider credential once and it will be picked up for all existing and new chains that use that provider.
 This is great for simplicity but restricts flexibility of setting different credentials per chain for the same provider. This is why we still allow fine-grained configuration per node that way they we keep the config simple while still allowing flexibility with more involved manual editing (as it is today).
+
+A preset is not tied one-to-one to a network: more presets per network can be added later, so nodes can run different provider mixes for a more heterogeneous setup.
 
 ## Related
 

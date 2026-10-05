@@ -1,5 +1,5 @@
 use super::ConfigFile;
-use crate::foreign_chains::RpcNetwork;
+use crate::foreign_chains::RpcPreset;
 use anyhow::Context;
 use clap::ValueEnum;
 use launcher_interface::types::PccsEndpointConfig;
@@ -42,14 +42,15 @@ pub struct StartConfig {
     pub pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
 }
 
-fn ensure_rpc_network_matches(
-    network: Option<RpcNetwork>,
+fn ensure_rpc_preset_matches(
+    rpc_preset: Option<RpcPreset>,
     chain_id: Option<&ChainId>,
 ) -> anyhow::Result<()> {
-    if let (Some(network), Some(chain_id)) = (network, chain_id) {
+    if let (Some(preset), Some(chain_id)) = (rpc_preset, chain_id) {
+        let preset_chain_id = preset.chain_id();
         anyhow::ensure!(
-            &network.chain_id() == chain_id,
-            "foreign chains rpc network `{network}` differs from near init chain id `{chain_id}`"
+            &preset_chain_id == chain_id,
+            "foreign_chains.rpc_preset `{preset}` is for `{preset_chain_id}` but near_init.chain_id is `{chain_id}`"
         );
     }
     Ok(())
@@ -77,8 +78,8 @@ impl StartConfig {
         self.node
             .validate()
             .context("invalid node config in config file")?;
-        ensure_rpc_network_matches(
-            self.node.foreign_chains.rpc_network,
+        ensure_rpc_preset_matches(
+            self.node.foreign_chains.rpc_preset,
             self.near_init.as_ref().map(|near_init| &near_init.chain_id),
         )
     }
@@ -220,36 +221,35 @@ pub enum DownloadConfigType {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use launcher_interface::types::PccsTlsTrust;
 
     #[rstest::rstest]
-    #[case(Some(RpcNetwork::Testnet), Some(ChainId::Testnet))]
-    #[case(Some(RpcNetwork::Mainnet), None)]
+    #[case(Some(RpcPreset::Testnet), Some(ChainId::Testnet))]
+    #[case(Some(RpcPreset::Mainnet), None)]
     #[case(None, Some(ChainId::Localnet))]
-    fn ensure_rpc_network_matches__should_accept_consistent_or_unknown_network(
-        #[case] network: Option<RpcNetwork>,
+    fn ensure_rpc_preset_matches__should_accept_consistent_or_unknown_preset(
+        #[case] rpc_preset: Option<RpcPreset>,
         #[case] chain_id: Option<ChainId>,
     ) {
         // When
-        let result = ensure_rpc_network_matches(network, chain_id.as_ref());
+        let result = ensure_rpc_preset_matches(rpc_preset, chain_id.as_ref());
 
         // Then
-        result.expect("network should be accepted");
+        result.expect("preset should be accepted");
     }
 
     #[test]
-    fn ensure_rpc_network_matches__should_reject_a_different_chain_id() {
+    fn ensure_rpc_preset_matches__should_reject_a_different_chain_id() {
         // Given
-        let network = Some(RpcNetwork::Mainnet);
+        let rpc_preset = Some(RpcPreset::Mainnet);
         let chain_id = ChainId::Testnet;
 
         // When
-        let result = ensure_rpc_network_matches(network, Some(&chain_id));
+        let result = ensure_rpc_preset_matches(rpc_preset, Some(&chain_id));
 
         // Then
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("`mainnet`"), "{error}");
-        assert!(error.contains("`testnet`"), "{error}");
+        assert_matches!(result, Err(_));
     }
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded

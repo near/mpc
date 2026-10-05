@@ -6275,6 +6275,7 @@ name = "mpc-node-config"
 version = "3.16.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "clap",
  "derive_more 2.1.1",
  "either",

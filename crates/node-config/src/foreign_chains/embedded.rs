@@ -10,34 +10,37 @@ const MAINNET: &str = include_str!("../../foreign_chains/mainnet.toml");
 const TESTNET: &str = include_str!("../../foreign_chains/testnet.toml");
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum RpcNetwork {
+#[serde(rename_all = "kebab-case")]
+pub enum RpcPreset {
     Mainnet,
     Testnet,
 }
 
-impl RpcNetwork {
+impl RpcPreset {
     pub fn chain_id(self) -> ChainId {
         match self {
-            RpcNetwork::Mainnet => ChainId::Mainnet,
-            RpcNetwork::Testnet => ChainId::Testnet,
+            RpcPreset::Mainnet => ChainId::Mainnet,
+            RpcPreset::Testnet => ChainId::Testnet,
         }
     }
 }
 
-impl fmt::Display for RpcNetwork {
+impl fmt::Display for RpcPreset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.chain_id().fmt(f)
+        f.write_str(match self {
+            RpcPreset::Mainnet => "mainnet",
+            RpcPreset::Testnet => "testnet",
+        })
     }
 }
 
-pub fn embedded_foreign_chains(network: RpcNetwork) -> anyhow::Result<ForeignChainsConfig> {
-    let source = match network {
-        RpcNetwork::Mainnet => MAINNET,
-        RpcNetwork::Testnet => TESTNET,
+pub fn embedded_foreign_chains(rpc_preset: RpcPreset) -> anyhow::Result<ForeignChainsConfig> {
+    let source = match rpc_preset {
+        RpcPreset::Mainnet => MAINNET,
+        RpcPreset::Testnet => TESTNET,
     };
     toml::from_str(source)
-        .with_context(|| format!("failed to parse the embedded {network} foreign chain config"))
+        .with_context(|| format!("failed to parse the embedded {rpc_preset} foreign chain config"))
 }
 
 #[cfg(test)]
@@ -50,15 +53,26 @@ mod tests {
     use super::*;
     use crate::foreign_chains::{AuthConfig, TokenConfig};
 
-    fn embedded(network: RpcNetwork) -> ForeignChainsConfig {
-        embedded_foreign_chains(network).expect("embedded config parsing should succeed")
+    #[rstest]
+    #[case::mainnet(RpcPreset::Mainnet)]
+    #[case::testnet(RpcPreset::Testnet)]
+    fn rpc_preset_display__should_match_its_config_name(#[case] rpc_preset: RpcPreset) {
+        // When
+        let config_name = toml::Value::try_from(rpc_preset).expect("preset should serialize");
+
+        // Then
+        assert_eq!(config_name.as_str(), Some(rpc_preset.to_string().as_str()));
+    }
+
+    fn embedded(rpc_preset: RpcPreset) -> ForeignChainsConfig {
+        embedded_foreign_chains(rpc_preset).expect("embedded config parsing should succeed")
     }
 
     #[rstest]
-    #[case::mainnet(RpcNetwork::Mainnet, MAINNET)]
-    #[case::testnet(RpcNetwork::Testnet, TESTNET)]
+    #[case::mainnet(RpcPreset::Mainnet, MAINNET)]
+    #[case::testnet(RpcPreset::Testnet, TESTNET)]
     fn embedded_foreign_chains__should_key_only_known_chains(
-        #[case] network: RpcNetwork,
+        #[case] rpc_preset: RpcPreset,
         #[case] source: &str,
     ) {
         // Given
@@ -66,7 +80,7 @@ mod tests {
             toml::from_str(source).expect("embedded config should be a valid TOML");
 
         // When
-        let config = embedded(network);
+        let config = embedded(rpc_preset);
 
         // Then
         let raw_keys: BTreeSet<&str> = raw.keys().map(String::as_str).collect();
@@ -75,11 +89,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::mainnet(RpcNetwork::Mainnet)]
-    #[case::testnet(RpcNetwork::Testnet)]
-    fn embedded_foreign_chains__should_carry_no_secrets(#[case] network: RpcNetwork) {
+    #[case::mainnet(RpcPreset::Mainnet)]
+    #[case::testnet(RpcPreset::Testnet)]
+    fn embedded_foreign_chains__should_carry_no_secrets(#[case] rpc_preset: RpcPreset) {
         // Given
-        let config = embedded(network);
+        let config = embedded(rpc_preset);
 
         // When
         let tokens: Vec<_> = config
@@ -99,6 +113,6 @@ mod tests {
             assert_eq!(token, &TokenConfig::Val { val: String::new() });
         }
         assert!(config.credentials.is_empty());
-        assert_eq!(config.rpc_network, None);
+        assert_eq!(config.rpc_preset, None);
     }
 }
