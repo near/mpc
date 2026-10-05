@@ -247,6 +247,7 @@ fn verify_quote_with_collateral_dates__should_reject_with_the_same_error_as_veri
     );
 }
 
+// TODO(#4659): flip to "both accept" once dcap-qvl#240 stops reading this field.
 #[test]
 fn verify_quote_with_collateral_dates__should_reject_unparsable_pck_crl_issuer_chain_that_verify_quote_accepts()
  {
