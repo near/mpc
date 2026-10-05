@@ -14,7 +14,7 @@ Node migration allows you to move your MPC node from one host to another without
 
 Set these variables on the machine where you run `backup-cli` and NEAR CLI, at the beginning of your migration; the code examples below use them.
 
-`backup-cli` also reads any of its flags from a same-named environment variable (`--backup-encryption-key-hex` from `BACKUP_ENCRYPTION_KEY_HEX`, and so on — `backup-cli --help` lists them). This guide relies on that for the encryption key, which should never appear on a command line.
+`backup-cli` also reads most of its flags from a same-named environment variable (`--backup-encryption-key-hex` from `BACKUP_ENCRYPTION_KEY_HEX`; a few are prefixed, e.g. `--home-dir` reads `BACKUP_HOME_DIR` — `backup-cli --help` lists each). This guide relies on that for the encryption key, which should never appear on a command line.
 
 Known up front:
 
@@ -68,7 +68,7 @@ Before starting a migration, ensure you have:
 
 ### Prepay the New Node's Attestation Storage
 
-During a migration your account briefly holds two attestations — the old node's and the new node's — and each stored attestation consumes one prepaid **grant**. The old node's grant remains occupied until its attestation is removed, so the new node needs an available grant of its own.
+During a migration your account holds two attestations — the old node's and the new node's — and each stored attestation consumes one prepaid **grant**. The old node's grant stays occupied until its attestation expires (7 days) and is swept — stopping the old node does not free it — so the new node needs an available grant of its own.
 
 Do this before you start the migration. Check whether a grant is available:
 
@@ -81,7 +81,18 @@ near contract call-function as-read-only \
   now
 ```
 
-If it returns `0`, prepay one grant. The fee is a votable contract parameter (currently 20 milliNEAR = 0.02 NEAR per grant) and the attached deposit must equal fee × grants exactly — read the current fee and see the full details in [Prepay Your Node's Attestation Storage](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepay-your-nodes-attestation-storage) in the operator guide:
+If it returns `0`, prepay one grant. The fee is a votable contract parameter (currently 20 milliNEAR = 0.02 NEAR per grant) and the attached deposit must equal fee × grants exactly. Read the current fee:
+
+```bash
+near contract call-function as-read-only \
+  $MPC_CONTRACT_ACCOUNT_ID \
+  config \
+  json-args {} \
+  network-config $NEAR_NETWORK \
+  now | jq .attestation_storage_fee_millinear
+```
+
+See [Prepay Your Node's Attestation Storage](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepay-your-nodes-attestation-storage) in the operator guide for the full details, then prepay:
 
 ```bash
 # attached-deposit must equal current fee × grants exactly — check the fee before running
@@ -210,7 +221,7 @@ Where you set it on a node depends on the deployment (see [Step 5](#step-5-prepa
 
 ### Retrieve a key from an existing node.
 
-**Note:** If your node has been running without an encryption key configured, the node automatically generates one and stores it in a file called `backup_encryption_key.hex` in the node's home directory — `MPC_HOME_DIR` in the node's `.env`, commonly `/data`. On a **non-TEE** node you can read it on the node host:
+**Note:** If your node has been running without an encryption key configured, the node automatically generates one and stores it in a file called `backup_encryption_key.hex` in the node's home directory — `MPC_HOME_DIR` in the node's `.env`, commonly `/data` inside the container. On a **non-TEE** node you can read it on the node host — inside the container, or from the host directory mounted at `/data`:
 
 ```bash
 cat $MPC_HOME_DIR/backup_encryption_key.hex
@@ -219,7 +230,7 @@ cat $MPC_HOME_DIR/backup_encryption_key.hex
 Copy the value to the backup-cli machine and set it there as `BACKUP_ENCRYPTION_KEY_HEX`. `backup-cli` reads the key from that variable — never pass it as the `--backup-encryption-key-hex` argument, where `ps` would expose it:
 
 ```bash
-export BACKUP_ENCRYPTION_KEY_HEX=<the 64-hex-character value>
+read -rs BACKUP_ENCRYPTION_KEY_HEX && export BACKUP_ENCRYPTION_KEY_HEX   # paste the 64-hex value; read -rs keeps it out of shell history
 ```
 
 **TEE (TDX/dstack) nodes:** the node's home directory (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
@@ -306,7 +317,7 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 `get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a NEAR JSON-RPC endpoint and takes a backup whenever the contract's keyset is not the one already stored:
 
 ```bash
-export BACKUP_RPC_URL=https://rpc.mainnet.fastnear.com   # a NEAR RPC provider's endpoint, not your MPC node; an api key goes in the query string
+export BACKUP_RPC_URL=https://rpc.$NEAR_NETWORK.fastnear.com   # a NEAR RPC provider's endpoint, not your MPC node; an api key goes in the query string
 
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
@@ -373,7 +384,7 @@ near contract call-function as-read-only \
   now
 ```
 
-**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs report `no attestation storage grant available`, prepay a grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage). The node retries the submission on its own once a grant exists.
+**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs keep repeating `failed to submit attestation`, check `available_attestation_grants` for your account; if it is `0`, prepay a grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage). The rejected `submit_participant_info` transaction (its hash is logged as `sending tx …`) shows `no attestation storage grant available` in an explorer or via `near transaction view-status`. The node retries the submission on its own once a grant exists.
 
 Output should look like this:
 
