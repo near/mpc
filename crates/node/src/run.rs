@@ -28,7 +28,9 @@ use crate::{
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use mpc_attestation::report_data::ReportDataV1;
-use mpc_node_config::{ConfigFile, StartConfig};
+use mpc_node_config::{
+    ConfigFile, ForeignChainsConfig, StartConfig, foreign_chains::resolve_with_embedded,
+};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
@@ -49,7 +51,21 @@ use crate::tee::{
 };
 
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
-pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
+
+fn resolve_foreign_chains(config: &StartConfig) -> anyhow::Result<ForeignChainsConfig> {
+    let resolved = resolve_with_embedded(&config.node.foreign_chains)
+        .context("failed to resolve the foreign chain config")?;
+    for diagnostic in &resolved.diagnostics {
+        if diagnostic.is_warning() {
+            tracing::warn!("foreign chain config: {diagnostic}");
+        } else {
+            tracing::info!("foreign chain config: {diagnostic}");
+        }
+    }
+    Ok(resolved.config)
+}
+
+pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
@@ -81,6 +97,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             "NEAR init config"
         );
     }
+
+    config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
     let root_runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use anyhow::Context as _;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -40,6 +41,75 @@ pub enum ResolutionDiagnostic {
         provider: RpcProviderName,
         rpc_url_differs: bool,
     },
+}
+
+impl ResolutionDiagnostic {
+    pub fn is_warning(&self) -> bool {
+        match self {
+            Self::Included { .. } => false,
+            Self::EmbeddedSkipped { .. } => true,
+            Self::Overridden {
+                rpc_url_differs, ..
+            } => *rpc_url_differs,
+        }
+    }
+}
+
+impl fmt::Display for ResolutionDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Included {
+                chain,
+                provider,
+                source,
+            } => {
+                let source = match source {
+                    PairSource::Embedded => "embedded preset",
+                    PairSource::NodeConfig => "node config",
+                };
+                write!(
+                    f,
+                    "{}/{}: from the {source}",
+                    chain.label(),
+                    provider.as_str()
+                )
+            }
+            Self::EmbeddedSkipped {
+                chain,
+                provider,
+                reason,
+            } => {
+                let reason = match reason {
+                    SkipReason::MissingCredentials => "no credentials for the provider",
+                    SkipReason::MissingSlug => "the provider's credentials have no slug",
+                    SkipReason::DuplicateRpcUrl => "a node config provider uses the same RPC URL",
+                };
+                write!(
+                    f,
+                    "{}/{}: embedded provider skipped, {reason}",
+                    chain.label(),
+                    provider.as_str()
+                )
+            }
+            Self::Overridden {
+                chain,
+                provider,
+                rpc_url_differs,
+            } => {
+                let detail = if *rpc_url_differs {
+                    "with a different RPC URL"
+                } else {
+                    "with the same RPC URL; the node config entry can be removed"
+                };
+                write!(
+                    f,
+                    "{}/{}: node config overrides the embedded provider {detail}",
+                    chain.label(),
+                    provider.as_str()
+                )
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -226,6 +296,50 @@ mod tests {
     const ALCHEMY_URL: &str = "https://eth-mainnet.g.alchemy.com/v2/{api_key}";
     const QUICKNODE_URL: &str = "https://{slug}.quiknode.pro/{api_key}";
     const PUBLIC_URL: &str = "https://ethereum-rpc.publicnode.com";
+
+    #[rstest]
+    #[case::included(
+        ResolutionDiagnostic::Included {
+            chain: dtos::ForeignChain::Ethereum,
+            provider: name("public"),
+            source: PairSource::Embedded,
+        },
+        false
+    )]
+    #[case::skipped(
+        ResolutionDiagnostic::EmbeddedSkipped {
+            chain: dtos::ForeignChain::Ethereum,
+            provider: name("alchemy"),
+            reason: SkipReason::MissingCredentials,
+        },
+        true
+    )]
+    #[case::overridden_differs(
+        ResolutionDiagnostic::Overridden {
+            chain: dtos::ForeignChain::Ethereum,
+            provider: name("alchemy"),
+            rpc_url_differs: true,
+        },
+        true
+    )]
+    #[case::overridden_same(
+        ResolutionDiagnostic::Overridden {
+            chain: dtos::ForeignChain::Ethereum,
+            provider: name("alchemy"),
+            rpc_url_differs: false,
+        },
+        false
+    )]
+    fn resolution_diagnostic_is_warning__should_flag_skips_and_differing_overrides(
+        #[case] diagnostic: ResolutionDiagnostic,
+        #[case] expected: bool,
+    ) {
+        // When
+        let is_warning = diagnostic.is_warning();
+
+        // Then
+        assert_eq!(is_warning, expected);
+    }
 
     fn name(name: &str) -> RpcProviderName {
         name.to_string().into()

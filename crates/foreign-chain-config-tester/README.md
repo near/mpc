@@ -25,6 +25,10 @@ cargo run -p foreign-chain-config-tester -- --config /path/to/user-config.toml
 - the launcher config (`foreign_chains` under `node`);
 - the legacy `config.yaml` (`foreign_chains` at the top level).
 
+When the section sets `rpc_preset`, it is resolved with the node's embedded
+provider preset, as the node does at startup: the `credentials` entries enable
+preset providers, and skipped ones are reported as warnings.
+
 The section is validated the way the node validates it at startup, so a config
 the node would refuse fails before any provider is contacted. Tokens configured
 with `env` are read from the environment: export them in the shell that runs
