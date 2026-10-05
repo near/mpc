@@ -69,18 +69,18 @@ impl StartConfig {
             .with_context(|| format!("failed to read config file: {}", path.display()))?;
         let config: Self = toml::from_str(&content)
             .with_context(|| format!("failed to parse config file: {}", path.display()))?;
-        config
-            .node
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.node
             .validate()
             .context("invalid node config in config file")?;
         ensure_rpc_network_matches(
-            config.node.foreign_chains.rpc_network,
-            config
-                .near_init
-                .as_ref()
-                .map(|near_init| &near_init.chain_id),
-        )?;
-        Ok(config)
+            self.node.foreign_chains.rpc_network,
+            self.near_init.as_ref().map(|near_init| &near_init.chain_id),
+        )
     }
 }
 
@@ -230,7 +230,6 @@ mod tests {
         #[case] network: Option<RpcNetwork>,
         #[case] chain_id: Option<ChainId>,
     ) {
-        // Given
         // When
         let result = ensure_rpc_network_matches(network, chain_id.as_ref());
 
