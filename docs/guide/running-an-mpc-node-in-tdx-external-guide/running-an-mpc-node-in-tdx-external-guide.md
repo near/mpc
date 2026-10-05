@@ -2033,7 +2033,7 @@ near contract call-function as-read-only \
   network-config testnet now
 ```
 
-The response wraps the stored attestation with `accepted_at_seconds`, the block time at which the contract accepted it. The `attestation` shape tells you what it accepted:
+The response wraps the stored attestation with `accepted_at_seconds`, the block time at which the contract accepted it. During the rollout only (nodes upgrade before the contract, see [#4498](https://github.com/near/mpc/issues/4498)): a contract that is not upgraded yet returns the bare attestation with no such field, and a freshly upgraded one reads `null` until your node's next accepted submission. The `attestation` shape tells you what it accepted:
 
 - `{ "Dstack": { ... } }` — a real TEE attestation. This is what a production operator should see.
 - `{ "Mock": "Valid" }` — a mock attestation. Acceptable on testnet during the [transition phase](#transition-phase), but means the node is **not** running in a TEE. Many existing testnet entries are in this state.

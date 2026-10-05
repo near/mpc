@@ -243,12 +243,8 @@ impl IndexerViewClient {
                 Option<near_mpc_contract_interface::types::GetAttestationResponse>,
             >(&call_result.result)
             .with_context(|| {
-                // An untagged enum names no field when nothing matches, so carry the response
-                // itself, capped since the attestation it holds is externally sized.
-                let response: String = String::from_utf8_lossy(&call_result.result)
-                    .chars()
-                    .take(512)
-                    .collect();
+                // An untagged enum names no field when nothing matches, so carry the response.
+                let response = String::from_utf8_lossy(&call_result.result);
                 format!("failed to deserialize get_attestation response: {response}")
             }),
             _ => {
@@ -547,7 +543,58 @@ pub struct IndexerAPI<TransactionSender> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SubmissionBaseline, SyncProgress, dtos};
+    use rstest::rstest;
+
+    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+    const EXPIRES_AT_SECONDS: u64 = 1_800_604_800;
+
+    fn mock_with_expiry() -> dtos::VerifiedAttestation {
+        dtos::VerifiedAttestation::Mock(dtos::MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(EXPIRES_AT_SECONDS),
+            expected_measurements: None,
+        })
+    }
+
+    fn current(accepted_at_seconds: Option<u64>) -> dtos::GetAttestationResponse {
+        dtos::GetAttestationResponse::Current(dtos::StoredAttestation {
+            attestation: mock_with_expiry(),
+            accepted_at_seconds,
+        })
+    }
+
+    #[rstest]
+    #[case::nothing_stored(None, None, None)]
+    #[case::stamped(
+        Some(current(Some(ACCEPTED_AT_SECONDS))),
+        Some(ACCEPTED_AT_SECONDS),
+        Some(EXPIRES_AT_SECONDS)
+    )]
+    #[case::carried_over_by_the_migration(Some(current(None)), None, Some(EXPIRES_AT_SECONDS))]
+    #[case::legacy_contract(
+        Some(dtos::GetAttestationResponse::Legacy(mock_with_expiry())),
+        None,
+        Some(EXPIRES_AT_SECONDS)
+    )]
+    fn from_stored__should_carry_both_timestamps(
+        #[case] stored: Option<dtos::GetAttestationResponse>,
+        #[case] expected_accepted_at: Option<u64>,
+        #[case] expected_expiry: Option<u64>,
+    ) {
+        // When
+        let baseline = SubmissionBaseline::from_stored(stored.as_ref());
+
+        // Then
+        assert_eq!(
+            baseline,
+            SubmissionBaseline {
+                accepted_at_seconds: expected_accepted_at,
+                expiry_timestamp_seconds: expected_expiry,
+            }
+        );
+    }
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();

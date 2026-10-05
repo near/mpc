@@ -4,7 +4,7 @@ use super::{IndexerState, SubmissionBaseline};
 use crate::config::RespondConfig;
 use crate::metrics;
 use crate::tee::attestation_freshness_metrics::{
-    record_attestation_landed, record_stored_attestation,
+    record_attestation_landed, record_stored_attestation_expiry,
 };
 use crate::types::{
     LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
@@ -199,12 +199,11 @@ fn submitted_attestation_landed(
     submitted: &Attestation,
 ) -> bool {
     match stored {
-        GetAttestationResponse::Stamped(stored) => match stored.accepted_at_seconds {
-            Some(accepted_at) => baseline.accepted_at_seconds != Some(accepted_at),
-            None => false,
-        },
+        GetAttestationResponse::Current(stored) => stored
+            .accepted_at_seconds
+            .is_some_and(|accepted_at| baseline.accepted_at_seconds != Some(accepted_at)),
         // TODO(#4498): remove once every deployed contract stamps the acceptance time.
-        GetAttestationResponse::Unstamped(stored) => submitted_attestation_landed_by_expiry(
+        GetAttestationResponse::Legacy(stored) => submitted_attestation_landed_by_expiry(
             baseline.expiry_timestamp_seconds,
             stored,
             submitted,
@@ -304,7 +303,11 @@ async fn observe_tx_result(
                 .get_participant_attestation(&args.tls_public_key)
                 .await?;
 
-            record_stored_attestation(stored_attestation.as_ref());
+            record_stored_attestation_expiry(
+                stored_attestation
+                    .as_ref()
+                    .map(GetAttestationResponse::attestation),
+            );
 
             let Some(stored_attestation) = stored_attestation else {
                 tracing::debug!(
@@ -424,6 +427,7 @@ mod tests {
         submitted_attestation_landed_by_expiry,
     };
     use near_mpc_contract_interface::types::{MockAttestation, StoredAttestation};
+    use rstest::rstest;
 
     #[test]
     #[expect(non_snake_case)]
@@ -547,7 +551,7 @@ mod tests {
     }
 
     fn stamped(accepted_at_seconds: u64) -> GetAttestationResponse {
-        GetAttestationResponse::Stamped(StoredAttestation {
+        GetAttestationResponse::Current(StoredAttestation {
             attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
             accepted_at_seconds: Some(accepted_at_seconds),
         })
@@ -616,7 +620,7 @@ mod tests {
     fn submitted_attestation_landed__should_reject_while_the_entry_is_still_unstamped() {
         // Given: an entry the migration carried over, which no submission has replaced
         let baseline = baseline_accepted_at(None);
-        let stored = GetAttestationResponse::Stamped(StoredAttestation {
+        let stored = GetAttestationResponse::Current(StoredAttestation {
             attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
             accepted_at_seconds: None,
         });
@@ -632,17 +636,21 @@ mod tests {
         assert!(!landed);
     }
 
-    #[test]
+    #[rstest]
+    #[case::expiry_changed(100, true)]
+    #[case::expiry_unchanged(200, false)]
     #[expect(non_snake_case)]
-    fn submitted_attestation_landed__should_fall_back_to_expiry_when_unstamped() {
-        // Given: a contract that does not report an acceptance timestamp, and an entry whose
-        // expiry is unchanged since before our submit
+    fn submitted_attestation_landed__should_fall_back_to_expiry_against_a_legacy_contract(
+        #[case] expiry_before_submit: u64,
+        #[case] expected: bool,
+    ) {
+        // Given: a contract that reports no acceptance time, and an entry expiring at 200
         let baseline = SubmissionBaseline {
             accepted_at_seconds: None,
-            expiry_timestamp_seconds: Some(200),
+            expiry_timestamp_seconds: Some(expiry_before_submit),
         };
         let stored =
-            GetAttestationResponse::Unstamped(VerifiedAttestation::Mock(mock_with_expiry(200)));
+            GetAttestationResponse::Legacy(VerifiedAttestation::Mock(mock_with_expiry(200)));
 
         // When
         let landed = submitted_attestation_landed(
@@ -652,6 +660,6 @@ mod tests {
         );
 
         // Then
-        assert!(!landed);
+        assert_eq!(landed, expected);
     }
 }

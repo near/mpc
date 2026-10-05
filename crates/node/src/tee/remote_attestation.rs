@@ -180,7 +180,6 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             .read_submission_baseline(&self.tls_public_key)
             .await
         {
-            // An empty baseline just means nothing is stored yet (e.g. first submit)
             Ok(baseline) => baseline,
             // Submit anyway on a read error: refreshing the attestation is the priority, and a
             // broken read must not block submission (the confirmation just can't use a baseline).

@@ -452,7 +452,7 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
     // When: the same participant re-attests with no attached deposit, an hour later.
     const ONE_HOUR_SECONDS: u64 = 3600;
     testing_env!(VMContext {
-        block_timestamp: near_sdk::env::block_timestamp() + ONE_HOUR_SECONDS * 1_000_000_000,
+        block_timestamp: near_sdk::env::block_timestamp() + ONE_HOUR_SECONDS * NANOS_IN_SECOND,
         ..common::participant_context(&node.account_id)
     });
     let result = setup
@@ -461,8 +461,7 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
         .map(|_| ());
 
     // Then: the submission succeeds and restamps the entry, so it was stored rather than
-    // silently dropped. Neither the acceptance time nor a mock's expiry survives a re-attestation
-    // unchanged, both being stamped from block time.
+    // silently dropped.
     assert_matches!(&result, Ok(()));
     let stored_after = setup
         .contract

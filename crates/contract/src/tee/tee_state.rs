@@ -639,6 +639,7 @@ mod tests {
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use rstest::rstest;
     use std::collections::{BTreeMap, BTreeSet};
     use std::time::Duration;
     use test_utils::attestation::{
@@ -1817,6 +1818,10 @@ mod tests {
             .get(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
+        assert_eq!(
+            stored.accepted_at_seconds,
+            Some(VALID_ATTESTATION_TIMESTAMP)
+        );
     }
 
     /// Stale code-hash votes from removed participants must not count toward
@@ -1929,6 +1934,9 @@ mod tests {
         );
     }
 
+    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+    const RESUBMITTED_AT_SECONDS: u64 = ACCEPTED_AT_SECONDS + 3600;
+
     fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
         tee_state
             .stored_attestations
@@ -1937,22 +1945,23 @@ mod tests {
             .accepted_at_seconds
     }
 
+    fn submit_mock(
+        tee_state: &mut TeeState,
+        node_id: &NodeId,
+        mock: MockAttestation,
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+        tee_state.verify_and_store_mock(node_id.clone(), mock, Duration::from_secs(0))
+    }
+
     #[test]
     fn verify_and_store_mock__should_stamp_the_block_time() {
         // Given
-        const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
-        set_block_timestamp(ACCEPTED_AT_SECONDS * 1_000_000_000);
+        set_block_secs(ACCEPTED_AT_SECONDS);
         let mut tee_state = TeeState::default();
         let node_id = node_id_for(&"alice.near".parse().unwrap());
 
         // When
-        tee_state
-            .verify_and_store_mock(
-                node_id.clone(),
-                MockAttestation::Valid,
-                Duration::from_secs(0),
-            )
-            .unwrap();
+        submit_mock(&mut tee_state, &node_id, MockAttestation::Valid).unwrap();
 
         // Then
         assert_eq!(
@@ -1961,68 +1970,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn verify_and_store_mock__should_leave_the_stamp_alone_when_the_attestation_is_rejected() {
+    /// The stamp is what lets a submitter tell a rejection from a landing, so only an accepted
+    /// submission may move it.
+    #[rstest]
+    #[case::rejected(MockAttestation::Invalid, ACCEPTED_AT_SECONDS)]
+    #[case::accepted_again(MockAttestation::Valid, RESUBMITTED_AT_SECONDS)]
+    fn verify_and_store_mock__should_restamp_only_an_accepted_resubmission(
+        #[case] resubmitted: MockAttestation,
+        #[case] expected_stamp: u64,
+    ) {
         // Given: an entry stored by an accepted submission
-        const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
-        set_block_timestamp(ACCEPTED_AT_SECONDS * 1_000_000_000);
+        set_block_secs(ACCEPTED_AT_SECONDS);
         let mut tee_state = TeeState::default();
         let node_id = node_id_for(&"alice.near".parse().unwrap());
-        tee_state
-            .verify_and_store_mock(
-                node_id.clone(),
-                MockAttestation::Valid,
-                Duration::from_secs(0),
-            )
-            .unwrap();
+        submit_mock(&mut tee_state, &node_id, MockAttestation::Valid).unwrap();
 
-        // When: a later submission fails verification
-        set_block_timestamp((ACCEPTED_AT_SECONDS + 3600) * 1_000_000_000);
-        let result = tee_state.verify_and_store_mock(
-            node_id.clone(),
-            MockAttestation::Invalid,
-            Duration::from_secs(0),
-        );
-
-        // Then: the stored stamp is the accepted submission's, which is what lets a submitter
-        // tell a rejection from a landing
-        assert_matches!(result, Err(_));
-        assert_eq!(
-            stamped_accepted_at(&tee_state, &node_id),
-            Some(ACCEPTED_AT_SECONDS)
-        );
-    }
-
-    #[test]
-    fn verify_and_store_mock__should_restamp_a_resubmission() {
-        // Given: an entry stored earlier by the same node
-        const FIRST_SUBMISSION_SECONDS: u64 = 1_800_000_000;
-        const SECOND_SUBMISSION_SECONDS: u64 = FIRST_SUBMISSION_SECONDS + 3600;
-        set_block_timestamp(FIRST_SUBMISSION_SECONDS * 1_000_000_000);
-        let mut tee_state = TeeState::default();
-        let node_id = node_id_for(&"alice.near".parse().unwrap());
-        tee_state
-            .verify_and_store_mock(
-                node_id.clone(),
-                MockAttestation::Valid,
-                Duration::from_secs(0),
-            )
-            .unwrap();
-
-        // When: the node resubmits the very same attestation an hour later
-        set_block_timestamp(SECOND_SUBMISSION_SECONDS * 1_000_000_000);
-        tee_state
-            .verify_and_store_mock(
-                node_id.clone(),
-                MockAttestation::Valid,
-                Duration::from_secs(0),
-            )
-            .unwrap();
+        // When: the same node submits again an hour later
+        set_block_secs(RESUBMITTED_AT_SECONDS);
+        let _ = submit_mock(&mut tee_state, &node_id, resubmitted);
 
         // Then
         assert_eq!(
             stamped_accepted_at(&tee_state, &node_id),
-            Some(SECOND_SUBMISSION_SECONDS)
+            Some(expected_stamp)
         );
     }
 }

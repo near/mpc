@@ -115,40 +115,37 @@ impl VerifiedAttestation {
 pub struct StoredAttestation {
     pub attestation: VerifiedAttestation,
     /// Block time at which the contract accepted this attestation. Every accepted submission
-    /// restamps it, including a resubmission of an identical attestation, so a submitter can
-    /// tell whether its own submission landed.
-    ///
-    /// `None` for an entry stored before the contract recorded this, which no submission has
-    /// replaced yet.
+    /// restamps it, so a submitter can tell whether its own submission landed. `None` for an
+    /// entry stored before the contract recorded it.
     pub accepted_at_seconds: Option<u64>,
 }
 
-/// A `get_attestation` response, over the contract versions a node may be talking to. Nodes are
-/// upgraded before the contract, so a node also has to read one that returns the bare
-/// attestation, with no [`StoredAttestation::accepted_at_seconds`].
+/// What `get_attestation` returns. Nodes are upgraded before the contract, so a node has to read
+/// both the current shape and the one that predates
+/// [`StoredAttestation::accepted_at_seconds`].
 ///
 /// TODO(#4498): collapse into [`StoredAttestation`] once every deployed contract stamps it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GetAttestationResponse {
-    Stamped(StoredAttestation),
-    Unstamped(VerifiedAttestation),
+    Current(StoredAttestation),
+    Legacy(VerifiedAttestation),
 }
 
 impl GetAttestationResponse {
     pub fn attestation(&self) -> &VerifiedAttestation {
         match self {
-            GetAttestationResponse::Stamped(stored) => &stored.attestation,
-            GetAttestationResponse::Unstamped(attestation) => attestation,
+            GetAttestationResponse::Current(stored) => &stored.attestation,
+            GetAttestationResponse::Legacy(attestation) => attestation,
         }
     }
 
-    /// `None` when the contract reports no acceptance time for the entry, and when it reports
-    /// none at all.
+    /// `None` both for an entry the contract reports without an acceptance time and for a
+    /// [`Legacy`](GetAttestationResponse::Legacy) response, which has no such field at all.
     pub fn accepted_at_seconds(&self) -> Option<u64> {
         match self {
-            GetAttestationResponse::Stamped(stored) => stored.accepted_at_seconds,
-            GetAttestationResponse::Unstamped(_) => None,
+            GetAttestationResponse::Current(stored) => stored.accepted_at_seconds,
+            GetAttestationResponse::Legacy(_) => None,
         }
     }
 }
@@ -413,19 +410,28 @@ mod tests {
     use rstest::rstest;
 
     const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+    const EXPIRES_AT_SECONDS: u64 = 1_800_604_800;
 
     fn mock() -> VerifiedAttestation {
         VerifiedAttestation::Mock(MockAttestation::Valid)
     }
 
-    /// The variant that ships. Its hash fields serialize as hex strings through a hand-written
-    /// impl, which `#[serde(untagged)]` replays out of a buffered `Content` rather than straight
-    /// off the wire.
+    fn mock_with_constraints() -> VerifiedAttestation {
+        VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(EXPIRES_AT_SECONDS),
+            expected_measurements: None,
+        })
+    }
+
+    /// Its hash fields serialize as hex strings through a hand-written impl, which
+    /// `#[serde(untagged)]` replays out of a buffered `Content` rather than straight off the wire.
     fn dstack() -> VerifiedAttestation {
         VerifiedAttestation::Dstack(VerifiedDstackAttestation {
             mpc_image_hash: [0x11; 32].into(),
             launcher_compose_hash: [0x22; 32].into(),
-            expiry_timestamp_seconds: 1_800_604_800,
+            expiry_timestamp_seconds: EXPIRES_AT_SECONDS,
             measurements: VerifiedMeasurements {
                 mrtd: [0x33; 48].into(),
                 rtmr0: [0x44; 48].into(),
@@ -437,61 +443,35 @@ mod tests {
     }
 
     #[rstest]
-    #[case::mock(mock())]
-    #[case::dstack(dstack())]
-    fn get_attestation_response__should_read_a_stamped_response(
-        #[case] attestation: VerifiedAttestation,
+    fn get_attestation_response__should_read_a_current_response(
+        #[values(mock(), mock_with_constraints(), dstack())] attestation: VerifiedAttestation,
+        #[values(Some(ACCEPTED_AT_SECONDS), None)] accepted_at_seconds: Option<u64>,
+    ) {
+        // Given: an entry the current contract stores, stamped or carried over by the migration
+        let stored = StoredAttestation {
+            attestation,
+            accepted_at_seconds,
+        };
+        let response = serde_json::to_string(&stored).unwrap();
+
+        // When
+        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
+
+        // Then
+        assert_eq!(parsed, GetAttestationResponse::Current(stored));
+    }
+
+    #[rstest]
+    fn get_attestation_response__should_read_a_response_from_a_contract_without_the_timestamp(
+        #[values(mock(), mock_with_constraints(), dstack())] attestation: VerifiedAttestation,
     ) {
         // Given
-        let response = serde_json::to_string(&StoredAttestation {
-            attestation: attestation.clone(),
-            accepted_at_seconds: Some(ACCEPTED_AT_SECONDS),
-        })
-        .unwrap();
-
-        // When
-        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
-
-        // Then
-        assert_eq!(parsed.attestation(), &attestation);
-        assert_eq!(parsed.accepted_at_seconds(), Some(ACCEPTED_AT_SECONDS));
-    }
-
-    #[rstest]
-    #[case::mock(mock())]
-    #[case::dstack(dstack())]
-    fn get_attestation_response__should_read_an_entry_stored_before_the_timestamp_existed(
-        #[case] attestation: VerifiedAttestation,
-    ) {
-        // Given: an entry the migration left without an acceptance time
-        let response = serde_json::to_string(&StoredAttestation {
-            attestation: attestation.clone(),
-            accepted_at_seconds: None,
-        })
-        .unwrap();
-
-        // When
-        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
-
-        // Then
-        assert_eq!(parsed.attestation(), &attestation);
-        assert_eq!(parsed.accepted_at_seconds(), None);
-    }
-
-    #[rstest]
-    #[case::mock(mock())]
-    #[case::dstack(dstack())]
-    fn get_attestation_response__should_read_a_response_from_a_contract_without_the_timestamp(
-        #[case] attestation: VerifiedAttestation,
-    ) {
-        // Given: what a contract predating the stored timestamp returns
         let response = serde_json::to_string(&attestation).unwrap();
 
         // When
         let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
 
         // Then
-        assert_eq!(parsed.attestation(), &attestation);
-        assert_eq!(parsed.accepted_at_seconds(), None);
+        assert_eq!(parsed, GetAttestationResponse::Legacy(attestation));
     }
 }

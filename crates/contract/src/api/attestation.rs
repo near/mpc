@@ -240,8 +240,6 @@ impl MpcContract {
             )
     }
 
-    /// The attestation stored under `tls_public_key`, with the block time at which the contract
-    /// accepted it.
     #[handle_result]
     pub fn get_attestation(
         &self,
@@ -251,13 +249,7 @@ impl MpcContract {
             .tee_state
             .stored_attestations
             .get(&tls_public_key)
-            .map(|node_attestation| dtos::StoredAttestation {
-                attestation: node_attestation
-                    .verified_attestation
-                    .clone()
-                    .into_dto_type(),
-                accepted_at_seconds: node_attestation.accepted_at_seconds,
-            }))
+            .map(IntoInterfaceType::into_dto_type))
     }
 
     /// Returns all accounts that have TEE attestations stored in the contract.

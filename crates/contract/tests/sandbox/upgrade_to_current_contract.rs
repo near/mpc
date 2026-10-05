@@ -10,8 +10,8 @@ use crate::sandbox::{
         contract_build::current_contract,
         mpc_contract::{
             get_participant_attestation, get_participants, get_state, get_tee_accounts,
-            prepay_attestation_grants, submit_participant_info, tee_verifier_account_id,
-            vote_add_launcher_hash, vote_tee_verifier_change,
+            prepay_and_submit_participant_info, tee_verifier_account_id, vote_add_launcher_hash,
+            vote_tee_verifier_change,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
@@ -242,27 +242,22 @@ async fn fill_stored_attestations(
     for _ in PARTICIPANT_LEN..total {
         accounts.push(gen_account(worker).await.0);
     }
+    let tls_keys: Vec<_> = (0..accounts.len())
+        .map(|index| dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]))
+        .collect();
 
     let submissions = accounts
         .iter()
-        .enumerate()
-        .map(|(index, account)| async move {
-            let tls_key = dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]);
-            let prepayment = prepay_attestation_grants(account, contract, account.id(), 1)
-                .await
-                .expect("prepay_attestation_storage should not error");
-            assert!(
-                prepayment.is_success(),
-                "filler prepayment failed: {prepayment:?}"
-            );
-            let result = submit_participant_info(
+        .zip(&tls_keys)
+        .map(|(account, tls_key)| async move {
+            let result = prepay_and_submit_participant_info(
                 account,
                 contract,
                 &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-                &tls_key,
+                tls_key,
             )
             .await
-            .expect("submit_participant_info should not error");
+            .expect("prepay_and_submit_participant_info should not error");
             assert!(result.is_success(), "filler submission failed: {result:?}");
         });
     futures::future::join_all(submissions).await;
@@ -270,9 +265,7 @@ async fn fill_stored_attestations(
     let stored = get_tee_accounts(contract).await.unwrap();
     assert_eq!(stored.len(), total, "stored attestation count");
 
-    (0..accounts.len())
-        .map(|index| dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]))
-        .collect()
+    tls_keys
 }
 
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)

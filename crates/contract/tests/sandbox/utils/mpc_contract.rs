@@ -83,14 +83,18 @@ pub async fn prepay_attestation_grants(
         .await?)
 }
 
-/// Reads the fee the way an operator does, but untyped, so this serves a released binary whose
-/// `Config` no longer deserializes into the current DTO.
+/// The one `config` field the fee is computed from. Read on its own rather than through the
+/// current `Config` DTO, which a released binary's config no longer deserializes into.
+#[derive(serde::Deserialize)]
+struct AttestationStorageFee {
+    attestation_storage_fee_millinear: u64,
+}
+
 async fn attestation_storage_fee(contract: &Contract) -> anyhow::Result<NearToken> {
-    let config: serde_json::Value = contract.view(method_names::CONFIG).await?.json()?;
-    let millinear = config["attestation_storage_fee_millinear"]
-        .as_u64()
-        .ok_or_else(|| anyhow::anyhow!("no attestation_storage_fee_millinear in {config}"))?;
-    Ok(NearToken::from_millinear(u128::from(millinear)))
+    let fee: AttestationStorageFee = contract.view(method_names::CONFIG).await?.json()?;
+    Ok(NearToken::from_millinear(u128::from(
+        fee.attestation_storage_fee_millinear,
+    )))
 }
 
 /// Prepays one grant, then submits. For a first submission; a re-attestation of a key the
