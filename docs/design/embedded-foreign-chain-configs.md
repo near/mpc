@@ -44,10 +44,11 @@ The proposal can be summarized in 2 steps below:
 
 ### Config type
 
-`mpc_node_config::ForeignChainsConfig` stays the single type for both the embedded and the operator config, and gets one optional field:
+`mpc_node_config::ForeignChainsConfig` stays the single type for both the embedded and the operator config, and gets two optional fields:
 
 ```rust
 pub struct ForeignChainsConfig {
+    pub rpc_network: Option<RpcNetwork>,
     // ...existing per-chain fields unchanged...
     pub credentials: BTreeMap<RpcProviderName, ProviderCredentials>,
 }
@@ -62,7 +63,11 @@ pub struct ProviderCredentials {
 ### Embedded config
 
 `crates/node-config/foreign_chains/{mainnet,testnet}.toml`, loaded with `include_str!` and parsed
-into `ForeignChainsConfig` using today's schema. The node selects the file by `mpc_node_config.near_init.chain_id` any other chain id, or `near_init = None`, means no embedded config.
+into `ForeignChainsConfig` using today's schema. `foreign_chains.rpc_network` (`mainnet` or
+`testnet`) selects the file, unset means no embedded config. When `near_init.chain_id` is present
+it must agree, otherwise the node refuses to start. Once the legacy `start` command, which has no
+`near_init`, is removed ([#2334](https://github.com/near/mpc/issues/2334)), `rpc_network` collapses
+into `near_init.chain_id`.
 
 Being part of the binary, the embedded config is covered by the image hash vote.
 
@@ -71,6 +76,9 @@ Being part of the binary, the embedded config is covered by the image hash vote.
 Once migrated, the operator's foreign chain config is only:
 
 ```toml
+[mpc_node_config.node.foreign_chains]
+rpc_network = "testnet"
+
 [mpc_node_config.node.foreign_chains.credentials]
 alchemy   = { val = "..." }
 geomi     = { env = "GEOMI_API_KEY" }
@@ -106,9 +114,10 @@ if same pair is defined in both places but differ, so that operators can remove 
 
 | Operator config | Result |
 |---|---|
-| Legacy `foreign_chains`, no `credentials` | File pairs and chain-level fields kept as written. Embedded no-auth providers added for pairs the file doesn't define. |
-| Legacy + `credentials` | File pairs kept as written. Embedded pairs for providers with credentials added for pairs the file doesn't define. |
-| `credentials` only | Embedded config only — the target state. |
+| Legacy `foreign_chains`, no `rpc_network` | Unchanged: no embedded config is used. |
+| Legacy + `rpc_network`, no `credentials` | File pairs and chain-level fields kept as written. Embedded no-auth providers added for pairs the file doesn't define. |
+| Legacy + `rpc_network` + `credentials` | File pairs kept as written. Embedded pairs for providers with credentials added for pairs the file doesn't define. |
+| `rpc_network` + `credentials` only | Embedded config only — the target state. |
 
 ## Tradeoffs
 
