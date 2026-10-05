@@ -1,19 +1,31 @@
-//! Log-only check that the node's local foreign-chain RPC config matches the
-//! on-chain whitelist (`allowed_foreign_chain_providers`).
+//! Checks that the node's local foreign chain RPC config matches the on chain whitelist
+//! (`allowed_foreign_chain_providers`) and logs every divergence. Nothing gates on the result.
+//!
+//! A configured provider links to a whitelist entry by its URL host, never by its config name, as
+//! [`provider_identity`](mpc_node_config::foreign_chains::provider_identity) describes. A
+//! provider whose host matches no entry, every way a provider differs from its entry, and two
+//! providers linked to one entry are logged as warnings. Logs name the chain, the config provider
+//! name, the whitelist id and the public whitelisted `base_url`, never the configured `rpc_url` or
+//! a token.
 //!
 //! On a fresh deployment with an unvoted whitelist, the verifier emits one
-//! [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist) info per configured chain — expected during rollout,
-//! clears once the whitelist is populated and the watch channel updates.
+//! [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist) info per configured chain. That is
+//! expected during rollout and clears once the whitelist is populated and the watch channel
+//! updates.
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
-    foreign_chains::RpcProviderName,
+    foreign_chains::{
+        RpcProviderName,
+        provider_identity::{
+            BaseUrlError, ChainWhitelist, ConfiguredAuth, ConfiguredUrl, Mismatch, WhitelistLink,
+        },
+    },
 };
-use near_mpc_contract_interface::types::{
-    self as dtos, AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
-};
+use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderId};
 use tokio::sync::watch;
 
 /// Subscribes to the contract's `allowed_foreign_chain_providers` whitelist (published by
@@ -33,9 +45,7 @@ pub(crate) async fn run(
             compare(&local, &whitelist)
         };
         if diagnostics.is_empty() {
-            tracing::info!(
-                "foreign-chain whitelist verifier: local config matches contract whitelist"
-            );
+            tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
         } else {
             for d in &diagnostics {
                 log_diagnostic(d);
@@ -48,6 +58,29 @@ pub(crate) async fn run(
     }
 }
 
+/// Links a configured provider to the whitelist of its chain. Fails only on an `rpc_url` that does
+/// not parse.
+pub(crate) fn link_provider<'w>(
+    whitelist: &ChainWhitelist<'w>,
+    provider: &ForeignChainProviderConfig,
+) -> Result<Option<WhitelistLink<'w>>, url::ParseError> {
+    let url = ConfiguredUrl::parse(&provider.rpc_url)?;
+    Ok(whitelist.link(&url, configured_auth(&provider.auth)))
+}
+
+fn configured_auth(auth: &AuthConfig) -> ConfiguredAuth<'_> {
+    match auth {
+        AuthConfig::None => ConfiguredAuth::None,
+        AuthConfig::Header { name, scheme, .. } => ConfiguredAuth::Header {
+            name: name.as_str(),
+            scheme: scheme.as_deref(),
+        },
+        AuthConfig::Path { placeholder, .. } => ConfiguredAuth::Path { placeholder },
+        AuthConfig::Query { name, .. } => ConfiguredAuth::Query { name },
+    }
+}
+
+/// Never holds a configured `rpc_url` or token, since it is logged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Diagnostic {
     chain: dtos::ForeignChain,
@@ -58,43 +91,29 @@ struct Diagnostic {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DiagnosticKind {
     ChainNotInWhitelist,
+    UnparseableWhitelistEntry {
+        whitelist_id: ProviderId,
+        base_url: String,
+        error: BaseUrlError,
+    },
+    UnparseableRpcUrl(url::ParseError),
     ProviderNotInWhitelist,
-    BaseUrlMismatch {
-        local_rpc_url: String,
-        contract_base_url: String,
+    Misconfigured {
+        whitelist_id: ProviderId,
+        base_url: String,
+        mismatch: Mismatch,
     },
-    ChainRoutingMismatch {
-        local_rpc_url: String,
-        contract_chain_routing: ChainRouting,
+    DuplicateProvider {
+        whitelist_id: ProviderId,
+        first: RpcProviderName,
     },
-    AuthSchemeVariantMismatch {
-        local: &'static str,
-        contract: &'static str,
-    },
-    AuthSchemeNameMismatch {
-        variant: &'static str,
-        local_name: String,
-        contract_name: String,
-    },
-    /// Header auth: the contract mandates a specific scheme tag (e.g. `Bearer`)
-    /// that doesn't match local. We can't compare token values, but we can compare
-    /// the scheme tag itself.
-    AuthSchemeHeaderSchemeMismatch {
-        local: Option<String>,
-        contract: Option<String>,
-    },
-    /// The contract whitelist contains a variant this node binary doesn't
-    /// recognize — operator should upgrade.
+    /// The contract whitelist contains a variant this node binary doesn't recognize, so the
+    /// operator should upgrade.
     UnknownContractVariant {
+        whitelist_id: ProviderId,
         what: &'static str,
         value: String,
     },
-}
-
-/// Advisory diagnostics (logged at info rather than warn). Only [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist)
-/// qualifies — it's the bootstrap case where a chain isn't yet voted in.
-fn is_informational(kind: &DiagnosticKind) -> bool {
-    matches!(kind, DiagnosticKind::ChainNotInWhitelist)
 }
 
 fn compare(
@@ -121,259 +140,159 @@ fn compare(
 fn compare_chain(
     chain: dtos::ForeignChain,
     local: &ForeignChainConfig,
-    whitelist: &ChainEntry,
+    entry: &ChainEntry,
     out: &mut Vec<Diagnostic>,
 ) {
-    for (local_name, local_provider) in local.providers.iter() {
-        let contract_id = ProviderId(local_name.as_str().to_string());
-        let Some(contract_provider) = whitelist.providers.get(&contract_id) else {
-            out.push(Diagnostic {
+    let whitelist = ChainWhitelist::parse(entry);
+    out.extend(
+        whitelist
+            .unparseable()
+            .iter()
+            .map(|unparseable| Diagnostic {
                 chain,
-                provider: Some(local_name.clone()),
-                kind: DiagnosticKind::ProviderNotInWhitelist,
-            });
-            continue;
-        };
-        compare_provider(chain, local_name, local_provider, contract_provider, out);
-    }
-}
+                provider: None,
+                kind: DiagnosticKind::UnparseableWhitelistEntry {
+                    whitelist_id: unparseable.id.clone(),
+                    base_url: unparseable.config.base_url.clone(),
+                    error: unparseable.error.clone(),
+                },
+            }),
+    );
 
-fn compare_provider(
-    chain: dtos::ForeignChain,
-    name: &RpcProviderName,
-    local: &ForeignChainProviderConfig,
-    contract: &ProviderConfig,
-    out: &mut Vec<Diagnostic>,
-) {
-    let local_url = local.rpc_url.as_str();
-    if !base_url_matches(local_url, &contract.base_url) {
-        out.push(Diagnostic {
+    let mut first_linked: BTreeMap<&ProviderId, &RpcProviderName> = BTreeMap::new();
+    for (name, provider) in local.providers.iter() {
+        let diagnostic = |kind| Diagnostic {
             chain,
             provider: Some(name.clone()),
-            kind: DiagnosticKind::BaseUrlMismatch {
-                local_rpc_url: local_url.to_string(),
-                contract_base_url: contract.base_url.clone(),
-            },
-        });
-    }
-
-    match chain_routing_satisfied(local_url, &contract.chain_routing) {
-        RoutingCheck::Ok => {}
-        RoutingCheck::Mismatch => {
-            out.push(Diagnostic {
-                chain,
-                provider: Some(name.clone()),
-                kind: DiagnosticKind::ChainRoutingMismatch {
-                    local_rpc_url: local_url.to_string(),
-                    contract_chain_routing: contract.chain_routing.clone(),
-                },
-            });
-        }
-        RoutingCheck::Unknown => {
-            out.push(Diagnostic {
-                chain,
-                provider: Some(name.clone()),
-                kind: DiagnosticKind::UnknownContractVariant {
-                    what: "chain_routing",
-                    value: format!("{:?}", contract.chain_routing),
-                },
-            });
-        }
-    }
-
-    compare_auth(chain, name, &local.auth, &contract.auth_scheme, out);
-}
-
-/// Path-boundary-aware prefix check. `https://api.example.com/v2` matches `/v2`,
-/// `/v2/eth`, `/v2?key=x`, `/v2#frag` — but not `/v2-evil`.
-///
-/// The first `{}` in `base` matches one non-empty run of `[A-Za-z0-9-]` — a single host
-/// label in the bases we use, where a provider puts a per-operator slug in the hostname
-/// (e.g. QuickNode's `https://{}.sui-testnet.quiknode.pro`).
-/// The character after `{}` must not itself be a label character:
-/// a base like `https://api-{}-v2.example.com` never matches.
-fn base_url_matches(local: &str, base: &str) -> bool {
-    let l = local.trim_end_matches('/');
-    let b = base.trim_end_matches('/');
-
-    let Some((prefix, suffix)) = b.split_once("{}") else {
-        return starts_with_at_boundary(l, b);
-    };
-    let Some(rest) = l.strip_prefix(prefix) else {
-        return false;
-    };
-    let label_len = rest
-        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
-        .unwrap_or(rest.len());
-    let (_, rest) = rest.split_at(label_len);
-    label_len > 0 && starts_with_at_boundary(rest, suffix)
-}
-
-/// Like [`str::starts_with`], but `prefix` must end where a URL component does.
-fn starts_with_at_boundary(s: &str, prefix: &str) -> bool {
-    if s == prefix {
-        return true;
-    }
-    s.strip_prefix(prefix)
-        .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#'))
-}
-
-enum RoutingCheck {
-    Ok,
-    Mismatch,
-    Unknown,
-}
-
-/// Substring-based (not a strict parse): `?xnetwork=ethereum` will satisfy
-/// `QueryParam { name: "network", value: "ethereum" }`. Acceptable for advisory
-/// diagnostics; tighten with [`Url::parse`](url::Url::parse) if this ever drives enforcement.
-fn chain_routing_satisfied(local_url: &str, routing: &ChainRouting) -> RoutingCheck {
-    match routing {
-        ChainRouting::Embedded => RoutingCheck::Ok,
-        ChainRouting::PathSegment { segment } => {
-            if local_url.contains(&format!("/{segment}")) {
-                RoutingCheck::Ok
-            } else {
-                RoutingCheck::Mismatch
+            kind,
+        };
+        let link = match link_provider(&whitelist, provider) {
+            Ok(Some(link)) => link,
+            Ok(None) => {
+                out.push(diagnostic(DiagnosticKind::ProviderNotInWhitelist));
+                continue;
             }
-        }
-        ChainRouting::QueryParam { name, value } => {
-            if local_url.contains(&format!("{name}={value}")) {
-                RoutingCheck::Ok
-            } else {
-                RoutingCheck::Mismatch
+            Err(error) => {
+                out.push(diagnostic(DiagnosticKind::UnparseableRpcUrl(error)));
+                continue;
             }
+        };
+        match first_linked.entry(link.id()) {
+            Entry::Vacant(slot) => {
+                slot.insert(name);
+            }
+            Entry::Occupied(first) => out.push(diagnostic(DiagnosticKind::DuplicateProvider {
+                whitelist_id: link.id().clone(),
+                first: (*first.get()).clone(),
+            })),
         }
-        _ => RoutingCheck::Unknown,
+        out.extend(
+            link.mismatches()
+                .iter()
+                .map(|mismatch| diagnostic(mismatch_kind(&link, mismatch))),
+        );
     }
 }
 
-fn auth_scheme_variant_name(scheme: &AuthScheme) -> &'static str {
-    match scheme {
-        AuthScheme::None => "None",
-        AuthScheme::Header { .. } => "Header",
-        AuthScheme::Path { .. } => "Path",
-        AuthScheme::Query { .. } => "Query",
-        _ => "Unknown",
+fn mismatch_kind(link: &WhitelistLink<'_>, mismatch: &Mismatch) -> DiagnosticKind {
+    let whitelist_id = link.id().clone();
+    let whitelisted = link.whitelisted();
+    match mismatch {
+        Mismatch::UnknownChainRouting => DiagnosticKind::UnknownContractVariant {
+            whitelist_id,
+            what: "chain_routing",
+            value: format!("{:?}", whitelisted.chain_routing),
+        },
+        Mismatch::UnknownAuthScheme => DiagnosticKind::UnknownContractVariant {
+            whitelist_id,
+            what: "auth_scheme",
+            value: format!("{:?}", whitelisted.auth_scheme),
+        },
+        mismatch => DiagnosticKind::Misconfigured {
+            whitelist_id,
+            base_url: whitelisted.base_url.clone(),
+            mismatch: mismatch.clone(),
+        },
     }
-}
-
-fn auth_config_variant_name(auth: &AuthConfig) -> &'static str {
-    match auth {
-        AuthConfig::None => "None",
-        AuthConfig::Header { .. } => "Header",
-        AuthConfig::Path { .. } => "Path",
-        AuthConfig::Query { .. } => "Query",
-    }
-}
-
-fn compare_auth(
-    chain: dtos::ForeignChain,
-    name: &RpcProviderName,
-    local: &AuthConfig,
-    contract: &AuthScheme,
-    out: &mut Vec<Diagnostic>,
-) {
-    match (local, contract) {
-        (AuthConfig::None, AuthScheme::None) => {}
-        (
-            AuthConfig::Path {
-                placeholder: local_p,
-                ..
-            },
-            AuthScheme::Path {
-                placeholder: contract_p,
-            },
-        ) => {
-            if local_p != contract_p {
-                out.push(Diagnostic {
-                    chain,
-                    provider: Some(name.clone()),
-                    kind: DiagnosticKind::AuthSchemeNameMismatch {
-                        variant: "Path",
-                        local_name: local_p.clone(),
-                        contract_name: contract_p.clone(),
-                    },
-                });
-            }
-        }
-        (
-            AuthConfig::Header {
-                name: local_h,
-                scheme: local_scheme,
-                ..
-            },
-            AuthScheme::Header {
-                name: contract_h,
-                scheme: contract_scheme,
-            },
-        ) => {
-            if !header_name_matches(local_h, contract_h) {
-                out.push(Diagnostic {
-                    chain,
-                    provider: Some(name.clone()),
-                    kind: DiagnosticKind::AuthSchemeNameMismatch {
-                        variant: "Header",
-                        local_name: local_h.as_str().to_string(),
-                        contract_name: contract_h.clone(),
-                    },
-                });
-            }
-            if local_scheme != contract_scheme {
-                out.push(Diagnostic {
-                    chain,
-                    provider: Some(name.clone()),
-                    kind: DiagnosticKind::AuthSchemeHeaderSchemeMismatch {
-                        local: local_scheme.clone(),
-                        contract: contract_scheme.clone(),
-                    },
-                });
-            }
-        }
-        (AuthConfig::Query { name: local_q, .. }, AuthScheme::Query { name: contract_q }) => {
-            if local_q != contract_q {
-                out.push(Diagnostic {
-                    chain,
-                    provider: Some(name.clone()),
-                    kind: DiagnosticKind::AuthSchemeNameMismatch {
-                        variant: "Query",
-                        local_name: local_q.clone(),
-                        contract_name: contract_q.clone(),
-                    },
-                });
-            }
-        }
-        (local, contract) => {
-            out.push(Diagnostic {
-                chain,
-                provider: Some(name.clone()),
-                kind: DiagnosticKind::AuthSchemeVariantMismatch {
-                    local: auth_config_variant_name(local),
-                    contract: auth_scheme_variant_name(contract),
-                },
-            });
-        }
-    }
-}
-
-/// Header names are case insensitive: local is lowercased when [`AuthConfig::Header`] parses it
-/// into an [`http::HeaderName`], while the contract keeps the casing the vote carried.
-fn header_name_matches(local: &http::HeaderName, contract: &str) -> bool {
-    local.as_str().eq_ignore_ascii_case(contract)
 }
 
 fn log_diagnostic(d: &Diagnostic) {
     let chain = d.chain;
-    let provider = d.provider.as_ref().map(|p| p.as_str());
+    let provider = d.provider.as_ref().map(|name| name.as_str());
     match &d.kind {
-        DiagnosticKind::UnknownContractVariant { .. } => {
-            tracing::error!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist contains a variant this node binary doesn't recognize; upgrade the node");
+        DiagnosticKind::ChainNotInWhitelist => {
+            tracing::info!(
+                ?chain,
+                "foreign chain whitelist: chain is not whitelisted yet"
+            );
         }
-        kind if is_informational(kind) => {
-            tracing::info!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist verifier");
+        DiagnosticKind::UnparseableWhitelistEntry {
+            whitelist_id,
+            base_url,
+            error,
+        } => {
+            tracing::warn!(
+                ?chain,
+                %whitelist_id,
+                %base_url,
+                %error,
+                "foreign chain whitelist: no provider can link to an entry whose base_url does not parse"
+            );
         }
-        _ => {
-            tracing::warn!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist mismatch");
+        DiagnosticKind::UnparseableRpcUrl(error) => {
+            tracing::warn!(
+                ?chain,
+                provider,
+                %error,
+                "foreign chain whitelist: the configured rpc_url does not parse"
+            );
+        }
+        DiagnosticKind::ProviderNotInWhitelist => {
+            tracing::warn!(
+                ?chain,
+                provider,
+                "foreign chain whitelist: provider is not in the whitelist because no whitelisted base_url has the host of its rpc_url"
+            );
+        }
+        DiagnosticKind::Misconfigured {
+            whitelist_id,
+            base_url,
+            mismatch,
+        } => {
+            tracing::warn!(
+                ?chain,
+                provider,
+                %whitelist_id,
+                %base_url,
+                ?mismatch,
+                "foreign chain whitelist: provider differs from its whitelist entry"
+            );
+        }
+        DiagnosticKind::DuplicateProvider {
+            whitelist_id,
+            first,
+        } => {
+            tracing::warn!(
+                ?chain,
+                provider,
+                first_provider = first.as_str(),
+                %whitelist_id,
+                "foreign chain whitelist: two providers link to the same whitelist entry, which doubles the RPC requests"
+            );
+        }
+        DiagnosticKind::UnknownContractVariant {
+            whitelist_id,
+            what,
+            value,
+        } => {
+            tracing::error!(
+                ?chain,
+                provider,
+                %whitelist_id,
+                what,
+                %value,
+                "foreign chain whitelist contains a variant this node binary does not recognize: upgrade the node"
+            );
         }
     }
 }
@@ -384,31 +303,58 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use mpc_node_config::TokenConfig;
+    use mpc_node_config::foreign_chains::provider_identity::AuthKind;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
-    use std::collections::BTreeMap;
+    use near_mpc_contract_interface::types::{AuthScheme, ChainRouting, ProviderConfig};
+    use rstest::rstest;
+    use tracing_test::traced_test;
 
-    fn local_provider(rpc_url: &str, auth: AuthConfig) -> ForeignChainProviderConfig {
+    fn provider(rpc_url: &str, auth: AuthConfig) -> ForeignChainProviderConfig {
         ForeignChainProviderConfig {
             rpc_url: rpc_url.to_string(),
             auth,
         }
     }
 
-    fn local_chain(providers: &[(&str, ForeignChainProviderConfig)]) -> ForeignChainConfig {
-        let map: BTreeMap<RpcProviderName, ForeignChainProviderConfig> = providers
-            .iter()
-            .map(|(name, cfg)| (RpcProviderName::from(name.to_string()), cfg.clone()))
-            .collect();
-        ForeignChainConfig {
-            timeout_sec: std::num::NonZeroU64::new(30).unwrap(),
-            max_retries: std::num::NonZeroU64::new(3).unwrap(),
-            expected_network_fingerprint: None,
-            providers: NonEmptyBTreeMap::try_from(map)
-                .expect("test setup: providers must be non-empty"),
+    fn token(val: &str) -> TokenConfig {
+        TokenConfig::Val {
+            val: val.to_string(),
         }
     }
 
-    fn contract_provider(
+    fn path_auth(placeholder: &str) -> AuthConfig {
+        AuthConfig::Path {
+            placeholder: placeholder.to_string(),
+            token: token("abc"),
+        }
+    }
+
+    fn must_header_auth(name: &str, scheme: Option<&str>) -> AuthConfig {
+        AuthConfig::Header {
+            name: name.parse().expect("a test header name parses"),
+            scheme: scheme.map(str::to_string),
+            token: token("abc"),
+        }
+    }
+
+    fn must_ethereum(providers: &[(&str, ForeignChainProviderConfig)]) -> ForeignChainsConfig {
+        let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> = providers
+            .iter()
+            .map(|(name, config)| (RpcProviderName::from(name.to_string()), config.clone()))
+            .collect();
+        ForeignChainsConfig {
+            ethereum: Some(ForeignChainConfig {
+                timeout_sec: std::num::NonZeroU64::new(30).unwrap(),
+                max_retries: std::num::NonZeroU64::new(3).unwrap(),
+                expected_network_fingerprint: None,
+                providers: NonEmptyBTreeMap::try_from(providers)
+                    .expect("a test chain has a provider"),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn whitelisted(
         base_url: &str,
         chain_routing: ChainRouting,
         auth_scheme: AuthScheme,
@@ -420,699 +366,429 @@ mod tests {
         }
     }
 
-    fn contract_chain_entry(providers: &[(&str, ProviderConfig)], quorum: u64) -> ChainEntry {
-        let map: BTreeMap<ProviderId, ProviderConfig> = providers
+    fn must_ethereum_whitelist(
+        providers: &[(&str, ProviderConfig)],
+    ) -> BTreeMap<dtos::ForeignChain, ChainEntry> {
+        let providers: BTreeMap<ProviderId, ProviderConfig> = providers
             .iter()
-            .map(|(id, cfg)| (ProviderId(id.to_string()), cfg.clone()))
+            .map(|(id, config)| (ProviderId(id.to_string()), config.clone()))
             .collect();
-        ChainEntry {
-            providers: NonEmptyBTreeMap::try_from(map)
-                .expect("test setup: providers must be non-empty"),
-            quorum,
+        let entry = ChainEntry {
+            providers: NonEmptyBTreeMap::try_from(providers)
+                .expect("a test whitelist has a provider"),
+            quorum: 1,
+        };
+        BTreeMap::from([(dtos::ForeignChain::Ethereum, entry)])
+    }
+
+    fn alchemy() -> ProviderConfig {
+        whitelisted(
+            "https://eth-mainnet.g.alchemy.com/v2/",
+            ChainRouting::Embedded,
+            AuthScheme::Path {
+                placeholder: "{API_KEY}".to_string(),
+            },
+        )
+    }
+
+    fn quicknode() -> ProviderConfig {
+        whitelisted(
+            "https://{}.quiknode.pro",
+            ChainRouting::Embedded,
+            AuthScheme::Path {
+                placeholder: "{api_key}".to_string(),
+            },
+        )
+    }
+
+    fn diagnostic(provider: &str, kind: DiagnosticKind) -> Diagnostic {
+        Diagnostic {
+            chain: dtos::ForeignChain::Ethereum,
+            provider: Some(RpcProviderName::from(provider.to_string())),
+            kind,
         }
     }
 
     #[test]
-    fn compare__should_be_empty_when_local_and_whitelist_match() {
+    fn compare__should_be_silent_when_a_provider_name_differs_from_its_whitelist_id() {
         // Given
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "alchemy",
-                local_provider(
-                    "https://eth-mainnet.g.alchemy.com/v2/test",
-                    AuthConfig::None,
-                ),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://eth-mainnet.g.alchemy.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::None,
-                    ),
-                )],
-                1,
+        let local = must_ethereum(&[(
+            "my-alchemy",
+            provider(
+                "https://eth-mainnet.g.alchemy.com/v2/{api_key}",
+                path_auth("{api_key}"),
             ),
-        )]
-        .into_iter()
-        .collect();
+        )]);
+        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
 
         // When
         let diags = compare(&local, &whitelist);
 
         // Then
-        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+        assert_eq!(diags, vec![]);
+    }
+
+    #[test]
+    fn compare__should_link_providers_by_url_when_config_names_swap_whitelist_ids() {
+        // Given
+        let local = must_ethereum(&[
+            (
+                "alchemy",
+                provider(
+                    "https://my-slug.quiknode.pro/{api_key}",
+                    path_auth("{api_key}"),
+                ),
+            ),
+            (
+                "quicknode",
+                provider(
+                    "https://eth-mainnet.g.alchemy.com/v2/{api_key}",
+                    path_auth("{api_key}"),
+                ),
+            ),
+        ]);
+        let whitelist =
+            must_ethereum_whitelist(&[("alchemy", alchemy()), ("quicknode", quicknode())]);
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(diags, vec![]);
     }
 
     #[test]
     fn compare__should_emit_chain_not_in_whitelist_when_chain_missing_from_contract() {
-        // Given: local configures Ethereum, contract has no whitelist entry yet.
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "alchemy",
-                local_provider("https://eth-mainnet.example.com", AuthConfig::None),
-            )])),
-            ..Default::default()
-        };
+        // Given
+        let local = must_ethereum(&[(
+            "alchemy",
+            provider("https://eth-mainnet.example.com", AuthConfig::None),
+        )]);
         let whitelist = BTreeMap::new();
 
         // When
         let diags = compare(&local, &whitelist);
 
         // Then
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].chain, dtos::ForeignChain::Ethereum);
-        assert_eq!(diags[0].kind, DiagnosticKind::ChainNotInWhitelist);
-    }
-
-    #[test]
-    fn compare__should_emit_provider_not_in_whitelist_when_local_has_extra_provider() {
-        // Given: contract has alchemy, local has alchemy + ankr.
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[
-                (
-                    "alchemy",
-                    local_provider("https://eth.alchemy.com/v2/x", AuthConfig::None),
-                ),
-                (
-                    "ankr",
-                    local_provider("https://rpc.ankr.com/eth", AuthConfig::None),
-                ),
-            ])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://eth.alchemy.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::None,
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].kind, DiagnosticKind::ProviderNotInWhitelist,);
         assert_eq!(
-            diags[0].provider,
-            Some(RpcProviderName::from("ankr".to_string()))
+            diags,
+            vec![Diagnostic {
+                chain: dtos::ForeignChain::Ethereum,
+                provider: None,
+                kind: DiagnosticKind::ChainNotInWhitelist,
+            }]
         );
-    }
-
-    #[test]
-    fn compare__should_emit_base_url_mismatch_when_local_rpc_url_has_wrong_prefix() {
-        // Given: contract says base_url is alchemy.com, local points at infura.io.
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "alchemy",
-                local_provider("https://eth.infura.io/v3/key", AuthConfig::None),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://eth-mainnet.g.alchemy.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::None,
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(diags[0].kind, DiagnosticKind::BaseUrlMismatch { .. });
-    }
-
-    #[test]
-    fn compare__should_emit_chain_routing_mismatch_when_path_segment_missing() {
-        // Given: contract says PathSegment "eth", local rpc_url doesn't contain it.
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "ankr",
-                local_provider("https://rpc.ankr.com/something_else", AuthConfig::None),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "ankr",
-                    contract_provider(
-                        "https://rpc.ankr.com",
-                        ChainRouting::PathSegment {
-                            segment: "eth".to_string(),
-                        },
-                        AuthScheme::None,
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(diags[0].kind, DiagnosticKind::ChainRoutingMismatch { .. });
-    }
-
-    #[test]
-    fn compare__should_emit_chain_routing_mismatch_when_query_param_missing() {
-        // Given: contract says QueryParam{name: "network", value: "ethereum"}, local rpc_url
-        // doesn't carry it.
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "drpc",
-                local_provider("https://lb.drpc.org/ogrpc?dkey=K", AuthConfig::None),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "drpc",
-                    contract_provider(
-                        "https://lb.drpc.org/ogrpc",
-                        ChainRouting::QueryParam {
-                            name: "network".to_string(),
-                            value: "ethereum".to_string(),
-                        },
-                        AuthScheme::None,
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(diags[0].kind, DiagnosticKind::ChainRoutingMismatch { .. });
-    }
-
-    #[test]
-    fn compare__should_emit_auth_variant_mismatch_when_local_uses_none_and_contract_uses_header() {
-        // Given
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "alchemy",
-                local_provider("https://eth.alchemy.com/v2/k", AuthConfig::None),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://eth.alchemy.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::Header {
-                            name: "x-api-key".to_string(),
-                            scheme: None,
-                        },
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(
-            diags[0].kind,
-            DiagnosticKind::AuthSchemeVariantMismatch {
-                local: "None",
-                contract: "Header",
-            }
-        );
-    }
-
-    #[test]
-    fn compare__should_emit_auth_name_mismatch_when_query_param_names_differ() {
-        // Given
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "drpc",
-                local_provider(
-                    "https://lb.drpc.org/?dkey=foo",
-                    AuthConfig::Query {
-                        name: "dkey".to_string(),
-                        token: TokenConfig::Val {
-                            val: "foo".to_string(),
-                        },
-                    },
-                ),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "drpc",
-                    contract_provider(
-                        "https://lb.drpc.org/",
-                        ChainRouting::Embedded,
-                        AuthScheme::Query {
-                            name: "apikey".to_string(),
-                        },
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(
-            diags[0].kind,
-            DiagnosticKind::AuthSchemeNameMismatch {
-                variant: "Query",
-                ..
-            }
-        );
-    }
-
-    /// Build a single-ethereum-chain [`ForeignChainsConfig`] with one alchemy
-    /// provider whose `auth` is a Header with the given (name, scheme).
-    fn local_header_eth(header_name: &str, scheme: Option<&str>) -> ForeignChainsConfig {
-        ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "alchemy",
-                local_provider(
-                    "https://eth.alchemy.com/v2/",
-                    AuthConfig::Header {
-                        name: header_name.parse().unwrap(),
-                        scheme: scheme.map(str::to_string),
-                        token: TokenConfig::Val {
-                            val: "abc".to_string(),
-                        },
-                    },
-                ),
-            )])),
-            ..Default::default()
-        }
-    }
-
-    /// Build a matching contract whitelist entry with one alchemy provider whose
-    /// `auth_scheme` is a Header with the given (name, scheme).
-    fn contract_header_eth(
-        header_name: &str,
-        scheme: Option<&str>,
-    ) -> BTreeMap<dtos::ForeignChain, ChainEntry> {
-        [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://eth.alchemy.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::Header {
-                            name: header_name.to_string(),
-                            scheme: scheme.map(str::to_string),
-                        },
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect()
-    }
-
-    #[test]
-    fn compare__should_emit_header_scheme_mismatch_when_schemes_differ() {
-        // Given: same Header name, different scheme tag.
-        let local = local_header_eth("authorization", Some("Bearer"));
-        let whitelist = contract_header_eth("authorization", Some("Basic"));
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(
-            &diags[0].kind,
-            DiagnosticKind::AuthSchemeHeaderSchemeMismatch { local, contract }
-                if local.as_deref() == Some("Bearer") && contract.as_deref() == Some("Basic")
-        );
-    }
-
-    #[test]
-    fn compare__should_emit_header_scheme_mismatch_when_one_side_is_none() {
-        // Given: local omits the scheme tag, contract requires one.
-        let local = local_header_eth("authorization", None);
-        let whitelist = contract_header_eth("authorization", Some("Bearer"));
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(
-            &diags[0].kind,
-            DiagnosticKind::AuthSchemeHeaderSchemeMismatch { local, contract }
-                if local.is_none() && contract.as_deref() == Some("Bearer")
-        );
-    }
-
-    #[test]
-    fn compare__should_emit_both_header_name_and_scheme_mismatch_when_both_differ() {
-        // Given: header name AND scheme both differ.
-        let local = local_header_eth("authorization", Some("Bearer"));
-        let whitelist = contract_header_eth("x-api-key", Some("Basic"));
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then: two independent diagnostics for the same provider.
-        assert_eq!(diags.len(), 2);
-        assert!(diags.iter().any(|d| matches!(
-            &d.kind,
-            DiagnosticKind::AuthSchemeNameMismatch {
-                variant: "Header",
-                ..
-            }
-        )));
-        assert!(diags.iter().any(|d| matches!(
-            &d.kind,
-            DiagnosticKind::AuthSchemeHeaderSchemeMismatch { .. }
-        )));
-    }
-
-    #[test]
-    fn compare__should_accept_matching_header_name_and_scheme() {
-        // Given: header name AND scheme both match.
-        let local = local_header_eth("authorization", Some("Bearer"));
-        let whitelist = contract_header_eth("authorization", Some("Bearer"));
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
-    }
-
-    #[test]
-    fn compare__should_accept_header_names_differing_only_in_case() {
-        // Given: the same header, voted in capitalised and configured lowercase.
-        let local = local_header_eth("authorization", Some("Bearer"));
-        let whitelist = contract_header_eth("Authorization", Some("Bearer"));
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
-    }
-
-    #[test]
-    fn compare__should_emit_header_name_mismatch_when_names_differ_beyond_case() {
-        // Given
-        let local = local_header_eth("authorization", Some("Bearer"));
-        let whitelist = contract_header_eth("X-Api-Key", Some("Bearer"));
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(
-            diags[0].kind,
-            DiagnosticKind::AuthSchemeNameMismatch {
-                variant: "Header",
-                ..
-            }
-        );
-    }
-
-    #[test]
-    fn compare__should_emit_path_placeholder_mismatch_when_placeholders_differ() {
-        // Given: local Path placeholder is "{KEY}", contract Path placeholder is "{TOKEN}".
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "alchemy",
-                local_provider(
-                    "https://api.example.com/v2/{KEY}",
-                    AuthConfig::Path {
-                        placeholder: "{KEY}".to_string(),
-                        token: TokenConfig::Val {
-                            val: "abc".to_string(),
-                        },
-                    },
-                ),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://api.example.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::Path {
-                            placeholder: "{TOKEN}".to_string(),
-                        },
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert_eq!(diags.len(), 1);
-        assert_matches!(
-            diags[0].kind,
-            DiagnosticKind::AuthSchemeNameMismatch {
-                variant: "Path",
-                ..
-            }
-        );
-    }
-
-    #[test]
-    fn compare__should_accept_matching_path_placeholders() {
-        // Given: both local and contract use the placeholder "{KEY}".
-        let local = ForeignChainsConfig {
-            ethereum: Some(local_chain(&[(
-                "alchemy",
-                local_provider(
-                    "https://api.example.com/v2/{KEY}",
-                    AuthConfig::Path {
-                        placeholder: "{KEY}".to_string(),
-                        token: TokenConfig::Val {
-                            val: "abc".to_string(),
-                        },
-                    },
-                ),
-            )])),
-            ..Default::default()
-        };
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://api.example.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::Path {
-                            placeholder: "{KEY}".to_string(),
-                        },
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
-
-        // When
-        let diags = compare(&local, &whitelist);
-
-        // Then
-        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
     }
 
     #[test]
     fn compare__should_be_silent_when_whitelist_has_chain_not_configured_locally() {
-        // Given: local has no chains; whitelist has Ethereum with one provider.
-        // The verifier doesn't warn when the whitelist is a superset — operators
-        // intentionally run on subsets.
+        // Given
         let local = ForeignChainsConfig::default();
-        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
-            dtos::ForeignChain::Ethereum,
-            contract_chain_entry(
-                &[(
-                    "alchemy",
-                    contract_provider(
-                        "https://eth.alchemy.com/v2/",
-                        ChainRouting::Embedded,
-                        AuthScheme::None,
-                    ),
-                )],
-                1,
-            ),
-        )]
-        .into_iter()
-        .collect();
+        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
 
         // When
         let diags = compare(&local, &whitelist);
 
         // Then
-        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+        assert_eq!(diags, vec![]);
+    }
+
+    #[rstest]
+    #[case::unlisted_host("ankr", "https://rpc.ankr.com/eth")]
+    #[case::whitelist_id_as_name("alchemy", "https://eth.infura.io/v3/key")]
+    fn compare__should_emit_provider_not_in_whitelist_when_no_entry_has_its_host(
+        #[case] name: &str,
+        #[case] rpc_url: &str,
+    ) {
+        // Given
+        let local = must_ethereum(&[(name, provider(rpc_url, AuthConfig::None))]);
+        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(
+            diags,
+            vec![diagnostic(name, DiagnosticKind::ProviderNotInWhitelist)]
+        );
+    }
+
+    #[rstest]
+    #[case::scheme(
+        "http://eth-mainnet.g.alchemy.com/v2/{api_key}",
+        path_auth("{api_key}"),
+        alchemy(),
+        Mismatch::Scheme { configured: "http".to_string(), whitelisted: "https".to_string() }
+    )]
+    #[case::path(
+        "https://eth-mainnet.g.alchemy.com/v3/{api_key}",
+        path_auth("{api_key}"),
+        alchemy(),
+        Mismatch::Path
+    )]
+    #[case::placeholder_position(
+        "https://eth-mainnet.g.alchemy.com/v2/x/{api_key}",
+        path_auth("{api_key}"),
+        alchemy(),
+        Mismatch::PlaceholderPosition
+    )]
+    #[case::auth_kind(
+        "https://eth-mainnet.g.alchemy.com/v2/key",
+        AuthConfig::None,
+        alchemy(),
+        Mismatch::AuthKind { configured: AuthKind::None, whitelisted: AuthKind::Path }
+    )]
+    #[case::routing_segment(
+        "https://rpc.ankr.com/ethereum",
+        AuthConfig::None,
+        whitelisted(
+            "https://rpc.ankr.com",
+            ChainRouting::PathSegment { segment: "eth".to_string() },
+            AuthScheme::None,
+        ),
+        Mismatch::ChainRouting
+    )]
+    #[case::routing_query(
+        "https://lb.drpc.org/ogrpc?xnetwork=ethereum",
+        AuthConfig::None,
+        whitelisted(
+            "https://lb.drpc.org/ogrpc",
+            ChainRouting::QueryParam { name: "network".to_string(), value: "ethereum".to_string() },
+            AuthScheme::None,
+        ),
+        Mismatch::ChainRouting
+    )]
+    #[case::header_name(
+        "https://sui-mainnet.g.alchemy.com",
+        must_header_auth("x-api-key", Some("Bearer")),
+        whitelisted(
+            "https://sui-mainnet.g.alchemy.com",
+            ChainRouting::Embedded,
+            AuthScheme::Header { name: "Authorization".to_string(), scheme: Some("Bearer".to_string()) },
+        ),
+        Mismatch::HeaderName { configured: "x-api-key".to_string(), whitelisted: "Authorization".to_string() }
+    )]
+    #[case::header_scheme(
+        "https://sui-mainnet.g.alchemy.com",
+        must_header_auth("authorization", None),
+        whitelisted(
+            "https://sui-mainnet.g.alchemy.com",
+            ChainRouting::Embedded,
+            AuthScheme::Header { name: "Authorization".to_string(), scheme: Some("Bearer".to_string()) },
+        ),
+        Mismatch::HeaderScheme { configured: None, whitelisted: Some("Bearer".to_string()) }
+    )]
+    #[case::query_name(
+        "https://lb.drpc.org/ogrpc",
+        AuthConfig::Query { name: "dkey".to_string(), token: token("abc") },
+        whitelisted(
+            "https://lb.drpc.org/ogrpc",
+            ChainRouting::Embedded,
+            AuthScheme::Query { name: "apikey".to_string() },
+        ),
+        Mismatch::QueryName { configured: "dkey".to_string(), whitelisted: "apikey".to_string() }
+    )]
+    fn compare__should_emit_misconfigured_for_the_part_that_differs(
+        #[case] rpc_url: &str,
+        #[case] auth: AuthConfig,
+        #[case] whitelisted_provider: ProviderConfig,
+        #[case] mismatch: Mismatch,
+    ) {
+        // Given
+        let base_url = whitelisted_provider.base_url.clone();
+        let local = must_ethereum(&[("configured", provider(rpc_url, auth))]);
+        let whitelist = must_ethereum_whitelist(&[("whitelisted", whitelisted_provider)]);
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        let expected = DiagnosticKind::Misconfigured {
+            whitelist_id: ProviderId("whitelisted".to_string()),
+            base_url,
+            mismatch,
+        };
+        assert_eq!(diags, vec![diagnostic("configured", expected)]);
     }
 
     #[test]
-    fn base_url_matches__should_accept_exact_match_and_segment_aligned_prefix() {
-        assert!(base_url_matches(
-            "https://api.example.com/v2",
-            "https://api.example.com/v2"
-        ));
-        assert!(base_url_matches(
-            "https://api.example.com/v2/eth",
-            "https://api.example.com/v2"
-        ));
-        assert!(base_url_matches(
-            "https://api.example.com/v2/",
-            "https://api.example.com/v2"
-        ));
-        // Query string / fragment immediately after the base count as boundaries.
-        assert!(base_url_matches(
-            "https://api.example.com/v2?key=foo",
-            "https://api.example.com/v2"
-        ));
-        assert!(base_url_matches(
-            "https://api.example.com/v2#frag",
-            "https://api.example.com/v2"
-        ));
+    fn compare__should_emit_duplicate_when_two_providers_link_to_one_entry() {
+        // Given
+        let local = must_ethereum(&[
+            (
+                "quicknode-a",
+                provider(
+                    "https://slug-a.quiknode.pro/{api_key}",
+                    path_auth("{api_key}"),
+                ),
+            ),
+            (
+                "quicknode-b",
+                provider(
+                    "https://slug-b.quiknode.pro/{api_key}",
+                    path_auth("{api_key}"),
+                ),
+            ),
+        ]);
+        let whitelist = must_ethereum_whitelist(&[("quicknode", quicknode())]);
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        let expected = DiagnosticKind::DuplicateProvider {
+            whitelist_id: ProviderId("quicknode".to_string()),
+            first: RpcProviderName::from("quicknode-a".to_string()),
+        };
+        assert_eq!(diags, vec![diagnostic("quicknode-b", expected)]);
     }
 
     #[test]
-    fn base_url_matches__should_reject_path_boundary_violations() {
-        // The case the reviewer flagged: a path that *starts with* the base
-        // but isn't segment-aligned must be rejected.
-        assert!(!base_url_matches(
-            "https://api.example.com/v2-evil/x",
-            "https://api.example.com/v2"
-        ));
-        assert!(!base_url_matches(
-            "https://api.example.com/v2foo",
-            "https://api.example.com/v2"
-        ));
-        assert!(!base_url_matches(
-            "https://eth.alchemy.com/v2foo.attacker.example/",
-            "https://eth.alchemy.com/v2"
-        ));
-    }
+    fn compare__should_emit_unparseable_whitelist_entry_for_a_configured_chain() {
+        // Given
+        let local = must_ethereum(&[(
+            "alchemy",
+            provider(
+                "https://eth-mainnet.g.alchemy.com/v2/{api_key}",
+                path_auth("{api_key}"),
+            ),
+        )]);
+        let broken = whitelisted("not a url", ChainRouting::Embedded, AuthScheme::None);
+        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy()), ("broken", broken)]);
 
-    const WILDCARD: &str = "https://{}.abstract-testnet.quiknode.pro";
+        // When
+        let diags = compare(&local, &whitelist);
 
-    #[test]
-    fn base_url_matches__should_accept_any_single_host_label_for_a_wildcard_base() {
-        assert!(base_url_matches(
-            "https://misty-fabled-sunset.abstract-testnet.quiknode.pro/abc123",
-            WILDCARD
-        ));
-        assert!(base_url_matches(
-            "https://acme7.abstract-testnet.quiknode.pro/{api_key}",
-            WILDCARD
-        ));
-        assert!(base_url_matches(
-            "https://acme7.abstract-testnet.quiknode.pro",
-            WILDCARD
-        ));
+        // Then
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].provider, None);
+        assert_matches!(
+            &diags[0].kind,
+            DiagnosticKind::UnparseableWhitelistEntry { whitelist_id, base_url, .. }
+                if whitelist_id.0 == "broken" && base_url == "not a url"
+        );
     }
 
     #[test]
-    fn base_url_matches__should_reject_wildcard_spanning_a_label_boundary() {
-        // The wildcard must not swallow `/`, `.`, or `?` — each would let the pinned domain
-        // suffix land somewhere other than the host.
-        assert!(!base_url_matches(
-            "https://evil.example.com/.abstract-testnet.quiknode.pro/",
-            WILDCARD
+    fn compare__should_emit_unparseable_rpc_url() {
+        // Given
+        let local = must_ethereum(&[("broken", provider("not a url", AuthConfig::None))]);
+        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_matches!(&diags[0].kind, DiagnosticKind::UnparseableRpcUrl(_));
+    }
+
+    /// Every configured value that must stay out of logs carries this marker.
+    const SECRET_MARKER: &str = "zq7";
+
+    /// Triggers the provider warnings with an `rpc_url`, slug, path or token that carries
+    /// [`SECRET_MARKER`].
+    fn must_config_with_secrets_in_warnings() -> (
+        ForeignChainsConfig,
+        BTreeMap<dtos::ForeignChain, ChainEntry>,
+    ) {
+        let header = AuthConfig::Header {
+            name: "x-token".parse().expect("a test header name parses"),
+            scheme: None,
+            token: token("token-zq7"),
+        };
+        let local = must_ethereum(&[
+            (
+                "duplicate-a",
+                provider(
+                    "https://slug-zq7-a.quiknode.pro/{api_key}",
+                    path_auth("{api_key}"),
+                ),
+            ),
+            (
+                "duplicate-b",
+                provider(
+                    "https://slug-zq7-b.quiknode.pro/key-zq7",
+                    AuthConfig::Path {
+                        placeholder: "{api_key}".to_string(),
+                        token: token("token-zq7"),
+                    },
+                ),
+            ),
+            (
+                "wrong-path",
+                provider("https://eth-mainnet.g.alchemy.com/v3-zq7/key-zq7", header),
+            ),
+            (
+                "unlisted",
+                provider("https://own-node-zq7.internal/key-zq7", AuthConfig::None),
+            ),
+            (
+                "query",
+                provider(
+                    "https://lb.drpc.org/ogrpc?network=zq7",
+                    AuthConfig::Query {
+                        name: "dkey".to_string(),
+                        token: token("token-zq7"),
+                    },
+                ),
+            ),
+            (
+                "unparseable",
+                provider("https://zq7 key/", AuthConfig::None),
+            ),
+        ]);
+        let drpc = whitelisted(
+            "https://lb.drpc.org/ogrpc",
+            ChainRouting::QueryParam {
+                name: "network".to_string(),
+                value: "ethereum".to_string(),
+            },
+            AuthScheme::Query {
+                name: "apikey".to_string(),
+            },
+        );
+        let whitelist = must_ethereum_whitelist(&[
+            ("alchemy", alchemy()),
+            ("drpc", drpc),
+            ("quicknode", quicknode()),
+        ]);
+        (local, whitelist)
+    }
+
+    #[test]
+    fn compare__should_keep_configured_urls_and_tokens_out_of_diagnostics() {
+        // Given
+        let (local, whitelist) = must_config_with_secrets_in_warnings();
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        let printed = format!("{diags:?}");
+        assert!(diags.len() >= 6, "{printed}");
+        assert!(!printed.contains(SECRET_MARKER), "{printed}");
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn run__should_keep_configured_urls_and_tokens_out_of_logs() {
+        // Given
+        let (local, whitelist) = must_config_with_secrets_in_warnings();
+        let (whitelist_tx, whitelist_rx) = watch::channel(whitelist);
+        drop(whitelist_tx);
+
+        // When
+        run(whitelist_rx, local).await;
+
+        // Then
+        assert!(logs_contain("provider differs from its whitelist entry"));
+        assert!(logs_contain(
+            "two providers link to the same whitelist entry"
         ));
-        assert!(!base_url_matches(
-            "https://a.b.abstract-testnet.quiknode.pro/",
-            WILDCARD
-        ));
-        assert!(!base_url_matches(
-            "https://evil.com?x=.abstract-testnet.quiknode.pro",
-            WILDCARD
-        ));
-        assert!(!base_url_matches(
-            "https://.abstract-testnet.quiknode.pro/",
-            WILDCARD
-        ));
-        assert!(!base_url_matches(
-            "https://acme7.abstract-testnet.quiknode.pro.evil.io/",
-            WILDCARD
-        ));
-        assert!(!base_url_matches(
-            "https://acme7.abstract-testnet.quiknode.proevil/",
-            WILDCARD
-        ));
-        // Userinfo trick: the whole whitelisted host as `user@` of an attacker host.
-        assert!(!base_url_matches(
-            "https://acme7.abstract-testnet.quiknode.pro@evil.com/",
-            WILDCARD
-        ));
+        assert!(logs_contain("provider is not in the whitelist"));
+        assert!(logs_contain("rpc_url does not parse"));
+        assert!(!logs_contain(SECRET_MARKER));
     }
 }
