@@ -39,7 +39,7 @@ export NEW_NODE_ADDRESS=new-node.example.com:8079
 export NEW_NODE_URL=http://new-node.example.com:80
 ```
 
-Four more variables are filled in as you go — each is set by a command in the step shown:
+Four more variables are filled in as you go — each is obtained in the step shown:
 
 - `BACKUP_ENCRYPTION_KEY` — the shared transport encryption key, 64 hex characters (Step 3)
 - `OLD_NODE_P2P_KEY` — the old node's P2P (TLS) public key (Step 4)
@@ -77,6 +77,7 @@ near contract call-function as-read-only \
 If it returns `0`, prepay one grant. The fee is a votable contract parameter (currently 20 milliNEAR = 0.02 NEAR per grant) and the attached deposit must equal fee × grants exactly — read the current fee and see the full details in [Prepay Your Node's Attestation Storage](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepay-your-nodes-attestation-storage) in the operator guide:
 
 ```bash
+# attached-deposit must equal current fee × grants exactly — check the fee before running
 near contract call-function as-transaction \
   $MPC_CONTRACT_ACCOUNT_ID \
   prepay_attestation_storage \
@@ -381,7 +382,7 @@ Output should look like this:
 You'll need:
 - **New node's P2P public key**: `$NEW_NODE_P2P_KEY` from the step above.
 - **New node's signer account public key**: `$NEW_NODE_SIGNER_PUBLIC_KEY` from the step above.
-- **New node's public URL**: `$NEW_NODE_URL` — where peers will reach the new node, not the migration endpoint in `$NEW_NODE_ADDRESS`.
+- **New node's public URL**: `$NEW_NODE_URL` — where peers will reach the new node (must include the `http://` prefix), not the migration endpoint in `$NEW_NODE_ADDRESS`.
 
 ### start_node_migration on contract
 
@@ -425,6 +426,7 @@ This will return migration information for all accounts, including your backup s
 
 ## Step 7: Transfer Keyshares to New Node
 
+As in [Step 4](#step-4-backup-keyshares-from-old-node), the port in `$NEW_NODE_ADDRESS` is the node's `migration_web_ui` port — read it from `http://<new-node-IP>:8080/debug/node_config` instead of assuming the `8079` default.
 
 ```bash
 backup-cli \
