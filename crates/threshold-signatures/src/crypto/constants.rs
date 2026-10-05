@@ -25,6 +25,16 @@ pub const RANDOMIZER_LEN: usize = 32;
 /// Confidential key derivation domain separator.
 pub const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
+// Pedersen Commitment Constants
+/// Domain separation tag for deriving the Pedersen generator `H` on secp256k1
+/// via RFC 9380 hash-to-curve (suite `secp256k1_XMD:SHA-256_SSWU_RO_`).
+/// Consensus-critical: changing it changes the generator.
+pub const NEAR_PEDERSEN_GENERATOR_DST: &[u8] =
+    b"NEAR secp256k1_XMD:SHA-256_SSWU_RO_ Pedersen generator";
+/// The fixed message hashed to the curve to derive the Pedersen generator `H`.
+pub const NEAR_PEDERSEN_GENERATOR_MSG: &[u8] =
+    b"Near threshold signatures Pedersen commitment generator, 2026-09-28, NEAR/USD=5.10";
+
 // DLOG Proof Constants
 /// DLOG proof statement label.
 pub const NEAR_DLOG_STATEMENT_LABEL: &[u8] = b"dlog proof statement";
