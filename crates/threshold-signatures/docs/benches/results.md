@@ -178,3 +178,25 @@ Reproduce with:
 NUM_PARTICIPANTS=7 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
 NUM_PARTICIPANTS=15 THRESHOLD=8 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
 ```
+
+## Robust ECDSA v2 signing
+
+The v2 robust scheme produces a signature in a single four-round protocol without
+presignatures (see [signing](../ecdsa/robust_ecdsa/signing.md)) and runs with exactly
+`2 * max_malicious + 1` participants. The numbers below use the advanced technique,
+replaying the coordinator's view, which receives the most data and performs the final
+aggregation. They were measured in September 2026 on an **Intel Core Ultra 9 288V**
+with **32 GB RAM** (15 samples, no network latency), so they are comparable with each
+other but not with the tables above.
+
+| Scheme | Max malicious | Parties | Sign |
+|:------:|:-------------:|:-------:|-----:|
+| **Robust ECDSA v2** | 6 | 13 | 107.10 ms |
+| **Robust ECDSA v2** | 15 | 31 | 498.92 ms |
+
+Reproduce with:
+
+```sh
+MAX_MALICIOUS=6 cargo bench -p threshold-signatures --features test-utils --bench advanced_ecdsa_v2_sign
+MAX_MALICIOUS=15 cargo bench -p threshold-signatures --features test-utils --bench advanced_ecdsa_v2_sign
+```
