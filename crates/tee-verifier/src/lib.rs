@@ -69,11 +69,18 @@ impl TeeVerifier {
         }
     }
 
-    /// [`Self::verify_quote`] plus the collateral's validity window.
+    /// [`Self::verify_quote`] plus the collateral's validity window: returns
+    /// [`VerificationResultWithCollateralDates::Verified`] with the report and
+    /// its [`CollateralDates`], and rejects as a value, like
+    /// [`Self::verify_quote`].
     ///
     /// Applies no policy ([`QuotePolicy::claims_only`]), so an accepted quote
     /// gets the same report as from [`Self::verify_quote`]. It can also reject
-    /// collateral whose dates do not parse, and costs slightly more gas.
+    /// collateral that [`Self::verify_quote`] accepts, since it parses more of
+    /// it, including the PCK CRL issuer chain, which nothing authenticates. It
+    /// costs slightly more gas.
+    ///
+    /// [`CollateralDates`]: tee_verifier_interface::CollateralDates
     #[result_serializer(borsh)]
     pub fn verify_quote_with_collateral_dates(
         &self,

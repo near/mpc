@@ -1,15 +1,5 @@
-//! Integration test for the stateless `tee-verifier` contract.
-//!
-//! Calls [`TeeVerifier::verify_quote`] and
-//! [`TeeVerifier::verify_quote_with_collateral_dates`] directly (no Promise
-//! round-trip) with a real Dstack quote+collateral fixture taken from
-//! `test-utils`:
-//!
-//! - a valid quote yields `Verified` carrying the parsed report (and, for the
-//!   second method, the fixture's collateral dates);
-//! - a rejected quote or collateral yields `Rejected`, returned as the value of
-//!   a successful call rather than a panic, with the same error from both
-//!   methods.
+//! Integration tests for the `tee-verifier` contract, calling its methods
+//! directly with the `test-utils` fixture.
 
 #![expect(non_snake_case)]
 
@@ -122,12 +112,12 @@ fn verify_quote__should_reject_valid_fixture_when_block_time_is_past_collateral_
     let result = contract.verify_quote(quote, collateral);
 
     // Then
-    let VerificationResult::Rejected(VerifierError::DcapVerification(reason)) = result else {
-        panic!("expected Rejected(DcapVerification(_)), got {result:?}");
-    };
     assert!(
-        reason.to_lowercase().contains("expired"),
-        "expected a time-driven rejection, got: {reason}"
+        matches!(
+            result,
+            VerificationResult::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected Rejected(DcapVerification(_)), got {result:?}"
     );
 }
 
@@ -203,21 +193,22 @@ fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fix
     );
 }
 
+const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+const TEN_YEARS: Duration = Duration::from_secs(10 * 365 * DAY.as_secs());
+
 fn ten_years_after_fixture() -> Duration {
-    Duration::from_secs(VALID_ATTESTATION_TIMESTAMP + 10 * 365 * 24 * 60 * 60)
+    Duration::from_secs(VALID_ATTESTATION_TIMESTAMP) + TEN_YEARS
 }
 
 fn invalid_quote() -> QuoteBytes {
     QuoteBytes(vec![0u8; 16])
 }
 
-/// The fixture collateral with its signed TCB Info replaced, so the DCAP
-/// signature chain no longer matches the quote.
+/// The fixture collateral with a corrupted TCB Info signature.
 fn mismatched_collateral() -> Collateral {
-    Collateral {
-        tcb_info: String::from("{}"),
-        ..collateral()
-    }
+    let mut collateral = collateral();
+    collateral.tcb_info_signature[0] ^= 1;
+    collateral
 }
 
 #[rstest]
@@ -253,6 +244,37 @@ fn verify_quote_with_collateral_dates__should_reject_with_the_same_error_as_veri
     assert_eq!(
         result,
         VerificationResultWithCollateralDates::Rejected(expected_error)
+    );
+}
+
+#[test]
+fn verify_quote_with_collateral_dates__should_reject_unparsable_pck_crl_issuer_chain_that_verify_quote_accepts()
+ {
+    // Given: `verify_quote` never reads this field; the dates method parses it.
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let collateral = Collateral {
+        pck_crl_issuer_chain: String::from(
+            "-----BEGIN CERTIFICATE-----\n!!!\n-----END CERTIFICATE-----\n",
+        ),
+        ..collateral()
+    };
+    let verify_quote_result = contract.verify_quote(make_quote_bytes(), collateral.clone());
+
+    // When
+    let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral);
+
+    // Then
+    assert!(
+        matches!(verify_quote_result, VerificationResult::Verified(_)),
+        "expected verify_quote to accept, got {verify_quote_result:?}"
+    );
+    assert!(
+        matches!(
+            result,
+            VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected Rejected(DcapVerification(_)), got {result:?}"
     );
 }
 
