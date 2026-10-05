@@ -1046,6 +1046,50 @@ mod tests {
     }
 
     #[test]
+    fn register_foreign_chains_config__should_reject_previous_node_after_migration_concludes() {
+        // Given
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let operator = participant_account_ids(&contract)[0].clone();
+        let previous_tls_key = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .info(&operator)
+            .unwrap()
+            .tls_public_key
+            .clone();
+        let destination = must_attest_new_node(&mut contract, &operator);
+        let mut env = Environment::new(None, Some(operator.clone()), None);
+        env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+        contract
+            .start_node_migration(destination_of(&destination))
+            .expect("participant should be able to start a node migration");
+        let ProtocolContractState::Running(state) = &contract.protocol_state else {
+            panic!("expected Running");
+        };
+        let keyset = state.keyset.clone();
+        let mut env = Environment::new(None, Some(operator.clone()), None);
+        env.set_pk(near_sdk::PublicKey::from(
+            destination.account_public_key.clone(),
+        ));
+        contract
+            .conclude_node_migration((&keyset).into_dto_type())
+            .expect("migration should conclude");
+
+        // When
+        let result = register_bitcoin_as(
+            &mut contract,
+            &operator,
+            near_sdk::PublicKey::from(previous_tls_key.clone()),
+        );
+
+        // Then
+        assert_eq!(result, not_participant(&operator));
+        assert!(!has_config(&contract, &previous_tls_key));
+    }
+
+    #[test]
     fn register_foreign_chains_config__should_reject_attested_node_of_participant_without_migration()
      {
         // Given
