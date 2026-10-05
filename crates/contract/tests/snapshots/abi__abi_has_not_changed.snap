@@ -2848,7 +2848,7 @@ expression: abi
               "$ref": "#/definitions/NonEmptyBTreeMap_ProviderId_ProviderConfig"
             },
             "quorum": {
-              "description": "Voted RPC response quorum. Stored for a deferred quorum policy and not yet consumed: nodes currently require every provider that reaches a verdict to agree on it.",
+              "description": "Voted RPC response quorum. Nodes judge their provider health against it. Verification does not consume it yet: nodes require every provider that reaches a verdict to agree on it.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0

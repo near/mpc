@@ -74,6 +74,8 @@ pub fn spawn_real_indexer(
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
         oneshot::channel();
+    let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
+        oneshot::channel();
     let (attestation_reader_sender, attestation_reader_receiver) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
@@ -218,16 +220,20 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-                watch::channel(std::collections::BTreeMap::new());
-            tokio::spawn(monitor_allowed_foreign_chain_providers(
-                foreign_chain_whitelist_sender,
-                indexer_state.clone(),
-            ));
+            let foreign_chain_whitelist_receiver =
+                monitor_allowed_foreign_chain_providers(indexer_state.clone()).await;
             tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver,
+                foreign_chain_whitelist_receiver.clone(),
                 foreign_chains.clone(),
             ));
+            if foreign_chain_whitelist_sender_oneshot
+                .send(foreign_chain_whitelist_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain whitelist receiver back to main driver."
+                )
+            };
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
@@ -326,6 +332,10 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain supporters receiver must be returned by indexer");
 
+    let foreign_chain_whitelist_receiver = foreign_chain_whitelist_receiver_oneshot
+        .blocking_recv()
+        .expect("foreign chain whitelist receiver must be returned by indexer");
+
     let attestation_reader = attestation_reader_receiver
         .blocking_recv()
         .expect("attestation reader must be returned by indexer");
@@ -338,6 +348,7 @@ pub fn spawn_real_indexer(
         allowed_launcher_compose_receiver,
         my_migration_info_receiver,
         foreign_chain_supporters_receiver,
+        foreign_chain_whitelist_receiver,
         attestation_reader,
     }
 }

@@ -95,10 +95,13 @@ pub async fn monitor_allowed_launcher_compose_hashes(
     monitor_allowed_hashes(sender, indexer_state, &fetcher).await
 }
 
+/// The contract's per chain RPC provider whitelist, keyed by chain.
+pub type ForeignChainWhitelist = BTreeMap<ForeignChain, ChainEntry>;
+
 /// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
 async fn fetch_allowed_foreign_chain_providers_with_retry(
     indexer_state: &IndexerState,
-) -> BTreeMap<ForeignChain, ChainEntry> {
+) -> ForeignChainWhitelist {
     let mut backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
         .with_max_delay(MAX_BACKOFF_DURATION)
@@ -122,25 +125,28 @@ async fn fetch_allowed_foreign_chain_providers_with_retry(
     }
 }
 
-/// Monitor the allowed foreign-chain providers whitelist stored in the contract and update the
-/// watch channel when changes are detected. Consumed by
-/// [`crate::foreign_chain_whitelist_verifier::run`].
+/// Returns once the first foreign chain provider whitelist is read from the contract, then keeps it
+/// updated in the background.
 pub async fn monitor_allowed_foreign_chain_providers(
-    sender: watch::Sender<BTreeMap<ForeignChain, ChainEntry>>,
     indexer_state: Arc<IndexerState>,
-) {
+) -> watch::Receiver<ForeignChainWhitelist> {
     indexer_state.client.wait_for_full_sync().await;
 
-    loop {
-        let whitelist = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
-        sender.send_if_modified(|previous| {
-            if *previous != whitelist {
-                *previous = whitelist;
-                true
-            } else {
-                false
-            }
-        });
-        tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
-    }
+    let initial = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
+    let (sender, receiver) = watch::channel(initial);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
+            let whitelist = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
+            sender.send_if_modified(|previous| {
+                if *previous != whitelist {
+                    *previous = whitelist;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    });
+    receiver
 }

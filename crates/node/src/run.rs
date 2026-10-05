@@ -203,12 +203,6 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
 
-    // Detached: the report is diagnostic, nothing downstream waits on it.
-    root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
-        node_config.foreign_chains.clone(),
-        tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
-    ));
-
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
     // Dedicated cancellation token for the indexer thread. Cancelled after
@@ -231,6 +225,13 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         RecentTransactionsLogger::new(recent_tx_sender),
         indexer_shutdown_token.clone(),
     );
+
+    // Detached: the report is diagnostic, nothing downstream waits on it.
+    root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
+        node_config.foreign_chains.clone(),
+        indexer_api.foreign_chain_whitelist_receiver.clone(),
+        tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
+    ));
 
     let cancellation_token = CancellationToken::new();
 

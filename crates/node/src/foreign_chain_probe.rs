@@ -1,7 +1,7 @@
 //! Periodic probe of every configured foreign-chain RPC provider, via
 //! [`foreign_chain_health_check::probe`].
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
 use foreign_chain_health_check::probe::{
@@ -10,14 +10,23 @@ use foreign_chain_health_check::probe::{
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::types as dtos;
+use tokio::sync::watch;
 use tracing::{info, warn};
 
+use crate::indexer::tee::ForeignChainWhitelist;
 use crate::metrics;
 use crate::tick::Tick;
 
 /// Asks every configured RPC provider which network it serves, once per tick of `ticker`, and
 /// reports the verdicts as logs and metrics. Diagnostic only: nothing gates on the result.
-pub async fn run_periodic_probe(foreign_chains: ForeignChainsConfig, ticker: impl Tick) {
+///
+/// Each probed chain is also judged against the latest `whitelist`. It is healthy when at least
+/// its quorum of whitelisted providers is configured and all of them are healthy.
+pub async fn run_periodic_probe(
+    foreign_chains: ForeignChainsConfig,
+    whitelist: watch::Receiver<ForeignChainWhitelist>,
+    ticker: impl Tick,
+) {
     if foreign_chains.is_empty() {
         warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
         return;
@@ -25,6 +34,7 @@ pub async fn run_periodic_probe(foreign_chains: ForeignChainsConfig, ticker: imp
 
     probe_periodically(
         || probe_all_providers(&foreign_chains, &InspectorFactory),
+        whitelist,
         ticker,
     )
     .await;
@@ -32,6 +42,7 @@ pub async fn run_periodic_probe(foreign_chains: ForeignChainsConfig, ticker: imp
 
 async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
     probe: impl Fn() -> Probe,
+    whitelist: watch::Receiver<ForeignChainWhitelist>,
     mut ticker: impl Tick,
 ) {
     loop {
@@ -41,6 +52,72 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
         let report = probe().await;
         publish_metrics(&report);
         log_report(&report);
+        log_chain_health(&judge(&report, &whitelist.borrow()));
+    }
+}
+
+/// A probed chain judged against the provider whitelist. Counts cover whitelisted providers only.
+#[derive(Debug, PartialEq, Eq)]
+enum ChainHealth {
+    Healthy,
+    BelowQuorum {
+        whitelisted: usize,
+        quorum: u64,
+    },
+    UnhealthyProviders {
+        unhealthy: usize,
+        whitelisted: usize,
+    },
+    NotWhitelisted,
+}
+
+fn judge(
+    report: &ProbeReport,
+    whitelist: &ForeignChainWhitelist,
+) -> BTreeMap<dtos::ForeignChain, ChainHealth> {
+    let mut probed_rows: BTreeMap<dtos::ForeignChain, Vec<&ProviderHealth>> = BTreeMap::new();
+    for row in report.rows().iter().filter(|row| row.status.was_probed()) {
+        probed_rows.entry(row.chain).or_default().push(row);
+    }
+
+    probed_rows
+        .into_iter()
+        .map(|(chain, rows)| {
+            let health = whitelist
+                .get(&chain)
+                .map_or(ChainHealth::NotWhitelisted, |entry| {
+                    judge_whitelisted_chain(&rows, entry)
+                });
+            (chain, health)
+        })
+        .collect()
+}
+
+fn judge_whitelisted_chain(rows: &[&ProviderHealth], entry: &dtos::ChainEntry) -> ChainHealth {
+    let statuses: Vec<&ProviderStatus> = rows
+        .iter()
+        .filter(|row| entry.providers.contains_key(&row.provider))
+        .map(|row| &row.status)
+        .collect();
+    let whitelisted = statuses.len();
+
+    if !usize::try_from(entry.quorum).is_ok_and(|quorum| whitelisted >= quorum) {
+        return ChainHealth::BelowQuorum {
+            whitelisted,
+            quorum: entry.quorum,
+        };
+    }
+
+    match statuses
+        .iter()
+        .filter(|status| !status.is_healthy())
+        .count()
+    {
+        0 => ChainHealth::Healthy,
+        unhealthy => ChainHealth::UnhealthyProviders {
+            unhealthy,
+            whitelisted,
+        },
     }
 }
 
@@ -92,6 +169,36 @@ fn log_report(report: &ProbeReport) {
     info!("foreign-chain RPC provider probe complete: {healthy}/{probed} providers healthy");
 }
 
+fn log_chain_health(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>) {
+    for (chain, health) in health_per_chain {
+        let chain = chain.label();
+        match health {
+            ChainHealth::Healthy => info!(%chain, "foreign chain is healthy"),
+            ChainHealth::BelowQuorum {
+                whitelisted,
+                quorum,
+            } => warn!(
+                %chain,
+                whitelisted,
+                quorum,
+                "foreign chain is below quorum: configure more whitelisted RPC providers",
+            ),
+            ChainHealth::UnhealthyProviders {
+                unhealthy,
+                whitelisted,
+            } => warn!(
+                %chain,
+                unhealthy,
+                whitelisted,
+                "foreign chain is unhealthy: a whitelisted RPC provider failed the probe",
+            ),
+            ChainHealth::NotWhitelisted => {
+                info!(%chain, "foreign chain is not whitelisted: health not judged")
+            }
+        }
+    }
+}
+
 fn publish_metrics(report: &ProbeReport) {
     let probed_chains: BTreeSet<dtos::ForeignChain> = report
         .rows()
@@ -123,6 +230,7 @@ mod tests {
     use prometheus::core::Collector as _;
     use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
+    use tracing_test::traced_test;
 
     fn labelled_chains(gauge: &prometheus::IntGaugeVec) -> BTreeSet<String> {
         gauge
@@ -151,6 +259,33 @@ mod tests {
             provider: dtos::ProviderId(provider.to_string()),
             status,
         }
+    }
+
+    fn whitelist_of(
+        chain: dtos::ForeignChain,
+        providers: &[&str],
+        quorum: u64,
+    ) -> ForeignChainWhitelist {
+        let providers: BTreeMap<dtos::ProviderId, dtos::ProviderConfig> = providers
+            .iter()
+            .map(|provider| {
+                let config = dtos::ProviderConfig {
+                    base_url: format!("https://{provider}.example.com"),
+                    auth_scheme: dtos::AuthScheme::None,
+                    chain_routing: dtos::ChainRouting::Embedded,
+                };
+                (dtos::ProviderId(provider.to_string()), config)
+            })
+            .collect();
+        let entry = dtos::ChainEntry {
+            providers: providers.try_into().expect("a whitelisted provider"),
+            quorum,
+        };
+        BTreeMap::from([(chain, entry)])
+    }
+
+    fn no_whitelist() -> watch::Receiver<ForeignChainWhitelist> {
+        watch::channel(BTreeMap::new()).1
     }
 
     #[test]
@@ -272,7 +407,11 @@ mod tests {
         };
 
         // When
-        run_future_once(probe_periodically(probe, MockTicker::new(3)));
+        run_future_once(probe_periodically(
+            probe,
+            no_whitelist(),
+            MockTicker::new(3),
+        ));
 
         // Then
         assert_eq!(probe_count.get(), 3);
@@ -298,9 +437,11 @@ mod tests {
         let ticker = MockTicker::new(1);
 
         // When
-        let MaybeReady::Future(parked_probe_loop) =
-            run_future_once(probe_periodically(probe_dispatch, ticker.clone()))
-        else {
+        let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
+            probe_dispatch,
+            no_whitelist(),
+            ticker.clone(),
+        )) else {
             panic!("the loop should park once its ticker runs out");
         };
         let metrics_after_the_first_round = gauges("starknet");
@@ -331,7 +472,11 @@ mod tests {
         let ticker = MockTicker::new(1);
 
         // When
-        let outcome = run_future_once(run_periodic_probe(foreign_chains, ticker.clone()));
+        let outcome = run_future_once(run_periodic_probe(
+            foreign_chains,
+            no_whitelist(),
+            ticker.clone(),
+        ));
 
         // Then
         assert_eq!(ticker.unspent(), 1, "no round should have run");
@@ -339,5 +484,197 @@ mod tests {
             matches!(outcome, MaybeReady::Ready(())),
             "the probe should return rather than park on its ticker"
         );
+    }
+
+    #[test]
+    fn judge__should_report_a_chain_healthy_when_quorum_whitelisted_providers_pass() {
+        // Given
+        let report = ProbeReport::from(vec![
+            row(
+                dtos::ForeignChain::Polygon,
+                "alchemy",
+                ProviderStatus::Healthy,
+            ),
+            row(
+                dtos::ForeignChain::Polygon,
+                "quicknode",
+                ProviderStatus::Healthy,
+            ),
+        ]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy", "quicknode"], 2);
+
+        // When
+        let health = judge(&report, &whitelist);
+
+        // Then
+        assert_eq!(
+            health,
+            BTreeMap::from([(dtos::ForeignChain::Polygon, ChainHealth::Healthy)])
+        );
+    }
+
+    /// The whitelisted provider is unreachable too, so this also pins below quorum taking
+    /// precedence over a failing provider.
+    #[test]
+    fn judge__should_not_count_providers_missing_from_the_whitelist_towards_the_quorum() {
+        // Given
+        let report = ProbeReport::from(vec![
+            row(
+                dtos::ForeignChain::Polygon,
+                "alchemy",
+                ProviderStatus::Unreachable,
+            ),
+            row(
+                dtos::ForeignChain::Polygon,
+                "own_node",
+                ProviderStatus::Healthy,
+            ),
+        ]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy", "quicknode"], 2);
+
+        // When
+        let health = judge(&report, &whitelist);
+
+        // Then
+        assert_eq!(
+            health,
+            BTreeMap::from([(
+                dtos::ForeignChain::Polygon,
+                ChainHealth::BelowQuorum {
+                    whitelisted: 1,
+                    quorum: 2
+                }
+            )])
+        );
+    }
+
+    #[test]
+    fn judge__should_ignore_the_health_of_providers_missing_from_the_whitelist() {
+        // Given
+        let report = ProbeReport::from(vec![
+            row(
+                dtos::ForeignChain::Polygon,
+                "alchemy",
+                ProviderStatus::Healthy,
+            ),
+            row(
+                dtos::ForeignChain::Polygon,
+                "own_node",
+                ProviderStatus::Unreachable,
+            ),
+        ]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+
+        // When
+        let health = judge(&report, &whitelist);
+
+        // Then
+        assert_eq!(
+            health,
+            BTreeMap::from([(dtos::ForeignChain::Polygon, ChainHealth::Healthy)])
+        );
+    }
+
+    #[test]
+    fn judge__should_report_a_chain_unhealthy_when_any_whitelisted_provider_fails() {
+        // Given
+        let report = ProbeReport::from(vec![
+            row(
+                dtos::ForeignChain::Polygon,
+                "alchemy",
+                ProviderStatus::Healthy,
+            ),
+            row(
+                dtos::ForeignChain::Polygon,
+                "quicknode",
+                ProviderStatus::Unreachable,
+            ),
+        ]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy", "quicknode"], 1);
+
+        // When
+        let health = judge(&report, &whitelist);
+
+        // Then
+        assert_eq!(
+            health,
+            BTreeMap::from([(
+                dtos::ForeignChain::Polygon,
+                ChainHealth::UnhealthyProviders {
+                    unhealthy: 1,
+                    whitelisted: 2
+                }
+            )])
+        );
+    }
+
+    #[test]
+    fn judge__should_not_judge_a_chain_missing_from_the_whitelist() {
+        // Given
+        let report = ProbeReport::from(vec![row(
+            dtos::ForeignChain::Sui,
+            "alchemy",
+            ProviderStatus::Healthy,
+        )]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+
+        // When
+        let health = judge(&report, &whitelist);
+
+        // Then
+        assert_eq!(
+            health,
+            BTreeMap::from([(dtos::ForeignChain::Sui, ChainHealth::NotWhitelisted)])
+        );
+    }
+
+    #[test]
+    fn judge__should_leave_out_a_chain_no_probe_covers() {
+        // Given
+        let report = ProbeReport::from(vec![row(
+            dtos::ForeignChain::Ton,
+            "only",
+            ProviderStatus::ProbeNotImplemented,
+        )]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Ton, &["only"], 1);
+
+        // When
+        let health = judge(&report, &whitelist);
+
+        // Then
+        assert!(health.is_empty());
+    }
+
+    #[test]
+    #[traced_test]
+    fn probe_periodically__should_warn_for_a_chain_below_quorum() {
+        // Given
+        let probe = || {
+            std::future::ready(ProbeReport::from(vec![row(
+                dtos::ForeignChain::Arbitrum,
+                "alchemy",
+                ProviderStatus::Healthy,
+            )]))
+        };
+        let (_whitelist_sender, whitelist) = watch::channel(whitelist_of(
+            dtos::ForeignChain::Arbitrum,
+            &["alchemy", "quicknode"],
+            2,
+        ));
+
+        // When
+        run_future_once(probe_periodically(probe, whitelist, MockTicker::new(1)));
+
+        // Then
+        logs_assert(|lines: &[&str]| {
+            let warned = lines.iter().any(|line| {
+                line.contains("WARN") && line.contains("foreign chain is below quorum")
+            });
+            if warned {
+                Ok(())
+            } else {
+                Err("no WARN line reports the chain below quorum".to_string())
+            }
+        });
     }
 }
