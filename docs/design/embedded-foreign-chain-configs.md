@@ -64,8 +64,10 @@ pub struct ProviderCredentials {
 
 `crates/node-config/foreign_chains/{mainnet,testnet}.toml`, loaded with `include_str!` and parsed
 into `ForeignChainsConfig` using today's schema. `foreign_chains.rpc_preset` selects the preset
-(today `mainnet` or `testnet`); unset means no embedded config. Each preset is built for one NEAR
-network, and when `near_init.chain_id` is present it must match, otherwise the node refuses to start.
+(today `mainnet` or `testnet`); unset means no embedded config. A preset can serve several NEAR
+networks: mainnet and testnet nodes must use their own network's preset, while development networks
+(localnet, sandbox, custom) may use any. When `near_init.chain_id` is present and the preset doesn't
+serve it, the node refuses to start.
 
 Being part of the binary, the embedded config is covered by the image hash vote.
 
@@ -122,7 +124,7 @@ if same pair is defined in both places but differ, so that operators can remove 
 The current proposal allows node operators to configure RPC provider credential once and it will be picked up for all existing and new chains that use that provider.
 This is great for simplicity but restricts flexibility of setting different credentials per chain for the same provider. This is why we still allow fine-grained configuration per node that way they we keep the config simple while still allowing flexibility with more involved manual editing (as it is today).
 
-A preset is not tied one-to-one to a network: more presets per network can be added later, so nodes can run different provider mixes for a more heterogeneous setup.
+Presets and networks are many-to-many: more presets per network can be added later, so nodes can run different provider mixes for a more heterogeneous setup, and each preset declares which networks it may serve.
 
 ## Related
 

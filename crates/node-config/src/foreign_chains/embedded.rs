@@ -17,10 +17,12 @@ pub enum RpcPreset {
 }
 
 impl RpcPreset {
-    pub fn chain_id(self) -> ChainId {
-        match self {
-            RpcPreset::Mainnet => ChainId::Mainnet,
-            RpcPreset::Testnet => ChainId::Testnet,
+    /// Whether a node on `chain_id` may use this preset. Development networks accept any preset.
+    pub fn supports(self, chain_id: &ChainId) -> bool {
+        match (self, chain_id) {
+            (Self::Mainnet, ChainId::Mainnet) | (Self::Testnet, ChainId::Testnet) => true,
+            (Self::Mainnet, ChainId::Testnet) | (Self::Testnet, ChainId::Mainnet) => false,
+            (_, ChainId::Localnet | ChainId::Sandbox | ChainId::Custom(_)) => true,
         }
     }
 }
@@ -62,6 +64,27 @@ mod tests {
 
         // Then
         assert_eq!(config_name.as_str(), Some(rpc_preset.to_string().as_str()));
+    }
+
+    #[rstest]
+    #[case::mainnet_on_mainnet(RpcPreset::Mainnet, ChainId::Mainnet, true)]
+    #[case::testnet_on_testnet(RpcPreset::Testnet, ChainId::Testnet, true)]
+    #[case::mainnet_on_testnet(RpcPreset::Mainnet, ChainId::Testnet, false)]
+    #[case::testnet_on_mainnet(RpcPreset::Testnet, ChainId::Mainnet, false)]
+    #[case::mainnet_on_localnet(RpcPreset::Mainnet, ChainId::Localnet, true)]
+    #[case::testnet_on_localnet(RpcPreset::Testnet, ChainId::Localnet, true)]
+    #[case::mainnet_on_sandbox(RpcPreset::Mainnet, ChainId::Sandbox, true)]
+    #[case::testnet_on_custom(RpcPreset::Testnet, ChainId::Custom("my-chain".to_string()), true)]
+    fn rpc_preset_supports__should_accept_own_production_network_and_any_development_network(
+        #[case] rpc_preset: RpcPreset,
+        #[case] chain_id: ChainId,
+        #[case] expected: bool,
+    ) {
+        // When
+        let supported = rpc_preset.supports(&chain_id);
+
+        // Then
+        assert_eq!(supported, expected);
     }
 
     fn embedded(rpc_preset: RpcPreset) -> ForeignChainsConfig {

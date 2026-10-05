@@ -47,10 +47,9 @@ fn ensure_rpc_preset_matches(
     chain_id: Option<&ChainId>,
 ) -> anyhow::Result<()> {
     if let (Some(preset), Some(chain_id)) = (rpc_preset, chain_id) {
-        let preset_chain_id = preset.chain_id();
         anyhow::ensure!(
-            &preset_chain_id == chain_id,
-            "foreign_chains.rpc_preset `{preset}` is for `{preset_chain_id}` but near_init.chain_id is `{chain_id}`"
+            preset.supports(chain_id),
+            "foreign_chains.rpc_preset `{preset}` is not supported for near_init.chain_id: `{chain_id}`"
         );
     }
     Ok(())
