@@ -6289,6 +6289,7 @@ dependencies = [
  "near-indexer-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "rstest",
  "serde",
  "serde_with",
  "serde_yaml",

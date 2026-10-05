@@ -7,8 +7,10 @@ use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
 pub use auth::{AuthConfig, TokenConfig};
+pub use embedded::{RpcNetwork, embedded_foreign_chains};
 
 mod auth;
+mod embedded;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainsConfig {
