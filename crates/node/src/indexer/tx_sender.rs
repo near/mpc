@@ -420,6 +420,7 @@ async fn ensure_send_transaction(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{
         Attestation, GetAttestationResponse, SubmissionBaseline, VerifiedAttestation,
@@ -430,7 +431,6 @@ mod tests {
     use rstest::rstest;
 
     #[test]
-    #[expect(non_snake_case)]
     fn attestation_expiry_changed__should_confirm_when_expiry_increases() {
         // Given: an attestation was stored before submitting
         let pre_submit_expiry = Some(100);
@@ -443,7 +443,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn attestation_expiry_changed__should_reject_when_expiry_unchanged() {
         // Given: an attestation was stored before submitting
         let pre_submit_expiry = Some(200);
@@ -456,7 +455,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn attestation_expiry_changed__should_confirm_when_expiry_decreases() {
         // Given: an attestation was stored before submitting, and a contract upgrade has lowered
         // the expiration constant, so a landed submit now stamps an *earlier* expiry
@@ -471,7 +469,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn attestation_expiry_changed__should_confirm_when_no_prior_attestation() {
         // Given: no attestation was stored before submitting
         let pre_submit_expiry = None;
@@ -484,7 +481,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed_by_expiry__should_confirm_matching_mock() {
         // Given: the stored mock attestation equals the one we submitted
         let stored = VerifiedAttestation::Mock(MockAttestation::Valid);
@@ -498,7 +494,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed_by_expiry__should_reject_mismatching_mock() {
         // Given: the stored mock attestation differs from the one we submitted
         let stored = VerifiedAttestation::Mock(MockAttestation::Valid);
@@ -521,7 +516,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed_by_expiry__should_confirm_mock_with_changed_expiry() {
         // Given: a contract that stamps expiries on mocks re-stamped our
         // submitted `Mock::Valid` as an expiring `WithConstraints`, changing the expiry.
@@ -536,7 +530,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed_by_expiry__should_reject_mock_with_unchanged_expiry() {
         // Given: an expiry-carrying mock whose stored expiry is unchanged since before
         // our submit (our resubmit did not land).
@@ -565,7 +558,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_confirm_when_the_timestamp_moved() {
         // Given: an entry stored before our submit
         let baseline = baseline_accepted_at(Some(100));
@@ -582,7 +574,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_reject_when_the_timestamp_is_unchanged() {
         // Given: an entry stored before our submit
         let baseline = baseline_accepted_at(Some(200));
@@ -599,7 +590,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_confirm_when_nothing_was_stored_before() {
         // Given: no attestation was stored before submitting
         let baseline = baseline_accepted_at(None);
@@ -616,7 +606,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_reject_while_the_entry_is_still_unstamped() {
         // Given: an entry the migration carried over, which no submission has replaced
         let baseline = baseline_accepted_at(None);
@@ -639,7 +628,6 @@ mod tests {
     #[rstest]
     #[case::expiry_changed(100, true)]
     #[case::expiry_unchanged(200, false)]
-    #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_fall_back_to_expiry_against_a_legacy_contract(
         #[case] expiry_before_submit: u64,
         #[case] expected: bool,
