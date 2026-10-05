@@ -29,9 +29,10 @@ done
 # The CI checks also take pre-built packages from the project's own cache, so their config adds it
 CONF_DIR="$TMP_DIR/conf"
 mkdir "$CONF_DIR"
-cat "$SCRIPT_DIR/nix.conf" > "$CONF_DIR/nix.conf"
-[[ "${PROJECT_CACHE:-false}" != true ]] ||
+cp "$SCRIPT_DIR/nix.conf" "$CONF_DIR/nix.conf"
+if [[ "${PROJECT_CACHE:-false}" == true ]]; then
   cat "$SCRIPT_DIR/project-cache.conf" >> "$CONF_DIR/nix.conf"
+fi
 
 curl -fsSL --retry 3 -o "$TMP_DIR/$RELEASE.tar.xz" \
   "https://releases.nixos.org/nix/nix-$NIX_VERSION/$RELEASE.tar.xz"
