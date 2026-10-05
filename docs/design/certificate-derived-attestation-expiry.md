@@ -51,7 +51,7 @@ to keep in sync, it does not help the fleet convergence described in item 4, and
 
 ## The expiry value
 
-`dcap-qvl` (0.6.3, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
+`dcap-qvl` (0.6.5, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
 eight dates, matching Intel's own `qve_get_collateral_dates()`. The claims are built by
 `QuoteVerificationResult::claims()`, reached through `verify_with_policy`. The rest of this document
 calls that `claims()`.
@@ -226,13 +226,10 @@ roughly 220 as things stand, or roughly 270 if `resolve_verification`'s 60 is tr
 `claims()` also reads the collateral dates. On `dcap-qvl` 0.6.3 it parsed the collateral a second
 time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against `verify_quote`'s
 173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
-([#4596](https://github.com/near/mpc/pull/4596)) removes the second parse and two duplicated
-signature checks, bringing them to 124.3 and 122.1. Both fit the current 200 TGas budget with room
-to spare, so `verifier_tera_gas` stays as it is.
-
-*Fallback if it does not fit: read `nextUpdate` from the two CRLs and the two JSON documents only.
-That drops the four certificate chains from the minimum, which is safe given their 7–30 year
-lifetimes, but it should be a deliberate choice rather than an accident.*
+([#4596](https://github.com/near/mpc/pull/4596)) keeps the parsed JSON documents, leaving only the
+CRLs and certificates parsed again, and drops two duplicated signature checks, bringing them to
+124.3 and 122.1. Both fit the current 200 TGas budget with room to spare, so `verifier_tera_gas`
+stays as it is.
 
 ## Rollout
 
