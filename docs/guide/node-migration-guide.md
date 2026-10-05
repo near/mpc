@@ -14,6 +14,8 @@ Node migration allows you to move your MPC node from one host to another without
 
 Set these variables on the machine where you run `backup-cli` and NEAR CLI, at the beginning of your migration; the code examples below use them.
 
+`backup-cli` also reads any of its flags from a same-named environment variable (`--backup-encryption-key-hex` from `BACKUP_ENCRYPTION_KEY_HEX`, and so on — `backup-cli --help` lists them). This guide relies on that for the encryption key, which should never appear on a command line.
+
 Known up front:
 
 ```bash
@@ -35,14 +37,19 @@ export OLD_NODE_ADDRESS=node.example.com:8079
 # The new node's migration endpoint, as bare host:port — no http:// (Step 7)
 export NEW_NODE_ADDRESS=new-node.example.com:8079
 
+# The nodes' hosts (or IPs), for their public-data/debug endpoints on port 8080 (Steps 4–7)
+export OLD_NODE_IP=node.example.com
+export NEW_NODE_IP=new-node.example.com
+
 # The new node's public URL to register on the contract — http:// prefix required (Step 6)
 export NEW_NODE_URL=http://new-node.example.com:80
 ```
 
-Four more variables are filled in as you go — each is obtained in the step shown:
+The remaining variables are filled in as you go — each is obtained in the step shown:
 
-- `BACKUP_ENCRYPTION_KEY` — the shared transport encryption key, 64 hex characters (Step 3)
+- `BACKUP_ENCRYPTION_KEY_HEX` — the shared transport encryption key, 64 hex characters (Step 3)
 - `OLD_NODE_P2P_KEY` — the old node's P2P (TLS) public key (Step 4)
+- `OLD_NODE_SIGNER_PUBLIC_KEY` — the old node's NEAR signer public key, captured while the old node is still up (Step 4) and revoked in Step 9
 - `NEW_NODE_P2P_KEY` — the new node's P2P (TLS) public key (Step 5)
 - `NEW_NODE_SIGNER_PUBLIC_KEY` — the new node's NEAR signer public key (Step 5)
 
@@ -203,15 +210,19 @@ Where you set it on a node depends on the deployment (see [Step 5](#step-5-prepa
 
 ### Retrieve a key from an existing node.
 
-**Note:** If your node has been running without an encryption key configured, the node automatically generates one and stores it in a file called `backup_encryption_key.hex` in your `$MPC_HOME_DIR` directory. On a **non-TEE** node you can retrieve it with:
+**Note:** If your node has been running without an encryption key configured, the node automatically generates one and stores it in a file called `backup_encryption_key.hex` in the node's home directory — `MPC_HOME_DIR` in the node's `.env`, commonly `/data`. On a **non-TEE** node you can read it on the node host:
 
 ```bash
-export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
+cat $MPC_HOME_DIR/backup_encryption_key.hex
 ```
 
-Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
+Copy the value to the backup-cli machine and set it there as `BACKUP_ENCRYPTION_KEY_HEX`. `backup-cli` reads the key from that variable — never pass it as the `--backup-encryption-key-hex` argument, where `ps` would expose it:
 
-**TEE (TDX/dstack) nodes:** `$MPC_HOME_DIR` (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
+```bash
+export BACKUP_ENCRYPTION_KEY_HEX=<the 64-hex-character value>
+```
+
+**TEE (TDX/dstack) nodes:** the node's home directory (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
 
 ```toml
 [mpc_node_config.secrets]
@@ -223,7 +234,7 @@ This is the key you pass to the backup-cli — if the node is already deployed, 
 
 
 **Note on key differences:**
-- `BACKUP_ENCRYPTION_KEY` (this key) is used to encrypt keyshares during transport between nodes and the backup-cli
+- `BACKUP_ENCRYPTION_KEY_HEX` (this key) is used to encrypt keyshares during transport between nodes and the backup-cli
 - `local_storage_aes_key` (from Step 1) is used to encrypt keyshares stored on disk in the backup home directory
 - These are two different keys serving different purposes
 
@@ -242,8 +253,14 @@ You'll need:
 - **MPC node P2P public key** (`$OLD_NODE_P2P_KEY`): The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash
-  export OLD_NODE_P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+  export OLD_NODE_P2P_KEY=$(curl -s http://$OLD_NODE_IP:8080/public_data | jq -r ".near_p2p_public_key")
   ```
+
+While the old node is still reachable, also capture its signer public key — you will revoke it from your account in [Step 9](#step-9-decommission-old-node), after the node is gone:
+
+```bash
+export OLD_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://$OLD_NODE_IP:8080/public_data | jq -r ".near_signer_public_key")
+```
 
 ### Get Contract State
 
@@ -265,7 +282,7 @@ This saves the contract state to `contract_state.json`, which the backup-cli use
 The migration endpoint listens on the node's `migration_web_ui` port — the port in `$OLD_NODE_ADDRESS`. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
 
 ```bash
-curl -s http://<IP>:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
+curl -s http://$OLD_NODE_IP:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
 ```
 
 ```bash
@@ -273,9 +290,10 @@ backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   get-keyshares \
   --mpc-node-address $OLD_NODE_ADDRESS \
-  --mpc-node-p2p-key $OLD_NODE_P2P_KEY \
-  --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
+  --mpc-node-p2p-key $OLD_NODE_P2P_KEY
 ```
+
+The encryption key comes from `$BACKUP_ENCRYPTION_KEY_HEX` ([Step 3](#step-3-generate-and-set-encryption-key)) rather than a `--backup-encryption-key-hex` argument, which `ps` would expose.
 
 Each request to the node is bounded by `--request-timeout-seconds` (default 30). If the transfer fails with a timeout on a slow link, raise it.
 
@@ -288,8 +306,7 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 `get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a NEAR JSON-RPC endpoint and takes a backup whenever the contract's keyset is not the one already stored:
 
 ```bash
-export BACKUP_RPC_URL=https://rpc.mainnet.near.org   # a NEAR RPC provider's endpoint, not your MPC node; an api key goes in the query string
-export BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
+export BACKUP_RPC_URL=https://rpc.mainnet.fastnear.com   # a NEAR RPC provider's endpoint, not your MPC node; an api key goes in the query string
 
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
@@ -304,7 +321,7 @@ Notes:
 
 - No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
 - The endpoint is probed at startup: if the contract state cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. When starting at boot, before the network is up, rely on the supervisor's restart policy.
-- Pass the encryption key through the environment as above rather than on the command line, where `ps` would expose it.
+- The encryption key again comes from `BACKUP_ENCRYPTION_KEY_HEX` (Step 3), never the command line, where `ps` would expose it for the lifetime of the service.
 - Keyshares already backed up are never re-fetched or overwritten, so restarting the service is safe and older epochs' files are kept.
 - It re-reads the contract every `--poll-interval-seconds` (default 60) and acts only when the state actually changed. A successful backup logs at `info`, a failed one at `warn`, and a failed backup is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
 - `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`. When unset (the default), nothing is served. After a restart the backup time is unknown, so until the next backup `/status` reports `timestamp_seconds: null` and the timestamp gauge is absent — an alert on that gauge returns no data then, rather than firing.
@@ -318,7 +335,7 @@ See [Automatic backups](../archive/design/migration-service.md#automatic-backups
 Set up your new node on the new host with the following:
 
 1. **Install and configure the MPC node software** on the new host (the new node should use the same NEAR account as the old node)
-2. **Set the encryption key** on the backup-cli and the new node, using the same key you pass to `put-keyshares` in [Step 7](#step-7-transfer-keyshares-to-new-node) (it may differ from the old node's key, but re-using one key throughout is simplest). Where to set it on the new node:
+2. **Set the encryption key** on the backup-cli and the new node — the key `put-keyshares` reads from `BACKUP_ENCRYPTION_KEY_HEX` in [Step 7](#step-7-transfer-keyshares-to-new-node) (it may differ from the old node's key, but re-using one key throughout is simplest). Where to set it on the new node:
 
    - **TDX / CVM node:** set it in `user-config.toml` under `[mpc_node_config.secrets]` before deploying. On a running CVM, apply it with `update-user-config` + restart (see [CVM management](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#cvm-management)):
      ```toml
@@ -341,8 +358,8 @@ See more details on extracting key from the node and adding the keys to your acc
 **Note:** The keys can be retrieved using the node's public data endpoint:
 
 ```bash
-export NEW_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_signer_public_key")
-export NEW_NODE_P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+export NEW_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://$NEW_NODE_IP:8080/public_data | jq -r ".near_signer_public_key")
+export NEW_NODE_P2P_KEY=$(curl -s http://$NEW_NODE_IP:8080/public_data | jq -r ".near_p2p_public_key")
 ```
 
 ### Check that the new node's attestation is registered on the contract
@@ -426,15 +443,14 @@ This will return migration information for all accounts, including your backup s
 
 ## Step 7: Transfer Keyshares to New Node
 
-As in [Step 4](#step-4-backup-keyshares-from-old-node), the port in `$NEW_NODE_ADDRESS` is the node's `migration_web_ui` port — read it from `http://<new-node-IP>:8080/debug/node_config` instead of assuming the `8079` default.
+As in [Step 4](#step-4-backup-keyshares-from-old-node), the port in `$NEW_NODE_ADDRESS` is the node's `migration_web_ui` port — read it from `http://$NEW_NODE_IP:8080/debug/node_config` instead of assuming the `8079` default. The encryption key again comes from `$BACKUP_ENCRYPTION_KEY_HEX`; the new node must hold the matching key ([Step 5](#step-5-prepare-the-new-node)).
 
 ```bash
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   put-keyshares \
   --mpc-node-address $NEW_NODE_ADDRESS \
-  --mpc-node-p2p-key $NEW_NODE_P2P_KEY \
-  --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
+  --mpc-node-p2p-key $NEW_NODE_P2P_KEY
 ```
 
 Each request to the node is bounded by `--request-timeout-seconds` (default 30). If the transfer fails with a timeout on a slow link, raise it.
@@ -476,7 +492,7 @@ After verifying the migration was successful:
 
 1. **Stop the old node** on the old host.
 
-2. **Revoke the old node's signer key.** The function-call key you added in Step 5 of the previous migration persists on your account with `unlimited` allowance on the MPC contract until explicitly removed. Use `list-keys` to find the old signer's public key (distinct from the one you just added in Step 5), then `delete-keys`:
+2. **Revoke the old node's signer key.** The function-call key you added in Step 5 of the previous migration persists on your account with `unlimited` allowance on the MPC contract until explicitly removed. You captured it as `$OLD_NODE_SIGNER_PUBLIC_KEY` in [Step 4](#step-4-backup-keyshares-from-old-node); confirm with `list-keys` that it is still on the account (and distinct from the key you just added in Step 5), then revoke it with `delete-keys`:
 
    ```bash
    near account list-keys \
@@ -486,7 +502,7 @@ After verifying the migration was successful:
 
    near account delete-keys \
      $SIGNER_ACCOUNT_ID \
-     public-keys <OLD_NODE_SIGNER_PUBLIC_KEY> \
+     public-keys $OLD_NODE_SIGNER_PUBLIC_KEY \
      network-config $NEAR_NETWORK \
      sign-with-keychain \
      send
@@ -507,7 +523,7 @@ After verifying the migration was successful:
 If backup-cli cannot connect to your node:
 
 - **`failed to lookup address information: Name or service not known`**: `--mpc-node-address` must be a bare `host:port` with no URL scheme and no trailing path. A value like `http://node.example.com:8079` is parsed as hostname `http://node.example.com`, which no resolver can answer.
-- **Verify the port**: The migration endpoint uses the node's `migration_web_ui` port, which is not always the `8079` default — read it from `http://<IP>:8080/debug/node_config`. The same endpoint shows the bind address, which must not be loopback-only.
+- **Verify the port**: The migration endpoint uses the node's `migration_web_ui` port, which is not always the `8079` default — read it from `http://$OLD_NODE_IP:8080/debug/node_config` (use `$NEW_NODE_IP` for the new node). The same endpoint shows the bind address, which must not be loopback-only.
 - **Verify firewall rules**: Ensure the backup service can reach the node's address and that the migration port is open and accessible. Test with `nc -vz <host> <port>` rather than `curl`; the endpoint is a raw TLS channel authenticated against the registered backup-service key, so it does not answer plain HTTP requests.
 
 ### `put-keyshares` reports success but the node never onboards
@@ -516,7 +532,7 @@ If the new node does not conclude the migration, check its logs for a warning th
 destination TLS key is not its own; it names both keys. That means the `tls_public_key` passed to
 `start_node_migration` in [Step 6](#step-6-initiate-migration-state-in-contract) is not the key the
 new node runs with. Compare `migration_info` against
-`curl -s http://<new-node-IP>:8080/public_data | jq -r .near_p2p_public_key` and call
+`curl -s http://$NEW_NODE_IP:8080/public_data | jq -r .near_p2p_public_key` and call
 `start_node_migration` again with the correct value; only the last call is retained. The node still
 holds the transferred keyshares in memory and imports them as soon as it sees itself registered,
 so `put-keyshares` only needs re-running if the node restarted in the meantime.
