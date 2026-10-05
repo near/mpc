@@ -36,6 +36,9 @@ ignore = [
   # Fixed in wasmtime >= 48.0.3, with no patched 45.x release. Affects only the component-model
   # `Val` API; no crate in the workspace enables wasmtime's `component-model` feature.
   "RUSTSEC-2026-0316", # wasmtime `Val` record lifting allocates beyond the fuel limit
+  # Fixed in wasmtime >= 48.0.4, with no patched 45.x release. Affects only the component-model
+  # async API; no crate in the workspace enables wasmtime's `component-model` feature.
+  "RUSTSEC-2026-0327", # wasmtime component async-lifted callback result count unvalidated
   # TODO(#4423): remove once nearcore's aws-lc-rs pin lets cargo resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore pins aws-lc-rs to
   # =1.16.2 (2.14.0-rc.2 and master), so the fix cannot be resolved until that pin moves. The
