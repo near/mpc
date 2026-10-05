@@ -1,14 +1,34 @@
+use std::fmt;
+
 use anyhow::Context as _;
+use serde::{Deserialize, Serialize};
 
 use super::ForeignChainsConfig;
+use crate::ChainId;
 
 const MAINNET: &str = include_str!("../../foreign_chains/mainnet.toml");
 const TESTNET: &str = include_str!("../../foreign_chains/testnet.toml");
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum RpcNetwork {
     Mainnet,
     Testnet,
+}
+
+impl RpcNetwork {
+    pub fn chain_id(self) -> ChainId {
+        match self {
+            RpcNetwork::Mainnet => ChainId::Mainnet,
+            RpcNetwork::Testnet => ChainId::Testnet,
+        }
+    }
+}
+
+impl fmt::Display for RpcNetwork {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.chain_id().fmt(f)
+    }
 }
 
 pub fn embedded_foreign_chains(network: RpcNetwork) -> anyhow::Result<ForeignChainsConfig> {
@@ -17,7 +37,7 @@ pub fn embedded_foreign_chains(network: RpcNetwork) -> anyhow::Result<ForeignCha
         RpcNetwork::Testnet => TESTNET,
     };
     toml::from_str(source)
-        .with_context(|| format!("failed to parse the embedded {network:?} foreign chain config"))
+        .with_context(|| format!("failed to parse the embedded {network} foreign chain config"))
 }
 
 #[cfg(test)]
@@ -78,5 +98,7 @@ mod tests {
         for token in tokens {
             assert_eq!(token, &TokenConfig::Val { val: String::new() });
         }
+        assert!(config.credentials.is_empty());
+        assert_eq!(config.rpc_network, None);
     }
 }

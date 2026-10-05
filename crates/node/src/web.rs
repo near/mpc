@@ -555,6 +555,8 @@ mod tests {
                 )),
                 adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
                 fogo: Some(test_chain(PROVIDER_PUBLIC, FOGO_RPC_URL, AuthConfig::None)),
+                rpc_network: None,
+                credentials: Default::default(),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,

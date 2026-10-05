@@ -1,4 +1,5 @@
 use super::ConfigFile;
+use crate::foreign_chains::RpcNetwork;
 use anyhow::Context;
 use clap::ValueEnum;
 use launcher_interface::types::PccsEndpointConfig;
@@ -41,6 +42,19 @@ pub struct StartConfig {
     pub pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
 }
 
+fn ensure_rpc_network_matches(
+    network: Option<RpcNetwork>,
+    chain_id: Option<&ChainId>,
+) -> anyhow::Result<()> {
+    if let (Some(network), Some(chain_id)) = (network, chain_id) {
+        anyhow::ensure!(
+            &network.chain_id() == chain_id,
+            "foreign chains rpc network `{network}` differs from near init chain id `{chain_id}`"
+        );
+    }
+    Ok(())
+}
+
 pub fn default_pccs_endpoints() -> NonEmptyVec<PccsEndpointConfig> {
     let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
@@ -59,6 +73,13 @@ impl StartConfig {
             .node
             .validate()
             .context("invalid node config in config file")?;
+        ensure_rpc_network_matches(
+            config.node.foreign_chains.rpc_network,
+            config
+                .near_init
+                .as_ref()
+                .map(|near_init| &near_init.chain_id),
+        )?;
         Ok(config)
     }
 }
@@ -200,6 +221,37 @@ pub enum DownloadConfigType {
 mod tests {
     use super::*;
     use launcher_interface::types::PccsTlsTrust;
+
+    #[rstest::rstest]
+    #[case(Some(RpcNetwork::Testnet), Some(ChainId::Testnet))]
+    #[case(Some(RpcNetwork::Mainnet), None)]
+    #[case(None, Some(ChainId::Localnet))]
+    fn ensure_rpc_network_matches__should_accept_consistent_or_unknown_network(
+        #[case] network: Option<RpcNetwork>,
+        #[case] chain_id: Option<ChainId>,
+    ) {
+        // Given
+        // When
+        let result = ensure_rpc_network_matches(network, chain_id.as_ref());
+
+        // Then
+        result.expect("network should be accepted");
+    }
+
+    #[test]
+    fn ensure_rpc_network_matches__should_reject_a_different_chain_id() {
+        // Given
+        let network = Some(RpcNetwork::Mainnet);
+        let chain_id = ChainId::Testnet;
+
+        // When
+        let result = ensure_rpc_network_matches(network, Some(&chain_id));
+
+        // Then
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("`mainnet`"), "{error}");
+        assert!(error.contains("`testnet`"), "{error}");
+    }
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).
