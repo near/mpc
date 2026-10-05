@@ -241,7 +241,7 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 |--------|----------|-------------|
 | `vote_mpc_node_manifest_digest(mpc_node_manifest_digest)` | All | Vote for a new Docker image hash |
 | `vote_add_launcher_hash(launcher_hash)` | All | Vote for a new launcher image hash (threshold) |
-| `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes are also removed automatically — see [launcher-image eviction](certificate-derived-attestation-expiry.md#what-else-has-to-change) |
+| `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes are also removed automatically — see [launcher-image eviction](auto-remove-launcher-hashes-design.md) |
 | `vote_foreign_chain_policy(policy)` | MPC, HOT | Vote on trusted RPC providers per chain |
 | `vote_new_parameters(...)` | MPC only | Vote for threshold and participant changes |
 | `vote_update_governors(...)` | HOT only | Vote to change the governor set |
