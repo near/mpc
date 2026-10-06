@@ -2,12 +2,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use backon::{BackoffBuilder, ExponentialBuilder};
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
 
 const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_mins(5);
+const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
+const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
@@ -82,6 +86,60 @@ pub(crate) fn supporters_by_available_chain(
         }
     }
     supporters
+}
+
+/// The contract's per chain RPC provider whitelist, keyed by chain.
+pub type ForeignChainWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
+
+/// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
+async fn fetch_allowed_foreign_chain_providers_with_retry(
+    indexer_state: &IndexerState,
+) -> ForeignChainWhitelist {
+    let mut backoff = ExponentialBuilder::default()
+        .with_min_delay(MIN_BACKOFF_DURATION)
+        .with_max_delay(MAX_BACKOFF_DURATION)
+        .without_max_times()
+        .with_jitter()
+        .build();
+
+    loop {
+        match indexer_state
+            .view_client
+            .get_allowed_foreign_chain_providers()
+            .await
+        {
+            Ok(whitelist) => return whitelist,
+            Err(e) => {
+                tracing::error!(target: "mpc", "error reading allowed_foreign_chain_providers from chain: {:?}", e);
+                let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
+                tokio::time::sleep(backoff_duration).await;
+            }
+        }
+    }
+}
+
+/// Publishes the allowed foreign-chain providers whitelist stored in the contract on `sender` once
+/// it is first read, then on every change. Consumed by
+/// [`crate::foreign_chain_whitelist_verifier::run`] and
+/// [`crate::foreign_chain_probe::run_periodic_probe`].
+pub async fn monitor_allowed_foreign_chain_providers(
+    sender: watch::Sender<Option<ForeignChainWhitelist>>,
+    indexer_state: Arc<IndexerState>,
+) {
+    indexer_state.client.wait_for_full_sync().await;
+
+    loop {
+        let whitelist = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
+        sender.send_if_modified(|previous| {
+            if previous.as_ref() != Some(&whitelist) {
+                *previous = Some(whitelist);
+                true
+            } else {
+                false
+            }
+        });
+        tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
+    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,7 @@
-use super::foreign_chain::monitor_foreign_chain_supporters;
+use super::foreign_chain::{
+    ForeignChainWhitelist, monitor_allowed_foreign_chain_providers,
+    monitor_foreign_chain_supporters,
+};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
@@ -10,10 +13,7 @@ use crate::config::RespondConfig;
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
-use crate::indexer::tee::{
-    ForeignChainWhitelist, monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
-    monitor_allowed_launcher_compose_hashes,
-};
+use crate::indexer::tee::{monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
 use ed25519_dalek::{SigningKey, VerifyingKey};

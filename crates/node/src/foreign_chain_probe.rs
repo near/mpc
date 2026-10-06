@@ -14,7 +14,7 @@ use tokio::sync::watch;
 use tracing::{info, warn};
 
 use crate::foreign_chain_whitelist_verifier::find_whitelist_match;
-use crate::indexer::tee::ForeignChainWhitelist;
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
 use crate::tick::Tick;
 
