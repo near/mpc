@@ -48,11 +48,31 @@ impl WhitelistMatch<'_> {
 }
 
 /// A part of a local provider config that differs from its [`WhitelistMatch::whitelisted`] provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mismatch {
     BaseUrl,
     ChainRouting,
-    Auth,
+    AuthKind {
+        local: &'static str,
+        whitelisted: &'static str,
+    },
+    HeaderName {
+        local: String,
+        whitelisted: String,
+    },
+    HeaderScheme {
+        local: Option<String>,
+        whitelisted: Option<String>,
+    },
+    QueryName {
+        local: String,
+        whitelisted: String,
+    },
+    /// The path auth placeholder is not the full path segment after the base path and the routing
+    /// segment.
+    PlaceholderPosition,
+    /// The whitelist uses a chain routing or auth variant that this node version does not know.
+    UnknownContractVariant,
 }
 
 pub fn find_match<'w>(
@@ -84,14 +104,16 @@ pub fn find_match<'w>(
 
     let (_, id, whitelisted, base) = best?;
     let path_mismatch = first_path_mismatch(whitelisted, &base, &path, auth);
-    let mismatches = [
-        compare_base_url(&base, rpc_url, path_mismatch),
-        compare_chain_routing(&whitelisted.chain_routing, rpc_url, path_mismatch),
-        compare_auth(auth, &whitelisted.auth_scheme, path_mismatch),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+    let path_mismatch = path_mismatch.as_ref();
+    let mismatches = compare_base_url(&base, rpc_url, path_mismatch)
+        .into_iter()
+        .chain(compare_chain_routing(
+            &whitelisted.chain_routing,
+            rpc_url,
+            path_mismatch,
+        ))
+        .chain(compare_auth(auth, &whitelisted.auth_scheme, path_mismatch))
+        .collect();
     Some(WhitelistMatch {
         id,
         whitelisted,
@@ -116,41 +138,42 @@ fn host_matches(base: &Url, url: &Url) -> bool {
     }
 }
 
-fn compare_base_url(base: &Url, url: &Url, path_mismatch: Option<Mismatch>) -> Option<Mismatch> {
+fn compare_base_url(base: &Url, url: &Url, path_mismatch: Option<&Mismatch>) -> Option<Mismatch> {
     let matches = url.scheme() == base.scheme()
         && url.port_or_known_default() == base.port_or_known_default()
-        && path_mismatch != Some(Mismatch::BaseUrl);
+        && path_mismatch != Some(&Mismatch::BaseUrl);
     (!matches).then_some(Mismatch::BaseUrl)
 }
 
 fn compare_chain_routing(
     routing: &ChainRouting,
     url: &Url,
-    path_mismatch: Option<Mismatch>,
+    path_mismatch: Option<&Mismatch>,
 ) -> Option<Mismatch> {
-    let matches = match routing {
-        ChainRouting::Embedded => true,
-        ChainRouting::PathSegment { .. } => path_mismatch != Some(Mismatch::ChainRouting),
+    match routing {
+        ChainRouting::Embedded => None,
+        ChainRouting::PathSegment { .. } => {
+            (path_mismatch == Some(&Mismatch::ChainRouting)).then_some(Mismatch::ChainRouting)
+        }
         ChainRouting::QueryParam { name, value } => {
             let values: Vec<_> = url
                 .query_pairs()
                 .filter(|(key, _)| key == name)
                 .map(|(_, value)| value)
                 .collect();
-            values == [value.as_str()]
+            (values != [value.as_str()]).then_some(Mismatch::ChainRouting)
         }
-        _ => false,
-    };
-    (!matches).then_some(Mismatch::ChainRouting)
+        _ => Some(Mismatch::UnknownContractVariant),
+    }
 }
 
 fn compare_auth(
     auth: ConfiguredAuth<'_>,
     whitelisted: &AuthScheme,
-    path_mismatch: Option<Mismatch>,
-) -> Option<Mismatch> {
-    let matches = match (auth, whitelisted) {
-        (ConfiguredAuth::None, AuthScheme::None) => true,
+    path_mismatch: Option<&Mismatch>,
+) -> Vec<Mismatch> {
+    match (auth, whitelisted) {
+        (ConfiguredAuth::None, AuthScheme::None) => vec![],
         (
             ConfiguredAuth::Header { name, scheme },
             AuthScheme::Header {
@@ -158,6 +181,11 @@ fn compare_auth(
                 scheme: whitelisted_scheme,
             },
         ) => {
+            let name_mismatch =
+                (!name.eq_ignore_ascii_case(whitelisted_name)).then(|| Mismatch::HeaderName {
+                    local: name.to_owned(),
+                    whitelisted: whitelisted_name.clone(),
+                });
             let schemes_match = match (scheme, whitelisted_scheme.as_deref()) {
                 (Some(scheme), Some(whitelisted_scheme)) => {
                     scheme.eq_ignore_ascii_case(whitelisted_scheme)
@@ -165,20 +193,57 @@ fn compare_auth(
                 (None, None) => true,
                 _ => false,
             };
-            name.eq_ignore_ascii_case(whitelisted_name) && schemes_match
+            let scheme_mismatch = (!schemes_match).then(|| Mismatch::HeaderScheme {
+                local: scheme.map(str::to_owned),
+                whitelisted: whitelisted_scheme.clone(),
+            });
+            name_mismatch.into_iter().chain(scheme_mismatch).collect()
         }
-        (ConfiguredAuth::Path { .. }, AuthScheme::Path { .. }) => {
-            path_mismatch != Some(Mismatch::Auth)
-        }
+        (ConfiguredAuth::Path { .. }, AuthScheme::Path { .. }) => (path_mismatch
+            == Some(&Mismatch::PlaceholderPosition))
+        .then_some(Mismatch::PlaceholderPosition)
+        .into_iter()
+        .collect(),
         (
             ConfiguredAuth::Query { name },
             AuthScheme::Query {
                 name: whitelisted_name,
             },
-        ) => name == whitelisted_name,
-        _ => false,
-    };
-    (!matches).then_some(Mismatch::Auth)
+        ) => (name != whitelisted_name)
+            .then(|| Mismatch::QueryName {
+                local: name.to_owned(),
+                whitelisted: whitelisted_name.clone(),
+            })
+            .into_iter()
+            .collect(),
+        _ => match whitelisted_auth_kind(whitelisted) {
+            Some(whitelisted) => vec![Mismatch::AuthKind {
+                local: local_auth_kind(auth),
+                whitelisted,
+            }],
+            None => vec![Mismatch::UnknownContractVariant],
+        },
+    }
+}
+
+fn local_auth_kind(auth: ConfiguredAuth<'_>) -> &'static str {
+    match auth {
+        ConfiguredAuth::None => "None",
+        ConfiguredAuth::Header { .. } => "Header",
+        ConfiguredAuth::Path { .. } => "Path",
+        ConfiguredAuth::Query { .. } => "Query",
+    }
+}
+
+/// [`None`] for a variant that this node version does not know.
+fn whitelisted_auth_kind(auth: &AuthScheme) -> Option<&'static str> {
+    match auth {
+        AuthScheme::None => Some("None"),
+        AuthScheme::Header { .. } => Some("Header"),
+        AuthScheme::Path { .. } => Some("Path"),
+        AuthScheme::Query { .. } => Some("Query"),
+        _ => None,
+    }
 }
 
 /// Stops at the first wrong part, so one wrong path segment gives one mismatch only.
@@ -207,7 +272,7 @@ fn first_path_mismatch(
     {
         let expected = with_segment(expected, placeholder);
         if !path.starts_with(&path_segments(&expected)) {
-            return Some(Mismatch::Auth);
+            return Some(Mismatch::PlaceholderPosition);
         }
     }
     None
@@ -460,12 +525,12 @@ mod tests {
     #[case::followed_by_more_segments("https://eth.alchemy.com/v2/{api_key}/v1", "{api_key}", vec![])]
     #[case::space("https://eth.alchemy.com/v2/{api key}", "{api key}", vec![])]
     #[case::angle_brackets("https://eth.alchemy.com/v2/<KEY>", "<KEY>", vec![])]
-    #[case::one_segment_late("https://eth.alchemy.com/v2/x/{api_key}", "{api_key}", vec![Mismatch::Auth])]
-    #[case::after_an_empty_segment("https://eth.alchemy.com/v2//{api_key}", "{api_key}", vec![Mismatch::Auth])]
-    #[case::part_of_the_segment("https://eth.alchemy.com/v2/key{api_key}", "{api_key}", vec![Mismatch::Auth])]
-    #[case::in_the_query("https://eth.alchemy.com/v2?key={api_key}", "{api_key}", vec![Mismatch::Auth])]
-    #[case::in_the_host("https://eth.alchemy.com/v2/key", "alchemy", vec![Mismatch::Auth])]
-    #[case::spanning_segments("https://eth.alchemy.com/v2/a/b", "a/b", vec![Mismatch::Auth])]
+    #[case::one_segment_late("https://eth.alchemy.com/v2/x/{api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
+    #[case::after_an_empty_segment("https://eth.alchemy.com/v2//{api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
+    #[case::part_of_the_segment("https://eth.alchemy.com/v2/key{api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
+    #[case::in_the_query("https://eth.alchemy.com/v2?key={api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
+    #[case::in_the_host("https://eth.alchemy.com/v2/key", "alchemy", vec![Mismatch::PlaceholderPosition])]
+    #[case::spanning_segments("https://eth.alchemy.com/v2/a/b", "a/b", vec![Mismatch::PlaceholderPosition])]
     fn find_match__should_check_the_placeholder_by_position_as_the_url_encodes_it(
         #[case] rpc_url: &str,
         #[case] placeholder: &str,
@@ -488,7 +553,7 @@ mod tests {
     #[rstest]
     #[case::after_the_routing_segment("https://rpc.ankr.com/eth/{api_key}", vec![])]
     #[case::before_the_routing_segment("https://rpc.ankr.com/{api_key}/eth", vec![Mismatch::ChainRouting])]
-    #[case::one_segment_late("https://rpc.ankr.com/eth/x/{api_key}", vec![Mismatch::Auth])]
+    #[case::one_segment_late("https://rpc.ankr.com/eth/x/{api_key}", vec![Mismatch::PlaceholderPosition])]
     fn find_match__should_expect_the_placeholder_after_the_routing_segment(
         #[case] rpc_url: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
@@ -531,23 +596,29 @@ mod tests {
 
     #[rstest]
     #[case::name_and_scheme_in_other_letter_case(Some("Bearer"), BEARER, vec![])]
-    #[case::other_name(
-        None,
-        ConfiguredAuth::Header { name: "x-api-key", scheme: None },
-        vec![Mismatch::Auth]
-    )]
-    #[case::other_scheme(
+    #[case::other_name_and_scheme(
         Some("Bearer"),
-        ConfiguredAuth::Header { name: "Authorization", scheme: Some("Basic") },
-        vec![Mismatch::Auth]
+        ConfiguredAuth::Header { name: "x-api-key", scheme: Some("Basic") },
+        vec![
+            Mismatch::HeaderName { local: "x-api-key".to_string(), whitelisted: "Authorization".to_string() },
+            Mismatch::HeaderScheme { local: Some("Basic".to_string()), whitelisted: Some("Bearer".to_string()) },
+        ]
     )]
     #[case::scheme_only_whitelisted(
         Some("Bearer"),
         ConfiguredAuth::Header { name: "Authorization", scheme: None },
-        vec![Mismatch::Auth]
+        vec![Mismatch::HeaderScheme { local: None, whitelisted: Some("Bearer".to_string()) }]
     )]
-    #[case::scheme_only_configured(None, BEARER, vec![Mismatch::Auth])]
-    #[case::other_auth_kind(None, ConfiguredAuth::None, vec![Mismatch::Auth])]
+    #[case::scheme_only_configured(
+        None,
+        BEARER,
+        vec![Mismatch::HeaderScheme { local: Some("bearer".to_string()), whitelisted: None }]
+    )]
+    #[case::other_auth_kind(
+        None,
+        ConfiguredAuth::None,
+        vec![Mismatch::AuthKind { local: "None", whitelisted: "Header" }]
+    )]
     fn find_match__should_compare_header_auth_without_letter_case(
         #[case] whitelisted_scheme: Option<&str>,
         #[case] configured: ConfiguredAuth<'_>,
@@ -565,8 +636,8 @@ mod tests {
 
     #[rstest]
     #[case::same_name("apikey", vec![])]
-    #[case::other_letter_case("ApiKey", vec![Mismatch::Auth])]
-    #[case::other_name("dkey", vec![Mismatch::Auth])]
+    #[case::other_letter_case("ApiKey", vec![Mismatch::QueryName { local: "ApiKey".to_string(), whitelisted: "apikey".to_string() }])]
+    #[case::other_name("dkey", vec![Mismatch::QueryName { local: "dkey".to_string(), whitelisted: "apikey".to_string() }])]
     fn find_match__should_compare_the_query_auth_name_exactly(
         #[case] configured: &str,
         #[case] expected_mismatches: Vec<Mismatch>,

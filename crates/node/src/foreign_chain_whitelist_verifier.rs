@@ -6,13 +6,10 @@
 //! describes.
 //!
 //! Log levels:
-//! - Error: a whitelisted `base_url` does not parse. The cause is a bug or a bad vote, not the
-//!   local config.
-//! - Warn: a local provider differs from its whitelist provider, or two local providers match
-//!   the same whitelist provider.
-//! - Info: a local provider has no whitelist provider. Operators may add providers outside the
-//!   whitelist.
-//! - Info: a local chain has no whitelist entry. This is normal until a vote adds the chain.
+//! - Error: a whitelisted `base_url` does not parse (a bug or a bad vote).
+//! - Warn: a local provider differs from its whitelist provider, or two local providers match a single whitelist entry.
+//! - Info: a local provider or chain is not in the whitelist. Both are normal.
+//! - Info: the local config matches the whitelist.
 //!
 //! Logs show the chain, the local provider name and public whitelist values. They never show the
 //! local `rpc_url` or a token.
@@ -440,7 +437,7 @@ mod tests {
             diagnostics,
             vec![
                 misconfigured(Mismatch::BaseUrl),
-                misconfigured(Mismatch::Auth),
+                misconfigured(Mismatch::PlaceholderPosition),
             ]
         );
     }
