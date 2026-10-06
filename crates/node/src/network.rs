@@ -325,7 +325,7 @@ impl MeshNetworkClient {
                     .push(channel_id, incomplete_channel)
                     && k != channel_id
                 {
-                    // If k != task_id, that means the LruCache evicted some other entry.
+                    // A different key means the LruCache evicted some other entry.
                     // That means that other channel never received Start and is old enough,
                     // so we also remove it from the senders map. See the above invariant.
                     channels.senders.remove(&k);
