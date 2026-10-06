@@ -4,6 +4,9 @@
 //! also stops updating them, and only the absolute form keeps decaying towards now, so a staleness
 //! alert still fires on a frozen gauge. At rest both advance hourly — the expiry is re-read on
 //! every submission observation, the landing timestamp only when one is confirmed.
+//!
+//! TODO(#4498): once every contract reports an acceptance time, set the landing gauge from it
+//! rather than from this node's clock, so a mistaken confirmation cannot inflate it.
 
 use near_mpc_contract_interface::types::VerifiedAttestation;
 use near_time::Clock;

@@ -134,11 +134,11 @@ future work this design only has to keep possible. Each is listed as the problem
 ([`tx_sender.rs`](../../crates/node/src/indexer/tx_sender.rs)). That stops working when the value is
 a calendar date that repeats for weeks.
 
-Fix: store `attested_at_seconds` on
+Fix: store `accepted_at_seconds` on
 [`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
 variants, so one field covers both. This restores today's semantics exactly, and gives operators a
-better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
-moves off 604 and the fee floor needs re-checking) and a state migration.
+better health signal than expiry. Costs 9 bytes per entry (599 → 608, so `WORST_CASE_ENTRY_BYTES`
+moves 604 → 613 and the fee floor needs re-checking) and a state migration.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
@@ -164,7 +164,7 @@ was written as "lower the constant", and the constant is going away.
 
 It stays possible, and gets cheaper, via the timestamp from item 1: record `verifier_rotated_at`
 when `vote_tee_verifier_change` passes, and in `re_verify` let any entry with
-`attested_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
+`accepted_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
 submitted after the rotation are untouched, every node gets a full day to re-attest, and there is no
 sweep or per-entry write.
 
@@ -231,7 +231,7 @@ so step 2 is a rotation, not a first deployment.
 
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
-`attested_at_seconds` is the replacement health signal.
+`accepted_at_seconds` is the replacement health signal.
 [`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) sells the old behaviour as the cheapest health check and
 needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` description from
 [#4236](https://github.com/near/mpc/pull/4236).

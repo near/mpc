@@ -76,6 +76,11 @@ pub enum TeeValidationResult {
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
+    /// Block time at which this entry was accepted. Restamped by every accepted submission, so
+    /// a submitter can recognize its own on chain. `None` for an entry stored before the contract
+    /// recorded this, and the init block time for a mocked entry nobody submitted (see
+    /// [`TeeState::with_mocked_participant_attestations`]).
+    pub(crate) accepted_at_seconds: Option<u64>,
 }
 
 #[near(serializers=[borsh])]
@@ -147,6 +152,7 @@ impl TeeState {
                     verified_attestation: VerifiedAttestation::Mock(
                         attestation::MockAttestation::Valid,
                     ),
+                    accepted_at_seconds: Some(Self::current_time_seconds()),
                 },
             );
         }
@@ -241,6 +247,7 @@ impl TeeState {
             NodeAttestation {
                 node_id,
                 verified_attestation,
+                accepted_at_seconds: Some(Self::current_time_seconds()),
             },
         );
 
@@ -628,6 +635,7 @@ mod tests {
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use rstest::rstest;
     use std::collections::{BTreeMap, BTreeSet};
     use std::time::Duration;
     use test_utils::attestation::{
@@ -1806,6 +1814,10 @@ mod tests {
             .get(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
+        assert_eq!(
+            stored.accepted_at_seconds,
+            Some(VALID_ATTESTATION_TIMESTAMP)
+        );
     }
 
     /// Stale code-hash votes from removed participants must not count toward
@@ -1915,6 +1927,68 @@ mod tests {
         assert_matches!(
             result,
             Err(AttestationSubmissionError::InvalidAttestation(_))
+        );
+    }
+
+    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+    const RESUBMITTED_AT_SECONDS: u64 = ACCEPTED_AT_SECONDS + 3600;
+
+    fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
+        tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("the attestation was stored")
+            .accepted_at_seconds
+    }
+
+    fn submit_mock(
+        tee_state: &mut TeeState,
+        node_id: &NodeId,
+        mock: MockAttestation,
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+        tee_state.verify_and_store_mock(node_id.clone(), mock, Duration::from_secs(0))
+    }
+
+    #[test]
+    fn verify_and_store_mock__should_stamp_the_block_time() {
+        // Given
+        set_block_secs(ACCEPTED_AT_SECONDS);
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+
+        // When
+        submit_mock(&mut tee_state, &node_id, MockAttestation::Valid).unwrap();
+
+        // Then
+        assert_eq!(
+            stamped_accepted_at(&tee_state, &node_id),
+            Some(ACCEPTED_AT_SECONDS)
+        );
+    }
+
+    /// The stamp is what lets a submitter tell a rejection from a landing, so only an accepted
+    /// submission may move it.
+    #[rstest]
+    #[case::rejected(MockAttestation::Invalid, ACCEPTED_AT_SECONDS)]
+    #[case::accepted_again(MockAttestation::Valid, RESUBMITTED_AT_SECONDS)]
+    fn verify_and_store_mock__should_restamp_only_an_accepted_resubmission(
+        #[case] resubmitted: MockAttestation,
+        #[case] expected_stamp: u64,
+    ) {
+        // Given: an entry stored by an accepted submission
+        set_block_secs(ACCEPTED_AT_SECONDS);
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+        submit_mock(&mut tee_state, &node_id, MockAttestation::Valid).unwrap();
+
+        // When: the same node submits again an hour later
+        set_block_secs(RESUBMITTED_AT_SECONDS);
+        let _ = submit_mock(&mut tee_state, &node_id, resubmitted);
+
+        // Then
+        assert_eq!(
+            stamped_accepted_at(&tee_state, &node_id),
+            Some(expected_stamp)
         );
     }
 }
