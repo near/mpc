@@ -1,6 +1,5 @@
 use super::foreign_chain::{
-    ForeignChainWhitelist, monitor_allowed_foreign_chain_providers,
-    monitor_foreign_chain_supporters,
+    ForeignChainWhitelist, monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist,
 };
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
@@ -223,7 +222,7 @@ pub fn spawn_real_indexer(
                 foreign_chain_whitelist_sender.subscribe(),
                 foreign_chains.clone(),
             ));
-            tokio::spawn(monitor_allowed_foreign_chain_providers(
+            tokio::spawn(monitor_foreign_chain_whitelist(
                 foreign_chain_whitelist_sender,
                 indexer_state.clone(),
             ));

@@ -31,7 +31,7 @@ use url::Url;
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
 /// Compares the local config with each whitelist that
-/// [`monitor_allowed_foreign_chain_providers`](crate::indexer::foreign_chain::monitor_allowed_foreign_chain_providers)
+/// [`monitor_foreign_chain_whitelist`](crate::indexer::foreign_chain::monitor_foreign_chain_whitelist)
 /// publishes. Waits for the first whitelist read, then compares again on each change.
 ///
 /// `run` does not read the contract: the monitor polls it, so a change to how the node reads the
