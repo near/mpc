@@ -38,8 +38,8 @@ export NEW_NODE_HOST=new-node.example.com
 
 # The nodes' migration endpoints, as bare host:port — no http://; the port is each
 # node's migration_web_ui port (Steps 4 and 7)
-export OLD_NODE_ADDRESS=$OLD_NODE_HOST:8079
-export NEW_NODE_ADDRESS=$NEW_NODE_HOST:8079
+export OLD_NODE_MIGRATION_ADDRESS=$OLD_NODE_HOST:8079
+export NEW_NODE_MIGRATION_ADDRESS=$NEW_NODE_HOST:8079
 
 # The new node's public URL to register on the contract — http:// prefix required;
 # adjust if peers reach the node under a different name (Step 6)
@@ -278,7 +278,7 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address** (`$OLD_NODE_ADDRESS`): The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view. The contract rejects a `url` longer than 256 bytes.
+- **MPC node address** (`$OLD_NODE_MIGRATION_ADDRESS`): The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view. The contract rejects a `url` longer than 256 bytes.
 - **MPC node P2P public key** (`$OLD_NODE_P2P_KEY`): The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash
@@ -308,7 +308,7 @@ This saves the contract state to `contract_state.json`, which the backup-cli use
 
 ### Run the Backup
 
-The migration endpoint listens on the node's `migration_web_ui` port — the port in `$OLD_NODE_ADDRESS`. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
+The migration endpoint listens on the node's `migration_web_ui` port — the port in `$OLD_NODE_MIGRATION_ADDRESS`. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
 
 ```bash
 curl -s http://$OLD_NODE_HOST:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
@@ -318,7 +318,7 @@ curl -s http://$OLD_NODE_HOST:8080/debug/node_config | jq -r '.migration_web_ui 
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   get-keyshares \
-  --mpc-node-address $OLD_NODE_ADDRESS \
+  --mpc-node-address $OLD_NODE_MIGRATION_ADDRESS \
   --mpc-node-p2p-key $OLD_NODE_P2P_KEY
 ```
 
@@ -340,7 +340,7 @@ backup-cli \
   run \
   --near-chain-id $NEAR_NETWORK \
   --mpc-contract-account-id $MPC_CONTRACT_ACCOUNT_ID \
-  --mpc-node-address $OLD_NODE_ADDRESS \
+  --mpc-node-address $OLD_NODE_MIGRATION_ADDRESS \
   --mpc-node-p2p-key $OLD_NODE_P2P_KEY
 ```
 
@@ -426,7 +426,7 @@ Output should look like this:
 You'll need:
 - **New node's P2P public key**: `$NEW_NODE_P2P_KEY` from the step above.
 - **New node's signer account public key**: `$NEW_NODE_SIGNER_PUBLIC_KEY` from the step above.
-- **New node's public URL**: `$NEW_NODE_URL` — where peers will reach the new node (must include the `http://` prefix), not the migration endpoint in `$NEW_NODE_ADDRESS`.
+- **New node's public URL**: `$NEW_NODE_URL` — where peers will reach the new node (must include the `http://` prefix), not the migration endpoint in `$NEW_NODE_MIGRATION_ADDRESS`.
 
 ### start_node_migration on contract
 
@@ -470,13 +470,13 @@ This will return migration information for all accounts, including your backup s
 
 ## Step 7: Transfer Keyshares to New Node
 
-As in [Step 4](#step-4-backup-keyshares-from-old-node), the port in `$NEW_NODE_ADDRESS` is the node's `migration_web_ui` port — read it from `http://$NEW_NODE_HOST:8080/debug/node_config` instead of assuming the `8079` default. The encryption key again comes from `$BACKUP_ENCRYPTION_KEY_HEX`; the new node must hold the matching key ([Step 5](#step-5-prepare-the-new-node)).
+As in [Step 4](#step-4-backup-keyshares-from-old-node), the port in `$NEW_NODE_MIGRATION_ADDRESS` is the node's `migration_web_ui` port — read it from `http://$NEW_NODE_HOST:8080/debug/node_config` instead of assuming the `8079` default. The encryption key again comes from `$BACKUP_ENCRYPTION_KEY_HEX`; the new node must hold the matching key ([Step 5](#step-5-prepare-the-new-node)).
 
 ```bash
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   put-keyshares \
-  --mpc-node-address $NEW_NODE_ADDRESS \
+  --mpc-node-address $NEW_NODE_MIGRATION_ADDRESS \
   --mpc-node-p2p-key $NEW_NODE_P2P_KEY
 ```
 
