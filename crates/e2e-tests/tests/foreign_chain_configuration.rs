@@ -110,9 +110,10 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
 
 /// Verify that a node resolves its `rpc_preset` at startup and registers the resolved chains.
 ///
-/// 3-node cluster (ForeignTx domain threshold 2): node 0 selects the testnet preset with no
-/// credentials, so only the preset's keyless providers are enabled; nodes 1 and 2 have no
-/// foreign chain config.
+/// 3-node cluster (ForeignTx domain threshold 2): node 0 selects the testnet preset with dummy
+/// alchemy, quicknode and tatum credentials, so it registers the keyless chains plus those the
+/// credentials enable; nodes 1 and 2 have no foreign chain config. Node 0's startup probe calls
+/// the preset's real endpoints; its failures are only logged.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn node_startup__should_register_chains_resolved_from_rpc_preset() {

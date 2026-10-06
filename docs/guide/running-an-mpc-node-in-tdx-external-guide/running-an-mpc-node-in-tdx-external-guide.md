@@ -939,7 +939,7 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, use the full per-network provider set in [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, see [Foreign chain RPC providers](#foreign-chain-rpc-providers).
 
 > **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
@@ -985,7 +985,7 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, the chain's `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints) below), and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider, and a node that cannot cover a chain is treated as down for it.
 
 You need your own API keys:
 

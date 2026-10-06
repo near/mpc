@@ -67,6 +67,7 @@ fn resolve_foreign_chains(config: &StartConfig) -> anyhow::Result<ForeignChainsC
 
 pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
+    config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
     // after `init_logging` so its logs are emitted. No-op for the `start` path.
@@ -97,8 +98,6 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             "NEAR init config"
         );
     }
-
-    config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
     let root_runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
