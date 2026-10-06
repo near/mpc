@@ -735,7 +735,7 @@ mod tests {
     fn is_heavy_generation_task__should_classify_generation_vs_other_tasks() {
         // Given every task kind paired with whether it is CPU-heavy asset
         // generation that must run on the lower-priority gen runtime.
-        let cases: [(MpcTaskId, bool); 13] = [
+        let cases: [(MpcTaskId, bool); _] = [
             // ECDSA: triples and presignatures are heavy generation.
             (
                 EcdsaTaskId::ManyTriples {

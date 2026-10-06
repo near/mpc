@@ -11412,7 +11412,6 @@ dependencies = [
 name = "test-port-allocator"
 version = "3.16.0"
 dependencies = [
- "named-lock",
  "rand 0.8.8",
 ]
 

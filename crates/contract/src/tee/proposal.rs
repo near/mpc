@@ -142,11 +142,8 @@ impl StoredDockerImageHashes {
         };
 
         let mut res: Vec<dtos::AllowedMpcDockerImageHash> = valid
-            .windows(2)
-            .map(|window| {
-                let [prev, next] = window else {
-                    unreachable!("windows(2) always yields two-element slices")
-                };
+            .array_windows()
+            .map(|[prev, next]| {
                 make_dtos_docker_image_hash(prev, next, tee_upgrade_deadline_duration)
             })
             .collect();

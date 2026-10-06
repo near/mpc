@@ -559,13 +559,10 @@ impl FakeIndexerCore {
             let block = current_block.child();
 
             let mut transactions_to_process = Vec::new();
-            while let Some((height, _, _)) = pending_transactions.front() {
-                if *height <= block.height() {
-                    let (_, txn, account_id) = pending_transactions.pop_front().unwrap();
-                    transactions_to_process.push((txn, account_id));
-                } else {
-                    break;
-                }
+            while let Some((_, txn, account_id)) =
+                pending_transactions.pop_front_if(|(height, _, _)| *height <= block.height())
+            {
+                transactions_to_process.push((txn, account_id));
             }
 
             let mut signature_requests = Vec::new();
