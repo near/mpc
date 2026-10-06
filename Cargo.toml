@@ -178,7 +178,6 @@ lru = "0.18.0"
 # addresses through ASLR.
 mappings = "0.7"
 mockall = "0.15.0"
-named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.6.0"
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by

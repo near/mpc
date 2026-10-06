@@ -11,8 +11,8 @@ use crate::indexer::IndexerState;
 
 const ALLOWED_HASHES_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
-const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
-const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_secs(300);
+const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
+const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_mins(5);
 
 async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     sender: watch::Sender<T>,

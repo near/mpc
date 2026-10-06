@@ -136,7 +136,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user0",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()
@@ -190,7 +190,7 @@ async fn test_onboarding() {
                         backup_service_info.is_some() && destination_node_info.is_some()
                     })
             },
-            Duration::from_secs(60),
+            Duration::from_mins(1),
         )
         .await
         .unwrap();
@@ -258,7 +258,7 @@ async fn test_onboarding() {
                     ParticipantStatus::Active(NodeStatus::Active)
                 )
             },
-            Duration::from_secs(60),
+            Duration::from_mins(1),
         )
         .await
         .expect("onboarding must succeed");
@@ -295,7 +295,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user1",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()
@@ -306,7 +306,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user2",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()
@@ -317,7 +317,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user3",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()

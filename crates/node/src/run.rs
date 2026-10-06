@@ -46,7 +46,7 @@ use crate::tee::{
     remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
 };
 
-pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
+pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
 

@@ -494,13 +494,12 @@ async fn do_keyshare<C: Ciphersuite>(
 
     // Step 4.5 +++
     // In the case of Resharing, check if the old public key is the same as the new one
-    if let Some(old_vk) = old_verification_key {
-        // check the equality between the old key and the new key without failing the unwrap
-        if old_vk != verifying_key {
-            return Err(ProtocolError::AssertionFailed(
-                "new public key does not match old public key".to_string(),
-            ));
-        }
+    if let Some(old_vk) = old_verification_key
+        && old_vk != verifying_key
+    {
+        return Err(ProtocolError::AssertionFailed(
+            "new public key does not match old public key".to_string(),
+        ));
     }
 
     // Step 4.6

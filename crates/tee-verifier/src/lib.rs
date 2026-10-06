@@ -59,7 +59,7 @@ impl TeeVerifier {
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResult {
         let now_seconds = now_seconds();
-        let quote_bytes: Vec<u8> = quote.into_dcap_type();
+        let quote_bytes = quote.into_dcap_type();
         let collateral = collateral.into_dcap_type();
         match dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds) {
             Ok(report) => VerificationResult::Verified(report.into_interface_type()),
@@ -69,12 +69,18 @@ impl TeeVerifier {
         }
     }
 
-    /// [`Self::verify_quote`] plus the collateral's validity window.
+    /// [`Self::verify_quote`] plus the collateral's validity window: returns
+    /// [`VerificationResultWithCollateralDates::Verified`] with the report and
+    /// its [`CollateralDates`], and rejects as a value, like
+    /// [`Self::verify_quote`].
     ///
     /// Applies no policy ([`QuotePolicy::claims_only`]), so an accepted quote
     /// gets the same report as from [`Self::verify_quote`]. It can also reject
-    /// collateral whose dates do not parse, and costs more gas: reading the
-    /// dates parses the collateral a second time.
+    /// collateral that [`Self::verify_quote`] accepts, since it parses more of
+    /// it, including the PCK CRL issuer chain, which nothing authenticates. It
+    /// costs slightly more gas.
+    ///
+    /// [`CollateralDates`]: tee_verifier_interface::CollateralDates
     #[result_serializer(borsh)]
     pub fn verify_quote_with_collateral_dates(
         &self,
@@ -82,7 +88,7 @@ impl TeeVerifier {
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResultWithCollateralDates {
         let now_seconds = now_seconds();
-        let quote_bytes: Vec<u8> = quote.into_dcap_type();
+        let quote_bytes = quote.into_dcap_type();
         let collateral = collateral.into_dcap_type();
         match QuoteVerifier::new_prod().verify_with_policy(
             &quote_bytes,
