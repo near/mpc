@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use anyhow::Context as _;
@@ -7,7 +7,7 @@ use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
 pub use auth::{AuthConfig, TokenConfig};
-pub use embedded::{RpcNetwork, embedded_foreign_chains};
+pub use embedded::{RpcPreset, embedded_foreign_chains};
 
 pub mod provider_identity;
 
@@ -16,6 +16,13 @@ mod embedded;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainsConfig {
+    /// Selects the embedded provider preset config that [`Self::credentials`] enable.
+    /// Unset means node won't use embedded config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rpc_preset: Option<RpcPreset>,
+    /// Per provider credentials used for embedded configs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub credentials: BTreeMap<RpcProviderName, ProviderCredentials>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,6 +54,14 @@ pub struct ForeignChainsConfig {
     pub adi: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fogo: Option<ForeignChainConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderCredentials {
+    #[serde(flatten)]
+    pub api_key: TokenConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -173,6 +188,17 @@ impl ForeignChainsConfig {
             }
         }
 
+        for (provider, credentials) in &self.credentials {
+            if let Some(slug) = &credentials.slug {
+                validate_slug(slug).with_context(|| {
+                    format!(
+                        "credentials for provider `{}` have an invalid slug",
+                        provider.as_str()
+                    )
+                })?;
+            }
+        }
+
         Ok(())
     }
 
@@ -183,9 +209,20 @@ impl ForeignChainsConfig {
     }
 }
 
+/// A slug fills exactly one host label, the same span the whitelist verifier matches `{}` against.
+fn validate_slug(slug: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+        "slug must be a single host label of ASCII letters, digits and `-`, got `{slug}`"
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
     use crate::ConfigFile;
 
@@ -650,6 +687,108 @@ ckd:
         assert!(error.contains("support only header auth"), "{error}");
     }
 
+    #[test]
+    fn config_parsing__should_read_credentials_from_yaml() {
+        // Given
+        let yaml = config_with_chains(
+            r#"
+  credentials:
+    alchemy:
+      env: ALCHEMY_API_KEY
+    quicknode:
+      val: "quicknode-key"
+      slug: "my-endpoint"
+"#,
+        );
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config.validate().expect("credentials should be valid");
+        let expected = BTreeMap::from([
+            (
+                "alchemy".to_string().into(),
+                ProviderCredentials {
+                    api_key: TokenConfig::Env {
+                        env: "ALCHEMY_API_KEY".to_string(),
+                    },
+                    slug: None,
+                },
+            ),
+            (
+                "quicknode".to_string().into(),
+                ProviderCredentials {
+                    api_key: TokenConfig::Val {
+                        val: "quicknode-key".to_string(),
+                    },
+                    slug: Some("my-endpoint".to_string()),
+                },
+            ),
+        ]);
+        assert_eq!(config.foreign_chains.credentials, expected);
+    }
+
+    #[test]
+    fn config_parsing__should_round_trip_credentials_through_toml() {
+        // Given
+        let toml_input = r#"
+rpc_preset = "testnet"
+
+[credentials]
+alchemy = { val = "alchemy-key" }
+quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
+"#;
+
+        // When
+        let config: ForeignChainsConfig =
+            toml::from_str(toml_input).expect("toml fixture should be correct");
+        let parsed: ForeignChainsConfig =
+            toml::from_str(&toml::to_string(&config).expect("config should serialize"))
+                .expect("serialized config should parse");
+
+        // Then
+        assert_eq!(config.rpc_preset, Some(RpcPreset::Testnet));
+        assert_eq!(config.credentials.len(), 2);
+        assert_eq!(parsed, config);
+    }
+
+    #[test]
+    fn config_parsing__should_reject_unknown_rpc_preset() {
+        // Given
+        let toml_input = "rpc_preset = \"not-a-preset\"\n";
+
+        // When
+        let result: Result<ForeignChainsConfig, _> = toml::from_str(toml_input);
+
+        // Then
+        assert_matches!(result, Err(_));
+    }
+
+    #[test]
+    fn config_validation__should_reject_slug_that_is_not_a_host_label() {
+        // Given
+        let config = ForeignChainsConfig {
+            credentials: BTreeMap::from([(
+                "quicknode".to_string().into(),
+                ProviderCredentials {
+                    api_key: TokenConfig::Val {
+                        val: "quicknode-key".to_string(),
+                    },
+                    slug: Some("evil.example.com/path".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+
+        // When
+        let result = config.validate();
+
+        // Then
+        assert_matches!(result, Err(_));
+    }
+
     /// Every chain is set, so a chain added later has to be listed here too.
     #[test]
     fn foreign_chains_config__should_key_every_chain_by_its_label() {
@@ -682,6 +821,8 @@ ckd:
             avalanche: Some(section()),
             adi: Some(section()),
             fogo: Some(section()),
+            rpc_preset: None,
+            credentials: BTreeMap::new(),
         };
 
         // When

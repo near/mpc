@@ -134,6 +134,9 @@ Traits should model a single capability, and be named after the action, not as a
 
 See `docs/development/engineering-standards.md` §Name capability traits after the action for the full rationale and a `Don't` / `Do` example.
 
+### Current Rust Features
+Where they make the code simpler, prefer the newest language features and std APIs of the toolchain pinned in `rust-toolchain.toml` over older idioms or third-party crates, e.g. `Duration::from_hours(1)` over `Duration::from_secs(3600)`, or a let chain over nested `if let`s.
+
 ### Code Comments
 Default to writing no comments. Add one only in case one of the following applies:
 - the *why* is non-obvious: an invariant, a constraint, a surprising behavior;

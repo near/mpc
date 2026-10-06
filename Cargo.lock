@@ -6275,6 +6275,7 @@ name = "mpc-node-config"
 version = "3.16.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "clap",
  "derive_more 2.1.1",
  "either",
@@ -11411,7 +11412,6 @@ dependencies = [
 name = "test-port-allocator"
 version = "3.16.0"
 dependencies = [
- "named-lock",
  "rand 0.8.8",
 ]
 
