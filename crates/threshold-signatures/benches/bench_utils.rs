@@ -98,7 +98,7 @@ pub fn analyze_received_sizes(
     sizes: &[usize],
     is_print: bool,
 ) -> (usize, usize, f64, f64, f64, f64) {
-    if sizes.len() <= 1 {
+    if sizes.is_empty() {
         return (0, 0, 0.0, 0.0, 0.0, 0.0);
     }
     let min = *sizes.iter().min().expect("Minimum should exist");
@@ -118,7 +118,11 @@ pub fn analyze_received_sizes(
     }
 
     let median = quantile.quantile();
-    let variance = variance_est.sample_variance();
+    let variance = if sizes.len() > 1 {
+        variance_est.sample_variance()
+    } else {
+        0.0
+    };
     let std_dev = variance.sqrt();
 
     if is_print {
