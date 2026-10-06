@@ -7,12 +7,13 @@
 //!
 //! Log levels:
 //! - Error: a whitelisted `base_url` does not parse (a bug or a bad vote).
+//! - Error: a whitelist entry uses a variant this node version does not know (upgrade the node).
 //! - Warn: a local provider differs from its whitelist provider, or two local providers match a single whitelist entry.
 //! - Info: a local provider or chain is not in the whitelist. Both are normal.
 //! - Info: the local config matches the whitelist.
 //!
-//! Logs show the chain, the local provider name and public whitelist values. They never show the
-//! local `rpc_url` or a token.
+//! Logs show the chain, the local provider name, local auth names and schemes, and public whitelist
+//! values. They never show the local `rpc_url` or a token.
 
 use std::collections::BTreeMap;
 
@@ -180,6 +181,19 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
                 ?chain,
                 local_provider,
                 "foreign chain whitelist: extra provider (its host matches no whitelist entry)"
+            );
+        }
+        DiagnosticKind::Misconfigured {
+            whitelist_id,
+            whitelist_provider,
+            mismatch: Mismatch::UnknownContractVariant,
+        } => {
+            tracing::error!(
+                ?chain,
+                local_provider,
+                %whitelist_id,
+                ?whitelist_provider,
+                "foreign chain whitelist: entry uses a variant this node version does not know, upgrade the node"
             );
         }
         DiagnosticKind::Misconfigured {

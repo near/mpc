@@ -41,12 +41,6 @@ pub struct WhitelistMatch<'w> {
     pub mismatches: Vec<Mismatch>,
 }
 
-impl WhitelistMatch<'_> {
-    pub fn conforms(&self) -> bool {
-        self.mismatches.is_empty()
-    }
-}
-
 /// A part of a local provider config that differs from its [`WhitelistMatch::whitelisted`] provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mismatch {
@@ -121,7 +115,6 @@ pub fn find_match<'w>(
     })
 }
 
-/// Tuples compare in order: an exact host ranks first, then the longer base path prefix.
 type Rank = (bool, Option<usize>);
 
 fn wildcard_suffix(base: &Url) -> Option<&str> {
