@@ -138,4 +138,34 @@ mod tests {
         assert!(config.credentials.is_empty());
         assert_eq!(config.rpc_preset, None);
     }
+
+    #[rstest]
+    #[case::mainnet(RpcPreset::Mainnet)]
+    #[case::testnet(RpcPreset::Testnet)]
+    fn embedded_foreign_chains__should_put_each_path_placeholder_in_its_own_path_segment(
+        #[case] rpc_preset: RpcPreset,
+    ) {
+        // Given
+        let config = embedded(rpc_preset);
+
+        // When
+        let misplaced: Vec<&str> = config
+            .iter_chains()
+            .flat_map(|(_, chain)| chain.providers.values())
+            .filter_map(|provider| match &provider.auth {
+                AuthConfig::Path { placeholder, .. } => Some((&provider.rpc_url, placeholder)),
+                _ => None,
+            })
+            .filter(|(rpc_url, placeholder)| {
+                let (path, _query) = rpc_url.split_once('?').unwrap_or((rpc_url, ""));
+                !path
+                    .split('/')
+                    .any(|segment| segment == placeholder.as_str())
+            })
+            .map(|(rpc_url, _)| rpc_url.as_str())
+            .collect();
+
+        // Then
+        assert_eq!(misplaced, Vec::<&str>::new());
+    }
 }
