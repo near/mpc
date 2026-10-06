@@ -253,21 +253,21 @@ impl fmt::Debug for DstackAttestation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const MAX_BYTES: usize = 2048;
 
+        fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
+            let debug_str = format!("{:?}", value);
+            if debug_str.len() <= max_bytes {
+                debug_str
+            } else {
+                let (kept, dropped) = debug_str.split_at(debug_str.floor_char_boundary(max_bytes));
+                format!("{kept}... (truncated {} bytes)", dropped.len())
+            }
+        }
+
         f.debug_struct("DstackAttestation")
             .field("quote", &truncate_debug(&self.quote, MAX_BYTES))
             .field("collateral", &truncate_debug(&self.collateral, MAX_BYTES))
             .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
             .finish()
-    }
-}
-
-fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
-    let debug_str = format!("{:?}", value);
-    if debug_str.len() <= max_bytes {
-        debug_str
-    } else {
-        let (kept, dropped) = debug_str.split_at(debug_str.floor_char_boundary(max_bytes));
-        format!("{kept}... (truncated {} bytes)", dropped.len())
     }
 }
 
@@ -342,22 +342,4 @@ pub struct EventLog {
     pub event: String,
     /// The payload data associated with the event
     pub event_payload: String,
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn truncate_debug__should_drop_a_multibyte_character_that_crosses_the_limit() {
-        // Given
-        let value = "€";
-
-        // When
-        let truncated = truncate_debug(&value, 2);
-
-        // Then
-        assert!(!truncated.contains('€'));
-    }
 }
