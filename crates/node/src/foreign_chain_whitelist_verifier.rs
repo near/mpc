@@ -6,7 +6,7 @@
 //! describes.
 //!
 //! Log levels:
-//! - Error: a whitelisted `base_url` does not parse (a bug or a bad vote).
+//! - Error: a whitelisted `base_url` is invalid (a bug or a bad vote).
 //! - Error: a whitelist entry uses a variant this node version does not know (upgrade the node).
 //! - Warn: a local provider differs from its whitelist provider, or two local providers match a single whitelist entry.
 //! - Info: a local provider or chain is not in the whitelist. Both are normal.
@@ -104,7 +104,9 @@ fn compare_chain(
     let mut diagnostics: Vec<Diagnostic> = whitelist_entry
         .providers
         .iter()
-        .filter(|(_, whitelist_provider)| Url::parse(&whitelist_provider.base_url).is_err())
+        .filter(|(_, whitelist_provider)| {
+            provider_identity::parse_base_url(&whitelist_provider.base_url).is_none()
+        })
         .map(|(whitelist_id, whitelist_provider)| Diagnostic {
             chain,
             local_name: None,
@@ -386,8 +388,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn compare__should_emit_unparseable_base_url_and_still_match_the_other_entries() {
+    #[rstest]
+    #[case::not_a_url("slug.quiknode.pro")]
+    #[case::wildcard_inside_a_label("https://{}-eth.quiknode.pro")]
+    #[case::two_wildcards("https://{}.{}.quiknode.pro")]
+    fn compare__should_emit_unparseable_base_url_and_still_match_the_other_entries(
+        #[case] base_url: &str,
+    ) {
         // Given
         let local = must_local_ethereum(&[
             (
@@ -399,7 +406,7 @@ mod tests {
                 local_path_auth("https://slug.quiknode.pro/{api_key}"),
             ),
         ]);
-        let unparseable = whitelist_provider("slug.quiknode.pro", AuthScheme::None);
+        let unparseable = whitelist_provider(base_url, AuthScheme::None);
         let whitelist =
             must_ethereum_whitelist(&[("alchemy", alchemy()), ("quicknode", unparseable)]);
 
@@ -412,7 +419,7 @@ mod tests {
             local_name: None,
             kind: DiagnosticKind::UnparseableBaseUrl {
                 whitelist_id: ProviderId("quicknode".to_string()),
-                whitelist_base_url: "slug.quiknode.pro".to_string(),
+                whitelist_base_url: base_url.to_string(),
             },
         };
         assert_eq!(

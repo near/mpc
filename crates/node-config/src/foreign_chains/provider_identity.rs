@@ -3,8 +3,9 @@
 //!
 //! The URL host identifies the provider. The local config name has no effect.
 //!
-//! The host of a whitelisted [`ProviderConfig::base_url`] can start with the label `{}`. This
-//! label matches exactly one label of the local host, for example a QuickNode slug.
+//! The host of a whitelisted [`ProviderConfig::base_url`] can have one `{}` label, in any position.
+//! It matches exactly one label of the local host, for example a QuickNode slug. Any other `{` or
+//! `}` in the host makes the `base_url` invalid, as [`parse_base_url`] describes.
 //!
 //! When more than one whitelist provider matches the host, [`find_match`] selects one with these
 //! rules, in this order:
@@ -77,14 +78,14 @@ pub fn find_match<'w>(
     let path = path_segments(rpc_url);
     let mut best: Option<(Rank, &ProviderId, &ProviderConfig, Url)> = None;
     for (id, whitelisted) in entry.providers.iter() {
-        let Ok(base) = Url::parse(&whitelisted.base_url) else {
+        let Some(base) = parse_base_url(&whitelisted.base_url) else {
             continue;
         };
         if !host_matches(&base, rpc_url) {
             continue;
         }
         let base_path = path_segments(&base);
-        let exact_host = wildcard_suffix(&base).is_none();
+        let exact_host = !base.host_str().is_some_and(|host| host.contains(WILDCARD));
         let prefix_len = path.starts_with(&base_path).then_some(base_path.len());
         let rank: Rank = (exact_host, prefix_len);
         // Ids come in ascending order, so on a tie the lower id stays.
@@ -117,18 +118,37 @@ pub fn find_match<'w>(
 
 type Rank = (bool, Option<usize>);
 
-fn wildcard_suffix(base: &Url) -> Option<&str> {
-    base.host_str()?.strip_prefix("{}.")
+const WILDCARD: &str = "{}";
+
+/// Returns [`None`] for a `base_url` that does not parse, or whose host has a `{` or `}` other than
+/// one whole `{}` label. Such a whitelist provider can never match.
+pub fn parse_base_url(base_url: &str) -> Option<Url> {
+    let url = Url::parse(base_url).ok()?;
+    let braced_labels: Vec<&str> = url
+        .host_str()?
+        .split('.')
+        .filter(|label| label.contains(['{', '}']))
+        .collect();
+    let valid = braced_labels.is_empty() || braced_labels == [WILDCARD];
+    valid.then_some(url)
 }
 
+/// Expects a `base` that [`parse_base_url`] accepted.
 fn host_matches(base: &Url, url: &Url) -> bool {
-    match wildcard_suffix(base) {
-        Some(suffix) => url
-            .domain()
-            .and_then(|domain| domain.split_once('.'))
-            .is_some_and(|(slug, rest)| !slug.is_empty() && rest == suffix),
-        None => base.host() == url.host(),
+    let (Some(pattern), Some(domain)) = (base.host_str(), url.domain()) else {
+        return base.host() == url.host();
+    };
+    if !pattern.contains(WILDCARD) {
+        return pattern == domain;
     }
+    pattern.split('.').count() == domain.split('.').count()
+        && pattern
+            .split('.')
+            .zip(domain.split('.'))
+            .all(|(expected, label)| match expected {
+                WILDCARD => !label.is_empty(),
+                _ => expected == label,
+            })
 }
 
 fn compare_base_url(base: &Url, url: &Url, path_mismatch: Option<&Mismatch>) -> Option<Mismatch> {
@@ -361,6 +381,7 @@ mod tests {
                 "quicknode",
                 whitelisted("https://{}.base-sepolia.quiknode.pro"),
             ),
+            ("middle-wildcard", whitelisted("https://api.{}.example.net")),
             ("two-wildcards", whitelisted("https://{}.{}.example.org")),
             (
                 "wildcard-in-a-label",
@@ -371,12 +392,32 @@ mod tests {
     }
 
     #[rstest]
+    #[case::exact_host("https://eth.alchemy.com/v2/", true)]
+    #[case::wildcard_in_the_first_label("https://{}.base-sepolia.quiknode.pro", true)]
+    #[case::wildcard_in_the_second_label("https://api.{}.example.com", true)]
+    #[case::not_a_url("eth.alchemy.com/v2/", false)]
+    #[case::wildcard_inside_a_label("https://api-{}.example.com", false)]
+    #[case::two_wildcards("https://{}.{}.example.org", false)]
+    #[case::stray_brace("https://api{.example.com", false)]
+    fn parse_base_url__should_accept_at_most_one_whole_wildcard_label(
+        #[case] base_url: &str,
+        #[case] expected_valid: bool,
+    ) {
+        // When
+        let base = parse_base_url(base_url);
+
+        // Then
+        assert_eq!(base.is_some(), expected_valid);
+    }
+
+    #[rstest]
     #[case::host_letter_case("https://eth.alchemy.COM/v2/key", "alchemy")]
     #[case::explicit_default_port("https://eth.alchemy.com:443/v2/key", "alchemy")]
     #[case::one_label_for_the_wildcard(
         "https://Misty-Fabled-7.base-sepolia.quiknode.pro/key",
         "quicknode"
     )]
+    #[case::wildcard_in_the_second_label("https://api.slug.example.net/key", "middle-wildcard")]
     fn find_match__should_match_by_host(#[case] rpc_url: &str, #[case] expected: &str) {
         // Given
         let entry = must_host_patterns();
@@ -397,7 +438,8 @@ mod tests {
     #[case::suffix_moved_into_the_path("https://evil.io/.base-sepolia.quiknode.pro/key")]
     #[case::suffix_extended("https://slug.base-sepolia.quiknode.pro.evil.io/key")]
     #[case::suffix_as_user_info("https://slug.base-sepolia.quiknode.pro@evil.io/key")]
-    #[case::wildcard_after_the_first_label("https://a.b.example.org/key")]
+    #[case::two_labels_for_a_wildcard_in_the_second_label("https://api.a.b.example.net/key")]
+    #[case::two_wildcards("https://a.b.example.org/key")]
     #[case::wildcard_inside_a_label("https://api-x.example.com/key")]
     #[case::unparseable_base_url("https://eth.example.net/v2/key")]
     fn find_match__should_not_match_a_url_whose_host_matches_no_entry(#[case] rpc_url: &str) {
