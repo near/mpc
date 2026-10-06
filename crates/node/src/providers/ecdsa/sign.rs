@@ -594,7 +594,7 @@ mod tests {
                         receiver.recv().await.context("no channel received")?
                     };
                     let (signature, verifying_key) = computation
-                        .perform_leader_centric_computation(channel, Duration::from_secs(60))
+                        .perform_leader_centric_computation(channel, Duration::from_mins(1))
                         .await?;
                     Ok(signature.map(|signature| (signature, verifying_key)))
                 }

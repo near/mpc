@@ -27,7 +27,7 @@ impl EddsaSignatureProvider {
             my_share,
             public_key,
         }
-        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
         .await?;
         tracing::info!("Key resharing completed");
 
@@ -162,7 +162,7 @@ mod tests {
                         my_share: keyshare,
                         public_key: pubkey,
                     }
-                    .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+                    .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
                     .await?;
                     anyhow::Ok(key)
                 }
