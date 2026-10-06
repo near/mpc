@@ -241,9 +241,9 @@ mod test {
 
     use super::*;
 
-    use assert_matches::assert_matches;
     use k256::Scalar;
     use rand::SeedableRng;
+    use std::assert_matches;
 
     /// Run the random OT protocol between two parties
     fn run_random_ot<R: CryptoRngCore + SeedableRng + Send + 'static>(

@@ -297,10 +297,9 @@ mod tests {
         },
         state::test_utils::gen_valid_params_proposal,
     };
-    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use rand::Rng;
-    use std::collections::BTreeMap;
+    use std::{assert_matches, collections::BTreeMap};
 
     #[test]
     fn test_threshold() {

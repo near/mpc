@@ -13,7 +13,6 @@ use crate::sandbox::{
         transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
-use assert_matches::assert_matches;
 use dtos::{
     AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, Protocol, ProtocolContractState,
     RunningContractState,
@@ -29,7 +28,7 @@ use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{Account, Contract};
 use rstest::rstest;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::{assert_matches, collections::BTreeMap};
 use test_utils::sandbox::SandboxWorker;
 
 #[tokio::test]

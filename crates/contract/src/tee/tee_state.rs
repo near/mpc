@@ -622,14 +622,16 @@ mod tests {
         proposal::get_docker_compose_hash,
         test_utils::{set_block_secs, set_block_timestamp, whitelist_dstack_measurements},
     };
-    use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
-    use std::collections::{BTreeMap, BTreeSet};
     use std::time::Duration;
+    use std::{
+        assert_matches,
+        collections::{BTreeMap, BTreeSet},
+    };
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
         launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,

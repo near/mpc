@@ -1050,9 +1050,9 @@ mod tests {
         bogus_ed25519_public_key, bogus_ed25519_public_key_extended, gen_participants,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
-    use assert_matches::assert_matches;
     use rand::rngs::OsRng;
     use rstest::rstest;
+    use std::assert_matches;
 
     #[rstest]
     #[case(dtos::Curve::Secp256k1)]

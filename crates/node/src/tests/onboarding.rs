@@ -1,7 +1,6 @@
-use assert_matches::assert_matches;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
+use std::{assert_matches, net::SocketAddr};
 
 use crate::config::{AesKey256, NodeStatus, ParticipantInfo, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
