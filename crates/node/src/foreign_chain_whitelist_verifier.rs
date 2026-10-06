@@ -18,10 +18,10 @@
 use std::collections::BTreeMap;
 
 use mpc_node_config::{
-    ForeignChainConfig, ForeignChainsConfig,
+    ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
     foreign_chains::{
         RpcProviderName,
-        provider_identity::{self, Mismatch},
+        provider_identity::{self, Mismatch, WhitelistMatch},
     },
 };
 use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderConfig, ProviderId};
@@ -128,16 +128,7 @@ fn compare_chain(
             local_name: Some(local_name.clone()),
             kind,
         };
-        let whitelist_match = Url::parse(&local_provider.rpc_url)
-            .ok()
-            .and_then(|local_url| {
-                provider_identity::find_match(
-                    whitelist_entry,
-                    &local_url,
-                    (&local_provider.auth).into(),
-                )
-            });
-        let Some(whitelist_match) = whitelist_match else {
+        let Some(whitelist_match) = find_whitelist_match(whitelist_entry, local_provider) else {
             diagnostics.push(diagnostic(DiagnosticKind::ProviderNotInWhitelist));
             continue;
         };
@@ -159,6 +150,15 @@ fn compare_chain(
         }));
     }
     diagnostics
+}
+
+/// A local `rpc_url` that does not parse matches nothing.
+pub(crate) fn find_whitelist_match<'w>(
+    whitelist_entry: &'w ChainEntry,
+    local_provider: &ForeignChainProviderConfig,
+) -> Option<WhitelistMatch<'w>> {
+    let local_url = Url::parse(&local_provider.rpc_url).ok()?;
+    provider_identity::find_match(whitelist_entry, &local_url, (&local_provider.auth).into())
 }
 
 fn log_diagnostic(diagnostic: &Diagnostic) {
@@ -235,7 +235,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig, TokenConfig};
+    use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
     use rstest::rstest;

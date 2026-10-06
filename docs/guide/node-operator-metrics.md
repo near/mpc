@@ -142,12 +142,13 @@ again as soon as the whitelist is read, and whenever the whitelist changes.
 
 A chain is healthy when at least its quorum of whitelisted providers is
 configured and all of them passed. Fewer than the quorum, or a whitelisted
-provider that failed, logs a warning. A provider counts as whitelisted when the
-name it is configured under is the provider id the whitelist lists for that
-chain, and the node warns separately when its URL or auth differs from the
-voted entry. Providers missing from the whitelist are probed and counted in the
-gauges, but not toward the quorum. A chain missing from the whitelist is probed
-but not judged.
+provider that failed, logs a warning. A configured provider counts for the
+whitelisted provider with the same URL host, and only when its scheme, port,
+path, chain routing and auth all match the voted entry. The name it is
+configured under has no effect. Two configured providers that match one
+whitelisted provider count once. Providers missing from the whitelist are
+probed and counted in the gauges, but not toward the quorum. A chain missing
+from the whitelist is probed but not judged.
 
 ## Recommended alerts
 
