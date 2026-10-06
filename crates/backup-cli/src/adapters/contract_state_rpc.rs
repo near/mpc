@@ -43,8 +43,8 @@ pub struct RpcError(String);
 /// not know the url. Every other variant carries text `near_kit` authored itself.
 fn describe(err: &NearKitError) -> String {
     match err {
-        NearKitError::Rpc(rpc) if matches!(rpc.as_ref(), NearKitRpcError::Http(_)) => {
-            let below_reqwest = Error::source(rpc.as_ref()).and_then(Error::source);
+        NearKitError::Rpc(rpc) if let NearKitRpcError::Http(reqwest_error) = rpc.as_ref() => {
+            let below_reqwest = Error::source(reqwest_error);
             match below_reqwest {
                 Some(cause) => format!("http transport error: {cause:?}"),
                 None => "http transport error".to_owned(),

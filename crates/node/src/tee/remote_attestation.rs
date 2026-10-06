@@ -31,9 +31,9 @@ use near_mpc_contract_interface::call_args as contract_args;
 use tokio::{sync::watch, time::Instant};
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
-const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
+const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 const BACKOFF_FACTOR: f32 = 1.5;
-const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour.
+const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_hours(1);
 
 pub(crate) trait GenerateAttestation: Send + Sync {
     fn generate_attestation(

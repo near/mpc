@@ -42,7 +42,7 @@ pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 // Concurrent e2e tests on a shared CI runner can stretch
 // triple/presignature generation past 120 s; the most pressure-sensitive
 // consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
-pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
+pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_mins(4);
 pub const CLUSTER_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Account id for node `i`. Single source for the cluster's node naming.

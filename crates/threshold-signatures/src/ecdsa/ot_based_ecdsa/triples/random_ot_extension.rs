@@ -140,7 +140,7 @@ pub async fn random_ot_extension_sender(
         out.push((v0_i, v1_i));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
-        if (i + 1) % YIELD_EVERY == 0 {
+        if (i + 1).is_multiple_of(YIELD_EVERY) {
             chan.yield_point().await;
         }
     }
@@ -221,7 +221,7 @@ pub async fn random_ot_extension_receiver(
         out.push((b_i, hash_to_scalar(i, t_i)));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
-        if (i + 1) % YIELD_EVERY == 0 {
+        if (i + 1).is_multiple_of(YIELD_EVERY) {
             chan.yield_point().await;
         }
     }
