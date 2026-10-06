@@ -20,10 +20,79 @@ use crate::{
     config::Config,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
+    primitives::key_state::AuthenticatedAccountId,
+    primitives::votes::Votes,
     state::ProtocolContractState,
-    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
+    storage_keys::StorageKey,
+    tee::measurements::{AllowedMeasurements, MeasurementVotes},
+    tee::proposal::{AllowedLauncherImages, LauncherHashVotes, StoredDockerImageHashes},
+    tee::tee_state::{NodeAttestation, NodeId, TeeState},
+    tee::verifier_votes::TeeVerifierVotes,
     update::ContractUpdateVotes,
 };
+use mpc_attestation::attestation::VerifiedAttestation;
+use near_mpc_contract_interface::types as dtos;
+
+/// Shadow of the entry layout from before [`NodeAttestation::accepted_at_seconds`] existed.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldNodeAttestation {
+    node_id: NodeId,
+    verified_attestation: VerifiedAttestation,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: StoredDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: Votes<AuthenticatedAccountId>,
+    launcher_votes: LauncherHashVotes,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: MeasurementVotes,
+}
+
+impl From<OldTeeState> for TeeState {
+    fn from(old: OldTeeState) -> Self {
+        TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: old.allowed_launcher_images,
+            votes: old.votes,
+            launcher_votes: old.launcher_votes,
+            stored_attestations: migrate_stored_attestations(old.stored_attestations),
+            allowed_measurements: old.allowed_measurements,
+            measurement_votes: old.measurement_votes,
+        }
+    }
+}
+
+/// Adds the [`NodeAttestation::accepted_at_seconds`] the old entries lack, as `None`: the
+/// contract never recorded when it accepted them, and the upgrade block time would read as a
+/// submission that never happened. Each node's next accepted submission stamps a real value.
+///
+/// This is a one-off for the layout that predates the field. A later migration must carry
+/// [`NodeAttestation::accepted_at_seconds`] across untouched, since rewriting it would restamp
+/// every node's entry.
+fn migrate_stored_attestations(
+    mut old: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
+) -> IterableMap<dtos::Ed25519PublicKey, NodeAttestation> {
+    let entries: Vec<_> = old.drain().collect();
+    // The new map writes under the same prefix, and an insert reads the slot before writing it.
+    // Leave the old layout in storage and that read panics on it.
+    old.flush();
+
+    let mut migrated = IterableMap::new(StorageKey::StoredAttestations);
+    for (tls_public_key, entry) in entries {
+        migrated.insert(
+            tls_public_key,
+            NodeAttestation {
+                node_id: entry.node_id,
+                verified_attestation: entry.verified_attestation,
+                accepted_at_seconds: None,
+            },
+        );
+    }
+    migrated
+}
 
 /// A stored proposal holds a whole contract binary, so the migration clears both maps.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -69,7 +138,7 @@ pub struct MpcContract {
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
     config: Config,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     foreign_chains: Lazy<ForeignChainsMetadata>,
@@ -92,7 +161,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             config: old.config,
-            tee_state: old.tee_state,
+            tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
@@ -111,8 +180,11 @@ impl From<MpcContract> for crate::MpcContract {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{ProposedUpdates, Update, UpdateEntry, UpdateId};
+    use super::*;
+    use crate::primitives::test_utils::node_id_for;
     use crate::storage_keys::StorageKey;
+    use assert_matches::assert_matches;
+    use mpc_attestation::attestation::MockAttestation;
     use near_sdk::store::IterableMap;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{env, testing_env};
@@ -146,5 +218,47 @@ mod tests {
 
         // Then
         assert_eq!(env::storage_usage(), baseline);
+    }
+
+    #[test]
+    fn migrate_stored_attestations__should_carry_entries_over_without_an_acceptance_time() {
+        // Given: two entries written by a contract that stored no acceptance time
+        testing_env!(VMContextBuilder::new().build());
+        let mut old = IterableMap::new(StorageKey::StoredAttestations);
+        let node_ids: Vec<_> = ["alice.near", "bob.near"]
+            .iter()
+            .map(|account_id| node_id_for(&account_id.parse().unwrap()))
+            .collect();
+        for node_id in &node_ids {
+            old.insert(
+                node_id.tls_public_key.clone(),
+                OldNodeAttestation {
+                    node_id: node_id.clone(),
+                    verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+                },
+            );
+        }
+        old.flush();
+
+        // When
+        let mut migrated = migrate_stored_attestations(old);
+        migrated.flush();
+
+        // Then: read back the way the next contract call would, through a handle rebuilt from
+        // the borsh form, whose cache is empty, so the assertions come from storage.
+        let reread: IterableMap<dtos::Ed25519PublicKey, NodeAttestation> =
+            borsh::from_slice(&borsh::to_vec(&migrated).unwrap()).unwrap();
+        assert_eq!(reread.len() as usize, node_ids.len());
+        for node_id in &node_ids {
+            let entry = reread
+                .get(&node_id.tls_public_key)
+                .expect("every entry survives the migration");
+            assert_eq!(entry.node_id, *node_id);
+            assert_matches!(
+                entry.verified_attestation,
+                VerifiedAttestation::Mock(MockAttestation::Valid)
+            );
+            assert_eq!(entry.accepted_at_seconds, None);
+        }
     }
 }
