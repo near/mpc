@@ -1,31 +1,23 @@
-//! Links a configured foreign chain RPC provider to the whitelist entry it stands for, by URL, and
-//! lists every way the provider differs from that entry.
+//! Finds the whitelist provider that matches a local foreign chain RPC provider, and lists the
+//! parts of the local provider that differ from it.
 //!
-//! A configured provider links to the entry of its chain whose [`ProviderConfig::base_url`] has
-//! the same host. Its config name plays no part. A `{}` label in a base URL host stands for exactly
-//! one host label of `[A-Za-z0-9-]`, such as a QuickNode slug. When several entries match the
-//! host, an exact host beats a `{}`, then the longest base path prefix wins, then the lowest
-//! [`ProviderId`].
+//! The URL host identifies the provider. The local config name has no effect.
 //!
-//! ```
-//! use mpc_node_config::foreign_chains::provider_identity::{ConfiguredAuth, link};
-//! use near_mpc_contract_interface::types::{ChainEntry, ProviderId};
-//! use url::Url;
+//! The host of a whitelisted [`ProviderConfig::base_url`] can start with the label `{}`. This
+//! label matches exactly one label of the local host, for example a QuickNode slug.
 //!
-//! fn conforming_id<'w>(entry: &'w ChainEntry, rpc_url: &Url) -> Option<&'w ProviderId> {
-//!     let link = link(entry, rpc_url, ConfiguredAuth::None)?;
-//!     link.conforms().then_some(link.id)
-//! }
-//! ```
+//! When more than one whitelist provider matches the host, [`find_match`] selects one with these
+//! rules, in this order:
+//! 1. An exact host comes before a `{}` host.
+//! 2. A longer base path prefix comes before a shorter one.
+//! 3. A lower [`ProviderId`] comes before a higher one.
 
 use near_mpc_contract_interface::types::{
     AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
 };
 use url::Url;
 
-const WILDCARD_LABEL: &str = "{}";
-
-/// The auth of a configured provider, without its token.
+/// The auth of a local provider, without its token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfiguredAuth<'a> {
     None,
@@ -41,186 +33,124 @@ pub enum ConfiguredAuth<'a> {
     },
 }
 
-/// A configured provider linked to the whitelisted provider with its URL host.
+/// The whitelist provider with the same URL host as a local provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WhitelistLink<'w> {
+pub struct WhitelistMatch<'w> {
     pub id: &'w ProviderId,
     pub whitelisted: &'w ProviderConfig,
-    /// Every way the configured provider differs from [`Self::whitelisted`].
     pub mismatches: Vec<Mismatch>,
 }
 
-impl WhitelistLink<'_> {
-    /// Whether scheme, port, path, chain routing and auth all match [`Self::whitelisted`].
+impl WhitelistMatch<'_> {
     pub fn conforms(&self) -> bool {
         self.mismatches.is_empty()
     }
 }
 
-/// A way a configured provider differs from its [`WhitelistLink::whitelisted`] provider. Holds no
-/// configured URL part but its scheme and port, so it is safe to log.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A part of a local provider config that differs from its [`WhitelistMatch::whitelisted`] provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mismatch {
-    Scheme {
-        configured: String,
-        whitelisted: String,
-    },
-    /// Only reported when the schemes match, since the default port follows the scheme.
-    Port {
-        configured: Option<u16>,
-        whitelisted: Option<u16>,
-    },
-    /// The whitelisted base path is not a segment prefix of the configured path.
-    Path,
-    /// The configured URL does not carry the whitelisted [`ChainRouting`].
+    BaseUrl,
     ChainRouting,
-    /// The configured auth is not of the whitelisted kind.
-    AuthKind { whitelisted: AuthScheme },
-    HeaderName {
-        configured: String,
-        whitelisted: String,
-    },
-    HeaderScheme {
-        configured: Option<String>,
-        whitelisted: Option<String>,
-    },
-    QueryName {
-        configured: String,
-        whitelisted: String,
-    },
-    /// The path auth placeholder is not the whole path segment after the base path and any
-    /// routing segment.
-    PlaceholderPosition,
-    /// The whitelisted [`ChainRouting`] or [`AuthScheme`] is a variant this binary does not know.
-    UnknownContractVariant,
+    Auth,
 }
 
-/// Links a configured provider to the whitelisted provider with its host, or returns [`None`] if
-/// `entry` has none. A `base_url` that does not parse links to nothing.
-pub fn link<'w>(
+pub fn find_match<'w>(
     entry: &'w ChainEntry,
     rpc_url: &Url,
     auth: ConfiguredAuth<'_>,
-) -> Option<WhitelistLink<'w>> {
+) -> Option<WhitelistMatch<'w>> {
     let path = path_segments(rpc_url);
-    entry
-        .providers
-        .iter()
-        .rev()
-        .filter_map(|(id, whitelisted)| {
-            let base = Url::parse(&whitelisted.base_url).ok()?;
-            host_matches(&base, rpc_url).then_some((id, whitelisted, base))
-        })
-        // `max_by_key` keeps the last of equals, so the reversed order yields the lowest id.
-        .max_by_key(|(_, _, base)| {
-            let exact_host = !base
-                .host_str()
-                .is_some_and(|host| host.contains(WILDCARD_LABEL));
-            let base_path = path_segments(base);
-            let prefix_len = path.starts_with(&base_path).then_some(base_path.len());
-            (exact_host, prefix_len)
-        })
-        .map(|(id, whitelisted, base)| WhitelistLink {
-            id,
-            whitelisted,
-            mismatches: compare(whitelisted, &base, rpc_url, &path, auth),
-        })
+    let mut best: Option<(Rank, &ProviderId, &ProviderConfig, Url)> = None;
+    for (id, whitelisted) in entry.providers.iter() {
+        let Ok(base) = Url::parse(&whitelisted.base_url) else {
+            continue;
+        };
+        if !host_matches(&base, rpc_url) {
+            continue;
+        }
+        let base_path = path_segments(&base);
+        let exact_host = wildcard_suffix(&base).is_none();
+        let prefix_len = path.starts_with(&base_path).then_some(base_path.len());
+        let rank: Rank = (exact_host, prefix_len);
+        // Ids come in ascending order, so on a tie the lower id stays.
+        if best
+            .as_ref()
+            .is_none_or(|(best_rank, ..)| rank > *best_rank)
+        {
+            best = Some((rank, id, whitelisted, base));
+        }
+    }
+
+    let (_, id, whitelisted, base) = best?;
+    let path_mismatch = first_path_mismatch(whitelisted, &base, &path, auth);
+    let mismatches = [
+        compare_base_url(&base, rpc_url, path_mismatch),
+        compare_chain_routing(&whitelisted.chain_routing, rpc_url, path_mismatch),
+        compare_auth(auth, &whitelisted.auth_scheme, path_mismatch),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    Some(WhitelistMatch {
+        id,
+        whitelisted,
+        mismatches,
+    })
+}
+
+/// Tuples compare in order: an exact host ranks first, then the longer base path prefix.
+type Rank = (bool, Option<usize>);
+
+fn wildcard_suffix(base: &Url) -> Option<&str> {
+    base.host_str()?.strip_prefix("{}.")
 }
 
 fn host_matches(base: &Url, url: &Url) -> bool {
-    let (Some(pattern), Some(host)) = (base.host_str(), url.host_str()) else {
-        return false;
-    };
-    let pattern: Vec<&str> = pattern.split('.').collect();
-    let host: Vec<&str> = host.split('.').collect();
-    pattern.len() == host.len()
-        && pattern.iter().zip(&host).all(|(expected, actual)| {
-            if *expected == WILDCARD_LABEL {
-                is_host_label(actual)
-            } else {
-                expected == actual
-            }
-        })
-}
-
-fn is_host_label(label: &str) -> bool {
-    !label.is_empty()
-        && label
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-}
-
-fn compare(
-    whitelisted: &ProviderConfig,
-    base: &Url,
-    url: &Url,
-    path: &[&str],
-    auth: ConfiguredAuth<'_>,
-) -> Vec<Mismatch> {
-    let base_path = path_segments(base);
-    let after_base = path.strip_prefix(base_path.as_slice());
-    let (routing, token_position) = compare_routing(&whitelisted.chain_routing, url, after_base);
-    compare_scheme_and_port(base, url)
-        .into_iter()
-        .chain(after_base.is_none().then_some(Mismatch::Path))
-        .chain(routing)
-        .chain(compare_auth(
-            auth,
-            &whitelisted.auth_scheme,
-            url,
-            token_position,
-        ))
-        .collect()
-}
-
-fn compare_scheme_and_port(base: &Url, url: &Url) -> Option<Mismatch> {
-    if url.scheme() != base.scheme() {
-        Some(Mismatch::Scheme {
-            configured: url.scheme().to_owned(),
-            whitelisted: base.scheme().to_owned(),
-        })
-    } else if url.port_or_known_default() != base.port_or_known_default() {
-        Some(Mismatch::Port {
-            configured: url.port_or_known_default(),
-            whitelisted: base.port_or_known_default(),
-        })
-    } else {
-        None
+    match wildcard_suffix(base) {
+        Some(suffix) => url
+            .domain()
+            .and_then(|domain| domain.split_once('.'))
+            .is_some_and(|(slug, rest)| !slug.is_empty() && rest == suffix),
+        None => base.host() == url.host(),
     }
 }
 
-/// Returns the routing mismatch and the path segments where a path auth token belongs, or
-/// [`None`] if the configured path leaves that position undefined.
-fn compare_routing<'p>(
+fn compare_base_url(base: &Url, url: &Url, path_mismatch: Option<Mismatch>) -> Option<Mismatch> {
+    let matches = url.scheme() == base.scheme()
+        && url.port_or_known_default() == base.port_or_known_default()
+        && path_mismatch != Some(Mismatch::BaseUrl);
+    (!matches).then_some(Mismatch::BaseUrl)
+}
+
+fn compare_chain_routing(
     routing: &ChainRouting,
     url: &Url,
-    after_base: Option<&'p [&'p str]>,
-) -> (Option<Mismatch>, Option<&'p [&'p str]>) {
-    match routing {
-        ChainRouting::Embedded => (None, after_base),
-        ChainRouting::PathSegment { segment } => {
-            let after_routing = after_base.and_then(|rest| strip_segment(url, rest, segment));
-            let mismatch = after_base.is_some() && after_routing.is_none();
-            (mismatch.then_some(Mismatch::ChainRouting), after_routing)
-        }
+    path_mismatch: Option<Mismatch>,
+) -> Option<Mismatch> {
+    let matches = match routing {
+        ChainRouting::Embedded => true,
+        ChainRouting::PathSegment { .. } => path_mismatch != Some(Mismatch::ChainRouting),
         ChainRouting::QueryParam { name, value } => {
-            let mut values = url.query_pairs().filter(|(key, _)| key == name);
-            let found =
-                matches!((values.next(), values.next()), (Some((_, v)), None) if v == *value);
-            ((!found).then_some(Mismatch::ChainRouting), after_base)
+            let values: Vec<_> = url
+                .query_pairs()
+                .filter(|(key, _)| key == name)
+                .map(|(_, value)| value)
+                .collect();
+            values == [value.as_str()]
         }
-        _ => (Some(Mismatch::UnknownContractVariant), None),
-    }
+        _ => false,
+    };
+    (!matches).then_some(Mismatch::ChainRouting)
 }
 
 fn compare_auth(
-    configured: ConfiguredAuth<'_>,
+    auth: ConfiguredAuth<'_>,
     whitelisted: &AuthScheme,
-    url: &Url,
-    token_position: Option<&[&str]>,
-) -> Vec<Mismatch> {
-    match (configured, whitelisted) {
-        (ConfiguredAuth::None, AuthScheme::None) => vec![],
+    path_mismatch: Option<Mismatch>,
+) -> Option<Mismatch> {
+    let matches = match (auth, whitelisted) {
+        (ConfiguredAuth::None, AuthScheme::None) => true,
         (
             ConfiguredAuth::Header { name, scheme },
             AuthScheme::Header {
@@ -228,69 +158,70 @@ fn compare_auth(
                 scheme: whitelisted_scheme,
             },
         ) => {
-            let name_mismatch =
-                (!name.eq_ignore_ascii_case(whitelisted_name)).then(|| Mismatch::HeaderName {
-                    configured: name.to_owned(),
-                    whitelisted: whitelisted_name.clone(),
-                });
             let schemes_match = match (scheme, whitelisted_scheme.as_deref()) {
-                (Some(configured), Some(whitelisted)) => {
-                    configured.eq_ignore_ascii_case(whitelisted)
+                (Some(scheme), Some(whitelisted_scheme)) => {
+                    scheme.eq_ignore_ascii_case(whitelisted_scheme)
                 }
                 (None, None) => true,
                 _ => false,
             };
-            let scheme_mismatch = (!schemes_match).then(|| Mismatch::HeaderScheme {
-                configured: scheme.map(str::to_owned),
-                whitelisted: whitelisted_scheme.clone(),
-            });
-            name_mismatch.into_iter().chain(scheme_mismatch).collect()
+            name.eq_ignore_ascii_case(whitelisted_name) && schemes_match
         }
-        (ConfiguredAuth::Path { placeholder }, AuthScheme::Path { .. }) => token_position
-            .filter(|position| strip_segment(url, position, placeholder).is_none())
-            .map(|_| Mismatch::PlaceholderPosition)
-            .into_iter()
-            .collect(),
+        (ConfiguredAuth::Path { .. }, AuthScheme::Path { .. }) => {
+            path_mismatch != Some(Mismatch::Auth)
+        }
         (
             ConfiguredAuth::Query { name },
             AuthScheme::Query {
                 name: whitelisted_name,
             },
-        ) => (name != whitelisted_name)
-            .then(|| Mismatch::QueryName {
-                configured: name.to_owned(),
-                whitelisted: whitelisted_name.clone(),
-            })
-            .into_iter()
-            .collect(),
-        (
-            _,
-            AuthScheme::None
-            | AuthScheme::Header { .. }
-            | AuthScheme::Path { .. }
-            | AuthScheme::Query { .. },
-        ) => {
-            vec![Mismatch::AuthKind {
-                whitelisted: whitelisted.clone(),
-            }]
-        }
-        _ => vec![Mismatch::UnknownContractVariant],
+        ) => name == whitelisted_name,
+        _ => false,
+    };
+    (!matches).then_some(Mismatch::Auth)
+}
+
+/// Stops at the first wrong part, so one wrong path segment gives one mismatch only.
+fn first_path_mismatch(
+    whitelisted: &ProviderConfig,
+    base: &Url,
+    path: &[&str],
+    auth: ConfiguredAuth<'_>,
+) -> Option<Mismatch> {
+    let expected = base.clone();
+    if !path.starts_with(&path_segments(&expected)) {
+        return Some(Mismatch::BaseUrl);
     }
+    let expected = match &whitelisted.chain_routing {
+        ChainRouting::PathSegment { segment } => {
+            let expected = with_segment(expected, segment);
+            if !path.starts_with(&path_segments(&expected)) {
+                return Some(Mismatch::ChainRouting);
+            }
+            expected
+        }
+        _ => expected,
+    };
+    if let (ConfiguredAuth::Path { placeholder }, AuthScheme::Path { .. }) =
+        (auth, &whitelisted.auth_scheme)
+    {
+        let expected = with_segment(expected, placeholder);
+        if !path.starts_with(&path_segments(&expected)) {
+            return Some(Mismatch::Auth);
+        }
+    }
+    None
 }
 
-/// Strips `segment` off the front of `path`, comparing it the way [`Url`] encodes a path segment.
-/// [`None`] if `segment` is not the first segment or spans several.
-fn strip_segment<'p>(url: &Url, path: &'p [&'p str], segment: &str) -> Option<&'p [&'p str]> {
-    let (first, rest) = path.split_first()?;
-    let mut encoded = url.clone();
-    encoded.set_path(segment);
-    let mut segments = encoded.path_segments()?;
-    matches!((segments.next(), segments.next()), (Some(only), None) if only == *first)
-        .then_some(rest)
+/// Encodes `segment` as [`Url::parse`] does, so `{api_key}` becomes `%7Bapi_key%7D` and equals the
+/// placeholder in a parsed local URL.
+fn with_segment(mut url: Url, segment: &str) -> Url {
+    if let Ok(mut segments) = url.path_segments_mut() {
+        segments.pop_if_empty().push(segment);
+    }
+    url
 }
 
-/// Drops the empty segments a trailing slash leaves. Inner empty segments stay, since the node
-/// sends them.
 fn path_segments(url: &Url) -> Vec<&str> {
     let mut segments: Vec<&str> = url.path_segments().into_iter().flatten().collect();
     while segments.last().is_some_and(|segment| segment.is_empty()) {
@@ -356,14 +287,13 @@ mod tests {
         }
     }
 
-    /// The linked whitelist id and the mismatches, or [`None`] if `rpc_url` links to no entry.
-    fn must_link<'w>(
+    fn must_find_match<'w>(
         entry: &'w ChainEntry,
         rpc_url: &str,
         auth: ConfiguredAuth<'_>,
     ) -> Option<(&'w str, Vec<Mismatch>)> {
         let url = Url::parse(rpc_url).expect("a test rpc_url parses");
-        link(entry, &url, auth).map(|link| (link.id.0.as_str(), link.mismatches))
+        find_match(entry, &url, auth).map(|found| (found.id.0.as_str(), found.mismatches))
     }
 
     fn must_host_patterns() -> ChainEntry {
@@ -389,16 +319,15 @@ mod tests {
         "https://Misty-Fabled-7.base-sepolia.quiknode.pro/key",
         "quicknode"
     )]
-    #[case::one_label_for_each_wildcard("https://a.b.example.org/key", "two-wildcards")]
-    fn link__should_link_by_host(#[case] rpc_url: &str, #[case] expected: &str) {
+    fn find_match__should_match_by_host(#[case] rpc_url: &str, #[case] expected: &str) {
         // Given
         let entry = must_host_patterns();
 
         // When
-        let link = must_link(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
-        assert_eq!(link, Some((expected, vec![])));
+        assert_eq!(whitelist_match, Some((expected, vec![])));
     }
 
     #[rstest]
@@ -410,26 +339,26 @@ mod tests {
     #[case::suffix_moved_into_the_path("https://evil.io/.base-sepolia.quiknode.pro/key")]
     #[case::suffix_extended("https://slug.base-sepolia.quiknode.pro.evil.io/key")]
     #[case::suffix_as_user_info("https://slug.base-sepolia.quiknode.pro@evil.io/key")]
-    #[case::one_label_for_two_wildcards("https://a.example.org/key")]
+    #[case::wildcard_after_the_first_label("https://a.b.example.org/key")]
     #[case::wildcard_inside_a_label("https://api-x.example.com/key")]
     #[case::unparseable_base_url("https://eth.example.net/v2/key")]
-    fn link__should_not_link_a_url_whose_host_matches_no_entry(#[case] rpc_url: &str) {
+    fn find_match__should_not_match_a_url_whose_host_matches_no_entry(#[case] rpc_url: &str) {
         // Given
         let entry = must_host_patterns();
 
         // When
-        let link = must_link(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
-        assert_eq!(link, None);
+        assert_eq!(whitelist_match, None);
     }
 
     #[rstest]
-    #[case::exact_host_over_wildcard("https://api.quiknode.pro/", "exact", vec![Mismatch::Path])]
+    #[case::exact_host_over_wildcard("https://api.quiknode.pro/", "exact", vec![Mismatch::BaseUrl])]
     #[case::longest_base_path_prefix("https://api.example.com/v1/beta/x", "beta", vec![])]
     #[case::lowest_id_among_equal_prefixes("https://api.example.com/v1/x", "stable", vec![])]
-    #[case::lowest_id_when_no_prefix_matches("https://api.example.com/v3", "beta", vec![Mismatch::Path])]
-    fn link__should_prefer_exact_host_then_longest_base_path_then_lowest_id(
+    #[case::lowest_id_when_no_prefix_matches("https://api.example.com/v3", "beta", vec![Mismatch::BaseUrl])]
+    fn find_match__should_prefer_exact_host_then_longest_base_path_then_lowest_id(
         #[case] rpc_url: &str,
         #[case] expected_id: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
@@ -444,30 +373,21 @@ mod tests {
         ]);
 
         // When
-        let link = must_link(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
-        assert_eq!(link, Some((expected_id, expected_mismatches)));
+        assert_eq!(whitelist_match, Some((expected_id, expected_mismatches)));
     }
 
     #[rstest]
     #[case::trailing_slash_on_the_rpc_url("https://eth.alchemy.com/v2/", vec![])]
     #[case::no_trailing_slash("https://eth.alchemy.com/v2", vec![])]
-    #[case::other_port(
-        "https://eth.alchemy.com:8443/v2/key",
-        vec![Mismatch::Port { configured: Some(8443), whitelisted: Some(443) }]
-    )]
-    #[case::other_scheme(
-        "http://eth.alchemy.com/v2/key",
-        vec![Mismatch::Scheme { configured: "http".to_string(), whitelisted: "https".to_string() }]
-    )]
-    #[case::websocket_scheme(
-        "wss://eth.alchemy.com/v2/key",
-        vec![Mismatch::Scheme { configured: "wss".to_string(), whitelisted: "https".to_string() }]
-    )]
-    #[case::path_with_only_a_string_prefix("https://eth.alchemy.com/v2-evil/key", vec![Mismatch::Path])]
-    #[case::empty_segment_before_the_base_path("https://eth.alchemy.com//v2/key", vec![Mismatch::Path])]
-    fn link__should_compare_scheme_port_and_path_segments(
+    #[case::other_port("https://eth.alchemy.com:8443/v2/key", vec![Mismatch::BaseUrl])]
+    #[case::other_scheme("http://eth.alchemy.com/v2/key", vec![Mismatch::BaseUrl])]
+    #[case::websocket_scheme("wss://eth.alchemy.com/v2/key", vec![Mismatch::BaseUrl])]
+    #[case::path_with_only_a_string_prefix("https://eth.alchemy.com/v2-evil/key", vec![Mismatch::BaseUrl])]
+    #[case::empty_segment_before_the_base_path("https://eth.alchemy.com//v2/key", vec![Mismatch::BaseUrl])]
+    fn find_match__should_compare_scheme_port_and_base_path_segments(
         #[case] rpc_url: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
@@ -475,10 +395,10 @@ mod tests {
         let entry = must_chain_entry(&[("alchemy", whitelisted("https://eth.alchemy.com/v2/"))]);
 
         // When
-        let link = must_link(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
-        assert_eq!(link, Some(("alchemy", expected_mismatches)));
+        assert_eq!(whitelist_match, Some(("alchemy", expected_mismatches)));
     }
 
     #[rstest]
@@ -486,7 +406,7 @@ mod tests {
     #[case::longer_segment("https://rpc.ankr.com/ethereum", vec![Mismatch::ChainRouting])]
     #[case::segment_further_down("https://rpc.ankr.com/x/eth", vec![Mismatch::ChainRouting])]
     #[case::missing_segment("https://rpc.ankr.com", vec![Mismatch::ChainRouting])]
-    fn link__should_require_the_routing_segment_right_after_the_base_path(
+    fn find_match__should_require_the_routing_segment_right_after_the_base_path(
         #[case] rpc_url: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
@@ -500,10 +420,10 @@ mod tests {
         )]);
 
         // When
-        let link = must_link(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
-        assert_eq!(link, Some(("ankr", expected_mismatches)));
+        assert_eq!(whitelist_match, Some(("ankr", expected_mismatches)));
     }
 
     #[rstest]
@@ -513,7 +433,7 @@ mod tests {
     #[case::longer_name("?xnetwork=ethereum", vec![Mismatch::ChainRouting])]
     #[case::repeated_name("?network=ethereum&network=bsc", vec![Mismatch::ChainRouting])]
     #[case::missing_pair("", vec![Mismatch::ChainRouting])]
-    fn link__should_require_exactly_the_routing_query_pair(
+    fn find_match__should_require_exactly_the_routing_query_pair(
         #[case] query: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
@@ -529,10 +449,10 @@ mod tests {
         let rpc_url = format!("https://lb.drpc.org/ogrpc{query}");
 
         // When
-        let link = must_link(&entry, &rpc_url, ConfiguredAuth::None);
+        let whitelist_match = must_find_match(&entry, &rpc_url, ConfiguredAuth::None);
 
         // Then
-        assert_eq!(link, Some(("drpc", expected_mismatches)));
+        assert_eq!(whitelist_match, Some(("drpc", expected_mismatches)));
     }
 
     #[rstest]
@@ -540,14 +460,13 @@ mod tests {
     #[case::followed_by_more_segments("https://eth.alchemy.com/v2/{api_key}/v1", "{api_key}", vec![])]
     #[case::space("https://eth.alchemy.com/v2/{api key}", "{api key}", vec![])]
     #[case::angle_brackets("https://eth.alchemy.com/v2/<KEY>", "<KEY>", vec![])]
-    #[case::already_encoded("https://eth.alchemy.com/v2/%7Bkey%7D", "%7Bkey%7D", vec![])]
-    #[case::one_segment_late("https://eth.alchemy.com/v2/x/{api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
-    #[case::after_an_empty_segment("https://eth.alchemy.com/v2//{api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
-    #[case::part_of_the_segment("https://eth.alchemy.com/v2/key{api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
-    #[case::in_the_query("https://eth.alchemy.com/v2?key={api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
-    #[case::in_the_host("https://eth.alchemy.com/v2/key", "alchemy", vec![Mismatch::PlaceholderPosition])]
-    #[case::spanning_segments("https://eth.alchemy.com/v2/a/b", "a/b", vec![Mismatch::PlaceholderPosition])]
-    fn link__should_check_the_placeholder_by_position_as_the_url_encodes_it(
+    #[case::one_segment_late("https://eth.alchemy.com/v2/x/{api_key}", "{api_key}", vec![Mismatch::Auth])]
+    #[case::after_an_empty_segment("https://eth.alchemy.com/v2//{api_key}", "{api_key}", vec![Mismatch::Auth])]
+    #[case::part_of_the_segment("https://eth.alchemy.com/v2/key{api_key}", "{api_key}", vec![Mismatch::Auth])]
+    #[case::in_the_query("https://eth.alchemy.com/v2?key={api_key}", "{api_key}", vec![Mismatch::Auth])]
+    #[case::in_the_host("https://eth.alchemy.com/v2/key", "alchemy", vec![Mismatch::Auth])]
+    #[case::spanning_segments("https://eth.alchemy.com/v2/a/b", "a/b", vec![Mismatch::Auth])]
+    fn find_match__should_check_the_placeholder_by_position_as_the_url_encodes_it(
         #[case] rpc_url: &str,
         #[case] placeholder: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
@@ -559,17 +478,18 @@ mod tests {
         )]);
 
         // When
-        let link = must_link(&entry, rpc_url, ConfiguredAuth::Path { placeholder });
+        let whitelist_match =
+            must_find_match(&entry, rpc_url, ConfiguredAuth::Path { placeholder });
 
         // Then
-        assert_eq!(link, Some(("alchemy", expected_mismatches)));
+        assert_eq!(whitelist_match, Some(("alchemy", expected_mismatches)));
     }
 
     #[rstest]
     #[case::after_the_routing_segment("https://rpc.ankr.com/eth/{api_key}", vec![])]
     #[case::before_the_routing_segment("https://rpc.ankr.com/{api_key}/eth", vec![Mismatch::ChainRouting])]
-    #[case::one_segment_late("https://rpc.ankr.com/eth/x/{api_key}", vec![Mismatch::PlaceholderPosition])]
-    fn link__should_expect_the_placeholder_after_the_routing_segment(
+    #[case::one_segment_late("https://rpc.ankr.com/eth/x/{api_key}", vec![Mismatch::Auth])]
+    fn find_match__should_expect_the_placeholder_after_the_routing_segment(
         #[case] rpc_url: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
@@ -580,10 +500,26 @@ mod tests {
         let entry = must_chain_entry(&[("ankr", path_auth("https://rpc.ankr.com", routing))]);
 
         // When
-        let link = must_link(&entry, rpc_url, API_KEY);
+        let whitelist_match = must_find_match(&entry, rpc_url, API_KEY);
 
         // Then
-        assert_eq!(link, Some(("ankr", expected_mismatches)));
+        assert_eq!(whitelist_match, Some(("ankr", expected_mismatches)));
+    }
+
+    #[test]
+    fn find_match__should_report_a_wrong_base_path_once() {
+        // Given
+        let routing = ChainRouting::PathSegment {
+            segment: "eth".to_string(),
+        };
+        let entry = must_chain_entry(&[("ankr", path_auth("https://rpc.ankr.com/v1", routing))]);
+
+        // When
+        let whitelist_match =
+            must_find_match(&entry, "https://rpc.ankr.com/v2/eth/{api_key}", API_KEY);
+
+        // Then
+        assert_eq!(whitelist_match, Some(("ankr", vec![Mismatch::BaseUrl])));
     }
 
     const GEOMI_URL: &str = "https://api.mainnet.aptoslabs.com/v1";
@@ -595,30 +531,24 @@ mod tests {
 
     #[rstest]
     #[case::name_and_scheme_in_other_letter_case(Some("Bearer"), BEARER, vec![])]
-    #[case::other_name_and_scheme(
+    #[case::other_name(
+        None,
+        ConfiguredAuth::Header { name: "x-api-key", scheme: None },
+        vec![Mismatch::Auth]
+    )]
+    #[case::other_scheme(
         Some("Bearer"),
-        ConfiguredAuth::Header { name: "x-api-key", scheme: Some("Basic") },
-        vec![
-            Mismatch::HeaderName { configured: "x-api-key".to_string(), whitelisted: "Authorization".to_string() },
-            Mismatch::HeaderScheme { configured: Some("Basic".to_string()), whitelisted: Some("Bearer".to_string()) },
-        ]
+        ConfiguredAuth::Header { name: "Authorization", scheme: Some("Basic") },
+        vec![Mismatch::Auth]
     )]
     #[case::scheme_only_whitelisted(
         Some("Bearer"),
         ConfiguredAuth::Header { name: "Authorization", scheme: None },
-        vec![Mismatch::HeaderScheme { configured: None, whitelisted: Some("Bearer".to_string()) }]
+        vec![Mismatch::Auth]
     )]
-    #[case::scheme_only_configured(
-        None,
-        BEARER,
-        vec![Mismatch::HeaderScheme { configured: Some("bearer".to_string()), whitelisted: None }]
-    )]
-    #[case::other_auth_kind(
-        None,
-        ConfiguredAuth::None,
-        vec![Mismatch::AuthKind { whitelisted: AuthScheme::Header { name: "Authorization".to_string(), scheme: None } }]
-    )]
-    fn link__should_compare_header_auth_without_letter_case(
+    #[case::scheme_only_configured(None, BEARER, vec![Mismatch::Auth])]
+    #[case::other_auth_kind(None, ConfiguredAuth::None, vec![Mismatch::Auth])]
+    fn find_match__should_compare_header_auth_without_letter_case(
         #[case] whitelisted_scheme: Option<&str>,
         #[case] configured: ConfiguredAuth<'_>,
         #[case] expected_mismatches: Vec<Mismatch>,
@@ -627,17 +557,17 @@ mod tests {
         let entry = must_chain_entry(&[("geomi", header_auth(whitelisted_scheme))]);
 
         // When
-        let link = must_link(&entry, GEOMI_URL, configured);
+        let whitelist_match = must_find_match(&entry, GEOMI_URL, configured);
 
         // Then
-        assert_eq!(link, Some(("geomi", expected_mismatches)));
+        assert_eq!(whitelist_match, Some(("geomi", expected_mismatches)));
     }
 
     #[rstest]
     #[case::same_name("apikey", vec![])]
-    #[case::other_letter_case("ApiKey", vec![Mismatch::QueryName { configured: "ApiKey".to_string(), whitelisted: "apikey".to_string() }])]
-    #[case::other_name("dkey", vec![Mismatch::QueryName { configured: "dkey".to_string(), whitelisted: "apikey".to_string() }])]
-    fn link__should_compare_the_query_auth_name_exactly(
+    #[case::other_letter_case("ApiKey", vec![Mismatch::Auth])]
+    #[case::other_name("dkey", vec![Mismatch::Auth])]
+    fn find_match__should_compare_the_query_auth_name_exactly(
         #[case] configured: &str,
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
@@ -655,13 +585,13 @@ mod tests {
         )]);
 
         // When
-        let link = must_link(
+        let whitelist_match = must_find_match(
             &entry,
             "https://lb.drpc.org/ogrpc",
             ConfiguredAuth::Query { name: configured },
         );
 
         // Then
-        assert_eq!(link, Some(("drpc", expected_mismatches)));
+        assert_eq!(whitelist_match, Some(("drpc", expected_mismatches)));
     }
 }
