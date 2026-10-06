@@ -193,7 +193,7 @@ fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fix
     );
 }
 
-const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+const DAY: Duration = Duration::from_hours(24);
 const TEN_YEARS: Duration = Duration::from_secs(10 * 365 * DAY.as_secs());
 
 fn ten_years_after_fixture() -> Duration {

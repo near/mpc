@@ -421,7 +421,7 @@ mod tests {
 
     use super::*;
     use crate::tee::test_utils::set_block_secs;
-    const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_secs(10 * 24 * 60 * 60); // 10 days
+    const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_hours(10 * 24);
     const SECOND: Duration = Duration::from_secs(1);
     const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 

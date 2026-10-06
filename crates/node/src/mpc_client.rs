@@ -45,7 +45,7 @@ use tokio::time::{sleep, timeout};
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
-    Duration::from_secs(60 * 60 * 24 * 2);
+    Duration::from_hours(2 * 24);
 
 #[derive(Clone)]
 pub struct MpcClient {
