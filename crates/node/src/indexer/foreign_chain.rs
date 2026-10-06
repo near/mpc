@@ -89,7 +89,7 @@ pub(crate) fn supporters_by_available_chain(
 }
 
 /// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
-async fn fetch_allowed_foreign_chain_providers_with_retry(
+async fn fetch_foreign_chain_whitelist_with_retry(
     indexer_state: &IndexerState,
 ) -> BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
     let mut backoff = ExponentialBuilder::default()
@@ -118,14 +118,14 @@ async fn fetch_allowed_foreign_chain_providers_with_retry(
 /// Monitor the allowed foreign-chain providers whitelist stored in the contract and update the
 /// watch channel when changes are detected. Consumed by
 /// [`crate::foreign_chain_whitelist_verifier::run`].
-pub async fn monitor_allowed_foreign_chain_providers(
+pub async fn monitor_foreign_chain_whitelist(
     sender: watch::Sender<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>>,
     indexer_state: Arc<IndexerState>,
 ) {
     indexer_state.client.wait_for_full_sync().await;
 
     loop {
-        let whitelist = fetch_allowed_foreign_chain_providers_with_retry(&indexer_state).await;
+        let whitelist = fetch_foreign_chain_whitelist_with_retry(&indexer_state).await;
         sender.send_if_modified(|previous| {
             if *previous != whitelist {
                 *previous = whitelist;
