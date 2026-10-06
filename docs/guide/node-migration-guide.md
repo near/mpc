@@ -31,18 +31,19 @@ export NEAR_NETWORK=testnet
 # Where backup-cli keeps its keys and the backed-up keyshares (Step 1)
 export BACKUP_HOME_DIR=/path/to/backup/home
 
-# The old node's migration endpoint, as bare host:port — no http:// (Step 4)
-export OLD_NODE_ADDRESS=node.example.com:8079
+# The old and new nodes' hosts (or IPs) — used for the nodes' public-data/debug
+# endpoints on port 8080 (Steps 4–7) and by the derived variables below
+export OLD_NODE_HOST=node.example.com
+export NEW_NODE_HOST=new-node.example.com
 
-# The new node's migration endpoint, as bare host:port — no http:// (Step 7)
-export NEW_NODE_ADDRESS=new-node.example.com:8079
+# The nodes' migration endpoints, as bare host:port — no http://; the port is each
+# node's migration_web_ui port (Steps 4 and 7)
+export OLD_NODE_ADDRESS=$OLD_NODE_HOST:8079
+export NEW_NODE_ADDRESS=$NEW_NODE_HOST:8079
 
-# The nodes' hosts (or IPs), for their public-data/debug endpoints on port 8080 (Steps 4–7)
-export OLD_NODE_IP=node.example.com
-export NEW_NODE_IP=new-node.example.com
-
-# The new node's public URL to register on the contract — http:// prefix required (Step 6)
-export NEW_NODE_URL=http://new-node.example.com:80
+# The new node's public URL to register on the contract — http:// prefix required;
+# adjust if peers reach the node under a different name (Step 6)
+export NEW_NODE_URL=http://$NEW_NODE_HOST:80
 
 # A NEAR RPC provider's endpoint, not your MPC node — only needed for the optional
 # continuous backup (Step 4); an api key goes in the query string
@@ -281,13 +282,13 @@ You'll need:
 - **MPC node P2P public key** (`$OLD_NODE_P2P_KEY`): The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash
-  export OLD_NODE_P2P_KEY=$(curl -s http://$OLD_NODE_IP:8080/public_data | jq -r ".near_p2p_public_key")
+  export OLD_NODE_P2P_KEY=$(curl -s http://$OLD_NODE_HOST:8080/public_data | jq -r ".near_p2p_public_key")
   ```
 
 While the old node is still reachable, also capture its signer public key — you will revoke it from your account in [Step 9](#step-9-decommission-old-node), after the node is gone:
 
 ```bash
-export OLD_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://$OLD_NODE_IP:8080/public_data | jq -r ".near_signer_public_key")
+export OLD_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://$OLD_NODE_HOST:8080/public_data | jq -r ".near_signer_public_key")
 ```
 
 ### Get Contract State
@@ -310,7 +311,7 @@ This saves the contract state to `contract_state.json`, which the backup-cli use
 The migration endpoint listens on the node's `migration_web_ui` port — the port in `$OLD_NODE_ADDRESS`. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
 
 ```bash
-curl -s http://$OLD_NODE_IP:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
+curl -s http://$OLD_NODE_HOST:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
 ```
 
 ```bash
@@ -384,8 +385,8 @@ See more details on extracting key from the node and adding the keys to your acc
 **Note:** The keys can be retrieved using the node's public data endpoint:
 
 ```bash
-export NEW_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://$NEW_NODE_IP:8080/public_data | jq -r ".near_signer_public_key")
-export NEW_NODE_P2P_KEY=$(curl -s http://$NEW_NODE_IP:8080/public_data | jq -r ".near_p2p_public_key")
+export NEW_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://$NEW_NODE_HOST:8080/public_data | jq -r ".near_signer_public_key")
+export NEW_NODE_P2P_KEY=$(curl -s http://$NEW_NODE_HOST:8080/public_data | jq -r ".near_p2p_public_key")
 ```
 
 ### Check that the new node's attestation is registered on the contract
@@ -469,7 +470,7 @@ This will return migration information for all accounts, including your backup s
 
 ## Step 7: Transfer Keyshares to New Node
 
-As in [Step 4](#step-4-backup-keyshares-from-old-node), the port in `$NEW_NODE_ADDRESS` is the node's `migration_web_ui` port — read it from `http://$NEW_NODE_IP:8080/debug/node_config` instead of assuming the `8079` default. The encryption key again comes from `$BACKUP_ENCRYPTION_KEY_HEX`; the new node must hold the matching key ([Step 5](#step-5-prepare-the-new-node)).
+As in [Step 4](#step-4-backup-keyshares-from-old-node), the port in `$NEW_NODE_ADDRESS` is the node's `migration_web_ui` port — read it from `http://$NEW_NODE_HOST:8080/debug/node_config` instead of assuming the `8079` default. The encryption key again comes from `$BACKUP_ENCRYPTION_KEY_HEX`; the new node must hold the matching key ([Step 5](#step-5-prepare-the-new-node)).
 
 ```bash
 backup-cli \
@@ -549,7 +550,7 @@ After verifying the migration was successful:
 If backup-cli cannot connect to your node:
 
 - **`failed to lookup address information: Name or service not known`**: `--mpc-node-address` must be a bare `host:port` with no URL scheme and no trailing path. A value like `http://node.example.com:8079` is parsed as hostname `http://node.example.com`, which no resolver can answer.
-- **Verify the port**: The migration endpoint uses the node's `migration_web_ui` port, which is not always the `8079` default — read it from `http://$OLD_NODE_IP:8080/debug/node_config` (use `$NEW_NODE_IP` for the new node). The same endpoint shows the bind address, which must not be loopback-only.
+- **Verify the port**: The migration endpoint uses the node's `migration_web_ui` port, which is not always the `8079` default — read it from `http://$OLD_NODE_HOST:8080/debug/node_config` (use `$NEW_NODE_HOST` for the new node). The same endpoint shows the bind address, which must not be loopback-only.
 - **Verify firewall rules**: Ensure the backup service can reach the node's address and that the migration port is open and accessible. Test with `nc -vz <host> <port>` rather than `curl`; the endpoint is a raw TLS channel authenticated against the registered backup-service key, so it does not answer plain HTTP requests.
 
 ### `put-keyshares` reports success but the node never onboards
@@ -558,7 +559,7 @@ If the new node does not conclude the migration, check its logs for a warning th
 destination TLS key is not its own; it names both keys. That means the `tls_public_key` passed to
 `start_node_migration` in [Step 6](#step-6-initiate-migration-state-in-contract) is not the key the
 new node runs with. Compare `migration_info` against
-`curl -s http://$NEW_NODE_IP:8080/public_data | jq -r .near_p2p_public_key` and call
+`curl -s http://$NEW_NODE_HOST:8080/public_data | jq -r .near_p2p_public_key` and call
 `start_node_migration` again with the correct value; only the last call is retained. The node still
 holds the transferred keyshares in memory and imports them as soon as it sees itself registered,
 so `put-keyshares` only needs re-running if the node restarted in the meantime.
