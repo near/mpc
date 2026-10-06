@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
 
@@ -449,21 +449,32 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
         .unwrap()
         .expect("participant attestation should be stored");
 
-    // When: the same participant re-attests with no attached deposit.
-    testing_env!(common::participant_context(&node.account_id));
+    // When: the same participant re-attests with no attached deposit, an hour later.
+    const ONE_HOUR_SECONDS: u64 = 3600;
+    testing_env!(VMContext {
+        block_timestamp: near_sdk::env::block_timestamp() + ONE_HOUR_SECONDS * NANOS_IN_SECOND,
+        ..common::participant_context(&node.account_id)
+    });
     let result = setup
         .contract
         .submit_participant_info(attestation, node.tls_public_key.clone())
         .map(|_| ());
 
-    // Then: the submission succeeds and the stored entry is unchanged.
+    // Then: the submission succeeds and restamps the entry, so it was stored rather than
+    // silently dropped.
     assert_matches!(&result, Ok(()));
     let stored_after = setup
         .contract
         .get_attestation(node.tls_public_key)
         .unwrap()
         .expect("participant attestation should still be stored");
-    assert_eq!(stored_before, stored_after);
+    let accepted_at_before = stored_before
+        .accepted_at_seconds
+        .expect("an accepted submission stamps its acceptance time");
+    assert_eq!(
+        stored_after.accepted_at_seconds,
+        Some(accepted_at_before + ONE_HOUR_SECONDS)
+    );
 }
 
 /// **Test that [`clean_tee_status()`] is vote-only** — attestations for non-participants
