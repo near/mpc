@@ -29,7 +29,7 @@ use tokio::sync::watch;
 use url::Url;
 
 /// Compares the local config with each whitelist that
-/// [`monitor_allowed_foreign_chain_providers`](crate::indexer::tee::monitor_allowed_foreign_chain_providers)
+/// [`monitor_allowed_foreign_chain_providers`](crate::indexer::foreign_chain::monitor_allowed_foreign_chain_providers)
 /// publishes.
 ///
 /// `run` does not read the contract: the monitor polls it, so a change to how the node reads the
