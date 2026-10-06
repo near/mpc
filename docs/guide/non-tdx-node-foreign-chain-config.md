@@ -1,5 +1,28 @@
 # Foreign chain config for non-TDX nodes
 
+## Credentials only (Recommended)
+
+Instead of the full `foreign_chains` section below, select the node's embedded provider preset
+and give one credentials entry per provider. The node enables every preset (chain, provider) pair
+whose provider has credentials, plus the providers that need none; chains you configure in full
+take precedence:
+
+```yaml
+foreign_chains:
+  rpc_preset: testnet  # mainnet: mainnet
+  credentials:
+    alchemy:
+      val: "YOUR_ALCHEMY_API_KEY"
+    quicknode:
+      val: "YOUR_QUICKNODE_API_KEY"
+      slug: "YOUR-SLUG"
+    geomi:
+      val: "YOUR_GEOMI_API_KEY"
+    tatum:
+      val: "YOUR_TATUM_API_KEY"
+    chainstack:
+      val: "YOUR_CHAINSTACK_API_KEY"
+```
 
 ## Testnet example
 

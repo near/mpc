@@ -589,12 +589,12 @@ mod tests {
         let object = value
             .as_object()
             .expect("response must serialize as a JSON object");
+
+        // Then — provider counts are safe to expose; sensitive details are not.
         assert_eq!(
             object.get("foreign_chains_rpc_preset"),
             Some(&serde_json::json!("testnet"))
         );
-
-        // Then — provider counts are safe to expose; sensitive details are not.
         let counts = object
             .get("foreign_chains_provider_counts")
             .expect("response must contain `foreign_chains_provider_counts`")

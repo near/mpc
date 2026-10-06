@@ -99,7 +99,7 @@ impl fmt::Display for ResolutionDiagnostic {
                 let detail = if *rpc_url_differs {
                     "with a different RPC URL"
                 } else {
-                    "with the same RPC URL; the node config entry can be removed"
+                    "with the same RPC URL"
                 };
                 write!(
                     f,

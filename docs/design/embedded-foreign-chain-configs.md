@@ -1,6 +1,6 @@
 # Embedding foreign chain configs in the node image
 
-**Status:** Proposed — tracked by [#4611](https://github.com/near/mpc/issues/4611)\
+**Status:** Implemented — designed in [#4611](https://github.com/near/mpc/issues/4611), implemented in [#4630](https://github.com/near/mpc/issues/4630)\
 **Date:** 2026-10-01
 
 ## Background
