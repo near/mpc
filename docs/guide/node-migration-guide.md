@@ -43,6 +43,17 @@ export NEW_NODE_IP=new-node.example.com
 
 # The new node's public URL to register on the contract — http:// prefix required (Step 6)
 export NEW_NODE_URL=http://new-node.example.com:80
+
+# A NEAR RPC provider's endpoint, not your MPC node — only needed for the optional
+# continuous backup (Step 4); an api key goes in the query string
+export BACKUP_RPC_URL=https://rpc.$NEAR_NETWORK.fastnear.com
+```
+
+One more variable lives on the node host rather than this machine:
+
+```bash
+# The node's home directory, from the node's .env — commonly /data inside the container (Step 3)
+export MPC_HOME_DIR=/data
 ```
 
 The remaining variables are filled in as you go — each is obtained in the step shown:
@@ -68,7 +79,7 @@ Before starting a migration, ensure you have:
 
 ### Prepay the New Node's Attestation Storage
 
-During a migration your account holds two attestations — the old node's and the new node's — and each stored attestation consumes one prepaid **grant**. The old node's grant stays occupied until its attestation expires (7 days) and is swept — stopping the old node does not free it — so the new node needs an available grant of its own.
+During a migration your account holds two attestations — the old node's and the new node's — and each stored attestation consumes one prepaid **grant**. The old node's grant stays occupied until its attestation expires and is swept — stopping the old node does not free it — so the new node needs an available grant of its own.
 
 Do this before you start the migration. Check whether a grant is available:
 
@@ -210,7 +221,7 @@ You should see your account and registered backup_cli public key listed, somethi
 
 ## Step 3: Generate and Set Encryption Key
 
-For additional security, the backup and restore process encrypts keyshares during transport using AES encryption. You need to generate a shared encryption key (32 bytes / 64 hex characters), configure it on both your old and new nodes, and pass it to the backup-cli commands.
+For additional security, the backup and restore process encrypts keyshares during transport using AES encryption. You need to generate a shared encryption key (32 bytes / 64 hex characters), configure it on both your old and new nodes, and provide it to the backup-cli via `BACKUP_ENCRYPTION_KEY_HEX`.
 
 Where you set it on a node depends on the deployment (see [Step 5](#step-5-prepare-the-new-node) for exact placement):
 - **TDX / CVM node:** set `backup_encryption_key_hex` under `[mpc_node_config.secrets]` in `user-config.toml`. A CVM has no `.env` / `MPC_BACKUP_ENCRYPTION_KEY_HEX` pathway.
@@ -219,7 +230,7 @@ Where you set it on a node depends on the deployment (see [Step 5](#step-5-prepa
 **Important:** The key must match **exactly** between the backup-cli and the node it talks to (the old node for `get-keyshares`, the new node for `put-keyshares`) — a mismatch, including a stray trailing newline, makes the transfer fail. If set on the node it must be 64 hex characters (a malformed value stops the node from starting); if left unset, the node generates one itself (see below).
 
 
-### Retrieve a key from an existing node.
+### Obtain the key
 
 **Note:** If your node has been running without an encryption key configured, the node automatically generates one and stores it in a file called `backup_encryption_key.hex` in the node's home directory — `MPC_HOME_DIR` in the node's `.env`, commonly `/data` inside the container. On a **non-TEE** node you can read it on the node host — inside the container, or from the host directory mounted at `/data`:
 
@@ -233,7 +244,13 @@ Copy the value to the backup-cli machine and set it there as `BACKUP_ENCRYPTION_
 read -rs BACKUP_ENCRYPTION_KEY_HEX && export BACKUP_ENCRYPTION_KEY_HEX   # paste the 64-hex value; read -rs keeps it out of shell history
 ```
 
-**TEE (TDX/dstack) nodes:** the node's home directory (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
+**TEE (TDX/dstack) nodes:** the node's home directory (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead. Generate one — it is just 32 random bytes, hex-encoded:
+
+```bash
+openssl rand -hex 32
+```
+
+Set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
 
 ```toml
 [mpc_node_config.secrets]
@@ -314,11 +331,9 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 
 ### Keeping the Backup Up to Date
 
-`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a NEAR JSON-RPC endpoint and takes a backup whenever the contract's keyset is not the one already stored:
+`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a NEAR JSON-RPC endpoint (`$BACKUP_RPC_URL` from [Environment Variables Setup](#environment-variables-setup)) and takes a backup whenever the contract's keyset is not the one already stored:
 
 ```bash
-export BACKUP_RPC_URL=https://rpc.$NEAR_NETWORK.fastnear.com   # a NEAR RPC provider's endpoint, not your MPC node; an api key goes in the query string
-
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   run \
