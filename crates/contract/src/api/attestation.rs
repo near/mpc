@@ -506,7 +506,7 @@ mod tests {
     use near_sdk::testing_env;
     use rand::rngs::OsRng;
     use rstest::rstest;
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
     use std::panic;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
@@ -866,7 +866,7 @@ mod tests {
                 domains[0].clone(),
                 expected_params,
             ),
-            cancellation_requests: HashSet::new(),
+            cancellation_requests: BTreeSet::new(),
             per_domain_thresholds: BTreeMap::new(),
         };
 

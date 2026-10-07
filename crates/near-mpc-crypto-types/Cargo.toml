@@ -20,7 +20,7 @@ bs58 = { workspace = true }
 curve25519-dalek = { workspace = true, optional = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true, optional = true }
-k256 = { workspace = true, optional = true }
+k256 = { workspace = true, optional = true, features = ["ecdsa"] }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
