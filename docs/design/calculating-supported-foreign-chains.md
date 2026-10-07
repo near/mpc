@@ -15,7 +15,7 @@ feature down. That is what this design fixes.
 
 It builds on the per-chain RPC whitelist (`ForeignChainRpcWhitelist`), which holds,
 per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`,
-stored for a deferred quorum policy and not yet consumed: verification compares every
+used only by each node's hourly provider health check: verification compares every
 configured provider, see [Verification behavior](#verification-behavior)).
 
 ## Design: two sets of chains

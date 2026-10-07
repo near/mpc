@@ -111,8 +111,7 @@ Reading the numbers:
   counter stays at zero, suspect a disagreeing provider and compare the node
   logs.
 * Every configured provider's series appears, at zero, as soon as the node
-  serves requests, so an idle node reports zero rather than nothing. Solana can
-  be configured but is not checked, so it never appears.
+  serves requests, so an idle node reports zero rather than nothing.
 * With no traffic, all series stay flat whether providers are healthy or down.
   On a quiet node, the probe below is the health signal.
 * Every participating node checks for itself: one user request produces one
@@ -122,20 +121,34 @@ Reading the numbers:
 
 ### The hourly probe
 
-Once per hour, whether or not any traffic exists, the node asks each configured
-provider which network it is serving and compares the answer with the chain's
-`expected_network_fingerprint` from your config:
+At startup and then once per hour, whether or not any traffic exists, the node
+asks each configured provider which network it is serving and compares the
+answer with the chain's `expected_network_fingerprint` from your config:
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain |
+| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain, whitelisted or not |
 | `mpc_foreign_chain_rpc_providers_healthy` | providers that passed the latest probe |
 
 `healthy` should equal `configured`. Anything less is a provider the probe
 could not confirm: unreachable, refusing, too slow, serving a different
 network, or a chain configured without an `expected_network_fingerprint`,
-which the probe cannot check. Solana has no probe and is left out of both
-gauges.
+which the probe cannot check.
+
+After each round the node also judges every probed chain against the provider
+whitelist and logs the verdict. Until the node has synced and read the
+whitelist from the contract, it logs that chain health is unknown. It probes
+again as soon as the whitelist is read, and whenever the whitelist changes.
+
+A chain is healthy when at least its quorum of whitelisted providers is
+configured and all of them passed. Fewer than the quorum, or a whitelisted
+provider that failed, logs a warning. A configured provider counts for the
+whitelisted provider with the same URL host, and only when its scheme, port,
+path, chain routing and auth all match the voted entry. The name it is
+configured under has no effect. Two configured providers that match one
+whitelisted provider count once. Providers missing from the whitelist are
+probed and counted in the gauges, but not toward the quorum. A chain missing
+from the whitelist is probed but not judged.
 
 ## Recommended alerts
 
