@@ -159,6 +159,7 @@ hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 http = "1.4.1"
 http-body-util = "0.1.3"
+httpmock = "0.8.2"
 humantime = "2.3.0"
 hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
@@ -184,12 +185,12 @@ near-account-id = "2.6.0"
 # the git nearcore crate below, which the node's indexer stack requires.
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
-near-crypto-public = { version = "0.37.3", package = "near-crypto" }
+near-crypto-public = { version = "0.37.4", package = "near-crypto" }
 near-gas = "0.3.6"
 near-jsonrpc-client = "0.22.0"
-near-jsonrpc-primitives = "0.37.3"
+near-jsonrpc-primitives = "0.37.4"
 near-kit = { version = "0.18.0", default-features = false, features = ["rpc"] }
-near-primitives = "0.37.3"
+near-primitives = "0.37.4"
 near-sandbox = "0.3.15"
 near-sdk = { version = "5.29.0", features = ["unstable"] }
 near-token = "0.3.4"
@@ -240,6 +241,7 @@ tikv-jemallocator = { version = "0.6.0", features = [
     "profiling",
     "unprefixed_malloc_on_supported_platforms",
 ] }
+time = "0.3.45"
 tokio = { version = "1.52.2", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.5.0" }
 tokio-rustls = { version = "0.26.4", default-features = false }
@@ -278,9 +280,6 @@ near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
 nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
 
 ## Outdated dependencies we cannot upgrade ##
-# Version 0.8.3 requires rustc 1.88
-httpmock = "0.8.2"
-
 prometheus = { version = "0.14.0", default-features = false }
 
 # This version needs to be exactly the same as in `near_sdk::schemars`
@@ -294,9 +293,6 @@ getrandom = "0.2.12"
 rand = "0.8.8"
 rand_chacha = "0.3"
 rand_core = "0.6.4"
-
-# Cannot be upgraded until we get MSVR 1.88
-time = "0.3.45"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = [

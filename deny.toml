@@ -19,6 +19,7 @@ allow = [
 ]
 
 [advisories]
+unsound = "all"
 ignore = [
   "RUSTSEC-2022-0054", # wee_alloc is unmaintained
   "RUSTSEC-2024-0436", # paste is unmaintained
@@ -40,10 +41,13 @@ ignore = [
   "RUSTSEC-2026-0327", # wasmtime component async-lifted callback result count unvalidated
   # TODO(#4423): remove once cargo can resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore 2.14.0-rc.2 and
-  # near-crypto 0.37.3 pin it to =1.16.2, so the fix cannot be resolved until they move. The
+  # near-crypto 0.37.4 pin it to =1.16.2, so the fix cannot be resolved until they move. The
   # handshake transcript stays authenticated: the flaw only lets a peer send handshake
   # messages that should be encrypted in plaintext without rustls rejecting them.
   "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
+  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
+  # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
+  "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry
 ]
 
 [bans]
