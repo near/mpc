@@ -54,7 +54,6 @@ zeroize.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
-average.workspace = true
 criterion.workspace = true
 insta.workspace = true
 rand.workspace = true

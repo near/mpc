@@ -113,14 +113,12 @@ built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 elliptic-curve = { workspace = true }
 httpmock = { workspace = true }
 insta = { workspace = true }
 itertools = { workspace = true }
-mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
@@ -129,7 +127,6 @@ test-log = { workspace = true }
 test-port-allocator = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }
-tracing-test = { workspace = true }
 
 [lints]
 workspace = true

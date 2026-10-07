@@ -1,15 +1,16 @@
 //! Integration tests for [`FanOut`].
-//!
-//! The mock is generated locally with `mockall::mock!` so the production trait
-//! definition stays clean and `mockall` is only pulled in as a dev-dep. The
-//! `impl Clone for Inspector` block makes the mock satisfy [`FanOut`]'s
-//! `Inspector: Clone` bound; mockall doesn't deep-clone expectations, so the
-//! factory below sets the same `expect_extract` behaviour on every clone.
 
 #![expect(non_snake_case)]
 pub mod common;
 
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use crate::common::fan_out_of;
 use assert_matches::assert_matches;
@@ -21,25 +22,27 @@ use near_mpc_contract_interface::types::ProviderId;
 use rstest::rstest;
 use tokio::sync::mpsc;
 
-mockall::mock! {
-    Inspector {}
+/// Clones share one count of [`ForeignChainInspector::extract`] calls, made through any of them
+#[derive(Clone)]
+struct MockInspector {
+    respond: ResponseFutureFn,
+    extract_calls: Arc<AtomicUsize>,
+}
 
-    impl ForeignChainInspector for Inspector {
-        type TransactionId = ();
-        type Finality = ();
-        type Extractor = ();
-        type ExtractedValue = u32;
+impl ForeignChainInspector for MockInspector {
+    type TransactionId = ();
+    type Finality = ();
+    type Extractor = ();
+    type ExtractedValue = u32;
 
-        fn extract(
-            &self,
-            tx_id: (),
-            finality: (),
-            extractors: Vec<()>,
-        ) -> impl Future<Output = Result<Verdict<u32>, ForeignChainInspectionError>> + Send;
-    }
-
-    impl Clone for Inspector {
-        fn clone(&self) -> Self;
+    async fn extract(
+        &self,
+        _tx_id: (),
+        _finality: (),
+        _extractors: Vec<()>,
+    ) -> Result<Verdict<u32>, ForeignChainInspectionError> {
+        self.extract_calls.fetch_add(1, Ordering::Relaxed);
+        (self.respond)().await
     }
 }
 
@@ -55,23 +58,11 @@ type Response =
     Pin<Box<dyn Future<Output = Result<Verdict<u32>, ForeignChainInspectionError>> + Send>>;
 type ResponseFutureFn = Arc<dyn Fn() -> Response + Send + Sync>;
 
-/// Builds a mock whose `extract` awaits the future `respond()` produces, and whose
-/// `clone()` produces another mock with the same behaviour.
-///
-/// [`FanOut::extract`] calls `clone()` on the inspector and only `extract` on the
-/// resulting clone; the inverse never happens. We allow `times(0..)` on both
-/// expectations so a single helper covers both "original" and "cloned" roles
-/// without surprising the test author with expectation failures on drop.
 fn mock_awaiting(respond: ResponseFutureFn) -> MockInspector {
-    let mut m = MockInspector::new();
-    let for_extract = Arc::clone(&respond);
-    m.expect_extract()
-        .returning(move |_, _, _| for_extract())
-        .times(0..);
-    m.expect_clone()
-        .returning(move || mock_awaiting(Arc::clone(&respond)))
-        .times(0..);
-    m
+    MockInspector {
+        respond,
+        extract_calls: Arc::default(),
+    }
 }
 
 fn mock_never_answering(asked: mpsc::UnboundedSender<()>) -> MockInspector {
@@ -82,26 +73,6 @@ fn mock_never_answering(asked: mpsc::UnboundedSender<()>) -> MockInspector {
             std::future::pending().await
         })
     }))
-}
-
-/// Strict variant of [`mock_returning`]: the original is cloned exactly once,
-/// and the resulting clone has `extract` called exactly once. Use this when a
-/// test needs to verify that the fan-out spawns one task per inspector.
-fn mock_called_once(response: ResponseFn) -> MockInspector {
-    let mut original = MockInspector::new();
-    original
-        .expect_clone()
-        .returning(move || {
-            let response = Arc::clone(&response);
-            let mut clone = MockInspector::new();
-            clone
-                .expect_extract()
-                .returning(move |_, _, _| Box::pin(std::future::ready(response())))
-                .times(1);
-            clone
-        })
-        .times(1);
-    original
 }
 
 fn ok(values: Vec<u32>) -> ResponseFn {
@@ -273,18 +244,20 @@ mod all_extract {
 
     #[tokio::test]
     async fn fan_out__should_query_every_inspector_exactly_once() {
-        // Given: strict mocks that panic on Drop if not invoked exactly once.
-        let fan_out = fan_out_of(vec![
-            mock_called_once(ok(vec![1, 2])),
-            mock_called_once(ok(vec![1, 2])),
-            mock_called_once(ok(vec![1, 2])),
-        ]);
+        // Given
+        let inspectors: Vec<_> = (0..3).map(|_| mock_returning(ok(vec![1, 2]))).collect();
+        let fan_out = fan_out_of(inspectors.clone());
 
         // When
         let result = fan_out.extract((), (), vec![]).await;
 
-        // Then: mockall verifies call counts on drop.
+        // Then
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![1, 2]));
+        let extract_calls: Vec<_> = inspectors
+            .iter()
+            .map(|inspector| inspector.extract_calls.load(Ordering::Relaxed))
+            .collect();
+        assert_eq!(extract_calls, vec![1, 1, 1]);
     }
 }
 
