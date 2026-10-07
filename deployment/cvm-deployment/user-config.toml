@@ -134,7 +134,7 @@ timeout_sec = 60
 # docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md for details, and verify
 # with crates/foreign-chain-config-tester before deploying.
 #
-# Alternatively (node 3.17+; older nodes ignore these keys), drop the per-chain
+# Recommended (only starting from node 3.17), drop the per-chain
 # sections: select a provider preset and give per-provider credentials.
 # Per-chain sections take precedence.
 #
