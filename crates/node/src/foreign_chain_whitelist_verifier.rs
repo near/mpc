@@ -46,12 +46,7 @@ pub(crate) async fn run(
             .as_ref()
             .map(|whitelist| compare(&local, whitelist));
         if let Some(diagnostics) = diagnostics {
-            if diagnostics.is_empty() {
-                tracing::info!(
-                    "foreign chain whitelist: local config matches the contract whitelist"
-                );
-            }
-            diagnostics.iter().for_each(log_diagnostic);
+            log_diagnostics(&diagnostics);
         }
         if whitelist_rx.changed().await.is_err() {
             // Sender dropped: the indexer is shutting down, nothing left to verify against.
@@ -163,6 +158,13 @@ pub(crate) fn find_whitelist_match<'w>(
     provider_identity::find_match(whitelist_entry, &local_url, (&local_provider.auth).into())
 }
 
+fn log_diagnostics(diagnostics: &[Diagnostic]) {
+    if diagnostics.is_empty() {
+        tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
+    }
+    diagnostics.iter().for_each(log_diagnostic);
+}
+
 fn log_diagnostic(diagnostic: &Diagnostic) {
     let chain = diagnostic.chain;
     let local_provider = diagnostic.local_name.as_deref();
@@ -237,6 +239,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::async_testing::{MaybeReady, run_future_once};
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
@@ -555,5 +558,29 @@ mod tests {
         assert!(logs_contain("two providers match the same whitelist entry"));
         assert!(logs_contain("extra provider"));
         assert!(!logs_contain(SECRET_MARKER));
+    }
+
+    #[test]
+    #[traced_test]
+    fn run__should_compare_only_once_the_whitelist_is_read() {
+        // Given
+        let local = must_local_ethereum(&[(
+            "alchemy",
+            local_path_auth("https://eth-mainnet.g.alchemy.com/v2/{api_key}"),
+        )]);
+        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
+        let (whitelist_tx, whitelist_rx) = watch::channel(None);
+
+        // When
+        let MaybeReady::Future(parked_verifier) = run_future_once(run(whitelist_rx, local)) else {
+            panic!("the verifier should park until the whitelist is read");
+        };
+        let logged_before_the_read = logs_contain("foreign chain whitelist");
+        whitelist_tx.send_replace(Some(whitelist));
+        run_future_once(parked_verifier);
+
+        // Then
+        assert!(!logged_before_the_read);
+        assert!(logs_contain("local config matches the contract whitelist"));
     }
 }
