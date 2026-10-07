@@ -2,6 +2,8 @@
 
 ## Credentials only (Recommended)
 
+Requires node release 3.17 or later. Earlier releases ignore `rpc_preset` and `credentials` and run without foreign chains.
+
 Instead of the full `foreign_chains` section below, select the node's embedded provider preset
 and give one credentials entry per provider. The node enables every preset (chain, provider) pair
 whose provider has credentials, plus the providers that need none; chains you configure in full
@@ -22,6 +24,8 @@ foreign_chains:
       val: "YOUR_TATUM_API_KEY"
     chainstack:
       val: "YOUR_CHAINSTACK_API_KEY"
+    fluxrpc:  # mainnet only
+      val: "YOUR_FLUXRPC_API_KEY"
 ```
 
 ## Testnet example

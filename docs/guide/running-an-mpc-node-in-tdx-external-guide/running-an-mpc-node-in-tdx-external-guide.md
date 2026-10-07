@@ -994,6 +994,7 @@ You need your own API keys:
 * **Geomi** (Aptos only) — https://geomi.dev/login → create a project, generate a Server API key (`aptoslabs_…`)
 * **Tatum** — https://dashboard.tatum.io → generate an API key for the right network. Make sure you have "Starter" plan.
 * **Chainstack** (HyperEVM only) — https://console.chainstack.com → deploy a Hyperliquid node, copy the key from its endpoint URL. Make sure you have "Growth" plan.
+* **FluxRPC** (Fogo, mainnet only) — https://fluxrpc.com → get an API key.
 
 > **Important:**
 >
@@ -1001,6 +1002,8 @@ You need your own API keys:
 > * Before deploying, verify your config with the [foreign chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml`. It runs the same provider probe the node runs after startup and reports the same verdicts.
 
 #### Credentials only (Recommended)
+
+Requires node release 3.17 or later. Earlier releases ignore `rpc_preset` and `credentials` and run without foreign chains.
 
 The node ships testnet and mainnet provider presets. Instead of the full `foreign_chains` block, select a preset and give one credentials entry per provider, the node enables every preset (chain, provider) pair whose provider has credentials, plus the providers that need none, including chains added in later releases:
 
@@ -1014,6 +1017,7 @@ quicknode  = { val = "YOUR_QUICKNODE_API_KEY", slug = "YOUR-SLUG" }
 geomi      = { val = "YOUR_GEOMI_API_KEY" }
 tatum      = { val = "YOUR_TATUM_API_KEY" }
 chainstack = { val = "YOUR_CHAINSTACK_API_KEY" }
+fluxrpc    = { val = "YOUR_FLUXRPC_API_KEY" }  # mainnet only
 ```
 
 A mainnet or testnet node must use its own network's preset. A (chain, provider) pair you also configure in full takes precedence, as do the chain-level fields of a chain you configure. At startup the node logs where each pair came from and warns about preset providers it skipped.
