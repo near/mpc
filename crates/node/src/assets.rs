@@ -389,21 +389,15 @@ where
         }
 
         // If the cold queue is exhausted, process elements buffered in the hot queue
-        while num_elements_to_process > 0 {
-            match self.hot_receiver.try_recv().ok() {
-                Some((id, value)) => {
-                    num_elements_to_process -= 1;
-                    let _ = self
-                        .cold_queue
-                        .lock()
-                        .unwrap()
-                        .add_if_condition_satisfied(id, value);
-                }
-                _ => {
-                    // Nothing waiting in the hot queue
-                    break;
-                }
-            }
+        while num_elements_to_process > 0
+            && let Ok((id, value)) = self.hot_receiver.try_recv()
+        {
+            num_elements_to_process -= 1;
+            let _ = self
+                .cold_queue
+                .lock()
+                .unwrap()
+                .add_if_condition_satisfied(id, value);
         }
 
         removed_from_cold_queue

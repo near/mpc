@@ -1,5 +1,4 @@
 use super::IndexerAPI;
-use super::ReadAttestationExpiry;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
@@ -54,18 +53,6 @@ pub struct FakeMpcContractState {
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
     pub migration_service: NodeMigrations,
-}
-
-struct FakeAttestationExpiryReader;
-
-impl ReadAttestationExpiry for FakeAttestationExpiryReader {
-    fn read_stored_attestation_expiry<'a>(
-        &'a self,
-        _tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
-    {
-        Box::pin(async { Ok(None) })
-    }
 }
 
 impl FakeMpcContractState {
@@ -561,13 +548,10 @@ impl FakeIndexerCore {
             let block = current_block.child();
 
             let mut transactions_to_process = Vec::new();
-            while let Some((height, _, _)) = pending_transactions.front() {
-                if *height <= block.height() {
-                    let (_, txn, account_id) = pending_transactions.pop_front().unwrap();
-                    transactions_to_process.push((txn, account_id));
-                } else {
-                    break;
-                }
+            while let Some((_, txn, account_id)) =
+                pending_transactions.pop_front_if(|(height, _, _)| *height <= block.height())
+            {
+                transactions_to_process.push((txn, account_id));
             }
 
             let mut signature_requests = Vec::new();
@@ -1114,7 +1098,6 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

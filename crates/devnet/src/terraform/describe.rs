@@ -79,12 +79,11 @@ impl Resource {
 
     pub fn as_mpc_nomad_server(&self) -> Option<GoogleComputeInstance> {
         let name = "google_compute_instance.nomad_server";
-        if self.type_ == "google_compute_instance" && self.address == name {
-            if let ResourceValues::GoogleComputeInstance(instance) = &self.values {
-                Some(instance.clone())
-            } else {
-                None
-            }
+        if self.type_ == "google_compute_instance"
+            && self.address == name
+            && let ResourceValues::GoogleComputeInstance(instance) = &self.values
+        {
+            Some(instance.clone())
         } else {
             None
         }
