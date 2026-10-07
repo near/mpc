@@ -346,6 +346,7 @@ backup-cli \
 
 Notes:
 
+- Keep it running as a persistent service (systemd or whichever supervisor you use), not in an interactive shell: if the process stops, backups stop silently.
 - No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
 - The endpoint is probed at startup: if the contract state cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. When starting at boot, before the network is up, rely on the supervisor's restart policy.
 - The encryption key again comes from `BACKUP_ENCRYPTION_KEY_HEX` (Step 3), never the command line, where `ps` would expose it for the lifetime of the service.
