@@ -34,7 +34,9 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
+    tee::{
+        measurements::MeasurementVotes, proposal::LauncherHashVotes, tee_state::NodeAttestation,
+    },
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -265,6 +267,15 @@ impl TryIntoContractType<EventLog> for dtos::EventLog {
             event,
             event_payload,
         })
+    }
+}
+
+impl IntoInterfaceType<dtos::StoredAttestation> for &NodeAttestation {
+    fn into_dto_type(self) -> dtos::StoredAttestation {
+        dtos::StoredAttestation {
+            attestation: self.verified_attestation.clone().into_dto_type(),
+            accepted_at_seconds: self.accepted_at_seconds,
+        }
     }
 }
 

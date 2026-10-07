@@ -37,7 +37,7 @@ jobs:
           prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: nextest@0.9.126
 

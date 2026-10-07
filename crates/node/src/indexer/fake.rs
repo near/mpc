@@ -1,5 +1,4 @@
 use super::IndexerAPI;
-use super::ReadAttestationExpiry;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
@@ -54,18 +53,6 @@ pub struct FakeMpcContractState {
     pub migration_service: NodeMigrations,
 }
 
-struct FakeAttestationExpiryReader;
-
-impl ReadAttestationExpiry for FakeAttestationExpiryReader {
-    fn read_stored_attestation_expiry<'a>(
-        &'a self,
-        _tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
-    {
-        Box::pin(async { Ok(None) })
-    }
-}
-
 impl FakeMpcContractState {
     pub fn new() -> Self {
         let state = ProtocolContractState::NotInitialized;
@@ -95,9 +82,8 @@ impl FakeMpcContractState {
         &self.foreign_chains_configs
     }
 
-    /// The real endpoint authenticates via the TEE registry, which is
-    /// phase-independent; the fake resolves the signer against the current
-    /// phase's participant sets instead (prospective participants included).
+    /// Resolves the signer through the active participant set like the real endpoint,
+    /// which additionally accepts the destination of an ongoing node migration.
     pub fn register_foreign_chains_config(
         &mut self,
         account_id: AccountId,
@@ -115,27 +101,14 @@ impl FakeMpcContractState {
         self.recompute_available_foreign_chains();
     }
 
-    /// TLS key of `account_id` in any participant set of the current phase.
     fn participant_tls_key(&self, account_id: &AccountId) -> Option<dtos::Ed25519PublicKey> {
-        let parameter_sets: Vec<&GovernanceThresholdParameters> = match &self.state {
-            ProtocolContractState::NotInitialized => vec![],
-            ProtocolContractState::Initializing(state) => {
-                vec![state.generating_key.proposed_parameters()]
-            }
-            ProtocolContractState::Running(state) => vec![&state.parameters],
-            ProtocolContractState::Resharing(state) => vec![
-                &state.previous_running_state.parameters,
-                state.resharing_key.proposed_parameters(),
-            ],
-        };
-        parameter_sets.iter().find_map(|parameters| {
-            parameters
-                .participants()
-                .participants()
-                .iter()
-                .find(|(id, _, _)| id == account_id)
-                .map(|(_, _, info)| info.tls_public_key.clone())
-        })
+        if matches!(self.state, ProtocolContractState::NotInitialized) {
+            return None;
+        }
+        self.state
+            .active_participants()
+            .info(account_id)
+            .map(|info| info.tls_public_key.clone())
     }
 
     /// Mirrors the real contract's recomputation: a chain is available once the
@@ -573,13 +546,10 @@ impl FakeIndexerCore {
             let block = current_block.child();
 
             let mut transactions_to_process = Vec::new();
-            while let Some((height, _, _)) = pending_transactions.front() {
-                if *height <= block.height() {
-                    let (_, txn, account_id) = pending_transactions.pop_front().unwrap();
-                    transactions_to_process.push((txn, account_id));
-                } else {
-                    break;
-                }
+            while let Some((_, txn, account_id)) =
+                pending_transactions.pop_front_if(|(height, _, _)| *height <= block.height())
+            {
+                transactions_to_process.push((txn, account_id));
             }
 
             let mut signature_requests = Vec::new();
@@ -1126,7 +1096,6 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

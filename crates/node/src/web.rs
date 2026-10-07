@@ -394,11 +394,12 @@ pub async fn start_web_server(
 mod tests {
     use super::*;
     use mpc_node_config::foreign_chains::{
-        ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
+        ForeignChainConfig, ForeignChainProviderConfig, ProviderCredentials, RpcProviderName,
     };
     use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use std::collections::BTreeMap;
     use std::net::Ipv4Addr;
     use std::num::NonZeroU64;
     use std::str::FromStr;
@@ -428,6 +429,9 @@ mod tests {
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
     const STARKNET_QUERY_TOKEN: &str = "blast-secret";
     const ETHEREUM_TOKEN_ENV_VAR: &str = "ALCHEMY_API_KEY";
+    const CREDENTIALS_PROVIDER: &str = "quicknode";
+    const CREDENTIALS_TOKEN: &str = "quicknode-secret";
+    const CREDENTIALS_SLUG: &str = "quicknode-endpoint-slug";
 
     fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
@@ -555,6 +559,16 @@ mod tests {
                 )),
                 adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
                 fogo: Some(test_chain(PROVIDER_PUBLIC, FOGO_RPC_URL, AuthConfig::None)),
+                rpc_preset: None,
+                credentials: BTreeMap::from([(
+                    CREDENTIALS_PROVIDER.to_string().into(),
+                    ProviderCredentials {
+                        api_key: TokenConfig::Val {
+                            val: CREDENTIALS_TOKEN.to_string(),
+                        },
+                        slug: Some(CREDENTIALS_SLUG.to_string()),
+                    },
+                )]),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,
@@ -631,6 +645,9 @@ mod tests {
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,
             ETHEREUM_TOKEN_ENV_VAR,
+            CREDENTIALS_PROVIDER,
+            CREDENTIALS_TOKEN,
+            CREDENTIALS_SLUG,
         ];
         for needle in forbidden {
             assert!(
