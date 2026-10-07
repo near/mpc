@@ -7,7 +7,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
-    analyze_received_sizes, ed25519_prepare_presign, ed25519_prepare_sign_v2, participant_rng,
+    ed25519_prepare_presign, ed25519_prepare_sign_v2, participant_rng,
 };
 use threshold_signatures::{
     ReconstructionThreshold,
@@ -31,7 +31,6 @@ fn bench_presign(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_presign_snapshot(num);
-    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("presign");
     group.sample_size(*SAMPLE_SIZE);
@@ -48,7 +47,6 @@ fn bench_presign(c: &mut Criterion) {
             );
         },
     );
-    analyze_received_sizes(&[size], true);
 }
 
 /// Benches the signing protocol
@@ -57,7 +55,6 @@ fn bench_sign(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_sign_snapshot(*RECONSTRUCTION_LOWER_BOUND);
-    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
     group.sample_size(*SAMPLE_SIZE);
@@ -74,7 +71,6 @@ fn bench_sign(c: &mut Criterion) {
             );
         },
     );
-    analyze_received_sizes(&[size], true);
 }
 
 criterion_group!(benches, bench_presign, bench_sign);

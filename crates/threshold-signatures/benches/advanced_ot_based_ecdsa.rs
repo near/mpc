@@ -9,8 +9,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
-    analyze_received_sizes, ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign,
-    ot_ecdsa_prepare_triples, participant_rng,
+    ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign, ot_ecdsa_prepare_triples, participant_rng,
 };
 
 use threshold_signatures::{
@@ -49,7 +48,6 @@ fn bench_triples(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_triples_snapshot(num);
-    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("triples");
     group.sample_size(*SAMPLE_SIZE);
@@ -66,7 +64,6 @@ fn bench_triples(c: &mut Criterion) {
             );
         },
     );
-    analyze_received_sizes(&[size], true);
 }
 
 /// Benches the presigning protocol
@@ -80,7 +77,6 @@ fn bench_presign(c: &mut Criterion) {
         run_protocol(preps.protocols).expect("Running triple preparations should succeed");
 
     let setup = setup_presign_snapshot(&two_triples);
-    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("presign");
     group.sample_size(*SAMPLE_SIZE);
@@ -97,7 +93,6 @@ fn bench_presign(c: &mut Criterion) {
             );
         },
     );
-    analyze_received_sizes(&[size], true);
 }
 
 /// Benches the signing protocol
@@ -114,7 +109,6 @@ fn bench_sign(c: &mut Criterion) {
     let pk = preps.key_packages[0].1.public_key;
 
     let setup = setup_sign_snapshot(&result, *RECONSTRUCTION_LOWER_BOUND, pk);
-    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
     group.sample_size(*SAMPLE_SIZE);
@@ -131,7 +125,6 @@ fn bench_sign(c: &mut Criterion) {
             );
         },
     );
-    analyze_received_sizes(&[size], true);
 }
 
 criterion_group!(benches, bench_triples, bench_presign, bench_sign);
