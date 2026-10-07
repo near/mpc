@@ -1,26 +1,26 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use anyhow::Context as _;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
 
 use super::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
-    ProviderCredentials, RpcProviderName, SLUG_PLACEHOLDER, embedded_foreign_chains,
+    ProviderCredentials, RpcPreset, RpcProviderName, SLUG_PLACEHOLDER, embedded_foreign_chains,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PairSource {
-    Embedded,
-    NodeConfig,
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveError {
+    #[error("failed to parse the embedded {0} foreign chain config")]
+    EmbeddedPreset(RpcPreset, #[source] toml::de::Error),
+    #[error("the foreign chain config resolved with the embedded config is invalid")]
+    InvalidResolvedConfig(#[source] anyhow::Error),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SkipReason {
-    MissingCredentials,
-    MissingSlug,
-    DuplicateRpcUrl,
+#[derive(Clone, Debug)]
+pub struct ResolvedForeignChains {
+    pub config: ForeignChainsConfig,
+    pub diagnostics: Vec<ResolutionDiagnostic>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -112,19 +112,28 @@ impl fmt::Display for ResolutionDiagnostic {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ResolvedForeignChains {
-    pub config: ForeignChainsConfig,
-    pub diagnostics: Vec<ResolutionDiagnostic>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PairSource {
+    Embedded,
+    NodeConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkipReason {
+    MissingCredentials,
+    MissingSlug,
+    DuplicateRpcUrl,
 }
 
 /// Resolves against the embedded config [`ForeignChainsConfig::rpc_preset`] selects.
 pub fn resolve_with_embedded(
     node_config: &ForeignChainsConfig,
-) -> anyhow::Result<ResolvedForeignChains> {
+) -> Result<ResolvedForeignChains, ResolveError> {
     let embedded = node_config
         .rpc_preset
-        .map(embedded_foreign_chains)
+        .map(|preset| {
+            embedded_foreign_chains(preset).map_err(|e| ResolveError::EmbeddedPreset(preset, e))
+        })
         .transpose()?;
     resolve_foreign_chains(node_config, embedded.as_ref())
 }
@@ -134,7 +143,7 @@ pub fn resolve_with_embedded(
 pub(super) fn resolve_foreign_chains(
     node_config: &ForeignChainsConfig,
     embedded: Option<&ForeignChainsConfig>,
-) -> anyhow::Result<ResolvedForeignChains> {
+) -> Result<ResolvedForeignChains, ResolveError> {
     let mut config = node_config.clone();
     let mut diagnostics = Vec::new();
     let node_config_rpc_urls: BTreeSet<&str> = node_config
@@ -198,7 +207,7 @@ pub(super) fn resolve_foreign_chains(
     diagnostics.extend(included(node_config, &config));
     config
         .validate()
-        .context("the foreign chain config resolved with the embedded config is invalid")?;
+        .map_err(ResolveError::InvalidResolvedConfig)?;
     Ok(ResolvedForeignChains {
         config,
         diagnostics,
@@ -859,6 +868,10 @@ mod tests {
         let result = resolve_foreign_chains(&node_config, Some(&embedded()));
 
         // Then
-        assert_matches!(result, Err(_), "a slug must be a single host label");
+        assert_matches!(
+            result,
+            Err(ResolveError::InvalidResolvedConfig(_)),
+            "a slug must be a single host label"
+        );
     }
 }
