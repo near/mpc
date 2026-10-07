@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{future::Future, time::Duration};
 
 use crate::{
     indexer::{
@@ -54,14 +54,14 @@ impl GenerateAttestation for TeeAuthority {
 /// Inputs for the attestation-submission background task
 /// [`run_periodic_attestation_submission`].
 #[derive(Clone)]
-pub struct AttestationSubmitter<T, A> {
+pub struct AttestationSubmitter<T, A, R> {
     pub tee_authority: A,
     pub tx_sender: T,
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub attestation_reader: Arc<dyn ReadSubmissionBaseline>,
+    pub baseline_reader: R,
 }
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
@@ -150,7 +150,9 @@ fn validate_remote_attestation(
         .map(|_| ())
 }
 
-impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<T, A> {
+impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBaseline>
+    AttestationSubmitter<T, A, R>
+{
     async fn generate_attestation(&self) -> Option<Attestation> {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
@@ -176,7 +178,7 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
 
     async fn read_submission_baseline(&self) -> SubmissionBaseline {
         match self
-            .attestation_reader
+            .baseline_reader
             .read_submission_baseline(&self.tls_public_key)
             .await
         {
@@ -236,10 +238,11 @@ fn outcome_label(succeeded: bool) -> &'static str {
     }
 }
 
-pub async fn run_periodic_attestation_submission<T, A>(submitter: AttestationSubmitter<T, A>)
+pub async fn run_periodic_attestation_submission<T, A, R>(submitter: AttestationSubmitter<T, A, R>)
 where
     T: TransactionSender + Clone,
     A: GenerateAttestation,
+    R: ReadSubmissionBaseline,
 {
     let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -251,8 +254,12 @@ where
 /// the next tick starts over with a fresh attestation. Failures are logged, never propagated;
 /// this task never returns.
 #[tracing::instrument(skip_all)]
-async fn periodic_attestation_submission<T: TransactionSender + Clone, A: GenerateAttestation>(
-    submitter: AttestationSubmitter<T, A>,
+async fn periodic_attestation_submission<
+    T: TransactionSender + Clone,
+    A: GenerateAttestation,
+    R: ReadSubmissionBaseline,
+>(
+    submitter: AttestationSubmitter<T, A, R>,
     mut interval_ticker: impl Tick,
 ) {
     loop {
@@ -339,24 +346,21 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct StubSubmissionBaselineReader {
         fail: bool,
     }
 
     impl ReadSubmissionBaseline for StubSubmissionBaselineReader {
-        fn read_submission_baseline<'a>(
-            &'a self,
-            _tls_public_key: &'a Ed25519PublicKey,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = anyhow::Result<SubmissionBaseline>> + Send + 'a>,
-        > {
-            Box::pin(async {
-                if self.fail {
-                    Err(anyhow::anyhow!("simulated baseline read failure"))
-                } else {
-                    Ok(SubmissionBaseline::default())
-                }
-            })
+        async fn read_submission_baseline(
+            &self,
+            _tls_public_key: &Ed25519PublicKey,
+        ) -> anyhow::Result<SubmissionBaseline> {
+            if self.fail {
+                Err(anyhow::anyhow!("simulated baseline read failure"))
+            } else {
+                Ok(SubmissionBaseline::default())
+            }
         }
     }
 
@@ -419,7 +423,7 @@ mod tests {
     }
 
     struct TestSetup<A> {
-        submitter: AttestationSubmitter<MockSender, A>,
+        submitter: AttestationSubmitter<MockSender, A, StubSubmissionBaselineReader>,
     }
 
     /// Builds an [`AttestationSubmitter`] around a [`MockSender`].
@@ -438,7 +442,7 @@ mod tests {
             account_public_key,
             allowed_image_hashes,
             allowed_launcher_compose_hashes,
-            attestation_reader: Arc::new(StubSubmissionBaselineReader { fail: false }),
+            baseline_reader: StubSubmissionBaselineReader { fail: false },
         };
         TestSetup { submitter }
     }
@@ -478,7 +482,7 @@ mod tests {
         // fails; the submission must still go out, otherwise a broken read path would stop the
         // node from refreshing its attestation until the contract evicts it
         let mut setup = test_setup();
-        setup.submitter.attestation_reader = Arc::new(StubSubmissionBaselineReader { fail: true });
+        setup.submitter.baseline_reader = StubSubmissionBaselineReader { fail: true };
         let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When

@@ -26,7 +26,7 @@ use near_mpc_contract_interface::method_names::{
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
@@ -360,12 +360,10 @@ impl SubmissionBaseline {
 pub(crate) trait ReadSubmissionBaseline: Send + Sync {
     /// An empty baseline is not proof that nothing is stored: an entry can be stored with
     /// neither an acceptance time nor an expiry.
-    fn read_submission_baseline<'a>(
-        &'a self,
-        tls_public_key: &'a dtos::Ed25519PublicKey,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<SubmissionBaseline>> + Send + 'a>,
-    >;
+    fn read_submission_baseline(
+        &self,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> impl Future<Output = anyhow::Result<SubmissionBaseline>> + Send;
 }
 
 pub(crate) struct RealSubmissionBaselineReader {
@@ -379,20 +377,16 @@ impl RealSubmissionBaselineReader {
 }
 
 impl ReadSubmissionBaseline for RealSubmissionBaselineReader {
-    fn read_submission_baseline<'a>(
-        &'a self,
-        tls_public_key: &'a dtos::Ed25519PublicKey,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<SubmissionBaseline>> + Send + 'a>,
-    > {
-        Box::pin(async move {
-            let stored = self
-                .indexer_state
-                .view_client
-                .get_participant_attestation(tls_public_key)
-                .await?;
-            Ok(SubmissionBaseline::from_stored(stored.as_ref()))
-        })
+    async fn read_submission_baseline(
+        &self,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> anyhow::Result<SubmissionBaseline> {
+        let stored = self
+            .indexer_state
+            .view_client
+            .get_participant_attestation(tls_public_key)
+            .await?;
+        Ok(SubmissionBaseline::from_stored(stored.as_ref()))
     }
 }
 
@@ -536,8 +530,6 @@ pub struct IndexerAPI<TransactionSender> {
     /// registered supporters (by TLS key). Seeded with the first successful read
     /// before the indexer hands it back, so it always holds a real value.
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
-
-    pub(crate) attestation_reader: std::sync::Arc<dyn ReadSubmissionBaseline>,
 }
 
 #[cfg(test)]
