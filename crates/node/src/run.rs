@@ -7,7 +7,9 @@ use crate::{
     coordinator::Coordinator,
     db::SecretDB,
     home_paths::assets_dir,
-    indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
+    indexer::{
+        IndexerAPI, ReadSubmissionBaseline, real::spawn_real_indexer, tx_sender::TransactionSender,
+    },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
@@ -324,12 +326,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 }
 
 #[expect(clippy::too_many_arguments)]
-async fn create_root_future<TransactionSenderImpl>(
+async fn create_root_future<TransactionSenderImpl, BaselineReader>(
     start_config: StartConfig,
     home_dir: PathBuf,
     config: ConfigFile,
     secrets: SecretsConfig,
-    indexer_api: IndexerAPI<TransactionSenderImpl>,
+    indexer_api: IndexerAPI<TransactionSenderImpl, BaselineReader>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
     // Otherwise we would not write to the same cell/lock.
@@ -338,6 +340,7 @@ async fn create_root_future<TransactionSenderImpl>(
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
+    BaselineReader: ReadSubmissionBaseline + Clone + 'static,
 {
     let root_task_handle = tracking::current_task();
 

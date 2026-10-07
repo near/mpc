@@ -69,7 +69,7 @@ pub fn spawn_real_indexer(
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
-) -> IndexerAPI<impl TransactionSender> {
+) -> IndexerAPI<impl TransactionSender, RealSubmissionBaselineReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
@@ -182,8 +182,7 @@ pub fn spawn_real_indexer(
                 tracing::error!("Failed to send txn_sender back to main thread.")
             };
 
-            let attestation_reader: std::sync::Arc<dyn super::ReadSubmissionBaseline> =
-                std::sync::Arc::new(RealSubmissionBaselineReader::new(indexer_state.clone()));
+            let attestation_reader = RealSubmissionBaselineReader::new(indexer_state.clone());
             if attestation_reader_sender.send(attestation_reader).is_err() {
                 tracing::error!("failed to send attestation reader back to main thread")
             };

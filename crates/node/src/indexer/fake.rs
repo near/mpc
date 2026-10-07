@@ -54,16 +54,15 @@ pub struct FakeMpcContractState {
     pub migration_service: NodeMigrations,
 }
 
-struct FakeSubmissionBaselineReader;
+#[derive(Clone)]
+pub(crate) struct FakeSubmissionBaselineReader;
 
 impl ReadSubmissionBaseline for FakeSubmissionBaselineReader {
-    fn read_submission_baseline<'a>(
-        &'a self,
-        _tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<SubmissionBaseline>> + Send + 'a>,
-    > {
-        Box::pin(async { Ok(SubmissionBaseline::default()) })
+    async fn read_submission_baseline(
+        &self,
+        _tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
+    ) -> anyhow::Result<SubmissionBaseline> {
+        Ok(SubmissionBaseline::default())
     }
 }
 
@@ -1078,7 +1077,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender>,
+        IndexerAPI<MockTransactionSender, FakeSubmissionBaselineReader>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -1110,7 +1109,7 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            attestation_reader: std::sync::Arc::new(FakeSubmissionBaselineReader),
+            attestation_reader: FakeSubmissionBaselineReader,
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
