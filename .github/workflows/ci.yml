@@ -194,14 +194,15 @@ jobs:
       - name: Check contract WASM size
         run: bash scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
 
-  # The only job that signs and pushes to the project cache. Its environment is limited to main,
-  # so no other branch can read the signing key, and only Nix's sandboxed builds run before it
+  # The only job that signs and pushes to the project cache. Its environment must be limited to
+  # main in the repository settings, so no other branch can read the signing key, and no
+  # dependency's build code runs outside Nix's sandbox before it signs
   push-project-cache:
     name: "Push the dev shells to the project cache"
     if: github.ref == 'refs/heads/main'
     runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
-    environment: project-cache
+    environment: write-project-cache
     permissions:
       contents: read
 
@@ -216,7 +217,8 @@ jobs:
         with:
           project-cache: true
 
-      # Most checks run in one of these two shells, so the cache holds them and everything they need
+      # Every check that uses this cache, except the Nix contract build, runs in one of these two
+      # shells, so the cache holds them and everything they need
       - name: Build the dev shells
         run: |
           nix develop --no-update-lock-file --profile "$RUNNER_TEMP/dev-shell" --command true
