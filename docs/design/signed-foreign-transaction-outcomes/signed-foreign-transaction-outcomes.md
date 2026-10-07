@@ -1,6 +1,6 @@
 # Signed Negative and Inconclusive Outcomes for Foreign Transaction Verification
 
-**Status:** draft for discussion · **Author:** Haiyue Chen (with Claude) · **Date:** 28 September 2026
+**Status:** Change in progress · **Author:** Haiyue Chen (with Claude) · **Date:** 28 September 2026
 
 ## Summary
 
@@ -91,9 +91,9 @@ enum ForeignTxVerificationNegativeVerdict {
 }
 ```
 
-- **Every answer names its request.** The signature covers the yield id, so it answers exactly
-  one request, once. This is what makes V2 replay safe (Component 2).
-- **Every answer says when it was checked.** Nodes only sign within 200 blocks of
+- **Every response is tied to the request.** The signature covers the yield id, so it answers
+  exactly one request, once. This is what makes V2 replay safe (Component 2).
+- **Every response says when it was checked.** Nodes only sign within 200 blocks of
   `request_block_height` (Component 2), so the signature proves the check happened in that
   range. Someone outside NEAR can verify this from the signature alone.
 - **Negative verdicts carry no extra data.** The inspector's `NonCanonicalBlock` also reports a
@@ -101,9 +101,9 @@ enum ForeignTxVerificationNegativeVerdict {
   between nodes during a reorg. Every node must sign the same bytes, so we drop them.
 - **Provider errors never become verdicts.** A node whose providers give no verdict, or
   disagree, fails the attempt instead.
-- **The inconclusive is not a verdict.** A verdict is a fact about the foreign chain. The
-  inconclusive only says the network ran out of attempts, so it has its own variant instead of
-  being one of the negative verdicts.
+- **The inconclusive outcome is not a verdict.** A verdict is a fact about the foreign chain.
+  The inconclusive only says the network ran out of attempts, so it has its own variant instead
+  of being one of the negative verdicts.
 
 ```rust
 struct VerifyForeignTransactionRequestV2 {
@@ -194,7 +194,7 @@ fn respond_verify_foreign_tx_v2(
 )
 ```
 
-The method:
+This method:
 
 1. Looks up the request stored under `yield_id`, and fails with `RequestNotFound` if there is
    none.
@@ -204,14 +204,14 @@ The method:
 4. Resumes that yield with a `VerifyForeignTransactionResponseV2`, values dropped, and removes
    the entry.
 
-**This stops replay.** In V1, one signed response answers every pending request with the same
-arguments. That is fine for a success, but wrong for _not found_ once the transaction lands. A
-V2 signature names a single yield, which is removed as soon as it is answered, so the signature
-can't be used again.
+**This stops replay.** In V1, one signed response answers every pending (not expired) request
+with the same arguments. That is fine for a success, but wrong for _not found_ once the
+transaction lands. A V2 signature names a single yield, which is removed as soon as it is
+answered, so the signature can't be used again.
 
 **Honest nodes only sign while the request is open.** A node only inspects requests it has
 indexed itself. It also refuses to join once its own indexer shows the request answered or more
-than 200 blocks old, the same expiry the leader's queue uses today. So every honest signer
+than 200 blocks old, the same expiration the leader's queue uses today. So every honest signer
 really checked inside the window the signature claims, and nobody can get another signature
 for a request once it is closed.
 
@@ -248,13 +248,6 @@ attempt deadline. A V2 attempt runs like this:
 follower's indexer to pick up the request, the 5 second inspection cap, and 2 seconds for the
 network. We give V2 its own constant, and V1 keeps its 60 seconds. With three attempts, a request
 whose followers keep going silent still ends well inside the 200 block yield window.
-
-**Why the reported outcome needs no signature.** A follower tells the leader what it found so
-the leader can stop a failing attempt early and log which node disagreed. The connection
-between the two nodes already proves who sent it, and nobody but the leader ever reads it. A
-follower that lies about its outcome can only make the attempt end sooner, which it could do
-anyway by aborting. Whether an attempt succeeds is still decided by the signature alone, and
-the reported outcomes are never used as evidence for an inconclusive outcome.
 
 ![Attempts: matching outcomes and shares sign the attempt. An abort, a different outcome, a bad share, a silent follower or a missing leader verdict fails it. The leader retries while attempts remain, then runs the inconclusive round up to three times, and if every round fails the request times out.](attachments/attempts.png)
 
@@ -305,40 +298,8 @@ V1 must not change, so V2 has to be opt in.
 - **C. A new method with its own request type (chosen).** `VerifyForeignTransactionRequestV2`
   is what the caller passes and what the contract stores under the yield id.
 
-C leaves every V1 caller untouched, byte for byte, and gives V2 its own types from end to end.
-
-### How is a V2 answer kept from answering the wrong request?
-
-A _not found_ must never answer an identical request made after the network checked.
-
-- **A. Sign a verification height and answer every request made before it.** One signature
-  can answer identical requests, but the leader has to propose the height in Start, every
-  follower has to check it against its own indexer, and the contract has to track creation
-  heights.
-- **B. Sign the yield id (chosen).** One signature answers one request.
-
-B needs no agreement between nodes at all, since the id comes straight from the chain.
-
-### How does a relayed answer say when it was checked?
-
-A negative verdict can stop being true, so a signature relayed off NEAR has to say when the
-network checked.
-
-- **A. No time in the payload.** Fine through the NEAR callback, which runs inside the yield
-  window, but a relayed _not found_ would look valid forever.
-- **B. A verification height agreed per attempt.** Precise to about 20 blocks, but the leader
-  has to propose it in Start and every follower has to check it against its own indexer.
-- **C. The request's block height, and signing only while the request is open (chosen).**
-  Every node already knows the height from the block it indexed the request in, and the 200
-  block window bounds the rest.
-
-C gives a relayed signature a clear time range without adding anything to Start.
-
-### Why is _not found_ a verdict?
-
-It is the network's answer when it checked, after the request was made. A later check may
-give a different answer, but that doesn't make the first one untrue. In addition, a caller that
-submits a wrong transaction hash should get an answer, not a timeout.
+C leaves every V1 caller untouched, and gives V2 its own types from end to end. V2 also needs
+to change many things outside of just request processing logic.
 
 ### When does the network give up?
 
@@ -352,26 +313,6 @@ attempts of one leader usually have the same members, so a persistent cause fail
 - **C. After the leader's budget of three attempts, with every failure counting (chosen).**
 
 C needs only a leadership check, and keeps a failed request short.
-
-### How do nodes and the contract agree on the yield id?
-
-Every V2 answer is bound to one request's yield id, so nodes and the contract must agree on
-that id.
-
-- **A. Name the yield in the respond call, outside the signature.** Anyone could reuse the
-  signature for another caller's request.
-- **B. Sign the runtime's own yield identifier.** Works on any protocol version, but the
-  timeout callback is created before the identifier exists, so a timeout could still remove
-  the wrong request.
-- **C. Nodes recompute the id.** Nodes would have to replay the contract's counter exactly,
-  which breaks the first time a node restarts from a snapshot.
-- **D. Nodes look the id up with a view call.** Adds an RPC call per request, and races with
-  the block the node just indexed.
-- **E. The contract picks the id, emits it as an event, and the network signs it (chosen).**
-  Needs protocol version 85. Mainnet already runs version 86.
-
-E keeps the id under the contract's control and costs nodes nothing extra, because they
-already read the receipt it arrives in.
 
 ### How does V2 roll out?
 
