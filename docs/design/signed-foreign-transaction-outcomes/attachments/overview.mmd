@@ -1,9 +1,9 @@
 flowchart LR
-    C["Caller"] -->|"requests V2"| K["MPC contract<br/>(stores request<br/>and block height<br/>by yield id,<br/>emits the id)"]
-    K -->|"indexed by every node"| L["Leader<br/>(takes a presignature,<br/>then inspects)"]
+    C["Caller"] -->|"requests V2<br/>with expected values"| K["MPC contract<br/>(stores request,<br/>expected values hash<br/>and block height<br/>by yield id,<br/>emits the id)"]
+    K -->|"indexed by every node"| L["Leader<br/>(takes an asset if needed,<br/>then inspects)"]
     L -->|"Start"| F["Followers<br/>(inspect, derive<br/>their own outcome)"]
-    F -->|"outcome with share,<br/>or an abort"| L
+    F -->|"signed outcome<br/>with share"| L
     L -->|"signature over request,<br/>block height, yield id<br/>and outcome"| K
-    K -->|"resumes that yield"| C
-    L -.->|"out of attempts"| I["Inconclusive round<br/>(signers check the leader)"]
+    K -->|"returns the response with<br/>the signature and the outcome"| C
+    L -.->|"disagreement,<br/>or out of attempts"| I["Inconclusive round<br/>(signers check the leader<br/>and the evidence)"]
     I -.->|"signature over the inconclusive<br/>for that yield"| K
