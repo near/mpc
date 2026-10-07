@@ -4,7 +4,6 @@ use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
 use super::types::ChainSendTransactionRequest;
-use super::{ReadSubmissionBaseline, SubmissionBaseline};
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::migration_service::types::MigrationInfo;
@@ -52,18 +51,6 @@ pub struct FakeMpcContractState {
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
     pub migration_service: NodeMigrations,
-}
-
-#[derive(Clone)]
-pub(crate) struct FakeSubmissionBaselineReader;
-
-impl ReadSubmissionBaseline for FakeSubmissionBaselineReader {
-    async fn read_submission_baseline(
-        &self,
-        _tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<SubmissionBaseline> {
-        Ok(SubmissionBaseline::default())
-    }
 }
 
 impl FakeMpcContractState {
@@ -1077,7 +1064,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender, FakeSubmissionBaselineReader>,
+        IndexerAPI<MockTransactionSender>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -1109,7 +1096,6 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            attestation_reader: FakeSubmissionBaselineReader,
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

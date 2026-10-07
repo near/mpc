@@ -61,7 +61,7 @@ pub struct AttestationSubmitter<T, A, R> {
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub attestation_reader: R,
+    pub baseline_reader: R,
 }
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
@@ -178,7 +178,7 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBase
 
     async fn read_submission_baseline(&self) -> SubmissionBaseline {
         match self
-            .attestation_reader
+            .baseline_reader
             .read_submission_baseline(&self.tls_public_key)
             .await
         {
@@ -442,7 +442,7 @@ mod tests {
             account_public_key,
             allowed_image_hashes,
             allowed_launcher_compose_hashes,
-            attestation_reader: StubSubmissionBaselineReader { fail: false },
+            baseline_reader: StubSubmissionBaselineReader { fail: false },
         };
         TestSetup { submitter }
     }
@@ -482,7 +482,7 @@ mod tests {
         // fails; the submission must still go out, otherwise a broken read path would stop the
         // node from refreshing its attestation until the contract evicts it
         let mut setup = test_setup();
-        setup.submitter.attestation_reader = StubSubmissionBaselineReader { fail: true };
+        setup.submitter.baseline_reader = StubSubmissionBaselineReader { fail: true };
         let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When

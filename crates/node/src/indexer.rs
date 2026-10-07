@@ -366,7 +366,6 @@ pub(crate) trait ReadSubmissionBaseline: Send + Sync {
     ) -> impl Future<Output = anyhow::Result<SubmissionBaseline>> + Send;
 }
 
-#[derive(Clone)]
 pub(crate) struct RealSubmissionBaselineReader {
     indexer_state: Arc<IndexerState>,
 }
@@ -507,7 +506,7 @@ impl IndexerRpcHandler {
 /// The MPC node implementation needs this and only this to be able to interact
 /// with the indexer.
 /// TODO(#592): abstract away having an indexer running in a separate process
-pub struct IndexerAPI<TransactionSender, BaselineReader> {
+pub struct IndexerAPI<TransactionSender> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
     /// Provides block updates (signature requests and other relevant receipts).
@@ -531,8 +530,6 @@ pub struct IndexerAPI<TransactionSender, BaselineReader> {
     /// registered supporters (by TLS key). Seeded with the first successful read
     /// before the indexer hands it back, so it always holds a real value.
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
-
-    pub(crate) attestation_reader: BaselineReader,
 }
 
 #[cfg(test)]

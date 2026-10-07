@@ -60,7 +60,7 @@ use tracing::{error, info};
 /// accordingly: if the contract says we need to generate keys, we generate
 /// keys; if the contract says we're running, we run the MPC protocol; if the
 /// contract says we need to perform key resharing, we perform key resharing.
-pub struct Coordinator<TransactionSender, BaselineReader> {
+pub struct Coordinator<TransactionSender> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
@@ -70,7 +70,7 @@ pub struct Coordinator<TransactionSender, BaselineReader> {
     /// Storage for keyshares.
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     /// For interaction with the indexer.
-    pub indexer: IndexerAPI<TransactionSender, BaselineReader>,
+    pub indexer: IndexerAPI<TransactionSender>,
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
@@ -106,10 +106,9 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
-impl<TransactionSender, BaselineReader> Coordinator<TransactionSender, BaselineReader>
+impl<TransactionSender> Coordinator<TransactionSender>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
-    BaselineReader: 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
