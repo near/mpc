@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use serde_with::{Bytes, DeserializeAs};
 use std::sync::Arc;
 
 use crate::errors::ProtocolError;
@@ -16,7 +17,7 @@ impl Serialize for AppId {
     where
         S: serde::Serializer,
     {
-        serde_bytes::Serialize::serialize(&self.0[..], serializer)
+        serializer.serialize_bytes(&self.0)
     }
 }
 
@@ -25,7 +26,7 @@ impl<'de> Deserialize<'de> for AppId {
     where
         D: serde::Deserializer<'de>,
     {
-        let v: Vec<u8> = serde_bytes::Deserialize::deserialize(deserializer)?;
+        let v: Vec<u8> = Bytes::deserialize_as(deserializer)?;
         Self::try_new(v).map_err(serde::de::Error::custom)
     }
 }

@@ -89,7 +89,6 @@ aes-gcm = "0.11.0"
 anyhow = "1.0.102"
 assert_matches = "1.5.0"
 async-trait = "0.1.89"
-auto_ops = "0.3.0"
 average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
@@ -99,7 +98,6 @@ blstrs = "0.7.1"
 borsh = { version = "1.6.1", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
-byteorder = "1.5.0"
 bytes = { version = "1.11.1" }
 cargo-near-build = "0.11.5"
 clap = { version = "4.6.1", features = ["derive", "env"] }
@@ -148,7 +146,6 @@ frost-core = { version = "3.0.0", default-features = false, features = [
 frost-ed25519 = { version = "3.0.0", default-features = false }
 frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
-futures-lite = "2.6.1"
 gcloud-sdk = { version = "0.32.0", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "google-rpc",
@@ -219,7 +216,6 @@ rustls = { version = "0.23.39", default-features = false, features = [
     "std",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_bytes = "0.11.19"
 serde_json = "1.0"
 serde_repr = "0.1.20"
 serde_with = { version = "3.20.0", features = ["hex"] }
