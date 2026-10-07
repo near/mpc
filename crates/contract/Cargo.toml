@@ -88,7 +88,6 @@ hex = { workspace = true, features = [] }
 k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",
-    "serde",
     "arithmetic",
     "expose-field",
 ] }
@@ -106,7 +105,6 @@ near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 tee-verifier-interface = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }

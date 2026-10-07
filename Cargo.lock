@@ -6119,7 +6119,6 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "serde_with",
  "sha2 0.10.9",
  "signature 2.2.0",
  "tee-verifier-interface",
