@@ -1,4 +1,4 @@
-use super::foreign_chain::monitor_foreign_chain_supporters;
+use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
@@ -10,10 +10,7 @@ use crate::config::RespondConfig;
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
-use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
-    monitor_allowed_launcher_compose_hashes,
-};
+use crate::indexer::tee::{monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -222,7 +219,7 @@ pub fn spawn_real_indexer(
 
             let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
                 watch::channel(std::collections::BTreeMap::new());
-            tokio::spawn(monitor_allowed_foreign_chain_providers(
+            tokio::spawn(monitor_foreign_chain_whitelist(
                 foreign_chain_whitelist_sender,
                 indexer_state.clone(),
             ));
