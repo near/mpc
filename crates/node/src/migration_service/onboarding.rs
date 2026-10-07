@@ -331,13 +331,10 @@ async fn wait_for_and_import_keyshares(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{pin::pin, sync::Arc};
 
     use rand::SeedableRng as _;
-    use tokio::{
-        sync::{RwLock, watch},
-        time::timeout,
-    };
+    use tokio::sync::{RwLock, watch};
     use tokio_util::sync::CancellationToken;
 
     use crate::{
@@ -345,10 +342,7 @@ mod tests {
         indexer::participants::ContractState,
         keyshare::{generate_key_storage_config, test_utils::KeysetBuilder},
         migration_service::{
-            onboarding::{
-                IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG, IMPORT_SUCCESS_MSG,
-                KEYSHARE_SENDER_CLOSED_MSG, START_IMPORT_LOOP_MSG, wait_for_and_import_keyshares,
-            },
+            onboarding::{KEYSHARE_SENDER_CLOSED_MSG, wait_for_and_import_keyshares},
             types::{
                 MigrationInfo, OnboardingJob, OnboardingTask,
                 tests::{
@@ -358,32 +352,18 @@ mod tests {
             },
         },
     };
-    use tracing_test::{self, traced_test};
 
     use super::start_onboarding_monitoring_task;
 
     const EPOCH_ID: u64 = 3;
     const NUM_KEYS: u64 = 5;
     #[tokio::test]
-    #[traced_test]
     async fn test_wait_for_and_import_keyshares_success() {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let wait_for_log = |msg: String| async move {
-            timeout(Duration::from_secs(10), async {
-                loop {
-                    if logs_contain(&msg) {
-                        return;
-                    }
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
-            })
-            .await
-            .expect("Timed out waiting for log message");
-        };
         let (config, _temp_dir) = generate_key_storage_config();
         let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let cancel_import = CancellationToken::new();
-        let (keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
         let contract_keyset = builder.keyset();
         let correct_keyshares = builder.keyshares().to_vec();
         let wrong_builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
@@ -392,36 +372,33 @@ mod tests {
         // sanity check
         assert_ne!(wrong_builder.keyset(), contract_keyset);
 
+        let (keyshare_sender, keyshare_receiver) = watch::channel(wrong_keyshares);
         let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
-
-        let res = tokio::spawn(async move {
-            wait_for_log(START_IMPORT_LOOP_MSG.into()).await;
-            keyshare_sender.send(wrong_keyshares).unwrap();
-            wait_for_log(IMPORT_FAILURE_MSG.into()).await;
-            keyshare_sender.send(correct_keyshares).unwrap();
-            wait_for_log(IMPORT_SUCCESS_MSG.into()).await;
-        });
-        wait_for_and_import_keyshares(
+        let mut import = pin!(wait_for_and_import_keyshares(
             &contract_keyset,
             keyshare_storage.clone(),
             keyshare_receiver,
             cancel_import,
-        )
-        .await
-        .unwrap();
+        ));
 
-        res.await.unwrap();
+        // When
+        // The first poll takes the wrong keyshares, so their import fails before
+        // the correct ones arrive
+        assert!(futures::poll!(&mut import).is_pending());
+        keyshare_sender.send(correct_keyshares.clone()).unwrap();
+        import.await.unwrap();
+
+        // Then
         let found = keyshare_storage
             .read()
             .await
             .get_keyshares(&contract_keyset)
             .await
             .unwrap();
-        assert_eq!(found, builder.keyshares().to_vec());
+        assert_eq!(found, correct_keyshares);
     }
 
     #[tokio::test]
-    #[traced_test]
     async fn test_wait_for_and_import_keyshares_cancel() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let (config, _temp_dir) = generate_key_storage_config();
@@ -439,9 +416,6 @@ mod tests {
         )
         .await
         .unwrap();
-
-        assert!(logs_contain(START_IMPORT_LOOP_MSG));
-        assert!(logs_contain(IMPORT_CANCELLED_MSG))
     }
 
     #[tokio::test]

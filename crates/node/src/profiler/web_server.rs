@@ -1,6 +1,6 @@
 #[cfg(target_os = "linux")]
 use super::jemalloc::{jemalloc_heap_flamegraph, jemalloc_heap_pprof};
-use super::pprof::collect_pprof;
+use super::pprof::{collect_pprof, write_flamegraph};
 
 use axum::{
     extract::Query,
@@ -81,7 +81,7 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
     match pprof_report {
         Ok(report) => {
             let mut svg_buffer = Vec::new();
-            let flamegraph_write = report.flamegraph(&mut svg_buffer);
+            let flamegraph_write = write_flamegraph(&report, &mut svg_buffer);
             if let Err(error) = flamegraph_write {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,

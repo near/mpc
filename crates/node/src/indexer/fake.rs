@@ -34,7 +34,7 @@ use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_crypto_types::Payload;
 use near_time::{Clock, Duration};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::{Arc, atomic::AtomicBool};
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -227,7 +227,7 @@ impl FakeMpcContractState {
                 resharing_domain,
                 participants_config_to_threshold_parameters(&new_participants),
             ),
-            cancellation_requests: HashSet::new(),
+            cancellation_requests: BTreeSet::new(),
             per_domain_thresholds,
         });
     }

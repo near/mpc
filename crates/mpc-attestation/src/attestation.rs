@@ -9,11 +9,10 @@ use attestation::{
 pub use attestation::{ExpectedMeasurements, Measurements};
 
 use include_measurements::include_measurements;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, MPC_IMAGE_HASH_EVENT, NodeImageHash};
 use tee_verifier_interface::VerifiedReport;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 

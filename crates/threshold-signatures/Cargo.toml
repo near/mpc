@@ -13,10 +13,8 @@ bench = false
 test-utils = ["rand", "rand_chacha"]
 
 [dependencies]
-auto_ops.workspace = true
 blstrs.workspace = true
 borsh.workspace = true
-byteorder.workspace = true
 derive_more = { workspace = true, features = ["deref_mut"] }
 digest.workspace = true
 ecdsa.workspace = true
@@ -25,11 +23,10 @@ frost-core.workspace = true
 frost-ed25519.workspace = true
 frost-secp256k1.workspace = true
 futures.workspace = true
-futures-lite.workspace = true
 hex.workspace = true
 hkdf.workspace = true
 itertools.workspace = true
-k256 = { workspace = true, features = [
+k256 = { workspace = true, default-features = true, features = [
     "sha256",
     "ecdsa",
     "serde",
@@ -43,7 +40,6 @@ rand_core.workspace = true
 reddsa.workspace = true
 rmp-serde.workspace = true
 serde.workspace = true
-serde_bytes.workspace = true
 serde_json.workspace = true
 serde_with.workspace = true
 sha2.workspace = true
@@ -54,7 +50,6 @@ zeroize.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
-average.workspace = true
 criterion.workspace = true
 insta.workspace = true
 rand.workspace = true

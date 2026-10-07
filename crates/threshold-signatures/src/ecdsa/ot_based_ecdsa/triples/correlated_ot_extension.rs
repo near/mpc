@@ -30,7 +30,7 @@ pub async fn correlated_ot_sender(
     }
 
     // Spec 6
-    let q = (u & delta) ^ t;
+    let q = u.and_vec(&delta).xor(&t);
 
     Ok(q)
 }
@@ -52,7 +52,7 @@ pub fn correlated_ot_receiver(
     let t1 = k1.expand_transpose(params.sid, params.batch_size)?;
 
     // Spec 3
-    let u = &t0 ^ t1 ^ x;
+    let u = t0.xor(&t1).xor(x);
 
     // Spec 4
     let wait0 = chan.next_waitpoint();
@@ -116,6 +116,6 @@ mod test {
             batch_size,
         )
         .unwrap();
-        assert_eq!(t ^ (x & delta), q);
+        assert_eq!(t.xor(&x.and_vec(&delta)), q);
     }
 }

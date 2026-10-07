@@ -57,7 +57,7 @@ pub(crate) fn new_ed25519(
     let scalar = curve25519_dalek::Scalar::random(rng);
     let public_key_element = Ed25519Group::generator() * scalar;
 
-    let pk = dtos::Ed25519PublicKey::from(public_key_element.compress());
+    let pk = dtos::Ed25519PublicKey::from(public_key_element.compress().to_bytes());
 
     (pk, scalar)
 }

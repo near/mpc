@@ -1,4 +1,3 @@
-use byteorder::{ByteOrder, LittleEndian};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::crypto::constants::MERLIN_PROTOCOL_LABEL;
@@ -7,10 +6,7 @@ use super::strobe::Strobe128;
 
 fn encode_array_len_as_u32(array: &[u8]) -> [u8; 4] {
     let x = u32::try_from(array.len()).expect("array.len() should always fit in u32 here");
-
-    let mut buf = [0; 4];
-    LittleEndian::write_u32(&mut buf, x);
-    buf
+    x.to_le_bytes()
 }
 
 #[derive(Clone, Zeroize)]

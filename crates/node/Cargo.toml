@@ -35,8 +35,9 @@ http-body-util = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
+inferno = { workspace = true }
 itertools = { workspace = true }
-k256 = { workspace = true }
+k256 = { workspace = true, default-features = true }
 launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true, features = ["local-verify"] }
@@ -74,7 +75,6 @@ rocksdb = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
 tee-authority = { workspace = true }
@@ -90,7 +90,7 @@ tokio-metrics = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["limit"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
@@ -98,7 +98,6 @@ url = { workspace = true }
 # jemalloc heap profiling is only supported on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
 backtrace = { workspace = true }
-inferno = { workspace = true }
 jemalloc_pprof = { workspace = true }
 mappings = { workspace = true }
 pprof_util = { workspace = true }
@@ -113,23 +112,21 @@ built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 elliptic-curve = { workspace = true }
 httpmock = { workspace = true }
 insta = { workspace = true }
 itertools = { workspace = true }
-mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
+serde_yaml = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
 test-log = { workspace = true }
 test-port-allocator = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }
-tracing-test = { workspace = true }
 
 [lints]
 workspace = true

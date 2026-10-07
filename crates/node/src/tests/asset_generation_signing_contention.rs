@@ -59,7 +59,6 @@ use crate::tests::{
     request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
-use average::{Estimate, Max, Mean, Quantile};
 use mpc_node_config::{PresignatureConfig, TripleConfig};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
@@ -110,9 +109,8 @@ const MEASURED_SIGNATURES: usize = 8;
 /// post-resharing contention without the fix trips it.
 const PER_SIGNATURE_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Summary statistics over a batch of signing attempts. Latency stats are computed
-/// with the `average` crate (as in the threshold-signatures benches); timeouts are
-/// counted separately since they have no finite latency.
+/// Summary statistics over a batch of signing attempts. Timeouts are counted
+/// separately since they have no finite latency
 struct LatencyReport {
     label: &'static str,
     n_ok: usize,
@@ -126,10 +124,8 @@ struct LatencyReport {
 impl LatencyReport {
     fn from_attempts(label: &'static str, attempts: &[Option<Duration>]) -> Self {
         let timeouts = attempts.iter().filter(|a| a.is_none()).count();
-        let latencies: Vec<f64> = attempts
-            .iter()
-            .filter_map(|a| a.map(|d| d.as_secs_f64()))
-            .collect();
+        let mut latencies: Vec<Duration> = attempts.iter().flatten().copied().collect();
+        latencies.sort();
         let n_ok = latencies.len();
 
         // Every request timed out: report the timeout bound as a sentinel so the
@@ -146,24 +142,15 @@ impl LatencyReport {
             };
         }
 
-        let mut mean = Mean::new();
-        let mut p50 = Quantile::new(0.5);
-        let mut p90 = Quantile::new(0.9);
-        let mut max = Max::new();
-        for &seconds in &latencies {
-            mean.add(seconds);
-            p50.add(seconds);
-            p90.add(seconds);
-            max.add(seconds);
-        }
+        let nearest_rank = |percent: usize| latencies[(n_ok * percent).div_ceil(100) - 1];
         Self {
             label,
             n_ok,
             timeouts,
-            mean: Duration::from_secs_f64(mean.mean()),
-            p50: Duration::from_secs_f64(p50.quantile()),
-            p90: Duration::from_secs_f64(p90.quantile()),
-            max: Duration::from_secs_f64(max.max()),
+            mean: latencies.iter().sum::<Duration>() / u32::try_from(n_ok).unwrap(),
+            p50: nearest_rank(50),
+            p90: nearest_rank(90),
+            max: nearest_rank(100),
         }
     }
 

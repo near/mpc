@@ -19,6 +19,7 @@ allow = [
 ]
 
 [advisories]
+unsound = "all"
 ignore = [
   "RUSTSEC-2022-0054", # wee_alloc is unmaintained
   "RUSTSEC-2024-0436", # paste is unmaintained
@@ -44,6 +45,9 @@ ignore = [
   # handshake transcript stays authenticated: the flaw only lets a peer send handshake
   # messages that should be encrypted in plaintext without rustls rejecting them.
   "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
+  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
+  # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
+  "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry
 ]
 
 [bans]

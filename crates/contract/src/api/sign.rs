@@ -137,8 +137,9 @@ impl MpcContract {
                     &public_key_edwards_point,
                     &request.tweak,
                 );
-                let derived_public_key_32_bytes =
-                    dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress());
+                let derived_public_key_32_bytes = dtos::Ed25519PublicKey::from(
+                    derived_public_key_edwards_point.compress().to_bytes(),
+                );
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 

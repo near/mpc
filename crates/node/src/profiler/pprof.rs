@@ -1,6 +1,7 @@
+use inferno::flamegraph;
 use pprof::{ProfilerGuardBuilder, Report};
 use regex::Regex;
-use std::{sync::LazyLock, time::Duration};
+use std::{io, iter, sync::LazyLock, time::Duration};
 use thiserror::Error;
 use tokio::task::{JoinError, spawn_blocking};
 
@@ -64,6 +65,40 @@ pub(super) async fn collect_pprof(
         .map_err(Into::into)
 }
 
+/// Writes the report as a flamegraph SVG, or nothing if it has no samples
+pub(super) fn write_flamegraph(report: &Report, writer: impl io::Write) -> io::Result<()> {
+    let collapsed_stacks = collapsed_stacks(report);
+    // The renderer rejects empty input
+    if collapsed_stacks.is_empty() {
+        return Ok(());
+    }
+
+    flamegraph::from_lines(
+        &mut flamegraph::Options::default(),
+        collapsed_stacks.iter().map(String::as_str),
+        writer,
+    )
+}
+
+/// Folds every sampled stack into a `thread;outermost;...;innermost count` line
+fn collapsed_stacks(report: &Report) -> Vec<String> {
+    report
+        .data
+        .iter()
+        .map(|(frames, count)| {
+            let symbols = frames
+                .frames
+                .iter()
+                .rev()
+                .flat_map(|frame| frame.iter().rev().map(ToString::to_string));
+            let stack: Vec<String> = iter::once(frames.thread_name_or_id())
+                .chain(symbols)
+                .collect();
+            format!("{} {count}", stack.join(";"))
+        })
+        .collect()
+}
+
 #[derive(Debug, Error)]
 pub(super) enum ProfileCollectionError {
     #[error("pprof profiling error")]
@@ -93,6 +128,79 @@ fn normalized_thread_name(thread_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pprof::{Frames, Symbol};
+    use std::{collections::HashMap, time::SystemTime};
+
+    fn symbol(name: &str) -> Symbol {
+        Symbol {
+            name: Some(name.as_bytes().to_vec()),
+            addr: None,
+            lineno: None,
+            filename: None,
+        }
+    }
+
+    /// `inlined`, inlined into `inner`, called from `outer` on the thread `worker`,
+    /// sampled 3 times
+    fn report_with_one_stack() -> Report {
+        let stack = Frames {
+            frames: vec![
+                vec![symbol("inlined"), symbol("inner")],
+                vec![symbol("outer")],
+            ],
+            thread_name: "worker".to_string(),
+            thread_id: 0,
+            sample_timestamp: SystemTime::UNIX_EPOCH,
+        };
+        Report {
+            data: HashMap::from([(stack, 3)]),
+            timing: Default::default(),
+        }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn collapsed_stacks__should_list_frames_from_outermost_to_innermost() {
+        // Given
+        let report = report_with_one_stack();
+
+        // When
+        let collapsed_stacks = collapsed_stacks(&report);
+
+        // Then
+        assert_eq!(collapsed_stacks, vec!["worker;outer;inner;inlined 3"]);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn write_flamegraph__should_write_an_svg_for_a_report_with_samples() {
+        // Given
+        let report = report_with_one_stack();
+        let mut svg = Vec::new();
+
+        // When
+        write_flamegraph(&report, &mut svg).unwrap();
+
+        // Then
+        assert!(!svg.is_empty());
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn write_flamegraph__should_write_nothing_for_a_report_without_samples() {
+        // Given
+        let report = Report {
+            data: HashMap::new(),
+            timing: Default::default(),
+        };
+        let mut svg = Vec::new();
+
+        // When
+        write_flamegraph(&report, &mut svg).unwrap();
+
+        // Then
+        assert!(svg.is_empty());
+    }
 
     #[test]
     fn leaves_thread_name_unchanged_when_no_trailing_numeric_id_exists() {

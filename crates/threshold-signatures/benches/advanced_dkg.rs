@@ -4,8 +4,7 @@ use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, participant_rng,
-    prepare_dkg,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, participant_rng, prepare_dkg,
 };
 
 use threshold_signatures::{
@@ -40,7 +39,6 @@ where
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_dkg_snapshot::<C>(threshold());
-    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("dkg");
     group.sample_size(*SAMPLE_SIZE);
@@ -57,7 +55,6 @@ where
             );
         },
     );
-    analyze_received_sizes(&[size], true);
 }
 
 fn bench_dkg_secp256k1(c: &mut Criterion) {
