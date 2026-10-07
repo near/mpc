@@ -22,8 +22,6 @@ updates:
       # TODO(#2051): updating this brings considerable breaking changes
       - dependency-name: "rcgen"
       ## Outdated dependencies we cannot upgrade ##
-      # Version 0.8.3 requires rustc 1.88
-      - dependency-name: "httpmock"
       # This cannot be upgraded because it conflicts the prometheus version required by nearcore
       - dependency-name: "prometheus"
       # Must match nearcore's `librocksdb-sys`; see the workspace Cargo.toml
@@ -47,8 +45,6 @@ updates:
       - dependency-name: "rand_chacha"
       # TODO(#1907): These dependencies need to be upgraded in tandem
       - dependency-name: "rand_core"
-      # Cannot be upgraded until we get MSVR 1.88
-      - dependency-name: "time"
       # The crates.io near-* stack must stay mutually consistent and in lockstep
       # with `near-crypto`; bumped manually, not by dependabot.
       - dependency-name: "near-crypto"
