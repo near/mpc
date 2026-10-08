@@ -102,11 +102,9 @@ async fn migration_endpoint__should_track_migration_state() {
 }
 
 async fn get_contract_migrations(cluster: &e2e_tests::MpcCluster) -> anyhow::Result<MigrationInfo> {
-    // todo: tidy up
     cluster
         .migration_info()
         .await
-        .into()
         .context("failed to view migration info")
 }
 

@@ -19,10 +19,10 @@ use near_mpc_contract_interface::{
         BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting,
         DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
         ForeignChain, ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters,
-        InitConfig, MockAttestation, NodeId, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-        ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
-        UpdateId,
+        InitConfig, MigrationInfo, MockAttestation, NodeId, ParticipantId, ParticipantInfo,
+        Participants, Payload, ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol,
+        ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
+        SignRequestArgs, TeeVerifierCodeHash, UpdateId,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -876,11 +876,7 @@ impl MpcCluster {
             .context("failed to send CKD request")
     }
 
-    pub async fn migration_info(
-        &self,
-    ) -> anyhow::Result<
-        BTreeMap<ContractAccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
-    > {
+    pub async fn migration_info(&self) -> anyhow::Result<MigrationInfo> {
         Ok(self.contract.view_mpc().migration_info().await?.value)
     }
 

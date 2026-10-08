@@ -10,8 +10,8 @@ use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::ProcessGuard;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
-    ParticipantInfo, ProtocolContractState,
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
+    ProtocolContractState,
 };
 use rand::SeedableRng;
 
