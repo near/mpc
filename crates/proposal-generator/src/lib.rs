@@ -162,11 +162,32 @@ mod tests {
     #[case::mainnet(
         include_str!("../proposals/mainnet-rpc-whitelist.toml"),
         &[
+            ForeignChain::Solana,
             ForeignChain::Bitcoin,
+            ForeignChain::Base,
+            ForeignChain::Bnb,
+            ForeignChain::Arbitrum,
             ForeignChain::Abstract,
             ForeignChain::Starknet,
+            ForeignChain::Polygon,
+            ForeignChain::HyperEvm,
             ForeignChain::Aptos,
             ForeignChain::Sui,
+            ForeignChain::Avalanche,
+            ForeignChain::Fogo,
+        ]
+    )]
+    #[case::mainnet_2026_10_08(
+        include_str!("../proposals/mainnet-rpc-whitelist-2026-10-08-evm-solana-fogo.toml"),
+        &[
+            ForeignChain::Solana,
+            ForeignChain::Base,
+            ForeignChain::Bnb,
+            ForeignChain::Arbitrum,
+            ForeignChain::Polygon,
+            ForeignChain::HyperEvm,
+            ForeignChain::Avalanche,
+            ForeignChain::Fogo,
         ]
     )]
     fn rpc_whitelist_proposals__should_be_valid(

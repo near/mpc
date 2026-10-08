@@ -1,4 +1,4 @@
-# Mainnet RPC provider whitelist: Solana, BNB, Base, Arbitrum, Polygon, Avalanche, HyperEVM, Fogo (vote of 2026-10-07).
+# Mainnet RPC provider whitelist: Solana, BNB, Base, Arbitrum, Polygon, Avalanche, HyperEVM, Fogo (vote of 2026-10-08).
 # Delta only; chains apply independently. Full state lives in mainnet-rpc-whitelist.toml.
 
 [chains.Solana]
