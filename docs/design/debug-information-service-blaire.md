@@ -1,8 +1,5 @@
 # Blaire - A debug information service for Foreign chain configurations
 
-Status: Draft
-Issue: [Add design doc for new debug information service 4077](https://github.com/near/mpc/issues/4077)
-
 ## Purpose
 
 This document defines goals and outlines the design of the Foreign chain configurations debug information webservice named Blaire. Blaire will enable the MPC team to easily inspect Foreign chain configuration information.
@@ -21,24 +18,27 @@ The webservice will be accessible to authenticated MPC team members.
 
 ### Work flow
 
-Nodes:
-1. MPC nodes will publish their configurations to Blaire at startup (a configuration change requires a node restart).
-2. Blaire will authenticate, validate and then store the configuration information in a database.
+#### MPC nodes
+
+1. MPC nodes connect to Blaire via mutual TLS and submit their redacted foreign chain configuration.
+2. Blaire allows mTLS connection by MPC nodes listed as participants in the MPC smart contract and for nodes whitelisted by users[^1]. Blaire stores the received configuration to a database.
+
+[^1]: MPC team members may whitelist a node that is about to join the network, but not yet a participant.
 
 ```mermaid
 ---
 title: "Blaire - System Context: MPC nodes"
 ---
 flowchart TD
-    BL["**Blaire**
+    BL["`**Blaire**
     _Foreign Chain Debug Information Service_
-    _Verifies node identity_"]
+    _Verifies node identity_`"]
 
-    MPC["**MPC node**
-    _Redacts secrets, then publishes its foreign chain config_"]
+    MPC["`**MPC node**
+    _Redacts secrets, then publishes its foreign chain config_`"]
 
-    DB["**Blaire database**
-    _Contains MPC nodes configuration information_"]
+    DB["`**Blaire database**
+    _Contains MPC nodes configuration information_`"]
 
     MPC -->|"1. Publish configuration over mTLS"| BL
     BL -->|"2. Stores report"| DB
@@ -48,32 +48,31 @@ flowchart TD
     DB@{ shape: db}
 ```
 
-Users:
-1. Users authenticate themselves to access the webpage.
-2. The user will be able to request Blaire for node configurations.
-3. Blaire reads its database to serve the information to users.
-4. The requests are recorded in an audit log.
-5. (Potentially) The user will be able to save/copy/compare the information.
+#### Users / MPC Team Members
+
+1. Users authenticate themselves to Blaire via Okta auth token.
+2. Users can request to view node configurations.
+3. Blaire serves the information to users and records each request in an audit log.
 
 ```mermaid
 ---
 title: "Blaire - System Context: developers"
 ---
 flowchart TD
-    DEV["**MPC Team Member**
-      _Selects nodes, compares configurations, copies or downloads results_"]
+    DEV["`**MPC Team Member**
+      _Selects nodes, compares configurations, copies or downloads results_`"]
 
-    AUTH["**Okta**
-      _Verifies session and MPC team membership_"]
+    AUTH["`**Okta**
+      _Verifies session and MPC team membership_`"]
 
-    BL["**Blaire**
-      _Foreign Chain Debug Information Service_"]
+    BL["`**Blaire**
+      _Foreign Chain Debug Information Service_`"]
 
-    LOG["**Log**
-      _Who requested which nodes, and when_"]
+    LOG["`**Log**
+      _Who requested which nodes, and when_`"]
 
-    DB["**Blaire database**
-      _Contains MPC nodes configuration information_"]
+    DB["`**Blaire database**
+      _Contains MPC nodes configuration information_`"]
 
     DEV -->|"1. Request configurations for selected nodes"| AUTH
     AUTH -->|"2. Verified request"| BL
@@ -91,11 +90,11 @@ flowchart TD
 
 See [the Foreign chain configurations documentation](https://github.com/near/mpc/blob/0185bf46611aece50a9e876ed8ec0ef96133e421/docs/foreign-chain-transactions.md?plain=1#L631) for a configuration example snippet. [Here is also the Foreign chain config struct in the MPC repo.](https://github.com/near/mpc/blob/b647bcd117ee8fcd09e17ad3a963dbf6078403fa/crates/node-config/src/foreign_chains.rs#L46)
 
-API keys for authentication will still need to be redacted for security reasons and the nodes will redact these secrets before they are published to Blaire. Therefore, the server never sees the secrets. See redactions table below for details on what will be published.
+API keys for authentication will need to be redacted for security reasons and the nodes will redact these secrets before they are published to Blaire. Therefore, the server never sees the secrets. See redactions table below for details on what will be published.
 
 #### Redaction table
 
-The payload published by nodes is `RedactedForeignChainsConfig`, constructed
+The payload published by nodes is `RedactedConfig`, constructed
 field-by-field from `ForeignChainsConfig`. It is an allowlist: any field added
 upstream and not listed in the table below is **not** published.
 
@@ -117,7 +116,7 @@ Required functions:
 - Nodes publish redacted Foreign chain configurations
 - SSO authentication of users (only team members) before site can be accessed
 - Store MPC nodes' Foreign chain configurations
-- Users able to request the database for configurations
+- Users able to request configurations
 - Users can see the audit log request history
 
 Potential functionalities:
@@ -131,25 +130,26 @@ Potential functionalities:
 
 ### Overview
 
-For the service there are two main wiring groups: the connections between the nodes and the service, and between the user and service. They have different requirements and will fulfill different objectives. The next section will include more details on the individual endpoints.
+Blaire will expose the following endpoints:
 
-Server endpoint/API root path:
-https://URL (TBD)
+| Method | Endpoint | Description | Scope |
+|--------|----------|-------------|-------|
+| POST | `/api/v1/reports` | Publish config info | `config:write` |
+| GET | `/api/v1/nodes` | List currently participating nodes | `nodes:read` |
+| GET | `/api/v1/nodes/{account_id}/{tls_public_key}/config` | Fetch latest reported config from a node | `config:read` |
+| GET | `/api/v1/nodes/{account_id}/history` | Fetch the config history of an account's nodes | `config:read` |
+| GET | `/api/v1/configs?account_id=X&account_id=Y` | Compare the latest configs of the given accounts' nodes | `config:read` |
+| GET | `/api/v1/activity` | List all users' actions/requests | `audit:read` |
 
-Summary:
-POST /api/v1/reports                        publish config info                         config:write
-POST /api/login                             log in authenticated users
-POST /api/logout                            log out authenticated users
-GET /api/v1/nodes                           list currently participating nodes          nodes:read
-GET /api/v1/nodes/{node_id}/config          fetch latest reported config from a node    config:read
-GET /api/v1/nodes/{node_id}/history         fetch a node's config history               config:read
-GET /api/v1/configs?node_id=X&node_id=Y     compare different node configs              config:read
-GET /api/v1/activity                        list all users actions/requests             audit:read
+In case Blaire needs to handle session management for users, it will additionally expose the following endpoints:
 
+| Method | Endpoint | Description | Scope |
+|--------|----------|-------------|-------|
+| GET | `/auth/login` | Redirect to Okta to start sign-in | — |
+| GET | `/auth/callback` | Exchange Okta auth code, create session | — |
+| POST | `/auth/logout` | Clear session, redirect to Okta logout | — |
 
 ### MPC nodes --> Blaire
-
-POST /api/v1/reports     publish config info     config:write
 
 The reports will be posted through the Blaire API, where the configs are recorded at a node's startup. The configurations will have a historic record, so that previous configurations could be compared to newer ones. The Blaire IP/web-address can be passed to the nodes via config-files where the address won't be public. Publishing should also be best-effort, as a Blaire outage or a rejected report must never block or fail MPC node startup.
 
@@ -157,44 +157,29 @@ The reports will be posted through the Blaire API, where the configs are recorde
 async fn publish_node_config_report(
     State(state): State<AppState>,
     node: AuthenticatedNode,
-    Json(report): Json<RedactedForeignChainsConfig>
+    Json(report): Json<NodeReport>
 ) -> Result<StatusCode,ApiError> {}
 ```
 
 ### Blaire <--> Users
 
-#### Authentication and access
-
-The login/logout endpoints will connect to the Okta SSO service once it is in place.
-
-POST /api/login                             log in authenticated users
-POST /api/logout                            log out authenticated users
-
 #### Configuration information
 
 The endpoints will mainly depend on fetching the nodes' configurations from the database and then serve the information in different formats, depending on what the user has requested. First, having an endpoint that serves information on the current participating nodes enables the team to check if there are any nodes that are no longer active and remove their configs from the database tables. One endpoint will serve individual node configurations, so users can inspect for possible problems. There will also be a history endpoint, where users can view older versions of individual node configs.
 
-GET /api/v1/nodes                           list currently participating nodes          nodes:read
-GET /api/v1/nodes/{node_id}/config          fetch latest reported config from a node    config:read
-GET /api/v1/nodes/{node_id}/history         fetch a node's config history               config:read
-
 Among potential functions users will be able to compare different node configs side-by-side in another endpoint. This could be done client-side and is not a priority.
-
-GET /api/v1/configs?node_id=X&node_id=Y  compare different node configs              config:read
 
 ```rust
 async fn get_node_config(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path(node_id): Path<NodeId>
-) -> Result<Json<NodeRedactedConfigReport>,ApiError> {}
+) -> Result<Json<ReportedData>,ApiError> {}
 ```
 
 #### Audit log
 
 There will be an endpoint that serves the audit log, so that users can track possible suspicious activity from someone's account. This will connect to a separate audit log table in the database.
-
-GET /api/v1/activity                      list all users actions/requests               audit:read
 
 ```rust
 async fn list_audit_log(
@@ -205,7 +190,27 @@ async fn list_audit_log(
 
 ## Data model
 
-### Structs
+### Node <--> Blaire Interface
+
+`NodeReport` is the payload a node posts to `/api/v1/reports`. It carries no identity: Blaire takes the TLS key from the mTLS handshake and resolves the account id from the contract.
+
+```rust
+pub struct NodeReport {
+    pub version: Version,
+    pub redacted_report: RedactedConfig,
+}
+```
+
+### User <--> Blaire Interface
+
+`NodeId` identifies a node in URLs and as the lookup key. An account may be associated to multiple nodes, so the TLS key is part of the identity.
+
+```rust
+pub struct NodeId {
+    pub account_id: AccountId,
+    pub tls_public_key: Ed25519PublicKey,
+}
+```
 
 ```rust
 pub struct AuthenticatedUser {
@@ -213,123 +218,33 @@ pub struct AuthenticatedUser {
 }
 ```
 
-A stored report: one row of node_config_reports.
-```rust
-pub struct NodeRedactedConfigReport {
-    pub id: i64,
-    pub node_id: NodeId,
-    pub tls_public_key: Ed25519PublicKey,
-    pub created_at: String,
-    pub redacted_config: String, //JSON
-}
-```
-
-#### Node identity
-
-Blaire keys nodes on the operator's NEAR account id, since it is stable across TLS key
-rotation.
-
-```rust
-/// The `node_id` used in URLs and as the key in every Blaire table.
-/// Corresponds to `NodeId::account_id` in the MPC repository.
-pub struct NodeId(AccountId);
-```
-
-The MPC repository's [`NodeId`](https://github.com/near/mpc/blob/fb32ae3787e0e445168260591e3e00213b786adc/crates/near-mpc-contract-interface/src/types/tee.rs#L24) is the full on-chain identity of a node:
-
-| Field                | Used by Blaire |
-| ---------            | ---------      |
-| `account_id`         | Yes, this is Blaire's `node_id` |
-| `tls_public_key`     | Recorded per report and in `node_tls_keys` table (not used as identity, since it changes on rotation) |
-| `account_public_key` | Not used       |
-
 ### Database
 
-The back-end will connect to a database `blaire.sqlite3` containing some of the following tables. The foreign chain table will contain the configurations of the individual MPC nodes. There will also be a node and operator mapping table, which connects which operator controls which node. Another table will be an audit log, which will record all user events. The audit log is essential for visibility, error handling and security.
+```rust
+pub struct MpcNode {
+    pub node_id: NodeId,
+    pub added_at: Timestamp,
+    pub block_height: BlockHeight,
+}
 
-Blaire uses SQLite, but if retention or query volume outgrows its capabilities the schema can be ported to Postgres.
+pub struct ReportedData {
+    pub node_id: NodeId,
+    pub report: NodeReport,
+    pub received_at: Timestamp,
+}
 
-#### Foreign chain configuration table
+pub struct AuditEvent {
+    pub user_id: UserId,
+    pub action: AuditAction,
+    pub recorded_at: Timestamp,
+}
 
-| Node ID             | TLS public key   | Created at    | Foreign chain config |
-| -------------       | -------------    | ------------- | -------------        |
-| node0.near          | Key #1           | date, time    | JSON(config)         |
-| everstake.pool.near | Key #2           | date, time    | JSON(config)         |
-| ....                | ....             | date, time    | JSON(config)         |
-
-```sql
-CREATE TABLE node_readcted_config_reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    node_id TEXT NOT NULL,
-    tls_public_key TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    redacted_config TEXT NOT NULL
-);
-
-CREATE INDEX index_node_reports
-    ON node_redacted_config_reports (node_id, created_at DESC);
-```
-#### Node TLS keys
-
-To ensure that a node's configuration history is complete, even if it rotates TLS keys, we need to map which TLS key belongs to which node.
-
-| TLS public key | Node ID              | First seen  | Last seen   |
-| ----------     | ----------           | ----------  | ----------  |
-| Key #1         | node0.near           | date, time  | date, time  |
-| Key #2         | everstake.pool.near  | date, time  | date, time  |
-| ....           | ....                 | date, time  | date, time  |
-
-```sql
-CREATE TABLE node_tls_keys (
-    tls_public_key TEXT PRIMARY KEY,
-    node_id TEXT NOT NULL,
-    first_seen TEXT NOT NULL DEFAULT (datetime('now')),
-    last_seen TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX index_tls_keys_node
-    ON node_tls_keys (node_id);
-```
-Blaire resolves a client's key to a node ID from contract state and updates node_tls_keys. Contract state only holds current keys, so this table will keep historical records correct across a rotation of keys.
-
-#### Node - operator mapping
-
-| Node ID             | Operator ID   |
-| -------------       | ------------- |
-| node0.near          | .....         |
-| everstake.pool.near | .....         |
-| ....                | .....         |
-
-```sql
-CREATE TABLE node_operator (
-    node_id TEXT PRIMARY KEY,
-    operator_id TEXT NOT NULL
-);
-```
-
-#### Audit log
-
-| User ID       | Timestamp     | Event                    |
-| ------------- | ------------- | -------------            |
-| User #1       | date, time    | Logged in                |
-| User #1       | date, time    | Request node0.near config|
-| ....          | date, time    | .....                    |
-
-```sql
-CREATE TABLE audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
-    event_timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-    target_node_id TEXT NULL,
-    event_type TEXT NOT NULL,
-    details TEXT NULL
-);
-
-CREATE INDEX idx_audit_user_time
-    ON audit_log (user_id, event_timestamp DESC);
-CREATE INDEX idx_audit_target_time
-    ON audit_log (target_node_id, event_timestamp DESC);
-
+pub enum AuditAction {
+    ListNodes,
+    ReadConfig(NodeId),
+    ReadHistory(AccountId),
+    ReadAuditLog,
+}
 ```
 
 ## Authentication/security
@@ -344,11 +259,5 @@ Node operators will not have access to the Blaire service when it launches, but 
 
 ### Node access
 
-Nodes authenticate to Blaire and report their configs using mTLS (from the start/development phase) and we can re-use code from the [backup-cli](https://github.com/near/mpc/tree/main/crates/backup-cli). Blaire will authenticate nodes by verifying their existing P2P TLS keys from the contract. This requires Blaire to have access to the MPC contract state, which can be fetched via the RPC nodes. The nodes will verify that they are communicating with the real Blaire by adding Blaire's public key to the node configuration. This key can be moved to the contract instead later on.
+Nodes authenticate to Blaire and report their configs using mTLS (from the start/development phase) and we can re-use code from the [backup-cli](https://github.com/near/mpc/tree/main/crates/backup-cli). Blaire accepts a connection when the TLS key the node presents belongs to a node whose operator account is a current participant or is on the whitelist. In both cases the key comes from the contract: participants' keys from the participant set, prospective nodes' keys from the participant info they submit on-chain before being voted in. Blaire stores no node keys of its own. This requires Blaire to have access to the MPC contract state, which can be fetched via the RPC nodes. The nodes will verify that they are communicating with the real Blaire by adding Blaire's public key to the node configuration. This key can be moved to the contract instead later on.
 
-
-### Risks
-
-The configuration information used to be public but was withdrawn as an extra precaution. If the debug service were to be hacked and this information is leaked, we heighten the risk to our node system. Therefore, security should still be strong and accessibility limited to only MPC team members.
-
-Since the service aggregates the information about the configurations of all of the nodes, it could become a bigger target for bad actors compared to when each configuration's information is stored separately by the node operators.
