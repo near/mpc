@@ -253,7 +253,7 @@ fn validate_slug(slug: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use assert_matches::assert_matches;
+    use std::assert_matches;
 
     use super::*;
     use crate::ConfigFile;

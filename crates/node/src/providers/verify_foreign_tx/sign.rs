@@ -612,8 +612,10 @@ fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
 mod tests {
     use super::*;
     use crate::primitives::ParticipantId;
-    use assert_matches::assert_matches;
-    use std::collections::{BTreeMap, HashSet};
+    use std::{
+        assert_matches,
+        collections::{BTreeMap, HashSet},
+    };
 
     fn bitcoin_supporters() -> SupportersByForeignChain {
         BTreeMap::from([(

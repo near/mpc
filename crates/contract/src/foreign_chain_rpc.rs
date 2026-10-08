@@ -217,9 +217,9 @@ mod tests {
     use crate::primitives::{
         key_state::AuthenticatedParticipantId, test_utils::gen_authenticated_participants,
     };
-    use assert_matches::assert_matches;
     use mpc_primitives::GovernanceThreshold;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
+    use std::assert_matches;
 
     /// Build a [`GovernanceThresholdParameters`] for tests, bypassing the relative-threshold
     /// validation so tests can express edge-case combinations (e.g. the stale-votes
