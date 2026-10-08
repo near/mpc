@@ -939,7 +939,7 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, use the full per-network provider set in [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, see [Foreign chain RPC providers](#foreign-chain-rpc-providers).
 
 > **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
@@ -985,7 +985,7 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, the chain's `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints) below), and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider, and a node that cannot cover a chain is treated as down for it.
 
 You need your own API keys:
 
@@ -994,11 +994,35 @@ You need your own API keys:
 * **Geomi** (Aptos only) — https://geomi.dev/login → create a project, generate a Server API key (`aptoslabs_…`)
 * **Tatum** — https://dashboard.tatum.io → generate an API key for the right network. Make sure you have "Starter" plan.
 * **Chainstack** (HyperEVM only) — https://console.chainstack.com → deploy a Hyperliquid node, copy the key from its endpoint URL. Make sure you have "Growth" plan.
+* **FluxRPC** (Fogo, mainnet only) — https://fluxrpc.com → get an API key.
 
 > **Important:**
 >
 > * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
 > * Before deploying, verify your config with the [foreign chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml`. It runs the same provider probe the node runs after startup and reports the same verdicts.
+
+#### Credentials only (Recommended)
+
+Requires node release 3.17 or later. Earlier releases ignore `rpc_preset` and `credentials` and run without foreign chains.
+
+The node ships testnet and mainnet provider presets. Instead of the full `foreign_chains` block, select a preset and give one credentials entry per provider, the node enables every preset (chain, provider) pair whose provider has credentials, plus the providers that need none, including chains added in later releases:
+
+```toml
+[mpc_node_config.node.foreign_chains]
+rpc_preset = "testnet"  # or "mainnet"
+
+[mpc_node_config.node.foreign_chains.credentials]
+alchemy    = { val = "YOUR_ALCHEMY_API_KEY" }
+quicknode  = { val = "YOUR_QUICKNODE_API_KEY", slug = "YOUR-SLUG" }
+geomi      = { val = "YOUR_GEOMI_API_KEY" }
+tatum      = { val = "YOUR_TATUM_API_KEY" }
+chainstack = { val = "YOUR_CHAINSTACK_API_KEY" }
+fluxrpc    = { val = "YOUR_FLUXRPC_API_KEY" }  # mainnet only
+```
+
+A mainnet or testnet node must use its own network's preset. A (chain, provider) pair you also configure in full takes precedence, as do the chain-level fields of a chain you configure. At startup the node logs where each pair came from and warns about preset providers it skipped.
+
+#### Full config
 
 Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
 

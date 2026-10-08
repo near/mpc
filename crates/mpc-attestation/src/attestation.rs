@@ -568,6 +568,7 @@ impl UnixSeconds {
 #[expect(non_snake_case)]
 mod tests {
     use alloc::vec;
+    use core::assert_matches;
 
     use super::*;
 
@@ -577,7 +578,7 @@ mod tests {
         let stamped = MockAttestation::Valid.with_expiry_capped_at(42);
 
         // Then
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash: None,
@@ -603,7 +604,7 @@ mod tests {
         let stamped = mock.with_expiry_capped_at(42);
 
         // Then: the expiry is filled in and the other constraints are preserved.
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash: Some(hash),
@@ -627,7 +628,7 @@ mod tests {
         let stamped = mock.with_expiry_capped_at(42);
 
         // Then: it is capped at the contract-provided value (a caller cannot extend it).
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 expiry_timestamp_seconds: Some(42),
@@ -650,7 +651,7 @@ mod tests {
         let stamped = mock.with_expiry_capped_at(42);
 
         // Then: the shorter expiry is left as-is (capping only lowers, never raises).
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 expiry_timestamp_seconds: Some(20),
@@ -665,7 +666,7 @@ mod tests {
         let stamped = MockAttestation::Invalid.with_expiry_capped_at(42);
 
         // Then
-        assert_matches::assert_matches!(stamped, MockAttestation::Invalid);
+        assert_matches!(stamped, MockAttestation::Invalid);
     }
 
     #[test]
@@ -820,7 +821,7 @@ mod tests {
 
         let verification_result = time_constrained_attestation.re_verify(time_now, &[], &[], &[]);
 
-        assert_matches::assert_matches!(
+        assert_matches!(
             verification_result,
             Err(VerificationError::ExpiredCertificate {
                 attestation_time,
@@ -875,7 +876,7 @@ mod tests {
         let result = attestation.re_verify(0, &[], &[], &allowed);
 
         // then
-        assert_matches::assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
+        assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
     }
 
     #[test]
@@ -893,7 +894,7 @@ mod tests {
         let result = attestation.re_verify(0, &[], &[], &[]);
 
         // then
-        assert_matches::assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
+        assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
     }
 
     #[test]

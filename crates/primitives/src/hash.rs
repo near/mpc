@@ -255,8 +255,8 @@ mod tests {
     use super::*;
 
     use alloc::format;
-    use assert_matches::assert_matches;
     use borsh::BorshDeserialize;
+    use core::assert_matches;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     define_hash!(TestHash, 32);

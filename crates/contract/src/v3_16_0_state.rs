@@ -183,11 +183,11 @@ mod tests {
     use super::*;
     use crate::primitives::test_utils::node_id_for;
     use crate::storage_keys::StorageKey;
-    use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
     use near_sdk::store::IterableMap;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{env, testing_env};
+    use std::assert_matches;
 
     #[test]
     fn proposed_updates__clear_storage__should_release_the_stored_proposals_and_votes() {

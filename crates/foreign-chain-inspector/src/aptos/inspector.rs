@@ -266,11 +266,11 @@ fn parse_aptos_address(s: &str) -> Result<AptosAddress, String> {
 mod tests {
     use super::*;
     use crate::aptos::{MAINNET_CHAIN_ID, TESTNET_CHAIN_ID};
-    use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::aptos::{
         AptosEventResponse, AptosRpcError, EventGuid, LedgerInfoResponse, TransactionResponse,
     };
     use rstest::rstest;
+    use std::assert_matches;
 
     struct MockAptosClient {
         response: Result<TransactionResponse, AptosRpcError>,

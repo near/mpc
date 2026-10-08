@@ -14,7 +14,6 @@ near-mpc-contract-interface = { workspace = true, features = ["near"] }
 near-sdk = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 ed25519-dalek = { workspace = true }
 k256 = { workspace = true, features = ["ecdsa"] }
 near-mpc-contract-interface = { workspace = true, features = [

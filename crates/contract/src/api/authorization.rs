@@ -4,6 +4,7 @@ use crate::MpcContract;
 use crate::errors::{Error, InvalidParameters};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{AccountId, env};
+use std::assert_matches;
 
 impl MpcContract {
     /// Get our own account id as a voter. Returns an error if we are not a participant.
@@ -54,7 +55,7 @@ impl MpcContract {
             .tee_state
             .is_caller_an_attested_participant(participants);
 
-        assert_matches::assert_matches!(
+        assert_matches!(
             attestation_check,
             Ok(()),
             "Caller must be an attested participant"

@@ -91,8 +91,8 @@ impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     #[rstest]

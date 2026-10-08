@@ -26,7 +26,6 @@ sha2 = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 hex = { workspace = true }
 test-utils = { workspace = true }
 
