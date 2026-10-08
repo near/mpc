@@ -195,14 +195,14 @@ jobs:
         run: bash scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
 
   # The only job that signs and pushes to the project cache. Its environment must be limited to
-  # main in the repository settings, so no other branch can read the signing key, and no
-  # dependency's build code runs outside Nix's sandbox before it signs
+  # main and release branches in the repository settings, so no other branch can read the signing
+  # key, and no dependency's build code runs outside Nix's sandbox before it signs
   push-project-cache:
     name: "Push the dev shells to the project cache"
     if: github.ref == 'refs/heads/main'
     runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
-    environment: write-project-cache
+    environment: production
     permissions:
       contents: read
 
