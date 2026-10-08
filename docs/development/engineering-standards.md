@@ -388,3 +388,7 @@ pub struct Resolved {
 
 pub enum SkipReason { ... }
 ```
+
+When two types reference each other, declare the one closer to the public API first.
+
+**Scope.** This applies to new code, and to files you are already reworking. It is not a request to reorder existing files in bulk.
