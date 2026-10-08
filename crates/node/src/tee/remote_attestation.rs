@@ -73,7 +73,7 @@ async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
-    baseline: SubmissionBaseline,
+    baseline: Option<SubmissionBaseline>,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
@@ -105,6 +105,12 @@ async fn submit_remote_attestation(
             }
         }
     };
+
+    // Without a baseline no observation can confirm a landing, so retrying would resubmit until
+    // the round deadline. The next round confirms with a fresh baseline.
+    if baseline.is_none() {
+        return set_attestation().await;
+    }
 
     let exponential_backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
@@ -176,26 +182,30 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBase
         }
     }
 
-    async fn read_submission_baseline(&self) -> SubmissionBaseline {
+    async fn read_submission_baseline(&self) -> Option<SubmissionBaseline> {
         match self
             .baseline_reader
             .read_submission_baseline(&self.tls_public_key)
             .await
         {
-            Ok(baseline) => baseline,
+            Ok(baseline) => Some(baseline),
             // Submit anyway on a read error: refreshing the attestation is the priority, and a
-            // broken read must not block submission (the confirmation just can't use a baseline).
+            // broken read must not block submission (it just can't be confirmed this round).
             Err(error) => {
                 tracing::warn!(
                     ?error,
                     "could not read pre-submit attestation baseline; submitting without it"
                 );
-                SubmissionBaseline::default()
+                None
             }
         }
     }
 
-    async fn submit_attestation(&self, attestation: Attestation, baseline: SubmissionBaseline) {
+    async fn submit_attestation(
+        &self,
+        attestation: Attestation,
+        baseline: Option<SubmissionBaseline>,
+    ) {
         let allowed_image_hashes: Vec<_> = self
             .allowed_image_hashes
             .borrow()
@@ -303,7 +313,9 @@ mod tests {
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::tick::MockTicker;
+    use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
+    use mpc_attestation::attestation::MockAttestation;
     use rand::SeedableRng;
     use std::sync::{
         Arc, Mutex,
@@ -370,9 +382,14 @@ mod tests {
         submissions: Arc<Mutex<usize>>,
         notify: Arc<tokio::sync::Notify>,
         failing: Arc<AtomicBool>,
+        unconfirmed: Arc<AtomicBool>,
     }
 
     impl MockSender {
+        fn set_unconfirmed(&self, unconfirmed: bool) {
+            self.unconfirmed.store(unconfirmed, Ordering::Relaxed);
+        }
+
         fn set_failing(&self, failing: bool) {
             self.failing.store(failing, Ordering::Relaxed);
         }
@@ -410,7 +427,11 @@ mod tests {
             request: ChainSendTransactionRequest,
         ) -> Result<TransactionStatus, TransactionProcessorError> {
             self.send(request).await?;
-            Ok(TransactionStatus::Executed)
+            Ok(if self.unconfirmed.load(Ordering::Relaxed) {
+                TransactionStatus::Unknown
+            } else {
+                TransactionStatus::Executed
+            })
         }
     }
 
@@ -490,6 +511,23 @@ mod tests {
 
         // Then
         assert_eq!(setup.sender().count(), TEST_SUBMISSION_COUNT);
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_submit_once_when_baseline_read_fails() {
+        // Given: without a baseline the landing can't be confirmed
+        let mut setup = test_setup();
+        setup.submitter.baseline_reader = StubSubmissionBaselineReader { fail: true };
+        setup.sender().set_unconfirmed(true);
+        let handle = setup.spawn_periodic(1);
+
+        // When
+        tokio::time::sleep(Duration::from_mins(10)).await;
+
+        // Then
+        assert_eq!(setup.sender().attempts(), 1);
         handle.abort();
     }
 
@@ -629,5 +667,28 @@ mod tests {
 
         // Then
         assert!(result.is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn submit_remote_attestation__should_submit_once_without_a_baseline() {
+        // Given: the landing can't be confirmed, so every attempt comes back unknown
+        let sender = MockSender::default();
+        sender.set_unconfirmed(true);
+        let (tls_public_key, _) = test_keys();
+
+        // When
+        let submission = submit_remote_attestation(
+            sender.clone(),
+            Attestation::Mock(MockAttestation::Valid),
+            tls_public_key,
+            None,
+        )
+        .timeout(Duration::from_mins(10))
+        .await;
+
+        // Then
+        assert_matches!(submission, Ok(Err(_)));
+        assert_eq!(sender.attempts(), 1);
     }
 }
