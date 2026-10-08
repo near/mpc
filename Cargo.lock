@@ -6272,6 +6272,7 @@ dependencies = [
  "serde",
  "serde_with",
  "serde_yaml",
+ "thiserror 2.0.20",
  "toml 1.1.6+spec-1.1.0",
  "url",
 ]

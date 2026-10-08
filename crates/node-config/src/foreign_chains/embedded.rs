@@ -1,6 +1,5 @@
 use std::fmt;
 
-use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
 use super::ForeignChainsConfig;
@@ -38,13 +37,12 @@ impl fmt::Display for RpcPreset {
 
 pub(super) fn embedded_foreign_chains(
     rpc_preset: RpcPreset,
-) -> anyhow::Result<ForeignChainsConfig> {
+) -> Result<ForeignChainsConfig, toml::de::Error> {
     let source = match rpc_preset {
         RpcPreset::Mainnet => MAINNET,
         RpcPreset::Testnet => TESTNET,
     };
     toml::from_str(source)
-        .with_context(|| format!("failed to parse the embedded {rpc_preset} foreign chain config"))
 }
 
 #[cfg(test)]
