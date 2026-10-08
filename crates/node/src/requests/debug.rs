@@ -132,10 +132,11 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     ) -> String {
         let mut output = String::new();
         let current_leader = self.current_leader(eligible_leaders);
+        let acting_leader = self.computation_progress.lock().unwrap().selected_leader;
         write!(
             &mut output,
             "  {:>11} blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2}",
-            if current_leader == Some(me) {
+            if current_leader == Some(me) || acting_leader == Some(me) {
                 "[leader]"
             } else {
                 ""

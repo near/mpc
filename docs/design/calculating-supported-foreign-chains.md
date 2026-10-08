@@ -80,7 +80,8 @@ non-covering participant produces no share and can stall the request.
 Implemented in two places:
 1. Leader selection is chain- and threshold-aware: the
 pending-request queue narrows a request's eligible leaders to the supporters
-of `C`, and selects one only when at least a reconstruction threshold's worth
+of `C`, and selects leaders (the staggered failover sequence included) only when
+at least a reconstruction threshold's worth
 of them is online (the same threshold that gates availability). Otherwise the request
 parks — no attempt is consumed, the `mpc_num_requests_without_refined_leader_total` metric counts the queue
 passes — until supporters come back or the request expires.
