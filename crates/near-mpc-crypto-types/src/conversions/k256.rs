@@ -115,11 +115,11 @@ impl TryFrom<&K256Signature> for k256::ecdsa::Signature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use k256::ecdsa::SigningKey;
     use k256::ecdsa::signature::hazmat::PrehashSigner;
     use k256::elliptic_curve::Field;
     use rand::SeedableRng as _;
+    use std::assert_matches;
 
     #[test]
     fn roundtrip_affine_point() {

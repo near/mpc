@@ -413,12 +413,11 @@ mod tests {
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::tee_state::ParticipantInsertion;
-    use assert_matches::assert_matches;
     use dtos::Ed25519PublicKey;
     use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;
     use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
-    use std::collections::BTreeMap;
     use std::panic;
+    use std::{assert_matches, collections::BTreeMap};
 
     pub fn migration_info(
         contract_state: &MpcContract,
@@ -1042,7 +1041,7 @@ mod tests {
                 valid_participant_attestation,
                 tee_upgrade_duration,
             );
-            assert_matches::assert_matches!(
+            assert_matches!(
                 insertion_result,
                 Ok(ParticipantInsertion::NewlyInsertedParticipant)
             );

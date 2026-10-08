@@ -239,9 +239,9 @@ pub mod ed25519_types {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use k256::elliptic_curve::PrimeField;
     use rstest::rstest;
+    use std::assert_matches;
 
     #[test]
     fn serializeable_scalar_roundtrip() {

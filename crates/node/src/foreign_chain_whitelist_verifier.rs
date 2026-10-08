@@ -382,10 +382,9 @@ fn log_diagnostic(d: &Diagnostic) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use mpc_node_config::TokenConfig;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
-    use std::collections::BTreeMap;
+    use std::{assert_matches, collections::BTreeMap};
 
     fn local_provider(rpc_url: &str, auth: AuthConfig) -> ForeignChainProviderConfig {
         ForeignChainProviderConfig {

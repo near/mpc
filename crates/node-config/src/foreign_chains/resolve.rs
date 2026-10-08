@@ -294,9 +294,8 @@ fn enable(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use std::num::NonZeroU64;
+    use std::{assert_matches, num::NonZeroU64};
 
-    use assert_matches::assert_matches;
     use rstest::rstest;
 
     use super::*;

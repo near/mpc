@@ -180,10 +180,9 @@ impl<K: Ord + schemars::JsonSchema, V: schemars::JsonSchema> schemars::JsonSchem
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{assert_matches, collections::BTreeSet};
 
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
 
     #[test]

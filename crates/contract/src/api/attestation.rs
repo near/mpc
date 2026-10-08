@@ -491,7 +491,6 @@ mod tests {
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{NodeAttestation, TeeState};
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
-    use assert_matches::assert_matches;
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
         ReconstructionThreshold,
@@ -506,8 +505,8 @@ mod tests {
     use near_sdk::testing_env;
     use rand::rngs::OsRng;
     use rstest::rstest;
-    use std::collections::HashSet;
     use std::panic;
+    use std::{assert_matches, collections::HashSet};
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
         launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,

@@ -38,11 +38,11 @@ pub fn build_payload(config: ProposalConfig) -> anyhow::Result<String> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{
         AuthScheme, ChainRouting, ProviderConfig, ProviderId,
     };
     use rstest::rstest;
+    use std::assert_matches;
 
     fn parse(toml: &str) -> ProposalConfig {
         toml::from_str(toml).unwrap()

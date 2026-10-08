@@ -34,7 +34,6 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use assert_matches::assert_matches;
     use near_account_id::AccountId;
 
     use crate::{
@@ -42,7 +41,7 @@ mod tests {
         mock::{MockViewContract, MockViewError},
         views::{monitoring::MonitoringTask, view_call::ViewCall},
     };
-    use std::time::Duration;
+    use std::{assert_matches, time::Duration};
 
     fn contract_id() -> AccountId {
         "test.testnet".parse().unwrap()

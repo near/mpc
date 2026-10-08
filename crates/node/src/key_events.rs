@@ -797,14 +797,13 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use crate::network::testing::new_task_channel_for_test;
-    use assert_matches::assert_matches;
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_mpc_contract_interface::types::{
         DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
     };
-    use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{assert_matches, collections::BTreeSet};
 
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
@@ -903,10 +902,9 @@ mod tests {
             validate_key_event_participants(&channel_participants, &expected_participant_ids);
 
         // Then
-        assert_matches!(result, Err(err) => {
-            assert_eq!(err.missing, make_participant_ids(&[4]));
-            assert!(err.unexpected.is_empty());
-        });
+        let err = result.unwrap_err();
+        assert_eq!(err.missing, make_participant_ids(&[4]));
+        assert!(err.unexpected.is_empty());
     }
 
     #[test]
@@ -921,10 +919,9 @@ mod tests {
             validate_key_event_participants(&channel_participants, &expected_participant_ids);
 
         // Then
-        assert_matches!(result, Err(err) => {
-            assert!(err.missing.is_empty());
-            assert_eq!(err.unexpected, make_participant_ids(&[5]));
-        });
+        let err = result.unwrap_err();
+        assert!(err.missing.is_empty());
+        assert_eq!(err.unexpected, make_participant_ids(&[5]));
     }
 
     /// A leader-chosen subset must be refused without any contract interaction, in particular

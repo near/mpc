@@ -2,7 +2,6 @@
 //! requires the off-chain `local-verify` feature.
 #![cfg(feature = "local-verify")]
 
-use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
 use attestation::{ExpectedMeasurements, Measurements};
 use mpc_attestation::attestation::{
@@ -10,6 +9,7 @@ use mpc_attestation::attestation::{
     VerifiedAttestation, default_measurements,
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
+use std::assert_matches;
 use test_utils::attestation::{
     VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
     mock_dstack_attestation, p2p_tls_key,
