@@ -759,10 +759,10 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use mpc_attestation::report_data::ReportDataV1;
     use rstest::rstest;
     use std::{
+        assert_matches,
         cell::RefCell,
         rc::Rc,
         sync::{

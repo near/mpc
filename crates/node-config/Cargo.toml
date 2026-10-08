@@ -22,7 +22,6 @@ toml = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 rstest = { workspace = true }
 
 [lints]

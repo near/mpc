@@ -16,13 +16,13 @@ use foreign_chain_inspector::{
 use foreign_chain_rpc_factory::build_http_client;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::evm::{
     GetBlockByNumberResponse, GetTransactionReceiptResponse, H160, H256, Log, U64,
 };
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
+use std::assert_matches;
 
 fn expected_extracted_value<Chain: EvmChain>(
     extractor: &EvmExtractor,

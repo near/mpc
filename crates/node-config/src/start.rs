@@ -220,8 +220,8 @@ pub enum DownloadConfigType {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use launcher_interface::types::PccsTlsTrust;
+    use std::assert_matches;
 
     #[rstest::rstest]
     #[case(Some(RpcPreset::Testnet), Some(ChainId::Testnet))]

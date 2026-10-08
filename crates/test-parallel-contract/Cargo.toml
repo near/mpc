@@ -11,7 +11,6 @@ ignored = ["getrandom", "borsh", "serde"]
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-assert_matches = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 elliptic-curve = { workspace = true }

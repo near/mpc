@@ -261,7 +261,6 @@ mod tests {
         }
     }
     use super::*;
-    use assert_matches::assert_matches;
     use foreign_chain_inspector::{
         abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, ethereum, hyperevm,
         polygon, starknet, sui, svm,
@@ -275,7 +274,7 @@ mod tests {
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use rstest::rstest;
-    use std::num::NonZeroU64;
+    use std::{assert_matches, num::NonZeroU64};
 
     const MAINNET: &str = starknet::MAINNET_CHAIN_ID;
     const SEPOLIA: &str = starknet::SEPOLIA_CHAIN_ID;
