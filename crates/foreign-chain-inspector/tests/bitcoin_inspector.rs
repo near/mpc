@@ -20,7 +20,6 @@ use foreign_chain_inspector::{
 use foreign_chain_rpc_factory::build_http_client;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::bitcoin::{
     GetBlockHeaderVerboseResponse, GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
 };
@@ -28,6 +27,7 @@ use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
+use std::assert_matches;
 
 const TEST_BLOCK_HEIGHT: u64 = 800_000;
 const TEST_SUFFICIENT_CONFIRMATIONS: u64 = 10;
@@ -103,11 +103,10 @@ async fn extract_returns_error_when_confirmations_insufficient() {
 
     // then
     assert_matches!(
-    response,
-    Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { expected, got }) => {
-        assert_eq!(expected,  threshold);
-        assert_eq!(got,  confirmations);
-    });
+        response,
+        Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { expected, got })
+            if expected == threshold && got == confirmations
+    );
 }
 
 #[tokio::test]

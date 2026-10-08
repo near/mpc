@@ -989,12 +989,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "assert_matches"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
-
-[[package]]
 name = "async-compression"
 version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1078,7 +1072,6 @@ name = "attestation-cli"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "attestation",
  "bs58 0.5.1",
  "clap",
@@ -1306,7 +1299,6 @@ name = "backup-cli"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "axum",
  "clap",
  "ed25519-dalek 2.2.0",
@@ -1841,7 +1833,6 @@ dependencies = [
 name = "chain-gateway"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "base64 0.23.1",
  "chain-gateway",
  "chain-gateway-test-contract",
@@ -3857,7 +3848,6 @@ name = "foreign-chain-health-check"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "foreign-chain-inspector",
  "foreign-chain-rpc-factory",
  "foreign-chain-rpc-interfaces",
@@ -3878,7 +3868,6 @@ name = "foreign-chain-inspector"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "base64 0.23.1",
  "bs58 0.5.1",
  "derive_more 2.1.1",
@@ -3908,7 +3897,6 @@ name = "foreign-chain-rpc-factory"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "foreign-chain-inspector",
  "foreign-chain-rpc-interfaces",
  "http",
@@ -5629,7 +5617,6 @@ dependencies = [
 name = "launcher-interface"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "derive_more 2.1.1",
  "insta",
  "mpc-primitives",
@@ -6062,7 +6049,6 @@ dependencies = [
 name = "mpc-attestation"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "attestation",
  "borsh",
  "dcap-qvl",
@@ -6085,7 +6071,6 @@ name = "mpc-contract"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "attestation-types",
  "blstrs",
  "borsh",
@@ -6173,7 +6158,6 @@ version = "3.16.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
- "assert_matches",
  "async-trait",
  "average",
  "axum",
@@ -6275,7 +6259,6 @@ name = "mpc-node-config"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "clap",
  "derive_more 2.1.1",
  "either",
@@ -6297,7 +6280,6 @@ dependencies = [
 name = "mpc-primitives"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "borsh",
  "derive_more 2.1.1",
  "hex",
@@ -6708,7 +6690,6 @@ dependencies = [
 name = "near-contract-transport"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "borsh",
  "derive_more 2.1.1",
  "near-account-id 2.6.0",
@@ -7067,7 +7048,6 @@ dependencies = [
 name = "near-mpc-bounded-collections"
 version = "0.0.1"
 dependencies = [
- "assert_matches",
  "borsh",
  "derive_more 2.1.1",
  "hex",
@@ -7082,7 +7062,6 @@ dependencies = [
 name = "near-mpc-contract-interface"
 version = "0.0.1"
 dependencies = [
- "assert_matches",
  "borsh",
  "derive_more 2.1.1",
  "hex",
@@ -7107,7 +7086,6 @@ dependencies = [
 name = "near-mpc-crypto-types"
 version = "0.0.1"
 dependencies = [
- "assert_matches",
  "blstrs",
  "borsh",
  "bs58 0.5.1",
@@ -7135,7 +7113,6 @@ dependencies = [
 name = "near-mpc-sdk"
 version = "0.0.1"
 dependencies = [
- "assert_matches",
  "borsh",
  "derive_more 2.1.1",
  "hex",
@@ -7152,7 +7129,6 @@ dependencies = [
 name = "near-mpc-signature-verifier"
 version = "0.0.1"
 dependencies = [
- "assert_matches",
  "ed25519-dalek 2.2.0",
  "k256 0.13.4",
  "near-mpc-contract-interface",
@@ -9012,7 +8988,6 @@ name = "proposal-generator"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "clap",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
@@ -11228,7 +11203,6 @@ name = "tee-authority"
 version = "3.16.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "backon",
  "dcap-qvl",
  "derive_more 2.1.1",
@@ -11255,7 +11229,6 @@ dependencies = [
 name = "tee-context"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "chain-gateway",
  "ed25519-dalek 2.2.0",
  "mpc-primitives",
@@ -11273,7 +11246,6 @@ dependencies = [
 name = "tee-launcher"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "backon",
  "clap",
  "dstack-sdk",
@@ -11398,7 +11370,6 @@ dependencies = [
 name = "test-parallel-contract"
 version = "3.16.0"
 dependencies = [
- "assert_matches",
  "blstrs",
  "borsh",
  "elliptic-curve 0.13.8",
@@ -11527,7 +11498,6 @@ dependencies = [
 name = "threshold-signatures"
 version = "0.1.0"
 dependencies = [
- "assert_matches",
  "auto_ops",
  "average",
  "blstrs",
