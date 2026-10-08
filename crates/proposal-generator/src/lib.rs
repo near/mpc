@@ -159,6 +159,10 @@ mod tests {
             ForeignChain::Fogo,
         ]
     )]
+    #[case::testnet_2026_10_08(
+        include_str!("../proposals/testnet-rpc-whitelist-2026-10-08-solana-public.toml"),
+        &[ForeignChain::Solana]
+    )]
     #[case::mainnet(
         include_str!("../proposals/mainnet-rpc-whitelist.toml"),
         &[
