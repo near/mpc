@@ -87,7 +87,6 @@ hex = { workspace = true, features = [] }
 k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",
-    "serde",
     "arithmetic",
     "expose-field",
 ] }
@@ -96,7 +95,6 @@ mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
-    "ed25519-dalek",
     "k256",
     "near",
 ] }
@@ -106,7 +104,6 @@ near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 tee-verifier-interface = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
@@ -117,9 +114,6 @@ near-account-id = { workspace = true, features = [
     "schemars-v0_8",
     "abi",
 ] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
 anyhow = { workspace = true }

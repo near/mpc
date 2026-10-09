@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
@@ -31,7 +31,7 @@ pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
-    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    pub cancellation_requests: BTreeSet<AuthenticatedAccountId>,
     /// Per-domain [`ReconstructionThreshold`] updates carried from the accepted
     /// proposal. Applied to the [`DomainRegistry`](crate::primitives::domain::DomainRegistry)
     /// when resharing completes; empty means "keep current per-domain thresholds".
@@ -87,7 +87,7 @@ impl ResharingContractState {
                         .clone(),
                     proposal.parameters().clone(),
                 ),
-                cancellation_requests: HashSet::new(),
+                cancellation_requests: BTreeSet::new(),
                 per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             }));
         }

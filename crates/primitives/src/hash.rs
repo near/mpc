@@ -185,6 +185,9 @@ define_hash!(
 /// Hash of the MPC node's Docker image.
 pub type NodeImageHash = DockerImageHash;
 
+/// Name of the event through which the launcher reports the [`NodeImageHash`]
+pub const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
+
 define_hash!(
     /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment.
     /// It is computed from the launcher's Docker Compose template populated with the launcher image
