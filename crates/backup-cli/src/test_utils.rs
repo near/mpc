@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use near_mpc_contract_interface::types::{
     AttemptId, EpochId, InitializingContractState, KeyEvent, ProtocolContractState,
@@ -47,7 +47,7 @@ pub fn resharing_state() -> ProtocolContractState {
         previous_running_state: running,
         reshared_keys: vec![],
         resharing_key,
-        cancellation_requests: HashSet::new(),
+        cancellation_requests: BTreeSet::new(),
         per_domain_thresholds: BTreeMap::new(),
     })
 }

@@ -87,8 +87,8 @@ pub fn validate_image_reference(image_ref: &str) -> Result<(), LauncherError> {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use launcher_interface::types::{DockerSha256Digest, TeeAuthorityConfig, TeeConfig};
+    use std::assert_matches;
 
     use super::*;
 
@@ -142,9 +142,7 @@ type = "Local"
         let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
 
         // then
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
-            assert_eq!(key, "tee");
-        });
+        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
     }
 
     #[test]
@@ -272,9 +270,7 @@ key = "value"
         let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
 
         // then — any occupied entry is rejected regardless of value type
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
-            assert_eq!(key, "tee");
-        });
+        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
     }
 
     #[test]
@@ -294,9 +290,7 @@ project_id = "my-project"
         let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
 
         // then
-        assert_matches!(result, Err(LauncherError::TeeRestrictedConfigKey(key)) => {
-            assert_eq!(key, "gcp");
-        });
+        assert_matches!(result, Err(LauncherError::TeeRestrictedConfigKey(key)) if key == "gcp");
     }
 
     #[test]
@@ -316,9 +310,7 @@ project_id = "my-project"
         let result = intercept_node_config(config, &sample_tee_config(), Platform::NonTee);
 
         // then
-        assert_matches!(result, Ok(table) => {
-            assert!(table.contains_key("gcp"));
-        });
+        assert_matches!(result, Ok(table) if table.contains_key("gcp"));
     }
 
     // --- validate_image_reference: positive (valid references) ---

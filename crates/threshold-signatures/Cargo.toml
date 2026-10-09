@@ -26,7 +26,7 @@ futures.workspace = true
 hex.workspace = true
 hkdf.workspace = true
 itertools.workspace = true
-k256 = { workspace = true, features = [
+k256 = { workspace = true, default-features = true, features = [
     "sha256",
     "ecdsa",
     "serde",
@@ -49,7 +49,6 @@ thiserror.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-assert_matches.workspace = true
 average.workspace = true
 criterion.workspace = true
 insta.workspace = true

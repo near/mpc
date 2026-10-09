@@ -127,22 +127,14 @@ client. It exposes `account_id()`, `client()`, `call` (signed by the contract
 account), `call_from_with_deposit` (untyped escape hatch for calls with no typed
 method yet), `view`, and `state()` (parsed `ProtocolContractState`).
 
-#### `NearKitCaller<T>` — signer-bound caller (`caller` module)
+#### `NearKitCaller<T>` — signer-bound caller (`near-contract-transport`, feature `near-kit`)
 
-Binds a signer to a non-contract account (nodes voting, users submitting sign
-requests) and implements the `CallContract` transport trait, s.t. typed calls can go
-through `MpcContractHandle`
-The `T` parameter is the wait level: how far a call waits
-before returning (e.g. `Final`, `ExecutedOptimistic`,...).
-Finality influences the return type (`T::Response`).
+Binds a signer to an account and implements the `CallContract` and `ViewContract` transport
+traits, s.t. typed calls and views go through `MpcContractHandle`.
 
 ```rust
 pub trait CallMpc: Sized {
     fn call_mpc(self, contract_id: &AccountId) -> MpcContractHandle<Self>;
-}
-
-pub trait WithWaitLevel {
-    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
 }
 ```
 

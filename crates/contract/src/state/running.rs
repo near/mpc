@@ -14,7 +14,7 @@ use crate::primitives::{
 };
 use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 /// In this state, the contract is ready to process signature requests.
 ///
@@ -83,7 +83,7 @@ impl RunningContractState {
                     first_domain.clone(),
                     proposal.parameters().clone(),
                 ),
-                cancellation_requests: HashSet::new(),
+                cancellation_requests: BTreeSet::new(),
                 per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             })
         } else {

@@ -7,6 +7,7 @@ use std::{
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
+use near_contract_transport::{NearGas, NearKitCaller, NearToken};
 use near_kit::AccountId;
 use near_kit::transaction::{ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -26,9 +27,8 @@ use near_mpc_contract_interface::{
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::json;
 
-use crate::NearKitCaller;
 use crate::blockchain::{DeployedContract, NearBlockchain};
-use crate::caller::{CallMpc, WithWaitLevel};
+use crate::caller::CallMpc;
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::test_dir::TestDir;
@@ -1265,7 +1265,7 @@ async fn prepay_attestation_grants(
                 &client,
                 method_names::PREPAY_ATTESTATION_STORAGE,
                 json!({ "account_id": account, "grants": 1 }),
-                near_kit::Gas::from_tgas(30),
+                NearGas::from_tgas(30),
                 fee,
             )
             .await
@@ -1280,14 +1280,12 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
-async fn attestation_storage_fee(
-    contract: &DeployedContract,
-) -> anyhow::Result<near_kit::NearToken> {
+async fn attestation_storage_fee(contract: &DeployedContract) -> anyhow::Result<NearToken> {
     let config: serde_json::Value = contract.view("config").await?;
     let millinear = config["attestation_storage_fee_millinear"]
         .as_u64()
         .context("config() has no attestation_storage_fee_millinear")?;
-    Ok(near_kit::NearToken::from_millinear(u128::from(millinear)))
+    Ok(NearToken::from_millinear(u128::from(millinear)))
 }
 
 async fn init_contract(
@@ -1327,8 +1325,8 @@ async fn init_contract(
         ContractInitFormat::Current => {
             contract
                 .client()
-                .call_mpc(contract.account_id())
                 .with_wait_level::<Final>()
+                .call_mpc(contract.account_id())
                 .init(params, tee_verifier_account_id, Some(init_config))
                 .await?
         }
