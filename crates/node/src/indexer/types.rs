@@ -66,10 +66,10 @@ pub enum ChainSendTransactionRequest {
     SubmitParticipantInfo {
         #[serde(flatten)]
         args: Box<contract_args::SubmitParticipantInfoArgs>,
-        /// What was stored before submitting, for the landing check. Skipped from serialization
-        /// so it never reaches the on-chain call args.
+        /// What was stored before submitting, for the landing check; `None` when that read
+        /// failed. Skipped from serialization so it never reaches the on-chain call args.
         #[serde(skip)]
-        baseline: SubmissionBaseline,
+        baseline: Option<SubmissionBaseline>,
     },
 
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
@@ -314,10 +314,10 @@ mod request_serialization_tests {
     fn submit_participant_info__should_serialize_as_bare_args() {
         let request = ChainSendTransactionRequest::SubmitParticipantInfo {
             args: Box::new(mock_submit_args()),
-            baseline: SubmissionBaseline {
+            baseline: Some(SubmissionBaseline {
                 accepted_at_seconds: Some(123),
                 expiry_timestamp_seconds: Some(456),
-            },
+            }),
         };
 
         let request_json = serde_json::to_string(&request).unwrap();

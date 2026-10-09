@@ -138,7 +138,7 @@ struct TransactionSenderSubmission {
     response_sender: Option<oneshot::Sender<TransactionStatus>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TransactionStatus {
     Executed,
     NotExecuted,
@@ -184,6 +184,28 @@ async fn submit_tx(
         signature,
         block_height: block.header.height,
     })
+}
+
+/// Whether our submission landed, given what was stored before and after it.
+///
+/// Without a baseline, a stored entry can't tell our submission from an earlier one, so the
+/// outcome is [`TransactionStatus::Unknown`] rather than a guess either way.
+fn attestation_submission_status(
+    baseline: Option<SubmissionBaseline>,
+    stored: Option<&GetAttestationResponse>,
+    submitted: &Attestation,
+) -> TransactionStatus {
+    let Some(stored) = stored else {
+        return TransactionStatus::NotExecuted;
+    };
+    let Some(baseline) = baseline else {
+        return TransactionStatus::Unknown;
+    };
+    if submitted_attestation_landed(baseline, stored, submitted) {
+        TransactionStatus::Executed
+    } else {
+        TransactionStatus::NotExecuted
+    }
 }
 
 /// Whether the attestation we submitted is now the one stored on chain.
@@ -309,33 +331,25 @@ async fn observe_tx_result(
                     .map(GetAttestationResponse::attestation),
             );
 
-            let Some(stored_attestation) = stored_attestation else {
-                tracing::debug!(
-                    "no attestation stored on chain for our key; submission not yet landed"
-                );
-                return Ok(TransactionStatus::NotExecuted);
-            };
-
-            let attestation_landed = submitted_attestation_landed(
+            let stored = stored_attestation.as_ref();
+            let status = attestation_submission_status(
                 *baseline,
-                &stored_attestation,
+                stored,
                 &args.proposed_participant_attestation,
             );
 
             tracing::info!(
                 ?baseline,
-                stored_accepted_at = ?stored_attestation.accepted_at_seconds(),
-                stored_expiry = ?stored_attestation.attestation().expiry_timestamp_seconds(),
-                attestation_landed,
+                stored_accepted_at = ?stored.and_then(GetAttestationResponse::accepted_at_seconds),
+                stored_expiry = ?stored.and_then(|stored| stored.attestation().expiry_timestamp_seconds()),
+                ?status,
                 "checked attestation submission on chain"
             );
 
-            Ok(if attestation_landed {
+            if status == TransactionStatus::Executed {
                 record_attestation_landed(&Clock::real());
-                TransactionStatus::Executed
-            } else {
-                TransactionStatus::NotExecuted
-            })
+            }
+            Ok(status)
         }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
@@ -423,9 +437,9 @@ async fn ensure_send_transaction(
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        Attestation, GetAttestationResponse, SubmissionBaseline, VerifiedAttestation,
-        attestation_expiry_changed, submitted_attestation_landed,
-        submitted_attestation_landed_by_expiry,
+        Attestation, GetAttestationResponse, SubmissionBaseline, TransactionStatus,
+        VerifiedAttestation, attestation_expiry_changed, attestation_submission_status,
+        submitted_attestation_landed, submitted_attestation_landed_by_expiry,
     };
     use near_mpc_contract_interface::types::{MockAttestation, StoredAttestation};
     use rstest::rstest;
@@ -555,6 +569,39 @@ mod tests {
             accepted_at_seconds,
             expiry_timestamp_seconds: None,
         }
+    }
+
+    #[test]
+    fn attestation_submission_status__should_be_unknown_without_a_baseline() {
+        // Given: the baseline read failed, and an earlier submission's stamp is stored
+        let stored = stamped(100);
+
+        // When: our submission was rejected, so the stored stamp is still the earlier one
+        let status = attestation_submission_status(
+            None,
+            Some(&stored),
+            &Attestation::Mock(MockAttestation::Valid),
+        );
+
+        // Then
+        assert_eq!(status, TransactionStatus::Unknown);
+    }
+
+    #[rstest]
+    #[case::with_baseline(Some(baseline_accepted_at(None)))]
+    #[case::without_baseline(None)]
+    fn attestation_submission_status__should_be_not_executed_while_nothing_is_stored(
+        #[case] baseline: Option<SubmissionBaseline>,
+    ) {
+        // When
+        let status = attestation_submission_status(
+            baseline,
+            None,
+            &Attestation::Mock(MockAttestation::Valid),
+        );
+
+        // Then
+        assert_eq!(status, TransactionStatus::NotExecuted);
     }
 
     #[test]
