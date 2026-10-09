@@ -325,7 +325,7 @@ impl Comms {
     pub(crate) async fn yield_point(&self) {
         self.yield_requested.store(true, Ordering::Relaxed);
         let mut yielded = false;
-        poll_fn(|cx| {
+        poll_fn(move |cx| {
             if yielded {
                 Poll::Ready(())
             } else {
