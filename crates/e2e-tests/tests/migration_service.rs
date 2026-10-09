@@ -10,8 +10,8 @@ use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::ProcessGuard;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
-    ParticipantInfo, ProtocolContractState,
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
+    ProtocolContractState,
 };
 use rand::SeedableRng;
 
@@ -292,7 +292,7 @@ async fn register_backup_service_and_wait(
     backup_service: &BackupService,
 ) -> anyhow::Result<()> {
     let backup_public_key = backup_service.public_key()?;
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
 
     let outcome = cluster
         .register_backup_service(
@@ -310,13 +310,13 @@ async fn register_backup_service_and_wait(
     );
 
     (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
+        let info = cluster
+            .migration_info()
             .await
             .context("failed to view migration info")?;
         let entry = info.get(&source_account_id);
         anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(0).unwrap_or(&serde_json::Value::Null).is_null()),
+            entry.is_some_and(|(backup, _)| backup.is_some()),
             "node has not indexed backup registration yet"
         );
         Ok(())
@@ -335,15 +335,12 @@ async fn register_backup_service_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("source node not running"),
     };
-    let source_account: AccountId = source_account_id
-        .parse()
-        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     wait_for_debug_migration(
         &source_web_addr,
         "source node debug endpoint to show backup registration",
         |info| {
             let actual = info
-                .get(&source_account)
+                .get(&source_account_id)
                 .and_then(|(backup, _)| backup.as_ref())
                 .map(|b| &b.public_key);
             anyhow::ensure!(
@@ -389,7 +386,7 @@ async fn start_migration_and_wait(
     source_idx: usize,
     target_idx: usize,
 ) -> anyhow::Result<()> {
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
     let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
@@ -412,13 +409,13 @@ async fn start_migration_and_wait(
     );
 
     (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
+        let info = cluster
+            .migration_info()
             .await
             .context("failed to view migration info")?;
         let entry = info.get(&source_account_id);
         anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
+            entry.is_some_and(|(_, destination)| destination.is_some()),
             "contract has not indexed node migration yet"
         );
         Ok(())
@@ -453,15 +450,12 @@ async fn start_migration_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("target node not running"),
     };
-    let source_account: AccountId = source_account_id
-        .parse()
-        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     wait_for_debug_migration(
         &target_web_addr,
         "target node to index node migration",
         |info| {
             let actual = info
-                .get(&source_account)
+                .get(&source_account_id)
                 .and_then(|(_, destination)| destination.as_ref())
                 .map(|d| &d.destination_node_info.tls_public_key);
             anyhow::ensure!(
@@ -509,7 +503,7 @@ async fn wait_for_migration_completion(
     source_idx: usize,
     target_idx: usize,
 ) -> anyhow::Result<()> {
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
 
     (|| async {
@@ -518,7 +512,11 @@ async fn wait_for_migration_completion(
             .await
             .context("failed to get contract state")?;
         anyhow::ensure!(
-            running_state_matches_participant_key(&state, &source_account_id, &target_p2p_key),
+            running_state_matches_participant_key(
+                &state,
+                source_account_id.as_str(),
+                &target_p2p_key
+            ),
             "target node not yet active participant"
         );
         Ok(())
@@ -535,16 +533,15 @@ async fn wait_for_migration_completion(
     .context("timed out waiting for migration to complete")?;
 
     (|| async {
-        let migration_info: serde_json::Value = cluster
-            .view_migration_info()
+        let migration_info = cluster
+            .migration_info()
             .await
             .context("failed to view migration info")?;
-        let entry = migration_info
+        let (_, destination) = migration_info
             .get(&source_account_id)
             .context("account not found in migration info")?;
-        let destination = entry.get(1).unwrap_or(&serde_json::Value::Null);
         anyhow::ensure!(
-            destination.is_null(),
+            destination.is_none(),
             "migration destination should be cleared after completion"
         );
         Ok(())
@@ -1002,10 +999,10 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
         .await;
     let source_idx = 0;
     let target_idx = 2;
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
     assert_eq!(
-        cluster.nodes[target_idx].account_id().to_string(),
-        source_account_id,
+        cluster.nodes[target_idx].account_id(),
+        &source_account_id,
         "migration target must share the source account"
     );
 
@@ -1016,13 +1013,13 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
 
     // Then: migration_info reports a pending destination for the source.
     (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
+        let info = cluster
+            .migration_info()
             .await
             .context("failed to view migration info")?;
         let entry = info.get(&source_account_id);
         anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
+            entry.is_some_and(|(_, destination)| destination.is_some()),
             "contract has not indexed migration information yet"
         );
         Ok(())
@@ -1050,8 +1047,8 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
 
     // Then: migration_info no longer shows a destination for that account.
     (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
+        let info = cluster
+            .migration_info()
             .await
             .context("failed to view migration info")?;
         let entry = info.get(&source_account_id);
