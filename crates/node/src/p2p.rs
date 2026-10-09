@@ -44,7 +44,7 @@ use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::timeout,
 };
-use tokio_rustls::TlsAcceptor;
+use tokio_rustls::{TlsAcceptor, client::TlsStream};
 use tokio_util::{
     codec::{Decoder, Framed, LengthDelimitedCodec},
     sync::CancellationToken,
@@ -218,7 +218,38 @@ impl OutgoingConnection {
         participant_identities: &ParticipantIdentities,
         sender_connection_id: u32,
     ) -> anyhow::Result<OutgoingConnection> {
-        let mut tls_stream = timeout(Self::CONNECT_TIMEOUT, async {
+        let mut tls_stream = Self::connect_tls(client_config, target_address).await?;
+        let peer_id =
+            Self::verify_expected_peer(&tls_stream, participant_identities, target_participant_id)?;
+
+        info!("performing P2P handshake with: {:?}", target_address);
+        let peer_network_protocol_version =
+            Self::negotiate_protocol(&mut tls_stream, sender_connection_id).await?;
+
+        let (sender, receiver) = mpsc::unbounded_channel::<Packet>();
+        let closed = CancellationToken::new();
+        let sender_task = tracking::spawn_checked(
+            &format!("TLS connection to {}", target_participant_id),
+            Self::run_sender_loop(tls_stream, receiver, peer_id, closed.clone()),
+        );
+        let keepalive_task = tracking::spawn(
+            &format!("ping keepalive task for {}", target_participant_id),
+            run_ping_keepalive(sender.clone()),
+        );
+        Ok(OutgoingConnection {
+            sender,
+            _sender_task: sender_task,
+            _keepalive_task: keepalive_task,
+            closed,
+            peer_network_protocol_version,
+        })
+    }
+
+    async fn connect_tls(
+        client_config: Arc<ClientConfig>,
+        target_address: &str,
+    ) -> anyhow::Result<TlsStream<TcpStream>> {
+        let tls_stream = timeout(Self::CONNECT_TIMEOUT, async {
             let tcp_stream = TcpStream::connect(target_address)
                 .await
                 .context("failed to establish tcp stream")?;
@@ -232,7 +263,14 @@ impl OutgoingConnection {
         })
         .await
         .context("timed out establishing tls connection")??;
+        Ok(tls_stream)
+    }
 
+    fn verify_expected_peer(
+        tls_stream: &TlsStream<TcpStream>,
+        participant_identities: &ParticipantIdentities,
+        target_participant_id: ParticipantId,
+    ) -> anyhow::Result<ParticipantId> {
         let peer_id = verify_peer_identity(tls_stream.get_ref().1, participant_identities)
             .context("verify server identity")?;
         if peer_id != target_participant_id {
@@ -242,15 +280,20 @@ impl OutgoingConnection {
                 peer_id
             );
         }
+        Ok(peer_id)
+    }
 
-        info!("performing P2P handshake with: {:?}", target_address);
+    async fn negotiate_protocol(
+        tls_stream: &mut TlsStream<TcpStream>,
+        sender_connection_id: u32,
+    ) -> anyhow::Result<NetworkProtocolVersion> {
         let connection_info = timeout(
             Self::HANDSHAKE_TIMEOUT,
             p2p_handshake_dialer(
                 DialerData {
                     sender_connection_id,
                 },
-                &mut tls_stream,
+                tls_stream,
             ),
         )
         .await??;
@@ -284,128 +327,109 @@ impl OutgoingConnection {
                 handshake_data.peer_network_protocol_version
             }
         };
+        Ok(peer_network_protocol_version)
+    }
 
+    async fn run_sender_loop<T>(
+        tls_stream: T,
+        mut receiver: UnboundedReceiver<Packet>,
+        peer_id: ParticipantId,
+        closed: CancellationToken,
+    ) -> anyhow::Result<()>
+    where
+        T: AsyncRead + AsyncWrite + Unpin,
+    {
         let mut framed_tls_stream = configure_framed_stream(tls_stream);
+        let _drop_to_cancel = DropToCancel(closed);
+        let mut sent_bytes: u64 = 0;
+        let peer_id_string = peer_id.to_string();
 
-        let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
-        let closed = CancellationToken::new();
-        let closed_clone = closed.clone();
-        let sender_task = tracking::spawn_checked(
-            &format!("TLS connection to {}", target_participant_id),
-            async move {
-                let _drop_to_cancel = DropToCancel(closed_clone);
-                let mut sent_bytes: u64 = 0;
-                let peer_id_string = peer_id.to_string();
+        let result: anyhow::Result<()> = async {
+            loop {
+                tokio::select! {
+                    data = receiver.recv() => {
+                        let Some(data) = data else {
+                            break;
+                        };
+                        let serialized = borsh::to_vec(&data)?;
+                        let bytes = Bytes::from(serialized);
+                        let payload_size = bytes.len();
 
-                let result: anyhow::Result<()> = async {
-                    loop {
-                        tokio::select! {
-                            data = receiver.recv() => {
-                                let Some(data) = data else {
-                                    break;
-                                };
-                                let serialized = borsh::to_vec(&data)?;
-                                let bytes = Bytes::from(serialized);
-                                let payload_size = bytes.len();
-
-                                // Add timeout to write operations to detect if writes are hanging
-                                // (e.g., due to half-open connection where peer stopped ACKing)
-                                match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
-                                    Ok(Ok(_)) => {},
-                                    Ok(Err(e)) => return Err(e.into()),
-                                    Err(_) => {
-                                        // Write timed out - connection is likely stuck/half-open
-                                        return Err(anyhow::anyhow!(
-                                            "write operation timed out after {}s (connection may be half-open)",
-                                            WRITE_OPERATION_TIMEOUT.as_secs()
-                                        ));
-                                    }
-                                }
-
-                                let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
-                                    Some(size) => size.try_into().unwrap_or_else(|_| {
-                                            tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
-                                            u64::MAX
-                                        }),
-                                    None => {
-                                        tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({payload_size})");
-                                        u64::MAX
-                                    }
-                                };
-
-                                let metric_labels = [
-                                    peer_id_string.as_str(),
-                                    OUTGOING_CONNECTION,
-                                    data.message_type_label(),
-                                ];
-
-                                MPC_P2P_TCP_WRITE_SIZE_BYTES
-                                    .with_label_values(&metric_labels)
-                                    .observe(total_message_size_bytes as f64);
-
-                                sent_bytes = sent_bytes.checked_add(total_message_size_bytes).unwrap_or_else(|| {
-                                        tracing::error!("sent_bytes overflow: {sent_bytes} + {total_message_size_bytes}");
-                                        u64::MAX
-                                    });
-                                tracking::set_progress(&format!("sent {} bytes", sent_bytes));
-                            }
-                            _ = futures::StreamExt::next(&mut framed_tls_stream) => {
-                                // We do not expect any data from the other side. However,
-                                // selecting on it will quickly return error if the connection
-                                // is broken before we have data to send. That way we can
-                                // immediately quit the loop as soon as the connection is broken
-                                // (so we can reconnect).
-                                break;
+                        // Add timeout to write operations to detect if writes are hanging
+                        // (e.g., due to half-open connection where peer stopped ACKing)
+                        match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
+                            Ok(Ok(_)) => {},
+                            Ok(Err(e)) => return Err(e.into()),
+                            Err(_) => {
+                                // Write timed out - connection is likely stuck/half-open
+                                return Err(anyhow::anyhow!(
+                                    "write operation timed out after {}s (connection may be half-open)",
+                                    WRITE_OPERATION_TIMEOUT.as_secs()
+                                ));
                             }
                         }
+
+                        let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
+                            Some(size) => size.try_into().unwrap_or_else(|_| {
+                                    tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
+                                    u64::MAX
+                                }),
+                            None => {
+                                tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({payload_size})");
+                                u64::MAX
+                            }
+                        };
+
+                        let metric_labels = [
+                            peer_id_string.as_str(),
+                            OUTGOING_CONNECTION,
+                            data.message_type_label(),
+                        ];
+
+                        MPC_P2P_TCP_WRITE_SIZE_BYTES
+                            .with_label_values(&metric_labels)
+                            .observe(total_message_size_bytes as f64);
+
+                        sent_bytes = sent_bytes.checked_add(total_message_size_bytes).unwrap_or_else(|| {
+                                tracing::error!("sent_bytes overflow: {sent_bytes} + {total_message_size_bytes}");
+                                u64::MAX
+                            });
+                        tracking::set_progress(&format!("sent {} bytes", sent_bytes));
                     }
-                    anyhow::Ok(())
-                }.await;
-
-                // Peer closing without close_notify is normal in P2P networks (task aborts,
-                // reconnections, process restarts). Treat it as a clean close, not an error.
-                if let Err(err) = &result
-                    && is_tls_close_notify_error(err)
-                {
-                    tracing::debug!(
-                        err = %err,
-                        peer_id = %peer_id,
-                        "peer closed connection without TLS close_notify"
-                    );
-                    return Ok(());
-                }
-
-                // Send TLS close_notify before dropping the connection so
-                // the peer does not see an unexpected EOF.
-                let mut tls_stream = framed_tls_stream.into_inner();
-                if let Err(err) = tls_stream.shutdown().await {
-                    tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
-                }
-
-                result
-            },
-        );
-        let sender_clone = sender.clone();
-        let keepalive_task = tracking::spawn(
-            &format!("ping keepalive task for {}", target_participant_id),
-            async move {
-                loop {
-                    tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
-                    if sender_clone.send(Packet::Ping).is_err() {
-                        // The receiver side will be dropped when the sender task is
-                        // dropped (i.e. connection is closed).
+                    _ = futures::StreamExt::next(&mut framed_tls_stream) => {
+                        // We do not expect any data from the other side. However,
+                        // selecting on it will quickly return error if the connection
+                        // is broken before we have data to send. That way we can
+                        // immediately quit the loop as soon as the connection is broken
+                        // (so we can reconnect).
                         break;
                     }
                 }
-            },
-        );
-        Ok(OutgoingConnection {
-            sender,
-            _sender_task: sender_task,
-            _keepalive_task: keepalive_task,
-            closed,
-            peer_network_protocol_version,
-        })
+            }
+            anyhow::Ok(())
+        }.await;
+
+        // Peer closing without close_notify is normal in P2P networks (task aborts,
+        // reconnections, process restarts). Treat it as a clean close, not an error.
+        if let Err(err) = &result
+            && is_tls_close_notify_error(err)
+        {
+            tracing::debug!(
+                err = %err,
+                peer_id = %peer_id,
+                "peer closed connection without TLS close_notify"
+            );
+            return Ok(());
+        }
+
+        // Send TLS close_notify before dropping the connection so
+        // the peer does not see an unexpected EOF.
+        let mut tls_stream = framed_tls_stream.into_inner();
+        if let Err(err) = tls_stream.shutdown().await {
+            tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
+        }
+
+        result
     }
 
     async fn wait_for_close(&self) {
@@ -420,6 +444,17 @@ impl OutgoingConnection {
     fn send_indexer_height(&self, msg: IndexerHeightMessage) -> anyhow::Result<()> {
         self.sender.send(Packet::IndexerHeight(msg))?;
         Ok(())
+    }
+}
+
+async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
+    loop {
+        tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
+        if sender.send(Packet::Ping).is_err() {
+            // The receiver side will be dropped when the sender task is
+            // dropped (i.e. connection is closed).
+            break;
+        }
     }
 }
 
