@@ -349,6 +349,39 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         None
     }
 
+    /// Decides whether we should lead this request now, together with the participant to
+    /// record as the request's current leader (ourselves when we lead). `None` when no
+    /// eligible leader exists.
+    fn leader_decision(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+        my_participant_id: ParticipantId,
+        now: near_time::Instant,
+    ) -> Option<(ParticipantId, LeaderDecision)> {
+        let leader = self.current_leader(eligible_leaders)?;
+        let Some(rank) = self.my_leader_rank(eligible_leaders, my_participant_id) else {
+            return Some((
+                leader,
+                LeaderDecision::Wait("we are not an eligible leader"),
+            ));
+        };
+        if rank >= MAX_LEADER_FAILOVER_DEPTH {
+            return Some((
+                leader,
+                LeaderDecision::Wait("past maximum leader failover depth"),
+            ));
+        }
+        let failover_slot_delay =
+            LEADER_FAILOVER_INTERVAL.saturating_mul(i32::try_from(rank).unwrap_or(i32::MAX));
+        if now.signed_duration_since(self.time_indexed) < failover_slot_delay {
+            return Some((
+                leader,
+                LeaderDecision::Wait("waiting for our leader failover slot"),
+            ));
+        }
+        Some((my_participant_id, LeaderDecision::Lead))
+    }
+
     /// Our position among the eligible participants in the leader selection order, or `None`
     /// if we are not eligible. Rank 0 is the current leader; rank k acts as the k-th backup.
     fn my_leader_rank(
@@ -434,38 +467,36 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         if !is_canonical {
             return RequestStatus::Wait("request is not on canonical chain");
         }
-        let Some(leader) = self.current_leader(eligible_leaders) else {
+        let Some((selected_leader, decision)) =
+            self.leader_decision(eligible_leaders, my_participant_id, now)
+        else {
             return RequestStatus::Wait("no eligible leaders for this request");
         };
         let mut progress = self.computation_progress.lock().unwrap();
-        progress.selected_leader = Some(leader);
-        let Some(rank) = self.my_leader_rank(eligible_leaders, my_participant_id) else {
-            return RequestStatus::Wait("we are not an eligible leader");
-        };
-        if rank >= MAX_LEADER_FAILOVER_DEPTH {
-            return RequestStatus::Wait("past maximum leader failover depth");
-        }
-        let failover_slot_delay =
-            LEADER_FAILOVER_INTERVAL.saturating_mul(i32::try_from(rank).unwrap_or(i32::MAX));
-        if now.signed_duration_since(self.time_indexed) < failover_slot_delay {
-            return RequestStatus::Wait("waiting for our leader failover slot");
-        }
-        progress.selected_leader = Some(my_participant_id);
-        match progress.update_computation_progress(now) {
-            ComputationProgressStatus::MaxAttemptsExceeded => {
-                RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
-            }
-            ComputationProgressStatus::Pending => RequestStatus::Wait("pending computation"),
-            ComputationProgressStatus::NewAttempt => {
-                let attempt = Arc::new(GenerationAttempt {
-                    request: self.request.clone(),
-                    computation_progress: self.computation_progress.clone(),
-                });
-                self.active_attempt = Arc::downgrade(&attempt);
-                RequestStatus::Attempt(attempt)
-            }
+        progress.selected_leader = Some(selected_leader);
+        match decision {
+            LeaderDecision::Wait(reason) => RequestStatus::Wait(reason),
+            LeaderDecision::Lead => match progress.update_computation_progress(now) {
+                ComputationProgressStatus::MaxAttemptsExceeded => {
+                    RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
+                }
+                ComputationProgressStatus::Pending => RequestStatus::Wait("pending computation"),
+                ComputationProgressStatus::NewAttempt => {
+                    let attempt = Arc::new(GenerationAttempt {
+                        request: self.request.clone(),
+                        computation_progress: self.computation_progress.clone(),
+                    });
+                    self.active_attempt = Arc::downgrade(&attempt);
+                    RequestStatus::Attempt(attempt)
+                }
+            },
         }
     }
+}
+
+enum LeaderDecision {
+    Lead,
+    Wait(&'static str),
 }
 
 enum RequestStatus<RequestType, ChainRespondArgsType> {
