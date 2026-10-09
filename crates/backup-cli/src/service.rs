@@ -1,16 +1,16 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::fmt::Debug;
 use std::time::Duration;
 
 use anyhow::anyhow;
 use mpc_node::keyshare::Keyshare;
+use near_contract_transport::WatchContractState;
 use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolContractState};
 use tokio_util::sync::CancellationToken;
 
 use crate::keyset::keyset_to_backup;
-use crate::ports::{
-    GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus, WatchContractState,
-};
+use crate::ports::{GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
 
 /// Keeps local storage holding the keyshares of the contract's current keyset
 pub struct Service<Keyshares, Storage, Contract, Status, Clock> {
@@ -28,7 +28,8 @@ impl<Keyshares, Storage, Contract, Status, Clock>
 where
     Keyshares: P2PClient,
     Storage: KeyShareRepository,
-    Contract: WatchContractState,
+    Contract: WatchContractState<Value = ProtocolContractState>,
+    Contract::ViewError: Debug,
     Status: ReportBackupStatus,
     Clock: GetCurrentTime,
 {
@@ -75,34 +76,36 @@ where
             "starting automatic backup service"
         );
 
-        // Armed only after a failed backup: there is work left to re-attempt, and a contract
-        // whose state never changes again would otherwise never wake us to do it.
-        let mut retry_in = None;
-
         loop {
-            // A read failure is reported by the watcher itself, once per distinct failure
-            // rather than once per read, and leaves nothing to back up until a state arrives.
-            if let Ok(state) = self.contract_state.latest() {
-                match self.back_up_if_needed(&state, &shutdown).await {
+            // Armed only after a failed backup: there is work left to re-attempt, and a contract
+            // whose state never changes again would otherwise never wake us to do it.
+            let retry_in = match self.contract_state.latest() {
+                Ok(observed) => match self.back_up_if_needed(&observed.value, &shutdown).await {
                     Ok(BackupOutcome::BackedUp {
                         epoch_id,
                         num_domains,
                     }) => {
-                        retry_in = None;
                         tracing::info!(%epoch_id, num_domains, "backed up keyshares");
+                        None
                     }
-                    Ok(BackupOutcome::Skipped(_)) => retry_in = None,
+                    Ok(BackupOutcome::Skipped(_)) => None,
                     Ok(BackupOutcome::Cancelled) => break,
                     Err(err) => {
-                        retry_in = Some(self.retry_delay);
                         tracing::warn!(
                             ?err,
                             retry_in_seconds = self.retry_delay.as_secs(),
                             "keyshare backup failed, retrying"
                         );
+                        Some(self.retry_delay)
                     }
+                },
+                // Once per distinct failure: `changed()` only wakes this loop when the
+                // observation differs from the previous one.
+                Err(err) => {
+                    tracing::warn!(?err, "could not read the contract state");
+                    None
                 }
-            }
+            };
 
             tokio::select! {
                 observed = self.contract_state.changed() => {
@@ -242,6 +245,7 @@ mod tests {
 
     use mpc_node::keyshare::Keyshare;
     use mpc_node::keyshare::test_utils::generate_dummy_keyshare;
+    use near_contract_transport::{ObservedState, TransportError};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
@@ -434,17 +438,27 @@ mod tests {
     }
 
     impl WatchContractState for FakeWatchContractState {
-        type Error = &'static str;
+        type Value = ProtocolContractState;
+        type ViewError = &'static str;
 
-        fn latest(&mut self) -> Result<ProtocolContractState, Self::Error> {
-            self.states.borrow_and_update().clone()
+        fn latest(
+            &mut self,
+        ) -> Result<ObservedState<ProtocolContractState>, TransportError<&'static str>> {
+            self.states
+                .borrow_and_update()
+                .clone()
+                .map(|value| ObservedState {
+                    observed_at: 0.into(),
+                    value,
+                })
+                .map_err(TransportError::View)
         }
 
-        async fn changed(&mut self) -> Result<(), Self::Error> {
+        async fn changed(&mut self) -> Result<(), TransportError<&'static str>> {
             self.states
                 .changed()
                 .await
-                .map_err(|_| "the contract state is no longer observed")
+                .map_err(|_| TransportError::MonitoringClosed)
         }
     }
 
@@ -876,6 +890,38 @@ mod tests {
 
         // Then
         result.expect("the service should return Ok on shutdown");
+    }
+
+    #[tokio::test]
+    async fn service_run__should_keep_watching_while_the_contract_state_cannot_be_read() {
+        // Given
+        let (sender, contract_state) =
+            FakeWatchContractState::observing(running_state_with_epoch(5));
+        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(5, &FIXTURE_DOMAIN_IDS));
+        let stored_notify = storage.stored_notify.clone();
+        let service = service_watching(FakeP2PClient::new(), storage, contract_state).await;
+        let shutdown = CancellationToken::new();
+
+        // When a read fails and a later one observes a new epoch
+        let fail_then_recover = async {
+            sender
+                .send(Err("rpc endpoint unreachable"))
+                .expect("the service should still be listening");
+            tokio::task::yield_now().await;
+            sender
+                .send(Ok(running_state_with_epoch(6)))
+                .expect("the service should still be listening");
+            stored_notify.notified().await;
+            shutdown.cancel();
+        };
+        let (result, ()) = timeout(Duration::from_secs(5), async {
+            tokio::join!(service.run(shutdown.clone()), fail_then_recover)
+        })
+        .await
+        .expect("the service should survive the failed read and back up the new state");
+
+        // Then
+        result.expect("a failed read is not a stop");
     }
 
     #[tokio::test]
