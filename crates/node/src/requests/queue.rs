@@ -442,10 +442,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         let Some(rank) = self.my_leader_rank(eligible_leaders, my_participant_id) else {
             return RequestStatus::Wait("we are not an eligible leader");
         };
-        // A plain constant rather than a committee-size model: whether enough healthy
-        // signers would remain past our rank is unknowable (a broken leader and even a
-        // stale node may still sign), so the depth bound only caps the assets burnt on
-        // a request that keeps failing cluster-wide.
         if rank >= MAX_LEADER_FAILOVER_DEPTH {
             return RequestStatus::Wait("past maximum leader failover depth");
         }
