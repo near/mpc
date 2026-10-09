@@ -36,15 +36,11 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
-/// Each successive eligible participant in the leader selection order starts attempting the
-/// request this much later than its predecessor, in case no response has landed on chain by
-/// then. This lets a backup take over from a leader that is reachable but failing to produce
-/// a response.
+/// How long each backup leader waits after its predecessor before taking over a
+/// still-unresolved request.
 pub const LEADER_FAILOVER_INTERVAL: Duration = Duration::seconds(10);
-/// Maximum number of participants, in leader-selection order, that will act as (backup)
-/// leaders for one request. This only caps the assets burnt on a request that keeps failing
-/// cluster-wide: this many simultaneously failing leaders is implausible enough that
-/// escalating further has negligible availability value.
+/// The max number of participants that act as leaders for one request. Purely a cap on
+/// assets burnt on a cluster-wide-failing request.
 const MAX_LEADER_FAILOVER_DEPTH: usize = 4;
 
 /// Narrows the eligible-leader set for a specific request (e.g. to the participants
