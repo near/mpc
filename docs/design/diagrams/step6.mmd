@@ -1,0 +1,3 @@
+flowchart LR
+    L["Leader node<br/>(selected by request hash)"] -->|"POST /result/(request hash),<br/>outbound, no held stream"| R["Relay<br/>(the instance named<br/>in the announcement)"]
+    R -->|"result on the client's<br/>waiting HTTP request"| W["Client<br/>(wallet, dApp, service)"]
