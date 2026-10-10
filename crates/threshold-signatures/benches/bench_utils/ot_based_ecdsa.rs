@@ -160,7 +160,7 @@ pub fn split_even_odd<T: Clone>(v: Vec<T>) -> (Vec<T>, Vec<T>) {
     let mut even = Vec::with_capacity(v.len() / 2 + 1);
     let mut odd = Vec::with_capacity(v.len() / 2);
     for (i, x) in v.into_iter().enumerate() {
-        if i % 2 == 0 {
+        if i.is_multiple_of(2) {
             even.push(x);
         } else {
             odd.push(x);

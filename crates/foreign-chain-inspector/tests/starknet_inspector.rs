@@ -17,7 +17,6 @@ use foreign_chain_inspector::{
 use foreign_chain_rpc_factory::build_http_client;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::starknet::{
     GetBlockWithTxHashesResponse, GetTransactionReceiptResponse, H256, StarknetEvent,
     StarknetExecutionStatus, StarknetFinalityStatus,
@@ -29,10 +28,10 @@ use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 use rstest::rstest;
-use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+use std::{assert_matches, num::NonZeroU64};
 
 fn mock_receipt(
     finality_status: StarknetFinalityStatus,

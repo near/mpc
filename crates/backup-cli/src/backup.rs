@@ -1,5 +1,6 @@
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
+use near_contract_transport::PollInterval;
 use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
 use std::{
@@ -83,12 +84,15 @@ pub async fn run_command(args: cli::Args) {
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
+            let request_timeout = Duration::from_secs(subcommand_args.node.request_timeout_seconds);
+            let poll_interval = Duration::from_secs(subcommand_args.poll_interval_seconds);
             let contract_state_reader = adapters::contract_state_rpc::RpcContractStateReader::new(
                 &subcommand_args.rpc_url,
                 &subcommand_args.near_chain_id,
                 subcommand_args.mpc_contract_account_id,
+                PollInterval::new(poll_interval).expect("clap rejects a zero interval"),
+                request_timeout,
             );
-            let request_timeout = Duration::from_secs(subcommand_args.node.request_timeout_seconds);
             probe_contract_state(&contract_state_reader, request_timeout)
                 .await
                 .expect("NEAR RPC endpoint probe failed");
@@ -96,7 +100,7 @@ pub async fn run_command(args: cli::Args) {
             let contract_state =
                 adapters::contract_state_polling::PollingContractStateWatcher::spawn(
                     contract_state_reader,
-                    Duration::from_secs(subcommand_args.poll_interval_seconds),
+                    poll_interval,
                     request_timeout,
                 )
                 .await;
@@ -110,7 +114,7 @@ pub async fn run_command(args: cli::Args) {
                 contract_state,
                 status_reporter,
                 adapters::clock::SystemClock,
-                Duration::from_secs(subcommand_args.poll_interval_seconds),
+                poll_interval,
                 shutdown,
             )
             .await

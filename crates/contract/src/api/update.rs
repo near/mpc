@@ -169,13 +169,14 @@ mod tests {
     };
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::Environment;
-    use assert_matches::assert_matches;
     use near_sdk::mock::MockAction;
     use near_sdk::test_utils::get_created_receipts;
     use near_sdk::{AccountId, env};
     use rstest::rstest;
-    use std::collections::{BTreeMap, BTreeSet};
-    use std::panic;
+    use std::{
+        assert_matches,
+        collections::{BTreeMap, BTreeSet},
+    };
     use test_utils::contract_types::dummy_config;
 
     fn update_hash(byte: u8) -> dtos::UpdateHash {
