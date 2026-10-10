@@ -1,8 +1,8 @@
-use assert_matches::assert_matches;
 use near_mpc_sdk::foreign_chain::{
     DomainId, ForeignChainRequestBuilder,
     arbitrum::{EvmFinality, EvmTxId, ForeignChainRpcRequest},
 };
+use std::assert_matches;
 
 #[test]
 fn no_extractor_added() {
@@ -19,9 +19,8 @@ fn no_extractor_added() {
         .unwrap();
 
     // then
-    let no_extractors = vec![];
-
-    assert_matches!(built_sign_request_args.request, ForeignChainRpcRequest::Arbitrum(arbitrum_rpc_request) => {
-        assert_eq!(arbitrum_rpc_request.extractors.to_vec(), no_extractors);
-    });
+    assert_matches!(
+        built_sign_request_args.request,
+        ForeignChainRpcRequest::Arbitrum(rpc_request) if rpc_request.extractors.is_empty()
+    );
 }

@@ -16,7 +16,7 @@ impl EddsaSignatureProvider {
         let key = KeyGenerationComputation {
             reconstruction_threshold,
         }
-        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
         .await?;
         tracing::info!("Eddsa key generation completed");
 
@@ -116,7 +116,7 @@ mod tests {
         let key = KeyGenerationComputation {
             reconstruction_threshold: ReconstructionThreshold::from(3),
         }
-        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
         .await?;
 
         Ok(key)

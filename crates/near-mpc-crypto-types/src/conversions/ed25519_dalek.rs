@@ -38,8 +38,8 @@ impl From<&Ed25519Signature> for ed25519_dalek::Signature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use ed25519_dalek::Signer;
+    use std::assert_matches;
 
     #[test]
     fn roundtrip_verifying_key() {

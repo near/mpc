@@ -490,7 +490,7 @@ mod tests {
         let claims = dcap_quote_claims();
 
         // When
-        let result: (VerifiedReport, CollateralDates) = claims.into_interface_type();
+        let result = claims.into_interface_type();
 
         // Then
         let expected = (
