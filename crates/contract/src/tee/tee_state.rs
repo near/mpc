@@ -76,6 +76,11 @@ pub enum TeeValidationResult {
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
+    /// Block time at which this entry was accepted. Restamped by every accepted submission, so
+    /// a submitter can recognize its own on chain. `None` for an entry stored before the contract
+    /// recorded this, and the init block time for a mocked entry nobody submitted (see
+    /// [`TeeState::with_mocked_participant_attestations`]).
+    pub(crate) accepted_at_seconds: Option<u64>,
 }
 
 #[near(serializers=[borsh])]
@@ -147,6 +152,7 @@ impl TeeState {
                     verified_attestation: VerifiedAttestation::Mock(
                         attestation::MockAttestation::Valid,
                     ),
+                    accepted_at_seconds: Some(Self::current_time_seconds()),
                 },
             );
         }
@@ -241,6 +247,7 @@ impl TeeState {
             NodeAttestation {
                 node_id,
                 verified_attestation,
+                accepted_at_seconds: Some(Self::current_time_seconds()),
             },
         );
 
@@ -534,52 +541,48 @@ impl TeeState {
             .filter(|stored| stored.node_id.account_id == *account_id)
     }
 
-    /// Finds the [`NodeId`] (account_id + tls_public_key) for the node whose attested
-    /// account public key matches `signer_account_pk`.
-    pub(crate) fn lookup_node_id_by_signer_pk(
+    /// Checks that the attestation stored under `tls_public_key` belongs to `signer_id` and
+    /// was submitted with `signer_pk`.
+    pub(crate) fn verify_signer_attestation(
         &self,
-        signer_account_pk: &Ed25519PublicKey,
-    ) -> Result<&NodeId, AttestationCheckError> {
-        self.stored_attestations
-            .values()
-            .find(|attestation| attestation.node_id.account_public_key == *signer_account_pk)
-            .map(|attestation| &attestation.node_id)
-            .ok_or(AttestationCheckError::AttestationNotFound)
+        tls_public_key: &Ed25519PublicKey,
+        signer_id: &AccountId,
+        signer_pk: &Ed25519PublicKey,
+    ) -> Result<(), AttestationCheckError> {
+        let node_id = &self
+            .stored_attestations
+            .get(tls_public_key)
+            .ok_or(AttestationCheckError::AttestationNotFound)?
+            .node_id;
+
+        if node_id.account_id != *signer_id {
+            return Err(AttestationCheckError::AttestationOwnerMismatch);
+        }
+        if node_id.account_public_key != *signer_pk {
+            return Err(AttestationCheckError::AttestationKeyMismatch);
+        }
+
+        Ok(())
     }
 
-    /// Returns Ok(()) if the caller has at least one participant entry
-    /// whose TLS key matches an attested node belonging to the caller account.
-    ///
-    /// Handles multiple participants per account and supports legacy mock nodes.
+    /// Returns Ok(()) if the caller's participant entry names a TLS key whose stored attestation
+    /// was submitted by the caller under the transaction's signer key.
     pub(crate) fn is_caller_an_attested_participant(
         &self,
         participants: &Participants,
     ) -> Result<(), AttestationCheckError> {
-        let signer_account_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id();
 
         let info = participants
             .info(&signer_id)
             .ok_or(AttestationCheckError::CallerNotParticipant)?;
 
-        let attestation = self
-            .stored_attestations
-            .get(&info.tls_public_key)
-            .ok_or(AttestationCheckError::AttestationNotFound)?;
-
-        if attestation.node_id.account_id != signer_id {
-            return Err(AttestationCheckError::AttestationOwnerMismatch);
-        }
-
         // Stored account keys are Ed25519 by construction; a non-Ed25519
         // signer necessarily mismatches.
-        let signer_ed25519 = Ed25519PublicKey::try_from(&signer_account_pk)
+        let signer_pk = Ed25519PublicKey::try_from(&env::signer_account_pk())
             .map_err(|_| AttestationCheckError::AttestationKeyMismatch)?;
-        if attestation.node_id.account_public_key != signer_ed25519 {
-            return Err(AttestationCheckError::AttestationKeyMismatch);
-        }
 
-        Ok(())
+        self.verify_signer_attestation(&info.tls_public_key, &signer_id, &signer_pk)
     }
 }
 
@@ -626,14 +629,17 @@ mod tests {
         proposal::get_docker_compose_hash,
         test_utils::{set_block_secs, set_block_timestamp, whitelist_dstack_measurements},
     };
-    use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
-    use std::collections::{BTreeMap, BTreeSet};
+    use rstest::rstest;
     use std::time::Duration;
+    use std::{
+        assert_matches,
+        collections::{BTreeMap, BTreeSet},
+    };
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
         launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
@@ -1810,6 +1816,10 @@ mod tests {
             .get(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
+        assert_eq!(
+            stored.accepted_at_seconds,
+            Some(VALID_ATTESTATION_TIMESTAMP)
+        );
     }
 
     /// Stale code-hash votes from removed participants must not count toward
@@ -1919,6 +1929,68 @@ mod tests {
         assert_matches!(
             result,
             Err(AttestationSubmissionError::InvalidAttestation(_))
+        );
+    }
+
+    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+    const RESUBMITTED_AT_SECONDS: u64 = ACCEPTED_AT_SECONDS + 3600;
+
+    fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
+        tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("the attestation was stored")
+            .accepted_at_seconds
+    }
+
+    fn submit_mock(
+        tee_state: &mut TeeState,
+        node_id: &NodeId,
+        mock: MockAttestation,
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+        tee_state.verify_and_store_mock(node_id.clone(), mock, Duration::from_secs(0))
+    }
+
+    #[test]
+    fn verify_and_store_mock__should_stamp_the_block_time() {
+        // Given
+        set_block_secs(ACCEPTED_AT_SECONDS);
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+
+        // When
+        submit_mock(&mut tee_state, &node_id, MockAttestation::Valid).unwrap();
+
+        // Then
+        assert_eq!(
+            stamped_accepted_at(&tee_state, &node_id),
+            Some(ACCEPTED_AT_SECONDS)
+        );
+    }
+
+    /// The stamp is what lets a submitter tell a rejection from a landing, so only an accepted
+    /// submission may move it.
+    #[rstest]
+    #[case::rejected(MockAttestation::Invalid, ACCEPTED_AT_SECONDS)]
+    #[case::accepted_again(MockAttestation::Valid, RESUBMITTED_AT_SECONDS)]
+    fn verify_and_store_mock__should_restamp_only_an_accepted_resubmission(
+        #[case] resubmitted: MockAttestation,
+        #[case] expected_stamp: u64,
+    ) {
+        // Given: an entry stored by an accepted submission
+        set_block_secs(ACCEPTED_AT_SECONDS);
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+        submit_mock(&mut tee_state, &node_id, MockAttestation::Valid).unwrap();
+
+        // When: the same node submits again an hour later
+        set_block_secs(RESUBMITTED_AT_SECONDS);
+        let _ = submit_mock(&mut tee_state, &node_id, resubmitted);
+
+        // Then
+        assert_eq!(
+            stamped_accepted_at(&tee_state, &node_id),
+            Some(expected_stamp)
         );
     }
 }

@@ -134,8 +134,8 @@ impl<Chain> ForeignChainRequestBuilder<BuildableSvmRequest<Chain>, NotSet> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod test {
-    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
+    use std::assert_matches;
 
     use crate::foreign_chain::{
         DEFAULT_PAYLOAD_VERSION, ForeignChainRequestBuilder, ForeignChainSignatureVerifier,
@@ -177,18 +177,21 @@ mod test {
             .unwrap();
 
         // Then
-        assert_matches!(&request_args.request, ForeignChainRpcRequest::Solana(rpc_request) => {
-            assert_eq!(
-                rpc_request.extractors.to_vec(),
-                vec![
-                    SvmExtractor::AccountState { pubkey: SvmAddress(pubkey) },
-                    SvmExtractor::InnerInstruction {
-                        instruction_index: 0,
-                        inner_instruction_index: 1,
-                    },
-                ]
-            );
-        });
+        let ForeignChainRpcRequest::Solana(rpc_request) = &request_args.request else {
+            panic!("expected Solana request, got {:?}", request_args.request);
+        };
+        assert_eq!(
+            rpc_request.extractors.to_vec(),
+            vec![
+                SvmExtractor::AccountState {
+                    pubkey: SvmAddress(pubkey),
+                },
+                SvmExtractor::InnerInstruction {
+                    instruction_index: 0,
+                    inner_instruction_index: 1,
+                },
+            ]
+        );
         assert_eq!(
             verifier.expected_extracted_values,
             vec![
@@ -317,8 +320,9 @@ mod test {
         let (_verifier, request_args) = builder.build().unwrap();
 
         // Then
-        assert_matches!(&request_args.request, ForeignChainRpcRequest::Solana(rpc_request) => {
-            assert!(rpc_request.extractors.is_empty());
-        });
+        assert_matches!(
+            &request_args.request,
+            ForeignChainRpcRequest::Solana(rpc_request) if rpc_request.extractors.is_empty()
+        );
     }
 }

@@ -137,8 +137,9 @@ impl MpcContract {
                     &public_key_edwards_point,
                     &request.tweak,
                 );
-                let derived_public_key_32_bytes =
-                    dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress());
+                let derived_public_key_32_bytes = dtos::Ed25519PublicKey::from(
+                    derived_public_key_edwards_point.compress().to_bytes(),
+                );
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
@@ -230,7 +231,6 @@ mod tests {
         with_active_participant_and_attested_context,
     };
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
-    use assert_matches::assert_matches;
     use dtos::{Curve, DomainId, Payload, Tweak};
     use k256::ecdsa::SigningKey;
     use k256::{Secp256k1, elliptic_curve};
@@ -239,7 +239,7 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::{RngCore, SeedableRng};
     use rstest::rstest;
-    use std::panic;
+    use std::{assert_matches, panic};
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
         let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();

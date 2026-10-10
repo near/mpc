@@ -38,11 +38,11 @@ pub fn build_payload(config: ProposalConfig) -> anyhow::Result<String> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{
         AuthScheme, ChainRouting, ProviderConfig, ProviderId,
     };
     use rstest::rstest;
+    use std::assert_matches;
 
     fn parse(toml: &str) -> ProposalConfig {
         toml::from_str(toml).unwrap()
@@ -159,14 +159,39 @@ mod tests {
             ForeignChain::Fogo,
         ]
     )]
+    #[case::testnet_2026_10_08(
+        include_str!("../proposals/testnet-rpc-whitelist-2026-10-08-solana-public.toml"),
+        &[ForeignChain::Solana]
+    )]
     #[case::mainnet(
         include_str!("../proposals/mainnet-rpc-whitelist.toml"),
         &[
+            ForeignChain::Solana,
             ForeignChain::Bitcoin,
+            ForeignChain::Base,
+            ForeignChain::Bnb,
+            ForeignChain::Arbitrum,
             ForeignChain::Abstract,
             ForeignChain::Starknet,
+            ForeignChain::Polygon,
+            ForeignChain::HyperEvm,
             ForeignChain::Aptos,
             ForeignChain::Sui,
+            ForeignChain::Avalanche,
+            ForeignChain::Fogo,
+        ]
+    )]
+    #[case::mainnet_2026_10_08(
+        include_str!("../proposals/mainnet-rpc-whitelist-2026-10-08-evm-solana-fogo.toml"),
+        &[
+            ForeignChain::Solana,
+            ForeignChain::Base,
+            ForeignChain::Bnb,
+            ForeignChain::Arbitrum,
+            ForeignChain::Polygon,
+            ForeignChain::HyperEvm,
+            ForeignChain::Avalanche,
+            ForeignChain::Fogo,
         ]
     )]
     fn rpc_whitelist_proposals__should_be_valid(

@@ -115,7 +115,7 @@ pub struct BlockArgs {
     pub height: u64,
 }
 
-/// The contents of the on-disk config.yaml file. Contains no secrets.
+/// The contents of the on-disk config.yaml file. [`Self::foreign_chains`] may hold provider API keys.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
     /// The near account ID that this node owns.
