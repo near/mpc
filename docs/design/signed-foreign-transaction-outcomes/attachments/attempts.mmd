@@ -1,0 +1,15 @@
+flowchart TD
+    A["Attempt"] --> Q{"Every node outcome matches<br/>and the shares combine?"}
+    Q -->|"yes"| S["Signed success or<br/>signed negative verdict"]
+    Q -->|"no: two followers differ,<br/>or a follower's inspectors disagree"| I
+    Q -->|"no: a follower has no verdict<br/>because of transient errors"| N["Attempt failed,<br/>with signed evidence"]
+    Q -->|"no: a refusal, a silent follower,<br/>a bad share, or a leader<br/>without a verdict<br/>or with a different outcome"| U["Attempt failed,<br/>no evidence"]
+    N --> B{"Attempts left?"}
+    U --> B
+    B -->|"yes: retry at once"| A
+    B -->|"no, with evidence<br/>from every attempt"| I["Inconclusive round:<br/>signers check the leader<br/>and the evidence"]
+    B -.->|"no, evidence missing"| T["Timeout, as today"]
+    I -->|"all sign"| IS["Signed inconclusive<br/>for this request's yield"]
+    I -->|"fails"| R{"Rounds left?"}
+    R -->|"yes: retry"| I
+    R -.->|"no"| T
