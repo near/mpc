@@ -1,12 +1,12 @@
 //! Log-only check that the node's local foreign-chain RPC config matches the
 //! on-chain whitelist (`allowed_foreign_chain_providers`).
 //!
+//! `run` waits for the channel's first real update before comparison
 //! On a fresh deployment with an unvoted whitelist, the verifier emits one
 //! [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist) info per configured chain — expected during rollout,
 //! clears once the whitelist is populated and the watch channel updates.
 
-use std::collections::BTreeMap;
-
+use itertools::Itertools;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
     foreign_chains::RpcProviderName,
@@ -14,11 +14,12 @@ use mpc_node_config::{
 use near_mpc_contract_interface::types::{
     self as dtos, AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
 };
+use std::collections::BTreeMap;
 use tokio::sync::watch;
 
 /// Subscribes to the contract's `allowed_foreign_chain_providers` whitelist (published by
 /// `monitor_allowed_foreign_chain_providers` in [`crate::indexer::tee`]) and logs any divergence
-/// from the local config. Processes the current value immediately, then reacts to each change.
+/// from the local config. Waits for the first real whitelist read, then reacts to each change.
 ///
 /// `run` owns no I/O: the polling and retry live in the monitor adapter, so when the chain gateway
 /// exposes a native subscription only the adapter changes, and `run` can be driven from an
@@ -28,6 +29,10 @@ pub(crate) async fn run(
     local: ForeignChainsConfig,
 ) {
     loop {
+        if whitelist_rx.changed().await.is_err() {
+            // Sender dropped: the indexer is shutting down, nothing left to verify against.
+            break;
+        }
         let diagnostics = {
             let whitelist = whitelist_rx.borrow_and_update();
             compare(&local, &whitelist)
@@ -40,10 +45,6 @@ pub(crate) async fn run(
             for d in &diagnostics {
                 log_diagnostic(d);
             }
-        }
-        if whitelist_rx.changed().await.is_err() {
-            // Sender dropped: the indexer is shutting down, nothing left to verify against.
-            break;
         }
     }
 }
