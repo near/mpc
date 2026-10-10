@@ -1,0 +1,146 @@
+# Mainnet RPC provider whitelist: Solana, BNB, Base, Arbitrum, Polygon, Avalanche, HyperEVM, Fogo (vote of 2026-10-08).
+# Delta only; chains apply independently. Full state lives in mainnet-rpc-whitelist.toml.
+
+[chains.Solana]
+quorum = 3
+
+[chains.Solana.providers.alchemy]
+base_url = "https://solana-mainnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Solana.providers.public]
+base_url = "https://api.mainnet-beta.solana.com"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Solana.providers.quicknode]
+base_url = "https://{}.solana-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Solana.providers.tatum]
+base_url = "https://solana-mainnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Bnb]
+quorum = 3
+
+[chains.Bnb.providers.alchemy]
+base_url = "https://bnb-mainnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Bnb.providers.quicknode]
+base_url = "https://{}.bsc.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Bnb.providers.tatum]
+base_url = "https://bsc-mainnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Base]
+quorum = 3
+
+[chains.Base.providers.alchemy]
+base_url = "https://base-mainnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Base.providers.quicknode]
+base_url = "https://{}.base-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Base.providers.tatum]
+base_url = "https://base-mainnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Arbitrum]
+quorum = 3
+
+[chains.Arbitrum.providers.alchemy]
+base_url = "https://arb-mainnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Arbitrum.providers.quicknode]
+base_url = "https://{}.arbitrum-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Arbitrum.providers.tatum]
+base_url = "https://arbitrum-one-mainnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Polygon]
+quorum = 3
+
+[chains.Polygon.providers.alchemy]
+base_url = "https://polygon-mainnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Polygon.providers.quicknode]
+base_url = "https://{}.matic.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Polygon.providers.tatum]
+base_url = "https://polygon-mainnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Avalanche]
+quorum = 3
+
+[chains.Avalanche.providers.public]
+base_url = "https://api.avax.network/ext/bc/C/rpc"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Avalanche.providers.quicknode]
+base_url = "https://{}.avalanche-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Avalanche.providers.tatum]
+base_url = "https://avax-mainnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.HyperEvm]
+quorum = 3
+
+[chains.HyperEvm.providers.chainstack]
+base_url = "https://hyperliquid-mainnet.core.chainstack.com/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.HyperEvm.providers.public]
+base_url = "https://rpc.hyperliquid.xyz/evm"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.HyperEvm.providers.quicknode]
+base_url = "https://{}.hype-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Fogo]
+quorum = 2
+
+[chains.Fogo.providers.fluxrpc]
+base_url = "https://eu.fogo.fluxrpc.com"
+auth_scheme = { Query = { name = "key" } }
+chain_routing = "Embedded"
+
+[chains.Fogo.providers.public]
+base_url = "https://mainnet.fogo.io"
+auth_scheme = "None"
+chain_routing = "Embedded"

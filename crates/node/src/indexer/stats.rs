@@ -33,24 +33,19 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
             - prev_blocks_processed_count) as f64)
             / (interval_secs as f64);
 
-        let time_to_catch_the_tip_duration = if block_processing_speed > 0.0 {
-            match indexer_state
+        let time_to_catch_the_tip_duration = if block_processing_speed > 0.0
+            && let Ok(block_height) = indexer_state
                 .view_client
                 .latest_final_block()
                 .await
                 .map(|block| block.header.height)
-            {
-                Ok(block_height) => {
-                    // 0 when we're ahead of the chain tip — no catching up needed.
-                    let blocks_behind =
-                        block_height.saturating_sub(stats_copy.last_processed_block_height);
+        {
+            // 0 when we're ahead of the chain tip — no catching up needed.
+            let blocks_behind = block_height.saturating_sub(stats_copy.last_processed_block_height);
 
-                    Some(std::time::Duration::from_millis(
-                        ((blocks_behind as f64 / block_processing_speed) * 1000f64) as u64,
-                    ))
-                }
-                _ => None,
-            }
+            Some(std::time::Duration::from_millis(
+                ((blocks_behind as f64 / block_processing_speed) * 1000f64) as u64,
+            ))
         } else {
             None
         };

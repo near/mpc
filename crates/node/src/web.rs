@@ -11,7 +11,7 @@ use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, TripleConfig,
+    SignatureConfig, TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -98,6 +98,8 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    foreign_chains_rpc_preset: Option<RpcPreset>,
     foreign_chains_provider_counts: ForeignChainsProviderCounts,
     cores: Option<usize>,
     separate_asset_generation_runtime: bool,
@@ -118,6 +120,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
+            foreign_chains_rpc_preset: config.foreign_chains.rpc_preset,
             foreign_chains_provider_counts: config.foreign_chains.into(),
             cores: config.cores,
             separate_asset_generation_runtime: config.separate_asset_generation_runtime,
@@ -414,11 +417,12 @@ pub async fn start_web_server(
 mod tests {
     use super::*;
     use mpc_node_config::foreign_chains::{
-        ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
+        ForeignChainConfig, ForeignChainProviderConfig, ProviderCredentials, RpcProviderName,
     };
     use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use std::collections::BTreeMap;
     use std::net::Ipv4Addr;
     use std::num::NonZeroU64;
     use std::str::FromStr;
@@ -448,6 +452,9 @@ mod tests {
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
     const STARKNET_QUERY_TOKEN: &str = "blast-secret";
     const ETHEREUM_TOKEN_ENV_VAR: &str = "ALCHEMY_API_KEY";
+    const CREDENTIALS_PROVIDER: &str = "quicknode";
+    const CREDENTIALS_TOKEN: &str = "quicknode-secret";
+    const CREDENTIALS_SLUG: &str = "quicknode-endpoint-slug";
 
     fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
@@ -575,6 +582,16 @@ mod tests {
                 )),
                 adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
                 fogo: Some(test_chain(PROVIDER_PUBLIC, FOGO_RPC_URL, AuthConfig::None)),
+                rpc_preset: Some(RpcPreset::Testnet),
+                credentials: BTreeMap::from([(
+                    CREDENTIALS_PROVIDER.to_string().into(),
+                    ProviderCredentials {
+                        api_key: TokenConfig::Val {
+                            val: CREDENTIALS_TOKEN.to_string(),
+                        },
+                        slug: Some(CREDENTIALS_SLUG.to_string()),
+                    },
+                )]),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,
@@ -594,6 +611,10 @@ mod tests {
             .expect("response must serialize as a JSON object");
 
         // Then — provider counts are safe to expose; sensitive details are not.
+        assert_eq!(
+            object.get("foreign_chains_rpc_preset"),
+            Some(&serde_json::json!("testnet"))
+        );
         let counts = object
             .get("foreign_chains_provider_counts")
             .expect("response must contain `foreign_chains_provider_counts`")
@@ -651,6 +672,9 @@ mod tests {
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,
             ETHEREUM_TOKEN_ENV_VAR,
+            CREDENTIALS_PROVIDER,
+            CREDENTIALS_TOKEN,
+            CREDENTIALS_SLUG,
         ];
         for needle in forbidden {
             assert!(

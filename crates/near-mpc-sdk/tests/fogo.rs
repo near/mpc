@@ -1,8 +1,8 @@
-use assert_matches::assert_matches;
 use near_mpc_sdk::foreign_chain::{
     DomainId, ForeignChainRequestBuilder,
     fogo::{ForeignChainRpcRequest, SvmFinality, SvmTxId},
 };
+use std::assert_matches;
 
 #[test]
 #[expect(non_snake_case)]
@@ -20,9 +20,8 @@ fn build__should_add_no_extractors_without_expectations() {
         .unwrap();
 
     // Then
-    let no_extractors = vec![];
-
-    assert_matches!(built_sign_request_args.request, ForeignChainRpcRequest::Fogo(fogo_rpc_request) => {
-        assert_eq!(fogo_rpc_request.extractors.to_vec(), no_extractors);
-    });
+    assert_matches!(
+        built_sign_request_args.request,
+        ForeignChainRpcRequest::Fogo(rpc_request) if rpc_request.extractors.is_empty()
+    );
 }

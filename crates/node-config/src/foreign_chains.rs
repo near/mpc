@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use anyhow::Context as _;
@@ -7,11 +7,29 @@ use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
 pub use auth::{AuthConfig, TokenConfig};
+pub use embedded::RpcPreset;
+use embedded::embedded_foreign_chains;
+pub use resolve::{
+    PairSource, ResolutionDiagnostic, ResolveError, ResolvedForeignChains, SkipReason,
+    resolve_with_embedded,
+};
 
 mod auth;
+mod embedded;
+mod resolve;
+
+/// Substituted in an `rpc_url` by the provider's [`ProviderCredentials::slug`].
+const SLUG_PLACEHOLDER: &str = "{slug}";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainsConfig {
+    /// Selects the embedded provider preset config that [`Self::credentials`] enable.
+    /// Unset means node won't use embedded config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rpc_preset: Option<RpcPreset>,
+    /// Per provider credentials used for embedded configs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub credentials: BTreeMap<RpcProviderName, ProviderCredentials>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -43,6 +61,14 @@ pub struct ForeignChainsConfig {
     pub adi: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fogo: Option<ForeignChainConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderCredentials {
+    #[serde(flatten)]
+    pub api_key: TokenConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,6 +159,31 @@ impl ForeignChainsConfig {
         .into_iter()
     }
 
+    /// [`None`] for a chain this config has no key for.
+    fn chain_slot_mut(
+        &mut self,
+        chain: dtos::ForeignChain,
+    ) -> Option<&mut Option<ForeignChainConfig>> {
+        match chain {
+            dtos::ForeignChain::Solana => Some(&mut self.solana),
+            dtos::ForeignChain::Bitcoin => Some(&mut self.bitcoin),
+            dtos::ForeignChain::Ethereum => Some(&mut self.ethereum),
+            dtos::ForeignChain::Abstract => Some(&mut self.abstract_chain),
+            dtos::ForeignChain::Starknet => Some(&mut self.starknet),
+            dtos::ForeignChain::Bnb => Some(&mut self.bnb),
+            dtos::ForeignChain::Base => Some(&mut self.base),
+            dtos::ForeignChain::Arbitrum => Some(&mut self.arbitrum),
+            dtos::ForeignChain::HyperEvm => Some(&mut self.hyper_evm),
+            dtos::ForeignChain::Polygon => Some(&mut self.polygon),
+            dtos::ForeignChain::Aptos => Some(&mut self.aptos),
+            dtos::ForeignChain::Sui => Some(&mut self.sui),
+            dtos::ForeignChain::Avalanche => Some(&mut self.avalanche),
+            dtos::ForeignChain::Adi => Some(&mut self.adi),
+            dtos::ForeignChain::Fogo => Some(&mut self.fogo),
+            _ => None,
+        }
+    }
+
     /// Iterate over every chain that has a local config, paired with its DTO identifier.
     pub fn iter_chains(
         &self,
@@ -169,6 +220,17 @@ impl ForeignChainsConfig {
             }
         }
 
+        for (provider, credentials) in &self.credentials {
+            if let Some(slug) = &credentials.slug {
+                validate_slug(slug).with_context(|| {
+                    format!(
+                        "credentials for provider `{}` have an invalid slug",
+                        provider.as_str()
+                    )
+                })?;
+            }
+        }
+
         Ok(())
     }
 
@@ -179,9 +241,20 @@ impl ForeignChainsConfig {
     }
 }
 
+/// A slug fills exactly one host label, the same span the whitelist verifier matches `{}` against.
+fn validate_slug(slug: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+        "slug must be a single host label of ASCII letters, digits and `-`, got `{slug}`"
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use std::assert_matches;
+
     use super::*;
     use crate::ConfigFile;
 
@@ -646,6 +719,141 @@ ckd:
         assert!(error.contains("support only header auth"), "{error}");
     }
 
+    #[test]
+    fn config_parsing__should_read_credentials_from_yaml() {
+        // Given
+        let yaml = config_with_chains(
+            r#"
+  credentials:
+    alchemy:
+      env: ALCHEMY_API_KEY
+    quicknode:
+      val: "quicknode-key"
+      slug: "my-endpoint"
+"#,
+        );
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config.validate().expect("credentials should be valid");
+        let expected = BTreeMap::from([
+            (
+                "alchemy".to_string().into(),
+                ProviderCredentials {
+                    api_key: TokenConfig::Env {
+                        env: "ALCHEMY_API_KEY".to_string(),
+                    },
+                    slug: None,
+                },
+            ),
+            (
+                "quicknode".to_string().into(),
+                ProviderCredentials {
+                    api_key: TokenConfig::Val {
+                        val: "quicknode-key".to_string(),
+                    },
+                    slug: Some("my-endpoint".to_string()),
+                },
+            ),
+        ]);
+        assert_eq!(config.foreign_chains.credentials, expected);
+    }
+
+    #[test]
+    fn config_parsing__should_round_trip_credentials_through_toml() {
+        // Given
+        let toml_input = r#"
+rpc_preset = "testnet"
+
+[credentials]
+alchemy = { val = "alchemy-key" }
+quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
+"#;
+
+        // When
+        let config: ForeignChainsConfig =
+            toml::from_str(toml_input).expect("toml fixture should be correct");
+        let parsed: ForeignChainsConfig =
+            toml::from_str(&toml::to_string(&config).expect("config should serialize"))
+                .expect("serialized config should parse");
+
+        // Then
+        assert_eq!(config.rpc_preset, Some(RpcPreset::Testnet));
+        assert_eq!(config.credentials.len(), 2);
+        assert_eq!(parsed, config);
+    }
+
+    #[test]
+    fn config_parsing__should_reject_unknown_rpc_preset() {
+        // Given
+        let toml_input = "rpc_preset = \"not-a-preset\"\n";
+
+        // When
+        let result: Result<ForeignChainsConfig, _> = toml::from_str(toml_input);
+
+        // Then
+        assert_matches!(result, Err(_));
+    }
+
+    #[test]
+    fn config_validation__should_reject_slug_that_is_not_a_host_label() {
+        // Given
+        let config = ForeignChainsConfig {
+            credentials: BTreeMap::from([(
+                "quicknode".to_string().into(),
+                ProviderCredentials {
+                    api_key: TokenConfig::Val {
+                        val: "quicknode-key".to_string(),
+                    },
+                    slug: Some("evil.example.com/path".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+
+        // When
+        let result = config.validate();
+
+        // Then
+        assert_matches!(result, Err(_));
+    }
+
+    #[test]
+    fn chain_slot_mut__should_address_the_same_field_as_chain_slots() {
+        // Given
+        let chains: Vec<_> = ForeignChainsConfig::default()
+            .chain_slots()
+            .map(|(chain, _)| chain)
+            .collect();
+
+        for chain in chains {
+            let mut config = ForeignChainsConfig::default();
+
+            // When
+            *config
+                .chain_slot_mut(chain)
+                .expect("every chain slot should be addressable") = Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(30).unwrap(),
+                max_retries: NonZeroU64::new(1).unwrap(),
+                expected_network_fingerprint: None,
+                providers: NonEmptyBTreeMap::new(
+                    "only".to_string().into(),
+                    ForeignChainProviderConfig {
+                        rpc_url: "https://rpc.example.com".to_string(),
+                        auth: AuthConfig::None,
+                    },
+                ),
+            });
+
+            // Then
+            let configured: Vec<_> = config.iter_chains().map(|(c, _)| c).collect();
+            assert_eq!(configured, vec![chain]);
+        }
+    }
+
     /// Every chain is set, so a chain added later has to be listed here too.
     #[test]
     fn foreign_chains_config__should_key_every_chain_by_its_label() {
@@ -678,6 +886,8 @@ ckd:
             avalanche: Some(section()),
             adi: Some(section()),
             fogo: Some(section()),
+            rpc_preset: None,
+            credentials: BTreeMap::new(),
         };
 
         // When

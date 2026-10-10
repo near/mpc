@@ -621,6 +621,7 @@ pub fn make_protocol<T: Send>(
 mod tests {
     use super::*;
     use crate::participants::Participant;
+    use std::assert_matches;
 
     #[test]
     #[expect(non_snake_case)]
@@ -643,10 +644,10 @@ mod tests {
 
         // When / Then - the message queued before the yield point surfaces first, the
         // yield is reported, and the next poke resumes the computation to completion
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::Yield));
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::Return(42)));
+        assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
+        assert_matches!(protocol.poke(), Ok(Action::Yield));
+        assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
+        assert_matches!(protocol.poke(), Ok(Action::Return(42)));
     }
 
     #[test]

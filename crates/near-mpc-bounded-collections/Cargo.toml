@@ -20,7 +20,6 @@ thiserror = { workspace = true }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 

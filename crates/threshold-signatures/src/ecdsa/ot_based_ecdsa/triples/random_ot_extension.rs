@@ -140,7 +140,7 @@ pub async fn random_ot_extension_sender(
         out.push((v0_i, v1_i));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
-        if (i + 1) % YIELD_EVERY == 0 {
+        if (i + 1).is_multiple_of(YIELD_EVERY) {
             chan.yield_point().await;
         }
     }
@@ -221,7 +221,7 @@ pub async fn random_ot_extension_receiver(
         out.push((b_i, hash_to_scalar(i, t_i)));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
-        if (i + 1) % YIELD_EVERY == 0 {
+        if (i + 1).is_multiple_of(YIELD_EVERY) {
             chan.yield_point().await;
         }
     }
@@ -241,9 +241,9 @@ mod test {
 
     use super::*;
 
-    use assert_matches::assert_matches;
     use k256::Scalar;
     use rand::SeedableRng;
+    use std::assert_matches;
 
     /// Run the random OT protocol between two parties
     fn run_random_ot<R: CryptoRngCore + SeedableRng + Send + 'static>(

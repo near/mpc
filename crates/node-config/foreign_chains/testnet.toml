@@ -1,0 +1,205 @@
+# Foreign chain RPC config embedded in the node for testnet, covered by the image hash vote.
+# A provider is enabled by the operator's `foreign_chains.credentials.<provider>` entry, whose API
+# key replaces the empty `token` below and whose slug replaces `{slug}` in `rpc_url`. Providers with
+# `auth.kind = "none"` are always enabled. Keep in sync with the network's provider whitelist.
+
+[bitcoin]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"  # genesis block hash
+
+[bitcoin.providers.public]
+rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
+
+[abstract]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "11124"
+
+[abstract.providers.abstract-testnet]
+rpc_url = "https://api.testnet.abs.xyz"
+
+[abstract.providers.alchemy]
+rpc_url = "https://abstract-testnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[abstract.providers.quicknode]
+rpc_url = "https://{slug}.abstract-testnet.quiknode.pro/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[starknet]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "0x534e5f5345504f4c4941"  # SN_SEPOLIA
+
+[starknet.providers.publicnode]
+rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
+
+[starknet.providers.alchemy]
+rpc_url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[starknet.providers.quicknode]
+rpc_url = "https://{slug}.strk-sepolia.quiknode.pro/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[aptos]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "2"  # Aptos ledger chain id
+
+[aptos.providers.public]
+rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
+
+[aptos.providers.alchemy]
+rpc_url = "https://aptos-testnet.g.alchemy.com/v2/{api_key}/v1"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[aptos.providers.quicknode]
+rpc_url = "https://{slug}.aptos-testnet.quiknode.pro/{api_key}/v1"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[aptos.providers.geomi]
+rpc_url = "https://api.testnet.aptoslabs.com/v1"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { val = "" } }
+
+[sui]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"  # genesis checkpoint digest
+
+[sui.providers.public]
+rpc_url = "https://archive.testnet.sui.io"
+
+[sui.providers.alchemy]
+rpc_url = "https://sui-testnet.g.alchemy.com"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { val = "" } }
+
+[sui.providers.quicknode]
+rpc_url = "https://{slug}.sui-testnet.quiknode.pro"
+auth = { kind = "header", name = "x-token", token = { val = "" } }
+
+[solana]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"  # devnet genesis hash
+
+[solana.providers.alchemy]
+rpc_url = "https://solana-devnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[solana.providers.quicknode]
+rpc_url = "https://{slug}.solana-devnet.quiknode.pro/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[solana.providers.tatum]
+rpc_url = "https://solana-devnet.gateway.tatum.io"
+auth = { kind = "header", name = "x-api-key", token = { val = "" } }
+
+[bnb]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "97"
+
+[bnb.providers.alchemy]
+rpc_url = "https://bnb-testnet.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[bnb.providers.quicknode]
+rpc_url = "https://{slug}.bsc-testnet.quiknode.pro/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[bnb.providers.tatum]
+rpc_url = "https://bsc-testnet.gateway.tatum.io"
+auth = { kind = "header", name = "x-api-key", token = { val = "" } }
+
+[base]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "84532"
+
+[base.providers.alchemy]
+rpc_url = "https://base-sepolia.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[base.providers.quicknode]
+rpc_url = "https://{slug}.base-sepolia.quiknode.pro/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[base.providers.tatum]
+rpc_url = "https://base-sepolia.gateway.tatum.io"
+auth = { kind = "header", name = "x-api-key", token = { val = "" } }
+
+[arbitrum]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "421614"
+
+[arbitrum.providers.alchemy]
+rpc_url = "https://arb-sepolia.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[arbitrum.providers.quicknode]
+rpc_url = "https://{slug}.arbitrum-sepolia.quiknode.pro/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[arbitrum.providers.tatum]
+rpc_url = "https://arbitrum-one-sepolia.gateway.tatum.io"
+auth = { kind = "header", name = "x-api-key", token = { val = "" } }
+
+[polygon]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "80002"
+
+[polygon.providers.alchemy]
+rpc_url = "https://polygon-amoy.g.alchemy.com/v2/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[polygon.providers.quicknode]
+rpc_url = "https://{slug}.matic-amoy.quiknode.pro/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[polygon.providers.tatum]
+rpc_url = "https://polygon-amoy.gateway.tatum.io"
+auth = { kind = "header", name = "x-api-key", token = { val = "" } }
+
+[avalanche]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "43113"
+
+[avalanche.providers.public]
+rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
+
+[avalanche.providers.quicknode]
+rpc_url = "https://{slug}.avalanche-testnet.quiknode.pro/{api_key}/ext/bc/C/rpc"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[avalanche.providers.tatum]
+rpc_url = "https://avax-testnet.gateway.tatum.io"
+auth = { kind = "header", name = "x-api-key", token = { val = "" } }
+
+[hyper_evm]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "998"
+
+[hyper_evm.providers.public]
+rpc_url = "https://rpc.hyperliquid-testnet.xyz/evm"
+
+[hyper_evm.providers.quicknode]
+rpc_url = "https://{slug}.hype-testnet.quiknode.pro/{api_key}/evm"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[hyper_evm.providers.chainstack]
+rpc_url = "https://hyperliquid-testnet.core.chainstack.com/{api_key}/evm"
+auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
+
+[fogo]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"  # genesis hash
+
+[fogo.providers.public]
+rpc_url = "https://testnet.fogo.io"

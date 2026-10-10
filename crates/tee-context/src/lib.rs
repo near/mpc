@@ -183,7 +183,6 @@ async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 
 #[cfg(test)]
 mod tests {
     use super::{AllowedTeeHashes, TeeContext, TeeContextError, watch_hashes};
-    use assert_matches::assert_matches;
     use chain_gateway::{
         errors::ChainGatewayError,
         mock::{MockChainState, MockChainStateBuilder, MockError},
@@ -200,6 +199,7 @@ mod tests {
     use near_mpc_contract_interface::types::{
         AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey, MockAttestation,
     };
+    use std::assert_matches;
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
     /// Block height returned by [`MockChainState`] view responses.

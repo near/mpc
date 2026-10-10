@@ -51,7 +51,7 @@ to keep in sync, it does not help the fleet convergence described in item 4, and
 
 ## The expiry value
 
-`dcap-qvl` (0.6.3, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
+`dcap-qvl` (0.6.5, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
 eight dates, matching Intel's own `qve_get_collateral_dates()`. The claims are built by
 `QuoteVerificationResult::claims()`, reached through `verify_with_policy`. The rest of this document
 calls that `claims()`.
@@ -134,11 +134,11 @@ future work this design only has to keep possible. Each is listed as the problem
 ([`tx_sender.rs`](../../crates/node/src/indexer/tx_sender.rs)). That stops working when the value is
 a calendar date that repeats for weeks.
 
-Fix: store `attested_at_seconds` on
+Fix: store `accepted_at_seconds` on
 [`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
 variants, so one field covers both. This restores today's semantics exactly, and gives operators a
-better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
-moves off 604 and the fee floor needs re-checking) and a state migration.
+better health signal than expiry. Costs 9 bytes per entry (599 → 608, so `WORST_CASE_ENTRY_BYTES`
+moves 604 → 613 and the fee floor needs re-checking) and a state migration.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
@@ -151,26 +151,11 @@ Under a plain "unused for 14 days" rule, a node that attests once with 30 days o
 stops loses its hash on day 14 and is kicked with 16 days left, which turns launcher cleanup into a
 second attestation deadline.
 
-Fix: keep a hash while a current participant uses it, and remove it only in `verify_tee`. Each
-entry has one stamp, `now + ttl`, set when it is voted in and again at every `verify_tee` that finds
-a current participant's stored attestation using it. `verify_tee` restamps first, then drops the
-unused entries whose stamp has passed, always keeping the most recently stamped one so the list
-never empties. Reads return every entry, with no time filter. A hash in use is therefore never
-removed automatically, whatever the TTL or the attestation's lifetime, and the TTL only retires
-hashes nobody uses. A hash used only by a node that is not yet a participant, such as a joining node
-or a migration destination, is protected by its vote stamp alone; a threshold re-vote restamps it.
-
-This removal is housekeeping, not a security control: removing a launcher immediately, for example a
-compromised one, is the unanimous `vote_remove_launcher_hash`. So removal may lag the TTL. An unused
-hash past its stamp stays accepted until the next `verify_tee`, and a current participant that
-submits with it in that window makes it in use again.
-
-*Considered: extending the stamp on each participant's submission to the attestation's own expiry,
-with reads filtering on the stamp. Correct, but the stamp then carries two meanings, every read has
-to filter, and the refresh has to be wired into both submission paths.*
-
-*Considered: dropping the TTL and evicting purely on references. Simpler config, but a newly
-voted-in hash has no references until nodes adopt it, so it would need its own grace period.*
+Fix: keep a hash while a current participant uses it, and remove it only in `verify_tee`, which
+restamps the hashes in use before dropping the unused ones past their TTL. A hash in use is
+therefore never removed automatically, whatever the attestation's lifetime. Done in
+[#4527](https://github.com/near/mpc/pull/4527) and [#4572](https://github.com/near/mpc/pull/4572);
+see [Auto-Removal of Unused Launcher Image Hashes](auto-remove-launcher-hashes-design.md).
 
 **3. Shortening after a verifier rotation — future work.** Nothing to build here. This design just
 has to leave it possible. [#3734](https://github.com/near/mpc/issues/3734) wants a short window
@@ -179,7 +164,7 @@ was written as "lower the constant", and the constant is going away.
 
 It stays possible, and gets cheaper, via the timestamp from item 1: record `verifier_rotated_at`
 when `vote_tee_verifier_change` passes, and in `re_verify` let any entry with
-`attested_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
+`accepted_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
 submitted after the rotation are untouched, every node gets a full day to re-attest, and there is no
 sweep or per-entry write.
 
@@ -199,7 +184,7 @@ an expired entry.
 Fix: extend the pinned-clock trick to the contract side, mirroring
 `tee_verifier_contract_with_pinned_clock`. Done in
 [#4518](https://github.com/near/mpc/issues/4518): `current_contract_with_pinned_clock` pins both
-contract clocks (`TeeState::current_time_seconds` and `Timestamp::now`, which drives launcher expiry)
+contract clocks (`TeeState::current_time_seconds` and `Timestamp::now`, which stamps launcher retention)
 to the fixture timestamp.
 
 *Considered: regenerating the fixture. Not a fix — a fresh one would have a 30-day shelf life.*
@@ -226,13 +211,10 @@ roughly 220 as things stand, or roughly 270 if `resolve_verification`'s 60 is tr
 `claims()` also reads the collateral dates. On `dcap-qvl` 0.6.3 it parsed the collateral a second
 time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against `verify_quote`'s
 173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
-([#4596](https://github.com/near/mpc/pull/4596)) removes the second parse and two duplicated
-signature checks, bringing them to 124.3 and 122.1. Both fit the current 200 TGas budget with room
-to spare, so `verifier_tera_gas` stays as it is.
-
-*Fallback if it does not fit: read `nextUpdate` from the two CRLs and the two JSON documents only.
-That drops the four certificate chains from the minimum, which is safe given their 7–30 year
-lifetimes, but it should be a deliberate choice rather than an accident.*
+([#4596](https://github.com/near/mpc/pull/4596)) keeps the parsed JSON documents, leaving only the
+CRLs and certificates parsed again, and drops two duplicated signature checks, bringing them to
+124.3 and 122.1. Both fit the current 200 TGas budget with room to spare, so `verifier_tera_gas`
+stays as it is.
 
 ## Rollout
 
@@ -249,7 +231,7 @@ so step 2 is a rotation, not a first deployment.
 
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
-`attested_at_seconds` is the replacement health signal.
+`accepted_at_seconds` is the replacement health signal.
 [`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) sells the old behaviour as the cheapest health check and
 needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` description from
 [#4236](https://github.com/near/mpc/pull/4236).
