@@ -122,7 +122,7 @@ impl OneNodeTestConfig {
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui,
-                    static_web_data(&self.secrets, None),
+                    static_web_data(&self.home_dir, &self.secrets, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
