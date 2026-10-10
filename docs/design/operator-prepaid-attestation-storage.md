@@ -57,9 +57,9 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 | Component | Charged bytes | Cost |
 |---|---|---|
-| Worst-case entry: a `Mock` one at 604 (`Dstack` is 599) | 604 | 0.00604 NEAR |
+| Worst-case entry: a `Mock` one at 613 (`Dstack` is 608) | 613 | 0.00613 NEAR |
 | Grants-map row, worst case (64-char account) | 194 | 0.00194 NEAR |
-| **Floor** | **798** | **0.00798 NEAR** |
+| **Floor** | **807** | **0.00807 NEAR** |
 
 Entry sizes are pinned by `stored_attestation_entry__should_have_the_pinned_size`; the grants row is measured at the time of writing. Either way the fee is held to twice the floor, so a test fails when it stops covering the layout.
 

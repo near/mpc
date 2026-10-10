@@ -8,7 +8,7 @@ use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::primitives::DomainId;
 
@@ -261,7 +261,7 @@ pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
-    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    pub cancellation_requests: BTreeSet<AuthenticatedAccountId>,
     /// Per-domain [`ReconstructionThreshold`] updates carried from the accepted
     /// proposal. Applied to the [`DomainRegistry`] when resharing completes.
     #[serde(default)]

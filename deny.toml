@@ -21,14 +21,13 @@ allow = [
 [advisories]
 ignore = [
   "RUSTSEC-2022-0054", # wee_alloc is unmaintained
-  "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
   "RUSTSEC-2024-0436", # paste is unmaintained
   "RUSTSEC-2024-0384", # instant is unmaintained
   "RUSTSEC-2023-0089", # atomic-polyfill is unmaintained
   # TODO(#3732): remove once quick-xml dependency is >= 0.41.0
   "RUSTSEC-2026-0194", # quadratic attribute duplicate-check
   "RUSTSEC-2026-0195", # unbounded namespace-declaration allocation
-  # Both need wasmtime >= 46.0.3; the 45.x line near-sdk and nearcore pin has no
+  # Both need wasmtime >= 46.0.3; the 45.x line nearcore pins has no
   # patched release for either. Reachable only through near-vm-runner, which never
   # shares a Store across Engines and does not depend on `wasmtime-wasi`.
   "RUSTSEC-2026-0222", # wasmtime stores can mix up type indices between engines
@@ -36,9 +35,12 @@ ignore = [
   # Fixed in wasmtime >= 48.0.3, with no patched 45.x release. Affects only the component-model
   # `Val` API; no crate in the workspace enables wasmtime's `component-model` feature.
   "RUSTSEC-2026-0316", # wasmtime `Val` record lifting allocates beyond the fuel limit
-  # TODO(#4423): remove once nearcore's aws-lc-rs pin lets cargo resolve rustls >= 0.23.45.
-  # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore pins aws-lc-rs to
-  # =1.16.2 (2.14.0-rc.2 and master), so the fix cannot be resolved until that pin moves. The
+  # Fixed in wasmtime >= 48.0.4, with no patched 45.x release. Affects only the component-model
+  # async API; no crate in the workspace enables wasmtime's `component-model` feature.
+  "RUSTSEC-2026-0327", # wasmtime component async-lifted callback result count unvalidated
+  # TODO(#4423): remove once cargo can resolve rustls >= 0.23.45.
+  # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore 2.14.0-rc.2 and
+  # near-crypto 0.37.3 pin it to =1.16.2, so the fix cannot be resolved until they move. The
   # handshake transcript stays authenticated: the flaw only lets a peer send handshake
   # messages that should be encrypted in plaintext without rustls rejecting them.
   "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
@@ -46,16 +48,6 @@ ignore = [
 
 [bans]
 multiple-versions = "allow"
-skip = [{ name = "windows-sys" }]
-skip-tree = [
-  { name = "axum" },
-  { name = "dstack-sdk" },
-  { name = "near-jsonrpc-client" },
-  { name = "near-vm-runner" },
-  { name = "pprof" },
-  { name = "reqwest" },
-  { name = "lru" },                 # TODO(#1730): Remove once nearcore updates to a fixed version
-]
 
 [sources]
 unknown-git = "deny"

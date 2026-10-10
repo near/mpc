@@ -6,7 +6,6 @@ use crate::common::{
     FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
 };
 
-use assert_matches::assert_matches;
 use base64::Engine as _;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
@@ -21,8 +20,11 @@ use jsonrpsee::core::params::BatchRequestBuilder;
 use near_mpc_contract_interface::types::{SvmAccount, SvmAddress, SvmInnerInstruction};
 use rstest::rstest;
 use serde_json::json;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::{
+    assert_matches,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 const TX_SLOT: u64 = 296_112_296;
 

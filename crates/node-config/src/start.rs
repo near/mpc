@@ -1,4 +1,5 @@
 use super::ConfigFile;
+use crate::foreign_chains::RpcPreset;
 use anyhow::Context;
 use clap::ValueEnum;
 use launcher_interface::types::PccsEndpointConfig;
@@ -41,6 +42,19 @@ pub struct StartConfig {
     pub pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
 }
 
+fn ensure_rpc_preset_matches(
+    rpc_preset: Option<RpcPreset>,
+    chain_id: Option<&ChainId>,
+) -> anyhow::Result<()> {
+    if let (Some(preset), Some(chain_id)) = (rpc_preset, chain_id) {
+        anyhow::ensure!(
+            preset.supports(chain_id),
+            "foreign_chains.rpc_preset `{preset}` is not supported for near_init.chain_id: `{chain_id}`"
+        );
+    }
+    Ok(())
+}
+
 pub fn default_pccs_endpoints() -> NonEmptyVec<PccsEndpointConfig> {
     let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
@@ -55,11 +69,18 @@ impl StartConfig {
             .with_context(|| format!("failed to read config file: {}", path.display()))?;
         let config: Self = toml::from_str(&content)
             .with_context(|| format!("failed to parse config file: {}", path.display()))?;
-        config
-            .node
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.node
             .validate()
             .context("invalid node config in config file")?;
-        Ok(config)
+        ensure_rpc_preset_matches(
+            self.node.foreign_chains.rpc_preset,
+            self.near_init.as_ref().map(|near_init| &near_init.chain_id),
+        )
     }
 }
 
@@ -202,6 +223,35 @@ pub enum DownloadConfigType {
 mod tests {
     use super::*;
     use launcher_interface::types::PccsTlsTrust;
+    use std::assert_matches;
+
+    #[rstest::rstest]
+    #[case(Some(RpcPreset::Testnet), Some(ChainId::Testnet))]
+    #[case(Some(RpcPreset::Mainnet), None)]
+    #[case(None, Some(ChainId::Localnet))]
+    fn ensure_rpc_preset_matches__should_accept_consistent_or_unknown_preset(
+        #[case] rpc_preset: Option<RpcPreset>,
+        #[case] chain_id: Option<ChainId>,
+    ) {
+        // When
+        let result = ensure_rpc_preset_matches(rpc_preset, chain_id.as_ref());
+
+        // Then
+        result.expect("preset should be accepted");
+    }
+
+    #[test]
+    fn ensure_rpc_preset_matches__should_reject_a_different_chain_id() {
+        // Given
+        let rpc_preset = Some(RpcPreset::Mainnet);
+        let chain_id = ChainId::Testnet;
+
+        // When
+        let result = ensure_rpc_preset_matches(rpc_preset, Some(&chain_id));
+
+        // Then
+        assert_matches!(result, Err(_));
+    }
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).

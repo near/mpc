@@ -87,7 +87,6 @@ threshold-signatures = { path = "crates/threshold-signatures" }
 
 aes-gcm = "0.11.0"
 anyhow = "1.0.102"
-assert_matches = "1.5.0"
 async-trait = "0.1.89"
 auto_ops = "0.3.0"
 average = "0.17"
@@ -169,7 +168,7 @@ itertools = "0.15.0"
 # (`links = "jemalloc"` permits one per graph); bump alongside the nearcore pin.
 jemalloc_pprof = "0.8.2"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
-k256 = "0.13.4"
+k256 = { version = "0.13.4", default-features = false }
 keccak = "0.1.5"
 libc = "0.2"
 lru = "0.18.0"
@@ -178,7 +177,6 @@ lru = "0.18.0"
 # addresses through ASLR.
 mappings = "0.7"
 mockall = "0.15.0"
-named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.6.0"
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
