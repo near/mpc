@@ -212,9 +212,8 @@ time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against 
 173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
 ([#4596](https://github.com/near/mpc/pull/4596)) keeps the parsed JSON documents, leaving only the
 CRLs and certificates parsed again, and drops two duplicated signature checks, bringing them to
-124.3 and 122.1. 0.6.6 parses only the verified certificates, bringing
-`verify_quote_with_collateral_dates` to 123.7. Both fit the current 200 TGas budget with room to spare, so `verifier_tera_gas`
-stays as it is.
+124.3 and 122.1. 0.6.6 parses only the verified certificates: 123.7 and 122.2. Both fit the
+current 200 TGas budget with room to spare, so `verifier_tera_gas` stays as it is.
 
 ## Rollout
 
