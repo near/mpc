@@ -47,9 +47,11 @@ No state is carried between runs, so a run can never pass because of something a
 one left behind.
 
 Nothing but reviewed scripts runs on Eva, and the runner stays ephemeral and GitHub-hosted.
-The workflow can live in the public `near/mpc` repo, because `schedule` and
-`workflow_dispatch` cannot be triggered from a fork — so the SSH key never reaches
-unreviewed code. Infra-ops is equally viable, and an SRE call.
+The workflow can live in the public `near/mpc` repo: neither `schedule` nor
+`workflow_dispatch` can be triggered from a fork. A collaborator can still dispatch any
+branch, including an unmerged edit of the workflow itself, so the SSH key belongs in an
+`environment` secret with the deployment branch restricted to `main` — the pattern
+`docker_build_node.yml` already uses. Infra-ops is equally viable, and an SRE call.
 
 ### Host: Eva
 
@@ -104,8 +106,8 @@ Raw logs ship alongside as an artifact.
 Nightly to start, plus `workflow_dispatch`.
 
 Running after every merge to `main` may be possible later. It depends on how long a run
-takes, which nobody has measured yet. Runs happen one at a time, so if a run is slower than
-merges arrive they queue up, and the result lands long after the commit that caused it.
+takes, which nobody has measured yet. Runs happen one at a time, so when merges arrive
+faster than runs finish, the `concurrency` group skips the commits in between.
 
 **Restriction: we have one dedicated server, and it can run at most six nodes at once.** A
 cluster takes three, so a single run occupies the host. The workflow needs a `concurrency`
@@ -140,11 +142,10 @@ anything they can do is cheaper to test there.
 **One server supports about six nodes.** A 6-node TEE network on a single host is stable;
 at 10 nodes, triple generation timed out frequently and signing became unreliable, and
 dropping to 8 active nodes fixed it (mpc-private, `resources/experiment-log/2026-01-21-testnet-tee-10-notes-with-automation-one-server/`).
-A cluster needs at least three nodes — a threshold must be at least
-`MIN_THRESHOLD_ABSOLUTE = 2` and at least 60% of `n`
-(`crates/contract/src/primitives/thresholds.rs:11`), so a 2-node cluster is pinned at
-2-of-2 with nothing legal to reshare into. Two clusters is therefore the ceiling on one
-server, and we run one at a time.
+Two nodes is the smallest cluster that runs at all, but at 2-of-2 both nodes have to
+survive every resharing, so no node can be replaced or rejected. Three is the minimum that
+covers those tests, which makes two clusters the ceiling on one server. We run one at a
+time.
 
 **The launcher must come from Docker Hub.** The contract derives the allowed compose hash
 by filling `crates/contract/assets/launcher_docker_compose.yaml.template`
