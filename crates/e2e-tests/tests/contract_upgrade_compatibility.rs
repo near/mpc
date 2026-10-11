@@ -74,10 +74,9 @@ async fn contract_upgrade_compatibility__current_node_runs_against_production_co
     // Then: the contract is back in Running state under the new code, and
     // both sign and CKD requests continue to succeed end-to-end.
     let post_upgrade_state = cluster
-        .wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
+        .wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
         .await
         .expect("contract did not reach Running state after upgrade");
     let ProtocolContractState::Running(running_post_upgrade) = post_upgrade_state else {
