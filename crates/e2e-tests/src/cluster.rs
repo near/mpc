@@ -8,13 +8,15 @@ use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{
-    NearKitCaller, NearKitViewError, NearToken, Subscription, WatchContractState,
+    Json, NearKitCaller, NearKitViewError, NearToken, Subscription, ViewArgs, ViewContract,
+    WatchContractState,
 };
 use near_kit::AccountId;
 use near_kit::transaction::{ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
+    method_names,
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
@@ -1243,10 +1245,9 @@ struct InitContractArgs {
 async fn prepay_attestation_grants(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
     near_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
-    let fee = attestation_storage_fee(mpc_contract_handle).await?;
+    let fee = attestation_storage_fee(contract).await?;
 
     // Granting the initial participants too is harmless: their attestations update the
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
@@ -1268,10 +1269,22 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
-async fn attestation_storage_fee(
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
-) -> anyhow::Result<NearToken> {
-    let config = mpc_contract_handle.config().await?.value;
+/// Reads only the fee: the production contracts in `contract_history` predate other fields of
+/// the current [`Config`](near_mpc_contract_interface::types::Config).
+// TODO(#4732): read through `MpcContractHandle::config()` once those WASMs carry every `Config` field.
+async fn attestation_storage_fee(contract: &DeployedContract) -> anyhow::Result<NearToken> {
+    #[derive(serde::Deserialize)]
+    struct Config {
+        attestation_storage_fee_millinear: u64,
+    }
+    let config = contract
+        .client()
+        .view::<Config, Json>(
+            contract.account_id().clone(),
+            ViewArgs::no_args(method_names::CONFIG),
+        )
+        .await?
+        .value;
     Ok(NearToken::from_millinear(u128::from(
         config.attestation_storage_fee_millinear,
     )))
@@ -1327,7 +1340,7 @@ async fn init_contract(
         outcome.failure_message()
     );
 
-    prepay_attestation_grants(blockchain, contract, mpc_contract_handle, &near_keys).await?;
+    prepay_attestation_grants(blockchain, contract, &near_keys).await?;
 
     for &i in &participant_indices {
         let account = node_account(i);
