@@ -98,7 +98,7 @@ Scripts today print `[PASS]`/`[FAIL]` and keep a `FAILURES` counter, but emit no
 machine can read — that is the one script-side change stage 2 needs.
 
 **JUnit XML** is the suggested format: GitHub renders it natively, and `cargo nextest`
-already emits it, so when stage 5 replaces bash with Rust the CI plumbing is unchanged.
+supports it, so when stage 5 replaces bash with Rust the CI plumbing is unchanged.
 Raw logs ship alongside as an artifact.
 
 ### Cadence
