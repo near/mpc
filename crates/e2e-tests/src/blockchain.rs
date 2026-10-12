@@ -1,13 +1,13 @@
 use ed25519_dalek::SigningKey;
+use near_mpc_contract_interface::types::ProtocolContractState;
+use serde::de::DeserializeOwned;
 use std::time::Duration;
 
 use near_contract_transport::{
-    CallContract, FunctionCallArgs, NearGas, NearKitCaller, NearToken, PollInterval,
+    CallContract, FunctionCallArgs, NearGas, NearKitCaller, PollInterval,
 };
 use near_kit::rpc::FinalExecutionOutcome;
-use near_kit::transaction::{ExecutedOptimistic, Final, WaitLevel};
-use near_mpc_contract_interface::types::ProtocolContractState;
-use serde::de::DeserializeOwned;
+use near_kit::transaction::{ExecutedOptimistic, Final};
 
 use crate::conversions::ToNearKey;
 
@@ -141,21 +141,6 @@ impl DeployedContract {
             .call_contract(&self.contract_id, call_args)
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
-    pub async fn call_from_with_deposit<T: WaitLevel>(
-        &self,
-        client: &NearKitCaller<T>,
-        method: &str,
-        args: serde_json::Value,
-        gas: NearGas,
-        deposit: NearToken,
-    ) -> anyhow::Result<T::Response> {
-        let call_args = FunctionCallArgs::new(method, serde_json::to_vec(&args)?, gas, deposit);
-        client
-            .call_contract(&self.contract_id, call_args)
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }
 
     pub async fn view<T: DeserializeOwned + Send + 'static>(

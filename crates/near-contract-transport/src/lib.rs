@@ -20,8 +20,8 @@ pub use traits::CallContract;
 #[cfg(feature = "traits")]
 pub use views::{
     Borsh, DeserializationError, DeserializeAs, Deserializer, HasPollInterval, Json, ObservedState,
-    PollInterval, SerializedObservation, TransportError, ViewArgs, ViewCall, ViewContract,
-    WatchContractState,
+    PollInterval, SerializedObservation, Subscription, TransportError, ViewArgs, ViewCall,
+    ViewContract, WatchContractState,
 };
 
 #[cfg(feature = "near-kit")]

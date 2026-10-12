@@ -13,12 +13,13 @@ use serde::de::DeserializeOwned;
 use crate::call_args::{
     AvailableAttestationGrantsArgs, DerivedPublicKeyArgs, GetAttestationArgs,
     GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs,
-    InitArgs, LatestKeyVersionArgs, PublicKeyArgs, RegisterBackupServiceArgs,
-    RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs, RequestAppPrivateKeyArgs, SignArgs,
-    StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
-    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
-    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
-    VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
+    InitArgs, LatestKeyVersionArgs, PrepayAttestationStorageArgs, PublicKeyArgs,
+    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
+    RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
+    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
+    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs,
+    VoteNewParametersArgs, VoteTeeVerifierChangeArgs, VoteUpdateArgs,
+    VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -32,8 +33,8 @@ use crate::method_names::{
     GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
     GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
     LATEST_KEY_VERSION, LAUNCHER_HASH_VOTES, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
+    OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PROPOSE_UPDATE, PUBLIC_KEY,
+    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY,
     SIGN, START_NODE_MIGRATION, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
     TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
@@ -75,6 +76,7 @@ pub const VOTE_CANCEL_KEYGEN_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
 // TODO(#166): not benchmarked, carried over from the callers.
+pub const PREPAY_ATTESTATION_STORAGE_GAS: NearGas = NearGas::from_tgas(30);
 pub const VOTE_MPC_NODE_MANIFEST_DIGEST_GAS: NearGas = NearGas::from_tgas(300);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
@@ -451,6 +453,22 @@ impl<C: CallContract> MpcContractHandle<C> {
             .map_err(MpcContractHandleError::Call)
     }
 
+    pub async fn prepay_attestation_storage(
+        &self,
+        account_id: AccountId,
+        grants: u32,
+        deposit: NearToken,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&PrepayAttestationStorageArgs::new(account_id, grants))?;
+        self.call(FunctionCallArgs::new(
+            PREPAY_ATTESTATION_STORAGE,
+            args,
+            PREPAY_ATTESTATION_STORAGE_GAS,
+            deposit,
+        ))
+        .await
+    }
+
     pub async fn submit_participant_info(
         &self,
         proposed_participant_attestation: Attestation,
@@ -668,7 +686,7 @@ mod tests {
         VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{
-        CallContract, FunctionCallArgs, ObservedState, mock::MockViewContract,
+        CallContract, FunctionCallArgs, NearToken, ObservedState, mock::MockViewContract,
     };
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
@@ -895,6 +913,14 @@ mod tests {
                     quorum: 1,
                 },
             ))
+            .await
+            .unwrap();
+        handle
+            .prepay_attestation_storage(
+                "node.near".parse().unwrap(),
+                2,
+                NearToken::from_millinear(14),
+            )
             .await
             .unwrap();
         handle

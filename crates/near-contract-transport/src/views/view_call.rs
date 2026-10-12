@@ -4,10 +4,9 @@ use near_account_id::AccountId;
 
 use crate::{
     HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs, ViewContract,
-    WatchContractState,
     views::{
         deserialize::{DeserializeAs, Deserializer},
-        monitoring::MonitoringTask,
+        monitoring::Subscription,
     },
 };
 
@@ -72,8 +71,8 @@ where
     Viewer: ViewContract + HasPollInterval + Send + 'static,
     T: Clone + Send + Sync,
 {
-    pub async fn subscribe(self) -> impl WatchContractState<Value = T, ViewError = Viewer::Error> {
-        MonitoringTask::<T, Viewer::Error>::new(self).await
+    pub async fn subscribe(self) -> Subscription<T, Viewer::Error> {
+        Subscription::new(self).await
     }
 }
 
