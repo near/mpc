@@ -90,18 +90,19 @@ pub trait WatchContractState {
         Self: Send,
     {
         async move {
-            let deadline = tokio::time::Instant::now() + timeout;
-            loop {
-                if let Ok(observed) = self.latest()
-                    && predicate(&observed.value)
-                {
-                    return Ok(observed);
+            let satisfied = async move {
+                loop {
+                    if let Ok(observed) = self.latest()
+                        && predicate(&observed.value)
+                    {
+                        return Ok(observed);
+                    }
+                    self.changed().await?;
                 }
-                match tokio::time::timeout_at(deadline, self.changed()).await {
-                    Ok(changed) => changed?,
-                    Err(_elapsed) => return Err(WaitError::TimedOut(timeout)),
-                }
-            }
+            };
+            tokio::time::timeout(timeout, satisfied)
+                .await
+                .map_err(|_elapsed| WaitError::TimedOut(timeout))?
         }
     }
 }
@@ -115,8 +116,6 @@ mod tests {
 
     type Observation = Result<ObservedState<&'static str>, TransportError<&'static str>>;
 
-    /// `latest()` is the front of the script; `changed()` advances to the next entry. Past the
-    /// last entry it reports [`TransportError::MonitoringClosed`] if `closes`, else pends forever.
     struct ScriptedWatch {
         observations: VecDeque<Observation>,
         closes: bool,
@@ -213,6 +212,21 @@ mod tests {
             result,
             observed(2, "recovered").map_err(WaitError::Transport)
         );
+    }
+
+    #[tokio::test]
+    async fn wait_for__should_accept_an_unbounded_timeout() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [observed(1, "a"), observed(2, "b")].into(),
+            closes: true,
+        };
+
+        // When
+        let result = watch.wait_for(Duration::MAX, |value| *value == "b").await;
+
+        // Then
+        assert_eq!(result, observed(2, "b").map_err(WaitError::Transport));
     }
 
     #[tokio::test(start_paused = true)]
