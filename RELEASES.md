@@ -220,12 +220,14 @@ branch at that merge commit:
 
 ```sh
 git checkout main && git pull
-git log -1 --oneline   # confirm HEAD is the prep commit
-git push origin HEAD:refs/heads/release/v3.11
+git push origin main:refs/heads/release/v3.11
 ```
 
-If other PRs merged after the prep commit, push the prep commit's SHA instead
-of `HEAD`.
+If other PRs merged after the prep commit, push that commit instead:
+
+```sh
+git push origin <prep-sha>:refs/heads/release/v3.11
+```
 
 The branch ruleset on `release/v*` restricts creation to admins. After
 the initial push, the branch's protection rules require PRs for any
