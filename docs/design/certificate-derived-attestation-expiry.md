@@ -155,7 +155,7 @@ Fix: keep a hash while a current participant uses it, and remove it only in `ver
 restamps the hashes in use before dropping the unused ones past their TTL. A hash in use is
 therefore never removed automatically, whatever the attestation's lifetime. Done in
 [#4527](https://github.com/near/mpc/pull/4527) and [#4572](https://github.com/near/mpc/pull/4572);
-see [Auto-Removal of Unused Launcher Image Hashes](auto-remove-launcher-hashes-design.md).
+see [Auto-Removal of Unused Launcher Image Hashes](../archive/design/auto-remove-launcher-hashes-design.md).
 
 **3. Shortening after a verifier rotation — future work.** Nothing to build here. This design just
 has to leave it possible. [#3734](https://github.com/near/mpc/issues/3734) wants a short window
