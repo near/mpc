@@ -6,11 +6,6 @@
 #
 # Usage:
 #   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>] [--rpc-preset <mainnet|testnet>]
-#
-# --rpc-preset makes the nodes use the embedded foreign chain config instead of the template's
-# `foreign_chains`. Credentials are passed by env var name, so API keys never reach the config:
-# ALCHEMY_API_KEY, CHAINSTACK_API_KEY, FLUXRPC_API_KEY, GEOMI_API_KEY, TATUM_API_KEY,
-# QUICKNODE_API_KEY (with QUICKNODE_SLUG). Providers whose variable is unset stay disabled.
 
 set -euo pipefail
 
@@ -27,7 +22,9 @@ N=2
 # threshold, currently must be > 1 and at least 60% of N
 THRESHOLD=2
 
-# Embedded foreign chain preset; empty keeps the template's `foreign_chains`.
+# Embedded foreign chain preset (e.g. testnet|mainnet). When enabled, one should
+# also pass provider credentials (<PROVIDER>_API_KEY + slug (when present)) in env vars.
+# For full list see use_embedded_foreign_chains().
 RPC_PRESET=""
 
 # Base ports used by the mpc-nodes
@@ -282,13 +279,6 @@ EOF
     run_quiet_on_success "$(mpc_tx sign "file-args docs/development/localnet/args/${args_file}.json" '100 yoctoNEAR' "${signer_account}")"
   done
   run_quiet_on_success "$(mpc_tx request_app_private_key 'file-args docs/development/localnet/args/ckd.json' '100 yoctoNEAR' "${signer_account}")"
-  if [[ -n "$RPC_PRESET" ]]; then
-    echo "Skipping foreign tx requests; run scripts/localnet-verify-foreign-chains.sh --rpc-preset ${RPC_PRESET}"
-  else
-    for chain in bitcoin abstract aptos sui; do
-      run_quiet_on_success "$(mpc_tx verify_foreign_transaction "file-args docs/development/localnet/args/verify_foreign_tx_${chain}.json" '100 yoctoNEAR' "${signer_account}")"
-    done
-  fi
 
   read -rp "Press Enter to finish the script and run clean-up steps..."
 }
