@@ -121,6 +121,11 @@ See `docs/development/engineering-standards.md` for the full rationale and addit
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
+### Test-Only Code
+Code that only unit tests use must be `#[cfg(test)]`, whether it is a function, method, type, constant or import. Production builds then skip it, and the dead-code lint keeps catching code nothing uses. Do not keep such code compiled in with `#[allow(dead_code)]`.
+
+`#[cfg(test)]` items are invisible to integration tests in `tests/` and to other crates. Put helpers those need behind the crate's `test-utils` feature (`#[cfg(any(test, feature = "test-utils"))]`). Public API meant for other crates or external users stays ungated even if only tests call it today.
+
 ### Validation
 We follow [parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/): a validation method returns a validated struct rather than a `bool`, so the type system carries the proof of validity.
 
