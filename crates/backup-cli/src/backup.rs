@@ -119,7 +119,7 @@ pub async fn run_command(args: cli::Args) {
                 contract_state,
                 status_reporter,
                 adapters::clock::SystemClock,
-                Duration::from_secs(subcommand_args.poll_interval_seconds),
+                poll_interval.into(),
                 shutdown,
             )
             .await
