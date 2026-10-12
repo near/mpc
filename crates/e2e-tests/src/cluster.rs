@@ -7,7 +7,7 @@ use std::{
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_contract_transport::{NearGas, NearKitCaller, NearToken};
+use near_contract_transport::{NearKitCaller, NearToken};
 use near_kit::AccountId;
 use near_kit::transaction::{ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -25,7 +25,6 @@ use near_mpc_contract_interface::{
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
-use serde_json::json;
 
 use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::CallMpc;
@@ -1259,15 +1258,10 @@ async fn prepay_attestation_grants(
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
     for (i, near_key) in near_keys.iter().enumerate() {
         let account = node_account(i);
-        let client = blockchain.client_for(&account, near_key).unwrap();
-        let outcome = contract
-            .call_from_with_deposit(
-                &client,
-                method_names::PREPAY_ATTESTATION_STORAGE,
-                json!({ "account_id": account, "grants": 1 }),
-                NearGas::from_tgas(30),
-                fee,
-            )
+        let outcome = blockchain
+            .client_for(&account, near_key)?
+            .call_mpc(contract.account_id())
+            .prepay_attestation_storage(account.parse()?, 1, fee)
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
         anyhow::ensure!(
