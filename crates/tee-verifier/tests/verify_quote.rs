@@ -214,6 +214,26 @@ fn mismatched_collateral() -> Collateral {
     collateral
 }
 
+/// The fixture collateral with a PCK CRL issuer chain that is not valid base64.
+fn collateral_with_unparsable_pck_crl_issuer_chain() -> Collateral {
+    Collateral {
+        pck_crl_issuer_chain: String::from(
+            "-----BEGIN CERTIFICATE-----\n!!!\n-----END CERTIFICATE-----\n",
+        ),
+        ..collateral()
+    }
+}
+
+/// The fixture collateral with a certificate that is not valid DER appended to
+/// the TCB Info issuer chain.
+fn collateral_with_garbage_certificate_in_tcb_info_issuer_chain() -> Collateral {
+    let mut collateral = collateral();
+    collateral
+        .tcb_info_issuer_chain
+        .push_str("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
+    collateral
+}
+
 #[rstest]
 #[case::expired_collateral(ten_years_after_fixture(), make_quote_bytes(), collateral())]
 #[case::invalid_quote(
@@ -250,21 +270,11 @@ fn verify_quote_with_collateral_dates__should_reject_with_the_same_error_as_veri
     );
 }
 
-const UNPARSABLE_CERTIFICATE: &str =
-    "-----BEGIN CERTIFICATE-----\n!!!\n-----END CERTIFICATE-----\n";
-const GARBAGE_DER_CERTIFICATE: &str =
-    "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
-
 #[rstest]
-#[case::unparsable_pck_crl_issuer_chain(Collateral {
-    pck_crl_issuer_chain: UNPARSABLE_CERTIFICATE.to_string(),
-    ..collateral()
-})]
-#[case::garbage_certificate_appended_to_tcb_info_issuer_chain({
-    let mut collateral = collateral();
-    collateral.tcb_info_issuer_chain.push_str(GARBAGE_DER_CERTIFICATE);
-    collateral
-})]
+#[case::unparsable_pck_crl_issuer_chain(collateral_with_unparsable_pck_crl_issuer_chain())]
+#[case::garbage_certificate_in_tcb_info_issuer_chain(
+    collateral_with_garbage_certificate_in_tcb_info_issuer_chain()
+)]
 fn verify_quote_with_collateral_dates__should_ignore_unverified_certificates(
     #[case] collateral: Collateral,
 ) {
