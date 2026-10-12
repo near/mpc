@@ -10,8 +10,9 @@ pub mod client;
 pub mod method_names;
 pub mod types {
     pub use attestation::{
-        Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation, TcbInfo,
-        VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
+        Attestation, Collateral, DstackAttestation, EventLog, GetAttestationResponse, HexVec,
+        MockAttestation, StoredAttestation, TcbInfo, VerifiedAttestation,
+        VerifiedDstackAttestation, VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;

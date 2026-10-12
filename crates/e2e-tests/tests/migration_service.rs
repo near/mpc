@@ -15,10 +15,10 @@ use near_mpc_contract_interface::types::{
 };
 use rand::SeedableRng;
 
-const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
+const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_mins(2);
 const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
-const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
-const BACKUP_TIMEOUT: Duration = Duration::from_secs(60);
+const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_mins(1);
+const BACKUP_TIMEOUT: Duration = Duration::from_mins(1);
 
 struct BackupService {
     home_dir: e2e_tests::TestDir,
@@ -953,7 +953,7 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         &cluster,
         a_idx,
         a0_indexer_height_before_kill,
-        Duration::from_secs(60),
+        Duration::from_mins(1),
     )
     .await
     .expect("A0's indexer did not resume + advance within 60s after restart");

@@ -463,7 +463,7 @@ impl PersistentConnection {
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
-                let mut log_throttle = LogThrottle::new(Duration::from_secs(60));
+                let mut log_throttle = LogThrottle::new(Duration::from_mins(1));
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
@@ -1639,7 +1639,7 @@ mod tests {
         // When dialing it (under an outer timeout so a regression fails the
         // test instead of hanging it).
         let result = timeout(
-            Duration::from_secs(60),
+            Duration::from_mins(1),
             OutgoingConnection::new(
                 make_client_config(),
                 &target_address,
@@ -1693,7 +1693,7 @@ mod tests {
             // Then each hung attempt times out and is retried, so the listener
             // keeps receiving fresh dial attempts.
             for _ in 0..3 {
-                timeout(Duration::from_secs(120), accept_rx.recv())
+                timeout(Duration::from_mins(2), accept_rx.recv())
                     .await
                     .expect("retry loop stopped dialing after a hung attempt")
                     .unwrap();
@@ -1736,7 +1736,7 @@ mod tests {
             )
             .unwrap();
 
-            timeout(Duration::from_secs(120), accept_a.recv())
+            timeout(Duration::from_mins(2), accept_a.recv())
                 .await
                 .expect("should dial the initial address A")
                 .unwrap();
@@ -1745,7 +1745,7 @@ mod tests {
             resolved_address_tx.send_replace(addr_b.clone());
 
             // Then
-            timeout(Duration::from_secs(120), accept_b.recv())
+            timeout(Duration::from_mins(2), accept_b.recv())
                 .await
                 .expect("should dial the updated address B after the resolver update")
                 .unwrap();
@@ -1771,7 +1771,7 @@ mod tests {
 
         // When
         let result = timeout(
-            Duration::from_secs(60),
+            Duration::from_mins(1),
             incoming_connection_handler(
                 message_sender,
                 connectivities,

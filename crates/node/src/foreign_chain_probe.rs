@@ -267,7 +267,7 @@ mod tests {
         // Given
         let probe_count = Cell::new(0);
         let probe = || {
-            probe_count.set(probe_count.get() + 1);
+            probe_count.update(|count| count + 1);
             std::future::ready(ProbeReport::from(vec![]))
         };
 

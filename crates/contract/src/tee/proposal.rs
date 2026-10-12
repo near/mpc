@@ -142,11 +142,8 @@ impl StoredDockerImageHashes {
         };
 
         let mut res: Vec<dtos::AllowedMpcDockerImageHash> = valid
-            .windows(2)
-            .map(|window| {
-                let [prev, next] = window else {
-                    unreachable!("windows(2) always yields two-element slices")
-                };
+            .array_windows()
+            .map(|[prev, next]| {
                 make_dtos_docker_image_hash(prev, next, tee_upgrade_deadline_duration)
             })
             .collect();
@@ -421,7 +418,7 @@ mod tests {
 
     use super::*;
     use crate::tee::test_utils::set_block_secs;
-    const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_secs(10 * 24 * 60 * 60); // 10 days
+    const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_hours(10 * 24);
     const SECOND: Duration = Duration::from_secs(1);
     const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 

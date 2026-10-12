@@ -286,8 +286,8 @@ fn parse_sui_address(s: &str) -> Result<SuiAddress, String> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     fn classify(status: Status) -> ForeignChainInspectionError {
         Result::<(), _>::Err(status).classified().unwrap_err()

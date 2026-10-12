@@ -208,5 +208,5 @@ expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"  #
 rpc_url = "https://mainnet.fogo.io"
 
 [fogo.providers.fluxrpc]
-auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
-rpc_url="https://eu.fogo.fluxrpc.com?key={api_key}"
+auth = { kind = "query", name = "key", token = { val = "" } }
+rpc_url = "https://eu.fogo.fluxrpc.com"

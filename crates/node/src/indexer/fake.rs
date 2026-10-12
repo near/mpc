@@ -1,5 +1,4 @@
 use super::IndexerAPI;
-use super::ReadAttestationExpiry;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
@@ -13,7 +12,6 @@ use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
-use assert_matches::assert_matches;
 use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
@@ -35,8 +33,11 @@ use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_crypto_types::Payload;
 use near_time::{Clock, Duration};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, atomic::AtomicBool};
+use std::{
+    assert_matches,
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+};
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
@@ -52,18 +53,6 @@ pub struct FakeMpcContractState {
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
     pub migration_service: NodeMigrations,
-}
-
-struct FakeAttestationExpiryReader;
-
-impl ReadAttestationExpiry for FakeAttestationExpiryReader {
-    fn read_stored_attestation_expiry<'a>(
-        &'a self,
-        _tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
-    {
-        Box::pin(async { Ok(None) })
-    }
 }
 
 impl FakeMpcContractState {
@@ -240,7 +229,7 @@ impl FakeMpcContractState {
                 resharing_domain,
                 participants_config_to_threshold_parameters(&new_participants),
             ),
-            cancellation_requests: HashSet::new(),
+            cancellation_requests: BTreeSet::new(),
             per_domain_thresholds,
         });
     }
@@ -559,13 +548,10 @@ impl FakeIndexerCore {
             let block = current_block.child();
 
             let mut transactions_to_process = Vec::new();
-            while let Some((height, _, _)) = pending_transactions.front() {
-                if *height <= block.height() {
-                    let (_, txn, account_id) = pending_transactions.pop_front().unwrap();
-                    transactions_to_process.push((txn, account_id));
-                } else {
-                    break;
-                }
+            while let Some((_, txn, account_id)) =
+                pending_transactions.pop_front_if(|(height, _, _)| *height <= block.height())
+            {
+                transactions_to_process.push((txn, account_id));
             }
 
             let mut signature_requests = Vec::new();
@@ -1112,7 +1098,6 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

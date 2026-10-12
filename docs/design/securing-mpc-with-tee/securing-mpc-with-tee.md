@@ -700,7 +700,7 @@ Once the voting threshold is reached:
 -   Multiple Launcher versions may temporarily coexist during migration.
 
 > Launcher hashes no current participant uses are removed automatically after a TTL, without a
-> unanimous vote — see [launcher-image eviction](../auto-remove-launcher-hashes-design.md).
+> unanimous vote — see [launcher-image eviction](../../archive/design/auto-remove-launcher-hashes-design.md).
 
 ### OS Measurement Upgrade
 

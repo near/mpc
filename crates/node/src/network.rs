@@ -323,13 +323,12 @@ impl MeshNetworkClient {
                 if let Some((k, _)) = channels
                     .channels_waiting_for_start
                     .push(channel_id, incomplete_channel)
+                    && k != channel_id
                 {
-                    // If k != task_id, that means the LruCache evicted some other entry.
+                    // A different key means the LruCache evicted some other entry.
                     // That means that other channel never received Start and is old enough,
                     // so we also remove it from the senders map. See the above invariant.
-                    if k != channel_id {
-                        channels.senders.remove(&k);
-                    }
+                    channels.senders.remove(&k);
                 }
                 sender
             }

@@ -590,9 +590,9 @@ mod tests {
     use crate::bnb::BnbBlockHash;
     use crate::bnb::inspector::{BnbExtractedValue, BnbExtractor};
     use crate::starknet::StarknetBlockHash;
-    use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::evm::Log;
     use near_mpc_contract_interface::types::{AptosAddress, AptosEvent, SuiAddress, SuiEvent};
+    use std::assert_matches;
 
     #[test]
     fn block_confirmations_roundtrip() {

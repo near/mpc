@@ -147,7 +147,7 @@ mod tests {
 
     use crate::test_utils::running_state_with_epoch;
 
-    const POLL_INTERVAL: Duration = Duration::from_secs(60);
+    const POLL_INTERVAL: Duration = Duration::from_mins(1);
     const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
     /// Answers with the queued responses in order, repeating the last one once exhausted.

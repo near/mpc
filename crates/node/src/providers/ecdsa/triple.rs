@@ -518,7 +518,7 @@ mod tests {
                         }
                         .perform_leader_centric_computation(
                             channel,
-                            std::time::Duration::from_secs(60),
+                            std::time::Duration::from_mins(1),
                         )
                         .await
                         .unwrap();
@@ -568,7 +568,7 @@ mod tests {
                         }
                         .perform_leader_centric_computation(
                             channel,
-                            std::time::Duration::from_secs(60),
+                            std::time::Duration::from_mins(1),
                         ),
                     )
                     .await

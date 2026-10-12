@@ -172,11 +172,7 @@ fn patch_near_config(
 fn write_near_config_atomic(config_path: &Path, config: &serde_json::Value) -> anyhow::Result<()> {
     let serialized =
         serde_json::to_string_pretty(config).context("failed to re-serialize NEAR config.json")?;
-    let file_name = config_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .with_context(|| format!("config path has no file name: {}", config_path.display()))?;
-    let tmp_path = config_path.with_file_name(format!("{file_name}.tmp"));
+    let tmp_path = config_path.with_added_extension("tmp");
     std::fs::write(&tmp_path, serialized)
         .with_context(|| format!("failed to write {}", tmp_path.display()))?;
     std::fs::rename(&tmp_path, config_path)

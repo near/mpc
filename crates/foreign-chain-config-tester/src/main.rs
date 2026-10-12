@@ -13,6 +13,7 @@ use anyhow::Context;
 use clap::Parser;
 use foreign_chain_health_check::probe::probe_all_providers;
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
+use mpc_node_config::foreign_chains::resolve_with_embedded;
 
 /// Verify a node's foreign chain RPC provider configuration.
 ///
@@ -35,6 +36,12 @@ async fn main() -> anyhow::Result<ExitCode> {
     foreign_chains
         .validate()
         .context("the node would refuse this foreign_chains config")?;
+    let resolved = resolve_with_embedded(&foreign_chains)
+        .context("the node would refuse this foreign_chains config")?;
+    for diagnostic in resolved.diagnostics.iter().filter(|d| d.is_warning()) {
+        eprintln!("warning: {diagnostic}");
+    }
+    let foreign_chains = resolved.config;
 
     let report = probe_all_providers(&foreign_chains, &InspectorFactory).await;
     print!("{}", report::render(&foreign_chains, &report));

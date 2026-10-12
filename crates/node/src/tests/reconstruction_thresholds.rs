@@ -23,7 +23,7 @@ use near_time::Clock;
 const REQUEST_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Generous budget for [`warm_up`], absorbing the one-time cold-start after each online-set change.
-const WARMUP_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
+const WARMUP_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_mins(1);
 
 /// Warm-up signatures per domain. An online-set change strands most of a node's buffered
 /// presignatures on the participants that left, and the first request to find the buffer empty pays

@@ -117,8 +117,8 @@ impl ForeignChainRequestBuilder<BuildableStarknetRequest, NotSet> {
 
 #[cfg(test)]
 mod test {
-    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
+    use std::assert_matches;
 
     use crate::foreign_chain::{
         DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier, ForeignTxSignPayload,
@@ -268,8 +268,9 @@ mod test {
             .unwrap();
 
         // then
-        assert_matches!(&request_args.request, ForeignChainRpcRequest::Starknet(rpc_request) => {
-            assert!(rpc_request.extractors.is_empty());
-        });
+        assert_matches!(
+            &request_args.request,
+            ForeignChainRpcRequest::Starknet(rpc_request) if rpc_request.extractors.is_empty()
+        );
     }
 }

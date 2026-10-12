@@ -7,7 +7,9 @@ use crate::{
     coordinator::Coordinator,
     db::SecretDB,
     home_paths::assets_dir,
-    indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
+    indexer::{
+        IndexerAPI, ReadSubmissionBaseline, real::spawn_real_indexer, tx_sender::TransactionSender,
+    },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
@@ -26,7 +28,9 @@ use crate::{
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use mpc_attestation::report_data::ReportDataV1;
-use mpc_node_config::{ConfigFile, StartConfig};
+use mpc_node_config::{
+    ConfigFile, ForeignChainsConfig, StartConfig, foreign_chains::resolve_with_embedded,
+};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
@@ -46,9 +50,24 @@ use crate::tee::{
     remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
 };
 
-pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
-pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
+pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
+
+fn resolve_foreign_chains(config: &StartConfig) -> anyhow::Result<ForeignChainsConfig> {
+    let resolved = resolve_with_embedded(&config.node.foreign_chains)
+        .context("failed to resolve the foreign chain config")?;
+    for diagnostic in &resolved.diagnostics {
+        if diagnostic.is_warning() {
+            tracing::warn!("foreign chain config: {diagnostic}");
+        } else {
+            tracing::info!("foreign chain config: {diagnostic}");
+        }
+    }
+    Ok(resolved.config)
+}
+
+pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
+    config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
     // after `init_logging` so its logs are emitted. No-op for the `start` path.
@@ -217,7 +236,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     // held by its spawned monitor tasks are released — enabling
     // `RocksDB::block_until_all_instances_are_dropped()` to return.
     let indexer_shutdown_token = CancellationToken::new();
-    let indexer_api = spawn_real_indexer(
+    let (indexer_api, baseline_reader) = spawn_real_indexer(
         config.home_dir.clone(),
         node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
@@ -259,6 +278,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         node_config.clone(),
         secrets.clone(),
         indexer_api,
+        baseline_reader,
         debug_request_sender,
         root_task_handle,
         tee_authority,
@@ -324,12 +344,13 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 }
 
 #[expect(clippy::too_many_arguments)]
-async fn create_root_future<TransactionSenderImpl>(
+async fn create_root_future<TransactionSenderImpl, BaselineReader>(
     start_config: StartConfig,
     home_dir: PathBuf,
     config: ConfigFile,
     secrets: SecretsConfig,
     indexer_api: IndexerAPI<TransactionSenderImpl>,
+    baseline_reader: BaselineReader,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
     // Otherwise we would not write to the same cell/lock.
@@ -338,6 +359,7 @@ async fn create_root_future<TransactionSenderImpl>(
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
+    BaselineReader: ReadSubmissionBaseline + 'static,
 {
     let root_task_handle = tracking::current_task();
 
@@ -368,7 +390,7 @@ where
         account_public_key,
         allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        attestation_reader: indexer_api.attestation_reader.clone(),
+        baseline_reader,
     };
     tokio::spawn(run_periodic_attestation_submission(submitter));
 

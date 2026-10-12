@@ -255,7 +255,7 @@ mod tests {
 
     const FIXTURE_DOMAIN_IDS: [u64; 2] = [0, 1];
     /// Only the retry test waits it out, and it does so under a paused clock.
-    const TEST_RETRY_DELAY: Duration = Duration::from_secs(60);
+    const TEST_RETRY_DELAY: Duration = Duration::from_mins(1);
 
     type TestService = Service<
         FakeP2PClient,

@@ -9,7 +9,7 @@ use near_mpc_contract_interface::{
     method_names,
     types::{
         Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
-        ProtocolContractState, VerifiedAttestation,
+        ProtocolContractState, StoredAttestation,
     },
 };
 use near_workspaces::{
@@ -72,11 +72,8 @@ pub async fn prepay_attestation_grants(
     beneficiary: &AccountId,
     grants: u32,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // The fee is read from `config()`, the way an operator reads it.
-    let config = get_config(contract).await?;
-    let total = NearToken::from_millinear(
-        u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
-    );
+    let fee = attestation_storage_fee(contract).await?;
+    let total = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
     Ok(payer
         .call(contract.id(), method_names::PREPAY_ATTESTATION_STORAGE)
         .args_json(serde_json::json!({ "account_id": beneficiary, "grants": grants }))
@@ -84,6 +81,20 @@ pub async fn prepay_attestation_grants(
         .max_gas()
         .transact()
         .await?)
+}
+
+/// The one `config` field the fee is computed from. Read on its own rather than through the
+/// current `Config` DTO, which a released binary's config no longer deserializes into.
+#[derive(serde::Deserialize)]
+struct AttestationStorageFee {
+    attestation_storage_fee_millinear: u64,
+}
+
+async fn attestation_storage_fee(contract: &Contract) -> anyhow::Result<NearToken> {
+    let fee: AttestationStorageFee = contract.view(method_names::CONFIG).await?.json()?;
+    Ok(NearToken::from_millinear(u128::from(
+        fee.attestation_storage_fee_millinear,
+    )))
 }
 
 /// Prepays one grant, then submits. For a first submission; a re-attestation of a key the
@@ -126,7 +137,7 @@ pub async fn tee_verifier_account_id(contract: &Contract) -> AccountId {
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<VerifiedAttestation>> {
+) -> anyhow::Result<Option<StoredAttestation>> {
     Ok(contract
         .view(method_names::GET_ATTESTATION)
         .args_json(serde_json::json!({

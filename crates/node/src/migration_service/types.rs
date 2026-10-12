@@ -79,26 +79,15 @@ impl OnboardingJob {
     ) -> Self {
         match contract.node_status(my_near_account_id, tls_public_key) {
             ParticipantStatus::Inactive => OnboardingJob::WaitForStateChange,
-            ParticipantStatus::Active(node_status) => match node_status {
-                NodeStatus::Active => OnboardingJob::Done,
-                NodeStatus::Idle => {
-                    if my_migration_info.active_migration {
-                        match contract {
-                            ContractState::Invalid => OnboardingJob::WaitForStateChange,
-                            ContractState::Initializing(_) => OnboardingJob::WaitForStateChange,
-                            ContractState::Running(running_state) => {
-                                if running_state.resharing_state.is_none() {
-                                    OnboardingJob::Onboard(running_state.keyset)
-                                } else {
-                                    OnboardingJob::WaitForStateChange
-                                }
-                            }
-                        }
-                    } else {
-                        OnboardingJob::WaitForStateChange
-                    }
-                }
-            },
+            ParticipantStatus::Active(NodeStatus::Active) => OnboardingJob::Done,
+            ParticipantStatus::Active(NodeStatus::Idle)
+                if my_migration_info.active_migration
+                    && let ContractState::Running(running_state) = contract
+                    && running_state.resharing_state.is_none() =>
+            {
+                OnboardingJob::Onboard(running_state.keyset)
+            }
+            ParticipantStatus::Active(NodeStatus::Idle) => OnboardingJob::WaitForStateChange,
         }
     }
 }

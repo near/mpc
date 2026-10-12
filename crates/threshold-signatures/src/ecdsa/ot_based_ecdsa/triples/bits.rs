@@ -49,13 +49,8 @@ impl BitVector {
     }
 
     pub fn from_bytes(bytes: &[u8; SEC_PARAM_8]) -> Self {
-        let u64s = bytes.chunks_exact(8).map(|chunk| {
-            u64::from_le_bytes(
-                chunk
-                    .try_into()
-                    .expect("Cannot fail as chunks_exact takes 8 bytes"),
-            )
-        });
+        let (chunks, _) = bytes.as_chunks::<8>();
+        let u64s = chunks.iter().copied().map(u64::from_le_bytes);
         let mut out = [0u64; SEC_PARAM_64];
         for (o, u) in out.iter_mut().zip(u64s) {
             *o = u;

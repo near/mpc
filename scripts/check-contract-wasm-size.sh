@@ -15,7 +15,7 @@ WASM_PATH="${1:-result/mpc_contract.wasm}"
 # single transaction, so we cap it below that. Set the limit just above the
 # current reproducible-build size so the binary can't silently creep toward the
 # protocol boundary. Lower it whenever the contract shrinks.
-HARD_LIMIT=1235000
+HARD_LIMIT=1216000
 
 
 if [[ ! -f "$WASM_PATH" ]]; then

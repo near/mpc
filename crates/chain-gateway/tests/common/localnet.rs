@@ -113,7 +113,7 @@ impl LocalnetBuilder {
         // Wait for block production: poll until the observer sees a finalized block
         // beyond genesis (height > 0). This ensures the P2P connection is established
         // and the validator has started producing blocks.
-        let deadline = Instant::now() + Duration::from_secs(60);
+        let deadline = Instant::now() + Duration::from_mins(1);
         loop {
             localnet.assert_nodes_alive();
             let state: ObservedState<String> = localnet

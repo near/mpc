@@ -198,7 +198,6 @@ mod tests {
         with_active_participant_and_attested_context,
     };
 
-    use assert_matches::assert_matches;
     use dtos::{DomainId, ForeignTxSignPayload, Protocol};
     use k256::ecdsa::SigningKey;
     use k256::{self, Secp256k1, elliptic_curve};
@@ -212,8 +211,8 @@ mod tests {
     use rand::SeedableRng;
 
     use rstest::rstest;
-    use std::panic;
     use std::str::FromStr;
+    use std::{assert_matches, panic};
 
     /// Whitelists the chains and registers them for all participants, making them available.
     fn make_chains_available(

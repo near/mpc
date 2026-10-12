@@ -12,9 +12,7 @@ use near_mpc_contract_interface::types::{
     Protocol, ProtocolContractState, PublicKey, ReconstructionThreshold, Secp256k1PublicKey,
 };
 use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
-use std::str::FromStr;
-
-use assert_matches::assert_matches;
+use std::{assert_matches, str::FromStr};
 
 /// A VM context whose signer and predecessor are `account_id` — i.e. the call originates from
 /// that participant's own account — keeping the current block timestamp.

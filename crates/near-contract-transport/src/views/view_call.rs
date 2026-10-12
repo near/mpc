@@ -80,8 +80,8 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use assert_matches::assert_matches;
     use near_account_id::AccountId;
+    use std::assert_matches;
 
     use crate::{
         Borsh, Json, ObservedState, TransportError, ViewArgs,

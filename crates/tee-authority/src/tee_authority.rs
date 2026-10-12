@@ -213,7 +213,7 @@ fn format_pccs_failures(failures: &[PccsEndpointError]) -> String {
 }
 
 /// The maximum duration to wait for retrying requests.
-const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
+const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 
 /// Per-request timeout for fetching collateral from PCCS. Applied at two
 /// layers — `reqwest::Client::builder().timeout(...)` (per-HTTP-request)
@@ -759,10 +759,10 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use mpc_attestation::report_data::ReportDataV1;
     use rstest::rstest;
     use std::{
+        assert_matches,
         cell::RefCell,
         rc::Rc,
         sync::{

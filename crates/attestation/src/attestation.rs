@@ -113,11 +113,8 @@ impl fmt::Debug for DstackAttestation {
             if debug_str.len() <= max_bytes {
                 debug_str
             } else {
-                format!(
-                    "{}... (truncated {} bytes)",
-                    &debug_str[..max_bytes],
-                    debug_str.len() - max_bytes
-                )
+                let (kept, dropped) = debug_str.split_at(debug_str.floor_char_boundary(max_bytes));
+                format!("{kept}... (truncated {} bytes)", dropped.len())
             }
         }
 

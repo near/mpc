@@ -1883,9 +1883,9 @@ pub struct ChainEntry {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
     use serde_json::json;
+    use std::assert_matches;
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {
