@@ -5,6 +5,236 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.17.0] - 2026-10-12
+
+### 🚀 Features
+
+- [#4433](https://github.com/near/mpc/pull/4433)(@gilcu3): *(node)* Wire protocol version selection (#4433)
+
+- [#4501](https://github.com/near/mpc/pull/4501)(@kevindeforth): Report duration of led computations (#4501)
+
+- [#4510](https://github.com/near/mpc/pull/4510)(@frolvanya): *(sdk)* Added svm support (#4510)
+
+- [#4338](https://github.com/near/mpc/pull/4338)(@netrome): Replace robust ecdsa implementation with a stub (#4338)
+
+- [#4533](https://github.com/near/mpc/pull/4533)(@gilcu3): *(contract)* Add required signers helper (#4533)
+
+- [#4503](https://github.com/near/mpc/pull/4503)(@gilcu3): *(node)* Support cait-sith with online presign (#4503)
+
+- [#4532](https://github.com/near/mpc/pull/4532)(@gilcu3): *(node)* Drive storage metrics independent of generation (#4532)
+
+- [#4520](https://github.com/near/mpc/pull/4520)(@kevindeforth): *(contract-interface)* Add the Update DTO, its hash and the submit deposit (#4520)
+
+- [#4545](https://github.com/near/mpc/pull/4545)(@kevindeforth): Add remaining endpoints and move deposit calculation (#4545)
+
+- [#4582](https://github.com/near/mpc/pull/4582)(@netrome): *(backup-cli)* Probe RPC URL on startup (#4582)
+
+- [#4401](https://github.com/near/mpc/pull/4401)(@haiyuechen-nearone): *(config-tester)* Drop golden values in favor of network fingerprint probe in ForeignTX config tester (#4401)
+
+- [#4537](https://github.com/near/mpc/pull/4537)(@kevindeforth): *(contract)* Vote-then-submit for contract updates (#4537)
+
+- [#4597](https://github.com/near/mpc/pull/4597)(@gilcu3): Constant time hardening for several comparisons (#4597)
+
+- [#4583](https://github.com/near/mpc/pull/4583)(@netrome): *(backup-cli)* Health and status endpoints (#4583)
+
+- [#3813](https://github.com/near/mpc/pull/3813)(@metalurgical): Implement simple log throttle utility (#3813)
+
+- [#4553](https://github.com/near/mpc/pull/4553)(@barakeinav1): *(tee-verifier)* Add verify_quote_with_collateral_dates (#4553)
+
+- [#4622](https://github.com/near/mpc/pull/4622)(@kevindeforth): Add more methods to contract call interface  (#4622)
+
+- [#4653](https://github.com/near/mpc/pull/4653)(@anodar): Add testnet and mainnet embedded foreign chain configs to the node (#4653)
+
+- [#4655](https://github.com/near/mpc/pull/4655)(@anodar): Add foreign chain credentials and rpc_network to the node config (#4655)
+
+- [#4667](https://github.com/near/mpc/pull/4667)(@anodar): Implement foreign chain config resolution (embedded + node config) (#4667)
+
+- [#4673](https://github.com/near/mpc/pull/4673)(@anodar): Wire embedded foreign chain config resolution on node startup, update docs (#4673)
+
+- [#4712](https://github.com/near/mpc/pull/4712)(@anodar): Update whitelist with solana, bnb, arb, base, polygon, avalanhe, hyperevm and fogo on MAINNET (#4712)
+
+- [#4722](https://github.com/near/mpc/pull/4722)(@kevindeforth): Cloneable subscriptions (#4722)
+
+
+### 🐛 Bug Fixes
+
+- [#4480](https://github.com/near/mpc/pull/4480)(@kevindeforth): Exclude offline participants from foreign chain tx computations (#4480)
+
+- [#4488](https://github.com/near/mpc/pull/4488)(@gilcu3): *(node)* Remove a single node's ability to shutdown independent computations (#4488)
+
+- [#4490](https://github.com/near/mpc/pull/4490)(@gilcu3): *(contract)* Reject duplicate TLS keys during migrations (#4490)
+
+- [#4502](https://github.com/near/mpc/pull/4502)(@gilcu3): *(node)* Prevent malicious channel ids (#4502)
+
+- [#4028](https://github.com/near/mpc/pull/4028)(@metalurgical): *(p2p)* Cap concurrent incoming connections (#4028)
+
+- [#4527](https://github.com/near/mpc/pull/4527)(@barakeinav1): *(contract)* Keep a launcher hash alive until its attestations expire (#4527)
+
+- [#4598](https://github.com/near/mpc/pull/4598)(@gilcu3): Make expire comparisons consistent (#4598)
+
+- [#4615](https://github.com/near/mpc/pull/4615)(@gilcu3): *(contract)* Verify_tee should not kickout participants needed for some domain (#4615)
+
+- [#4678](https://github.com/near/mpc/pull/4678)(@pbeza): Truncate attestation `Debug` output at a char boundary (#4678)
+
+- [#4500](https://github.com/near/mpc/pull/4500)(@barakeinav1): *(attestation)* Confirm submission from a stored timestamp (#4500)
+
+
+### 💼 Other
+
+- [#4483](https://github.com/near/mpc/pull/4483)(@gilcu3): Minor rocksdb bump related fixes (#4483)
+
+- [#4561](https://github.com/near/mpc/pull/4561)(@pbeza): *(nix)* Publish Nix-built images alongside the `repro-env` images (#4561)
+
+
+### 🚜 Refactor
+
+- [#4363](https://github.com/near/mpc/pull/4363)(@pbeza): *(contract)* Drop `Option` from `tee_verifier_account_id` (#4363)
+
+- [#4541](https://github.com/near/mpc/pull/4541)(@pbeza): *(contract)* Replace the hand-built `verify_quote` call with a typed `#[ext_contract]` wrapper (#4541)
+
+- [#4539](https://github.com/near/mpc/pull/4539)(@pbeza): *(contract)* Replace raw self-call promises with typed `Self::ext_self()` calls (#4539)
+
+- [#4543](https://github.com/near/mpc/pull/4543)(@pbeza): *(contract)* Replace the last hand-built promises with generated wrappers, pinning unused-gas weight to `0` (#4543)
+
+- [#4548](https://github.com/near/mpc/pull/4548)(@kevindeforth): *(contract)* Remove the update-proposal scheme (#4548)
+
+- [#4614](https://github.com/near/mpc/pull/4614)(@gilcu3): Rename contract upgrade config to apply_contract_update_tera_gas (#4614)
+
+- [#4627](https://github.com/near/mpc/pull/4627)(@kevindeforth): Use associated types for watch contract state (#4627)
+
+- [#4572](https://github.com/near/mpc/pull/4572)(@pbeza): *(contract)* Keep launchers alive by reference instead of refresh-on-use (#4572)
+
+- [#4102](https://github.com/near/mpc/pull/4102)(@ayushsingh82): Remove account_id parameter from IndexerViewClient methods (#4102)
+
+- [#4632](https://github.com/near/mpc/pull/4632)(@kevindeforth): Add DTO type for `migration_info` view (#4632)
+
+- [#4652](https://github.com/near/mpc/pull/4652)(@barakeinav1): *(tee-verifier)* Address #4553 review follow-ups (#4652)
+
+- [#4679](https://github.com/near/mpc/pull/4679)(@pbeza): Use `Duration::from_mins` and `Duration::from_hours` (#4679)
+
+- [#4681](https://github.com/near/mpc/pull/4681)(@pbeza): Adopt `let` chains, `if-let` guards and new `std` APIs (#4681)
+
+- [#4657](https://github.com/near/mpc/pull/4657)(@barakeinav1): *(node)* Drop the boxed future from the baseline reader (#4657)
+
+- [#4680](https://github.com/near/mpc/pull/4680)(@pbeza): Replace the `assert_matches` crate with `std::assert_matches!` (#4680)
+
+- [#4706](https://github.com/near/mpc/pull/4706)(@anodar): Use error types in resolver, reorder defined types (#4706)
+
+- [#4700](https://github.com/near/mpc/pull/4700)(@pbeza): *(contract)* Trim the contract's dependencies to shrink its wasm (#4700)
+
+- [#4623](https://github.com/near/mpc/pull/4623)(@kevindeforth): Expose near kit transport cli in near-contract-transport crate (#4623)
+
+- [#4726](https://github.com/near/mpc/pull/4726)(@kevindeforth): Typed prepay attestation storage calls (#4726)
+
+- [#4737](https://github.com/near/mpc/pull/4737)(@gilcu3): *(contract-interface)* Make curve25519 conversion available to the contract again (#4737)
+
+- [#4625](https://github.com/near/mpc/pull/4625)(@kevindeforth): *(backup-cli)* Read contract state through MpcContractHandle (#4625)
+
+
+### 📚 Documentation
+
+- [#4292](https://github.com/near/mpc/pull/4292)(@barakeinav1): *(tee)* Design for certificate-derived attestation expiry (#4292)
+
+- [#4566](https://github.com/near/mpc/pull/4566)(@gilcu3): Make sure TDX nodes use compatible home_dir (#4566)
+
+- [#4569](https://github.com/near/mpc/pull/4569)(@gilcu3): Clarify how to access node logs in TDX (#4569)
+
+- [#4581](https://github.com/near/mpc/pull/4581)(@netrome): Document that BACKUP_RPC_URL has to be a NEAR RPC (#4581)
+
+- [#4575](https://github.com/near/mpc/pull/4575)(@anodar): Update onboarding docs with new chains for TESTNET (#4575)
+
+- [#4618](https://github.com/near/mpc/pull/4618)(@anodar): Foreign chain config embeddings in the node (#4618)
+
+- [#4616](https://github.com/near/mpc/pull/4616)(@gilcu3): *(crypto)* Ensure independent triples are used (#4616)
+
+- [#4647](https://github.com/near/mpc/pull/4647)(@barakeinav1): Un-archive the launcher auto-removal design and align it with #4572 (#4647)
+
+- [#4660](https://github.com/near/mpc/pull/4660)(@netrome): Make migration guide more coherent (#4660)
+
+- [#4734](https://github.com/near/mpc/pull/4734)(@gilcu3): More clear explanation of archived docs + archive the auto remove launcher hashes (#4734)
+
+- [#4663](https://github.com/near/mpc/pull/4663)(@SimonRastikian): Add DKG bench results and fix CKD doc typos (#4663)
+
+
+### ⚡ Performance
+
+- [#4641](https://github.com/near/mpc/pull/4641)(@haiyuechen-nearone): *(contract)* Make the foreign-chains registration use sub-linear caller lookup (#4641)
+
+
+### 🧪 Testing
+
+- [#4555](https://github.com/near/mpc/pull/4555)(@gilcu3): Fix flaky test_basic_cluster test (#4555)
+
+- [#4599](https://github.com/near/mpc/pull/4599)(@gilcu3): Make sure the node supports tls connections (#4599)
+
+- [#4547](https://github.com/near/mpc/pull/4547)(@kevindeforth): *(contract)* Drive the sandbox update flows through vote-then-submit (#4547)
+
+- [#4602](https://github.com/near/mpc/pull/4602)(@barakeinav1): *(contract)* Pin the contract clock in sandbox to the attestation fixture (#4602)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4462](https://github.com/near/mpc/pull/4462)(@dependabot[bot]): Bump the github-actions group across 1 directory with 3 updates (#4462)
+
+- [#4467](https://github.com/near/mpc/pull/4467)(@dependabot[bot]): Bump sui-sdk-types from 0.3.2 to 0.4.0 (#4467)
+
+- [#4466](https://github.com/near/mpc/pull/4466)(@dependabot[bot]): Bump gcloud-sdk from 0.31.0 to 0.32.0 (#4466)
+
+- [#4463](https://github.com/near/mpc/pull/4463)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 3 updates (#4463)
+
+- [#4464](https://github.com/near/mpc/pull/4464)(@dependabot[bot]): Bump sui-rpc from 0.3.2 to 0.4.0 (#4464)
+
+- [#4487](https://github.com/near/mpc/pull/4487)(@gilcu3): Remove ExternalStorage migration path (#4487)
+
+- [#4465](https://github.com/near/mpc/pull/4465)(@dependabot[bot]): Bump near-kit from 0.17.0 to 0.18.0 (#4465)
+
+- [#4489](https://github.com/near/mpc/pull/4489)(@gilcu3): *(node)* Drop deprecated borsh fallback for allowed_foreign_chain_providers (#4489)
+
+- [#4494](https://github.com/near/mpc/pull/4494)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4494)
+
+- [#4495](https://github.com/near/mpc/pull/4495)(@dependabot[bot]): Bump wycheproof from 0.6.0 to 0.7.0 (#4495)
+
+- [#4524](https://github.com/near/mpc/pull/4524)(@anodar): Update aptos tx in mainnet config for foreign-chain-config-tester (#4524)
+
+- [#4528](https://github.com/near/mpc/pull/4528)(@anodar): Add golden tx's for evm chains testnet, update aptos (#4528)
+
+- [#4531](https://github.com/near/mpc/pull/4531)(@gilcu3): Update Claude to latests standards (#4531)
+
+- [#4552](https://github.com/near/mpc/pull/4552)(@barakeinav1): *(contract)* Update contract migrations after 3.16.0 release (#4552)
+
+- [#4560](https://github.com/near/mpc/pull/4560)(@anodar): Update golden tx in testnet (#4560)
+
+- [#4578](https://github.com/near/mpc/pull/4578)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#4578)
+
+- [#4577](https://github.com/near/mpc/pull/4577)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4577)
+
+- [#4576](https://github.com/near/mpc/pull/4576)(@anodar): Update testnet whitelist and its proposals (#4576)
+
+- [#4590](https://github.com/near/mpc/pull/4590)(@barakeinav1): Ignore RUSTSEC-2026-0316 in cargo-deny (#4590)
+
+- [#4607](https://github.com/near/mpc/pull/4607)(@gilcu3): Tighten permissions by agent actions (#4607)
+
+- [#4098](https://github.com/near/mpc/pull/4098)(@ayushsingh82): Ban wildcard imports via clippy::wildcard_imports (#4098)
+
+- [#4603](https://github.com/near/mpc/pull/4603)(@pbeza): *(nix)* Install a hash-pinned upstream Nix and assert its security settings (#4603)
+
+- [#4651](https://github.com/near/mpc/pull/4651)(@barakeinav1): Ignore RUSTSEC-2026-0327 in cargo-deny (#4651)
+
+- [#4666](https://github.com/near/mpc/pull/4666)(@pbeza): *(cargo-deny)* Clean up stale rules (#4666)
+
+- [#4669](https://github.com/near/mpc/pull/4669)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4669)
+
+- [#4686](https://github.com/near/mpc/pull/4686)(@haiyuechen-nearone): Use query auth for the embedded Fogo fluxrpc provider (#4686)
+
+- [#4638](https://github.com/near/mpc/pull/4638)(@pbeza): *(nix)* Replace the CI checks' `/nix` cache with a signed project cache (#4638)
+
+- [#4716](https://github.com/near/mpc/pull/4716)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 11 updates (#4716)
+
+- [#4682](https://github.com/near/mpc/pull/4682)(@dependabot[bot]): Bump hickory-resolver from 0.26.1 to 0.26.3 in the cargo group across 1 directory (#4682)
+
+- [#4739](https://github.com/near/mpc/pull/4739)(@gilcu3): Update deny to include unsafe-libyaml being unmaintained (#4739)
+
+
 ## [3.16.0] - 2026-09-18
 
 ### 🚀 Features
