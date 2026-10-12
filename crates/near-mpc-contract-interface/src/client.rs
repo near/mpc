@@ -77,7 +77,6 @@ pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
 // TODO(#166): not benchmarked, carried over from the callers.
 pub const PREPAY_ATTESTATION_STORAGE_GAS: NearGas = NearGas::from_tgas(30);
-// TODO(#166): not benchmarked, carried over from the callers.
 pub const VOTE_MPC_NODE_MANIFEST_DIGEST_GAS: NearGas = NearGas::from_tgas(300);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still

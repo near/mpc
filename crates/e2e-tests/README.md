@@ -124,7 +124,7 @@ impl NearBlockchain {
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
 client. It exposes `account_id()`, `client()`, `call` (signed by the contract
-account) `view` and `state()`.
+account), `view`, and `state()`.
 
 #### `NearKitCaller<T>` — signer-bound caller (`near-contract-transport`, feature `near-kit`)
 

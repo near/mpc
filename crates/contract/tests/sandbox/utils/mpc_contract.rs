@@ -74,13 +74,11 @@ pub async fn prepay_attestation_grants(
 ) -> anyhow::Result<ExecutionFinalResult> {
     let fee = attestation_storage_fee(contract).await?;
     let total = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
-    Ok(payer
-        .call(contract.id(), method_names::PREPAY_ATTESTATION_STORAGE)
-        .args_json(serde_json::json!({ "account_id": beneficiary, "grants": grants }))
-        .deposit(total)
-        .max_gas()
-        .transact()
-        .await?)
+    payer
+        .call_mpc(contract.id())
+        .prepay_attestation_storage(beneficiary.clone(), grants, total)
+        .await
+        .map_err(Into::into)
 }
 
 /// The one `config` field the fee is computed from. Read on its own rather than through the
