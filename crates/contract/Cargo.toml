@@ -95,6 +95,7 @@ mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
+    "curve25519-dalek",
     "k256",
     "near",
 ] }
