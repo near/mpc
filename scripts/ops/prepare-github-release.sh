@@ -139,4 +139,4 @@ cd "$REPO_ROOT"
 
 git add -A
 git commit -m "release: v${VERSION}"
-echo "==> Done. Review the commit, push your branch, and open a PR against the release-source branch."
+echo "==> Done. Review the commit, push your branch, and open a PR against the branch you started from (see RELEASES.md)."

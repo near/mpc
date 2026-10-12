@@ -81,8 +81,8 @@ Once it merges:
 
 ### 2. Wait for the build workflows
 
-When the release PR merges, the four workflows the release needs fire on the
-protected branch:
+The four workflows the release needs fire on every push to `main` and
+`release/v*`:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
 - [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
@@ -93,8 +93,16 @@ The image workflows push `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-s
 The contract workflow uploads the reproducible WASM as a GitHub Actions
 artifact named `contract`.
 
-Wait for all four to finish successfully. The Release workflow refuses to
-run if any artifact is missing.
+The Release workflow only uses images tagged for the branch it is dispatched
+on, so wait for the runs on `release/vX.Y`:
+
+- **Patch**: they fire when the prep PR merges.
+- **Major/minor**: they fire when the admin pushes the new release branch.
+  The `main` builds from the prep PR merge are not used.
+
+The contract artifact is looked up by commit SHA, so either run's artifact
+works. Wait for all four to finish successfully. The Release workflow refuses
+to run if any artifact is missing.
 
 <!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
 

@@ -137,7 +137,7 @@ For detailed information about our release process, compatibility guarantees, an
 
 **Key Release Principles:**
 
-- Releases are created from the `main` branch using semantic versioning.
+- Every release is published from a `release/vX.Y` branch using semantic versioning; see [RELEASES.md §Branch model](RELEASES.md#branch-model).
 - Minor versions maintain backward compatibility with previous node versions.
 - Major versions ensure contract compatibility with the previous major version.
 
