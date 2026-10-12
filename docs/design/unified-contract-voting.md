@@ -180,11 +180,11 @@ enum Proposal {
     RemoveLauncherHash(LauncherImageHash),
     AddOsMeasurement(ExpectedMeasurements),
     RemoveOsMeasurement(ExpectedMeasurements),
-    NodeManifestDigest(NodeImageHash),
-    TeeVerifierChange(VerifierChangeProposal),
-    ForeignChainProviders { chain: ForeignChain, entry: ChainEntry },
+    NodeManifestHash(NodeImageHash),
+    ChangeTeeVerifier(VerifierChangeProposal),
+    UpdateForeignChainProviders { chain: ForeignChain, entry: ChainEntry },
     AddDomains(Vec<DomainConfig>),
-    NewParameters { prospective_epoch_id: EpochId, proposal: ProposedGovernanceThresholdParameters },
+    UpdateGovernanceParameters { prospective_epoch_id: EpochId, parameters: ProposedGovernanceThresholdParameters },
 }
 ```
 
@@ -252,13 +252,13 @@ family per flow, which is exactly what each bespoke struct enforces today:
 
 | Family | Variants | Today's store | Cleared today by |
 |---|---|---|---|
-| `NewParameters` | `NewParameters` | `GovernanceThresholdParametersVotes` | transition to Resharing (`running.rs:122`) |
+| `GovernanceParameters` | `UpdateGovernanceParameters` | `GovernanceThresholdParametersVotes` | transition to Resharing (`running.rs:122`) |
 | `AddDomains` | `AddDomains` | `AddDomainsVotes` | transition to Initializing (`running.rs:235`) |
-| `NodeManifestDigest` | `NodeManifestDigest` | `TeeState::votes` | `whitelist_tee_proposal` (`tee_state.rs:367`) |
+| `NodeManifestHash` | `NodeManifestHash` | `TeeState::votes` | `whitelist_tee_proposal` (`tee_state.rs:367`) |
 | `Launcher` | `AddLauncherHash`, `RemoveLauncherHash` | `LauncherHashVotes` | `add_launcher_image` / `remove_launcher_image` (`tee_state.rs:416`, `:426`) |
 | `OsMeasurement` | `AddOsMeasurement`, `RemoveOsMeasurement` | `MeasurementVotes` | `add_measurement` / `remove_measurement` (`tee_state.rs:447`, `:453`) |
-| `TeeVerifier` | `TeeVerifierChange` | `TeeVerifierVotes` | `TeeVerifierVotes::vote` (`verifier_votes.rs:79`) |
-| `ForeignChain(chain)` | `ForeignChainProviders` | `ProviderVotes` | per-chain `retain_votes` (`foreign_chain_rpc.rs:163`) |
+| `TeeVerifier` | `ChangeTeeVerifier` | `TeeVerifierVotes` | `TeeVerifierVotes::vote` (`verifier_votes.rs:79`) |
+| `ForeignChain(chain)` | `UpdateForeignChainProviders` | `ProviderVotes` | per-chain `retain_votes` (`foreign_chain_rpc.rs:163`) |
 
 Note that `Launcher` and `OsMeasurement` already share one map across their add and remove
 variants (`LauncherVoteAction`, `MeasurementVoteAction`), so a participant cannot hold
@@ -276,7 +276,7 @@ that may vote and the number of votes required:
   Running → current set, Resharing → previous running set).
 - `n-of-n (current)` variants require `participants.len()` votes from the same set
   (`api/tee_measurements.rs:108`, `running.rs:233`).
-- `NewParameters` is special: the electorate is the *proposed* set, and a voter who is not yet
+- `UpdateGovernanceParameters` is special: the electorate is the *proposed* set, and a voter who is not yet
   a current participant is admitted only after `t` current participants have voted for the
   same proposal (`running.rs:191`–`200`). That admission rule is part of this variant's
   `validate`, not of the generic path.
@@ -287,13 +287,13 @@ that may vote and the number of votes required:
 
 | Variant | Apply helper |
 |---|---|
-| `NewParameters` | `process_new_parameters_proposal` + `transition_to_resharing_no_checks` (`state/running.rs:143`, `:66`), re-proposal path `state/resharing.rs:56` |
+| `UpdateGovernanceParameters` | `process_new_parameters_proposal` + `transition_to_resharing_no_checks` (`state/running.rs:143`, `:66`), re-proposal path `state/resharing.rs:56` |
 | `AddDomains` | `DomainRegistry::add_domains` (`primitives/domain.rs:142`) + Initializing transition (`state/running.rs:234`–`245`) |
-| `NodeManifestDigest` | `TeeState::whitelist_tee_proposal` (`tee/tee_state.rs:362`) |
+| `NodeManifestHash` | `TeeState::whitelist_tee_proposal` (`tee/tee_state.rs:362`) |
 | `AddLauncherHash` / `RemoveLauncherHash` | `TeeState::add_launcher_image` / `remove_launcher_image` (`tee/tee_state.rs:410`, `:425`) |
 | `AddOsMeasurement` / `RemoveOsMeasurement` | `TeeState::add_measurement` / `remove_measurement` (`tee/tee_state.rs:446`, `:452`) |
-| `TeeVerifierChange` | assign `tee_verifier_account_id` (`api/tee_verifier.rs:52`) |
-| `ForeignChainProviders` | `AllowedProviders::replace` (`foreign_chain_rpc.rs:205`) + `recompute_available_foreign_chains` (`api/foreign_chain/support.rs:103`) |
+| `ChangeTeeVerifier` | assign `tee_verifier_account_id` (`api/tee_verifier.rs:52`) |
+| `UpdateForeignChainProviders` | `AllowedProviders::replace` (`foreign_chain_rpc.rs:205`) + `recompute_available_foreign_chains` (`api/foreign_chain/support.rs:103`) |
 
 The two state-transition variants return a new `ProtocolContractState` rather than mutating in
 place, so `apply` must be allowed to replace `self.protocol_state` (as `api/governance.rs:59`
@@ -328,7 +328,7 @@ When a proposal crosses threshold, `vote` drops every vote in that family before
 (`retain_votes(|(_, f)| *f != family)`). This is the single rule that replaces the per-flow
 clearing calls in §3.3, and it is what makes conflicting proposals safe:
 
-- A **competing sibling** (`NewParameters` A vs B, `AddLauncherHash(X)` vs
+- A **competing sibling** (`UpdateGovernanceParameters` A vs B, `AddLauncherHash(X)` vs
   `RemoveLauncherHash(X)`) loses its accumulated votes the moment the winner applies. To revive
   it, participants must re-vote against the post-apply state, and the sibling's `validate`
   (§4.3) then runs against that state.
@@ -349,14 +349,14 @@ committed to the exact payload by hash, so what gets applied is what they voted 
 
 The checks are the ones the flows already perform at vote time, moved behind one hook:
 
-- `NewParameters`: `prospective_epoch_id` must be the next epoch (`state/running.rs:111`),
+- `UpdateGovernanceParameters`: `prospective_epoch_id` must be the next epoch (`state/running.rs:111`),
   the proposal must be valid against current parameters
   (`validate_incoming_proposal`, `primitives/thresholds.rs:123`), every proposed participant
   must hold a valid attestation (`api/governance.rs:47`–`82`), and the governance threshold
   must dominate every domain's reconstruction threshold (`running.rs:182`).
 - `AddDomains`: non-empty, contiguous ids starting at `next_domain_id`, valid purposes
   (`running.rs:215`–`230`, `domain.rs:142`).
-- `TeeVerifierChange`: candidate differs from the current verifier (`api/tee_verifier.rs:36`).
+- `ChangeTeeVerifier`: candidate differs from the current verifier (`api/tee_verifier.rs:36`).
 - `RemoveOsMeasurement`: removal must leave at least one measurement
   (`tee/measurements.rs:97`–`101`).
 
@@ -429,7 +429,7 @@ the current flows' defensive filtering at count time (`api/update.rs:52`,
 `foreign_chain_rpc.rs:157`) keeps the tally correct even if that sweep fails. This is a
 primary reason to build on the existing primitive rather than a fresh `BTreeMap`.
 
-Phase transitions are handled by the family rule: `NewParameters` and `AddDomains` clear their
+Phase transitions are handled by the family rule: `UpdateGovernanceParameters` and `AddDomains` clear their
 own family when they apply, and their electorate is re-derived from the new phase on the next
 vote (§3.4).
 
@@ -562,17 +562,17 @@ numbers. The per-flow picture, with borsh payload sizes measured **per voter**:
 | Flow | Payload | Stored per voter today | Unified | Verdict |
 |---|---|---|---|---|
 | `AddOsMeasurement` / `RemoveOsMeasurement` | `ExpectedMeasurements` | 1 B tag + **240 B** (5 × 48-B SHA-384 digests, `types/tee.rs:80`, `hash.rs:214`–`243`) | 32 B | **big saving** |
-| `NewParameters` | `ProposedGovernanceThresholdParameters` | ~100 B × participants, plus per-domain thresholds | 32 B | **big saving**, scales with set |
+| `UpdateGovernanceParameters` | `ProposedGovernanceThresholdParameters` | ~100 B × participants, plus per-domain thresholds | 32 B | **big saving**, scales with set |
 | `AddDomains` | `Vec<DomainConfig>` | ~25 B × domains | 32 B | saving when many |
 | `AddLauncherHash` / `RemoveLauncherHash` | `LauncherImageHash` | 1 B tag + 32 B | 32 B | wash |
-| `NodeManifestDigest` | `NodeImageHash` | 32 B — already `Votes<V>` | 32 B | already optimal |
-| `TeeVerifierChange` | account + code hash (~38–100 B) | 32 B — already `Votes<V>` | 32 B | already optimal |
-| `ForeignChainProviders` | `ChainEntry` (URLs; variable, large) | 32 B — already `Votes<V>` | 32 B | already optimal |
+| `NodeManifestHash` | `NodeImageHash` | 32 B — already `Votes<V>` | 32 B | already optimal |
+| `ChangeTeeVerifier` | account + code hash (~38–100 B) | 32 B — already `Votes<V>` | 32 B | already optimal |
+| `UpdateForeignChainProviders` | `ChainEntry` (URLs; variable, large) | 32 B — already `Votes<V>` | 32 B | already optimal |
 | contract update | `UpdateHash` | 32 B — already `Votes<V>` | unchanged | already optimal |
 
 - **Measurements is the standout** — 240 B per voter collapses to 32 B, saved again on every
   re-vote.
-- **`NewParameters` / `AddDomains` scale** with participant and domain count, so their saving
+- **`UpdateGovernanceParameters` / `AddDomains` scale** with participant and domain count, so their saving
   grows with the network.
 - **Counting goes from O(voters) to O(1)**: the bespoke stores scan every voter's payload for
   equality (`tee/proposal.rs:58`, `measurements.rs:40`, `threshold_votes.rs:19`,
