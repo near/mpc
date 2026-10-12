@@ -447,19 +447,20 @@ something breaks within the cluster or at a provider. Only the second kind is wo
   (chosen).**
 
 C keeps a disagreement final and a failed request short. It needs signed node outcomes, which
-use each node's existing TLS key. Every inconclusive comes with evidence, and an
-metric can show the nodes involved.
+use each node's existing TLS key. Every inconclusive comes with evidence, and a metric can
+show the nodes involved.
 
 ### How does V2 behave when the leader changes?
 
 V2 relies only on the request queue's answer to who may lead right now (Component 3). This has
-two costs. 
-- Nodes can disagree on who may lead. While they do, followers refuse the
-leaders they don't accept, and every refused attempt counts against that leader, so a request
-can time out if the network stays partitioned for long enough time.
-- A backup can start while a slow leader is still
-trying. With four planned leaders, each with three
-attempts and three rounds, a request can use up to 4 × (3 + 3) = 24 assets instead of only 6 (3 + 3) with a single leader.
+two costs.
+
+- Nodes can disagree on who may lead. While they do, followers refuse the leaders they don't
+  accept, and every refused attempt counts against that leader, so a request can time out if
+  the network stays partitioned for long enough time.
+- A backup can start while a slow leader is still trying. With four planned leaders, each with
+  three attempts and three rounds, a request can use up to 4 × (3 + 3) = 24 assets instead of
+  only 6 (3 + 3) with a single leader.
 
 ### How does V2 roll out?
 
