@@ -168,7 +168,7 @@ itertools = "0.15.0"
 # (`links = "jemalloc"` permits one per graph); bump alongside the nearcore pin.
 jemalloc_pprof = "0.8.2"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
-k256 = "0.13.4"
+k256 = { version = "0.13.4", default-features = false }
 keccak = "0.1.5"
 libc = "0.2"
 lru = "0.18.0"

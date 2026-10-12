@@ -506,7 +506,7 @@ mod tests {
     use rand::rngs::OsRng;
     use rstest::rstest;
     use std::panic;
-    use std::{assert_matches, collections::HashSet};
+    use std::{assert_matches, collections::BTreeSet};
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
         launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
@@ -865,7 +865,7 @@ mod tests {
                 domains[0].clone(),
                 expected_params,
             ),
-            cancellation_requests: HashSet::new(),
+            cancellation_requests: BTreeSet::new(),
             per_domain_thresholds: BTreeMap::new(),
         };
 

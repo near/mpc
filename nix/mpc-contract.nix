@@ -4,7 +4,6 @@
   rustPlatform,
   rust-bin,
   llvmPackages_19,
-  binaryen,
   cargo-near,
 }:
 
@@ -83,7 +82,6 @@ stdenv.mkDerivation {
   nativeBuildInputs = [
     rustToolchain
     cargo-near
-    binaryen # provides wasm-opt, invoked by cargo-near
     llvmPkgs.clang # for ring's / blst's build.rs (cc-rs) when targeting wasm32
   ];
 

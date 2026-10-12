@@ -36,7 +36,7 @@ use near_time::{Clock, Duration};
 use std::sync::{Arc, atomic::AtomicBool};
 use std::{
     assert_matches,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
 };
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -229,7 +229,7 @@ impl FakeMpcContractState {
                 resharing_domain,
                 participants_config_to_threshold_parameters(&new_participants),
             ),
-            cancellation_requests: HashSet::new(),
+            cancellation_requests: BTreeSet::new(),
             per_domain_thresholds,
         });
     }

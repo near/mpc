@@ -10,7 +10,8 @@ pub use auth::{AuthConfig, TokenConfig};
 pub use embedded::RpcPreset;
 use embedded::embedded_foreign_chains;
 pub use resolve::{
-    PairSource, ResolutionDiagnostic, ResolvedForeignChains, SkipReason, resolve_with_embedded,
+    PairSource, ResolutionDiagnostic, ResolveError, ResolvedForeignChains, SkipReason,
+    resolve_with_embedded,
 };
 
 mod auth;

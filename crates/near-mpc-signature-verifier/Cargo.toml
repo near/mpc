@@ -15,7 +15,7 @@ near-sdk = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
-k256 = { workspace = true }
+k256 = { workspace = true, features = ["ecdsa"] }
 near-mpc-contract-interface = { workspace = true, features = [
     "k256",
     "ed25519-dalek",
