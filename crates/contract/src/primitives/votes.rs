@@ -95,6 +95,7 @@ where
 
     /// Removes any votes for proposal with [`ProposalHash`], together with any voters that voted for
     /// [`ProposalHash`].
+    #[cfg(test)]
     pub fn remove_votes_for_proposal(&mut self, proposal: &ProposalHash) {
         let Some(voters) = self.votes_by_proposal.remove(proposal) else {
             return;
