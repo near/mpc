@@ -14,6 +14,8 @@ pub enum CryptoConversionError {
 
 #[cfg(feature = "blstrs")]
 mod blstrs;
+#[cfg(feature = "curve25519-dalek")]
+mod curve25519_dalek;
 #[cfg(feature = "ed25519-dalek")]
 mod ed25519_dalek;
 #[cfg(feature = "k256")]

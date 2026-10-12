@@ -9,7 +9,8 @@ description = "Cryptographic primitives and key types for the NEAR MPC network"
 [features]
 abi = ["borsh/unstable__schema", "schemars"]
 blstrs = ["dep:blstrs"]
-ed25519-dalek = ["dep:curve25519-dalek", "dep:ed25519-dalek"]
+curve25519-dalek = ["dep:curve25519-dalek"]
+ed25519-dalek = ["curve25519-dalek", "dep:ed25519-dalek"]
 k256 = ["dep:k256"]
 near = ["dep:near-sdk"]
 
