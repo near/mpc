@@ -292,15 +292,13 @@ async fn register_backup_service_and_wait(
     backup_service: &BackupService,
 ) -> anyhow::Result<()> {
     let backup_public_key = backup_service.public_key()?;
+    let backup_service_info = BackupServiceInfo {
+        public_key: backup_public_key.clone(),
+    };
     let source_account_id = cluster.nodes[source_idx].account_id().clone();
 
     let outcome = cluster
-        .register_backup_service(
-            source_idx,
-            BackupServiceInfo {
-                public_key: backup_public_key.clone(),
-            },
-        )
+        .register_backup_service(source_idx, backup_service_info.clone())
         .await
         .context("failed to register backup service")?;
     anyhow::ensure!(
@@ -312,7 +310,7 @@ async fn register_backup_service_and_wait(
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
             info.get(&source_account_id)
-                .is_some_and(|(backup, _)| backup.is_some())
+                .is_some_and(|(backup, _)| backup.as_ref() == Some(&backup_service_info))
         })
         .await
         .context("timed out waiting for node to index backup registration")?;
@@ -366,12 +364,13 @@ async fn get_keyshares_from_source(
     )
 }
 
-/// Start node migration on the contract and wait for confirmation.
+/// Start node migration on the contract, wait for confirmation, and return the
+/// submitted [`DestinationNodeInfo`].
 async fn start_migration_and_wait(
     cluster: &e2e_tests::MpcCluster,
     source_idx: usize,
     target_idx: usize,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<DestinationNodeInfo> {
     let source_account_id = cluster.nodes[source_idx].account_id().clone();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
@@ -385,7 +384,7 @@ async fn start_migration_and_wait(
         },
     };
     let outcome = cluster
-        .start_node_migration(source_idx, destination_node_info)
+        .start_node_migration(source_idx, destination_node_info.clone())
         .await
         .context("failed to start node migration")?;
     anyhow::ensure!(
@@ -397,7 +396,9 @@ async fn start_migration_and_wait(
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
             info.get(&source_account_id)
-                .is_some_and(|(_, destination)| destination.is_some())
+                .is_some_and(|(_, destination)| {
+                    destination.as_ref() == Some(&destination_node_info)
+                })
         })
         .await
         .context("timed out waiting for contract to reflect node migration")?;
@@ -439,7 +440,7 @@ async fn start_migration_and_wait(
     )
     .await?;
 
-    Ok(())
+    Ok(destination_node_info)
 }
 
 /// PUT keyshares to the target node via the backup CLI.
@@ -951,15 +952,15 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
     );
 
     // When: the source registers a migration destination.
-    start_migration_and_wait(&cluster, source_idx, target_idx)
+    let destination_node_info = start_migration_and_wait(&cluster, source_idx, target_idx)
         .await
         .expect("start_migration_and_wait failed");
 
-    // Then: migration_info reports a pending destination for the source.
+    // Then: migration_info holds exactly that destination and no backup service for the source.
+    let expected = (None, Some(destination_node_info));
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id)
-                .is_some_and(|(_, destination)| destination.is_some())
+            info.get(&source_account_id) == Some(&expected)
         })
         .await
         .expect("timed out waiting for migration info");
