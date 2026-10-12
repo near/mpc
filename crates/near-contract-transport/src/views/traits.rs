@@ -84,7 +84,7 @@ pub trait WatchContractState {
     fn wait_for(
         &mut self,
         timeout: Duration,
-        predicate: impl Fn(&Self::Value) -> bool + Send,
+        mut predicate: impl FnMut(&Self::Value) -> bool + Send,
     ) -> impl Future<Output = Result<ObservedState<Self::Value>, WaitError<Self::ViewError>>> + Send
     where
         Self: Send,
@@ -212,6 +212,22 @@ mod tests {
             result,
             observed(2, "recovered").map_err(WaitError::Transport)
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wait_for__should_keep_waiting_while_view_errors_persist() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [Err(TransportError::View("view failed"))].into(),
+            closes: false,
+        };
+        let timeout = Duration::from_secs(1);
+
+        // When
+        let result = watch.wait_for(timeout, |value| *value == "never").await;
+
+        // Then
+        assert_eq!(result, Err(WaitError::TimedOut(timeout)));
     }
 
     #[tokio::test]
