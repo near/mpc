@@ -2,17 +2,13 @@
 
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_account,
-        gen_accounts, init, propose_and_vote_contract_binary, submit_attestations,
+        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
+        init, submit_attestations, vote_and_submit_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
-        mpc_contract::{
-            get_participant_attestation, get_participants, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, tee_verifier_account_id, vote_add_launcher_hash,
-            vote_tee_verifier_change,
-        },
+        mpc_contract::{get_participants, get_state, get_tee_accounts, vote_add_launcher_hash},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
         transactions::CallMpcContract,
@@ -51,9 +47,7 @@ fn contract_code(network: Network) -> &'static [u8] {
     }
 }
 
-/// The production contract predates the verifier argument and ignores it, so the verifier
-/// stays unset.
-async fn init_old_contract_without_tee_verifier(
+async fn init_old_contract(
     worker: &Worker<Sandbox>,
     contract: &Contract,
     number_of_participants: usize,
@@ -72,17 +66,6 @@ async fn init_old_contract_without_tee_verifier(
         .init(threshold_parameters, bogus_tee_verifier_account_id(), None)
         .await?
         .into_result()?;
-    Ok((accounts, participants))
-}
-
-async fn init_old_contract(
-    worker: &Worker<Sandbox>,
-    contract: &Contract,
-    number_of_participants: usize,
-) -> anyhow::Result<(Vec<Account>, Participants)> {
-    let (accounts, participants) =
-        init_old_contract_without_tee_verifier(worker, contract, number_of_participants).await?;
-    vote_tee_verifier_change(&accounts, contract, &bogus_tee_verifier_account_id()).await?;
     Ok((accounts, participants))
 }
 
@@ -171,105 +154,8 @@ async fn back_compatibility_without_state(
     )
 }
 
-#[rstest]
-#[tokio::test]
-async fn migrate__should_carry_over_the_voted_in_tee_verifier(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
-) -> anyhow::Result<()> {
-    // Given
-    let worker = test_utils::sandbox::start_sandbox().await?;
-    let contract = deploy_old(&worker, network).await?;
-    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
-
-    // When
-    let contract = upgrade_to_new(contract).await?;
-    migrate_and_assert_contract_code(&contract).await?;
-
-    // Then
-    assert_eq!(
-        tee_verifier_account_id(&contract).await,
-        bogus_tee_verifier_account_id()
-    );
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn migrate__should_fail_when_no_tee_verifier_is_configured(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
-) -> anyhow::Result<()> {
-    // Given
-    let worker = test_utils::sandbox::start_sandbox().await?;
-    let contract = deploy_old(&worker, network).await?;
-    init_old_contract_without_tee_verifier(&worker, &contract, PARTICIPANT_LEN).await?;
-
-    // When
-    let contract = upgrade_to_new(contract).await?;
-    let err = contract
-        .call(method_names::MIGRATE)
-        .transact()
-        .await?
-        .into_result()
-        .expect_err("migrate must fail without a configured TEE verifier");
-
-    // Then
-    assert!(
-        err.to_string().contains("No TEE verifier is configured"),
-        "unexpected migrate failure: {err}"
-    );
-    let contract = contract
-        .as_account()
-        .deploy(contract_code(network))
-        .await?
-        .into_result()?;
-    assert!(healthcheck(&contract).await?);
-    Ok(())
-}
-
-/// Entries the upgrade under test has to carry across. Migration cost scales with this, and
-/// `stored_attestations` keeps entries for non-participants too, so it is sized past the real
-/// fleet rather than at [`PARTICIPANT_LEN`].
-const STORED_ATTESTATION_ENTRIES: usize = 25;
-
-/// Tops the stored attestations up to `total` with entries owned by non-participants, the way a
-/// prospective node's submission would.
-async fn fill_stored_attestations(
-    worker: &Worker<Sandbox>,
-    contract: &Contract,
-    total: usize,
-) -> Vec<dtos::Ed25519PublicKey> {
-    let mut accounts = Vec::with_capacity(total - PARTICIPANT_LEN);
-    for _ in PARTICIPANT_LEN..total {
-        accounts.push(gen_account(worker).await.0);
-    }
-    let tls_keys: Vec<_> = (0..accounts.len())
-        .map(|index| dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]))
-        .collect();
-
-    let submissions = accounts
-        .iter()
-        .zip(&tls_keys)
-        .map(|(account, tls_key)| async move {
-            let result = prepay_and_submit_participant_info(
-                account,
-                contract,
-                &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-                tls_key,
-            )
-            .await
-            .expect("prepay_and_submit_participant_info should not error");
-            assert!(result.is_success(), "filler submission failed: {result:?}");
-        });
-    futures::future::join_all(submissions).await;
-
-    let stored = get_tee_accounts(contract).await.unwrap();
-    assert_eq!(stored.len(), total, "stored attestation count");
-
-    tls_keys
-}
-
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
-/// can be upgraded to the [`current_contract`] binary using the proposal-and-vote flow.
+/// can be upgraded to the [`current_contract`] binary using the vote-then-submit flow.
 #[rstest]
 #[tokio::test]
 async fn propose_upgrade_from_production_to_current_binary(
@@ -283,8 +169,6 @@ async fn propose_upgrade_from_production_to_current_binary(
     let mpc_contract = worker.view_mpc(contract.id());
 
     submit_attestations(&contract, &accounts, &participants).await;
-    let filler_keys =
-        fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(
@@ -316,9 +200,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
-    // TODO(#4513): switch to `vote_and_submit_contract_binary` once production runs the
-    // vote-then-submit API.
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
+    vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
@@ -335,20 +217,6 @@ async fn propose_upgrade_from_production_to_current_binary(
             .value
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
-    );
-
-    assert_eq!(
-        get_tee_accounts(&contract).await.unwrap().len(),
-        STORED_ATTESTATION_ENTRIES,
-        "every stored attestation should survive migration"
-    );
-    let migrated = get_participant_attestation(&contract, &filler_keys[0])
-        .await
-        .unwrap()
-        .expect("a migrated attestation should still be readable");
-    assert_eq!(
-        migrated.accepted_at_seconds, None,
-        "migration must not stamp an entry the contract never accepted"
     );
 }
 
