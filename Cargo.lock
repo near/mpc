@@ -388,7 +388,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -1049,7 +1049,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "attestation"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "attestation",
  "attestation-types",
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "attestation-cli"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "attestation",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "attestation-types"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -1131,12 +1131,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
-
-[[package]]
-name = "auto_ops"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7460f7dd8e100147b82a63afca1a20eb6c231ee36b90ba7272e14951cb58af59"
 
 [[package]]
 name = "autocfg"
@@ -1296,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "backup-cli"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1832,7 +1826,7 @@ dependencies = [
 
 [[package]]
 name = "chain-gateway"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "base64 0.23.1",
  "chain-gateway",
@@ -1866,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "chain-gateway-test-contract"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "near-contract-transport",
@@ -1928,7 +1922,7 @@ dependencies = [
 
 [[package]]
 name = "ckd-example-cli"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "blstrs",
@@ -2034,7 +2028,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2176,7 +2170,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "contract-history"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "bs58 0.5.1",
  "reqwest 0.13.5",
@@ -2808,9 +2802,9 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "dcap-qvl"
-version = "0.6.5"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7812ff5cb57c46d6c4d8eee2ad42d48c752ccc1c752aac28fe1215828352d4d6"
+checksum = "975e00ca7c287451d12647856125e3fdea386681f19bfbb5c0c56cdc88cbb61d"
 dependencies = [
  "anyhow",
  "asn1_der",
@@ -2838,7 +2832,6 @@ dependencies = [
  "serde_json",
  "tracing",
  "urlencoding",
- "wasm-bindgen-futures",
  "x509-cert",
 ]
 
@@ -3236,7 +3229,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e-tests"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "backon",
@@ -3567,7 +3560,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3830,7 +3823,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-chain-config-tester"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3846,7 +3839,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-health-check"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "foreign-chain-inspector",
@@ -3866,7 +3859,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-inspector"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3895,7 +3888,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-rpc-factory"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "foreign-chain-inspector",
@@ -3909,7 +3902,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-rpc-interfaces"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "base64 0.23.1",
  "derive_more 2.1.1",
@@ -4099,19 +4092,6 @@ name = "futures-io"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed"
-
-[[package]]
-name = "futures-lite"
-version = "2.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
-dependencies = [
- "fastrand",
- "futures-core",
- "futures-io",
- "parking",
- "pin-project-lite",
-]
 
 [[package]]
 name = "futures-macro"
@@ -5021,7 +5001,7 @@ dependencies = [
 
 [[package]]
 name = "include-measurements"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "attestation-types",
@@ -5188,7 +5168,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5615,7 +5595,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-interface"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "derive_more 2.1.1",
  "insta",
@@ -6047,7 +6027,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-attestation"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "attestation",
  "borsh",
@@ -6067,7 +6047,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "attestation-types",
@@ -6117,7 +6097,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-devnet"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "blstrs",
@@ -6151,7 +6131,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -6253,7 +6233,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node-config"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6276,7 +6256,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-primitives"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -6292,7 +6272,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-tls"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "ed25519-dalek 2.2.0",
@@ -6686,7 +6666,7 @@ dependencies = [
 
 [[package]]
 name = "near-contract-transport"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -7931,7 +7911,7 @@ dependencies = [
 
 [[package]]
 name = "node-types"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "mpc-attestation",
  "near-mpc-crypto-types",
@@ -7965,7 +7945,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8984,7 +8964,7 @@ dependencies = [
 
 [[package]]
 name = "proposal-generator"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -9030,7 +9010,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -9992,7 +9972,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10072,7 +10052,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.6",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10432,16 +10412,6 @@ checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float 2.10.1",
  "serde",
-]
-
-[[package]]
-name = "serde_bytes"
-version = "0.11.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
-dependencies = [
- "serde",
- "serde_core",
 ]
 
 [[package]]
@@ -11199,7 +11169,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tee-authority"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "backon",
@@ -11226,7 +11196,7 @@ dependencies = [
 
 [[package]]
 name = "tee-context"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "chain-gateway",
  "ed25519-dalek 2.2.0",
@@ -11243,7 +11213,7 @@ dependencies = [
 
 [[package]]
 name = "tee-launcher"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "backon",
  "clap",
@@ -11264,7 +11234,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "dcap-qvl",
@@ -11280,7 +11250,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier-conversions"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "dcap-qvl",
@@ -11290,7 +11260,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier-interface"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -11308,7 +11278,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11360,7 +11330,7 @@ dependencies = [
 
 [[package]]
 name = "test-migration-contract"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "borsh",
  "near-sdk",
@@ -11368,7 +11338,7 @@ dependencies = [
 
 [[package]]
 name = "test-parallel-contract"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "blstrs",
  "borsh",
@@ -11380,14 +11350,14 @@ dependencies = [
 
 [[package]]
 name = "test-port-allocator"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "rand 0.8.8",
 ]
 
 [[package]]
 name = "test-utils"
-version = "3.16.0"
+version = "3.17.0"
 dependencies = [
  "anyhow",
  "bs58 0.5.1",
@@ -11497,11 +11467,9 @@ dependencies = [
 name = "threshold-signatures"
 version = "0.1.0"
 dependencies = [
- "auto_ops",
  "average",
  "blstrs",
  "borsh",
- "byteorder",
  "criterion",
  "derive_more 2.1.1",
  "digest 0.10.7",
@@ -11511,7 +11479,6 @@ dependencies = [
  "frost-ed25519",
  "frost-secp256k1",
  "futures",
- "futures-lite",
  "hex",
  "hkdf",
  "insta",
@@ -11526,7 +11493,6 @@ dependencies = [
  "rmp-serde",
  "rstest",
  "serde",
- "serde_bytes",
  "serde_json",
  "serde_with",
  "sha2 0.10.9",
@@ -12892,7 +12858,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
