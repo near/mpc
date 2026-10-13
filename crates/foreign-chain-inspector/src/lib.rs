@@ -550,8 +550,8 @@ impl ProviderFailure {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     fn transport(error: HttpTransportError) -> RpcClientError {
         RpcClientError::Transport(Box::new(error))

@@ -161,6 +161,12 @@ pub struct StartKeygenArgs {
     pub key_event_id: KeyEventId,
 }
 
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct PrepayAttestationStorageArgs {
+    pub account_id: AccountId,
+    pub grants: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::Constructor)]
 pub struct SubmitParticipantInfoArgs {
     pub proposed_participant_attestation: Attestation,

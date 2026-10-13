@@ -7,7 +7,10 @@ use near_mpc_contract_interface::types::{
     ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    assert_matches,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 use tokio::sync::{RwLock, watch};
 
@@ -34,7 +37,6 @@ use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
 use aes_gcm::aead::Generate;
-use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;

@@ -141,6 +141,12 @@ deposit:  0 NEAR
 args:     {"votes":{"Bitcoin":{"providers":{"alchemy":{"base_url":"http://localhost:7","auth_scheme":"None","chain_routing":"Embedded"}},"quorum":1}}}
 
 contract: mpc.near
+method:   prepay_attestation_storage
+gas:      30.0 Tgas
+deposit:  0.014 NEAR
+args:     {"account_id":"node.near","grants":2}
+
+contract: mpc.near
 method:   submit_participant_info
 gas:      300.0 Tgas
 deposit:  0 NEAR

@@ -1,0 +1,25 @@
+# Testnet RPC provider whitelist: Solana public endpoint (vote of 2026-10-08).
+# Delta only; chains apply independently. Full state lives in testnet-rpc-whitelist.toml.
+
+[chains.Solana]
+quorum = 3
+
+[chains.Solana.providers.alchemy]
+base_url = "https://solana-devnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Solana.providers.public]
+base_url = "https://api.devnet.solana.com"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Solana.providers.quicknode]
+base_url = "https://{}.solana-devnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Solana.providers.tatum]
+base_url = "https://solana-devnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"

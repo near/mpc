@@ -37,7 +37,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true }
 inferno = { workspace = true }
 itertools = { workspace = true }
-k256 = { workspace = true }
+k256 = { workspace = true, default-features = true }
 launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true, features = ["local-verify"] }
@@ -111,7 +111,6 @@ pprof = { workspace = true, features = ["frame-pointer"] }
 built = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }

@@ -799,8 +799,8 @@ pub mod hex_serde {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use core::convert::TryInto;
+    use std::assert_matches;
 
     use super::*;
 
@@ -1121,7 +1121,7 @@ mod tests {
 
 #[cfg(test)]
 mod serde_tests {
-    use assert_matches::assert_matches;
+    use std::assert_matches;
 
     use super::*;
 
@@ -1159,8 +1159,8 @@ mod serde_tests {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod hex_serde_tests {
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     use super::*;
 
