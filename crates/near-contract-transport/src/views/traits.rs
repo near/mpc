@@ -4,10 +4,10 @@ use near_account_id::AccountId;
 
 use crate::{
     TransportError,
-    views::errors::WaitError,
     views::{
         args::ViewArgs,
         deserialize::DeserializeAs,
+        errors::WaitError,
         observation::{ObservedState, SerializedObservation},
         view_call::ViewCall,
     },
