@@ -51,11 +51,6 @@ impl Signature {
         x_coordinate(&reproduced.into()) == r
     }
 
-    /// Finds the [`RecoveryId`] under which this signature and `msg_hash` recover `public_key`,
-    /// as needed by verifiers that recover the signer's key instead of taking it as input.
-    ///
-    /// Only the x-coordinate of [`Self::big_r`] is used: signing negates `s` to normalize it
-    /// but leaves `big_r` as is, so the y-parity of `big_r` may not match the signature.
     pub fn recovery_id(
         &self,
         public_key: &AffinePoint,

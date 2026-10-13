@@ -18,8 +18,7 @@ use threshold_signatures::frost_secp256k1::VerifyingKey;
 
 const MAX_GAS: Gas = Gas::from_teragas(300);
 
-const NO_RECOVERY_ID: &str =
-    "no recovery id found for such a tuple of public key, signature, message hash";
+const RECOVERY_ID_FAILED: &str = "failed to compute the recovery id of the ECDSA signature";
 
 fn k256_signature_response(
     big_r: AffinePoint,
@@ -145,7 +144,7 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
                     .as_ecdsa()
                     .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
             )
-            .context(NO_RECOVERY_ID)?;
+            .context(RECOVERY_ID_FAILED)?;
         Ok(contract_args::SignatureRespondArgs::new(
             request.into_contract_interface_type(),
             k256_signature_response(response.big_r, response.s, recovery_id),
@@ -190,7 +189,7 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
     ) -> anyhow::Result<Self> {
         let recovery_id = signature
             .recovery_id(&public_key.to_element().to_affine(), payload_hash.as_ref())
-            .context(NO_RECOVERY_ID)?;
+            .context(RECOVERY_ID_FAILED)?;
 
         let dto_signature = dtos::K256Signature {
             big_r: dtos::K256AffinePoint::from(signature.big_r),
