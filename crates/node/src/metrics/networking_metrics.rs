@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 
 use prometheus::{
-    HistogramVec, IntCounterVec, IntGaugeVec, register_histogram_vec, register_int_counter_vec,
-    register_int_gauge_vec,
+    HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, register_histogram_vec,
+    register_int_counter_vec, register_int_gauge, register_int_gauge_vec,
 };
 
 pub(crate) const INCOMING_CONNECTION: &str = "incoming";
@@ -10,6 +10,7 @@ pub(crate) const OUTGOING_CONNECTION: &str = "outgoing";
 
 pub(crate) const PING_MESSAGE: &str = "ping";
 pub(crate) const INDEXER_HEIGHT_MESSAGE: &str = "indexer_height";
+pub(crate) const CONNECTED_PEERS_MESSAGE: &str = "connected_peers";
 pub(crate) const MPC_START_MESSAGE: &str = "mpc_start";
 pub(crate) const MPC_COMPUTATION_MESSAGE: &str = "mpc_computation";
 pub(crate) const MPC_ABORT_MESSAGE: &str = "mpc_abort";
@@ -52,6 +53,22 @@ pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::ne
         "mpc_network_live_connections",
         "Current state of the mesh network connections",
         &[LABEL_MY_PARTICIPANT_ID, LABEL_PEER_PARTICIPANT_ID],
+    )
+    .unwrap()
+});
+
+pub(crate) static NETWORK_VIEW_BROKEN_PAIRS: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "mpc_network_view_broken_pairs",
+        "Pairs of alive participants that do not report a connection to each other",
+    )
+    .unwrap()
+});
+
+pub(crate) static NETWORK_VIEW_UNKNOWN_PEERS: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "mpc_network_view_unknown_peers",
+        "Alive peers without a fresh connected-peers report; their links are assumed usable",
     )
     .unwrap()
 });

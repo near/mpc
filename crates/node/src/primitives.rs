@@ -224,9 +224,21 @@ pub struct PeerIndexerHeightMessage {
     pub message: IndexerHeightMessage,
 }
 
+/// The peers the sender is bidirectionally connected to; never contains the sender.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct ConnectedPeersMessage {
+    pub peers: Vec<ParticipantId>,
+}
+
+pub struct PeerConnectedPeersMessage {
+    pub from: ParticipantId,
+    pub message: ConnectedPeersMessage,
+}
+
 pub enum PeerMessage {
     Mpc(MpcPeerMessage),
     IndexerHeight(PeerIndexerHeightMessage),
+    ConnectedPeers(PeerConnectedPeersMessage),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

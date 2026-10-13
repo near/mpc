@@ -23,6 +23,16 @@ counters tell you whether that is working:
 | --- | --- | --- |
 | `mpc_led_computation_duration_seconds` | how long a computation took, recorded by its leader only. Labelled by `protocol_scheme`, `task` and `outcome` (`succeeded`, `failed`, `deadline_exceeded`, `abandoned` when the caller gave up on it) | increase in the number of `failed`, `abandoned` or `deadline_exceeded` counts, and `succeeded` computations approaching the deadline for that `task`. |
 
+## Mesh connectivity
+
+Every node tells its peers once a second which peers it is connected to, and
+compares those reports with its own view of who is alive:
+
+| Metric | What it tracks | When to worry |
+| --- | --- | --- |
+| `mpc_network_view_broken_pairs` | pairs of alive participants that do not both report a connection to each other | should be zero. A sustained non-zero value means two operators cannot reach each other, usually a firewall or routing problem between them, and computations that include both will time out. |
+| `mpc_network_view_unknown_peers` | alive peers from which no recent report arrived | non-zero while peers still run a node version that does not send reports; their links are assumed usable. Otherwise it should be zero. |
+
 ## Backups
 
 After every resharing, the node hands its key shares to the backup service
@@ -151,6 +161,10 @@ increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 
 # Warn: requests fail for lack of an answer in time. Cross check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Warn: two alive participants cannot reach each other. Computations that include
+# both time out until the link is fixed or one of them drops out.
+mpc_network_view_broken_pairs > 0  for 10m
 
 # Warn: more than one computation in ten ends without a result: failed, past its
 # deadline, or dropped by the caller. The last clause skips tasks with under ten

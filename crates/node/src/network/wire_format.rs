@@ -4,7 +4,9 @@
 //! only safe once no deployed node can still send it, which the handshake's
 //! [`NetworkProtocolVersion`](crate::protocol_version::NetworkProtocolVersion) check decides.
 
-use crate::primitives::{IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId};
+use crate::primitives::{
+    ConnectedPeersMessage, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
+};
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
@@ -18,6 +20,7 @@ pub enum Packet {
     Ping = 0,
     MpcMessage(MpcMessage) = 1,
     IndexerHeight(IndexerHeightMessage) = 2,
+    ConnectedPeers(ConnectedPeersMessage) = 3,
 }
 
 #[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -187,10 +190,20 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use crate::primitives::{ChannelId, ParticipantId};
+    use super::{
+        CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcMessageKind, MpcTaskId, Packet, RobustEcdsaTaskId,
+        VerifyForeignTxTaskId,
+    };
+    use crate::primitives::{
+        ChannelId, ConnectedPeersMessage, IndexerHeightMessage, MpcMessage, MpcStartMessage,
+        ParticipantId, UniqueId,
+    };
+    use borsh::BorshSerialize;
+    use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types::KeyEventId;
+    use std::fmt::Debug;
 
     fn uid(counter: u32) -> UniqueId {
         UniqueId::new(ParticipantId::from_raw(0), 1, counter)
@@ -233,6 +246,9 @@ mod tests {
                     kind: MpcMessageKind::Success,
                 }),
                 Packet::IndexerHeight(IndexerHeightMessage { height: 4 }),
+                Packet::ConnectedPeers(ConnectedPeersMessage {
+                    peers: vec![ParticipantId::from_raw(5), ParticipantId::from_raw(7)],
+                }),
             ]),
             rows(&[
                 MpcMessageKind::Start(MpcStartMessage {

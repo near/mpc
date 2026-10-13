@@ -5,6 +5,7 @@ expression: table
 Ping => 00
 MpcMessage(MpcMessage { channel_id: ChannelId(UniqueId(0, 1, 1)), kind: Success }) => 01 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 01 03
 IndexerHeight(IndexerHeightMessage { height: 4 }) => 02 04 00 00 00 00 00 00 00
+ConnectedPeers(ConnectedPeersMessage { peers: [5, 7] }) => 03 02 00 00 00 05 00 00 00 07 00 00 00
 
 Start(MpcStartMessage { task_id: EcdsaTaskId(ManyTriples { start: UniqueId(0, 1, 1), count: 64 }), participants: [5] }) => 00 00 02 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 01 40 00 00 00 01 00 00 00 05 00 00 00
 Computation([1 chunks, 3 bytes]) => 01 01 00 00 00 03 00 00 00 01 02 03
