@@ -10,7 +10,7 @@ use crate::{
     indexer::{
         IndexerAPI, ReadSubmissionBaseline, real::spawn_real_indexer, tx_sender::TransactionSender,
     },
-    keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
+    keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
     tracing::init_logging,
@@ -345,7 +345,6 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
 #[expect(clippy::too_many_arguments)]
 async fn create_root_future<TransactionSenderImpl, BaselineReader>(
-    start_config: StartConfig,
     home_dir: PathBuf,
     config: ConfigFile,
     secrets: SecretsConfig,
@@ -377,10 +376,6 @@ where
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
         local_encryption_key: secrets.local_storage_aes_key,
-        gcp: start_config.gcp.map(|gcp| GcpPermanentKeyStorageConfig {
-            project_id: gcp.project_id,
-            secret_id: gcp.keyshare_secret_id,
-        }),
     };
 
     let submitter = AttestationSubmitter {

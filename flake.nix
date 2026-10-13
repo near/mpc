@@ -77,7 +77,6 @@
           in
           {
             mpc-node-image = registryImage nodeImage;
-            mpc-node-gcp-image = registryImage (nodeImage.override { withGcloud = true; });
             mpc-launcher-image = registryImage (
               pkgs.callPackage ./nix/mpc-launcher-image.nix { inherit tee-launcher; }
             );

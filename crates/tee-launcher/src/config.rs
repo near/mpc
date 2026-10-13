@@ -6,7 +6,7 @@ use crate::types::Platform;
 /// Config keys that are not allowed in TEE mode because they could allow
 /// an operator to exfiltrate key material.
 /// Must match the field names in node-config's `StartConfig`.
-const TEE_BLOCKED_KEYS: &[&str] = &["gcp"];
+const TEE_BLOCKED_KEYS: &[&str] = &[];
 
 /// Inject launcher-controlled config section (`tee`) into the user-provided
 /// MPC node config table.  Returns an error if the user config already
@@ -271,46 +271,6 @@ key = "value"
 
         // then — any occupied entry is rejected regardless of value type
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
-    }
-
-    #[test]
-    fn intercept_config_rejects_gcp_in_tee_mode() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"
-home_dir = "/data"
-[gcp]
-keyshare_secret_id = "my-secret"
-project_id = "my-project"
-"#,
-        )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
-
-        // then
-        assert_matches!(result, Err(LauncherError::TeeRestrictedConfigKey(key)) if key == "gcp");
-    }
-
-    #[test]
-    fn intercept_config_allows_gcp_in_nontee_mode() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"
-home_dir = "/data"
-[gcp]
-keyshare_secret_id = "my-secret"
-project_id = "my-project"
-"#,
-        )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::NonTee);
-
-        // then
-        assert_matches!(result, Ok(table) if table.contains_key("gcp"));
     }
 
     // --- validate_image_reference: positive (valid references) ---
