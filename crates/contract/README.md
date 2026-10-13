@@ -106,6 +106,16 @@ _EDDSA Signature Request_
 
 Note that an Ecdsa payload is subsequently represented as a Scalar on curve Secp256k1. This means that the payload must be strictly less than the field size `p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F` (see also [curve parameters](https://www.secg.org/sec2-v2.pdf#subsubsection.2.4.1) and [k256 implementation details](https://docs.rs/k256/latest/k256/struct.Scalar.html#method.from_repr)).
 
+### ECDSA signature response
+
+A `Secp256k1` response carries `big_r`, `s` and `recovery_id`:
+
+- `r` is the x-coordinate of `big_r`, i.e. bytes `1..33` of its compressed encoding. `s` is low-s normalized.
+- `recovery_id` is the [ECDSA recovery ID](https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm#Public_key_recovery).
+- The signed message is the 32-byte `Ecdsa` payload (for `verify_foreign_transaction`, the response's `payload_hash`), without further hashing.
+
+Recovery returns some key even for forged signatures, so a signature is only valid if the recovered key equals the expected one: `derived_public_key(path, predecessor, domain_id)` for `sign`, or `public_key(domain_id)` for `verify_foreign_transaction`. See [`near-mpc-signature-verifier`](../near-mpc-signature-verifier/src/lib.rs) for a reference implementation.
+
 ### Submitting a confidential key derivation (ckd) request
 
 Users can submit a ckd request to the MPC network via the
@@ -262,8 +272,8 @@ stateDiagram-v2
 | `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, path, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`.             | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
 | `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (ckd) request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, derivation path, and app public key) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
 | `verify_foreign_transaction(request: VerifyForeignTransactionRequestArgs)`                   | Submits a foreign-chain transaction verification request to the contract. Requires a deposit of 1 yoctonear and that the requested foreign chain is in the contract's supported set. A request may carry at most 32 extractors. Duplicate submissions of the same request (same caller, domain, chain, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
-| `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
-| `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
+| `public_key(domain_id: Option<DomainId>)`                                                    | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
+| `derived_public_key(path: String, predecessor: Option<AccountId>, domain_id: Option<DomainId>)`| Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 | `prepay_attestation_storage(account_id: AccountId, grants: u32)` | Prepays attestation-entry storage for `account_id`. One grant permits one stored attestation. Payable and permissionless — anyone may prepay for any account, which is how an operator funds a node whose function-call access key cannot attach a deposit. Requires an attached deposit of exactly `attestation_storage_fee_millinear × grants` (see `config`) and rejects anything else. Nothing is refunded and there is no withdrawal. | `Result<(), Error>` | 30Tgas | ~4Tgas |
 | `available_attestation_grants(account_id: AccountId)` | Read-only function; returns the grants `account_id` has available — bought, minus those currently backing a stored attestation. `0` therefore means either "never prepaid" or "prepaid, and the grant is backing an entry"; cross-reference `get_tee_accounts` to distinguish them. | `u32` | | |
 
