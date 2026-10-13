@@ -8,24 +8,21 @@ use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{
-    Json, NearKitCaller, NearKitViewError, NearToken, Subscription, ViewArgs, ViewContract,
-    WatchContractState,
+    NearKitCaller, NearKitViewError, NearToken, Subscription, WatchContractState,
 };
 use near_kit::AccountId;
 use near_kit::transaction::ExecutedOptimistic;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
-    method_names,
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
         ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters, InitConfig,
         MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-        ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
-        UpdateId,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, Update,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -1032,22 +1029,50 @@ impl MpcCluster {
             .context("failed to send verify_foreign_transaction request")
     }
 
-    /// Propose a contract code update through the update API of the production binary the
-    /// cluster runs, and cast votes until `vote_update` reports the threshold reached.
-    /// Pair with [`Self::ensure_deployed_code`]: the deploy
-    /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
-    /// rolls the deploy back without changing the threshold-reached signal.
-    #[expect(deprecated)]
-    pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
+    /// Vote a contract code update in through the update API of the production binary the
+    /// cluster runs, then submit the code once `vote_contract_update` reports the threshold
+    /// reached. Pair with [`Self::ensure_deployed_code`]: the deploy and `migrate()` promise
+    /// runs asynchronously, and a panicking `migrate` rolls the deploy back without failing
+    /// the submission.
+    pub async fn vote_and_submit_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
         anyhow::ensure!(
             !self.nodes.is_empty(),
-            "cannot propose contract update with no nodes"
+            "cannot submit contract update with no nodes"
         );
 
-        let propose_args = ProposeUpdateArgs {
-            code: Some(new_wasm.to_vec()),
-            config: None,
-        };
+        let update = Update::Code(new_wasm.to_vec());
+        let update_hash = near_mpc_sdk::update::hash(&update);
+        let mut approved = false;
+        for (i, node) in self.nodes.iter().enumerate() {
+            let vote_outcome = self
+                .contract_handle(node.account_id())
+                .vote_contract_update(update_hash.clone())
+                .await
+                .with_context(|| format!("node {i} failed to call vote_contract_update"))?;
+            anyhow::ensure!(
+                vote_outcome.is_success(),
+                "vote_contract_update from node {i} failed: {:?}",
+                vote_outcome.failure_message()
+            );
+            approved = vote_outcome
+                .json()
+                .with_context(|| format!("vote_contract_update from node {i} returned non-bool"))?;
+            if approved {
+                anyhow::ensure!(
+                    i + 1 == self.threshold,
+                    "expected exactly {} votes to approve update, got {}",
+                    self.threshold,
+                    i + 1,
+                );
+                tracing::info!(votes = i + 1, "contract code update vote threshold reached");
+                break;
+            }
+        }
+        anyhow::ensure!(
+            approved,
+            "contract code update was not approved after votes from every node"
+        );
+
         let proposer_account = self
             .nodes
             .get(PROPOSER_NODE_INDEX)
@@ -1055,44 +1080,15 @@ impl MpcCluster {
             .account_id();
         let outcome = self
             .contract_handle(proposer_account)
-            .propose_update(propose_args)
+            .submit_contract_update(update)
             .await
-            .context("failed to call propose_update")?;
+            .context("failed to call submit_contract_update")?;
         anyhow::ensure!(
             outcome.is_success(),
-            "propose_update failed: {:?}",
+            "submit_contract_update failed: {:?}",
             outcome.failure_message()
         );
-        let proposal_id: UpdateId = outcome
-            .json()
-            .context("propose_update did not return a JSON update id")?;
-
-        for (i, node) in self.nodes.iter().enumerate() {
-            let vote_outcome = self
-                .contract_handle(node.account_id())
-                .vote_update(proposal_id)
-                .await
-                .with_context(|| format!("node {i} failed to call vote_update"))?;
-            anyhow::ensure!(
-                vote_outcome.is_success(),
-                "vote_update from node {i} failed: {:?}",
-                vote_outcome.failure_message()
-            );
-            let update_applied: bool = vote_outcome
-                .json()
-                .with_context(|| format!("vote_update from node {i} returned non-bool"))?;
-            if update_applied {
-                anyhow::ensure!(
-                    i + 1 == self.threshold,
-                    "expected exactly {} votes to apply update, got {}",
-                    self.threshold,
-                    i + 1,
-                );
-                tracing::info!(votes = i + 1, "contract code update vote threshold reached");
-                return Ok(());
-            }
-        }
-        anyhow::bail!("contract code update was not applied after votes from every node")
+        Ok(())
     }
 
     /// Wait until the deployed contract code hash matches `sha256(expected_wasm)`.
@@ -1243,9 +1239,10 @@ struct InitContractArgs {
 async fn prepay_attestation_grants(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
+    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
     near_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
-    let fee = attestation_storage_fee(contract).await?;
+    let fee = attestation_storage_fee(mpc_contract_handle).await?;
 
     // Granting the initial participants too is harmless: their attestations update the
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
@@ -1267,21 +1264,10 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
-// TODO(#4732): read through `MpcContractHandle::config()` once the `contract_history` WASMs
-// carry every `Config` field.
-async fn attestation_storage_fee(contract: &DeployedContract) -> anyhow::Result<NearToken> {
-    #[derive(serde::Deserialize)]
-    struct Config {
-        attestation_storage_fee_millinear: u64,
-    }
-    let config = contract
-        .client()
-        .view::<Config, Json>(
-            contract.account_id().clone(),
-            ViewArgs::no_args(method_names::CONFIG),
-        )
-        .await?
-        .value;
+async fn attestation_storage_fee(
+    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+) -> anyhow::Result<NearToken> {
+    let config = mpc_contract_handle.config().await?.value;
     Ok(NearToken::from_millinear(u128::from(
         config.attestation_storage_fee_millinear,
     )))
@@ -1333,7 +1319,7 @@ async fn init_contract(
         outcome.failure_message()
     );
 
-    prepay_attestation_grants(blockchain, contract, &near_keys).await?;
+    prepay_attestation_grants(blockchain, contract, mpc_contract_handle, &near_keys).await?;
 
     for &i in &participant_indices {
         let account = node_account(i);
