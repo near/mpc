@@ -250,8 +250,6 @@ pub struct MpcCluster {
     pub blockchain: NearBlockchain,
     pub contract: DeployedContract,
     pub mpc_contract_handle: MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
-    /// One monitoring task for [`state()`](MpcContractHandle::state) behind every wait, so no
-    /// two waits observe the chain out of phase with each other.
     state_subscription: Subscription<ProtocolContractState, NearKitViewError>,
     migration_info_subscription: OnceCell<Subscription<MigrationInfo, NearKitViewError>>,
     pub nodes: Vec<MpcNodeState>,
