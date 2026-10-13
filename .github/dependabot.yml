@@ -33,6 +33,8 @@ updates:
       - dependency-name: "jemalloc_pprof"
       - dependency-name: "pprof_util"
       - dependency-name: "mappings"
+      # Must match nearcore's `thread-priority`; see the workspace Cargo.toml
+      - dependency-name: "thread-priority"
       # This version needs to be exactly the same as in `near_sdk::schemars`
       - dependency-name: "schemars"
       # This is deprecated, we should find an alterantive
