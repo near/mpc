@@ -88,7 +88,6 @@ threshold-signatures = { path = "crates/threshold-signatures" }
 aes-gcm = "0.11.0"
 anyhow = "1.0.102"
 async-trait = "0.1.89"
-average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 backtrace = "0.3"
