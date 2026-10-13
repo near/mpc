@@ -264,8 +264,19 @@ let
     # builds on other machines. This hook normalises `$NIX_BUILD_TOP` to
     # `/build` for everyone so the output is bit-identical regardless of
     # how Nix is installed on the builder.
+    #
+    # Then drop the per-derivation seed from bindgen's clang arguments.
+    #
+    # `bindgenHook` copies `NIX_CFLAGS_COMPILE` into
+    # `BINDGEN_EXTRA_CLANG_ARGS`, including the `-frandom-seed` that stdenv
+    # derives from each derivation's output path. bindgen's build script
+    # tracks that variable, so with the seed left in, the final build sees a
+    # value that differs from the one `cargoArtifacts` was built with and
+    # recompiles bindgen and everything above it (rocksdb, nearcore). The seed
+    # has no effect on the generated bindings.
     preBuild = ''
       export RUSTFLAGS="$RUSTFLAGS --remap-path-prefix=$NIX_BUILD_TOP/source=/build/source --remap-path-prefix=$NIX_BUILD_TOP=/build"
+      export BINDGEN_EXTRA_CLANG_ARGS="$(sed -E 's/(^| )-frandom-seed=[^ ]*//' <<< "$BINDGEN_EXTRA_CLANG_ARGS")"
     '';
 
     doCheck = false;
@@ -273,7 +284,15 @@ let
 
   # Build deps in a separate derivation so that they're cached across
   # source changes.
-  cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+  cargoArtifacts = craneLib.buildDepsOnly (
+    commonArgs
+    // {
+      # Skip the `cargo check` pass crane runs before `cargo build` by
+      # default: it only caches artifacts for a later `cargo check` or
+      # clippy, which nothing runs on these artifacts.
+      buildPhaseCargoCommand = "cargoWithProfile build ${commonArgs.cargoExtraArgs}";
+    }
+  );
 
 in
 craneLib.buildPackage (
