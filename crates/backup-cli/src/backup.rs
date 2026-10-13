@@ -1,10 +1,13 @@
+use chain_gateway::{ChainGateway, NodeHandle};
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_contract_transport::{NearKitCaller, PollInterval, WatchContractState};
-use near_kit::Near;
-use near_kit::transaction::Final;
+use near_contract_transport::WatchContractState;
+use near_indexer::{
+    AwaitForNodeSyncedEnum, IndexerConfig, SyncModeEnum, near_primitives::types::Finality,
+};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as contract_types;
+use near_store::db::RocksDB;
 use rand_core::OsRng;
 use std::fmt::Debug;
 use std::{
@@ -88,30 +91,23 @@ pub async fn run_command(args: cli::Args) {
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
-            let request_timeout = Duration::from_secs(subcommand_args.node.request_timeout_seconds);
-            let poll_interval =
-                PollInterval::new(Duration::from_secs(subcommand_args.poll_interval_seconds))
-                    .expect("clap's range(1..) rejects a zero poll_interval_seconds");
-            let rpc = NearKitCaller::<Final>::new(
-                Near::custom(
-                    subcommand_args.rpc_url.as_str(),
-                    subcommand_args.near_chain_id.as_str(),
-                )
-                .build(),
-                poll_interval,
-                request_timeout,
-            );
-            let mpc_contract = MpcContractHandle::new(rpc, subcommand_args.mpc_contract_account_id);
-
-            mpc_contract.state().await.expect(
-                "could not read the MPC contract state; check that BACKUP_RPC_URL points to a \
-                 reachable NEAR JSON-RPC endpoint of the configured chain and that \
-                 MPC_CONTRACT_ACCOUNT_ID names the MPC contract",
-            );
-            let contract_state = mpc_contract.state().subscribe().await;
-
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
+
+            let (chain_gateway, near_node, _) =
+                ChainGateway::start(near_node_config(home_dir), None)
+                    .await
+                    .expect("failed to start the NEAR node");
+            let _near_node = StopNearNodeOnDrop(near_node);
+            let mpc_contract =
+                MpcContractHandle::new(chain_gateway, subcommand_args.mpc_contract_account_id);
+            // The first read waits until the NEAR node has synced
+            let Some(contract_state) = shutdown
+                .run_until_cancelled(mpc_contract.state().subscribe())
+                .await
+            else {
+                return;
+            };
 
             run_backup_service(
                 mpc_p2p_client,
@@ -119,7 +115,7 @@ pub async fn run_command(args: cli::Args) {
                 contract_state,
                 status_reporter,
                 adapters::clock::SystemClock,
-                poll_interval.into(),
+                Duration::from_secs(subcommand_args.retry_delay_seconds),
                 shutdown,
             )
             .await
@@ -163,6 +159,30 @@ async fn open_node_client_and_storage(
     .expect("failed to create keyshare storage");
 
     (mpc_p2p_client, keyshares_storage)
+}
+
+/// Without a block event subscriber only the home directory and the genesis validation take
+/// effect
+fn near_node_config(home_dir: PathBuf) -> IndexerConfig {
+    IndexerConfig {
+        home_dir,
+        sync_mode: SyncModeEnum::LatestSynced,
+        await_for_node_synced: AwaitForNodeSyncedEnum::WaitForFullSync,
+        finality: Finality::Final,
+        validate_genesis: false,
+        skip_broken_blocks: false,
+    }
+}
+
+/// Stops the NEAR node and waits until it has closed its store, so that exiting does not cut
+/// off its writes
+struct StopNearNodeOnDrop(NodeHandle);
+
+impl Drop for StopNearNodeOnDrop {
+    fn drop(&mut self) {
+        self.0.send_shutdown();
+        RocksDB::block_until_all_instances_are_dropped();
+    }
 }
 
 /// Backs up keyshares whenever the observed contract state stops being covered by what is

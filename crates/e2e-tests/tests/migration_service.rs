@@ -8,12 +8,13 @@ use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
-use e2e_tests::mpc_node::ProcessGuard;
+use e2e_tests::mpc_node::{MpcNodeSetup, ProcessGuard};
 use near_mpc_contract_interface::types::{
     AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
     ParticipantInfo, ProtocolContractState,
 };
 use rand::SeedableRng;
+use test_port_allocator::reserve_port;
 
 const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_mins(2);
 const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -51,6 +52,35 @@ impl BackupService {
             "backup-cli generate-keys failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    /// Makes the NEAR node embedded in `backup-cli run` one more peer of the sandbox, by reusing
+    /// the genesis and NEAR config of an [`MpcNodeSetup`] that already is one
+    fn must_init_near_node(&self, node: &MpcNodeSetup) {
+        let output = Command::new(node.binary_path())
+            .args(["init", "--chain-id", "mpc-localnet", "--dir"])
+            .arg(self.home_dir.path())
+            .arg("--genesis")
+            .arg(node.home_dir().join("genesis.json"))
+            .output()
+            .expect("failed to run mpc-node init");
+        assert!(
+            output.status.success(),
+            "mpc-node init failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let config = std::fs::read(node.home_dir().join("config.json"))
+            .expect("failed to read the node's NEAR config");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&config).expect("failed to parse the node's NEAR config");
+        config["rpc"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
+        config["network"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
+        std::fs::write(
+            self.home_dir.path().join("config.json"),
+            serde_json::to_vec_pretty(&config).expect("failed to serialize the NEAR config"),
+        )
+        .expect("failed to write the NEAR config");
     }
 
     fn public_key(&self) -> anyhow::Result<Ed25519PublicKey> {
@@ -112,10 +142,6 @@ impl BackupService {
                 "--home-dir",
                 self.must_get_home_dir_str(),
                 "run",
-                "--rpc-url",
-                args.rpc_url,
-                "--near-chain-id",
-                args.chain_id,
                 "--mpc-contract-account-id",
                 args.contract_account_id,
                 "--mpc-node-address",
@@ -124,7 +150,7 @@ impl BackupService {
                 args.node_p2p_key,
                 "--backup-encryption-key-hex",
                 args.backup_encryption_key_hex,
-                "--poll-interval-seconds",
+                "--retry-delay-seconds",
                 "1",
             ])
             .spawn()
@@ -177,8 +203,6 @@ struct RunningBackupService {
 }
 
 struct RunArgs<'a> {
-    rpc_url: &'a str,
-    chain_id: &'a str,
     contract_account_id: &'a str,
     node_migration_address: &'a str,
     node_p2p_key: &'a str,
@@ -755,16 +779,18 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
         })
         .await;
 
+    let MpcNodeState::Running(source) = &cluster.nodes[source_idx] else {
+        panic!("source node not running");
+    };
+
     let backup_service = BackupService::must_get_new(backup_cli);
     backup_service.must_generate_keys();
+    backup_service.must_init_near_node(source.setup());
     register_backup_service_and_wait(&cluster, source_idx, &backup_service)
         .await
         .expect("register_backup_service_and_wait failed");
 
-    let source_migration_addr = match &cluster.nodes[source_idx] {
-        MpcNodeState::Running(n) => n.migration_web_ui_address(),
-        _ => panic!("source node not running"),
-    };
+    let source_migration_addr = source.migration_web_ui_address();
     wait_for_migration_port(&source_migration_addr)
         .await
         .expect("migration port never became reachable");
@@ -779,8 +805,6 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     );
     let _service = backup_service
         .run(RunArgs {
-            rpc_url: &cluster.sandbox.rpc_url(),
-            chain_id: &cluster.sandbox.chain_id().expect("sandbox chain id"),
             contract_account_id: cluster.contract.account_id().as_str(),
             node_migration_address: &source_migration_addr,
             node_p2p_key: &cluster.nodes[source_idx].p2p_public_key_str(),

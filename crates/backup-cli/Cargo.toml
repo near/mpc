@@ -7,13 +7,15 @@ edition = { workspace = true }
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
+chain-gateway = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }
 near-account-id = { workspace = true }
-near-contract-transport = { workspace = true, features = ["near-kit"] }
-near-kit = { workspace = true }
+near-contract-transport = { workspace = true, features = ["traits"] }
+near-indexer = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
+near-store = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }

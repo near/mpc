@@ -44,10 +44,6 @@ export NEW_NODE_MIGRATION_ADDRESS=$NEW_NODE_HOST:8079
 # The new node's public URL to register on the contract — http:// prefix required;
 # adjust if peers reach the node under a different name (Step 6)
 export NEW_NODE_URL=http://$NEW_NODE_HOST:80
-
-# A NEAR RPC provider's endpoint, not your MPC node — only needed for the optional
-# continuous backup (Step 4); an api key goes in the query string
-export BACKUP_RPC_URL=https://rpc.$NEAR_NETWORK.fastnear.com
 ```
 
 One more variable lives on the node host rather than this machine:
@@ -332,13 +328,12 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 
 ### Keeping the Backup Up to Date
 
-`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a NEAR JSON-RPC endpoint (`$BACKUP_RPC_URL` from [Environment Variables Setup](#environment-variables-setup)) and takes a backup whenever the contract's keyset is not the one already stored:
+`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself through a NEAR node it embeds and takes a backup whenever the contract's keyset is not the one already stored:
 
 ```bash
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   run \
-  --near-chain-id $NEAR_NETWORK \
   --mpc-contract-account-id $MPC_CONTRACT_ACCOUNT_ID \
   --mpc-node-address $OLD_NODE_MIGRATION_ADDRESS \
   --mpc-node-p2p-key $OLD_NODE_P2P_KEY
@@ -347,15 +342,16 @@ backup-cli \
 Notes:
 
 - Run `backup-cli run` under a supervisor such as systemd, so it restarts after a crash or reboot.
-- No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
-- The endpoint is probed at startup: if the contract state cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. When starting at boot, before the network is up, rely on the supervisor's restart policy.
+- No `contract_state.json` is needed: the state comes from the embedded NEAR node. It is the NEAR node an MPC node embeds, so expect [comparable requirements](node-requirements.md).
+- The embedded node expects its `config.json`, `genesis.json` and `node_key.json` in `$BACKUP_HOME_DIR`, where it also keeps its data. `backup-cli` does not create these files: before the first start, initialize them the way [`deployment/start.sh`](../../deployment/start.sh) does for an MPC node, with `mpc-node init` followed by the script's `config.json` changes.
+- Nothing is backed up until the embedded node has synced. A contract state that cannot be read is logged at `error`, and the service keeps waiting for one that can.
 - The encryption key again comes from `BACKUP_ENCRYPTION_KEY_HEX` (Step 3), never the command line, where `ps` would expose it for the lifetime of the service.
 - Keyshares already backed up are never re-fetched or overwritten, so restarting the service is safe and older epochs' files are kept.
-- It re-reads the contract every `--poll-interval-seconds` (default 60) and acts only when the state actually changed. A successful backup logs at `info`, a failed one at `warn`, and a failed backup is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
+- It acts only when the contract state actually changed. A successful backup logs at `info`, a failed one at `warn`, and a failed backup is re-attempted after `--retry-delay-seconds` (default 60). Logs, which include the embedded node's, default to `info`; `RUST_LOG` overrides that.
 - `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`. When unset (the default), nothing is served. After a restart the backup time is unknown, so until the next backup `/status` reports `timestamp_seconds: null` and the timestamp gauge is absent — an alert on that gauge returns no data then, rather than firing.
 - This is the backup direction only. Restoring (Steps 6–8) stays manual.
 
-See [Automatic backups](../archive/design/migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee, including the RPC endpoint's role.
+See [Automatic backups](../archive/design/migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee. That document predates the embedded NEAR node, so its notes on the RPC endpoint no longer apply.
 
 
 ## Step 5: Prepare the New Node
