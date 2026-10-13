@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -7,9 +7,12 @@ use std::{
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_contract_transport::{NearKitCaller, NearToken};
+use near_contract_transport::{
+    Json, NearKitCaller, NearKitViewError, NearToken, Subscription, ViewArgs, ViewContract,
+    WatchContractState,
+};
 use near_kit::AccountId;
-use near_kit::transaction::{ExecutedOptimistic, Final};
+use near_kit::transaction::ExecutedOptimistic;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
@@ -18,13 +21,15 @@ use near_mpc_contract_interface::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
-        GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
-        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
+        ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters, InitConfig,
+        MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
+        ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
+        ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
+        UpdateId,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
+use tokio::sync::OnceCell;
 
 use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::CallMpc;
@@ -42,7 +47,9 @@ pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 // triple/presignature generation past 120 s; the most pressure-sensitive
 // consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_mins(4);
-pub const CLUSTER_POLL_INTERVAL: Duration = Duration::from_millis(500);
+pub const VOTE_KEY_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
+pub const PARTICIPANT_ATTESTATIONS_TIMEOUT: Duration = Duration::from_mins(2);
+const CONTRACT_INIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Account id for node `i`. Single source for the cluster's node naming.
 fn node_account(i: usize) -> String {
@@ -51,14 +58,6 @@ fn node_account(i: usize) -> String {
 
 fn tee_verifier_account() -> String {
     format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}")
-}
-
-pub fn cluster_poll_retry() -> ConstantBuilder {
-    ConstantBuilder::default()
-        .with_delay(CLUSTER_POLL_INTERVAL)
-        .with_max_times(
-            (CLUSTER_WAIT_TIMEOUT.as_millis() / CLUSTER_POLL_INTERVAL.as_millis()) as usize,
-        )
 }
 
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
@@ -250,6 +249,9 @@ pub struct MpcCluster {
     pub sandbox: NearSandbox,
     pub blockchain: NearBlockchain,
     pub contract: DeployedContract,
+    pub mpc_contract_handle: MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    state_subscription: Subscription<ProtocolContractState, NearKitViewError>,
+    migration_info_subscription: OnceCell<Subscription<MigrationInfo, NearKitViewError>>,
     pub nodes: Vec<MpcNodeState>,
     pub node_keys: Vec<SigningKey>,
     /// Separate access keys used by the test to cast votes on node accounts.
@@ -321,6 +323,9 @@ impl MpcCluster {
             &config.contract_wasm,
         )
         .await?;
+        let mpc_contract_handle =
+            MpcContractHandle::new(contract.client(), contract_account.clone());
+        let state_subscription = mpc_contract_handle.state().subscribe().await;
 
         let participant_indices = config.participant_indices();
 
@@ -329,6 +334,8 @@ impl MpcCluster {
         init_contract(
             &blockchain,
             &contract,
+            &mpc_contract_handle,
+            &state_subscription,
             &ports,
             InitContractArgs {
                 near_keys: node_near_keys.clone(),
@@ -368,6 +375,7 @@ impl MpcCluster {
             add_initial_domains(
                 &blockchain,
                 &contract,
+                &state_subscription,
                 &operator_keys,
                 &participant_indices,
                 &config.domains,
@@ -383,6 +391,9 @@ impl MpcCluster {
             sandbox,
             blockchain,
             contract,
+            mpc_contract_handle,
+            state_subscription,
+            migration_info_subscription: OnceCell::new(),
             nodes,
             node_keys,
             operator_keys,
@@ -489,15 +500,30 @@ impl MpcCluster {
     }
 
     pub async fn get_contract_state(&self) -> anyhow::Result<ProtocolContractState> {
-        self.contract.state().await
+        Ok(self.mpc_contract_handle.state().await?.value)
     }
 
     pub async fn wait_for_state(
         &self,
-        predicate: impl Fn(&ProtocolContractState) -> bool,
         timeout: Duration,
+        predicate: impl Fn(&ProtocolContractState) -> bool + Send,
     ) -> anyhow::Result<ProtocolContractState> {
-        wait_for_contract_state(&self.contract, timeout, predicate).await
+        wait_for_contract_state(&self.state_subscription, timeout, predicate).await
+    }
+
+    pub async fn wait_for_migration_info(
+        &self,
+        timeout: Duration,
+        predicate: impl Fn(&MigrationInfo) -> bool + Send,
+    ) -> anyhow::Result<MigrationInfo> {
+        let observed = self
+            .migration_info_subscription
+            .get_or_init(|| self.mpc_contract_handle.migration_info().subscribe())
+            .await
+            .clone()
+            .wait_for(timeout, predicate)
+            .await?;
+        Ok(observed.value)
     }
 
     /// Wait until the node at `idx` responds with HTTP 200 on its `/health` endpoint.
@@ -529,11 +555,6 @@ impl MpcCluster {
         .with_context(|| format!("node {idx} did not become healthy within 120s"))
     }
 
-    /// Query all accounts that have TEE attestations stored in the contract.
-    pub async fn get_tee_accounts(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.contract.view(method_names::GET_TEE_ACCOUNTS).await
-    }
-
     /// Vote to add domains and wait until the contract returns to the
     /// [`Running`](ProtocolContractState::Running)
     /// state (i.e. key generation has completed for all new domains).
@@ -542,12 +563,11 @@ impl MpcCluster {
     pub async fn add_domains_and_wait(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
         self.start_add_domains(domains).await?;
 
-        self.wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
-        .await
-        .map(|_| ())
+        self.wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
+        .await?;
+        Ok(())
     }
 
     /// Vote to add domains and wait only until the contract enters the
@@ -579,12 +599,11 @@ impl MpcCluster {
 
         futures::future::try_join_all(votes).await?;
 
-        self.wait_for_state(
-            |s| matches!(s, ProtocolContractState::Initializing(_)),
-            Duration::from_secs(30),
-        )
-        .await
-        .map(|_| ())
+        self.wait_for_state(VOTE_KEY_EVENT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Initializing(_))
+        })
+        .await?;
+        Ok(())
     }
 
     /// Vote to cancel an in-progress keygen from a specific node.
@@ -636,12 +655,11 @@ impl MpcCluster {
         self.vote_resharing(current_participants, prospective_epoch_id, proposal)
             .await?;
 
-        self.wait_for_state(
-            |s| matches!(s, ProtocolContractState::Resharing(_)),
-            Duration::from_secs(30),
-        )
-        .await
-        .map(|_| ())
+        self.wait_for_state(VOTE_KEY_EVENT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Resharing(_))
+        })
+        .await?;
+        Ok(())
     }
 
     /// Full resharing: vote, wait for Resharing, then wait for Running.
@@ -652,12 +670,11 @@ impl MpcCluster {
     ) -> anyhow::Result<()> {
         self.start_resharing(new_participants, new_threshold)
             .await?;
-        self.wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
-        .await
-        .map(|_| ())
+        self.wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
+        .await?;
+        Ok(())
     }
 
     /// Poll until all proposed participants have TEE attestations on-chain.
@@ -665,25 +682,24 @@ impl MpcCluster {
         &self,
         node_indices: &[usize],
     ) -> anyhow::Result<()> {
-        let required: Vec<String> = node_indices
+        let required: Vec<&AccountId> = node_indices
             .iter()
-            .map(|&idx| self.nodes[idx].account_id().to_string())
+            .map(|&idx| self.nodes[idx].account_id())
             .collect();
-        (|| async {
-            let tee_accounts = self.get_tee_accounts().await?;
-            let have: std::collections::HashSet<String> = tee_accounts
-                .iter()
-                .filter_map(|v| v.get("account_id")?.as_str().map(String::from))
-                .collect();
-            anyhow::ensure!(
-                required.iter().all(|a| have.contains(a)),
-                "not all proposed participants have TEE attestations (need: {required:?}, have: {have:?})"
-            );
-            Ok(())
-        })
-        // 120s deadline: 120_000ms / 500ms = 240 attempts
-        .retry(ConstantBuilder::default().with_delay(POLL_INTERVAL).with_max_times(240))
-        .await
+        self.mpc_contract_handle
+            .get_tee_accounts()
+            .subscribe()
+            .await
+            .wait_for(PARTICIPANT_ATTESTATIONS_TIMEOUT, |tee_accounts| {
+                let have: HashSet<&AccountId> =
+                    tee_accounts.iter().map(|node| &node.account_id).collect();
+                required.iter().all(|a| have.contains(a))
+            })
+            .await
+            .with_context(|| {
+                format!("not all proposed participants have TEE attestations (need: {required:?})")
+            })?;
+        Ok(())
     }
 
     /// Vote for resharing from all running nodes: current participants first,
@@ -874,13 +890,6 @@ impl MpcCluster {
             .context("failed to send CKD request")
     }
 
-    /// View migration info from the contract.
-    pub async fn view_migration_info<T: serde::de::DeserializeOwned + Send + 'static>(
-        &self,
-    ) -> anyhow::Result<T> {
-        self.contract.view(method_names::MIGRATION_INFO).await
-    }
-
     /// Build a [`NearKitCaller`] for the operator key of the given node.
     pub fn operator_client_for(
         &self,
@@ -904,45 +913,31 @@ impl MpcCluster {
             .context("failed to register backup service")
     }
 
-    pub async fn view_available_foreign_chains(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::AvailableForeignChains> {
-        self.contract
-            .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
-            .await
-    }
-
-    pub async fn view_foreign_chains_configs(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
-            .await
-    }
-
     pub async fn view_allowed_foreign_chain_providers(
         &self,
     ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
-        self.contract
-            .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-            .await
+        Ok(self
+            .mpc_contract_handle
+            .allowed_foreign_chain_providers()
+            .await?
+            .value)
     }
 
     /// Polls until the registered per-node configs equal `expected`.
     pub async fn wait_for_foreign_chains_registrations(
         &self,
-        expected: &near_mpc_contract_interface::types::ForeignChainsConfigs,
+        expected: &ForeignChainsConfigs,
     ) -> anyhow::Result<()> {
-        (|| async {
-            let registrations = self.view_foreign_chains_configs().await?;
-            anyhow::ensure!(
-                registrations == *expected,
-                "expected registrations {expected:?}, got {registrations:?}"
-            );
-            Ok(())
-        })
-        .retry(cluster_poll_retry())
-        .await
+        self.mpc_contract_handle
+            .get_foreign_chains_configs()
+            .subscribe()
+            .await
+            .wait_for(CLUSTER_WAIT_TIMEOUT, |registrations| {
+                registrations == expected
+            })
+            .await
+            .with_context(|| format!("registrations did not reach {expected:?}"))?;
+        Ok(())
     }
 
     /// Polls until the available-chains view equals `expected`.
@@ -950,16 +945,14 @@ impl MpcCluster {
         &self,
         expected: &BTreeSet<ForeignChain>,
     ) -> anyhow::Result<()> {
-        (|| async {
-            let available = self.view_available_foreign_chains().await?;
-            anyhow::ensure!(
-                *available == *expected,
-                "expected available chains {expected:?}, got {available:?}"
-            );
-            Ok(())
-        })
-        .retry(cluster_poll_retry())
-        .await
+        self.mpc_contract_handle
+            .get_available_foreign_chains()
+            .subscribe()
+            .await
+            .wait_for(CLUSTER_WAIT_TIMEOUT, |available| **available == *expected)
+            .await
+            .with_context(|| format!("available chains did not reach {expected:?}"))?;
+        Ok(())
     }
 
     pub async fn whitelist_foreign_chains(
@@ -1274,17 +1267,31 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
+// TODO(#4732): read through `MpcContractHandle::config()` once the `contract_history` WASMs
+// carry every `Config` field.
 async fn attestation_storage_fee(contract: &DeployedContract) -> anyhow::Result<NearToken> {
-    let config: serde_json::Value = contract.view("config").await?;
-    let millinear = config["attestation_storage_fee_millinear"]
-        .as_u64()
-        .context("config() has no attestation_storage_fee_millinear")?;
-    Ok(NearToken::from_millinear(u128::from(millinear)))
+    #[derive(serde::Deserialize)]
+    struct Config {
+        attestation_storage_fee_millinear: u64,
+    }
+    let config = contract
+        .client()
+        .view::<Config, Json>(
+            contract.account_id().clone(),
+            ViewArgs::no_args(method_names::CONFIG),
+        )
+        .await?
+        .value;
+    Ok(NearToken::from_millinear(u128::from(
+        config.attestation_storage_fee_millinear,
+    )))
 }
 
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
+    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
     ports: &TestPorts,
     args: InitContractArgs,
 ) -> anyhow::Result<()> {
@@ -1313,14 +1320,9 @@ async fn init_contract(
         key_event_timeout_blocks: Some(KEY_EVENT_TIMEOUT_BLOCKS),
         ..InitConfig::default()
     };
-    // Final, not the default optimistic wait: `prepay_attestation_grants` reads `config()`
-    // next, and a view resolves against the last final block.
     let outcome = match init_format {
         ContractInitFormat::Current => {
-            contract
-                .client()
-                .with_wait_level::<Final>()
-                .call_mpc(contract.account_id())
+            mpc_contract_handle
                 .init(params, tee_verifier_account_id, Some(init_config))
                 .await?
         }
@@ -1346,12 +1348,12 @@ async fn init_contract(
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
     }
 
-    wait_for_contract_state(contract, Duration::from_secs(30), |s| {
+    wait_for_contract_state(state_subscription, CONTRACT_INIT_TIMEOUT, |s| {
         matches!(s, ProtocolContractState::Running(_))
     })
     .await
-    .map(|_| ())
-    .context("contract did not reach Running state after init")
+    .context("contract did not reach Running state after init")?;
+    Ok(())
 }
 
 /// Deploys the tee-verifier and votes it in from every participant. The vote is a no-op on
@@ -1400,6 +1402,7 @@ async fn deploy_and_trust_tee_verifier(
 async fn add_initial_domains(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
+    state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
     operator_keys: &[SigningKey],
     participant_indices: &[usize],
     domains: &[DomainConfig],
@@ -1416,18 +1419,18 @@ async fn add_initial_domains(
             .with_context(|| format!("node {i} failed to vote add domains"))?;
     }
 
-    wait_for_contract_state(contract, Duration::from_secs(30), |s| {
+    wait_for_contract_state(state_subscription, VOTE_KEY_EVENT_TIMEOUT, |s| {
         matches!(s, ProtocolContractState::Initializing(_))
     })
     .await
     .context("contract did not reach Initializing state after domain addition")?;
 
-    wait_for_contract_state(contract, CLUSTER_WAIT_TIMEOUT, |s| {
+    wait_for_contract_state(state_subscription, CLUSTER_WAIT_TIMEOUT, |s| {
         matches!(s, ProtocolContractState::Running(_))
     })
     .await
-    .map(|_| ())
-    .context("contract did not reach Running state after key generation")
+    .context("contract did not reach Running state after key generation")?;
+    Ok(())
 }
 
 fn start_mpc_nodes(
@@ -1614,31 +1617,13 @@ async fn ensure_nodes_alive(nodes: &mut [MpcNodeState]) -> anyhow::Result<()> {
 }
 
 async fn wait_for_contract_state(
-    contract: &DeployedContract,
+    state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
     timeout: Duration,
-    predicate: impl Fn(&ProtocolContractState) -> bool,
+    predicate: impl Fn(&ProtocolContractState) -> bool + Send,
 ) -> anyhow::Result<ProtocolContractState> {
-    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
-    (|| async {
-        match contract.state().await {
-            Ok(state) if predicate(&state) => Ok(state),
-            Ok(_) => anyhow::bail!("predicate not yet satisfied"),
-            Err(e) => {
-                tracing::debug!(error = %e, "failed to query contract state (retrying)");
-                Err(e)
-            }
-        }
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(POLL_INTERVAL)
-            .with_max_times(max_times),
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "contract state predicate not satisfied within {}s",
-            timeout.as_secs()
-        )
-    })
+    let observed = state_subscription
+        .clone()
+        .wait_for(timeout, predicate)
+        .await?;
+    Ok(observed.value)
 }
