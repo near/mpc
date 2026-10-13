@@ -101,13 +101,6 @@ async fn migration_endpoint__should_track_migration_state() {
     }
 }
 
-async fn get_contract_migrations(cluster: &e2e_tests::MpcCluster) -> anyhow::Result<MigrationInfo> {
-    cluster
-        .view_migration_info::<MigrationInfo>()
-        .await
-        .context("failed to view migration info")
-}
-
 async fn get_debug_migrations(
     client: &reqwest::Client,
     web_addr: &str,
@@ -132,22 +125,11 @@ async fn ensure_contract_matches(
     cluster: &e2e_tests::MpcCluster,
     expected: &MigrationInfo,
 ) -> anyhow::Result<()> {
-    let expected = expected.clone();
-    (|| async {
-        let actual = get_contract_migrations(cluster).await?;
-        anyhow::ensure!(
-            actual == expected,
-            "contract migration state mismatch: expected {expected:?}, got {actual:?}"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(20),
-    )
-    .await
-    .context("timed out waiting for contract migration state to match")
+    cluster
+        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |actual| actual == expected)
+        .await
+        .with_context(|| format!("contract migration state did not reach {expected:?}"))?;
+    Ok(())
 }
 
 /// Ensure the node's `/debug/migrations` endpoint eventually equals `expected`.
