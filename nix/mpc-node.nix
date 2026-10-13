@@ -290,7 +290,7 @@ let
       # Skip the `cargo check` pass crane runs before `cargo build` by
       # default: it only caches artifacts for a later `cargo check` or
       # clippy, which nothing runs on these artifacts.
-      buildPhaseCargoCommand = "cargoWithProfile build ${commonArgs.cargoExtraArgs}";
+      cargoCheckCommand = "true";
     }
   );
 
