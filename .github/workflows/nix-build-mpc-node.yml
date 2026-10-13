@@ -48,6 +48,4 @@ jobs:
           docker run --rm mpc-node /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
           docker run --rm mpc-node-gcp /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
           docker run --rm mpc-node-gcp gcloud --version
-          ./scripts/check-mpc-node-docker-starts.sh
-          NODE_IMAGE_NAME=mpc-node-gcp ./scripts/check-mpc-node-docker-starts.sh
-          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
+          .github/scripts/check-images-start.sh
