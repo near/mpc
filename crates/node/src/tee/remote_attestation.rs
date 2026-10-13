@@ -69,12 +69,16 @@ pub struct AttestationSubmitter<T, A, R> {
 /// retrying with backoff until [`TransactionStatus::Executed`] is observed. Retries are
 /// unbounded; the caller stops them by dropping this future, as
 /// [`periodic_attestation_submission`] does when a round times out.
+///
+/// Without a `baseline` an unknown outcome is not retried and returns
+/// [`SubmissionError::Unconfirmed`]: no observation can confirm the landing, so a retry would
+/// resubmit until the round deadline. The next round confirms with a fresh baseline.
 async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
     baseline: Option<SubmissionBaseline>,
-) -> anyhow::Result<()> {
+) -> Result<(), SubmissionError> {
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
         tls_public_key,
@@ -97,20 +101,12 @@ async fn submit_remote_attestation(
             match attestation_submission_response {
                 TransactionStatus::Executed => Ok(()),
                 TransactionStatus::NotExecuted => {
-                    anyhow::bail!("attestation submission was not executed")
+                    Err(anyhow::anyhow!("attestation submission was not executed").into())
                 }
-                TransactionStatus::Unknown => {
-                    anyhow::bail!("attestation submission has unknown response")
-                }
+                TransactionStatus::Unknown => Err(SubmissionError::Unconfirmed),
             }
         }
     };
-
-    // Without a baseline no observation can confirm a landing, so retrying would resubmit until
-    // the round deadline. The next round confirms with a fresh baseline.
-    if baseline.is_none() {
-        return set_attestation().await;
-    }
 
     let exponential_backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
@@ -121,6 +117,7 @@ async fn submit_remote_attestation(
 
     set_attestation
         .retry(exponential_backoff)
+        .when(|error| baseline.is_some() || !matches!(error, SubmissionError::Unconfirmed))
         .sleep(tokio::time::sleep)
         .notify(|error, duration| {
             tracing::error!(
@@ -130,6 +127,14 @@ async fn submit_remote_attestation(
             );
         })
         .await
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SubmissionError {
+    #[error("attestation submission has unknown response")]
+    Unconfirmed,
+    #[error(transparent)]
+    Failed(#[from] anyhow::Error),
 }
 
 fn validate_remote_attestation(
@@ -234,8 +239,12 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBase
         MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
             .with_label_values(&[outcome_label(submission.is_ok())])
             .inc();
-        if let Err(error) = submission {
-            tracing::error!(?error, "attestation submission failed");
+        match submission {
+            Ok(()) => {}
+            Err(SubmissionError::Unconfirmed) => tracing::warn!(
+                "attestation submitted, but it can't be confirmed without a baseline; the next round checks again"
+            ),
+            Err(error) => tracing::error!(?error, "attestation submission failed"),
         }
     }
 }
@@ -313,10 +322,10 @@ mod tests {
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::tick::MockTicker;
-    use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
     use mpc_attestation::attestation::MockAttestation;
     use rand::SeedableRng;
+    use std::assert_matches;
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -671,7 +680,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
-    async fn submit_remote_attestation__should_submit_once_without_a_baseline() {
+    async fn submit_remote_attestation__should_not_retry_an_unknown_outcome_without_a_baseline() {
         // Given: the landing can't be confirmed, so every attempt comes back unknown
         let sender = MockSender::default();
         sender.set_unconfirmed(true);
@@ -688,7 +697,30 @@ mod tests {
         .await;
 
         // Then
-        assert_matches!(submission, Ok(Err(_)));
+        assert_matches!(submission, Ok(Err(SubmissionError::Unconfirmed)));
         assert_eq!(sender.attempts(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn submit_remote_attestation__should_retry_a_failed_send_without_a_baseline() {
+        // Given: a send that never left the node can't have landed, so retrying is safe
+        let sender = MockSender::default();
+        sender.set_failing(true);
+        let (tls_public_key, _) = test_keys();
+
+        // When
+        let submission = submit_remote_attestation(
+            sender.clone(),
+            Attestation::Mock(MockAttestation::Valid),
+            tls_public_key,
+            None,
+        )
+        .timeout(Duration::from_mins(10))
+        .await;
+
+        // Then
+        assert_matches!(submission, Err(_));
+        assert!(sender.attempts() > 1);
     }
 }
