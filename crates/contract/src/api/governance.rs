@@ -126,14 +126,12 @@ mod tests {
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
     use crate::primitives::thresholds::GovernanceThresholdParameters;
-    use assert_matches::assert_matches;
     use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
     use rand::rngs::OsRng;
-    use std::collections::BTreeMap;
-    use std::panic;
+    use std::{assert_matches, collections::BTreeMap};
 
     /// Sets up the voting context and calls [`MpcContract::vote_new_parameters`] with the
     /// given parameters.

@@ -3,12 +3,8 @@ pub mod serializable;
 use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use k256::{
-    AffinePoint, Secp256k1,
-    elliptic_curve::{CurveArithmetic, PrimeField, group::GroupEncoding},
-};
+use k256::elliptic_curve::group::GroupEncoding;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serializable::SerializableEdwardsPoint;
 
 use near_mpc_contract_interface::types as dtos;
@@ -91,178 +87,12 @@ impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
     }
 }
 
-pub mod k256_types {
-    use super::{
-        AffinePoint, BorshDeserialize, BorshSerialize, CurveArithmetic, Deserialize, PrimeField,
-        Secp256k1, Serialize,
-    };
-    use k256::Scalar;
-
-    pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
-
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, Ord, PartialOrd)]
-    pub struct SerializableScalar {
-        pub scalar: Scalar,
-    }
-
-    impl SerializableScalar {
-        pub fn new(scalar: Scalar) -> Self {
-            Self { scalar }
-        }
-    }
-
-    impl From<Scalar> for SerializableScalar {
-        fn from(scalar: Scalar) -> Self {
-            Self { scalar }
-        }
-    }
-
-    // Is there a better way to enforce `borsh` serialization?
-    impl BorshSerialize for SerializableScalar {
-        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let to_ser: [u8; 32] = self.scalar.to_bytes().into();
-            BorshSerialize::serialize(&to_ser, writer)
-        }
-    }
-
-    impl BorshDeserialize for SerializableScalar {
-        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let from_ser: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
-            let scalar =
-                Scalar::from_repr(from_ser.into())
-                    .into_option()
-                    .ok_or(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "The given scalar is not in the field of Secp256k1",
-                    ))?;
-            Ok(SerializableScalar { scalar })
-        }
-    }
-
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-    pub struct SerializableAffinePoint {
-        pub affine_point: AffinePoint,
-    }
-
-    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-    pub struct Signature {
-        pub big_r: SerializableAffinePoint,
-        pub s: SerializableScalar,
-        pub recovery_id: u8,
-    }
-
-    impl Signature {
-        pub fn new(big_r: AffinePoint, s: k256::Scalar, recovery_id: u8) -> Self {
-            Signature {
-                big_r: SerializableAffinePoint {
-                    affine_point: big_r,
-                },
-                s: s.into(),
-                recovery_id,
-            }
-        }
-    }
-}
-
-pub mod ed25519_types {
-    use super::{BorshDeserialize, BorshSerialize, Deserialize, PrimeField, Serialize, serde_as};
-    use curve25519_dalek::Scalar;
-
-    // Is there a better way to force a borsh serialization?
-    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
-    pub struct SerializableScalar {
-        scalar: Scalar,
-    }
-
-    impl SerializableScalar {
-        pub fn new(scalar: Scalar) -> Self {
-            Self { scalar }
-        }
-    }
-
-    impl From<Scalar> for SerializableScalar {
-        fn from(scalar: Scalar) -> Self {
-            Self { scalar }
-        }
-    }
-
-    impl BorshSerialize for SerializableScalar {
-        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let to_ser: [u8; 32] = self.scalar.to_bytes();
-            BorshSerialize::serialize(&to_ser, writer)
-        }
-    }
-
-    impl BorshDeserialize for SerializableScalar {
-        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let from_ser: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
-            let scalar = Scalar::from_repr(from_ser)
-                .into_option()
-                .ok_or(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "The given scalar is not in the field of ed25519",
-                ))?;
-            Ok(SerializableScalar { scalar })
-        }
-    }
-
-    impl Ord for SerializableScalar {
-        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-            self.scalar.as_bytes().cmp(other.scalar.as_bytes())
-        }
-    }
-
-    impl PartialOrd for SerializableScalar {
-        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            Some(self.cmp(other))
-        }
-    }
-
-    #[serde_as]
-    #[derive(
-        BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
-    )]
-    pub struct Signature(#[serde_as(as = "[_; 64]")] [u8; 64]);
-
-    impl Signature {
-        pub fn as_bytes(&self) -> &[u8; 64] {
-            &self.0
-        }
-
-        pub fn new(bytes: [u8; 64]) -> Self {
-            Self(bytes)
-        }
-    }
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
-    use k256::elliptic_curve::PrimeField;
     use rstest::rstest;
-
-    #[test]
-    fn serializeable_scalar_roundtrip() {
-        let test_vec = vec![
-            k256::Scalar::ZERO,
-            k256::Scalar::ONE,
-            k256::Scalar::from_u128(u128::MAX),
-            k256::Scalar::from_repr([3; 32].into()).unwrap(),
-        ];
-
-        for scalar in test_vec.into_iter() {
-            let input = k256_types::SerializableScalar { scalar };
-            // Test borsh
-            {
-                let serialized = borsh::to_vec(&input).unwrap();
-                let output: k256_types::SerializableScalar =
-                    borsh::from_slice(&serialized).unwrap();
-                assert_eq!(input, output, "Failed on {:?}", scalar);
-            }
-        }
-    }
+    use std::assert_matches;
 
     /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     #[rstest]

@@ -19,9 +19,9 @@ pub struct CKDRequestArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
     use serde_json::json;
+    use std::assert_matches;
 
     fn dummy_g1() -> Bls12381G1PublicKey {
         Bls12381G1PublicKey([1u8; 48])

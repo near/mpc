@@ -119,10 +119,9 @@ mod tests {
     use mpc_node::migration_service::web::test_utils;
     use mpc_node::p2p::testing::port_seed;
 
-    use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
     use rand::SeedableRng as _;
-    use std::time::Duration;
+    use std::{assert_matches, time::Duration};
 
     use crate::adapters::p2p_client::{Error, MpcP2PClient};
     use crate::cli::NodeAddress;

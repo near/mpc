@@ -52,8 +52,8 @@ use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::Context;
-use std::{collections::HashMap, error, future::Future, sync::Arc};
+use std::task::{Context, Poll};
+use std::{collections::HashMap, error, future::poll_fn, sync::Arc};
 
 use crate::crypto::constants::NEAR_CHANNEL_TAGS_DOMAIN;
 
@@ -322,10 +322,19 @@ impl Comms {
     /// The suspension must self-wake: nested executors like the
     /// [`FuturesUnordered`](futures::stream::FuturesUnordered) behind `try_join_all` only re-poll children whose
     /// waker fired, so a plain pending return would never be polled again.
-    /// [`futures_lite::future::yield_now`] wakes before returning pending.
     pub(crate) async fn yield_point(&self) {
         self.yield_requested.store(true, Ordering::Relaxed);
-        futures_lite::future::yield_now().await;
+        let mut yielded = false;
+        poll_fn(move |cx| {
+            if yielded {
+                Poll::Ready(())
+            } else {
+                yielded = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        })
+        .await;
     }
 
     /// Consume a pending yield request, returning whether one was set.
@@ -597,7 +606,7 @@ impl<T> Protocol for ProtocolExecutor<T> {
             polled_once_already = true;
             let waker = noop_waker();
             let mut cx = Context::from_waker(&waker);
-            if let std::task::Poll::Ready(result) = fut.poll_unpin(&mut cx) {
+            if let Poll::Ready(result) = fut.poll_unpin(&mut cx) {
                 self.result = Some(result);
                 self.fut = None;
             }
@@ -621,6 +630,7 @@ pub fn make_protocol<T: Send>(
 mod tests {
     use super::*;
     use crate::participants::Participant;
+    use std::assert_matches;
 
     #[test]
     #[expect(non_snake_case)]
@@ -643,10 +653,10 @@ mod tests {
 
         // When / Then - the message queued before the yield point surfaces first, the
         // yield is reported, and the next poke resumes the computation to completion
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::Yield));
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
-        assert_matches::assert_matches!(protocol.poke(), Ok(Action::Return(42)));
+        assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
+        assert_matches!(protocol.poke(), Ok(Action::Yield));
+        assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
+        assert_matches!(protocol.poke(), Ok(Action::Return(42)));
     }
 
     #[test]

@@ -18,9 +18,7 @@ use near_mpc_contract_interface::types::{
     ParticipantInfo as DtoParticipantInfo, ProtocolContractState,
 };
 use near_sdk::{NearToken, testing_env};
-use std::str::FromStr;
-
-use assert_matches::assert_matches;
+use std::{assert_matches, str::FromStr};
 
 fn participant_info(contract: &MpcContract, account_id: &AccountId) -> DtoParticipantInfo {
     let ProtocolContractState::Running(running) = contract.state() else {
