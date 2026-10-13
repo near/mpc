@@ -194,9 +194,10 @@ The returned cluster exposes:
 - **Node lifecycle:** `kill_nodes`, `start_nodes`, `reset_and_start_nodes`
   (wipe + start + wait for health), `kill_all`.
 - **Contract state:** `get_contract_state`, `wait_for_state`,
-  `wait_for_migration_info` (one subscription per view, started on first use
-  and shared by every wait), `wait_for_node_healthy`; other views via
-  `cluster.mpc_contract_handle`, waited on with `.subscribe().await.wait_for(..)`.
+  `wait_for_migration_info` (one subscription per view, shared by every wait;
+  `state` is subscribed when the cluster is created, `migration_info` on first
+  use), `wait_for_node_healthy`; other views via `cluster.mpc_contract_handle`,
+  waited on with `.subscribe().await.wait_for(..)`.
 - **Resharing:** `start_resharing`, `start_resharing_and_wait`,
   `vote_cancel_resharing_from`, `add_domains_and_wait`, `start_add_domains`.
 - **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.

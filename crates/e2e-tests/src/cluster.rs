@@ -12,7 +12,7 @@ use near_contract_transport::{
     WatchContractState,
 };
 use near_kit::AccountId;
-use near_kit::transaction::{ExecutedOptimistic, Final};
+use near_kit::transaction::ExecutedOptimistic;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
@@ -250,8 +250,8 @@ pub struct MpcCluster {
     pub blockchain: NearBlockchain,
     pub contract: DeployedContract,
     pub mpc_contract_handle: MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
-    /// One monitoring task for `state()` behind every wait, so no two waits observe the chain
-    /// out of phase with each other.
+    /// One monitoring task for [`state()`](MpcContractHandle::state) behind every wait, so no
+    /// two waits observe the chain out of phase with each other.
     state_subscription: Subscription<ProtocolContractState, NearKitViewError>,
     migration_info_subscription: OnceCell<Subscription<MigrationInfo, NearKitViewError>>,
     pub nodes: Vec<MpcNodeState>,
@@ -1269,9 +1269,8 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
-/// Reads only the fee: the production contracts in `contract_history` predate other fields of
-/// the current [`Config`](near_mpc_contract_interface::types::Config).
-// TODO(#4732): read through `MpcContractHandle::config()` once those WASMs carry every `Config` field.
+// TODO(#4732): read through `MpcContractHandle::config()` once the `contract_history` WASMs
+// carry every `Config` field.
 async fn attestation_storage_fee(contract: &DeployedContract) -> anyhow::Result<NearToken> {
     #[derive(serde::Deserialize)]
     struct Config {
@@ -1323,13 +1322,9 @@ async fn init_contract(
         key_event_timeout_blocks: Some(KEY_EVENT_TIMEOUT_BLOCKS),
         ..InitConfig::default()
     };
-    // Final, not the default optimistic wait: `prepay_attestation_grants` reads `config()`
-    // next, and a view resolves against the last final block.
     let outcome = match init_format {
         ContractInitFormat::Current => {
             mpc_contract_handle
-                .clone()
-                .map_caller(|client| client.with_wait_level::<Final>())
                 .init(params, tee_verifier_account_id, Some(init_config))
                 .await?
         }
