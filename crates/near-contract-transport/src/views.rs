@@ -10,6 +10,7 @@ mod view_call;
 pub use args::ViewArgs;
 pub use deserialize::{Borsh, DeserializationError, DeserializeAs, Deserializer, Json};
 pub use errors::TransportError;
+pub use monitoring::Subscription;
 pub use observation::{ObservedState, SerializedObservation};
 pub use traits::{HasPollInterval, PollInterval, ViewContract, WatchContractState};
 pub use view_call::ViewCall;

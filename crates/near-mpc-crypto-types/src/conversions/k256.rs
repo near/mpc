@@ -60,7 +60,7 @@ impl From<&k256::PublicKey> for Secp256k1PublicKey {
     fn from(pk: &k256::PublicKey) -> Self {
         let mut bytes = [0u8; 64];
         // Uncompressed encoded point is 65 bytes (0x04 prefix + 64 bytes)
-        bytes.copy_from_slice(&pk.to_encoded_point(false).to_bytes()[1..]);
+        bytes.copy_from_slice(&pk.to_encoded_point(false).as_bytes()[1..]);
         Secp256k1PublicKey::from(bytes)
     }
 }
@@ -115,11 +115,11 @@ impl TryFrom<&K256Signature> for k256::ecdsa::Signature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use k256::ecdsa::SigningKey;
     use k256::ecdsa::signature::hazmat::PrehashSigner;
     use k256::elliptic_curve::Field;
     use rand::SeedableRng as _;
+    use std::assert_matches;
 
     #[test]
     fn roundtrip_affine_point() {

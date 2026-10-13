@@ -1123,7 +1123,6 @@ mod tests {
     use crate::indexer::types::ChainSendTransactionRequest;
     use crate::primitives::ParticipantId;
     use crate::tests::common::MockTransactionSender;
-    use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
     use mpc_node_config::foreign_chains::RpcProviderName;
     use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
@@ -1132,8 +1131,8 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
-    use std::collections::BTreeSet;
     use std::num::NonZeroU64;
+    use std::{assert_matches, collections::BTreeSet};
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;

@@ -1,8 +1,9 @@
 # Auto-Removal of Unused Launcher Image Hashes
 
+**Status:** ARCHIVED
 **Implemented:** [#3564](https://github.com/near/mpc/pull/3564), reworked in [#4527](https://github.com/near/mpc/pull/4527) and [#4572](https://github.com/near/mpc/pull/4572)
 **Issue:** [#3381](https://github.com/near/mpc/issues/3381)
-**Related:** [Securing MPC with TEE](securing-mpc-with-tee/securing-mpc-with-tee.md), [TEE Lifecycle](tee-lifecycle.md), [Certificate-Derived Attestation Expiry](certificate-derived-attestation-expiry.md)
+**Related:** [Securing MPC with TEE](../../design/securing-mpc-with-tee/securing-mpc-with-tee.md), [TEE Lifecycle](../../design/tee-lifecycle.md), [Certificate-Derived Attestation Expiry](../../design/certificate-derived-attestation-expiry.md)
 
 ## Problem
 

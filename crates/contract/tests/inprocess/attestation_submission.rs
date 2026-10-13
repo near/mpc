@@ -18,9 +18,8 @@ use mpc_contract::{
 use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
-use std::collections::BTreeMap;
+use std::{assert_matches, collections::BTreeMap};
 
-use assert_matches::assert_matches;
 use near_account_id::AccountId;
 use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;

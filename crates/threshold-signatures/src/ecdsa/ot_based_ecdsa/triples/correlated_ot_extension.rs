@@ -30,7 +30,7 @@ pub async fn correlated_ot_sender(
     }
 
     // Spec 6
-    let q = (u & delta) ^ t;
+    let q = u.and_vec(&delta).xor(&t);
 
     Ok(q)
 }
@@ -52,7 +52,7 @@ pub fn correlated_ot_receiver(
     let t1 = k1.expand_transpose(params.sid, params.batch_size)?;
 
     // Spec 3
-    let u = &t0 ^ t1 ^ x;
+    let u = t0.xor(&t1).xor(x);
 
     // Spec 4
     let wait0 = chan.next_waitpoint();
@@ -108,7 +108,9 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
         let batch_size = 256;
-        let x = BitMatrix::random(&mut rng, batch_size).unwrap();
+        let x: BitMatrix = (0..batch_size)
+            .map(|_| BitVector::random(&mut rng))
+            .collect();
         let (q, t) = run_correlated_ot(
             (delta, k),
             (k0, k1, x.clone()),
@@ -116,6 +118,6 @@ mod test {
             batch_size,
         )
         .unwrap();
-        assert_eq!(t ^ (x & delta), q);
+        assert_eq!(t.xor(&x.and_vec(&delta)), q);
     }
 }

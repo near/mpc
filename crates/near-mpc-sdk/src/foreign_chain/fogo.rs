@@ -39,8 +39,8 @@ impl ForeignChainRequestBuilder<FogoRequest<NotSet, NotSet>, NotSet> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod test {
-    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::DomainId;
+    use std::assert_matches;
 
     use crate::foreign_chain::ForeignChainRequestBuilder;
 

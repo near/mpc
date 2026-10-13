@@ -3,7 +3,7 @@ use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainId, Payload, SignRequestArgs,
 };
 use near_sdk::{AccountId, Gas, NearToken, Promise, env, ext_contract, log, near};
-use std::collections::BTreeMap;
+use std::{assert_matches, collections::BTreeMap};
 
 #[ext_contract(ext_mpc_contract)]
 pub trait MpcContract {
@@ -164,7 +164,7 @@ impl TestContract {
         for i in 0..num_calls {
             let result = env::promise_result_checked(i, 500);
             log!("sign #{i}: {:?}", result);
-            assert_matches::assert_matches!(result, Ok(_));
+            assert_matches!(result, Ok(_));
         }
         num_calls
     }

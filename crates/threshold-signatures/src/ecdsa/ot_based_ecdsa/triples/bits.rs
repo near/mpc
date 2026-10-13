@@ -1,6 +1,5 @@
 use crate::crypto::constants::{NEAR_PRG_CTX, SECURITY_PARAMETER};
 use crate::errors::ProtocolError;
-use auto_ops::impl_op_ex;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use sha3::{
@@ -102,12 +101,6 @@ impl BitVector {
         }
     }
 
-    pub fn and(&self, other: &Self) -> Self {
-        let mut out = *self;
-        out.and_mut(other);
-        out
-    }
-
     /// Multiplication in the field.
     ///
     /// This returns an unreduced value, which is fine for our use case.
@@ -150,12 +143,6 @@ impl ConditionallySelectable for BitVector {
         Self(out)
     }
 }
-
-impl_op_ex!(^ |u: &BitVector, v: &BitVector| -> BitVector { u.xor(v) });
-impl_op_ex!(^= |u: &mut BitVector, v: &BitVector| { u.xor_mut(v) });
-impl_op_ex!(&|u: &BitVector, v: &BitVector| -> BitVector { u.and(v) });
-impl_op_ex!(&= |u: &mut BitVector, v: &BitVector| { u.and_mut(v) });
-impl_op_ex!(!|u: &BitVector| -> BitVector { u.not() });
 
 /// A [`BitVector`] of double the size.
 ///
@@ -206,9 +193,6 @@ impl ConstantTimeEq for DoubleBitVector {
     }
 }
 
-impl_op_ex!(^ |u: &DoubleBitVector, v: &DoubleBitVector| -> DoubleBitVector { u.xor(v) });
-impl_op_ex!(^= |u: &mut DoubleBitVector, v: &DoubleBitVector| { u.xor_mut(v) });
-
 /// Represents a matrix of bits.
 ///
 /// Each row of this matrix is a [`BitVector`], although we might have more or less
@@ -226,23 +210,6 @@ impl_secret_debug!(
 );
 
 impl BitMatrix {
-    /// Create a random matrix of a certain chunk size.
-    ///
-    /// Each chunk will have a security parameter's worth of rows.
-    pub fn random(rng: &mut impl CryptoRngCore, height: usize) -> Result<Self, ProtocolError> {
-        if !height.is_multiple_of(SECURITY_PARAMETER) {
-            return Err(ProtocolError::InvalidInput(format!(
-                "height {height} must be a multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
-            )));
-        }
-        Ok(Self((0..height).map(|_| BitVector::random(rng)).collect()))
-    }
-
-    /// Create a new matrix from a list of rows.
-    pub fn from_rows<'a>(rows: impl IntoIterator<Item = &'a BitVector>) -> Self {
-        Self(rows.into_iter().copied().collect())
-    }
-
     /// Return the number of rows in this matrix.
     pub fn height(&self) -> usize {
         self.0.len()
@@ -269,7 +236,7 @@ impl BitMatrix {
     /// Modify this matrix by xoring it with another.
     pub fn xor_mut(&mut self, other: &Self) {
         for (self_i, other_i) in self.0.iter_mut().zip(other.0.iter()) {
-            *self_i ^= other_i;
+            self_i.xor_mut(other_i);
         }
     }
 
@@ -282,7 +249,7 @@ impl BitMatrix {
 
     pub fn and_vec_mut(&mut self, v: &BitVector) {
         for self_i in &mut self.0 {
-            *self_i &= v;
+            self_i.and_mut(v);
         }
     }
 
@@ -299,9 +266,6 @@ impl FromIterator<BitVector> for BitMatrix {
     }
 }
 
-impl_op_ex!(^ |u: &BitMatrix, v: &BitMatrix| -> BitMatrix { u.xor(v) });
-impl_op_ex!(^= |u: &mut BitMatrix, v: &BitMatrix| { u.xor_mut(v) });
-impl_op_ex!(&|u: &BitMatrix, v: &BitVector| -> BitMatrix { u.and_vec(v) });
 #[derive(Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct SquareBitMatrix {

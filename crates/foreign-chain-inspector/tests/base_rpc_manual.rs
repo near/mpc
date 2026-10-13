@@ -1,4 +1,3 @@
-use assert_matches::assert_matches;
 use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector,
@@ -8,6 +7,7 @@ use foreign_chain_inspector::{
     },
 };
 use foreign_chain_rpc_factory::build_http_client;
+use std::assert_matches;
 
 const BASE_RPC_URL: &str = "https://mainnet.base.org";
 
