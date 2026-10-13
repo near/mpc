@@ -200,6 +200,7 @@ pprof = { version = "0.15.0", features = [
 # Same `tikv-jemalloc-sys` constraint as `jemalloc_pprof`.
 pprof_util = "0.8"
 proc-macro2 = "1.0"
+prometheus = { version = "0.14.0", default-features = false }
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
@@ -275,8 +276,6 @@ near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
 nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
 
 ## Outdated dependencies we cannot upgrade ##
-prometheus = { version = "0.14.0", default-features = false }
-
 # This version needs to be exactly the same as in `near_sdk::schemars`
 schemars = "0.8.22"
 
