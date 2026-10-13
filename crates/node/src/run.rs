@@ -273,7 +273,6 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let home_dir = config.home_dir.clone();
     let root_future = create_root_future(
-        config,
         home_dir.clone(),
         node_config.clone(),
         secrets.clone(),
