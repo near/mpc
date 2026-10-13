@@ -17,10 +17,10 @@ on:
         required: true
         type: string
       repository:
-        description: "Target repository name (default: 'mpc-node-gcp')"
+        description: "Target repository name (default: 'mpc-node')"
         required: false
         type: string
-        default: mpc-node-gcp
+        default: mpc-node
   workflow_call:
     inputs:
       source-tag:

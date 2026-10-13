@@ -7,7 +7,7 @@ This document describes the release process for the NEAR MPC project.
 The NEAR MPC project ships two artifacts together as one release bundle:
 
 - **MPC Node binary** — distributed as Docker images
-  (`nearone/mpc-node`, `nearone/mpc-node-gcp`, `nearone/mpc-launcher`).
+  (`nearone/mpc-node`, `nearone/mpc-launcher`).
 - **Chain Signatures contract** — distributed as a reproducibly-built WASM
   attached to the GitHub release.
 
@@ -16,7 +16,7 @@ promotes already-built artifacts to a versioned release. The workflow:
 
 1. Reads the version from `Cargo.toml` on the dispatched branch.
 2. Retags the Docker images that were built for the branch HEAD
-   (`nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`) to the
+   (`nearone/mpc-{node,launcher}:<branch>-<short-sha>`) to the
    release version (`:X.Y.Z`).
 3. Downloads the reproducibly-built contract WASM from the matching
    [Build Contract](.github/workflows/build_contract.yml) run.
@@ -78,11 +78,10 @@ When the release PR merges, the four workflows the release needs fire on the
 protected branch:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
-- [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
 - [Build Docker Rust Launcher Image](.github/workflows/docker_build_rust_launcher.yml)
 - [Build Contract](.github/workflows/build_contract.yml)
 
-The image workflows push `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`.
+The image workflows push `nearone/mpc-{node,launcher}:<branch>-<short-sha>`.
 The contract workflow uploads the reproducible WASM as a GitHub Actions
 artifact named `contract`.
 
@@ -97,7 +96,7 @@ not use yet.
 
 > **Tip:** The pre-release images are deployable. If you want to
 > smoke-test on testnet before promoting, deploy
-> `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
+> `nearone/mpc-node:release-v3.11-<short-sha>` directly.
 
 ### 3. Verify the build is reproducible
 
@@ -159,10 +158,10 @@ Review the draft and click "Publish release." Publishing creates the
 
 ### 6. Promote to operator floating tags (optional)
 
-Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
+Some operators consume floating tags like `nearone/mpc-node:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
 
-- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run once with `repository: mpc-node` and once with `repository: mpc-node-gcp`.
+- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run once with `repository: mpc-node`.
 - [Release Launcher Docker Image](.github/workflows/docker_launcher_release.yml) — single run for `mpc-launcher`.
 
 Use `source-tag = 3.11.0` and `release-tag = testnet-release` or
