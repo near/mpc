@@ -11541,7 +11541,7 @@ dependencies = [
  "insta",
  "itertools 0.15.0",
  "k256 0.13.4",
- "keccak 0.1.6",
+ "keccak 0.2.2",
  "pairing",
  "rand 0.8.8",
  "rand_chacha 0.3.1",
