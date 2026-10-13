@@ -90,7 +90,7 @@ pub trait WatchContractState {
         Self: Send,
     {
         async move {
-            let satisfied = async move {
+            tokio::time::timeout(timeout, async {
                 loop {
                     if let Ok(observed) = self.latest()
                         && predicate(&observed.value)
@@ -99,10 +99,9 @@ pub trait WatchContractState {
                     }
                     self.changed().await?;
                 }
-            };
-            tokio::time::timeout(timeout, satisfied)
-                .await
-                .map_err(|_elapsed| WaitError::TimedOut(timeout))?
+            })
+            .await
+            .map_err(|_elapsed| WaitError::TimedOut(timeout))?
         }
     }
 }
