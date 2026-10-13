@@ -50,7 +50,6 @@ use tokio_util::{
     sync::CancellationToken,
     time::FutureExt,
 };
-use tracing::{error, info};
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
 /// This will send small packets immediately, reducing latency for node messages at
@@ -222,7 +221,7 @@ impl OutgoingConnection {
         let peer_id =
             Self::verify_expected_peer(&tls_stream, participant_identities, target_participant_id)?;
 
-        info!("performing P2P handshake with: {:?}", target_address);
+        tracing::info!("performing P2P handshake with: {:?}", target_address);
         let peer_network_protocol_version =
             Self::negotiate_protocol(&mut tls_stream, sender_connection_id).await?;
 
@@ -617,7 +616,7 @@ where
         .map(|participant| participant.port)
         .ok_or_else(|| anyhow!("My ID not found in participants"))?;
 
-    info!("Preparing participant data.");
+    tracing::info!("Preparing participant data.");
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
@@ -685,7 +684,7 @@ where
 
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
-    info!("Spawning incoming connections handler.");
+    tracing::info!("Spawning incoming connections handler.");
     let incoming_connections_task =
         tracking::spawn("incoming connection handler tls mesh network", async move {
             let mut tasks = AutoAbortTaskCollection::new();
@@ -753,7 +752,7 @@ async fn incoming_connection_handler(
             .with_label_values(&[peer_id.to_string().as_str()])
             .inc();
         if let Err(err) = tls_stream.shutdown().await {
-            error!(err = %err, "TLS shutdown failed");
+            tracing::error!(err = %err, "TLS shutdown failed");
         }
         return Ok(());
     };
