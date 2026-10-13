@@ -88,7 +88,6 @@ threshold-signatures = { path = "crates/threshold-signatures" }
 aes-gcm = "0.11.0"
 anyhow = "1.0.102"
 async-trait = "0.1.89"
-average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 backtrace = "0.3"
@@ -173,7 +172,6 @@ lru = "0.18.0"
 # binary mappings into emitted pprof profiles so `pprof` can symbolicate
 # addresses through ASLR.
 mappings = "0.7"
-mockall = "0.15.0"
 near-abi = "0.4.4"
 near-account-id = "2.6.0"
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
@@ -250,7 +248,6 @@ tracing-subscriber = { version = "0.3.23", features = [
     "std",
     "json",
 ] }
-tracing-test = "0.2.6"
 url = "2"
 wycheproof = { version = "0.7", default-features = false, features = [
     "ecdsa",
