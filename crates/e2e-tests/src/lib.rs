@@ -10,7 +10,6 @@ pub mod near_sandbox;
 pub mod test_dir;
 
 pub use blockchain::{DeployedContract, NearBlockchain};
-pub use caller::NearKitCaller;
 pub use cluster::{
     CLUSTER_WAIT_TIMEOUT, DEFAULT_PRESIGNATURES_TO_BUFFER, DEFAULT_TRIPLES_TO_BUFFER, MpcCluster,
     MpcClusterConfig, MpcNodeState,

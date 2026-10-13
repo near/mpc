@@ -7,10 +7,19 @@ use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
 pub use auth::{AuthConfig, TokenConfig};
-pub use embedded::{RpcPreset, embedded_foreign_chains};
+pub use embedded::RpcPreset;
+use embedded::embedded_foreign_chains;
+pub use resolve::{
+    PairSource, ResolutionDiagnostic, ResolveError, ResolvedForeignChains, SkipReason,
+    resolve_with_embedded,
+};
 
 mod auth;
 mod embedded;
+mod resolve;
+
+/// Substituted in an `rpc_url` by the provider's [`ProviderCredentials::slug`].
+const SLUG_PLACEHOLDER: &str = "{slug}";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainsConfig {
@@ -150,6 +159,31 @@ impl ForeignChainsConfig {
         .into_iter()
     }
 
+    /// [`None`] for a chain this config has no key for.
+    fn chain_slot_mut(
+        &mut self,
+        chain: dtos::ForeignChain,
+    ) -> Option<&mut Option<ForeignChainConfig>> {
+        match chain {
+            dtos::ForeignChain::Solana => Some(&mut self.solana),
+            dtos::ForeignChain::Bitcoin => Some(&mut self.bitcoin),
+            dtos::ForeignChain::Ethereum => Some(&mut self.ethereum),
+            dtos::ForeignChain::Abstract => Some(&mut self.abstract_chain),
+            dtos::ForeignChain::Starknet => Some(&mut self.starknet),
+            dtos::ForeignChain::Bnb => Some(&mut self.bnb),
+            dtos::ForeignChain::Base => Some(&mut self.base),
+            dtos::ForeignChain::Arbitrum => Some(&mut self.arbitrum),
+            dtos::ForeignChain::HyperEvm => Some(&mut self.hyper_evm),
+            dtos::ForeignChain::Polygon => Some(&mut self.polygon),
+            dtos::ForeignChain::Aptos => Some(&mut self.aptos),
+            dtos::ForeignChain::Sui => Some(&mut self.sui),
+            dtos::ForeignChain::Avalanche => Some(&mut self.avalanche),
+            dtos::ForeignChain::Adi => Some(&mut self.adi),
+            dtos::ForeignChain::Fogo => Some(&mut self.fogo),
+            _ => None,
+        }
+    }
+
     /// Iterate over every chain that has a local config, paired with its DTO identifier.
     pub fn iter_chains(
         &self,
@@ -219,7 +253,7 @@ fn validate_slug(slug: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use assert_matches::assert_matches;
+    use std::assert_matches;
 
     use super::*;
     use crate::ConfigFile;
@@ -785,6 +819,39 @@ quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
 
         // Then
         assert_matches!(result, Err(_));
+    }
+
+    #[test]
+    fn chain_slot_mut__should_address_the_same_field_as_chain_slots() {
+        // Given
+        let chains: Vec<_> = ForeignChainsConfig::default()
+            .chain_slots()
+            .map(|(chain, _)| chain)
+            .collect();
+
+        for chain in chains {
+            let mut config = ForeignChainsConfig::default();
+
+            // When
+            *config
+                .chain_slot_mut(chain)
+                .expect("every chain slot should be addressable") = Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(30).unwrap(),
+                max_retries: NonZeroU64::new(1).unwrap(),
+                expected_network_fingerprint: None,
+                providers: NonEmptyBTreeMap::new(
+                    "only".to_string().into(),
+                    ForeignChainProviderConfig {
+                        rpc_url: "https://rpc.example.com".to_string(),
+                        auth: AuthConfig::None,
+                    },
+                ),
+            });
+
+            // Then
+            let configured: Vec<_> = config.iter_chains().map(|(c, _)| c).collect();
+            assert_eq!(configured, vec![chain]);
+        }
     }
 
     /// Every chain is set, so a chain added later has to be listed here too.

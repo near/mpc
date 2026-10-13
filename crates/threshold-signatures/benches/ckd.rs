@@ -5,7 +5,8 @@ use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, participant_rng, prepare_ckd,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, participant_rng,
+    prepare_ckd,
 };
 use threshold_signatures::{
     ReconstructionThreshold,
@@ -31,6 +32,7 @@ fn bench_ckd(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_ckd_snapshot(threshold());
+    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("ckd");
     group.sample_size(*SAMPLE_SIZE);
@@ -47,6 +49,7 @@ fn bench_ckd(c: &mut Criterion) {
             );
         },
     );
+    analyze_received_sizes(&[size], true);
 }
 
 criterion_group!(benches, bench_ckd);

@@ -6,7 +6,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
-    ed25519_prepare_sign_v1, participant_rng,
+    analyze_received_sizes, ed25519_prepare_sign_v1, participant_rng,
 };
 use threshold_signatures::{
     ReconstructionThreshold,
@@ -26,6 +26,7 @@ fn bench_sign(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_sign_snapshot(*RECONSTRUCTION_LOWER_BOUND);
+    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
     group.sample_size(*SAMPLE_SIZE);
@@ -42,6 +43,7 @@ fn bench_sign(c: &mut Criterion) {
             );
         },
     );
+    analyze_received_sizes(&[size], true);
 }
 
 criterion_group!(benches, bench_sign);

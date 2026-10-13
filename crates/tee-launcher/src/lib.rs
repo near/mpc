@@ -2,10 +2,10 @@ use std::io::Write;
 use std::path::Path;
 
 use clap::Parser;
-use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use launcher_interface::types::{
     ApprovedHashes, DockerSha256Digest, TeeAuthorityConfig, TeeConfig,
 };
+use mpc_primitives::hash::MPC_IMAGE_HASH_EVENT;
 
 use compose::launch_mpc_container;
 use config::{intercept_node_config, validate_image_reference};

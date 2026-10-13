@@ -1,6 +1,5 @@
 use std::fmt;
 
-use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
 use super::ForeignChainsConfig;
@@ -36,13 +35,14 @@ impl fmt::Display for RpcPreset {
     }
 }
 
-pub fn embedded_foreign_chains(rpc_preset: RpcPreset) -> anyhow::Result<ForeignChainsConfig> {
+pub(super) fn embedded_foreign_chains(
+    rpc_preset: RpcPreset,
+) -> Result<ForeignChainsConfig, toml::de::Error> {
     let source = match rpc_preset {
         RpcPreset::Mainnet => MAINNET,
         RpcPreset::Testnet => TESTNET,
     };
     toml::from_str(source)
-        .with_context(|| format!("failed to parse the embedded {rpc_preset} foreign chain config"))
 }
 
 #[cfg(test)]
@@ -53,7 +53,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::foreign_chains::{AuthConfig, TokenConfig};
+    use crate::foreign_chains::{
+        AuthConfig, ProviderCredentials, SLUG_PLACEHOLDER, TokenConfig, resolve_with_embedded,
+    };
 
     #[rstest]
     #[case::mainnet(RpcPreset::Mainnet)]
@@ -137,5 +139,57 @@ mod tests {
         }
         assert!(config.credentials.is_empty());
         assert_eq!(config.rpc_preset, None);
+    }
+
+    #[rstest]
+    #[case::mainnet(RpcPreset::Mainnet)]
+    #[case::testnet(RpcPreset::Testnet)]
+    fn resolve_with_embedded__should_enable_every_preset_provider_given_credentials(
+        #[case] rpc_preset: RpcPreset,
+    ) {
+        // Given
+        let embedded = embedded(rpc_preset);
+        let provider_names: BTreeSet<_> = embedded
+            .iter_chains()
+            .flat_map(|(_, chain)| chain.providers.keys().cloned())
+            .collect();
+        let node_config = ForeignChainsConfig {
+            rpc_preset: Some(rpc_preset),
+            credentials: provider_names
+                .into_iter()
+                .map(|name| {
+                    let credentials = ProviderCredentials {
+                        api_key: TokenConfig::Val {
+                            val: "dummy-key".to_string(),
+                        },
+                        slug: Some("dummy-slug".to_string()),
+                    };
+                    (name, credentials)
+                })
+                .collect(),
+            ..Default::default()
+        };
+
+        // When
+        let resolved = resolve_with_embedded(&node_config).expect("preset should resolve");
+
+        // Then
+        assert_eq!(
+            resolved.config.iter_chains().count(),
+            embedded.iter_chains().count()
+        );
+        for (chain, resolved_chain) in resolved.config.iter_chains() {
+            let embedded_chain = embedded
+                .iter_chains()
+                .find_map(|(c, config)| (c == chain).then_some(config))
+                .expect("resolved chain should be embedded");
+            assert_eq!(
+                resolved_chain.providers.len(),
+                embedded_chain.providers.len()
+            );
+            for provider in resolved_chain.providers.values() {
+                assert!(!provider.rpc_url.contains(SLUG_PLACEHOLDER));
+            }
+        }
     }
 }

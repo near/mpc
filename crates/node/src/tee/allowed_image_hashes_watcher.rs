@@ -195,9 +195,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
     use std::{
+        assert_matches,
         sync::{Arc, Mutex},
         time::Duration,
     };

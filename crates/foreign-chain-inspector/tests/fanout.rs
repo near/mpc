@@ -4,6 +4,7 @@
 pub mod common;
 
 use std::{
+    assert_matches,
     pin::Pin,
     sync::{
         Arc,
@@ -13,7 +14,6 @@ use std::{
 };
 
 use crate::common::fan_out_of;
-use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ProviderFailure,
     TimeProviderCall, Verdict,

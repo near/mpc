@@ -102,8 +102,8 @@ pub fn build_http_client(provider: &ForeignChainProviderConfig) -> anyhow::Resul
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use mpc_node_config::TokenConfig;
+    use std::assert_matches;
 
     #[test]
     fn auth_config_to_rpc_auth__path_auth_substitutes_token_into_url() {

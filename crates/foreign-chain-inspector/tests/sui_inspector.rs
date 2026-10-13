@@ -1,6 +1,5 @@
 #![allow(non_snake_case)]
 
-use assert_matches::assert_matches;
 use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
@@ -15,6 +14,7 @@ use foreign_chain_rpc_interfaces::sui::proto::{
 };
 use foreign_chain_rpc_interfaces::sui::{Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
+use std::assert_matches;
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
