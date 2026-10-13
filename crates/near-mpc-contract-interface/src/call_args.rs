@@ -2,10 +2,10 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
-    NodeImageHash, ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs,
-    SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
+    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId,
+    ExpectedMeasurements, ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId,
+    Keyset, LauncherImageHash, NodeImageHash, ProposedGovernanceThresholdParameters, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
     VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
@@ -68,6 +68,11 @@ pub struct VoteMpcNodeManifestDigestArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteAddLauncherHashArgs {
     pub launcher_hash: LauncherImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddOsMeasurementArgs {
+    pub measurement: ExpectedMeasurements,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
