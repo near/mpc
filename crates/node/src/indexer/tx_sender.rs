@@ -12,7 +12,9 @@ use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
-use near_mpc_contract_interface::types::{Ed25519PublicKey, GetAttestationResponse};
+use near_mpc_contract_interface::types::{
+    Attestation, Ed25519PublicKey, GetAttestationResponse, VerifiedAttestation,
+};
 use near_time::Clock;
 use std::future::Future;
 use std::sync::Arc;
@@ -182,10 +184,15 @@ async fn submit_tx(
     })
 }
 
-fn attestation_submission_status(stored: Option<&GetAttestationResponse>) -> TransactionStatus {
-    match stored {
-        Some(_) => TransactionStatus::Unknown,
+fn attestation_submission_status(
+    stored: Option<&GetAttestationResponse>,
+    dstack_submitted: bool,
+) -> TransactionStatus {
+    match stored.map(GetAttestationResponse::attestation) {
         None => TransactionStatus::NotExecuted,
+        // The contract stores a mock placeholder for each initial participant
+        Some(VerifiedAttestation::Mock(_)) if dstack_submitted => TransactionStatus::NotExecuted,
+        Some(_) => TransactionStatus::Unknown,
     }
 }
 
@@ -251,7 +258,13 @@ async fn observe_tx_result(
 
             record_stored_attestation(stored_attestation.as_ref());
 
-            Ok(attestation_submission_status(stored_attestation.as_ref()))
+            Ok(attestation_submission_status(
+                stored_attestation.as_ref(),
+                matches!(
+                    args.proposed_participant_attestation,
+                    Attestation::Dstack(_)
+                ),
+            ))
         }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
@@ -342,18 +355,24 @@ mod tests {
     use near_mpc_contract_interface::types::{MockAttestation, VerifiedAttestation};
     use rstest::rstest;
 
+    const STORED_MOCK: GetAttestationResponse =
+        GetAttestationResponse::Legacy(VerifiedAttestation::Mock(MockAttestation::Valid));
+
     #[rstest]
-    #[case::stored(
-        Some(GetAttestationResponse::Legacy(VerifiedAttestation::Mock(MockAttestation::Valid))),
-        TransactionStatus::Unknown
+    #[case::nothing_stored(None, true, TransactionStatus::NotExecuted)]
+    #[case::mock_stored_for_a_dstack_submission(
+        Some(STORED_MOCK),
+        true,
+        TransactionStatus::NotExecuted
     )]
-    #[case::nothing_stored(None, TransactionStatus::NotExecuted)]
-    fn attestation_submission_status__should_be_not_executed_only_while_nothing_is_stored(
+    #[case::mock_stored_for_a_mock_submission(Some(STORED_MOCK), false, TransactionStatus::Unknown)]
+    fn attestation_submission_status__should_be_not_executed_while_no_stored_entry_can_be_ours(
         #[case] stored: Option<GetAttestationResponse>,
+        #[case] dstack_submitted: bool,
         #[case] expected: TransactionStatus,
     ) {
         // When
-        let status = attestation_submission_status(stored.as_ref());
+        let status = attestation_submission_status(stored.as_ref(), dstack_submitted);
 
         // Then
         assert_eq!(status, expected);

@@ -7,8 +7,8 @@ use crate::{
     },
     metrics::{
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
-        MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL,
-        MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
+        MPC_TEE_ATTESTATION_OUTCOME_SENT, MPC_TEE_ATTESTATION_OUTCOME_SUCCESS,
+        MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL, MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
@@ -190,8 +190,13 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             self.tls_public_key.clone(),
         )
         .await;
+        let outcome = if submission.is_ok() {
+            MPC_TEE_ATTESTATION_OUTCOME_SENT
+        } else {
+            MPC_TEE_ATTESTATION_OUTCOME_FAILURE
+        };
         MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
-            .with_label_values(&[outcome_label(submission.is_ok())])
+            .with_label_values(&[outcome])
             .inc();
         if let Err(error) = submission {
             tracing::error!(?error, "attestation submission failed");
