@@ -82,6 +82,7 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
         }
         NetworkProtocolVersion::Jan2026
         | NetworkProtocolVersion::Sep2026
+        | NetworkProtocolVersion::Oct2026
         | NetworkProtocolVersion::Unknown(_) => {
             conn.write_u32(sender_connection_id).await?;
             let min_expected_connection_id = conn.read_u32().await?;
@@ -169,6 +170,7 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
         }
         NetworkProtocolVersion::Jan2026
         | NetworkProtocolVersion::Sep2026
+        | NetworkProtocolVersion::Oct2026
         | NetworkProtocolVersion::Unknown(_) => {
             write_magic_byte_protocol_version_and_expected_connection_version(
                 conn,
