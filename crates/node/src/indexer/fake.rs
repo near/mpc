@@ -722,7 +722,7 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, Into::into(abort.key_event_id));
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
-                    ChainSendTransactionRequest::SubmitParticipantInfo { .. } => {
+                    ChainSendTransactionRequest::SubmitParticipantInfo(_) => {
                         // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }
                     ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {

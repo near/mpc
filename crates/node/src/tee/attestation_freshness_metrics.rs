@@ -2,14 +2,11 @@
 //!
 //! Both are absolute timestamps rather than remaining durations: a node that stops re-attesting
 //! also stops updating them, and only the absolute form keeps decaying towards now, so a staleness
-//! alert still fires on a frozen gauge. At rest both advance hourly — the expiry is re-read on
-//! every submission observation, the landing timestamp only when one is confirmed.
-//!
-//! TODO(#4498): once every contract reports an acceptance time, set the landing gauge from it
-//! rather than from this node's clock, so a mistaken confirmation cannot inflate it.
+//! alert still fires on a frozen gauge. At rest both advance hourly, as both are read from the
+//! entry stored on chain after every submission.
 
-use near_mpc_contract_interface::types::VerifiedAttestation;
-use near_time::Clock;
+use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
+use near_mpc_contract_interface::types::{GetAttestationResponse, VerifiedAttestation};
 
 use crate::metrics::{
     MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS, MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS,
@@ -18,12 +15,24 @@ use crate::metrics::{
 const NO_ATTESTATION_STORED: i64 = 0;
 const NO_EXPIRY: i64 = -1;
 
-pub(crate) fn record_stored_attestation_expiry(stored: Option<&VerifiedAttestation>) {
-    MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.set(expiry_gauge_value(stored));
+pub(crate) fn record_stored_attestation(stored: Option<&GetAttestationResponse>) {
+    MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.set(expiry_gauge_value(
+        stored.map(GetAttestationResponse::attestation),
+    ));
+    if let Some(landed_at) = stored.and_then(landed_at_seconds) {
+        MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS
+            .set(i64::try_from(landed_at).unwrap_or(i64::MAX));
+    }
 }
 
-pub(crate) fn record_attestation_landed(clock: &Clock) {
-    MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.set(clock.now_utc().unix_timestamp());
+fn landed_at_seconds(stored: &GetAttestationResponse) -> Option<u64> {
+    match stored {
+        GetAttestationResponse::Current(stored) => stored.accepted_at_seconds,
+        // TODO(#4498): remove once every deployed contract stamps the acceptance time
+        GetAttestationResponse::Legacy(attestation) => attestation
+            .expiry_timestamp_seconds()
+            .and_then(|expiry| expiry.checked_sub(DEFAULT_EXPIRATION_DURATION_SECONDS)),
+    }
 }
 
 fn expiry_gauge_value(stored: Option<&VerifiedAttestation>) -> i64 {
@@ -38,11 +47,11 @@ fn expiry_gauge_value(stored: Option<&VerifiedAttestation>) -> i64 {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use near_mpc_contract_interface::types::MockAttestation;
-    use near_time::{FakeClock, Utc};
+    use near_mpc_contract_interface::types::{MockAttestation, StoredAttestation};
     use rstest::rstest;
 
     const EXPIRES_AT: u64 = 1_754_000_000;
+    const LANDED_AT: u64 = EXPIRES_AT - DEFAULT_EXPIRATION_DURATION_SECONDS;
 
     fn mock_with_expiry(expiry_timestamp_seconds: Option<u64>) -> VerifiedAttestation {
         VerifiedAttestation::Mock(MockAttestation::WithConstraints {
@@ -53,19 +62,48 @@ mod tests {
         })
     }
 
+    fn current(accepted_at_seconds: Option<u64>) -> GetAttestationResponse {
+        GetAttestationResponse::Current(StoredAttestation {
+            attestation: mock_with_expiry(Some(EXPIRES_AT)),
+            accepted_at_seconds,
+        })
+    }
+
     #[test]
-    fn record_attestation_landed__should_set_the_gauge_to_the_landing_time() {
+    fn record_stored_attestation__should_keep_the_last_acceptance_time_for_an_unstamped_entry() {
         // Given
-        let landed_at = Utc::from_unix_timestamp(EXPIRES_AT as i64).unwrap();
+        record_stored_attestation(Some(&current(Some(LANDED_AT))));
 
         // When
-        record_attestation_landed(&FakeClock::new(landed_at).clock());
+        record_stored_attestation(Some(&current(None)));
 
         // Then
         assert_eq!(
-            MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.get(),
-            EXPIRES_AT as i64
+            (
+                MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.get(),
+                MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.get()
+            ),
+            (EXPIRES_AT as i64, LANDED_AT as i64)
         );
+    }
+
+    #[rstest]
+    #[case::stamped(current(Some(LANDED_AT)), Some(LANDED_AT))]
+    #[case::carried_over_by_the_migration(current(None), None)]
+    #[case::legacy_contract(
+        GetAttestationResponse::Legacy(mock_with_expiry(Some(EXPIRES_AT))),
+        Some(LANDED_AT)
+    )]
+    #[case::legacy_without_expiry(GetAttestationResponse::Legacy(mock_with_expiry(None)), None)]
+    fn landed_at_seconds__should_read_the_acceptance_time(
+        #[case] stored: GetAttestationResponse,
+        #[case] expected: Option<u64>,
+    ) {
+        // When
+        let landed_at = landed_at_seconds(&stored);
+
+        // Then
+        assert_eq!(landed_at, expected);
     }
 
     #[rstest]
