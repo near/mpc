@@ -42,9 +42,7 @@ pub mod types {
         LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
     };
 
-    pub use updates::{
-        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, Update, UpdateHash, UpdateId,
-    };
+    pub use updates::{Update, UpdateHash};
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
