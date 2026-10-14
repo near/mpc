@@ -2505,6 +2505,8 @@ near contract call-function as-read-only \
   now
 ```
 
+Shows the voters grouped by the proposal hash of the action they voted for: the SHA-256 of the borsh-encoded `LauncherVoteAction`. May include former participants' votes, which don't count toward the threshold.
+
 ### OS Measurement Voting
 
 OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Participants can vote to approve new measurement sets, enabling OS/Dstack upgrades without contract redeployment.
