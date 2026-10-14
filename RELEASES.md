@@ -29,21 +29,24 @@ If the tag exists, the release succeeded.
 
 ## Branch model
 
-Releases ship from protected branches:
+Every release, including `X.Y.0`, is published from a `release/vX.Y` branch.
+What differs is where the release-prep PR lands:
 
-- **`main`** — ships the next minor or major.
-- **`release/vX.Y`** — ships patches for the X.Y line (`X.Y.0`, `X.Y.1`, ...).
-  Created from `main` by a repository admin when a release line needs its
-  own branch.
+| Release             | Prep PR targets | Release workflow runs on                        |
+| ------------------- | --------------- | ----------------------------------------------- |
+| Major/minor `X.Y.0` | `main`          | `release/vX.Y`, cut from the merged prep commit |
+| Patch `X.Y.Z`       | `release/vX.Y`  | `release/vX.Y`                                  |
 
-Patches accumulate on `release/vX.Y` over time:
+Landing the `X.Y.0` prep commit (changelog + version bump) on `main` keeps
+the `X.Y.0` tag reachable from `main`, so the next minor's changelog starts
+from it. Patches then accumulate on the release branch:
 
 - `release/v3.11` ships `3.11.0`, then `3.11.1`, then `3.11.2`, ...
 - `release/v3.12` ships `3.12.0` and onward.
 
 Branch protection on `main` and `release/v*` requires every commit to land
 via a reviewed PR. Branch *creation* on `release/v*` is restricted to repo
-admins — admins are trusted to fork release branches from `main` HEAD.
+admins.
 
 ## How to make a release
 
@@ -52,30 +55,34 @@ with whatever version you're releasing.
 
 ### 1. Prepare the release PR
 
-Create a working branch off the release-source branch, then run
+Create a working branch off the prep target (see [Branch model](#branch-model)),
+then run
 [`scripts/ops/prepare-github-release.sh`](./scripts/ops/prepare-github-release.sh) to apply the
 release boilerplate (changelog, version bump, ABI snapshot, licenses):
 
 ```sh
-# For a minor/major release:
+# Major/minor release: prep on main
 git checkout main && git pull
 git checkout -b release-prep/v3.11.0
 ./scripts/ops/prepare-github-release.sh 3.11.0
 
-# For a patch release:
+# Patch release: prep on the release branch
 git checkout release/v3.11 && git pull
 git checkout -b release-prep/v3.11.1
 ./scripts/ops/prepare-github-release.sh 3.11.1
 ```
 
-Push the working branch and open a PR against `main` (for minor releases)
-or `release/vX.Y` (for patches). Once the PR is reviewed and merged, the
-merge commit is what will be released.
+Push the working branch and open a PR against the branch you started from.
+Once it merges:
+
+- **Major/minor**: a repo admin cuts `release/vX.Y` at the merged prep commit
+  (see [Creating a new release branch](#creating-a-new-release-branch)).
+- **Patch**: the merge commit on `release/vX.Y` is what will be released.
 
 ### 2. Wait for the build workflows
 
-When the release PR merges, the four workflows the release needs fire on the
-protected branch:
+The four workflows the release needs fire on every push to `main` and
+`release/v*`:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
 - [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
@@ -86,8 +93,16 @@ The image workflows push `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-s
 The contract workflow uploads the reproducible WASM as a GitHub Actions
 artifact named `contract`.
 
-Wait for all four to finish successfully. The Release workflow refuses to
-run if any artifact is missing.
+The Release workflow only uses images tagged for the branch it is dispatched
+on, so wait for the runs on `release/vX.Y`:
+
+- **Patch**: they fire when the prep PR merges.
+- **Major/minor**: they fire when the admin pushes the new release branch.
+  The `main` builds from the prep PR merge are not used.
+
+The contract artifact is looked up by commit SHA, so either run's artifact
+works. Wait for all four to finish successfully. The Release workflow refuses
+to run if any artifact is missing.
 
 <!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
 
@@ -124,13 +139,14 @@ procedure. If any hash/digest differs, do **not** publish — investigate first.
 ### 4. Run the Release workflow
 
 Trigger the [Release workflow](.github/workflows/release.yml) against the
-branch:
+release branch (not `main`):
 
 ```sh
 gh workflow run release.yml --ref release/v3.11
 ```
 
-Or use the Actions UI: "Release" → "Run workflow" → pick the branch.
+Or use the Actions UI: "Release" → "Run workflow" → pick the release branch
+(e.g. `release/v3.11`).
 
 The workflow runs in the `production` environment and uses
 `DOCKERHUB_PAT` to retag images. It refuses if the version's git tag
@@ -207,12 +223,18 @@ the orphaned blob (usually a few minutes) and re-run.
 
 ## Creating a new release branch
 
-When a minor line needs its own branch (typically just before or just
-after shipping `X.Y.0`), a repo admin forks from `main`:
+After the `X.Y.0` prep PR merges to `main`, a repo admin forks the release
+branch at that merge commit:
 
 ```sh
 git checkout main && git pull
 git push origin main:refs/heads/release/v3.11
+```
+
+If other PRs merged after the prep commit, push that commit instead:
+
+```sh
+git push origin <prep-sha>:refs/heads/release/v3.11
 ```
 
 The branch ruleset on `release/v*` restricts creation to admins. After
@@ -248,8 +270,8 @@ concrete SHA rather than the literal `HEAD`: git-cliff derives the ref it
 fetches PR/author metadata from off the range head, and `HEAD` resolves to
 the repo's default branch (`main`), so PRs merged only into a release
 branch would render with empty links. Using the SHA makes git-cliff fetch
-from the branch actually being released, so both minor releases on `main`
-and patch releases on `release/vX.Y` get correct PR links, and the
+from the branch actually being released, so both minor prep on `main`
+and patch prep on `release/vX.Y` get correct PR links, and the
 baseline is always the previous semver release regardless of where
 unrelated tags point.
 

@@ -20,6 +20,16 @@ jobs:
       actions: read
 
     steps:
+      - name: Refuse if not on a release branch
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$REF" != refs/heads/release/v* ]]; then
+            echo "::error::Releases must be dispatched on a release/vX.Y branch, got $REF."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
