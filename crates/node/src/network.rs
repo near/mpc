@@ -537,27 +537,40 @@ pub fn run_network_client(
 ) -> (
     Arc<MeshNetworkClient>,
     mpsc::UnboundedReceiver<NetworkTaskChannel>,
-    AutoAbortTask<()>,
+    Vec<AutoAbortTask<()>>,
 ) {
     let indexer_heights = Arc::new(IndexerHeightTracker::new(
         &transport_sender.all_participant_ids(),
     ));
-    let client = Arc::new(MeshNetworkClient::new(
+    let network_client = Arc::new(MeshNetworkClient::new(
         transport_sender,
         Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
         indexer_heights.clone(),
     ));
     let (new_channel_sender, new_channel_receiver) = mpsc::unbounded_channel();
-    let handle = tracking::spawn(
+    let receive_loop = tracking::spawn(
         "Network receive message loop",
         run_receive_messages_loop(
-            client.clone(),
+            network_client.clone(),
             transport_receiver,
             new_channel_sender,
             indexer_heights,
         ),
     );
-    (client, new_channel_receiver, handle)
+    let metrics_emitter = tracking::spawn("periodically emits metrics", {
+        let network_client = network_client.clone();
+        async move {
+            loop {
+                network_client.emit_metrics();
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+        }
+    });
+    (
+        network_client,
+        new_channel_receiver,
+        vec![receive_loop, metrics_emitter],
+    )
 }
 
 /// Channel for a specific MPC task that allows sending and receiving messages in order to compute
