@@ -66,8 +66,8 @@ pub enum ChainSendTransactionRequest {
     SubmitParticipantInfo {
         #[serde(flatten)]
         args: Box<contract_args::SubmitParticipantInfoArgs>,
-        /// What was stored before submitting, for the landing check; `None` when that read
-        /// failed. Skipped from serialization so it never reaches the on-chain call args.
+        /// What was stored before submitting, if known, for the landing check. Skipped from
+        /// serialization so it never reaches the on-chain call args.
         #[serde(skip)]
         baseline: Option<SubmissionBaseline>,
     },

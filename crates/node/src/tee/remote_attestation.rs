@@ -3,7 +3,7 @@ use std::{future::Future, time::Duration};
 use crate::{
     indexer::{
         ReadSubmissionBaseline, SubmissionBaseline,
-        tx_sender::{TransactionSender, TransactionStatus},
+        tx_sender::{TransactionProcessorError, TransactionSender, TransactionStatus},
         types::ChainSendTransactionRequest,
     },
     metrics::{
@@ -16,7 +16,6 @@ use crate::{
     tick::Tick,
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
-use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use mpc_attestation::{
     attestation::{Attestation, VerificationError},
@@ -93,16 +92,9 @@ async fn submit_remote_attestation(
         };
 
         async move {
-            let attestation_submission_response = tx_sender
-                .send_and_wait(chain_args)
-                .await
-                .context("failed to submit transaction")?;
-
-            match attestation_submission_response {
+            match tx_sender.send_and_wait(chain_args).await? {
                 TransactionStatus::Executed => Ok(()),
-                TransactionStatus::NotExecuted => {
-                    Err(anyhow::anyhow!("attestation submission was not executed").into())
-                }
+                TransactionStatus::NotExecuted => Err(SubmissionError::NotExecuted),
                 TransactionStatus::Unknown => Err(SubmissionError::Unconfirmed),
             }
         }
@@ -121,7 +113,7 @@ async fn submit_remote_attestation(
         .sleep(tokio::time::sleep)
         .notify(|error, duration| {
             tracing::error!(
-                cause = ?error,
+                cause = %error,
                 backoff_duration = ?duration,
                 "failed to submit attestation"
             );
@@ -131,10 +123,12 @@ async fn submit_remote_attestation(
 
 #[derive(Debug, thiserror::Error)]
 enum SubmissionError {
+    #[error("failed to submit transaction: {0}")]
+    Send(#[from] TransactionProcessorError),
+    #[error("attestation submission was not executed")]
+    NotExecuted,
     #[error("attestation submission has unknown response")]
     Unconfirmed,
-    #[error(transparent)]
-    Failed(#[from] anyhow::Error),
 }
 
 fn validate_remote_attestation(
@@ -194,8 +188,6 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBase
             .await
         {
             Ok(baseline) => Some(baseline),
-            // Submit anyway on a read error: refreshing the attestation is the priority, and a
-            // broken read must not block submission (it just can't be confirmed this round).
             Err(error) => {
                 tracing::warn!(
                     ?error,
@@ -244,7 +236,7 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBase
             Err(SubmissionError::Unconfirmed) => tracing::warn!(
                 "attestation submitted, but it can't be confirmed without a baseline; the next round checks again"
             ),
-            Err(error) => tracing::error!(?error, "attestation submission failed"),
+            Err(error) => tracing::error!(%error, "attestation submission failed"),
         }
     }
 }
