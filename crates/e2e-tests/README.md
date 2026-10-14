@@ -194,15 +194,17 @@ The returned cluster exposes:
 - **Node lifecycle:** `kill_nodes`, `start_nodes`, `reset_and_start_nodes`
   (wipe + start + wait for health), `kill_all`.
 - **Contract state:** `get_contract_state`, `wait_for_state`,
-  `wait_for_node_healthy`, `get_tee_accounts`.
+  `wait_for_migration_info` (one subscription per view, shared by every wait;
+  `state` is subscribed when the cluster is created, `migration_info` on first
+  use), `wait_for_node_healthy`; other views via `cluster.mpc_contract_handle`,
+  waited on with `.subscribe().await.wait_for(..)`.
 - **Resharing:** `start_resharing`, `start_resharing_and_wait`,
   `vote_cancel_resharing_from`, `add_domains_and_wait`, `start_add_domains`.
 - **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.
 - **Data management:** `wipe_db`, `set_block_ingestion`.
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
   `send_verify_foreign_transaction`.
-- **Foreign chains:** `view_available_foreign_chains`, `view_foreign_chains_configs`,
-  `view_allowed_foreign_chain_providers`, `whitelist_foreign_chains`,
+- **Foreign chains:** `view_allowed_foreign_chain_providers`, `whitelist_foreign_chains`,
   `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
