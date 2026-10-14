@@ -2754,8 +2754,6 @@ ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
 
 This line **doesn't tell you why** — `cause` is one of `attestation submission was not executed` (most common), `attestation submission has unknown response`, or `failed to submit transaction` (lower-level RPC send failure). None of these carry the underlying reason. The actual failure shows up in one of three places.
 
-Exception: if the node couldn't read its stored attestation before submitting (`WARN could not read pre-submit attestation baseline`), it can't tell a rejection from a landing, so it doesn't retry. It logs `WARN attestation submitted, but it can't be confirmed without a baseline` instead and submits again on the next hourly tick.
-
 #### 1. Client-side pre-flight WARN — in the node logs
 
 Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
