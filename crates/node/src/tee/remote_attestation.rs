@@ -2,7 +2,6 @@ use std::{future::Future, time::Duration};
 
 use crate::{
     indexer::{
-        ReadSubmissionBaseline, SubmissionBaseline,
         tx_sender::{TransactionSender, TransactionStatus},
         types::ChainSendTransactionRequest,
     },
@@ -10,7 +9,6 @@ use crate::{
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
         MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL,
         MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
-        MPC_TEE_ATTESTATION_STAGE_READ_SUBMISSION_BASELINE,
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
@@ -54,26 +52,24 @@ impl GenerateAttestation for TeeAuthority {
 /// Inputs for the attestation-submission background task
 /// [`run_periodic_attestation_submission`].
 #[derive(Clone)]
-pub struct AttestationSubmitter<T, A, R> {
+pub struct AttestationSubmitter<T, A> {
     pub tee_authority: A,
     pub tx_sender: T,
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub baseline_reader: R,
 }
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
 /// participant's attestation and TLS public key, using the provided [`TransactionSender`] and
-/// retrying with backoff until [`TransactionStatus::Executed`] is observed. Retries are
+/// retrying with backoff while [`TransactionStatus::NotExecuted`] is observed. Retries are
 /// unbounded; the caller stops them by dropping this future, as
 /// [`periodic_attestation_submission`] does when a round times out.
 async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
-    baseline: SubmissionBaseline,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
@@ -83,10 +79,8 @@ async fn submit_remote_attestation(
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
         let propose_join_args_clone = submit_participant_info_args.clone();
-        let chain_args = ChainSendTransactionRequest::SubmitParticipantInfo {
-            args: Box::new(propose_join_args_clone),
-            baseline,
-        };
+        let chain_args =
+            ChainSendTransactionRequest::SubmitParticipantInfo(Box::new(propose_join_args_clone));
 
         async move {
             let attestation_submission_response = tx_sender
@@ -95,12 +89,9 @@ async fn submit_remote_attestation(
                 .context("failed to submit transaction")?;
 
             match attestation_submission_response {
-                TransactionStatus::Executed => Ok(()),
+                TransactionStatus::Executed | TransactionStatus::Unknown => Ok(()),
                 TransactionStatus::NotExecuted => {
                     anyhow::bail!("attestation submission was not executed")
-                }
-                TransactionStatus::Unknown => {
-                    anyhow::bail!("attestation submission has unknown response")
                 }
             }
         }
@@ -150,9 +141,7 @@ fn validate_remote_attestation(
         .map(|_| ())
 }
 
-impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBaseline>
-    AttestationSubmitter<T, A, R>
-{
+impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<T, A> {
     async fn generate_attestation(&self) -> Option<Attestation> {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
@@ -176,26 +165,7 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBase
         }
     }
 
-    async fn read_submission_baseline(&self) -> SubmissionBaseline {
-        match self
-            .baseline_reader
-            .read_submission_baseline(&self.tls_public_key)
-            .await
-        {
-            Ok(baseline) => baseline,
-            // Submit anyway on a read error: refreshing the attestation is the priority, and a
-            // broken read must not block submission (the confirmation just can't use a baseline).
-            Err(error) => {
-                tracing::warn!(
-                    ?error,
-                    "could not read pre-submit attestation baseline; submitting without it"
-                );
-                SubmissionBaseline::default()
-            }
-        }
-    }
-
-    async fn submit_attestation(&self, attestation: Attestation, baseline: SubmissionBaseline) {
+    async fn submit_attestation(&self, attestation: Attestation) {
         let allowed_image_hashes: Vec<_> = self
             .allowed_image_hashes
             .borrow()
@@ -218,7 +188,6 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation, R: ReadSubmissionBase
             self.tx_sender.clone(),
             attestation,
             self.tls_public_key.clone(),
-            baseline,
         )
         .await;
         MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
@@ -238,11 +207,10 @@ fn outcome_label(succeeded: bool) -> &'static str {
     }
 }
 
-pub async fn run_periodic_attestation_submission<T, A, R>(submitter: AttestationSubmitter<T, A, R>)
+pub async fn run_periodic_attestation_submission<T, A>(submitter: AttestationSubmitter<T, A>)
 where
     T: TransactionSender + Clone,
     A: GenerateAttestation,
-    R: ReadSubmissionBaseline,
 {
     let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -254,12 +222,8 @@ where
 /// the next tick starts over with a fresh attestation. Failures are logged, never propagated;
 /// this task never returns.
 #[tracing::instrument(skip_all)]
-async fn periodic_attestation_submission<
-    T: TransactionSender + Clone,
-    A: GenerateAttestation,
-    R: ReadSubmissionBaseline,
->(
-    submitter: AttestationSubmitter<T, A, R>,
+async fn periodic_attestation_submission<T: TransactionSender + Clone, A: GenerateAttestation>(
+    submitter: AttestationSubmitter<T, A>,
     mut interval_ticker: impl Tick,
 ) {
     loop {
@@ -272,15 +236,7 @@ async fn periodic_attestation_submission<
         let Some(attestation) = generated else {
             continue;
         };
-        let Ok(baseline) = submitter
-            .read_submission_baseline()
-            .timeout_at(deadline)
-            .await
-        else {
-            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_READ_SUBMISSION_BASELINE);
-            continue;
-        };
-        let submission = submitter.submit_attestation(attestation, baseline);
+        let submission = submitter.submit_attestation(attestation);
         if submission.timeout_at(deadline).await.is_err() {
             record_round_timeout(MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION);
         }
@@ -346,35 +302,22 @@ mod tests {
         }
     }
 
-    #[derive(Clone)]
-    struct StubSubmissionBaselineReader {
-        fail: bool,
-    }
-
-    impl ReadSubmissionBaseline for StubSubmissionBaselineReader {
-        async fn read_submission_baseline(
-            &self,
-            _tls_public_key: &Ed25519PublicKey,
-        ) -> anyhow::Result<SubmissionBaseline> {
-            if self.fail {
-                Err(anyhow::anyhow!("simulated baseline read failure"))
-            } else {
-                Ok(SubmissionBaseline::default())
-            }
-        }
-    }
-
     #[derive(Clone, Default)]
     struct MockSender {
         attempts: Arc<AtomicUsize>,
         submissions: Arc<Mutex<usize>>,
         notify: Arc<tokio::sync::Notify>,
         failing: Arc<AtomicBool>,
+        not_executed: Arc<AtomicBool>,
     }
 
     impl MockSender {
         fn set_failing(&self, failing: bool) {
             self.failing.store(failing, Ordering::Relaxed);
+        }
+
+        fn set_not_executed(&self, not_executed: bool) {
+            self.not_executed.store(not_executed, Ordering::Relaxed);
         }
 
         fn attempts(&self) -> usize {
@@ -410,7 +353,11 @@ mod tests {
             request: ChainSendTransactionRequest,
         ) -> Result<TransactionStatus, TransactionProcessorError> {
             self.send(request).await?;
-            Ok(TransactionStatus::Executed)
+            Ok(if self.not_executed.load(Ordering::Relaxed) {
+                TransactionStatus::NotExecuted
+            } else {
+                TransactionStatus::Unknown
+            })
         }
     }
 
@@ -423,7 +370,7 @@ mod tests {
     }
 
     struct TestSetup<A> {
-        submitter: AttestationSubmitter<MockSender, A, StubSubmissionBaselineReader>,
+        submitter: AttestationSubmitter<MockSender, A>,
     }
 
     /// Builds an [`AttestationSubmitter`] around a [`MockSender`].
@@ -442,7 +389,6 @@ mod tests {
             account_public_key,
             allowed_image_hashes,
             allowed_launcher_compose_hashes,
-            baseline_reader: StubSubmissionBaselineReader { fail: false },
         };
         TestSetup { submitter }
     }
@@ -475,21 +421,34 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
-    async fn periodic_attestation_submission__should_submit_when_baseline_read_fails() {
-        // Given: reading the pre-submit baseline (used only to confirm the submission landed)
-        // fails; the submission must still go out, otherwise a broken read path would stop the
-        // node from refreshing its attestation until the contract evicts it
-        let mut setup = test_setup();
-        setup.submitter.baseline_reader = StubSubmissionBaselineReader { fail: true };
-        let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
+    async fn periodic_attestation_submission__should_not_resend_a_sent_attestation() {
+        // Given
+        let setup = test_setup();
+        let handle = setup.spawn_periodic(1);
 
         // When
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL).await;
 
         // Then
-        assert_eq!(setup.sender().count(), TEST_SUBMISSION_COUNT);
+        assert_eq!(setup.sender().attempts(), 1);
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_resend_an_attestation_that_was_not_executed() {
+        // Given
+        let setup = test_setup();
+        setup.sender().set_not_executed(true);
+        let handle = setup.spawn_periodic(1);
+
+        // When
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL).await;
+
+        // Then
+        assert!(setup.sender().attempts() > 1);
         handle.abort();
     }
 

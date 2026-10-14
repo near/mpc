@@ -659,7 +659,6 @@ pub static MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL: LazyLock<prometheus::IntCou
     });
 
 pub const MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION: &str = "generate_attestation";
-pub const MPC_TEE_ATTESTATION_STAGE_READ_SUBMISSION_BASELINE: &str = "read_submission_baseline";
 pub const MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION: &str = "submit_attestation";
 
 pub static FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: LazyLock<prometheus::IntGaugeVec> =
@@ -698,8 +697,8 @@ pub static MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS: LazyLock<prometheus::I
     LazyLock::new(|| {
         prometheus::register_int_gauge!(
             "mpc_attestation_last_landed_timestamp_seconds",
-            "Unix time, by this node's own clock, at which it last confirmed an attestation \
-             submission landed on chain"
+            "NEAR block time at which the contract last accepted an attestation for this node's \
+             TLS key"
         )
         .unwrap()
     });

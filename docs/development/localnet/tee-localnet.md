@@ -264,15 +264,13 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 ## Voting for a New MPC Docker Image Hash
 
 Before voting, the contract’s list of valid MPC image hashes is empty.
-Therefore, node attestation submissions will fail.
+Therefore, node attestation submissions will fail, and each node submits again an hour later.
 
 **Sample Error Log (Expected Before Voting):**
 
 ```
+WARN periodic_attestation_submission: mpc_node::tee::remote_attestation: Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
 mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
-..
-..
-ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
 ```
 
 You can view the transaction details by calling:
@@ -373,6 +371,8 @@ near contract call-function as-transaction \
 ```
 
 You should see both nodes with valid attestations containing a `tls_public_key` and an `account_public_key`.
+
+> **Note:** The nodes resubmit at their next hourly round, so after the votes their attestations can take up to an hour to show up. Restarting the nodes submits right away.
 
 > **Note:** If the `account_public_key` is `null`, this means the attestation recorded on the contract is the mock attestation, and the real attestation verification failed.
 

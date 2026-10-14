@@ -4,7 +4,7 @@ use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealSubmissionBaselineReader};
+use super::{IndexerAPI, IndexerState};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
@@ -69,15 +69,11 @@ pub fn spawn_real_indexer(
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
-) -> (
-    IndexerAPI<impl TransactionSender>,
-    RealSubmissionBaselineReader,
-) {
+) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
         oneshot::channel();
-    let (baseline_reader_sender, baseline_reader_receiver) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -183,11 +179,6 @@ pub fn spawn_real_indexer(
 
             if txn_sender_sender.send(txn_sender).is_err() {
                 tracing::error!("Failed to send txn_sender back to main thread.")
-            };
-
-            let baseline_reader = RealSubmissionBaselineReader::new(indexer_state.clone());
-            if baseline_reader_sender.send(baseline_reader).is_err() {
-                tracing::error!("failed to send submission baseline reader back to main thread")
             };
 
             #[cfg(feature = "network-hardship-simulation")]
@@ -328,11 +319,7 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain supporters receiver must be returned by indexer");
 
-    let baseline_reader = baseline_reader_receiver
-        .blocking_recv()
-        .expect("submission baseline reader must be returned by indexer");
-
-    let indexer_api = IndexerAPI {
+    IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
@@ -340,9 +327,7 @@ pub fn spawn_real_indexer(
         allowed_launcher_compose_receiver,
         my_migration_info_receiver,
         foreign_chain_supporters_receiver,
-    };
-
-    (indexer_api, baseline_reader)
+    }
 }
 
 async fn await_sync_or_shutdown(

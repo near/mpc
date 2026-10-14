@@ -505,6 +505,8 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
 
 *Note:* If attestation public key is **null**, the contract uses the default mock attestation.
 
+*Note:* The nodes resubmit at their next hourly round, so after the votes in Step 9 their attestations can take up to an hour to show up. Restarting the nodes submits right away.
+
 *Note:* After attestation succeeds, both nodes spam logs aggressively (bug to fix).
 
 ---

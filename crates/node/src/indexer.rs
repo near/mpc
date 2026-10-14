@@ -26,7 +26,7 @@ use near_mpc_contract_interface::method_names::{
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
-use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
@@ -337,59 +337,6 @@ impl IndexerViewClient {
     }
 }
 
-/// What was stored on chain for this node's TLS key just before it submitted. The landing check
-/// confirms a submission by observing a change against it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SubmissionBaseline {
-    /// `None` when nothing is stored, or no acceptance time is known for it.
-    pub accepted_at_seconds: Option<u64>,
-    /// TODO(#4498): remove along with the expiry fallback it feeds.
-    pub expiry_timestamp_seconds: Option<u64>,
-}
-
-impl SubmissionBaseline {
-    pub(crate) fn from_stored(stored: Option<&dtos::GetAttestationResponse>) -> Self {
-        Self {
-            accepted_at_seconds: stored.and_then(dtos::GetAttestationResponse::accepted_at_seconds),
-            expiry_timestamp_seconds: stored
-                .and_then(|stored| stored.attestation().expiry_timestamp_seconds()),
-        }
-    }
-}
-
-pub(crate) trait ReadSubmissionBaseline: Send + Sync {
-    /// An empty baseline is not proof that nothing is stored: an entry can be stored with
-    /// neither an acceptance time nor an expiry.
-    fn read_submission_baseline(
-        &self,
-        tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> impl Future<Output = anyhow::Result<SubmissionBaseline>> + Send;
-}
-
-pub(crate) struct RealSubmissionBaselineReader {
-    indexer_state: Arc<IndexerState>,
-}
-
-impl RealSubmissionBaselineReader {
-    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
-        Self { indexer_state }
-    }
-}
-
-impl ReadSubmissionBaseline for RealSubmissionBaselineReader {
-    async fn read_submission_baseline(
-        &self,
-        tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> anyhow::Result<SubmissionBaseline> {
-        let stored = self
-            .indexer_state
-            .view_client
-            .get_participant_attestation(tls_public_key)
-            .await?;
-        Ok(SubmissionBaseline::from_stored(stored.as_ref()))
-    }
-}
-
 #[derive(Clone)]
 struct IndexerClient {
     client: TokioRuntimeHandle<ClientActor>,
@@ -535,58 +482,7 @@ pub struct IndexerAPI<TransactionSender> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SubmissionBaseline, SyncProgress, dtos};
-    use rstest::rstest;
-
-    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
-    const EXPIRES_AT_SECONDS: u64 = 1_800_604_800;
-
-    fn mock_with_expiry() -> dtos::VerifiedAttestation {
-        dtos::VerifiedAttestation::Mock(dtos::MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(EXPIRES_AT_SECONDS),
-            expected_measurements: None,
-        })
-    }
-
-    fn current(accepted_at_seconds: Option<u64>) -> dtos::GetAttestationResponse {
-        dtos::GetAttestationResponse::Current(dtos::StoredAttestation {
-            attestation: mock_with_expiry(),
-            accepted_at_seconds,
-        })
-    }
-
-    #[rstest]
-    #[case::nothing_stored(None, None, None)]
-    #[case::stamped(
-        Some(current(Some(ACCEPTED_AT_SECONDS))),
-        Some(ACCEPTED_AT_SECONDS),
-        Some(EXPIRES_AT_SECONDS)
-    )]
-    #[case::carried_over_by_the_migration(Some(current(None)), None, Some(EXPIRES_AT_SECONDS))]
-    #[case::legacy_contract(
-        Some(dtos::GetAttestationResponse::Legacy(mock_with_expiry())),
-        None,
-        Some(EXPIRES_AT_SECONDS)
-    )]
-    fn from_stored__should_carry_both_timestamps(
-        #[case] stored: Option<dtos::GetAttestationResponse>,
-        #[case] expected_accepted_at: Option<u64>,
-        #[case] expected_expiry: Option<u64>,
-    ) {
-        // When
-        let baseline = SubmissionBaseline::from_stored(stored.as_ref());
-
-        // Then
-        assert_eq!(
-            baseline,
-            SubmissionBaseline {
-                accepted_at_seconds: expected_accepted_at,
-                expiry_timestamp_seconds: expected_expiry,
-            }
-        );
-    }
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();
