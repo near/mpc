@@ -6,6 +6,7 @@ use chain_gateway::{
 use near_indexer::near_primitives::types::Finality;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 use super::accounts::{Contract, TestAccount};
 
@@ -29,7 +30,11 @@ pub(crate) struct LocalNodeBuilder {
 }
 
 impl LocalNodeBuilder {
-    pub(crate) async fn start(self, streamer_config: Option<BlockEventSubscriptions>) -> LocalNode {
+    pub(crate) async fn start(
+        self,
+        streamer_config: Option<BlockEventSubscriptions>,
+        shutdown: CancellationToken,
+    ) -> LocalNode {
         let indexer_config = near_indexer::IndexerConfig {
             home_dir: self.home_dir.path().to_path_buf(),
             sync_mode: near_indexer::SyncModeEnum::LatestSynced,
@@ -40,7 +45,7 @@ impl LocalNodeBuilder {
         };
 
         let (chain_gateway, node_handle, block_update_receiver) =
-            chain_gateway::chain_gateway::ChainGateway::start(indexer_config, streamer_config)
+            ChainGateway::start(indexer_config, streamer_config, shutdown)
                 .await
                 .expect("chain_gateway::start should succeed");
 

@@ -11,6 +11,7 @@ use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_store::db::RocksDB;
 use nearcore::NearConfig;
 use tokio::sync::mpsc::Receiver;
+use tokio_util::sync::CancellationToken;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
 use crate::event_subscriber;
@@ -101,7 +102,7 @@ impl HasPollInterval for ChainGateway {
 /// shutdown via [`send_shutdown`](Self::send_shutdown).
 pub struct NodeHandle {
     thread_handle: std::thread::JoinHandle<()>,
-    shutdown_sender: Option<tokio::sync::oneshot::Sender<()>>,
+    shutdown: CancellationToken,
 }
 
 impl NodeHandle {
@@ -113,10 +114,9 @@ impl NodeHandle {
     /// Sends the shutdown signal to the nearcore node.
     /// Returns `true` if the signal was sent, `false` if already sent or node already dead.
     pub fn send_shutdown(&mut self) -> bool {
-        self.shutdown_sender
-            .take()
-            .map(|tx| tx.send(()).is_ok())
-            .unwrap_or(false)
+        let sent = self.is_node_alive() && !self.shutdown.is_cancelled();
+        self.shutdown.cancel();
+        sent
     }
 }
 
@@ -135,6 +135,7 @@ impl ChainGateway {
     pub async fn start(
         indexer_config: near_indexer::IndexerConfig,
         subscriber: Option<BlockEventSubscriptions>,
+        shutdown: CancellationToken,
     ) -> Result<
         (
             ChainGateway,
@@ -157,14 +158,15 @@ impl ChainGateway {
         });
 
         let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
-        let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+        let shutdown = shutdown.child_token();
+        let stop_unless_started = shutdown.clone().drop_guard();
 
         let thread_handle = std::thread::spawn(move || {
             run_node(
                 ready_sender,
                 near_config,
                 &home_dir,
-                shutdown_receiver,
+                shutdown,
                 streamer_setup,
             )
         });
@@ -172,7 +174,7 @@ impl ChainGateway {
         let (chain_gateway, stream) = ready_receiver.await.expect("startup thread died")?;
         let node_handle = NodeHandle {
             thread_handle,
-            shutdown_sender: Some(shutdown_sender),
+            shutdown: stop_unless_started.disarm(),
         };
         Ok((chain_gateway, node_handle, stream))
     }
@@ -184,7 +186,7 @@ fn run_node(
     ready_sender: tokio::sync::oneshot::Sender<RunNodeResult>,
     near_config: nearcore::NearConfig,
     home_dir: &Path,
-    mut shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
+    shutdown: CancellationToken,
     streamer_setup: Option<StreamerSetup>,
 ) {
     let expected_block_time: std::time::Duration = near_config
@@ -200,6 +202,7 @@ fn run_node(
 
     rt.block_on(async move {
         let actor_system = ActorSystem::new();
+        let _stop_actors = StopActorSystemOnDrop(actor_system.clone());
         let near_node =
             match nearcore::start_with_config(home_dir, near_config, actor_system.clone()).await {
                 Ok(node) => node,
@@ -227,16 +230,13 @@ fn run_node(
             tracing::info!(
                 "chain-gateway waiting for node to finish syncing before streaming blocks."
             );
-            let synced = await_sync_or_shutdown(client.wait_for_full_sync(), async {
-                let _ = (&mut shutdown_receiver).await;
-            })
-            .await;
+            let synced =
+                await_sync_or_shutdown(client.wait_for_full_sync(), shutdown.cancelled()).await;
             if !synced {
                 tracing::info!("shutdown requested before sync completed; exiting startup.");
                 let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {
                     msg: "shutdown requested before node finished syncing".to_string(),
                 }));
-                actor_system.stop();
                 return;
             }
 
@@ -268,16 +268,8 @@ fn run_node(
             stream,
         )));
 
-        match shutdown_receiver.await {
-            Ok(()) => {
-                tracing::info!("node gracefully shutting down actor system");
-            }
-            _ => {
-                tracing::info!("shutdown sender was dropped, shutting down actor system");
-            }
-        }
-
-        actor_system.stop();
+        shutdown.cancelled().await;
+        tracing::info!("node gracefully shutting down actor system");
     });
 }
 
@@ -287,6 +279,14 @@ struct StreamerSetup {
     subscriber: BlockEventSubscriptions,
     indexer_config: near_indexer::IndexerConfig,
     near_config: NearConfig,
+}
+
+struct StopActorSystemOnDrop(ActorSystem);
+
+impl Drop for StopActorSystemOnDrop {
+    fn drop(&mut self) {
+        self.0.stop();
+    }
 }
 
 async fn await_sync_or_shutdown(

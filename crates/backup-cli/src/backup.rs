@@ -94,7 +94,7 @@ pub async fn run_command(args: cli::Args) {
             spawn_shutdown_on_signal(shutdown.clone());
 
             let (chain_gateway, _near_node, _) =
-                ChainGateway::start(near_node_config(home_dir), None)
+                ChainGateway::start(near_node_config(home_dir), None, shutdown.clone())
                     .await
                     .expect("failed to start the NEAR node");
             let mpc_contract =

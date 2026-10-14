@@ -5,6 +5,7 @@ use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
 use chain_gateway_test_contract::consts::VIEW_VALUE;
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{Json, ObservedState, ViewArgs, ViewContract};
+use tokio_util::sync::CancellationToken;
 
 use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};
@@ -86,7 +87,7 @@ impl LocalnetBuilder {
             validator = validator.with_account(test_account);
         }
 
-        let validator = validator.start(None).await;
+        let validator = validator.start(None, CancellationToken::new()).await;
 
         // Start an observer node (non-validator, just like what the MPC node would be running).
         // Copy genesis from validator so both nodes share the same chain
@@ -100,7 +101,7 @@ impl LocalnetBuilder {
             .with_genesis_from(&validator)
             .without_validator_key()
             .with_boot_nodes(&boot_node)
-            .start(self.event_subscriber)
+            .start(self.event_subscriber, CancellationToken::new())
             .await;
 
         let localnet = Localnet {
