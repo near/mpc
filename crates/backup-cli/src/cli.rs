@@ -73,9 +73,6 @@ pub enum Command {
     PutKeyshares(NodeConnectionArgs),
     /// Run the automatic backup service: watch the MPC contract and back up keyshares whenever
     /// the stored ones no longer cover its keyset.
-    ///
-    /// The contract is read through an embedded NEAR node, which expects its config, genesis and
-    /// node key in the home directory
     Run(RunArgs),
 }
 
@@ -119,14 +116,26 @@ pub struct NodeConnectionArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct RunArgs {
+    /// NEAR JSON-RPC endpoint used to poll the contract state — a NEAR RPC provider's URL, not
+    /// the MPC node's address. A provider api key, if any, is passed as a query parameter of
+    /// this URL; only the scheme and host ever reach the logs.
+    /// Without it, the contract is read through an embedded NEAR node, which expects its config,
+    /// genesis and node key in the home directory.
+    #[arg(long, env("BACKUP_RPC_URL"), hide_env_values = true)]
+    pub rpc_url: Option<String>,
+    /// NEAR chain id (e.g. mainnet, testnet). Required by the RPC client; the contract state
+    /// is read with a view call, which does not consume it.
+    #[arg(long, env, default_value = "mainnet")]
+    pub near_chain_id: String,
     /// MPC contract account ID whose state is polled.
     #[arg(long, env)]
     pub mpc_contract_account_id: AccountId,
     #[command(flatten)]
     pub node: NodeConnectionArgs,
-    /// How long to wait before re-attempting a failed backup, in seconds
+    /// How often to poll the contract state, in seconds.
+    /// Without --rpc-url, only the delay before re-attempting a failed backup.
     #[arg(long, env, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
-    pub retry_delay_seconds: u64,
+    pub poll_interval_seconds: u64,
     /// Address to serve /health, /status and /metrics on (e.g. 127.0.0.1:8080).
     /// The endpoints are not served when unset.
     #[arg(long, env("BACKUP_LISTEN_ADDRESS"))]
@@ -176,6 +185,7 @@ mod tests {
 
     #[rstest]
     #[case::run("run", "BACKUP_ENCRYPTION_KEY_HEX")]
+    #[case::run_rpc_url("run", "BACKUP_RPC_URL")]
     #[case::get_keyshares("get-keyshares", "BACKUP_ENCRYPTION_KEY_HEX")]
     #[case::put_keyshares("put-keyshares", "BACKUP_ENCRYPTION_KEY_HEX")]
     fn help__should_not_render_values_of_secret_env_vars(
@@ -202,11 +212,13 @@ mod tests {
         );
     }
 
-    const MINIMAL_RUN_ARGS: [&str; 10] = [
+    const MINIMAL_RUN_ARGS: [&str; 12] = [
         "backup-cli",
         "--home-dir",
         "/tmp/backup",
         "run",
+        "--rpc-url",
+        "https://rpc.example.com",
         "--mpc-contract-account-id",
         "v1.signer",
         "--mpc-node-address",
@@ -227,7 +239,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::retry_delay("--retry-delay-seconds")]
+    #[case::poll_interval("--poll-interval-seconds")]
     #[case::request_timeout("--request-timeout-seconds")]
     fn run_args__should_reject_a_zero_duration(#[case] flag: &str) {
         // When
