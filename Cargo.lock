@@ -1302,7 +1302,6 @@ dependencies = [
  "near-contract-transport",
  "near-indexer",
  "near-mpc-contract-interface",
- "near-store",
  "prometheus",
  "rand 0.8.8",
  "rand_core 0.6.4",

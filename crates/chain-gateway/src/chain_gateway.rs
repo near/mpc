@@ -8,6 +8,7 @@ use near_async::ActorSystem;
 use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_store::db::RocksDB;
 use nearcore::NearConfig;
 use tokio::sync::mpsc::Receiver;
 
@@ -116,6 +117,13 @@ impl NodeHandle {
             .take()
             .map(|tx| tx.send(()).is_ok())
             .unwrap_or(false)
+    }
+}
+
+impl Drop for NodeHandle {
+    fn drop(&mut self) {
+        self.send_shutdown();
+        RocksDB::block_until_all_instances_are_dropped();
     }
 }
 

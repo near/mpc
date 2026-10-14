@@ -165,6 +165,13 @@ impl Localnet {
     }
 }
 
+impl Drop for Localnet {
+    fn drop(&mut self) {
+        self.validator.node_handle.send_shutdown();
+        self.observer.node_handle.send_shutdown();
+    }
+}
+
 /// Returns a temp directory.
 /// The returned [`TempDir`] is automatically deleted when dropped.
 fn make_test_home_dir(account_id: &str) -> tempfile::TempDir {

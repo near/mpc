@@ -15,7 +15,6 @@ near-account-id = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
 near-indexer = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
-near-store = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }

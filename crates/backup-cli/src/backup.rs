@@ -1,4 +1,4 @@
-use chain_gateway::{ChainGateway, NodeHandle};
+use chain_gateway::ChainGateway;
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
 use near_contract_transport::WatchContractState;
@@ -7,7 +7,6 @@ use near_indexer::{
 };
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as contract_types;
-use near_store::db::RocksDB;
 use rand_core::OsRng;
 use std::fmt::Debug;
 use std::{
@@ -94,11 +93,10 @@ pub async fn run_command(args: cli::Args) {
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
 
-            let (chain_gateway, near_node, _) =
+            let (chain_gateway, _near_node, _) =
                 ChainGateway::start(near_node_config(home_dir), None)
                     .await
                     .expect("failed to start the NEAR node");
-            let _near_node = StopNearNodeOnDrop(near_node);
             let mpc_contract =
                 MpcContractHandle::new(chain_gateway, subcommand_args.mpc_contract_account_id);
             // The first read waits until the NEAR node has synced
@@ -171,17 +169,6 @@ fn near_node_config(home_dir: PathBuf) -> IndexerConfig {
         finality: Finality::Final,
         validate_genesis: false,
         skip_broken_blocks: false,
-    }
-}
-
-/// Stops the NEAR node and waits until it has closed its store, so that exiting does not cut
-/// off its writes
-struct StopNearNodeOnDrop(NodeHandle);
-
-impl Drop for StopNearNodeOnDrop {
-    fn drop(&mut self) {
-        self.0.send_shutdown();
-        RocksDB::block_until_all_instances_are_dropped();
     }
 }
 
