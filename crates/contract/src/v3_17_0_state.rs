@@ -28,9 +28,6 @@ use crate::{
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see earlier `v*_state.rs` modules in git history
 /// for examples) so state written by the `3.17.0` contract still deserializes during migration.
-///
-/// This module reads the *current* [`ProtocolContractState`], so a bound added to a stored type
-/// is also an upgrade gate: state the new type rejects cannot be migrated.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,

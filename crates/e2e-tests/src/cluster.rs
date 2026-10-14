@@ -1239,11 +1239,9 @@ struct InitContractArgs {
 async fn prepay_attestation_grants(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    fee: NearToken,
     near_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
-    let fee = attestation_storage_fee(mpc_contract_handle).await?;
-
     // Granting the initial participants too is harmless: their attestations update the
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
     for (i, near_key) in near_keys.iter().enumerate() {
@@ -1319,7 +1317,8 @@ async fn init_contract(
         outcome.failure_message()
     );
 
-    prepay_attestation_grants(blockchain, contract, mpc_contract_handle, &near_keys).await?;
+    let fee = attestation_storage_fee(mpc_contract_handle).await?;
+    prepay_attestation_grants(blockchain, contract, fee, &near_keys).await?;
 
     for &i in &participant_indices {
         let account = node_account(i);
