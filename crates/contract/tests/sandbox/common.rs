@@ -1,5 +1,5 @@
 use crate::sandbox::utils::{
-    consts::{GAS_FOR_INIT, PARTICIPANT_LEN},
+    consts::PARTICIPANT_LEN,
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{
@@ -8,7 +8,7 @@ use crate::sandbox::utils::{
     },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
-    transactions::{CallMpcContract, execute_async_handle_calls},
+    transactions::{CallMpcContract, CallMpcContractAsSelf, execute_async_handle_calls},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -134,8 +134,7 @@ pub async fn init_contract(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .as_account()
-        .call_mpc(contract.id())
+        .call_mpc()
         .init(params.into(), bogus_tee_verifier_account_id(), init_config)
         .await
         .unwrap();
@@ -153,17 +152,15 @@ pub async fn init_contract_running(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call(method_names::INIT_RUNNING)
-        .args_json(json!({
-            "domains": domains,
-            "next_domain_id": next_domain_id,
-            "keyset": keyset,
-            "parameters": dtos::GovernanceThresholdParameters::from(params),
-            "tee_verifier_account_id": bogus_tee_verifier_account_id(),
-            "init_config": init_config,
-        }))
-        .gas(GAS_FOR_INIT)
-        .transact()
+        .call_mpc()
+        .init_running(
+            domains,
+            next_domain_id,
+            keyset,
+            dtos::GovernanceThresholdParameters::from(params),
+            bogus_tee_verifier_account_id(),
+            init_config,
+        )
         .await
         .unwrap();
     assert!(result.is_success(), "init_running failed: {:?}", result);

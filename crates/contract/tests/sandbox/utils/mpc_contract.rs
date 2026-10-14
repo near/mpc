@@ -189,9 +189,8 @@ pub async fn vote_add_launcher_hash(
     launcher_hash: &LauncherImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), method_names::VOTE_ADD_LAUNCHER_HASH)
-        .args_json(serde_json::json!({"launcher_hash": launcher_hash}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_add_launcher_hash(*launcher_hash)
         .await?;
     all_receipts_successful(result)?;
     Ok(())

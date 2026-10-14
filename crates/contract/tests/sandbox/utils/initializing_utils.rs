@@ -1,14 +1,11 @@
 use dtos::KeyEventId;
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_workspaces::{Account, Contract};
-use serde_json::json;
 
 use super::{
-    consts::GAS_FOR_VOTE_PK,
     mpc_contract::get_state,
-    transactions::{execute_async_handle_calls, execute_async_transactions},
+    transactions::{CallMpcContract, all_receipts_successful, execute_async_handle_calls},
 };
 
 pub async fn vote_add_domains(
@@ -52,13 +49,10 @@ pub async fn start_keygen_instance(
         })
         .unwrap();
     let result = leader
-        .call(contract.id(), method_names::START_KEYGEN_INSTANCE)
-        .args_json(json!({"key_event_id": key_event_id}))
-        .transact()
+        .call_mpc(contract.id())
+        .start_keygen_instance(key_event_id)
         .await?;
-    if !result.is_success() {
-        anyhow::bail!("{result:#?}");
-    }
+    all_receipts_successful(result)?;
     Ok(())
 }
 
@@ -68,17 +62,9 @@ pub async fn vote_public_key(
     key_event_id: KeyEventId,
     public_key: dtos::PublicKey,
 ) -> anyhow::Result<()> {
-    let vote_pk_args = json!( {
-        "key_event_id": key_event_id,
-        "public_key": public_key,
-    });
-
-    execute_async_transactions(
-        accounts,
-        contract,
-        method_names::VOTE_PK,
-        &vote_pk_args,
-        GAS_FOR_VOTE_PK,
-    )
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let public_key = public_key.clone();
+        async move { handle.vote_pk(key_event_id, public_key).await }
+    })
     .await
 }

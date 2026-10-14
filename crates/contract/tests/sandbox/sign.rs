@@ -7,7 +7,7 @@ use crate::sandbox::{
             CKDRequestTest, DomainResponseTest, gen_secp_256k1_sign_test,
             submit_ckd_response_measure_gas, submit_signature_response, verify_timeout,
         },
-        transactions::CallMpcContract,
+        transactions::CallMpcContractAsSelf,
     },
 };
 use anyhow::Context;
@@ -306,8 +306,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let proposed_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
         GovernanceThresholdParameters::new_unvalidated(participants, threshold).into();
     let result = contract
-        .as_account()
-        .call_mpc(contract.id())
+        .call_mpc()
         .init(proposed_parameters, bogus_tee_verifier_account_id(), None)
         .await?;
     assert!(
@@ -320,8 +319,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
             .unwrap()
             .into();
     let result = contract
-        .as_account()
-        .call_mpc(contract.id())
+        .call_mpc()
         .init(
             proposed_parameters.clone(),
             bogus_tee_verifier_account_id(),
@@ -335,8 +333,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
     // Reinitializing after the first successful initialization should fail.
     let result = contract
-        .as_account()
-        .call_mpc(contract.id())
+        .call_mpc()
         .init(
             proposed_parameters.clone(),
             bogus_tee_verifier_account_id(),
