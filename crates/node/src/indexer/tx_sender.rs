@@ -12,7 +12,7 @@ use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
-use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::{Ed25519PublicKey, GetAttestationResponse};
 use near_time::Clock;
 use std::future::Future;
 use std::sync::Arc;
@@ -134,7 +134,7 @@ struct TransactionSenderSubmission {
     response_sender: Option<oneshot::Sender<TransactionStatus>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TransactionStatus {
     Executed,
     NotExecuted,
@@ -180,6 +180,13 @@ async fn submit_tx(
         signature,
         block_height: block.header.height,
     })
+}
+
+fn attestation_submission_status(stored: Option<&GetAttestationResponse>) -> TransactionStatus {
+    match stored {
+        Some(_) => TransactionStatus::Unknown,
+        None => TransactionStatus::NotExecuted,
+    }
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -244,10 +251,7 @@ async fn observe_tx_result(
 
             record_stored_attestation(stored_attestation.as_ref());
 
-            Ok(match stored_attestation {
-                Some(_) => TransactionStatus::Unknown,
-                None => TransactionStatus::NotExecuted,
-            })
+            Ok(attestation_submission_status(stored_attestation.as_ref()))
         }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
@@ -326,7 +330,32 @@ async fn ensure_send_transaction(
         .inc();
 
     (
-        transaction_status.unwrap_or(TransactionStatus::Unknown),
+        transaction_status.unwrap_or(TransactionStatus::NotExecuted),
         SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at),
     )
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{GetAttestationResponse, TransactionStatus, attestation_submission_status};
+    use near_mpc_contract_interface::types::{MockAttestation, VerifiedAttestation};
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::stored(
+        Some(GetAttestationResponse::Legacy(VerifiedAttestation::Mock(MockAttestation::Valid))),
+        TransactionStatus::Unknown
+    )]
+    #[case::nothing_stored(None, TransactionStatus::NotExecuted)]
+    fn attestation_submission_status__should_be_not_executed_only_while_nothing_is_stored(
+        #[case] stored: Option<GetAttestationResponse>,
+        #[case] expected: TransactionStatus,
+    ) {
+        // When
+        let status = attestation_submission_status(stored.as_ref());
+
+        // Then
+        assert_eq!(status, expected);
+    }
 }

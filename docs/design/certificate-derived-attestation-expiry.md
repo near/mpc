@@ -129,14 +129,15 @@ verifier change needed, but it puts DER/X.509 parsing back into the contract was
 Six things depend on the expiry being `now + constant`. Five have to change with it; item 3 is
 future work this design only has to keep possible. Each is listed as the problem, then the fix.
 
-**1. Confirming a submission landed.** The node checks whether the stored expiry went up
-([`tx_sender.rs`](../../crates/node/src/indexer/tx_sender.rs)). That stops working when the value is
-a calendar date that repeats for weeks.
+**1. Knowing when a submission was accepted.** On a contract that stores no acceptance time, the
+node derives it from the stored expiry
+([`attestation_freshness_metrics.rs`](../../crates/node/src/tee/attestation_freshness_metrics.rs)).
+That stops working when the value is a calendar date that repeats for weeks.
 
 Fix: store `accepted_at_seconds` on
 [`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
-variants, so one field covers both. This restores today's semantics exactly, and gives operators a
-better health signal than expiry. Costs 9 bytes per entry (599 → 608, so `WORST_CASE_ENTRY_BYTES`
+variants, so one field covers both. The node then reads the acceptance time directly, and operators
+get a better health signal than expiry. Costs 9 bytes per entry (599 → 608, so `WORST_CASE_ENTRY_BYTES`
 moves 604 → 613 and the fee floor needs re-checking) and a state migration.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
@@ -217,7 +218,7 @@ current 200 TGas budget with room to spare, so `verifier_tera_gas` stays as it i
 
 ## Rollout
 
-1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
+1. **Land item 1**, the stored submission timestamp, so the node keeps knowing when it was accepted.
 2. **Deploy the new verifier and vote it in**, per
    [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
    so nothing changes on chain yet. Reversible by voting back.

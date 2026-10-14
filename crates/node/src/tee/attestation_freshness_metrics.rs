@@ -28,6 +28,7 @@ pub(crate) fn record_stored_attestation(stored: Option<&GetAttestationResponse>)
 fn landed_at_seconds(stored: &GetAttestationResponse) -> Option<u64> {
     match stored {
         GetAttestationResponse::Current(stored) => stored.accepted_at_seconds,
+        // TODO(#4498): remove once every deployed contract stamps the acceptance time
         GetAttestationResponse::Legacy(attestation) => attestation
             .expiry_timestamp_seconds()
             .and_then(|expiry| expiry.checked_sub(DEFAULT_EXPIRATION_DURATION_SECONDS)),
