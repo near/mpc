@@ -32,7 +32,7 @@ requiring all other nodes to have the exact same configuration.
    served while it is **available** (≥ signing threshold of active nodes cover it), and
    `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. Per-node
    registrations feed the availability computation. See
-   [Calculating the whitelisted and available foreign-chain sets](../../design/calculating-supported-foreign-chains.md).
+   [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
 6. Monitoring and off-chain alert channels notify operators of incomplete coverage (a node not
    covering some whitelisted chain); there is no on-chain penalty.
 
@@ -121,13 +121,13 @@ Since the nodes are running in a Trusted Execution Environment (TEE), this funct
 
 ### Provider agreement for verification requests
 
-When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff every provider that reached a verdict reached the same one; providers that fail to answer are tolerated. On any disagreement the node errors out and produces no signature share. This disagreement outcome must be **terminal** for the request — the leader does not re-attempt it. This is an implementation requirement, not current behavior. See [Calculating the whitelisted and available foreign-chain sets](../../design/calculating-supported-foreign-chains.md#verification-behavior).
+When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff every provider that reached a verdict reached the same one; providers that fail to answer are tolerated. On any disagreement the node errors out and produces no signature share. This disagreement outcome must be **terminal** for the request — the leader does not re-attempt it. This is an implementation requirement, not current behavior. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md#verification-behavior).
 
 The on-chain `ChainEntry.quorum`, voted in as part of the same `ChainVote` that voted the chain's provider list, is stored for a deferred quorum policy (how many providers must concur before a node accepts a result) and is not yet consumed by verification.
 
 ### Nodes submit the configured foreign chains on-chain
 
-Nodes submit their per-chain provider set on-chain so the network knows which chains they cover. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept, now serving two roles: it feeds the **available**-set computation (which chains have ≥ signing threshold covering nodes) and the alerting that flags any active node not covering a whitelisted chain. See [Calculating the whitelisted and available foreign-chain sets](../../design/calculating-supported-foreign-chains.md).
+Nodes submit their per-chain provider set on-chain so the network knows which chains they cover. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept, now serving two roles: it feeds the **available**-set computation (which chains have ≥ signing threshold covering nodes) and the alerting that flags any active node not covering a whitelisted chain. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
 
 ## Rollout
 
