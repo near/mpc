@@ -6,6 +6,7 @@ use crate::sandbox::utils::{
         assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
         submit_participant_info,
     },
+    sandbox_mpc_contract::SandboxMpcContract,
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
     transactions::{CallMpcContract, CallMpcContractAsSelf, execute_async_handle_calls},
@@ -29,35 +30,29 @@ use mpc_contract::{
     tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
+use near_contract_transport::WatchContractState;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
-    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
-    SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality, SuiRpcRequest, SuiTxId,
-    SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality, SvmInnerInstruction, SvmRpcRequest,
-    SvmTxId, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality, TonLog,
-    TonRpcRequest, TonTxId, Update, UpdateHash,
-};
-use near_mpc_contract_interface::{
-    method_names,
-    types::{
-        self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
-        BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
-        EvmRpcRequest, EvmTxId, ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation,
-        StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
-        StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
-    },
+    self as dtos, AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality,
+    AptosRpcRequest, AptosTxId, Attestation, BitcoinExtractedValue, BitcoinExtractor,
+    BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig, DomainId,
+    DomainPurpose, EvmExtractedValue, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId,
+    ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation, Protocol,
+    ReconstructionThreshold, StarknetExtractedValue, StarknetExtractor, StarknetFelt,
+    StarknetFinality, StarknetRpcRequest, StarknetTxId, SuiAddress, SuiEvent, SuiExtractedValue,
+    SuiExtractor, SuiFinality, SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor,
+    SvmFinality, SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody,
+    TonExtractedValue, TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, Update,
+    UpdateHash, VerifyForeignTransactionResponse,
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
 use near_workspaces::{Account, Worker, result::Execution};
 use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
-use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 use test_utils::sandbox::SandboxWorker;
-use tokio_util::time::FutureExt as _;
 
 use super::utils::contract_build;
 
@@ -129,7 +124,7 @@ pub fn make_threshold_params(participants: &Participants) -> GovernanceThreshold
 
 /// Initialize the contract with the given parameters.
 pub async fn init_contract(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
@@ -144,7 +139,7 @@ pub async fn init_contract(
 
 /// Initialize contract in Running state with domains and keyset.
 pub async fn init_contract_running(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     domains: Vec<DomainConfig>,
     next_domain_id: u64,
     keyset: dtos::Keyset,
@@ -169,7 +164,7 @@ pub async fn init_contract_running(
 
 pub struct SandboxTestSetup {
     pub worker: SandboxWorker,
-    pub contract: Contract,
+    pub contract: SandboxMpcContract,
     pub mpc_signer_accounts: Vec<Account>,
     pub keys: Vec<DomainKey>,
 }
@@ -239,6 +234,7 @@ impl SandboxTestSetupBuilder {
 
     pub async fn build(self) -> SandboxTestSetup {
         let (worker, contract) = init_with_wasm((self.contract_wasm)()).await;
+        let contract = SandboxMpcContract::new(&worker, contract);
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 
@@ -338,7 +334,7 @@ impl SandboxTestSetupBuilder {
 
 pub async fn vote_and_submit_contract_binary(
     accounts: &[Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     new_contract_binary: &[u8],
 ) {
     let update = Update::Code(new_contract_binary.to_vec());
@@ -363,7 +359,7 @@ pub async fn vote_and_submit_contract_binary(
 }
 
 pub async fn approve_contract_update(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     update_hash: UpdateHash,
 ) {
@@ -432,7 +428,7 @@ pub fn build_sandbox_node_ids(
 }
 
 pub async fn submit_tee_attestations(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
     node_ids: &BTreeSet<NodeId>,
 ) -> anyhow::Result<()> {
@@ -451,7 +447,7 @@ pub async fn submit_tee_attestations(
 /// Like [`submit_tee_attestations`], for accounts whose entry does not exist yet: each
 /// submission stores a new entry, so each needs a grant.
 pub async fn prepay_and_submit_tee_attestations(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
     node_ids: &BTreeSet<NodeId>,
 ) -> anyhow::Result<()> {
@@ -473,7 +469,7 @@ pub async fn prepay_and_submit_tee_attestations(
 
 /// Submit mock attestations for all participants in parallel.
 pub async fn submit_attestations(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     participants: &Participants,
 ) {
@@ -505,7 +501,7 @@ pub async fn submit_attestations(
 pub async fn call_contract_key_generation<const N: usize>(
     domains_to_add: &[DomainConfig; N],
     accounts: &[Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     expected_epoch_id: u64,
 ) -> [DomainKey; N] {
     let mut domain_keys = vec![];
@@ -582,7 +578,7 @@ pub struct InjectedContractState {
 pub async fn execute_key_generation_and_add_random_state(
     accounts: &[Account],
     participants: Participants,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     worker: &Worker<Sandbox>,
     rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
@@ -645,7 +641,7 @@ fn hash(code: &[u8]) -> [u8; 32] {
 /// Whitelists `chain` and registers it as covered by every node, making it available.
 pub async fn make_foreign_chain_available(
     chain: dtos::ForeignChain,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
 ) {
     let batch = NonEmptyBTreeMap::new(chain, test_utils::contract_types::dummy_chain_entry());
@@ -677,33 +673,18 @@ pub async fn make_foreign_chain_available(
 
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).
 pub async fn await_pending_foreign_tx_request_observed_on_contract(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     request: &dtos::VerifyForeignTransactionRequest,
 ) {
     const TIMEOUT: Duration = Duration::from_secs(10);
-    const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-    async {
-        let args = json!({ "request": request });
-
-        loop {
-            let result = contract
-                .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
-                .args_json(&args)
-                .await;
-            if let Ok(view) = result {
-                // The view returns Option<YieldIndex>; non-null means the request is pending.
-                let value: serde_json::Value = view.json().unwrap();
-                if !value.is_null() {
-                    return;
-                }
-            }
-            tokio::time::sleep(POLL_INTERVAL).await;
-        }
-    }
-    .timeout(TIMEOUT)
-    .await
-    .expect("Timed out waiting for pending foreign-tx request on-chain");
+    contract
+        .get_pending_verify_foreign_tx_request(request.clone())
+        .subscribe()
+        .await
+        .wait_for(TIMEOUT, Option::is_some)
+        .await
+        .expect("Timed out waiting for pending foreign-tx request on-chain");
 }
 
 /// Sign a foreign-tx payload hash with the root secret key and return the
@@ -740,7 +721,7 @@ pub fn sign_foreign_tx_response(
 
 pub async fn generate_participant_and_submit_attestation(
     worker: &Worker<Sandbox>,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
 ) -> (Account, AccountId, ParticipantInfo) {
     let (new_account, account_id) = gen_account(worker).await;
     let new_participant = gen_participant_info();

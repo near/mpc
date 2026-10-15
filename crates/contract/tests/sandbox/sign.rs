@@ -2,10 +2,12 @@ use crate::sandbox::{
     common::{SandboxTestSetup, candidates, create_account_given_id, init},
     utils::{
         consts::ALL_PROTOCOLS,
+        sandbox_mpc_contract::SandboxMpcContract,
         shared_key_utils::SharedSecretKey,
         sign_utils::{
-            CKDRequestTest, DomainResponseTest, gen_secp_256k1_sign_test,
-            submit_ckd_response_measure_gas, submit_signature_response, verify_timeout,
+            CKDRequestTest, DomainResponseTest, await_request_in_contract_queue,
+            gen_secp_256k1_sign_test, submit_ckd_response_measure_gas, submit_signature_response,
+            verify_timeout,
         },
         transactions::CallMpcContractAsSelf,
     },
@@ -36,6 +38,7 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
+        ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .build()
@@ -112,14 +115,14 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
 
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
-    let mut contract_balance = contract.view_account().await?.balance;
+    let mut contract_balance = contract.as_account().view_account().await?.balance;
 
     for key in &keys {
         let req = DomainResponseTest::new(&mut rng, key, alice.id());
         req.run(&alice, &contract, attested_account).await?;
 
         let new_balance = alice.view_account().await?.balance;
-        let new_contract_balance = contract.view_account().await?.balance;
+        let new_contract_balance = contract.as_account().view_account().await?.balance;
         assert!(
             balance.as_millinear() - new_balance.as_millinear() < 10,
             "refund should happen"
@@ -153,7 +156,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
     let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
-    let mut contract_balance = contract.view_account().await?.balance;
+    let mut contract_balance = contract.as_account().view_account().await?.balance;
 
     for key in &keys {
         let req = DomainResponseTest::new(&mut rng, key, alice.id());
@@ -165,7 +168,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
         verify_timeout(status).await?;
 
         let new_balance = alice.view_account().await?.balance;
-        let new_contract_balance = contract.view_account().await?.balance;
+        let new_contract_balance = contract.as_account().view_account().await?.balance;
         assert!(balance >= new_balance, "user balance should not increase");
         assert!(
             balance.as_millinear() - new_balance.as_millinear() < 10,
@@ -199,10 +202,12 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
     for key in &keys {
         // Try to sign with no deposit, should fail.
         let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
+        // TODO(#4741): typed calls with the deposit overridden to zero.
         let status = match &req {
             DomainResponseTest::Sign(req) => {
                 let status = contract
-                    .call(method_names::SIGN)
+                    .as_account()
+                    .call(contract.id(), method_names::SIGN)
                     .args_json(req.request_json_args())
                     .max_gas()
                     .transact_async()
@@ -212,7 +217,8 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
             }
             DomainResponseTest::CKD(req) => {
                 let status = contract
-                    .call(method_names::REQUEST_APP_PRIVATE_KEY)
+                    .as_account()
+                    .call(contract.id(), method_names::REQUEST_APP_PRIVATE_KEY)
                     .args_json(req.request_json_args())
                     .max_gas()
                     .transact_async()
@@ -273,7 +279,8 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         let req = gen_secp_256k1_sign_test(&mut rng, key.domain_id(), predecessor_id, sk);
 
         let status = contract
-            .call(method_names::SIGN)
+            .as_account()
+            .call(contract.id(), method_names::SIGN)
             .args_json(serde_json::json!({
                 "request": {
                     "payload": req.payload().as_ecdsa().unwrap(),
@@ -287,7 +294,8 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
             .await?;
         dbg!(&status);
 
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        await_request_in_contract_queue(contract.get_pending_request(req.response.request.clone()))
+            .await?;
 
         // Call `respond` as if we are the MPC network itself.
         submit_signature_response(&req.response, &contract, attested_account).await?;
@@ -298,7 +306,8 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_initialization() -> anyhow::Result<()> {
-    let (_worker, contract) = init().await;
+    let (worker, contract) = init().await;
+    let contract = SandboxMpcContract::new(&worker, contract);
 
     // Empty candidates should fail.
     let participants = Participants::new();
@@ -356,6 +365,7 @@ async fn test_contract_ckd_pv_request() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
+        ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()
@@ -391,6 +401,7 @@ async fn test_ckd_gas_regression() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
+        ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()
