@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Runs the start checks of the mpc-node, mpc-node-gcp and mpc-rust-launcher images in Docker. Each
+# Runs the start checks of the mpc-node and mpc-rust-launcher images in Docker. Each
 # check waits a fixed time for its container to stay up, so they run concurrently, with each line of
 # output prefixed by the image it checks.
 
@@ -19,11 +19,9 @@ check mpc-launcher "$CHECK_STARTS" --rust-launcher &
 launcher_check=$!
 check mpc-node env NODE_IMAGE_NAME=mpc-node "$CHECK_STARTS" &
 node_check=$!
-check mpc-node-gcp env NODE_IMAGE_NAME=mpc-node-gcp "$CHECK_STARTS" &
-gcp_check=$!
 
 status=0
-for pid in "$launcher_check" "$node_check" "$gcp_check"; do
+for pid in "$launcher_check" "$node_check"; do
   wait "$pid" || status=1
 done
 exit "$status"

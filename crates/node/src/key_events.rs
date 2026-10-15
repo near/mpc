@@ -1107,7 +1107,6 @@ mod tests {
         let keyshare_storage = KeyStorageConfig {
             home_dir: tempfile::tempdir().unwrap().keep(),
             local_encryption_key: [0u8; 16],
-            gcp: None,
         }
         .create()
         .await

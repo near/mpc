@@ -97,7 +97,7 @@ jobs:
           BRANCH_TAG: ${{ steps.inputs.outputs.branch-tag }}
         run: |
           set -euo pipefail
-          for REPO in mpc-node mpc-node-gcp mpc-launcher; do
+          for REPO in mpc-node mpc-launcher; do
             if ! skopeo inspect docker://nearone/$REPO:$BRANCH_TAG > /dev/null 2>&1; then
               echo "::error::Source image nearone/$REPO:$BRANCH_TAG not found."
               echo "::error::Has the build workflow finished for this commit? If a new commit was pushed after the build started, wait for the new build to complete."
@@ -142,7 +142,7 @@ jobs:
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
           set -euo pipefail
-          for REPO in mpc-node mpc-node-gcp mpc-launcher; do
+          for REPO in mpc-node mpc-launcher; do
             SAFE_NAME="${REPO//-/_}"
             skopeo copy --preserve-digests --all \
               docker://nearone/$REPO:$BRANCH_TAG \
@@ -172,7 +172,6 @@ jobs:
         env:
           VERSION: ${{ steps.inputs.outputs.version }}
           NODE_DIGEST: ${{ steps.digests.outputs.mpc_node_digest }}
-          NODE_GCP_DIGEST: ${{ steps.digests.outputs.mpc_node_gcp_digest }}
           LAUNCHER_DIGEST: ${{ steps.digests.outputs.mpc_launcher_digest }}
           CONTRACT_HASH: ${{ steps.contract.outputs.hash }}
         run: |
@@ -184,9 +183,6 @@ jobs:
 
           - [nearone/mpc-node:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node/${VERSION}/)
             Manifest digest: \`${NODE_DIGEST}\`
-
-          - [nearone/mpc-node-gcp:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node-gcp/${VERSION}/)
-            Manifest digest: \`${NODE_GCP_DIGEST}\`
 
           - [nearone/mpc-launcher:${VERSION}](https://hub.docker.com/layers/nearone/mpc-launcher/${VERSION}/)
             Manifest digest: \`${LAUNCHER_DIGEST}\`
