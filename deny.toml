@@ -2,6 +2,9 @@
 clarify = [
   { name = "near-chain", expression = "MIT OR Apache-2.0", license-files = [
   ] },
+  { name = "stringmetrics", expression = "Apache-2.0", license-files = [
+    { path = "LICENSE", hash = 0xc9663a1e },
+  ] },
 ]
 allow = [
   "Apache-2.0",
@@ -41,6 +44,12 @@ ignore = [
   # Fixed in wasmtime >= 48.0.4, with no patched 45.x release. Affects only the component-model
   # async API; no crate in the workspace enables wasmtime's `component-model` feature.
   "RUSTSEC-2026-0327", # wasmtime component async-lifted callback result count unvalidated
+  # Fixed in wasmtime >= 48.0.6, with no patched 45.x release. The workspace builds wasmtime
+  # without its `gc`, `async` and `component-model` features, and near-vm-runner's preparation
+  # step rejects the GC reference types a guest needs to build the type chain in 0359.
+  "RUSTSEC-2026-0359", # wasmtime stack overflow dropping a long chain of recursive types
+  "RUSTSEC-2026-0362", # wasmtime may not enforce the async-entrypoint requirement
+  "RUSTSEC-2026-0363", # wasmtime component-model handle tables are charged to no limit
   # TODO(#4423): remove once cargo can resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore 2.14.0-rc.2 and
   # near-crypto 0.37.4 pin it to =1.16.2, so the fix cannot be resolved until they move. The
