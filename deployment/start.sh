@@ -162,28 +162,6 @@ generate_secrets_json() {
         return 0
     fi
 
-    # Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
-    if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
-        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_P2P_PRIVATE_KEY_SECRET_ID}" ]; then
-            echo "MPC_P2P_PRIVATE_KEY not provided in environment, fetching from GCP Secret Manager..."
-            MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_P2P_PRIVATE_KEY_SECRET_ID")
-            export MPC_P2P_PRIVATE_KEY
-        fi
-    else
-        echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
-    fi
-
-    # Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
-    if [ -z "${MPC_ACCOUNT_SK}" ]; then
-        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_ACCOUNT_SK_SECRET_ID}" ]; then
-            echo "MPC_ACCOUNT_SK not provided in environment, fetching from GCP Secret Manager..."
-            MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_ACCOUNT_SK_SECRET_ID")
-            export MPC_ACCOUNT_SK
-        fi
-    else
-        echo "Using provided MPC_ACCOUNT_SK from environment"
-    fi
-
     # Only generate secrets.json if we have the required keys
     if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
         echo "Generating secrets.json from provided keys..."
@@ -228,15 +206,6 @@ update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
 # Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
 generate_secrets_json
-
-# Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
-if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
-  echo "MPC_SECRET_STORE_KEY not provided in environment, will fetch from GCP Secret Manager..."
-  MPC_SECRET_STORE_KEY=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID)
-  export MPC_SECRET_STORE_KEY
-else
-  echo "Using provided MPC_SECRET_STORE_KEY from environment"
-fi
 
 echo "Starting mpc node..."
 # `exec` so mpc-node becomes PID 1 and receives SIGTERM directly; otherwise
