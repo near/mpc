@@ -29,7 +29,7 @@ security and verification purposes.
 
 The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
 
-**Build from a plain clone on the branch CI built**, not a `git worktree`: the node
+**Build from a clean clone on the branch CI built**, not a `git worktree`: the node
 embeds git metadata from `.git`, so a different checkout gives a different digest.
 
 **Build both node and launcher images** (default behavior):
