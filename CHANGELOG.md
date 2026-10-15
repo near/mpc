@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.17.1] - 2026-10-15
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4798](https://github.com/near/mpc/pull/4798)(@barakeinav1): Bump nearcore to 2.14.0-rc.4 (#4798)
+
+
 ## [3.17.0] - 2026-10-12
 
 ### 🚀 Features
