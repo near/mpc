@@ -154,7 +154,9 @@ by GitHub when the draft is published.
 Review the draft, rename it to `3.11.0`, add a one-sentence summary at the
 top of the notes (what the release is for, which networks it targets, and
 whether it needs a contract upgrade or launcher vote), and click "Publish
-release." Publishing creates the `3.11.0` git tag at the released commit.
+release."
+
+Publishing creates the `3.11.0` git tag at the released commit.
 
 > ⚠️ **Point of no return.** Publishing creates the tag, and once the tag is published it cannot be modified as we are using [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
 
