@@ -152,8 +152,6 @@ impl MpcClient {
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
-        let network_client = self.network_client.clone();
-
         // Reads every asset store directly, so the owned-asset gauges do not
         // depend on any generation loop iterating.
         let asset_metrics_reporter = tracking::spawn("report asset metrics", {

@@ -528,9 +528,10 @@ async fn run_receive_messages_loop(
     }
 }
 
-/// The main entry point for the networking layer. Spawns a tokio task that runs the message
-/// receiving loop, and returns a client that can be used to create new MPC tasks, as well as a
-/// receiver for triggering new MPC tasks that the node should passively participate in.
+/// The main entry point for the networking layer. Spawns the message receiving loop and a
+/// periodic [`MeshNetworkClient::emit_metrics`] task, and returns a client that can be used to
+/// create new MPC tasks, a receiver for triggering new MPC tasks that the node should passively
+/// participate in, and the spawned tasks' handles, which abort both tasks on drop.
 pub fn run_network_client(
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     transport_receiver: Box<dyn MeshNetworkTransportReceiver>,
