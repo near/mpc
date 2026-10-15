@@ -10,7 +10,7 @@ use crate::sandbox::{
         contract_build::{current_contract, migration_contract},
         interface::IntoContractType,
         mpc_contract::assert_running_return_participants,
-        transactions::CallMpcContract,
+        transactions::{CallMpcContract, CallMpcContractAsSelf},
     },
 };
 use near_mpc_contract_interface::method_names;
@@ -73,8 +73,7 @@ async fn vote_contract_update__should_reject_a_non_participant() {
 
     // When
     let execution = contract
-        .as_account()
-        .call_mpc(contract.id())
+        .call_mpc()
         .vote_contract_update(hash(&dummy_contract_update()))
         .await
         .unwrap();
@@ -354,9 +353,8 @@ async fn migration_function_rejects_external_callers() {
         .await;
 
     let execution_error = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::MIGRATE)
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .migrate()
         .await
         .unwrap()
         .into_result()

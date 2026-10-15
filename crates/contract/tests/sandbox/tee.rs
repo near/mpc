@@ -16,7 +16,7 @@ use crate::sandbox::{
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
-        transactions::CallMpcContract,
+        transactions::{CallMpcContract, CallMpcContractAsSelf},
         views::{SandboxViewer, ViewMpcContract},
     },
 };
@@ -324,9 +324,8 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 
     // Try to call clean_tee_status from external account - should fail
     let result = external_account
-        .call(contract.id(), method_names::CLEAN_TEE_STATUS)
-        .args_json(serde_json::json!({}))
-        .transact()
+        .call_mpc(contract.id())
+        .clean_tee_status()
         .await?;
 
     // The call should fail because it's not from the contract itself
@@ -380,12 +379,7 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
     assert_eq!(tee_participants_before, expected_union);
 
     // When: contract calls clean_tee_status on itself.
-    let result = contract
-        .as_account()
-        .call(contract.id(), method_names::CLEAN_TEE_STATUS)
-        .args_json(serde_json::json!({}))
-        .transact()
-        .await?;
+    let result = contract.call_mpc().clean_tee_status().await?;
 
     assert!(result.is_success());
 
@@ -453,10 +447,8 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     // to cover every stored entry.
     let scan_budget: u32 = (before_cleanup.len() as u32) + 1;
     let result = contract
-        .as_account()
-        .call(contract.id(), method_names::CLEAN_INVALID_ATTESTATIONS)
-        .args_json(serde_json::json!({ "max_scan": scan_budget }))
-        .transact()
+        .call_mpc()
+        .clean_invalid_attestations(scan_budget)
         .await?;
     assert!(result.is_success());
 

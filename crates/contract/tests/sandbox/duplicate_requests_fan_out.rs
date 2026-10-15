@@ -12,15 +12,15 @@ use crate::sandbox::{
         contract_build::parallel_contract,
         shared_key_utils::SharedSecretKey,
         sign_utils::{
-            CKDResponseArgs, create_response_ckd, create_response_ed25519,
-            create_response_secp256k1, submit_ckd_response, submit_signature_response,
+            create_response_ckd, create_response_ed25519, create_response_secp256k1,
+            submit_ckd_response, submit_signature_response,
         },
     },
 };
 use elliptic_curve::Group;
 use mpc_contract::MAX_PENDING_REQUEST_FAN_OUT;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::call_args::SignatureRespondArgs;
+use near_mpc_contract_interface::call_args::{CKDRespondArgs, SignatureRespondArgs};
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequest, CKDRequestArgs, Protocol, SignRequestArgs,
 };
@@ -121,7 +121,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
                 let app_pk = make_app_public_key(domain_id.0 + 1);
                 let (request, response) =
                     create_response_ckd(&parallel_id, &app_pk, &domain_id, sk, &scheme_tag);
-                let response_args = CKDResponseArgs { request, response };
+                let response_args = CKDRespondArgs { request, response };
                 let ckd_args = CKDRequestArgs {
                     derivation_path: scheme_tag,
                     domain_id,
@@ -257,7 +257,7 @@ async fn run_ckd_fan_out(
     contract: &near_workspaces::Contract,
     parallel: &near_workspaces::Contract,
     attested: &near_workspaces::Account,
-    response_args: &CKDResponseArgs,
+    response_args: &CKDRespondArgs,
     ckd_args: &CKDRequestArgs,
 ) -> anyhow::Result<Vec<(TransactionStatus, u64)>> {
     let statuses = submit_duplicate_ckd_batches(
