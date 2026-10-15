@@ -1346,7 +1346,7 @@ timeout_sec = 30
 max_retries = 3
 expected_network_fingerprint = "2741"
 
-[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-mainnet]
 rpc_url = "https://api.mainnet.abs.xyz"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
@@ -1464,6 +1464,165 @@ kind = "path"
 placeholder = "{api_key}"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
 
+[mpc_node_config.node.foreign_chains.solana.providers.tatum]
+rpc_url = "https://solana-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.solana.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# BNB Smart Chain.
+[mpc_node_config.node.foreign_chains.bnb]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "56"
+
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy]
+rpc_url = "https://bnb-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.bsc.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum]
+rpc_url = "https://bsc-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "8453"
+
+[mpc_node_config.node.foreign_chains.base.providers.alchemy]
+rpc_url = "https://base-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.base.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.base-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.base.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.tatum]
+rpc_url = "https://base-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.base.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Arbitrum One.
+[mpc_node_config.node.foreign_chains.arbitrum]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "42161"
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy]
+rpc_url = "https://arb-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.arbitrum-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum]
+rpc_url = "https://arbitrum-one-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "137"
+
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy]
+rpc_url = "https://polygon-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.matic.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum]
+rpc_url = "https://polygon-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Avalanche C-chain. The C-chain path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.avalanche]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "43114"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.public]
+rpc_url = "https://api.avax.network/ext/bc/C/rpc"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.avalanche-mainnet.quiknode.pro/{api_key}/ext/bc/C/rpc"
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum]
+rpc_url = "https://avax-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# HyperEVM. The `/evm` path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.hyper_evm]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "999"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.public]
+rpc_url = "https://rpc.hyperliquid.xyz/evm"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.hype-mainnet.quiknode.pro/{api_key}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack]
+rpc_url = "https://hyperliquid-mainnet.core.chainstack.com/{API_KEY}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_CHAINSTACK_API_KEY" }
+
 [mpc_node_config.node.foreign_chains.fogo]
 timeout_sec = 30
 max_retries = 3
@@ -1471,6 +1630,14 @@ expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"
 
 [mpc_node_config.node.foreign_chains.fogo.providers.public]
 rpc_url = "https://mainnet.fogo.io"
+
+# FluxRPC takes the key as a query parameter.
+[mpc_node_config.node.foreign_chains.fogo.providers.fluxrpc]
+rpc_url = "https://eu.fogo.fluxrpc.com"
+[mpc_node_config.node.foreign_chains.fogo.providers.fluxrpc.auth]
+kind = "query"
+name = "key"
+token = { val = "YOUR_FLUXRPC_API_KEY" }
 ```
 
 #### Expected network fingerprints
