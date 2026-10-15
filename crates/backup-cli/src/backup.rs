@@ -1,10 +1,7 @@
-use chain_gateway::ChainGateway;
+use chain_gateway::{ChainGateway, default_indexer_config};
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
 use near_contract_transport::{NearKitCaller, PollInterval, WatchContractState};
-use near_indexer::{
-    AwaitForNodeSyncedEnum, IndexerConfig, SyncModeEnum, near_primitives::types::Finality,
-};
 use near_kit::Near;
 use near_kit::transaction::Final;
 use near_mpc_contract_interface::client::MpcContractHandle;
@@ -189,7 +186,7 @@ async fn run_backup_service_through_embedded_node(
     spawn_shutdown_on_signal(shutdown.clone());
 
     let (chain_gateway, _near_node, _) =
-        ChainGateway::start(near_node_config(home_dir), None, shutdown.clone())
+        ChainGateway::start(default_indexer_config(home_dir), None, shutdown.clone())
             .await
             .expect("failed to start the NEAR node");
     let mpc_contract = MpcContractHandle::new(chain_gateway, mpc_contract_account_id);
@@ -210,17 +207,6 @@ async fn run_backup_service_through_embedded_node(
     )
     .await
     .expect("automatic backup service failed");
-}
-
-fn near_node_config(home_dir: PathBuf) -> IndexerConfig {
-    IndexerConfig {
-        home_dir,
-        sync_mode: SyncModeEnum::LatestSynced,
-        await_for_node_synced: AwaitForNodeSyncedEnum::WaitForFullSync,
-        finality: Finality::Final,
-        validate_genesis: false,
-        skip_broken_blocks: false,
-    }
 }
 
 /// Backs up keyshares whenever the observed contract state stops being covered by what is

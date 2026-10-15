@@ -13,7 +13,6 @@ ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }
 near-account-id = { workspace = true }
 near-contract-transport = { workspace = true, features = ["near-kit"] }
-near-indexer = { workspace = true }
 near-kit = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
 prometheus = { workspace = true }

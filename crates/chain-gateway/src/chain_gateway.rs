@@ -1,13 +1,15 @@
 use std::cmp::max;
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use near_account_id::AccountId;
 use near_async::ActorSystem;
 use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
-use near_indexer::StreamerMessage;
-use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_indexer::{
+    AwaitForNodeSyncedEnum, IndexerConfig, StreamerMessage, SyncModeEnum,
+    near_primitives::{transaction::SignedTransaction, types::Finality},
+};
 use near_store::db::RocksDB;
 use nearcore::NearConfig;
 use tokio::sync::mpsc::Receiver;
@@ -133,7 +135,7 @@ impl ChainGateway {
     /// The node dies if [`NodeHandle`] is dropped.
     /// Returns a stream for BlockUpdates if BlockEventSubscriptions is not None.
     pub async fn start(
-        indexer_config: near_indexer::IndexerConfig,
+        indexer_config: IndexerConfig,
         subscriber: Option<BlockEventSubscriptions>,
         shutdown: CancellationToken,
     ) -> Result<
@@ -177,6 +179,17 @@ impl ChainGateway {
             shutdown: stop_unless_started.disarm(),
         };
         Ok((chain_gateway, node_handle, stream))
+    }
+}
+
+pub fn default_indexer_config(home_dir: PathBuf) -> IndexerConfig {
+    IndexerConfig {
+        home_dir,
+        sync_mode: SyncModeEnum::LatestSynced,
+        await_for_node_synced: AwaitForNodeSyncedEnum::WaitForFullSync,
+        finality: Finality::Final,
+        validate_genesis: false,
+        skip_broken_blocks: false,
     }
 }
 
@@ -277,7 +290,7 @@ fn run_node(
 /// alongside the nearcore node.
 struct StreamerSetup {
     subscriber: BlockEventSubscriptions,
-    indexer_config: near_indexer::IndexerConfig,
+    indexer_config: IndexerConfig,
     near_config: NearConfig,
 }
 
