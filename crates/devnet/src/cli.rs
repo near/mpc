@@ -160,14 +160,14 @@ pub enum MpcNetworkSubCmd {
     VoteNewParameters(MpcVoteNewParametersCmd),
     /// Send `vote_mpc_node_manifest_digest()` transactions to vote for a new approved MPC image hash.
     VoteCodeHash(MpcVoteApprovedHashCmd),
-    /// Deploy the nodes with Terraform to host Nomad jobs to run this network.
+    /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
     /// Deploy the localnet validator (neard) Nomad job. Localnet only; run after deploy-infra and
     /// before funding/deploy-contract, so the chain is up for account creation.
     DeployChain(MpcTerraformDeployChainCmd),
     /// Deploy the Nomad jobs to run this network.
     DeployNomad(MpcTerraformDeployNomadCmd),
-    /// Destroy the nodes previously deployed.
+    /// Destroy the GCP nodes previously deployed.
     DestroyInfra(MpcTerraformDestroyInfraCmd),
     /// Prints out useful information about the contract and/or the deployed infra.
     Describe(MpcDescribeCmd),

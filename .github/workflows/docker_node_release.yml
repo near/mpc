@@ -2,7 +2,7 @@ name: Release Node Docker Image
 
 # cancel-in-progress is false to avoid orphaning blobs mid-push; see RELEASES.md.
 concurrency:
-  group: retag-node-${{ inputs.repository }}-${{ github.ref }}
+  group: retag-node-${{ github.ref }}
   cancel-in-progress: false
 
 on:
@@ -16,20 +16,12 @@ on:
         description: "Release tag for the image (e.g., '3.0.4')"
         required: true
         type: string
-      repository:
-        description: "Target repository name (default: 'mpc-node')"
-        required: false
-        type: string
-        default: mpc-node
   workflow_call:
     inputs:
       source-tag:
         required: true
         type: string
       release-tag:
-        required: true
-        type: string
-      repository:
         required: true
         type: string
 
@@ -51,19 +43,17 @@ jobs:
       - name: Verify source image exists
         env:
           SOURCE_TAG: ${{ inputs.source-tag }}
-          REPOSITORY: ${{ inputs.repository }}
         run: |
-          if ! skopeo inspect docker://nearone/$REPOSITORY:$SOURCE_TAG > /dev/null 2>&1; then
-            echo "Source image nearone/$REPOSITORY:$SOURCE_TAG does not exist"
+          if ! skopeo inspect docker://nearone/mpc-node:$SOURCE_TAG > /dev/null 2>&1; then
+            echo "Source image nearone/mpc-node:$SOURCE_TAG does not exist"
             exit 1
           fi
 
       - name: Retag image
         env:
           SOURCE_TAG: ${{ inputs.source-tag }}
-          REPOSITORY: ${{ inputs.repository }}
           RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
           skopeo copy \
-            docker://nearone/$REPOSITORY:$SOURCE_TAG \
-            docker://nearone/$REPOSITORY:$RELEASE_TAG
+            docker://nearone/mpc-node:$SOURCE_TAG \
+            docker://nearone/mpc-node:$RELEASE_TAG

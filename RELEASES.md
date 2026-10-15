@@ -74,7 +74,7 @@ merge commit is what will be released.
 
 ### 2. Wait for the build workflows
 
-When the release PR merges, the four workflows the release needs fire on the
+When the release PR merges, the three workflows the release needs fire on the
 protected branch:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
@@ -85,7 +85,7 @@ The image workflows push `nearone/mpc-{node,launcher}:<branch>-<short-sha>`.
 The contract workflow uploads the reproducible WASM as a GitHub Actions
 artifact named `contract`.
 
-Wait for all four to finish successfully. The Release workflow refuses to
+Wait for all three to finish successfully. The Release workflow refuses to
 run if any artifact is missing.
 
 <!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
@@ -111,8 +111,8 @@ exactly what the source produces:
   cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
   ```
 - **Docker images** — compare the digests in the draft release to the ones
-  produced locally (with no flags the script builds and prints digests for all
-  three images):
+  produced locally (with no flags the script builds and prints digests for both
+  images):
   ```sh
   ./deployment/build-images.sh
   ```
@@ -161,7 +161,7 @@ Review the draft and click "Publish release." Publishing creates the
 Some operators consume floating tags like `nearone/mpc-node:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
 
-- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run once with `repository: mpc-node`.
+- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — single run for `mpc-node`.
 - [Release Launcher Docker Image](.github/workflows/docker_launcher_release.yml) — single run for `mpc-launcher`.
 
 Use `source-tag = 3.11.0` and `release-tag = testnet-release` or

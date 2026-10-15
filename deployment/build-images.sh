@@ -201,9 +201,7 @@ if $USE_NODE; then
       --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
       -- cargo build -p mpc-node --profile reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
-fi
 
-if $USE_NODE; then
     node_tar="$(mktemp --suffix=.tar)"
     build_reproducible_image "$NODE_IMAGE_NAME" "$DOCKERFILE_NODE" "$node_tar"
     node_skopeo_dir="$(skopeo_compress "$node_tar")"

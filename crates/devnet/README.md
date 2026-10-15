@@ -11,7 +11,23 @@ our internal-specific setup.
 
 ## Prerequisites
 
-To be able to use the CLI, make sure to first install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli).
+To be able to use the CLI, make sure to first install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli) and the [google cloud CLI](https://cloud.google.com/sdk/docs/install).
+
+Once installed you need to authenticate yourself with `gcloud` and get application credentials, which can be done using the following commands.
+
+```shell
+gcloud auth login
+```
+
+```shell
+gcloud auth application-default login
+```
+
+You can check you are correctly authenticated by using:
+
+```shell
+gcloud auth list
+```
 
 ## Installation
 
@@ -120,6 +136,8 @@ This will output the address of the **Nomad UI**. Go there and wait until the
 Nomad server UI shows up. Accessing the UI will require a password, which can be
 found in the "Nomad MPC UI" entry in the company's password manager. We can then
 deploy the MPC nodes:
+
+In addition, you can find the VMs created in GCP under [this link](<https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc&pli=1&pageState=(%22instances%22:(%22s%22:%5B(%22i%22:%22creationTimestamp%22,%22s%22:%220%22),(%22i%22:%22name%22,%22s%22:%220%22)%5D,%22r%22:50))>).
 
 ```shell
 mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad

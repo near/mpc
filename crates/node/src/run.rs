@@ -271,9 +271,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         image_hash_shutdown_sender,
     ));
 
-    let home_dir = config.home_dir.clone();
     let root_future = create_root_future(
-        home_dir.clone(),
+        config.home_dir,
         node_config.clone(),
         secrets.clone(),
         indexer_api,

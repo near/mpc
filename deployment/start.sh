@@ -162,22 +162,6 @@ generate_secrets_json() {
         return 0
     fi
 
-    # Check if MPC_P2P_PRIVATE_KEY is empty
-    if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
-        echo "MPC_P2P_PRIVATE_KEY not provided in environment"
-        fi
-    else
-        echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
-    fi
-
-    # Check if MPC_ACCOUNT_SK is empty
-    if [ -z "${MPC_ACCOUNT_SK}" ]; then
-        echo "MPC_ACCOUNT_SK not provided in environment."
-        fi
-    else
-        echo "Using provided MPC_ACCOUNT_SK from environment"
-    fi
-
     # Only generate secrets.json if we have the required keys
     if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
         echo "Generating secrets.json from provided keys..."
@@ -222,14 +206,6 @@ update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
 # Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
 generate_secrets_json
-
-# Check if MPC_SECRET_STORE_KEY is empty
-if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
-  echo "MPC_SECRET_STORE_KEY not provided in environment"
-  fi
-else
-  echo "Using provided MPC_SECRET_STORE_KEY from environment"
-fi
 
 echo "Starting mpc node..."
 # `exec` so mpc-node becomes PID 1 and receives SIGTERM directly; otherwise

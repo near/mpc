@@ -20,7 +20,7 @@ dockerTools.buildLayeredImage {
     python3Minimal
     dockerTools.caCertificates
     dockerTools.fakeNss
-  ]
+  ];
 
   extraCommands = ''
     mkdir -p app root
