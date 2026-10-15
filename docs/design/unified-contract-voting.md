@@ -145,7 +145,7 @@ where
   with Borsh + SHA-256 and clears all pending votes on a win (`:79`).
   `ProviderVotes::vote` (`foreign_chain_rpc.rs:145`) keys voters by `(participant, chain)`
   (`:121`), counts per chain (`:157`), and on a win drops only that chain's rows (`:163`).
-  The node manifest digest (`tee_state.rs:336`, #4403) treats the 32-byte `NodeImageHash` as
+  The node manifest digest (`tee_state.rs:336`) treats the 32-byte `NodeImageHash` as
   its own proposal hash (`tee/proposal.rs:16`) and clears the tally when it whitelists
   (`tee_state.rs:367`).
 - **Vote-then-submit** (one flow): `vote_contract_update(update_hash)` (`api/update.rs:82`,
@@ -184,7 +184,10 @@ enum Proposal {
     ChangeTeeVerifier(VerifierChangeProposal),
     UpdateForeignChainProviders { chain: ForeignChain, entry: ChainEntry },
     AddDomains(Vec<DomainConfig>),
-    UpdateGovernanceParameters { prospective_epoch_id: EpochId, parameters: ProposedGovernanceThresholdParameters },
+    UpdateGovernanceParameters {
+        prospective_epoch_id: EpochId,
+        parameters: ProposedGovernanceThresholdParameters,
+    },
 }
 ```
 
@@ -212,12 +215,12 @@ The generic path, with per-variant hooks in bold:
 ```rust
 pub fn vote(&mut self, proposal: dtos::Proposal) -> Result<VoteOutcome, Error> {
     let proposal: Proposal = proposal.try_into_contract_type()?;
-    let (electorate, required) = proposal.electorate(&self.protocol_state)?;   // §3.4
+    let (electorate, required) = proposal.electorate(&self.protocol_state)?;  // §3.4
     let voter = AuthenticatedParticipantId::new(electorate)?;
 
-    proposal.validate(self)?;                                                   // §4.3, every vote
+    proposal.validate(self)?;                                                 // §4.3, every vote
 
-    let family = proposal.family();                                             // §3.3
+    let family = proposal.family();                                           // §3.3
     let hash = proposal.to_proposal_hash();
     let count = self
         .governance_votes
@@ -227,8 +230,8 @@ pub fn vote(&mut self, proposal: dtos::Proposal) -> Result<VoteOutcome, Error> {
     if count < required {
         return Ok(VoteOutcome::Pending { votes: count, required });
     }
-    self.governance_votes.retain_votes(|(_, f)| *f != family);                 // §4.2
-    proposal.apply(self)?;                                                      // §3.5, same receipt
+    self.governance_votes.retain_votes(|(_, f)| *f != family);                // §4.2
+    proposal.apply(self)?;                                                    // §3.5, same receipt
     Ok(VoteOutcome::Applied)
 }
 ```
@@ -276,10 +279,10 @@ that may vote and the number of votes required:
   Running → current set, Resharing → previous running set).
 - `n-of-n (current)` variants require `participants.len()` votes from the same set
   (`api/tee_measurements.rs:108`, `running.rs:233`).
-- `UpdateGovernanceParameters` is special: the electorate is the *proposed* set, and a voter who is not yet
-  a current participant is admitted only after `t` current participants have voted for the
-  same proposal (`running.rs:191`–`200`). That admission rule is part of this variant's
-  `validate`, not of the generic path.
+- `UpdateGovernanceParameters` is special: the electorate is the *proposed* set, and a voter
+  who is not yet a current participant is admitted only after `t` current participants have
+  voted for the same proposal (`running.rs:191`–`200`). That admission rule is part of this
+  variant's `validate`, not of the generic path.
 
 ### 3.5 Apply helpers
 
@@ -349,8 +352,8 @@ committed to the exact payload by hash, so what gets applied is what they voted 
 
 The checks are the ones the flows already perform at vote time, moved behind one hook:
 
-- `UpdateGovernanceParameters`: `prospective_epoch_id` must be the next epoch (`state/running.rs:111`),
-  the proposal must be valid against current parameters
+- `UpdateGovernanceParameters`: `prospective_epoch_id` must be the next epoch
+  (`state/running.rs:111`), the proposal must be valid against current parameters
   (`validate_incoming_proposal`, `primitives/thresholds.rs:123`), every proposed participant
   must hold a valid attestation (`api/governance.rs:47`–`82`), and the governance threshold
   must dominate every domain's reconstruction threshold (`running.rs:182`).
@@ -429,9 +432,9 @@ the current flows' defensive filtering at count time (`api/update.rs:52`,
 `foreign_chain_rpc.rs:157`) keeps the tally correct even if that sweep fails. This is a
 primary reason to build on the existing primitive rather than a fresh `BTreeMap`.
 
-Phase transitions are handled by the family rule: `UpdateGovernanceParameters` and `AddDomains` clear their
-own family when they apply, and their electorate is re-derived from the new phase on the next
-vote (§3.4).
+Phase transitions are handled by the family rule: `UpdateGovernanceParameters` and `AddDomains`
+clear their own family when they apply, and their electorate is re-derived from the new phase
+on the next vote (§3.4).
 
 ### 5.3 Optional vote expiry
 
@@ -518,7 +521,8 @@ family at a time:
    layout change and needs a state migration on upgrade, in the `v3_16_0_state.rs` style. We
    recommend **clearing in-flight votes at the upgrade boundary** (a short governance quiet
    period) rather than migrating live tallies — vote state is cheap to re-cast and this avoids
-   fragile per-struct migration code.
+   fragile per-struct migration code. The node-image-hash tally's move onto `Votes<V>` set that
+   precedent: its state migration dropped the pending votes instead of converting them.
 3. **Dual-run** the old `vote_*` names as thin delegates to `vote` for a deprecation window,
    then remove them. The interface crate already does this for the legacy update methods
    (`TODO(#4513)`, `method_names.rs:30`), which is the precedent to follow.
@@ -536,11 +540,13 @@ rollout must stage:
   Both snapshots must be regenerated as each family migrates.
 - **In-repo consumers must move in lockstep:** the interface crate
   (`crates/near-mpc-contract-interface/src/`: `method_names.rs`, `call_args.rs`, the typed
-  `client.rs`, `types/`), the devnet driver/CLI (`crates/devnet/src/mpc.rs`, `cli.rs`), and
-  the sandbox suite (`crates/contract/tests/sandbox/`). The node's self-driven key-event votes
-  (`crates/node/src/key_events.rs`) are out of scope (§6).
+  `client.rs`, `types/`), the devnet driver/CLI (`crates/devnet/src/mpc.rs`, `cli.rs`), the
+  contract README's method table and state diagram (`crates/contract/README.md:248`, `:301`),
+  and the sandbox and in-process suites (`crates/contract/tests/sandbox/`, `tests/inprocess/`).
+  The node's self-driven key-event votes (`crates/node/src/key_events.rs`) are out of scope (§6).
 - **External callers need a deprecation window.** Governance tooling and the operator guides
-  (`docs/development/`, `docs/guide/`) call the old method names directly; the dual-running
+  (`docs/development/`, `docs/guide/`, `docs/design/tee-lifecycle.md`) call the old method
+  names directly; the dual-running
   step above covers them.
 
 ## 8. Cost model
@@ -572,8 +578,8 @@ numbers. The per-flow picture, with borsh payload sizes measured **per voter**:
 
 - **Measurements is the standout** — 240 B per voter collapses to 32 B, saved again on every
   re-vote.
-- **`UpdateGovernanceParameters` / `AddDomains` scale** with participant and domain count, so their saving
-  grows with the network.
+- **`UpdateGovernanceParameters` / `AddDomains` scale** with participant and domain count, so
+  their saving grows with the network.
 - **Counting goes from O(voters) to O(1)**: the bespoke stores scan every voter's payload for
   equality (`tee/proposal.rs:58`, `measurements.rs:40`, `threshold_votes.rs:19`,
   `domain.rs:278`); `Votes<V>` returns the voter set for a hash in one lookup.
