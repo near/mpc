@@ -1,10 +1,8 @@
 use near_contract_transport::{CallContract, FunctionCallArgs};
 use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
-use near_sdk::Gas;
 use near_workspaces::{
     Account, AccountId, Contract, operations::TransactionStatus, result::ExecutionFinalResult,
 };
-use serde::Serialize;
 use std::future::Future;
 
 pub(crate) trait CallMpcContract {
@@ -31,6 +29,17 @@ impl CallMpcContract for Account {
         contract_id: &near_account_id::AccountId,
     ) -> MpcContractHandle<AsyncSandboxCaller<'_>> {
         MpcContractHandle::new(AsyncSandboxCaller(self), contract_id.clone())
+    }
+}
+
+/// Calls the MPC contract as the contract account itself (e.g. for `#[private]` methods).
+pub(crate) trait CallMpcContractAsSelf {
+    fn call_mpc(&self) -> MpcContractHandle<SandboxCaller<'_>>;
+}
+
+impl CallMpcContractAsSelf for Contract {
+    fn call_mpc(&self) -> MpcContractHandle<SandboxCaller<'_>> {
+        self.as_account().call_mpc(self.id())
     }
 }
 
@@ -76,30 +85,6 @@ impl CallContract for AsyncSandboxCaller<'_> {
             .transact_async()
             .await
     }
-}
-
-pub async fn execute_async_transactions(
-    accounts: &[Account],
-    contract: &Contract,
-    function_name: &str,
-    json_args: &impl Serialize,
-    attached_gas: Gas,
-) -> anyhow::Result<()> {
-    let mut transactions = vec![];
-    for account in accounts.iter() {
-        let result = account
-            .call(contract.id(), function_name)
-            .gas(attached_gas)
-            .args_json(json_args)
-            .transact_async()
-            .await?;
-        transactions.push(result);
-    }
-    for transaction in transactions {
-        let result = transaction.await?;
-        all_receipts_successful(result)?;
-    }
-    Ok(())
 }
 
 /// Issues `call` once per account against `contract`, keeping every transaction in flight

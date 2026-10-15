@@ -3,16 +3,27 @@
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
     Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
-    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, TeeVerifierCodeHash, UpdateHash, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
+    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
+    NodeImageHash, ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs,
+    SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct InitArgs {
+    pub parameters: GovernanceThresholdParameters,
+    pub tee_verifier_account_id: AccountId,
+    pub init_config: Option<InitConfig>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct InitRunningArgs {
+    pub domains: Vec<DomainConfig>,
+    pub next_domain_id: u64,
+    pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
     pub tee_verifier_account_id: AccountId,
     pub init_config: Option<InitConfig>,
@@ -52,6 +63,11 @@ pub struct VoteCancelKeygenArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteMpcNodeManifestDigestArgs {
     pub mpc_node_manifest_digest: NodeImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddLauncherHashArgs {
+    pub launcher_hash: LauncherImageHash,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -169,6 +185,11 @@ pub struct VoteAbortKeyEventInstanceArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct CleanInvalidAttestationsArgs {
+    pub max_scan: u32,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

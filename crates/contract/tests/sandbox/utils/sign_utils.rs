@@ -12,10 +12,8 @@ use k256::{
 };
 use mpc_contract::errors;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::call_args::SignatureRespondArgs;
-use near_mpc_contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, RESPOND, RESPOND_CKD,
-};
+use near_mpc_contract_interface::call_args::{CKDRespondArgs, SignatureRespondArgs};
+use near_mpc_contract_interface::method_names::{GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST};
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
     self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
@@ -28,7 +26,6 @@ use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestRe
 use near_workspaces::{Account, Contract, Worker, network::Sandbox, operations::TransactionStatus};
 use rand::{Rng, rngs::OsRng};
 use rand_core::CryptoRngCore;
-use serde::Serialize;
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::time::Duration;
@@ -177,7 +174,7 @@ pub async fn verify_timeout(status: TransactionStatus) -> anyhow::Result<()> {
 
 #[derive(Debug)]
 pub struct CKDRequestTest {
-    pub response: CKDResponseArgs,
+    pub response: CKDRespondArgs,
     pub args: CKDRequestArgs,
 }
 
@@ -213,7 +210,7 @@ impl CKDRequestTest {
         };
 
         CKDRequestTest {
-            response: CKDResponseArgs { request, response },
+            response: CKDRespondArgs { request, response },
             args,
         }
     }
@@ -233,7 +230,7 @@ impl CKDRequestTest {
         };
 
         CKDRequestTest {
-            response: CKDResponseArgs { request, response },
+            response: CKDRespondArgs { request, response },
             args,
         }
     }
@@ -257,55 +254,40 @@ impl CKDRequestTest {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct CKDResponseArgs {
-    pub request: CKDRequest,
-    pub response: CKDResponse,
-}
-
-async fn submit_response(
-    contract: &Contract,
-    attested_account: &Account,
-    method: &str,
-    args: impl Serialize,
-) -> anyhow::Result<()> {
-    let respond = attested_account
-        .call(contract.id(), method)
-        .args_json(args)
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&respond);
-    respond.into_result()?;
-    Ok(())
-}
-
 pub async fn submit_signature_response(
     response: &SignatureRespondArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND, response).await
+    attested_account
+        .call_mpc(contract.id())
+        .respond(response.request.clone(), response.response.clone())
+        .await?
+        .into_result()?;
+    Ok(())
 }
 
 pub async fn submit_ckd_response(
-    response: &CKDResponseArgs,
+    response: &CKDRespondArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND_CKD, response).await
+    attested_account
+        .call_mpc(contract.id())
+        .respond_ckd(response.request.clone(), response.response.clone())
+        .await?
+        .into_result()?;
+    Ok(())
 }
 
 pub async fn submit_ckd_response_measure_gas(
-    response: &CKDResponseArgs,
+    response: &CKDRespondArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<near_workspaces::types::Gas> {
     let respond = attested_account
-        .call(contract.id(), RESPOND_CKD)
-        .args_json(response)
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .respond_ckd(response.request.clone(), response.response.clone())
         .await?;
     let gas = respond.total_gas_burnt;
     respond.into_result()?;
@@ -544,7 +526,7 @@ pub struct PendingSignRequest {
 
 pub struct PendingCKDRequest {
     pub transaction: TransactionStatus,
-    pub ckd_response: CKDResponseArgs,
+    pub ckd_response: CKDRespondArgs,
 }
 
 fn gen_ed25519_sign_test(
