@@ -29,6 +29,16 @@ security and verification purposes.
 
 The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
 
+The node binary embeds git metadata (commit, branch, dirty state) read from `.git`
+inside the build container. To match CI's node digest, build from a plain clone
+checked out on the branch CI built, not from a `git worktree`, whose `.git` points
+outside the container:
+
+```bash
+git clone --branch <branch> https://github.com/near/mpc && cd mpc
+git checkout -B <branch> <commit>   # e.g. release/v3.17
+```
+
 **Build both node and launcher images** (default behavior):
 
 ```bash
