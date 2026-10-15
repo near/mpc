@@ -282,7 +282,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         .unwrap()
         .expect("a migrated attestation should still be readable");
 
-    // Pending launcher votes are deliberately dropped by the migration.
     assert!(
         mpc_contract
             .launcher_hash_votes()
@@ -293,7 +292,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         "pending launcher votes should be dropped by the migration"
     );
 
-    // Voting still works after the upgrade: a fresh threshold vote gets the hash in.
     let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
     for account in &accounts[..threshold] {
         vote_add_launcher_hash(account, &contract, &pending_launcher_hash)
