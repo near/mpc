@@ -1,15 +1,16 @@
 use dtos::KeyEventId;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::{self as dtos};
-use near_workspaces::{Account, Contract};
+use near_workspaces::Account;
 
 use super::{
     mpc_contract::get_state,
+    sandbox_mpc_contract::SandboxMpcContract,
     transactions::{CallMpcContract, all_receipts_successful, execute_async_handle_calls},
 };
 
 pub async fn vote_add_domains(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
@@ -21,7 +22,7 @@ pub async fn vote_add_domains(
 }
 
 pub async fn start_keygen_instance(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
@@ -57,7 +58,7 @@ pub async fn start_keygen_instance(
 }
 
 pub async fn vote_public_key(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
     public_key: dtos::PublicKey,
