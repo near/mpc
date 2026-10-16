@@ -36,6 +36,12 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
+/// How long each backup leader waits after its predecessor before taking over a
+/// still-unresolved request.
+pub const LEADER_FAILOVER_INTERVAL: Duration = Duration::seconds(10);
+/// The max number of participants that act as leaders for one request. Purely a cap on
+/// assets burnt on a cluster-wide-failing request.
+const MAX_LEADER_FAILOVER_DEPTH: usize = 4;
 
 /// Narrows the eligible-leader set for a specific request (e.g. to the participants
 /// supporting the request's foreign chain).
@@ -72,8 +78,10 @@ impl<RequestType> RefineEligibleLeaders<RequestType> for NoRefinement {
 /// that we should attempt to generate a request for. The list will be generated based on the
 /// following goals:
 ///  - Assuming the network state is stable and nodes have consistent views of the connectivity and
-///    indexer heights, each request will be attempted by exactly one node ("leader").
-///  - Each request will be retried (by the current leader) if it has not been
+///    indexer heights, each request will be attempted first by exactly one node ("leader"). If no
+///    response lands on chain, the subsequent eligible participants in the request's leader
+///    selection order join in as backup leaders, staggered by [`LEADER_FAILOVER_INTERVAL`].
+///  - Each request will be retried (by each acting leader) if it has not been
 ///    successfully responded to on chain.
 ///  - If network state fluctuates (nodes going down or back up, or indexers falling behind),
 ///    the queue will adapt to the new state and attempt to find new leaders for the requests.
@@ -189,7 +197,8 @@ pub(super) struct QueuedRequest<RequestType, ChainRespondArgsType> {
 
     /// A pre-computed order of participants that we consider for leader selection.
     /// The leader for the request would be the first in this list that is eligible
-    /// (online and indexer not stale).
+    /// (online and indexer not stale); subsequent eligible participants act as backup
+    /// leaders, staggered by [`LEADER_FAILOVER_INTERVAL`].
     pub leader_selection_order: Vec<ParticipantId>,
 
     /// A throttling mechanism to prevent doing too much computation on each request.
@@ -340,6 +349,52 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         None
     }
 
+    /// Decides whether we should lead this request now, together with the participant to
+    /// record as the request's current leader (ourselves when we lead). `None` when no
+    /// eligible leader exists.
+    fn leader_decision(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+        my_participant_id: ParticipantId,
+        now: near_time::Instant,
+    ) -> Option<(ParticipantId, LeaderDecision)> {
+        let leader = self.current_leader(eligible_leaders)?;
+        let Some(rank) = self.my_leader_rank(eligible_leaders, my_participant_id) else {
+            return Some((
+                leader,
+                LeaderDecision::Wait("we are not an eligible leader"),
+            ));
+        };
+        if rank >= MAX_LEADER_FAILOVER_DEPTH {
+            return Some((
+                leader,
+                LeaderDecision::Wait("past maximum leader failover depth"),
+            ));
+        }
+        let failover_slot_delay =
+            LEADER_FAILOVER_INTERVAL.saturating_mul(i32::try_from(rank).unwrap_or(i32::MAX));
+        if now.signed_duration_since(self.time_indexed) < failover_slot_delay {
+            return Some((
+                leader,
+                LeaderDecision::Wait("waiting for our leader failover slot"),
+            ));
+        }
+        Some((my_participant_id, LeaderDecision::Lead))
+    }
+
+    /// Our position among the eligible participants in the leader selection order, or `None`
+    /// if we are not eligible. Rank 0 is the current leader; rank k acts as the k-th backup.
+    fn my_leader_rank(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+        my_participant_id: ParticipantId,
+    ) -> Option<usize> {
+        self.leader_selection_order
+            .iter()
+            .filter(|p| eligible_leaders.contains(p))
+            .position(|p| *p == my_participant_id)
+    }
+
     /// Returns true if this request is due for another check (i.e. [`Self::next_check_due`] is
     /// at or before `now`), and in that case bumps [`Self::next_check_due`] by
     /// [`CHECK_EACH_REQUEST_INTERVAL`].
@@ -412,13 +467,16 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         if !is_canonical {
             return RequestStatus::Wait("request is not on canonical chain");
         }
-        let Some(leader) = self.current_leader(eligible_leaders) else {
+        let Some((selected_leader, decision)) =
+            self.leader_decision(eligible_leaders, my_participant_id, now)
+        else {
             return RequestStatus::Wait("no eligible leaders for this request");
         };
         let mut progress = self.computation_progress.lock().unwrap();
-        progress.selected_leader = Some(leader);
-        if leader == my_participant_id {
-            match progress.update_computation_progress(now) {
+        progress.selected_leader = Some(selected_leader);
+        match decision {
+            LeaderDecision::Wait(reason) => RequestStatus::Wait(reason),
+            LeaderDecision::Lead => match progress.update_computation_progress(now) {
                 ComputationProgressStatus::MaxAttemptsExceeded => {
                     RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
                 }
@@ -431,11 +489,14 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     self.active_attempt = Arc::downgrade(&attempt);
                     RequestStatus::Attempt(attempt)
                 }
-            }
-        } else {
-            RequestStatus::Wait("we are not leader")
+            },
         }
     }
+}
+
+enum LeaderDecision {
+    Lead,
+    Wait(&'static str),
 }
 
 enum RequestStatus<RequestType, ChainRespondArgsType> {
@@ -784,7 +845,7 @@ mod tests {
     use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest};
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
-        CHECK_EACH_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
+        CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE, REQUEST_EXPIRATION_BLOCKS,
     };
     use crate::tests::into_participant_ids;
@@ -896,12 +957,18 @@ mod tests {
     impl TestSetup {
         const MY_INDEX: usize = 1;
         fn new() -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
+            Self::with_participant_count(4)
+        }
+
+        fn with_participant_count(
+            count: usize,
+        ) -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
             let clock = FakeClock::default();
-            let participants = into_participant_ids(&generate_participants(4));
+            let participants = into_participant_ids(&generate_participants(count));
             let my_participant_id = participants[Self::MY_INDEX];
             let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
-            let pending_requests = PendingRequests::<SignatureRequest, TestRequestRespondArgs>::new(
+            let pending_requests = PendingRequests::<TestRequest, TestRequestRespondArgs>::new(
                 clock.clock(),
                 participants.clone(),
                 my_participant_id,
@@ -1306,6 +1373,112 @@ mod tests {
         let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_attempt_as_secondary_after_failover_interval() {
+        // Given: a request whose leader order puts us second, with all participants alive
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When: less than the failover interval has elapsed
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL - CHECK_EACH_REQUEST_INTERVAL);
+
+        // Then: we do not attempt yet
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+
+        // When: the failover interval elapses without a response on chain
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+
+        // Then: we attempt the request as the backup leader, attributed to ourselves
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+        assert_eq!(
+            to_attempt[0]
+                .computation_progress
+                .lock()
+                .unwrap()
+                .selected_leader,
+            Some(setup.participant_ids[TestSetup::MY_INDEX])
+        );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_attempt_as_tertiary_after_two_failover_intervals() {
+        // Given: a request whose leader order puts us third, with all participants alive
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, 2, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When: only one failover interval has elapsed
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+
+        // Then: we do not attempt yet
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+
+        // When: the second failover interval elapses without a response on chain
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+
+        // Then: we attempt the request as the second backup leader
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_shift_failover_slot_when_prior_leader_offline() {
+        // Given: a request whose leader order puts us third, but the second participant is down
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        setup.network_api.bring_down(setup.participant_ids[2]);
+        let req = setup.add_request_leader_order(&[0, 2, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When: one failover interval elapses without a response on chain
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+
+        // Then: we attempt at the secondary's slot, since our rank shifted down
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_not_attempt_beyond_failover_depth() {
+        // Given: a request whose leader order puts us at rank MAX_LEADER_FAILOVER_DEPTH
+        let (mut pending_requests, mut setup) = TestSetup::with_participant_count(5);
+        let _req = setup.add_request_leader_order(&[0, 2, 3, 4, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When: far more time elapses than our slot would require
+        setup.advance_clock(10 * LEADER_FAILOVER_INTERVAL);
+
+        // Then: we never attempt the request
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_not_attempt_as_secondary_after_response_indexed() {
+        // Given: a request whose leader order puts us second
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When: the leader's response lands on chain before our failover slot
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL / 2);
+        setup.add_indexed_respond_tx(req.id);
+        setup.update(&mut pending_requests);
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+
+        // Then: we do not attempt the request even though our slot has passed
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
     #[test_log::test]
