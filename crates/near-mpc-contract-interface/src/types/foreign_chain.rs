@@ -1873,9 +1873,8 @@ pub struct ProviderConfig {
 )]
 pub struct ChainEntry {
     pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
-    /// Voted RPC response quorum. Stored for a deferred quorum policy and not yet
-    /// consumed: nodes currently require every provider that reaches a verdict to
-    /// agree on it.
+    /// Voted RPC response quorum. Verification does not apply it yet: nodes require every
+    /// provider that reaches a verdict to agree on it.
     pub quorum: u64,
 }
 

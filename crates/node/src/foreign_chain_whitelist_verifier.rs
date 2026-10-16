@@ -18,32 +18,36 @@
 use std::collections::BTreeMap;
 
 use mpc_node_config::{
-    ForeignChainConfig, ForeignChainsConfig,
+    ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
     foreign_chains::{
         RpcProviderName,
-        provider_identity::{self, Mismatch},
+        provider_identity::{self, Mismatch, WhitelistMatch},
     },
 };
 use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderConfig, ProviderId};
 use tokio::sync::watch;
 use url::Url;
 
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
+
 /// Compares the local config with each whitelist that
 /// [`monitor_foreign_chain_whitelist`](crate::indexer::foreign_chain::monitor_foreign_chain_whitelist)
-/// publishes.
+/// publishes. Waits for the first whitelist read, then compares again on each change.
 ///
 /// `run` does not read the contract: the monitor polls it, so a change to how the node reads the
 /// whitelist changes only the monitor.
 pub(crate) async fn run(
-    mut whitelist_rx: watch::Receiver<BTreeMap<dtos::ForeignChain, ChainEntry>>,
+    mut whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     local: ForeignChainsConfig,
 ) {
     loop {
-        let diagnostics = compare(&local, &whitelist_rx.borrow_and_update());
-        if diagnostics.is_empty() {
-            tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
+        let diagnostics = whitelist_rx
+            .borrow_and_update()
+            .as_ref()
+            .map(|whitelist| compare(&local, whitelist));
+        if let Some(diagnostics) = diagnostics {
+            log_diagnostics(&diagnostics);
         }
-        diagnostics.iter().for_each(log_diagnostic);
         if whitelist_rx.changed().await.is_err() {
             // Sender dropped: the indexer is shutting down, nothing left to verify against.
             break;
@@ -79,10 +83,7 @@ enum DiagnosticKind {
     },
 }
 
-fn compare(
-    local: &ForeignChainsConfig,
-    whitelist: &BTreeMap<dtos::ForeignChain, ChainEntry>,
-) -> Vec<Diagnostic> {
+fn compare(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) -> Vec<Diagnostic> {
     local
         .iter_chains()
         .flat_map(|(chain, local_config)| match whitelist.get(&chain) {
@@ -124,16 +125,7 @@ fn compare_chain(
             local_name: Some(local_name.clone()),
             kind,
         };
-        let whitelist_match = Url::parse(&local_provider.rpc_url)
-            .ok()
-            .and_then(|local_url| {
-                provider_identity::find_match(
-                    whitelist_entry,
-                    &local_url,
-                    (&local_provider.auth).into(),
-                )
-            });
-        let Some(whitelist_match) = whitelist_match else {
+        let Some(whitelist_match) = find_whitelist_match(whitelist_entry, local_provider) else {
             diagnostics.push(diagnostic(DiagnosticKind::ProviderNotInWhitelist));
             continue;
         };
@@ -155,6 +147,22 @@ fn compare_chain(
         }));
     }
     diagnostics
+}
+
+/// A local `rpc_url` that does not parse matches nothing.
+pub(crate) fn find_whitelist_match<'w>(
+    whitelist_entry: &'w ChainEntry,
+    local_provider: &ForeignChainProviderConfig,
+) -> Option<WhitelistMatch<'w>> {
+    let local_url = Url::parse(&local_provider.rpc_url).ok()?;
+    provider_identity::find_match(whitelist_entry, &local_url, (&local_provider.auth).into())
+}
+
+fn log_diagnostics(diagnostics: &[Diagnostic]) {
+    if diagnostics.is_empty() {
+        tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
+    }
+    diagnostics.iter().for_each(log_diagnostic);
 }
 
 fn log_diagnostic(diagnostic: &Diagnostic) {
@@ -231,7 +239,8 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig, TokenConfig};
+    use crate::async_testing::{MaybeReady, run_future_once};
+    use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
     use rstest::rstest;
@@ -538,7 +547,7 @@ mod tests {
             ("drpc", drpc),
             ("quicknode", quicknode()),
         ]);
-        let (whitelist_tx, whitelist_rx) = watch::channel(whitelist);
+        let (whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist));
         drop(whitelist_tx);
 
         // When
@@ -549,5 +558,29 @@ mod tests {
         assert!(logs_contain("two providers match the same whitelist entry"));
         assert!(logs_contain("extra provider"));
         assert!(!logs_contain(SECRET_MARKER));
+    }
+
+    #[test]
+    #[traced_test]
+    fn run__should_compare_only_once_the_whitelist_is_read() {
+        // Given
+        let local = must_local_ethereum(&[(
+            "alchemy",
+            local_path_auth("https://eth-mainnet.g.alchemy.com/v2/{api_key}"),
+        )]);
+        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
+        let (whitelist_tx, whitelist_rx) = watch::channel(None);
+
+        // When
+        let MaybeReady::Future(parked_verifier) = run_future_once(run(whitelist_rx, local)) else {
+            panic!("the verifier should park until the whitelist is read");
+        };
+        let logged_before_the_read = logs_contain("foreign chain whitelist");
+        whitelist_tx.send_replace(Some(whitelist));
+        run_future_once(parked_verifier);
+
+        // Then
+        assert!(!logged_before_the_read);
+        assert!(logs_contain("local config matches the contract whitelist"));
     }
 }
