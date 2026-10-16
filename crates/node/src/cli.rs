@@ -11,7 +11,7 @@ use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{
-    ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
+    ChainId, ConfigFile, DownloadConfigType, LogConfig, LogFormat, NearInitConfig,
     SecretsStartConfig, StartConfig, load_config_file,
 };
 use mpc_primitives::hash::NodeImageHash;
@@ -55,12 +55,6 @@ pub struct StartCmd {
     /// This key should come from a secure secret storage.
     #[arg(env("MPC_SECRET_STORE_KEY"))]
     pub secret_store_key_hex: String,
-    /// If provided, the root keyshare is stored on GCP.
-    /// This requires GCP_PROJECT_ID to be set as well.
-    #[arg(env("GCP_KEYSHARE_SECRET_ID"))]
-    pub gcp_keyshare_secret_id: Option<String>,
-    #[arg(env("GCP_PROJECT_ID"))]
-    pub gcp_project_id: Option<String>,
     /// TEE related configuration settings.
     #[command(flatten)]
     pub image_hash_config: CliImageHashConfig,
@@ -87,13 +81,6 @@ pub struct CliImageHashConfig {
 
 impl StartCmd {
     fn into_start_config(self, config: ConfigFile, log_format: LogFormat) -> StartConfig {
-        let gcp = match (self.gcp_keyshare_secret_id, self.gcp_project_id) {
-            (Some(keyshare_secret_id), Some(project_id)) => Some(GcpStartConfig {
-                keyshare_secret_id,
-                project_id,
-            }),
-            _ => None,
-        };
         StartConfig {
             home_dir: self.home_dir,
             secrets: SecretsStartConfig {
@@ -101,7 +88,6 @@ impl StartCmd {
                 backup_encryption_key_hex: self.backup_encryption_key_hex,
             },
             near_init: None,
-            gcp,
             node: config,
             // dstack and TEE is not supported with StartCmd, as it will be removed
             // in #2334, and not used by the rust launcher.

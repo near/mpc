@@ -1,7 +1,8 @@
+use crate::sandbox::utils::sandbox_mpc_contract::SandboxMpcContract;
 use near_contract_transport::{CallContract, FunctionCallArgs};
 use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
 use near_workspaces::{
-    Account, AccountId, Contract, operations::TransactionStatus, result::ExecutionFinalResult,
+    Account, AccountId, operations::TransactionStatus, result::ExecutionFinalResult,
 };
 use std::future::Future;
 
@@ -29,17 +30,6 @@ impl CallMpcContract for Account {
         contract_id: &near_account_id::AccountId,
     ) -> MpcContractHandle<AsyncSandboxCaller<'_>> {
         MpcContractHandle::new(AsyncSandboxCaller(self), contract_id.clone())
-    }
-}
-
-/// Calls the MPC contract as the contract account itself (e.g. for `#[private]` methods).
-pub(crate) trait CallMpcContractAsSelf {
-    fn call_mpc(&self) -> MpcContractHandle<SandboxCaller<'_>>;
-}
-
-impl CallMpcContractAsSelf for Contract {
-    fn call_mpc(&self) -> MpcContractHandle<SandboxCaller<'_>> {
-        self.as_account().call_mpc(self.id())
     }
 }
 
@@ -97,7 +87,7 @@ impl CallContract for AsyncSandboxCaller<'_> {
 /// ```
 pub async fn execute_async_handle_calls<'a, F, Fut>(
     accounts: &'a [Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     call: F,
 ) -> anyhow::Result<()>
 where

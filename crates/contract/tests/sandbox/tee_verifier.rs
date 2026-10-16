@@ -16,6 +16,7 @@ use crate::sandbox::{
             get_tee_accounts, prepay_attestation_grants, submit_participant_info,
             tee_verifier_account_id, total_gas_fee, vote_tee_verifier_change,
         },
+        sandbox_mpc_contract::SandboxMpcContract,
     },
 };
 use attestation_types::Measurements;
@@ -132,7 +133,7 @@ async fn setup_fixture(allowed_compose_hash: Option<LauncherDockerComposeHash>) 
     }
 }
 
-async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
+async fn submit_dstack(submitter: &Account, contract: &SandboxMpcContract) -> ExecutionFinalResult {
     submit_participant_info(
         submitter,
         contract,
@@ -147,8 +148,8 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
 /// a Rejected verdict or a failed promise fails the transaction.
 async fn submit_dstack_verified(
     submitter: &Account,
-    contract: &Contract,
-) -> (ExecutionFinalResult, dtos::StoredAttestation) {
+    contract: &SandboxMpcContract,
+) -> (ExecutionFinalResult, dtos::GetAttestationResponse) {
     let result = submit_dstack(submitter, contract).await;
     assert!(
         result.failures().is_empty(),
@@ -160,7 +161,9 @@ async fn submit_dstack_verified(
     (result, stored)
 }
 
-async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::StoredAttestation> {
+async fn stored_fixture_attestation(
+    contract: &SandboxMpcContract,
+) -> Option<dtos::GetAttestationResponse> {
     get_participant_attestation(contract, &p2p_tls_key().into())
         .await
         .unwrap()
@@ -185,7 +188,7 @@ fn assert_failure_contains(result: &ExecutionFinalResult, expected_errors: &[&st
 
 async fn assert_submission_failed_cleanly(
     result: &ExecutionFinalResult,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     submitter: &Account,
     balance_before: NearToken,
     expected_errors: &[&str],
@@ -437,11 +440,11 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 
     // Then
     assert_eq!(
-        stored.accepted_at_seconds,
+        stored.accepted_at_seconds(),
         Some(VALID_ATTESTATION_TIMESTAMP),
         "the acceptance time is the pinned block time"
     );
-    let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation else {
+    let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation().clone() else {
         panic!("expected a stored Dstack attestation");
     };
     // The stored measurements are the allowlist entry the fixture matched; select
