@@ -280,7 +280,7 @@ async fn propose_upgrade_from_production_to_current_binary(
         .expect("a migrated attestation should still be readable");
 
     assert!(
-        mpc_contract
+        contract
             .launcher_hash_votes()
             .await
             .unwrap()
@@ -296,7 +296,7 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap();
     }
     assert!(
-        mpc_contract
+        contract
             .allowed_launcher_image_hashes()
             .await
             .unwrap()
