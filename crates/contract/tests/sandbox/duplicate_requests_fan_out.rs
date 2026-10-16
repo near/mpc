@@ -58,7 +58,6 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-        ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .with_sandbox_test_methods()

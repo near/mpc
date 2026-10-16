@@ -38,7 +38,6 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-        ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .build()
@@ -190,7 +189,6 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-        ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .build()
@@ -259,7 +257,6 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-        ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
@@ -365,7 +362,6 @@ async fn test_contract_ckd_pv_request() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-        ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()
@@ -401,7 +397,6 @@ async fn test_ckd_gas_regression() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-        ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()

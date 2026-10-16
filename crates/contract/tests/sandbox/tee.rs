@@ -879,7 +879,6 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
         contract,
         mpc_signer_accounts,
         keys,
-        ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .with_number_of_participants(PARTICIPANT_COUNT)

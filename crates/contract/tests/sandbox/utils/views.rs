@@ -3,35 +3,21 @@ use near_contract_transport::{
 };
 use near_jsonrpc_client::{JsonRpcClient, methods::query::RpcQueryRequest};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
-use near_mpc_contract_interface::client::MpcContractHandle;
 use near_primitives::types::BlockReference;
 use near_primitives::views::QueryRequest;
 use near_workspaces::{AccountId, Worker, network::Sandbox};
 use std::time::Duration;
 
-pub(crate) trait ViewMpcContract {
-    fn view_mpc(
-        &self,
-        contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<SandboxViewer>;
-}
-
-impl ViewMpcContract for Worker<Sandbox> {
-    fn view_mpc(
-        &self,
-        contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<SandboxViewer> {
-        MpcContractHandle::new(
-            SandboxViewer(JsonRpcClient::connect(self.rpc_addr())),
-            contract_id.clone(),
-        )
-    }
-}
-
 /// Queries the sandbox RPC directly: near-workspaces' `view` drops the block height of the
 /// response, which [`ObservedState`] needs.
 #[derive(Clone)]
 pub struct SandboxViewer(JsonRpcClient);
+
+impl SandboxViewer {
+    pub fn new(worker: &Worker<Sandbox>) -> Self {
+        Self(JsonRpcClient::connect(worker.rpc_addr()))
+    }
+}
 
 impl HasPollInterval for SandboxViewer {
     fn poll_interval(&self) -> PollInterval {

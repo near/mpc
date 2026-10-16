@@ -1,4 +1,4 @@
-use crate::sandbox::utils::views::{SandboxViewer, ViewMpcContract};
+use crate::sandbox::utils::views::SandboxViewer;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_workspaces::{Account, AccountId, Contract, Worker, network::Sandbox};
 use std::ops::Deref;
@@ -14,7 +14,7 @@ pub struct SandboxMpcContract {
 impl SandboxMpcContract {
     pub fn new(worker: &Worker<Sandbox>, account: Contract) -> Self {
         Self {
-            handle: worker.view_mpc(account.id()),
+            handle: MpcContractHandle::new(SandboxViewer::new(worker), account.id().clone()),
             account,
         }
     }
