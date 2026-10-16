@@ -282,7 +282,6 @@ fn run_node(
         )));
 
         shutdown.cancelled().await;
-        tracing::info!("node gracefully shutting down actor system");
     });
 }
 
