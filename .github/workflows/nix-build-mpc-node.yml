@@ -11,6 +11,14 @@ on:
   workflow_dispatch:
   workflow_call:
 
+permissions: {}
+
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   nix-build-mpc-node:
     name: "Nix build mpc-node"

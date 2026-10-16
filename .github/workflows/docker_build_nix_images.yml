@@ -12,10 +12,19 @@ on:
       - 'release/v*'
   workflow_dispatch:
 
+permissions: {}
+
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   build-images:
     name: "Build Nix Docker images"
     runs-on: warp-ubuntu-2604-x64-16x
+    timeout-minutes: 60
     permissions:
       contents: read
 
@@ -52,6 +61,7 @@ jobs:
     name: "Push Nix Docker images with commit hash"
     needs: build-images
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 15
     environment: production
     permissions: {}
 

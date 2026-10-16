@@ -22,6 +22,12 @@ on:
   schedule:
     - cron: "5 0 * * 0"
 
+permissions: {}
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   # Downstream gates use `if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}`.
   # `!cancelled()` overrides GitHub's implicit `success()` on `needs`, so a
@@ -34,7 +40,7 @@ jobs:
     name: "Detect non-docs changes"
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # lists the files the pull request changes
     uses: ./.github/workflows/changes.yml
 
   docker-tee-build:
@@ -104,12 +110,10 @@ jobs:
         uses: ./.github/actions/cache-repro-env-pkgs
 
       - name: Build Rust launcher docker image
-        shell: bash
         run: |
           ./deployment/build-images.sh --rust-launcher
 
       - name: Run Rust launcher non-TEE runtime check
-        shell: bash
         run: |
           ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
 
@@ -164,7 +168,9 @@ jobs:
 
       - name: Run cargo-nextest
         if: needs.changes.outputs.code_changed != 'false'
-        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
+        env:
+          NEXTEST_ARGS: ${{ matrix.nextest-args }}
+        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked $NEXTEST_ARGS
 
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
@@ -267,6 +273,7 @@ jobs:
   fast-ci-checks:
     name: "Fast CI checks"
     runs-on: warp-ubuntu-2604-x64-8x
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -352,6 +359,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -372,9 +380,10 @@ jobs:
     name: "Check TODOs for issues closed by this PR"
     if: github.event_name == 'pull_request'
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # lists the issues the pull request closes
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -10,14 +10,17 @@ on:
 permissions:
   contents: read
 
+cache-mode: none
+
 jobs:
   release:
     name: "Promote built artifacts to a release"
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 30
     environment: production
     permissions:
-      contents: write
-      actions: read
+      contents: write # creates the draft release
+      actions: read # downloads the contract from the build run
 
     steps:
       - name: Checkout

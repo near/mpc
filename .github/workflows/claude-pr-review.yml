@@ -1,13 +1,26 @@
 name: Claude Code Review
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  queue: max
+
 on:
   pull_request:
     types: [opened, ready_for_review]  # When PR is ready for review (not draft)
   issue_comment:
     types: [created]  # Listen for @claude mentions in PR comments
 
+permissions: {}
+
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   claude-review:
+    name: "Review pull request"
     # Run if: (PR opened/ready AND not draft) OR (@claude review in PR comment AND
     # commenter is an owner/member, so non-trusted commenters can't trigger the
     # privileged job)
@@ -20,10 +33,11 @@ jobs:
         contains(github.event.comment.body, '@claude code review')))
 
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 30
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: read # reads the diff and the review threads
+      issues: read # reads the issues the pull request refers to
     outputs:
       review: ${{ fromJSON(steps.claude-review.outputs.structured_output).review }}
 
@@ -45,13 +59,15 @@ jobs:
 
       - name: Build review prompt
         id: build-prompt
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
           DELIM="PROMPT_EOF_$(uuidgen)"
           {
             echo "REVIEW_PROMPT<<$DELIM"
             echo '<pr_context>'
-            echo "REPO: ${{ github.repository }}"
-            echo "PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}"
+            echo "REPO: $GITHUB_REPOSITORY"
+            echo "PR NUMBER: $PR_NUMBER"
             echo 'LANGUAGE: Rust'
             echo '</pr_context>'
             echo ''
@@ -80,7 +96,7 @@ jobs:
         id: claude-review
         uses: anthropics/claude-code-action@58985842b834ed26087302ba27d07bc24ca8697a # v1.0.244
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API }} # zizmor: ignore[secrets-outside-env]
           github_token: ${{ github.token }}
           prompt: ${{ env.REVIEW_PROMPT }}
           # Deny is evaluated before allow, so these bound the allow-list below.
@@ -114,10 +130,12 @@ jobs:
   # agent's environment, and so the runner withholds a review that contains a
   # registered secret instead of passing it on.
   post-review:
+    name: "Post review comment"
     needs: claude-review
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 10
     permissions:
-      pull-requests: write
+      pull-requests: write # posts the review as a comment
 
     steps:
       - name: Post review comment
@@ -128,7 +146,7 @@ jobs:
           REVIEW: ${{ needs.claude-review.outputs.review }}
         run: |
           if [ -z "$REVIEW" ]; then
-            echo "::error::The review is empty: either the agent returned no text, or the runner withheld it for containing a secret (look for a 'Skip output' warning in the claude-review job)."
+            echo "::error::The review is empty: either the agent returned no text, or the runner withheld it for containing a secret (look for a 'Skip output' warning in the 'Review pull request' job)."
             exit 1
           fi
           printf '%s\n' "$REVIEW" > "$RUNNER_TEMP/review.md"

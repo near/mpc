@@ -25,13 +25,20 @@ on:
         required: true
         type: string
 
+permissions: {}
+
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   retag-node-image:
     name: "Retag node image for release"
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 15
     environment: production
-    permissions:
-      contents: read
 
     steps:
       - name: Login to Docker Hub

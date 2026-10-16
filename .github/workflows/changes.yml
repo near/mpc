@@ -14,12 +14,18 @@ on:
         description: "'true' if any non-docs file changed in the PR, or on non-PR events; 'false' only on docs-only PRs"
         value: ${{ jobs.detect.outputs.code_changed }}
 
+permissions: {}
+
+cache-mode: none
+
 jobs:
   detect:
+    name: "Detect changed paths"
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # lists the files the pull request changes
     outputs:
       code_changed: ${{ steps.filter.outputs.code || 'true' }}
     steps:

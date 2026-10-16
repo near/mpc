@@ -15,8 +15,10 @@ runs:
   steps:
     - name: Compute repro-env cache key
       id: compute-key
-      shell: bash
-      run: echo "key=repro-env-pkgs-${{ runner.os }}-${{ hashFiles('repro-env.lock') }}" >> "$GITHUB_OUTPUT"
+      shell: bash -euo pipefail {0}
+      env:
+        LOCK_HASH: ${{ hashFiles('repro-env.lock') }}
+      run: echo "key=repro-env-pkgs-$RUNNER_OS-$LOCK_HASH" >> "$GITHUB_OUTPUT"
 
     - name: Restore and save repro-env packages
       if: inputs.save == 'true'
@@ -36,7 +38,7 @@ runs:
     # installs a cached copy as is. Anyone able to write the cache could swap a package, so every
     # restored package is checked against the hash in its path, as a fresh download would be
     - name: Verify the restored packages
-      shell: bash
+      shell: bash -euo pipefail {0}
       run: |
         cd ~/.cache/repro-env/pkgs 2> /dev/null || exit 0
         shopt -s nullglob
