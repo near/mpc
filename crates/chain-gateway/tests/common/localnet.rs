@@ -168,6 +168,11 @@ impl Localnet {
 
 impl Drop for Localnet {
     fn drop(&mut self) {
+        // A node handle's drop blocks until every node in this process has closed its databases.
+        // Rust drops the fields one by one on this thread, so the first handle's drop would wait
+        // for the other node, which only stops when told to. Without these calls, only its own
+        // handle's drop would tell it, and that drop can't start while the first one is waiting,
+        // so the first drop would wait forever
         self.validator.node_handle.send_shutdown();
         self.observer.node_handle.send_shutdown();
     }

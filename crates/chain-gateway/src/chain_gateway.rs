@@ -121,6 +121,12 @@ impl NodeHandle {
     }
 }
 
+/// Tells the node to stop, then blocks until every [`RocksDB`] instance in the process is closed,
+/// not just this node's databases. So if two handles are dropped one by one on the same thread,
+/// for example as fields of one struct, the first drop also waits for the second node. If nothing
+/// else stops that node, only its own handle's drop would tell it to, and that drop can't start
+/// while the first one is waiting, so the first drop waits forever. To avoid this, call
+/// [`NodeHandle::send_shutdown`] on every handle before dropping any of them
 impl Drop for NodeHandle {
     fn drop(&mut self) {
         self.send_shutdown();
