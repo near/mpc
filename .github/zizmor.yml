@@ -4,3 +4,21 @@ rules:
       # this one was wrongly detected as a release action, provoking a
       # problem because because we use cache there
       - external-services-tests.yml
+  forbidden-uses:
+    config:
+      allow:
+        - act10ns/slack
+        - actions/cache/*
+        - actions/checkout
+        - actions/download-artifact
+        - actions/upload-artifact
+        - amannn/action-semantic-pull-request
+        - anthropics/claude-code-action
+        - docker/login-action
+        - dorny/paths-filter
+        - Swatinem/rust-cache
+        - taiki-e/install-action
+  secrets-outside-env:
+    config:
+      allow:
+        - ANTHROPIC_API

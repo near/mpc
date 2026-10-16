@@ -14,10 +14,17 @@ on:
 permissions:
   contents: read
 
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   build-contract:
     name: "Build contract reproducibly"
     runs-on: warp-ubuntu-2604-x64-16x
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -26,7 +33,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
 
       # Reproducible build via cargo-near so the released WASM carries NEP-330
       # build metadata that third-party verifiers (sourcescan.io, nearblocks)

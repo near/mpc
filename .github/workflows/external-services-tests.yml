@@ -14,6 +14,14 @@ on:
   schedule:
     - cron: "5 0 * * 0"
 
+permissions: {}
+
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   external-services-tests:
     name: "Run tests that depend on external services"

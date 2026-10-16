@@ -1,13 +1,29 @@
 name: PR Title Lint
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number }}
 
 jobs:
   lint-pr-title:
     name: "Check PR title format"
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 10
     permissions:
       contents: read
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -32,10 +48,10 @@ jobs:
   check-pr-title-type:
     name: "Validate title type matches changes"
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 15
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: read # lists the files the pull request changes
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     outputs:
       comment: ${{ fromJSON(steps.check-title.outputs.structured_output).comment }}
@@ -50,7 +66,6 @@ jobs:
         id: build-prompt
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
         run: |
           FILES=$(gh pr diff "$PR_NUMBER" --name-only)
@@ -106,14 +121,14 @@ jobs:
     needs: check-pr-title-type
     if: needs.check-pr-title-type.outputs.comment != ''
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 10
     permissions:
-      pull-requests: write
+      pull-requests: write # posts the suggestion as a comment
     steps:
       - name: Post title type suggestion
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           COMMENT: ${{ needs.check-pr-title-type.outputs.comment }}
         run: |
           printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"

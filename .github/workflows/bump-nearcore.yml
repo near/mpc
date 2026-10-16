@@ -12,13 +12,22 @@ on:
 concurrency:
   group: bump-nearcore
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
+
+cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
 
 jobs:
   bump:
+    name: "Bump nearcore"
     runs-on: warp-ubuntu-2604-x64-2x
+    timeout-minutes: 30
+    permissions:
+      contents: write # pushes the bump branch
+      pull-requests: write # opens the bump pull request
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
