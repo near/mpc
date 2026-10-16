@@ -3,7 +3,7 @@
 # key replaces the empty `token` below and whose slug replaces `{slug}` in `rpc_url`. Providers with
 # `auth.kind = "none"` are always enabled.
 # TODO(near/mpc-private#720): keep in sync with providers whitelist, currently
-# Bitcoin is still whitelisted there but not listed here anymore.
+# Bitcoin is still whitelisted on chain but not listed here anymore.
 
 [abstract]
 timeout_sec = 30
