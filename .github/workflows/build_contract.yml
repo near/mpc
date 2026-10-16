@@ -24,7 +24,7 @@ jobs:
   build-contract:
     name: "Build contract reproducibly"
     runs-on: warp-ubuntu-2604-x64-16x
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository

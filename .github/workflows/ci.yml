@@ -359,7 +359,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2604-x64-2x
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
