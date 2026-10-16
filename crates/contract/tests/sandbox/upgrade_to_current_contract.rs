@@ -12,10 +12,10 @@ use crate::sandbox::{
             get_participant_attestation, get_participants, get_state, get_tee_accounts,
             prepay_and_submit_participant_info, vote_add_launcher_hash,
         },
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
-        transactions::{CallMpcContract, CallMpcContractAsSelf},
-        views::ViewMpcContract,
+        transactions::CallMpcContract,
     },
 };
 use mpc_contract::primitives::{
@@ -32,7 +32,7 @@ use near_mpc_contract_interface::types::{
     CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{Account, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
@@ -52,7 +52,7 @@ fn contract_code(network: Network) -> &'static [u8] {
 
 async fn init_old_contract(
     worker: &Worker<Sandbox>,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     number_of_participants: usize,
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
     let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
@@ -64,16 +64,16 @@ async fn init_old_contract(
             .unwrap()
             .into();
     contract
-        .call_mpc()
         .init(threshold_parameters, bogus_tee_verifier_account_id(), None)
         .await?
         .into_result()?;
     Ok((accounts, participants))
 }
 
-async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
+async fn healthcheck(contract: &SandboxMpcContract) -> anyhow::Result<bool> {
     let status = contract
-        .call(method_names::STATE)
+        .as_account()
+        .call(contract.id(), method_names::STATE)
         .transact()
         .await?
         .into_result()
@@ -81,26 +81,29 @@ async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
     Ok(status)
 }
 
-async fn deploy_old(worker: &Worker<Sandbox>, network: Network) -> anyhow::Result<Contract> {
+async fn deploy_old(
+    worker: &Worker<Sandbox>,
+    network: Network,
+) -> anyhow::Result<SandboxMpcContract> {
     let old_wasm = contract_code(network);
     let old_contract = worker.dev_deploy(old_wasm).await?;
-    Ok(old_contract)
+    Ok(SandboxMpcContract::from_deployed(worker, old_contract))
 }
 
-async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
+async fn upgrade_to_new(contract: &SandboxMpcContract) -> anyhow::Result<()> {
     let new_wasm = current_contract();
-    let new_contract = old_contract
+    contract
         .as_account()
         .deploy(new_wasm)
         .await?
         .into_result()?;
-    Ok(new_contract)
+    Ok(())
 }
 
 /// Migrates the contract to a current contract build
 /// and sanity checks that the upgraded code matches compiled contract bytes.
-async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result<()> {
-    contract.call_mpc().migrate().await?.into_result()?;
+async fn migrate_and_assert_contract_code(contract: &SandboxMpcContract) -> anyhow::Result<()> {
+    contract.migrate().await?.into_result()?;
     let code_hash_post_upgrade = contract.view_code().await.unwrap();
     let current_code_hash = current_contract();
 
@@ -128,7 +131,7 @@ async fn back_compatibility_without_state(
 
     assert!(healthcheck(&contract).await?);
 
-    let contract = upgrade_to_new(contract).await?;
+    upgrade_to_new(&contract).await?;
 
     if healthcheck(&contract).await? {
         println!("✅ Back compatibility check succeeded: no breaking changes found 🫧.");
@@ -160,7 +163,7 @@ const STORED_ATTESTATION_ENTRIES: usize = 25;
 /// prospective node's submission would.
 async fn fill_stored_attestations(
     worker: &Worker<Sandbox>,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     total: usize,
 ) -> Vec<dtos::Ed25519PublicKey> {
     let mut accounts = Vec::with_capacity(total - PARTICIPANT_LEN);
@@ -205,7 +208,6 @@ async fn propose_upgrade_from_production_to_current_binary(
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
-    let mpc_contract = worker.view_mpc(contract.id());
 
     submit_attestations(&contract, &accounts, &participants).await;
     let filler_keys =
@@ -230,7 +232,7 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap();
     }
     assert!(
-        mpc_contract
+        contract
             .allowed_launcher_image_hashes()
             .await
             .unwrap()
@@ -251,7 +253,7 @@ async fn propose_upgrade_from_production_to_current_binary(
     );
 
     assert!(
-        mpc_contract
+        contract
             .allowed_launcher_image_hashes()
             .await
             .unwrap()
@@ -311,7 +313,7 @@ async fn upgrade_preserves_state_and_requests(
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
-    let contract = upgrade_to_new(contract).await.unwrap();
+    upgrade_to_new(&contract).await.unwrap();
     migrate_and_assert_contract_code(&contract)
         .await
         .expect("❌ migration() failed");
@@ -362,7 +364,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
 
     submit_attestations(&contract, &accounts, &participants).await;
 
-    let contract = upgrade_to_new(contract).await?;
+    upgrade_to_new(&contract).await?;
 
     migrate_and_assert_contract_code(&contract)
         .await
@@ -433,7 +435,7 @@ async fn upgrade_allows_new_request_types(
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
-    let contract = upgrade_to_new(contract).await.unwrap();
+    upgrade_to_new(&contract).await.unwrap();
     migrate_and_assert_contract_code(&contract)
         .await
         .expect("❌ migration() failed");

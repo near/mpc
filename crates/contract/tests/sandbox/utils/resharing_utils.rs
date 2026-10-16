@@ -1,5 +1,6 @@
 use crate::sandbox::utils::{
     mpc_contract::get_state,
+    sandbox_mpc_contract::SandboxMpcContract,
     transactions::{CallMpcContract, all_receipts_successful, execute_async_handle_calls},
 };
 use dtos::{AttemptId, EpochId, KeyEventId};
@@ -7,11 +8,11 @@ use mpc_contract::primitives::thresholds::{
     GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
-use near_workspaces::{Account, Contract};
+use near_workspaces::Account;
 use std::collections::BTreeMap;
 
 pub async fn conclude_resharing(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     all_participants: &[Account],
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
@@ -43,7 +44,10 @@ pub async fn conclude_resharing(
     Ok(())
 }
 
-pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> anyhow::Result<()> {
+pub async fn vote_cancel_reshaing(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+) -> anyhow::Result<()> {
     execute_async_handle_calls(accounts, contract, |handle| async move {
         handle.vote_cancel_resharing().await
     })
@@ -51,7 +55,7 @@ pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> 
 }
 
 pub async fn vote_new_parameters(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     prospective_epoch_id: u64,
     proposal: &GovernanceThresholdParameters,
     persistent_participants: &[Account],
@@ -85,7 +89,7 @@ pub async fn vote_new_parameters(
 }
 
 pub async fn start_reshare_instance(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
@@ -121,7 +125,7 @@ pub async fn start_reshare_instance(
 }
 
 pub async fn vote_reshared(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
@@ -136,7 +140,7 @@ pub async fn vote_reshared(
 /// and voting reshared to complete the transition.
 pub async fn do_resharing(
     remaining_accounts: &[Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     new_threshold_parameters: GovernanceThresholdParameters,
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
