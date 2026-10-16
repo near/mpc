@@ -224,6 +224,11 @@ pub struct PeerIndexerHeightMessage {
     pub message: IndexerHeightMessage,
 }
 
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct ConnectedPeersMessage {
+    pub peers: Vec<ParticipantId>,
+}
+
 pub enum PeerMessage {
     Mpc(MpcPeerMessage),
     IndexerHeight(PeerIndexerHeightMessage),
