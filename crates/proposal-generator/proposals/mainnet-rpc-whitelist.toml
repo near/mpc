@@ -1,5 +1,6 @@
 # Mainnet RPC provider whitelist
 
+# TODO(#720): Drop Bitcoin on the next whitelist announcement.
 [chains.Bitcoin]
 quorum = 1
 

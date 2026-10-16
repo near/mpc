@@ -3,14 +3,6 @@
 # key replaces the empty `token` below and whose slug replaces `{slug}` in `rpc_url`. Providers with
 # `auth.kind = "none"` are always enabled. Keep in sync with the network's provider whitelist.
 
-[bitcoin]
-timeout_sec = 30
-max_retries = 3
-expected_network_fingerprint = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"  # genesis block hash
-
-[bitcoin.providers.public]
-rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
-
 [abstract]
 timeout_sec = 30
 max_retries = 3
