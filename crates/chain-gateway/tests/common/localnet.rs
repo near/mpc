@@ -156,13 +156,6 @@ impl Localnet {
     pub async fn shutdown(mut self) {
         self.validator.node_handle.send_shutdown();
         self.observer.node_handle.send_shutdown();
-        // RocksDB cleanup happens asynchronously after the actor system stops;
-        // block until all instances are dropped to avoid test interference.
-        tokio::task::spawn_blocking(|| {
-            near_store::db::RocksDB::block_until_all_instances_are_dropped();
-        })
-        .await
-        .unwrap();
     }
 }
 
