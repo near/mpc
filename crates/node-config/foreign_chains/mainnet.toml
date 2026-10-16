@@ -1,7 +1,8 @@
 # Foreign chain RPC config embedded in the node for mainnet, covered by the image hash vote.
 # A provider is enabled by the operator's `foreign_chains.credentials.<provider>` entry, whose API
 # key replaces the empty `token` below and whose slug replaces `{slug}` in `rpc_url`. Providers with
-# `auth.kind = "none"` are always enabled. Keep in sync with the network's provider whitelist.
+# `auth.kind = "none"` are always enabled. Keep in sync with the network's provider whitelist,
+# except Bitcoin: dropped here, still whitelisted until near/mpc-private#720 is resolved.
 
 [abstract]
 timeout_sec = 30

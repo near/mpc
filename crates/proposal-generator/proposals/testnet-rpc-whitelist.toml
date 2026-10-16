@@ -1,6 +1,7 @@
 # Testnet RPC provider whitelist
 
-# TODO(#720): Drop Bitcoin on the next whitelist announcement.
+# TODO(near/mpc-private#720): Drop Bitcoin on the next whitelist announcement. Needs a contract
+# change first: `vote_update_foreign_chain_providers` can replace a chain's entry but not remove it.
 [chains.Bitcoin]
 quorum = 1
 

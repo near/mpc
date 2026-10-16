@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Chain signatures is a Multi-Party Computation (MPC) service that lets you sign arbitrary payloads by calling a smart contract and receiving a signature. The returned signature can be used to derive public keys on external chains (for example, Ethereum).
+Chain signatures is a Multi-Party Computation (MPC) service that lets you sign arbitrary payloads by calling a smart contract and receiving a signature. The returned signature can be used to derive public keys on external chains (for example, Ethereum or Bitcoin).
 
 This guide walks you through deploying a self-hosted MPC node on a bare-metal server using Intel Trusted Domain Extensions (TDX). The node runs inside a Confidential VM (CVM) for isolation and attestation.
 
