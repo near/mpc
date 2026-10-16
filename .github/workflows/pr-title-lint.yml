@@ -16,6 +16,9 @@ defaults:
   run:
     shell: bash -euo pipefail {0}
 
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+
 jobs:
   lint-pr-title:
     name: "Check PR title format"
@@ -63,7 +66,6 @@ jobs:
         id: build-prompt
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
         run: |
           FILES=$(gh pr diff "$PR_NUMBER" --name-only)
@@ -83,7 +85,7 @@ jobs:
         id: check-title
         uses: anthropics/claude-code-action@58985842b834ed26087302ba27d07bc24ca8697a # v1.0.244
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API }} # zizmor: ignore[secrets-outside-env]
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           github_token: ${{ github.token }}
           prompt: ${{ env.TITLE_CHECK_PROMPT }}
           # Deny is evaluated before allow, so these hold whatever tools are allowed.
@@ -127,7 +129,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           COMMENT: ${{ needs.check-pr-title-type.outputs.comment }}
         run: |
           printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"

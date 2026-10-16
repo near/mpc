@@ -24,6 +24,9 @@ defaults:
   run:
     shell: bash -euo pipefail {0}
 
+env:
+  NEARCORE_BRANCH: ${{ inputs.nearcore-branch || 'master' }}
+
 jobs:
   build-mpc:
     name: "Build mpc-node"
@@ -39,8 +42,6 @@ jobs:
             persist-credentials: false
 
       - name: Adjust Cargo.toml to use required nearcore branch
-        env:
-          NEARCORE_BRANCH: ${{ inputs.nearcore-branch || 'master' }}
         run: |
           sed -i -E "s#(\{ git = \"https://github.com/near/nearcore\", )(tag|branch) = \"[^\"]*\"#\1branch = \"${NEARCORE_BRANCH}\"#g" Cargo.toml
 
@@ -55,5 +56,5 @@ jobs:
         uses: act10ns/slack@d96404edccc6d6467fc7f8134a420c851b1e9054 # v2.2.0
         with:
           status: failure
-          message: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/near/mpc/actions/runs/${{ github.run_id }}|here> "
+          message: "MPC build failed with latest nearcore branch: ${{ env.NEARCORE_BRANCH }}. Check the logs <https://github.com/near/mpc/actions/runs/${{ github.run_id }}|here> "
 

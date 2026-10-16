@@ -8,8 +8,7 @@ rules:
     config:
       allow:
         - act10ns/slack
-        - actions/cache
-        - actions/cache/restore
+        - actions/cache/*
         - actions/checkout
         - actions/download-artifact
         - actions/upload-artifact
@@ -19,3 +18,7 @@ rules:
         - dorny/paths-filter
         - Swatinem/rust-cache
         - taiki-e/install-action
+  secrets-outside-env:
+    config:
+      allow:
+        - ANTHROPIC_API

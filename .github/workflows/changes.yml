@@ -16,8 +16,6 @@ on:
 
 permissions: {}
 
-cache-mode: none
-
 jobs:
   detect:
     name: "Detect changed paths"

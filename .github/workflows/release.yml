@@ -7,10 +7,13 @@ concurrency:
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 cache-mode: none
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
 
 jobs:
   release:
@@ -33,7 +36,6 @@ jobs:
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
           VERSION=$(awk -F'"' '/^version = "[0-9]+\.[0-9]+\.[0-9]+/ {print $2; exit}' Cargo.toml)
           if [[ -z "$VERSION" ]]; then
             echo "::error::Could not find workspace 'version = \"X.Y.Z\"' line in Cargo.toml"
@@ -59,7 +61,6 @@ jobs:
         env:
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
-          set -euo pipefail
           if git ls-remote --exit-code --tags origin "${VERSION}" >/dev/null 2>&1; then
             echo "::error::Git tag ${VERSION} already exists on origin."
             echo "::error::If this was an accidental orphan tag, delete it and re-run. Otherwise the release has already shipped."
@@ -71,7 +72,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
-          set -euo pipefail
           if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             echo "::error::A GitHub release (draft or published) for ${VERSION} already exists."
             echo "::error::Delete it on the releases page before re-running."
@@ -82,7 +82,6 @@ jobs:
         env:
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
-          set -euo pipefail
           awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > release-notes-raw.md
           if [ ! -s release-notes-raw.md ]; then
             echo "::error::No changelog section found for version ${VERSION} in CHANGELOG.md"
@@ -99,7 +98,6 @@ jobs:
         env:
           BRANCH_TAG: ${{ steps.inputs.outputs.branch-tag }}
         run: |
-          set -euo pipefail
           for REPO in mpc-node mpc-launcher; do
             if ! skopeo inspect docker://nearone/$REPO:$BRANCH_TAG > /dev/null 2>&1; then
               echo "::error::Source image nearone/$REPO:$BRANCH_TAG not found."
@@ -114,7 +112,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ steps.inputs.outputs.sha }}
         run: |
-          set -euo pipefail
           RUN_ID=$(gh run list \
             --repo "$GITHUB_REPOSITORY" \
             --workflow=build_contract.yml \
@@ -144,7 +141,6 @@ jobs:
           BRANCH_TAG: ${{ steps.inputs.outputs.branch-tag }}
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
-          set -euo pipefail
           for REPO in mpc-node mpc-launcher; do
             SAFE_NAME="${REPO//-/_}"
             skopeo copy --preserve-digests --all \
@@ -163,7 +159,6 @@ jobs:
         env:
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
-          set -euo pipefail
           cd contract-artifact
           mv mpc_contract.wasm "mpc-contract-v${VERSION}.wasm"
           tar -czf "mpc-contract-v${VERSION}.tar.gz" "mpc-contract-v${VERSION}.wasm"
@@ -178,7 +173,6 @@ jobs:
           LAUNCHER_DIGEST: ${{ steps.digests.outputs.mpc_launcher_digest }}
           CONTRACT_HASH: ${{ steps.contract.outputs.hash }}
         run: |
-          set -euo pipefail
           cp release-notes-raw.md release-notes.md
           cat >> release-notes.md <<EOF
 
@@ -202,7 +196,6 @@ jobs:
           SHA: ${{ steps.inputs.outputs.sha }}
           CONTRACT_ARCHIVE: ${{ steps.contract.outputs.archive }}
         run: |
-          set -euo pipefail
           # The git tag is NOT created here. GitHub materializes the tag at
           # target_commitish when the operator publishes the draft.
           gh release create "$VERSION" \
