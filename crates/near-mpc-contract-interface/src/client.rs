@@ -19,9 +19,9 @@ use crate::call_args::{
     SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
     SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
     VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs, VoteAddLauncherHashArgs,
-    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs,
-    VoteNewParametersArgs, VotePkArgs, VoteResharedArgs, VoteTeeVerifierChangeArgs,
-    VoteUpdateForeignChainProvidersArgs,
+    VoteAddOsMeasurementArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
+    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs, VoteResharedArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -42,9 +42,9 @@ use crate::method_names::{
     START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
     TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
-    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST,
-    VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED, VOTE_TEE_VERIFIER_CHANGE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
+    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
@@ -415,6 +415,19 @@ impl<C: CallContract> MpcContractHandle<C> {
         let args = serde_json::to_vec(&VoteAddLauncherHashArgs::new(launcher_hash))?;
         self.call(FunctionCallArgs::no_deposit(
             VOTE_ADD_LAUNCHER_HASH,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_add_os_measurement(
+        &self,
+        measurement: ExpectedMeasurements,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteAddOsMeasurementArgs::new(measurement))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_ADD_OS_MEASUREMENT,
             args,
             MAX_GAS,
         ))
