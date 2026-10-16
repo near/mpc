@@ -1,15 +1,13 @@
 use std::cmp::max;
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use near_account_id::AccountId;
 use near_async::ActorSystem;
 use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
-use near_indexer::{
-    AwaitForNodeSyncedEnum, IndexerConfig, StreamerMessage, SyncModeEnum,
-    near_primitives::{transaction::SignedTransaction, types::Finality},
-};
+use near_indexer::StreamerMessage;
+use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_store::db::RocksDB;
 use nearcore::NearConfig;
 use tokio::sync::mpsc::Receiver;
@@ -22,6 +20,7 @@ use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
+use crate::node_config::NodeConfig;
 use crate::primitives::{
     FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction, view_when_synced,
 };
@@ -130,12 +129,12 @@ impl Drop for NodeHandle {
 }
 
 impl ChainGateway {
-    /// Spawns a near node with `indexer_config`.
+    /// Spawns a NEAR node with [`NodeConfig`].
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
     /// Returns a stream for BlockUpdates if BlockEventSubscriptions is not None.
     pub async fn start(
-        indexer_config: IndexerConfig,
+        node_config: NodeConfig,
         subscriber: Option<BlockEventSubscriptions>,
         shutdown: CancellationToken,
     ) -> Result<
@@ -146,6 +145,7 @@ impl ChainGateway {
         ),
         ChainGatewayError,
     > {
+        let NodeConfig(indexer_config) = node_config;
         let near_config: NearConfig = indexer_config.load_near_config().map_err(|err| {
             ChainGatewayError::FailureLoadingConfig {
                 msg: err.to_string(),
@@ -179,17 +179,6 @@ impl ChainGateway {
             shutdown: stop_unless_started.disarm(),
         };
         Ok((chain_gateway, node_handle, stream))
-    }
-}
-
-pub fn default_indexer_config(home_dir: PathBuf) -> IndexerConfig {
-    IndexerConfig {
-        home_dir,
-        sync_mode: SyncModeEnum::LatestSynced,
-        await_for_node_synced: AwaitForNodeSyncedEnum::WaitForFullSync,
-        finality: Finality::Final,
-        validate_genesis: false,
-        skip_broken_blocks: false,
     }
 }
 
@@ -289,7 +278,7 @@ fn run_node(
 /// alongside the nearcore node.
 struct StreamerSetup {
     subscriber: BlockEventSubscriptions,
-    indexer_config: IndexerConfig,
+    indexer_config: near_indexer::IndexerConfig,
     near_config: NearConfig,
 }
 

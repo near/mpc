@@ -1,9 +1,8 @@
 use base64::Engine;
 use chain_gateway::{
-    ChainGateway, NodeHandle,
+    ChainGateway, NodeConfig, NodeHandle,
     event_subscriber::{block_events::BlockUpdate, subscriber::BlockEventSubscriptions},
 };
-use near_indexer::near_primitives::types::Finality;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -35,17 +34,11 @@ impl LocalNodeBuilder {
         streamer_config: Option<BlockEventSubscriptions>,
         shutdown: CancellationToken,
     ) -> LocalNode {
-        let indexer_config = near_indexer::IndexerConfig {
-            home_dir: self.home_dir.path().to_path_buf(),
-            sync_mode: near_indexer::SyncModeEnum::LatestSynced,
-            await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
-            finality: Finality::None,
-            validate_genesis: true,
-            skip_broken_blocks: false,
-        };
+        let node_config =
+            NodeConfig::new(self.home_dir.path().to_path_buf()).with_validate_genesis(true);
 
         let (chain_gateway, node_handle, block_update_receiver) =
-            ChainGateway::start(indexer_config, streamer_config, shutdown)
+            ChainGateway::start(node_config, streamer_config, shutdown)
                 .await
                 .expect("chain_gateway::start should succeed");
 

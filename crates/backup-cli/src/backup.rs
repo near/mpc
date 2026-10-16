@@ -1,4 +1,4 @@
-use chain_gateway::{ChainGateway, default_indexer_config};
+use chain_gateway::{ChainGateway, NodeConfig};
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
 use near_contract_transport::{NearKitCaller, PollInterval, WatchContractState};
@@ -186,7 +186,7 @@ async fn run_backup_service_through_embedded_node(
     spawn_shutdown_on_signal(shutdown.clone());
 
     let (chain_gateway, _near_node, _) =
-        ChainGateway::start(default_indexer_config(home_dir), None, shutdown.clone())
+        ChainGateway::start(NodeConfig::new(home_dir), None, shutdown.clone())
             .await
             .expect("failed to start the NEAR node");
     let mpc_contract = MpcContractHandle::new(chain_gateway, mpc_contract_account_id);
