@@ -10,7 +10,7 @@ use crate::sandbox::{
     utils::{
         consts::ALL_PROTOCOLS,
         contract_build::parallel_contract,
-        sandbox_mpc_contract::SandboxMpcContract,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::SharedSecretKey,
         sign_utils::{
             create_response_ckd, create_response_ed25519, create_response_secp256k1,

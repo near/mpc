@@ -12,10 +12,10 @@ use crate::sandbox::{
             get_participant_attestation, get_participants, get_state, get_tee_accounts,
             prepay_and_submit_participant_info, vote_add_launcher_hash,
         },
-        sandbox_mpc_contract::SandboxMpcContract,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
-        transactions::{CallMpcContract, CallMpcContractAsSelf},
+        transactions::CallMpcContract,
     },
 };
 use mpc_contract::primitives::{
@@ -64,7 +64,6 @@ async fn init_old_contract(
             .unwrap()
             .into();
     contract
-        .call_mpc()
         .init(threshold_parameters, bogus_tee_verifier_account_id(), None)
         .await?
         .into_result()?;
@@ -88,7 +87,7 @@ async fn deploy_old(
 ) -> anyhow::Result<SandboxMpcContract> {
     let old_wasm = contract_code(network);
     let old_contract = worker.dev_deploy(old_wasm).await?;
-    Ok(SandboxMpcContract::new(worker, old_contract))
+    Ok(SandboxMpcContract::from_deployed(worker, old_contract))
 }
 
 async fn upgrade_to_new(contract: &SandboxMpcContract) -> anyhow::Result<()> {
@@ -104,7 +103,7 @@ async fn upgrade_to_new(contract: &SandboxMpcContract) -> anyhow::Result<()> {
 /// Migrates the contract to a current contract build
 /// and sanity checks that the upgraded code matches compiled contract bytes.
 async fn migrate_and_assert_contract_code(contract: &SandboxMpcContract) -> anyhow::Result<()> {
-    contract.call_mpc().migrate().await?.into_result()?;
+    contract.migrate().await?.into_result()?;
     let code_hash_post_upgrade = contract.view_code().await.unwrap();
     let current_code_hash = current_contract();
 

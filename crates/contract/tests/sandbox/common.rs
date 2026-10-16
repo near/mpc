@@ -6,10 +6,10 @@ use crate::sandbox::utils::{
         assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
         submit_participant_info,
     },
-    sandbox_mpc_contract::SandboxMpcContract,
+    sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
-    transactions::{CallMpcContract, CallMpcContractAsSelf, execute_async_handle_calls},
+    transactions::{CallMpcContract, execute_async_handle_calls},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -129,7 +129,6 @@ pub async fn init_contract(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call_mpc()
         .init(params.into(), bogus_tee_verifier_account_id(), init_config)
         .await
         .unwrap();
@@ -147,7 +146,6 @@ pub async fn init_contract_running(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call_mpc()
         .init_running(
             domains,
             next_domain_id,
@@ -234,7 +232,7 @@ impl SandboxTestSetupBuilder {
 
     pub async fn build(self) -> SandboxTestSetup {
         let (worker, contract) = init_with_wasm((self.contract_wasm)()).await;
-        let contract = SandboxMpcContract::new(&worker, contract);
+        let contract = SandboxMpcContract::from_deployed(&worker, contract);
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 

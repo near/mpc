@@ -1,41 +1,27 @@
-use crate::sandbox::utils::views::SandboxViewer;
+use crate::sandbox::utils::sandbox_self_caller::SandboxSelfCaller;
 use near_mpc_contract_interface::client::MpcContractHandle;
-use near_workspaces::{Account, AccountId, Contract, Worker, network::Sandbox};
-use std::ops::Deref;
+use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 
-/// The MPC contract deployed in a sandbox. Derefs to its typed view handle;
-/// [`as_account`](Self::as_account) is the contract's own [`Account`], key included, for
-/// whatever the typed interface does not cover.
-pub struct SandboxMpcContract {
-    handle: MpcContractHandle<SandboxViewer>,
-    account: Contract,
+pub type SandboxMpcContract = MpcContractHandle<SandboxSelfCaller>;
+
+/// What the typed interface does not cover: the contract's own account, key included.
+pub trait SandboxMpcContractExt {
+    fn from_deployed(worker: &Worker<Sandbox>, contract: Contract) -> Self;
+    fn as_account(&self) -> &Account;
+    fn view_code(&self) -> impl Future<Output = near_workspaces::Result<Vec<u8>>>;
 }
 
-impl SandboxMpcContract {
-    pub fn new(worker: &Worker<Sandbox>, account: Contract) -> Self {
-        Self {
-            handle: MpcContractHandle::new(SandboxViewer::new(worker), account.id().clone()),
-            account,
-        }
+impl SandboxMpcContractExt for SandboxMpcContract {
+    fn from_deployed(worker: &Worker<Sandbox>, contract: Contract) -> Self {
+        let contract_id = contract.id().clone();
+        MpcContractHandle::new(SandboxSelfCaller::new(worker, contract), contract_id)
     }
 
-    pub fn id(&self) -> &AccountId {
-        self.account.id()
+    fn as_account(&self) -> &Account {
+        self.caller().as_account()
     }
 
-    pub fn as_account(&self) -> &Account {
-        self.account.as_account()
-    }
-
-    pub async fn view_code(&self) -> near_workspaces::Result<Vec<u8>> {
-        self.account.view_code().await
-    }
-}
-
-impl Deref for SandboxMpcContract {
-    type Target = MpcContractHandle<SandboxViewer>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
+    async fn view_code(&self) -> near_workspaces::Result<Vec<u8>> {
+        self.caller().view_code().await
     }
 }

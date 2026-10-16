@@ -33,17 +33,6 @@ impl CallMpcContract for Account {
     }
 }
 
-/// Calls the MPC contract as the contract account itself (e.g. for `#[private]` methods).
-pub(crate) trait CallMpcContractAsSelf {
-    fn call_mpc(&self) -> MpcContractHandle<SandboxCaller<'_>>;
-}
-
-impl CallMpcContractAsSelf for SandboxMpcContract {
-    fn call_mpc(&self) -> MpcContractHandle<SandboxCaller<'_>> {
-        self.as_account().call_mpc(self.id())
-    }
-}
-
 pub struct SandboxCaller<'a>(pub &'a Account);
 
 impl CallContract for SandboxCaller<'_> {

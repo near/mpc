@@ -10,7 +10,7 @@ use crate::sandbox::{
         contract_build::{current_contract, migration_contract},
         interface::IntoContractType,
         mpc_contract::assert_running_return_participants,
-        transactions::{CallMpcContract, CallMpcContractAsSelf},
+        transactions::CallMpcContract,
     },
 };
 use near_mpc_contract_interface::method_names;
@@ -73,7 +73,6 @@ async fn vote_contract_update__should_reject_a_non_participant() {
 
     // When
     let execution = contract
-        .call_mpc()
         .vote_contract_update(hash(&dummy_contract_update()))
         .await
         .unwrap();

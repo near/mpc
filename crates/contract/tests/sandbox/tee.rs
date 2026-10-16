@@ -15,9 +15,9 @@ use crate::sandbox::{
             submit_participant_info, vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
-        sandbox_mpc_contract::SandboxMpcContract,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         sign_utils::DomainResponseTest,
-        transactions::{CallMpcContract, CallMpcContractAsSelf},
+        transactions::CallMpcContract,
     },
 };
 use anyhow::Result;
@@ -362,7 +362,7 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
     assert_eq!(tee_participants_before, expected_union);
 
     // When: contract calls clean_tee_status on itself.
-    let result = contract.call_mpc().clean_tee_status().await?;
+    let result = contract.clean_tee_status().await?;
 
     assert!(result.is_success());
 
@@ -429,10 +429,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     // When: any account calls `clean_invalid_attestations` with a scan budget large enough
     // to cover every stored entry.
     let scan_budget: u32 = (before_cleanup.len() as u32) + 1;
-    let result = contract
-        .call_mpc()
-        .clean_invalid_attestations(scan_budget)
-        .await?;
+    let result = contract.clean_invalid_attestations(scan_budget).await?;
     assert!(result.is_success());
 
     // Then: the expired entry is evicted while the valid participant entries remain.

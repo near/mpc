@@ -5,7 +5,7 @@ pub mod interface;
 pub mod mpc_contract;
 pub mod resharing_utils;
 pub mod sandbox_mpc_contract;
+pub mod sandbox_self_caller;
 pub mod shared_key_utils;
 pub mod sign_utils;
 pub mod transactions;
-pub mod views;

@@ -14,7 +14,8 @@ use crate::sandbox::{
     common::{candidates, init_contract, init_contract_running, make_threshold_params},
     utils::{
         contract_build::current_contract_with_bench_methods,
-        sandbox_mpc_contract::SandboxMpcContract, shared_key_utils::new_secp256k1,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+        shared_key_utils::new_secp256k1,
     },
 };
 use near_account_id::AccountId;
@@ -263,7 +264,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
     let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
-    let contract = SandboxMpcContract::new(&worker, contract);
+    let contract = SandboxMpcContract::from_deployed(&worker, contract);
     let account_ids: Vec<AccountId> = (0..n_participants)
         .map(|i| format!("node-{i}.test.near").parse().unwrap())
         .collect();

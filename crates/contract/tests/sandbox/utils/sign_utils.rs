@@ -1,6 +1,6 @@
 use crate::sandbox::utils::sandbox_mpc_contract::SandboxMpcContract;
+use crate::sandbox::utils::sandbox_self_caller::SandboxSelfCaller;
 use crate::sandbox::utils::transactions::CallMpcContract;
-use crate::sandbox::utils::views::SandboxViewer;
 
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
 use super::shared_key_utils::{
@@ -303,7 +303,7 @@ pub async fn submit_ckd_response_measure_gas(
 }
 
 pub async fn await_request_in_contract_queue(
-    pending_request: ViewCall<SandboxViewer, Option<YieldIndex>>,
+    pending_request: ViewCall<SandboxSelfCaller, Option<YieldIndex>>,
 ) -> anyhow::Result<()> {
     pending_request
         .subscribe()
