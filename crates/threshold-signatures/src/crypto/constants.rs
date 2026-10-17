@@ -63,6 +63,26 @@ pub const NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC1: &[u8] = b"public 1:";
 /// A string used to extend an encoding
 pub const NEAR_DLOGEQ_ENCODE_LABEL_GENERATOR1: &[u8] = b"generator 1:";
 
+// W-Opening Proof Constants
+/// W-opening proof statement label.
+pub const NEAR_W_OPENING_STATEMENT_LABEL: &[u8] = b"w opening proof statement";
+/// W-opening proof commitment label.
+pub const NEAR_W_OPENING_COMMITMENT_LABEL: &[u8] = b"w opening proof commitment";
+/// W-opening proof challenge label.
+pub const NEAR_W_OPENING_CHALLENGE_LABEL: &[u8] = b"w opening proof challenge";
+/// A string used to extend an encoding
+pub const NEAR_W_OPENING_ENCODE_LABEL_STATEMENT: &[u8] = b"statement:";
+/// A string used to extend an encoding
+pub const NEAR_W_OPENING_ENCODE_LABEL_BIG_W: &[u8] = b"big w:";
+/// A string used to extend an encoding
+pub const NEAR_W_OPENING_ENCODE_LABEL_BIG_R: &[u8] = b"big r:";
+/// A string used to extend an encoding
+pub const NEAR_W_OPENING_ENCODE_LABEL_COM_A: &[u8] = b"com a:";
+/// A string used to extend an encoding
+pub const NEAR_W_OPENING_ENCODE_LABEL_COM_B: &[u8] = b"com b:";
+/// A string used to extend an encoding
+pub const NEAR_W_OPENING_ENCODE_LABEL_H_PED: &[u8] = b"pedersen generator:";
+
 // Keccak Constants
 pub const KECCAK_STATE_BYTES: usize = 200;
 pub const KECCAK_STATE_WORDS: usize = 25;
