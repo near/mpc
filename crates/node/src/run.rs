@@ -211,7 +211,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
-            static_web_data(&secrets, attestation),
+            static_web_data(&config.home_dir, &secrets, attestation),
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
