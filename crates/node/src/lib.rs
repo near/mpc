@@ -49,6 +49,7 @@ mod home_paths;
 mod indexer;
 mod key_events;
 mod mpc_client;
+mod mpc_state;
 mod network;
 mod protocol;
 mod protocol_version;

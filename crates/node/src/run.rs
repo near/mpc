@@ -251,7 +251,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let cancellation_token = CancellationToken::new();
 
-    let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+    let allowed_hashes_in_contract = indexer_api.mpc_state.allowed_docker_images.clone();
     let image_hash_storage =
         AllowedImageHashesFile::from(config.tee.latest_allowed_hash_file_path.clone());
 
@@ -375,9 +375,12 @@ where
         tx_sender: indexer_api.txn_sender.clone(),
         tls_public_key,
         account_public_key,
-        allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
-        allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        stored_attestation: indexer_api.my_attestation_receiver.clone(),
+        allowed_image_hashes: indexer_api.mpc_state.allowed_docker_images.clone(),
+        allowed_launcher_compose_hashes: indexer_api
+            .mpc_state
+            .allowed_launcher_compose_hashes
+            .clone(),
+        stored_attestation: indexer_api.mpc_state.my_attestation.clone(),
     };
     tokio::spawn(run_periodic_attestation_submission(submitter));
 
@@ -389,8 +392,8 @@ where
         (&secrets).into(),
         config.my_near_account_id.clone(),
         keyshare_storage.clone(),
-        indexer_api.my_migration_info_receiver.clone(),
-        indexer_api.contract_state_receiver.clone(),
+        indexer_api.mpc_state.migration_info.clone(),
+        indexer_api.mpc_state.contract_state.clone(),
         indexer_api.txn_sender.clone(),
     )
     .await?;

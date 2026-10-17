@@ -7,6 +7,7 @@ use super::types::ChainSendTransactionRequest;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::migration_service::types::MigrationInfo;
+use crate::mpc_state::{Monitor, MpcState};
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
@@ -1078,6 +1079,8 @@ impl FakeIndexerManager {
             watch::channel(vec![]);
         let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
             watch::channel(vec![]);
+        let (_allowed_foreign_chain_providers_sender, allowed_foreign_chain_providers_receiver) =
+            watch::channel(BTreeMap::new());
         let (_my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
         let (my_migration_info_sender, my_migration_info_receiver) =
@@ -1090,16 +1093,25 @@ impl FakeIndexerManager {
             transaction_sender: api_txn_sender,
         };
         let indexer = IndexerAPI {
-            contract_state_receiver: api_state_receiver,
+            mpc_state: MpcState {
+                contract_state: Monitor::from_receiver(api_state_receiver),
+                allowed_docker_images: Monitor::from_receiver(allowed_docker_images_receiver),
+                allowed_launcher_compose_hashes: Monitor::from_receiver(
+                    allowed_launcher_compose_receiver,
+                ),
+                allowed_foreign_chain_providers: Monitor::from_receiver(
+                    allowed_foreign_chain_providers_receiver,
+                ),
+                migration_info: Monitor::from_receiver(my_migration_info_receiver),
+                foreign_chain_supporters: Monitor::from_receiver(
+                    self.foreign_chain_supporters_receiver.clone(),
+                ),
+                my_attestation: Monitor::from_receiver(my_attestation_receiver),
+            },
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
                 api_signature_request_receiver,
             )),
             txn_sender: mock_transaction_sender,
-            allowed_docker_images_receiver,
-            allowed_launcher_compose_receiver,
-            my_migration_info_receiver,
-            my_attestation_receiver,
-            foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

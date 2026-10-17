@@ -1,8 +1,6 @@
-use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
 use super::handler::listen_blocks;
-use super::migrations::{ContractMigrationInfo, monitor_migrations};
+use super::migrations::ContractMigrationInfo;
 use super::near_data_wipe::wipe_near_data_if_requested;
-use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
 use crate::config::RespondConfig;
@@ -10,16 +8,15 @@ use crate::config::RespondConfig;
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
-use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_my_attestation,
-};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use crate::mpc_state::{ChainSubscriptions, MpcState};
 use crate::types::LogTransaction;
 use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
+use near_contract_transport::{ObservedState, Subscription, WatchContractState};
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::{Ed25519PublicKey, ProtocolContractState};
 use std::future::Future;
@@ -70,16 +67,9 @@ pub fn spawn_real_indexer(
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
 ) -> IndexerAPI<impl TransactionSender> {
-    let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
-    let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
-    let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
-        oneshot::channel();
+    let (mpc_state_sender_oneshot, mpc_state_receiver_oneshot) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
-    let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
-    let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
-        watch::channel(vec![]);
-    let (my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -192,76 +182,35 @@ pub fn spawn_real_indexer(
 
             tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
 
-            tokio::spawn(monitor_allowed_docker_images(
-                allowed_docker_images_sender,
-                indexer_state.contract.clone(),
-            ));
-
-            tokio::spawn(monitor_allowed_launcher_compose_hashes(
-                allowed_launcher_compose_sender,
-                indexer_state.contract.clone(),
-            ));
-
-            tokio::spawn(monitor_my_attestation(
-                my_attestation_sender,
-                indexer_state.contract.clone(),
+            let subscriptions = ChainSubscriptions::subscribe(
+                &indexer_state.contract,
                 Ed25519PublicKey::from(&tls_public_key),
-            ));
-
-            let foreign_chain_supporters_receiver =
-                monitor_foreign_chain_supporters(indexer_state.contract.clone()).await;
-            if foreign_chain_supporters_sender_oneshot
-                .send(foreign_chain_supporters_receiver)
-                .is_err()
-            {
-                tracing::error!(
-                    "Indexer thread could not send foreign chain supporters receiver back to main driver."
-                )
-            };
-
-            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-                watch::channel(std::collections::BTreeMap::new());
-            tokio::spawn(monitor_foreign_chain_whitelist(
-                foreign_chain_whitelist_sender,
-                indexer_state.contract.clone(),
-            ));
-            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver,
-                foreign_chains.clone(),
-            ));
-
-            // Returns once the contract state is available.
-            let contract_state_receiver = monitor_contract_state(
-                indexer_state.contract.clone(),
-                mpc_indexer_config.port_override,
-                protocol_state_sender,
             )
             .await;
-
-            if contract_state_sender_oneshot
-                .send(contract_state_receiver)
-                .is_err()
-            {
-                tracing::error!(
-                    "Indexer thread could not send contract state receiver back to main driver."
-                )
-            };
-
-            let my_migration_info_receiver = monitor_migrations(
-                indexer_state.contract.clone(),
+            tokio::spawn(relay(
+                subscriptions.protocol_state.clone(),
+                protocol_state_sender,
+                |observed| observed.value,
+            ));
+            tokio::spawn(relay(
+                subscriptions.migration_info.clone(),
                 migration_state_sender,
+                |observed| (observed.observed_at.into(), observed.value),
+            ));
+            let mpc_state = MpcState::watch(
+                subscriptions,
+                mpc_indexer_config.port_override,
                 my_near_account_id,
                 tls_public_key,
             )
-            .await;
-
-            if migration_info_sender_oneshot
-                .send(my_migration_info_receiver)
-                .is_err()
-            {
-                tracing::error!(
-                    "Indexer thread could not send migration info receiver back to main driver."
-                )
+            .await
+            .expect("contract view subscriptions must outlive startup");
+            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
+                mpc_state.allowed_foreign_chain_providers.clone(),
+                foreign_chains.clone(),
+            ));
+            if mpc_state_sender_oneshot.send(mpc_state).is_err() {
+                tracing::error!("Indexer thread could not send the mpc state back to main driver.")
             };
 
             // `listen_blocks` runs indefinitely and only returns in case of an
@@ -314,27 +263,33 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("txn_sender is returned from the `block_on` expression above.");
 
-    let contract_state_receiver = contract_state_receiver_oneshot
+    let mpc_state = mpc_state_receiver_oneshot
         .blocking_recv()
-        .expect("Contract state receiver must be returned by indexer.");
-
-    let my_migration_info_receiver = migration_info_receiver_oneshot
-        .blocking_recv()
-        .expect("Migraration info receiver must be returned by indexer.");
-
-    let foreign_chain_supporters_receiver = foreign_chain_supporters_receiver_oneshot
-        .blocking_recv()
-        .expect("foreign chain supporters receiver must be returned by indexer");
+        .expect("mpc state must be returned by indexer");
 
     IndexerAPI {
-        contract_state_receiver,
+        mpc_state,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
-        allowed_docker_images_receiver,
-        allowed_launcher_compose_receiver,
-        my_migration_info_receiver,
-        my_attestation_receiver,
-        foreign_chain_supporters_receiver,
+    }
+}
+
+/// Feeds a debug page's receiver from a subscription.
+async fn relay<T, U, E>(
+    mut subscription: Subscription<T, E>,
+    sender: watch::Sender<U>,
+    map: impl Fn(ObservedState<T>) -> U,
+) where
+    T: Clone + Send + Sync,
+    E: Clone + Send + Sync,
+{
+    loop {
+        if let Ok(observed) = subscription.latest() {
+            sender.send_replace(map(observed));
+        }
+        if subscription.changed().await.is_err() {
+            return;
+        }
     }
 }
 

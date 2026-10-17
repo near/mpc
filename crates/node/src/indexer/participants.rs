@@ -5,15 +5,13 @@ use ed25519_dalek::VerifyingKey;
 use mpc_primitives::EpochId;
 use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
-use near_contract_transport::ViewContract;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_contract_transport::ObservedState;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
     GovernanceThresholdParameters, KeyEvent, ProtocolContractState,
 };
 use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
 use std::collections::{BTreeMap, BTreeSet};
-use tokio::sync::watch;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,69 +302,24 @@ impl ContractState {
     }
 }
 
-/// Continuously monitors the contract state. Every time the state changes,
-/// sends the new state via the provided sender. This is a long-running task.
-pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'static>(
-    contract: MpcContractHandle<V>,
+/// Converts an observed [`dtos::ProtocolContractState`] with `port_override`; `None` logs the
+/// conversion error.
+pub(crate) fn contract_state_from_observed(
+    observed: ObservedState<dtos::ProtocolContractState>,
     port_override: Option<u16>,
-    protocol_state_sender: watch::Sender<dtos::ProtocolContractState>,
-) -> watch::Receiver<ContractState> {
-    const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-    let mut refresh_interval_tick = tokio::time::interval(CONTRACT_STATE_REFRESH_INTERVAL);
-
-    let mut fetch_contract_state = async move || {
-        loop {
-            // first tick returns immediately
-            refresh_interval_tick.tick().await;
-
-            tracing::debug!(target: "indexer", "querying contract state");
-
-            let (height, protocol_state) = match contract.state().await {
-                Ok(observed) => (observed.observed_at.into(), observed.value),
-                Err(e) => {
-                    tracing::error!(target: "mpc", "error reading config from chain during state: {:?}", e);
-                    tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
-                    continue;
-                }
-            };
-
-            let result = ContractState::from_contract_state(&protocol_state, height, port_override);
-
-            protocol_state_sender.send(protocol_state).unwrap();
-
-            let state = match result {
-                Ok(state) => state,
-                Err(e) => {
-                    tracing::error!(target: "mpc", "error converting contract state obtained from chain: {:?}", e);
-                    continue;
-                }
-            };
-
-            break state;
+) -> Option<ContractState> {
+    let converted = ContractState::from_contract_state(
+        &observed.value,
+        observed.observed_at.into(),
+        port_override,
+    );
+    match converted {
+        Ok(state) => Some(state),
+        Err(e) => {
+            tracing::error!(target: "mpc", "error converting contract state obtained from chain: {:?}", e);
+            None
         }
-    };
-
-    let initial_contract_state = fetch_contract_state().await;
-    let (contract_state_sender, contract_state_receiver) = watch::channel(initial_contract_state);
-
-    tokio::spawn(async move {
-        loop {
-            let contract_state = fetch_contract_state().await;
-            tracing::debug!(target: "indexer", "got mpc contract state {:?}", contract_state);
-
-            contract_state_sender.send_if_modified(|watched_state| {
-                if *watched_state != contract_state {
-                    tracing::info!("Contract state changed: {:?}", contract_state);
-                    *watched_state = contract_state;
-                    true
-                } else {
-                    false
-                }
-            });
-        }
-    });
-
-    contract_state_receiver
+    }
 }
 
 /// Sentinel address used when a participant's stored address cannot be parsed. Any value

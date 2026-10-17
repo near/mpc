@@ -1,9 +1,8 @@
-use crate::migration_service::types::MigrationInfo;
+use crate::mpc_state::MpcState;
 
 use self::stats::IndexerStats;
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
-use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
@@ -12,12 +11,8 @@ use near_client::{RpcHandlerActor, Status, client_actor::ClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::types::BlockHeight;
 use near_mpc_contract_interface::client::MpcContractHandle;
-use near_mpc_contract_interface::types as dtos;
-use participants::ContractState;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{
-    Mutex, {mpsc, watch},
-};
+use tokio::sync::{Mutex, mpsc};
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
@@ -28,7 +23,6 @@ pub mod near_data_wipe;
 pub mod participants;
 pub mod real;
 pub mod stats;
-pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
@@ -174,8 +168,8 @@ impl IndexerRpcHandler {
 /// with the indexer.
 /// TODO(#592): abstract away having an indexer running in a separate process
 pub struct IndexerAPI<TransactionSender> {
-    /// Provides the current contract state as well as updates to it.
-    pub contract_state_receiver: watch::Receiver<ContractState>,
+    /// The contract-derived state the node runs against.
+    pub mpc_state: MpcState,
     /// Provides block updates (signature requests and other relevant receipts).
     /// It is in a mutex, because the logical "owner" of this receiver can
     /// change over time (specifically, when we transition from the Running
@@ -186,19 +180,6 @@ pub struct IndexerAPI<TransactionSender> {
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
-    /// Watcher that keeps track of [`dtos::AllowedMpcDockerImageHash`]es on the contract
-    pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
-    /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
-    pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-
-    pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
-
-    pub my_attestation_receiver: watch::Receiver<Option<dtos::GetAttestationResponse>>,
-
-    /// Watcher that tracks the contract's available foreign chains and their
-    /// registered supporters (by TLS key). Seeded with the first successful read
-    /// before the indexer hands it back, so it always holds a real value.
-    pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
 }
 
 #[cfg(test)]

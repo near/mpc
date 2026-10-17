@@ -112,7 +112,7 @@ where
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
-            let state = self.indexer.contract_state_receiver.borrow().clone();
+            let state = self.indexer.mpc_state.contract_state.borrow().clone();
             if let Some(epoch_id) = current_epoch_id(&state) {
                 metrics::MPC_CURRENT_EPOCH_ID.set(epoch_id);
             }
@@ -179,7 +179,7 @@ where
                                 self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
-                                self.indexer.foreign_chain_supporters_receiver.clone(),
+                                self.indexer.mpc_state.foreign_chain_supporters.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -187,7 +187,7 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
-                                self.indexer.contract_state_receiver.clone(),
+                                self.indexer.mpc_state.contract_state.clone(),
                             ),
                         )?,
                         stop_fn,
@@ -220,11 +220,11 @@ where
                             }
                         }
                     }
-                    res = self.indexer.contract_state_receiver.changed() => {
+                    res = self.indexer.mpc_state.contract_state.changed() => {
                         if res.is_err() {
                             anyhow::bail!("[{}] contract state receiver closed", job.name);
                         }
-                        if (job.stop_fn)(&self.indexer.contract_state_receiver.borrow()) {
+                        if (job.stop_fn)(&self.indexer.mpc_state.contract_state.borrow()) {
                             tracing::info!(
                                 "[{}] contract state changed incompatibly, stopping",
                                 job.name

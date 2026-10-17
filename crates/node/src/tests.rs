@@ -150,8 +150,8 @@ impl OneNodeTestConfig {
                     (&self.secrets).into(),
                     self.config.my_near_account_id.clone(),
                     keystore.clone(),
-                    self.indexer.my_migration_info_receiver.clone(),
-                    self.indexer.contract_state_receiver.clone(),
+                    self.indexer.mpc_state.migration_info.clone(),
+                    self.indexer.mpc_state.contract_state.clone(),
                     self.indexer.txn_sender.clone(),
                 )
                 .await
