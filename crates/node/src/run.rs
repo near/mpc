@@ -1,3 +1,4 @@
+use crate::tracing::spawn_periodic_prune;
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
@@ -66,6 +67,7 @@ fn resolve_foreign_chains(config: &StartConfig) -> anyhow::Result<ForeignChainsC
 }
 
 pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
+    let (_log_guard, log_path) = init_logging(&config.log);
     init_logging(&config.log);
     config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
@@ -105,7 +107,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         .build()?;
 
     let _tokio_enter_guard = root_runtime.enter();
-
+    spawn_periodic_prune(&root_runtime.handle(), &config.log);
     // Install the SIGTERM handler as the first thing after the runtime is
     // built, BEFORE any expensive startup (indexer bootstrap, contract
     // state fetch, attestation generation). A SIGTERM arriving during
@@ -130,6 +132,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
+    // TODO: Make log server address and port configurable
+    profiler::web_server::start_log_server("127.0.0.1:35000".parse().unwrap(), log_path).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
     // TODO(#2102): Decide if the MPC responder account is actually needed

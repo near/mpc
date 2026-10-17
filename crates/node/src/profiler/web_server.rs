@@ -2,11 +2,18 @@
 use super::jemalloc::{jemalloc_heap_flamegraph, jemalloc_heap_pprof};
 use super::pprof::collect_pprof;
 
+use axum::body::Body;
+use axum::extract::{Path, State};
+use axum::response::Response;
 use axum::{
+    Json,
     extract::Query,
     http::{StatusCode, header},
     response::IntoResponse,
 };
+use http::HeaderValue;
+use serde::Serialize;
+use std::path::PathBuf;
 use std::{net::SocketAddr, time::Duration};
 use tokio::{io, net::TcpListener};
 use tower::limit::GlobalConcurrencyLimitLayer;
@@ -105,4 +112,86 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error: {:?}", e)).into_response(),
     }
+}
+
+#[derive(Clone)]
+struct LogServerState {
+    log_dir: PathBuf,
+}
+
+#[derive(Serialize)]
+struct LogFile {
+    name: String,
+    size: u64,
+}
+
+async fn list_logs(State(state): State<LogServerState>) -> Result<Json<Vec<LogFile>>, StatusCode> {
+    let mut logs = Vec::new();
+    let mut entries = tokio::fs::read_dir(&state.log_dir).await.map_err(|err| {
+        tracing::warn!(?err, log_dir = ?state.log_dir, "failed to list log directory");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    while let Some(entry) = entries.next_entry().await.map_err(|err| {
+        tracing::warn!(?err, "failed to read log directory entry");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })? {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("mpc") {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata().await else {
+            continue; // one unreadable entry shouldn't 500 the whole listing
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        logs.push(LogFile {
+            name,
+            size: metadata.len(),
+        });
+    }
+    logs.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(Json(logs))
+}
+
+async fn fetch_log(
+    State(state): State<LogServerState>,
+    Path(name): Path<String>,
+) -> Result<Response, StatusCode> {
+    if !name.starts_with("mpc") || name.contains('/') || name.contains('\\') || name.contains("..")
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let path = state.log_dir.join(&name);
+    let file = tokio::fs::File::open(&path).await.map_err(|err| {
+        tracing::warn!(?err, %name, "failed to open log file");
+        StatusCode::NOT_FOUND
+    })?;
+    let body = Body::from_stream(tokio_util::io::ReaderStream::new(file));
+    Ok((
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        )],
+        body,
+    )
+        .into_response())
+}
+
+pub(crate) async fn start_log_server(
+    bind_address: SocketAddr,
+    log_dir: PathBuf,
+) -> Result<(), io::Error> {
+    let router = axum::Router::new()
+        .route("/logs", axum::routing::get(list_logs))
+        .route("/logs/{name}", axum::routing::get(fetch_log))
+        .with_state(LogServerState { log_dir });
+    let tcp_listener = TcpListener::bind(&bind_address).await?;
+    tokio::spawn(async move {
+        tracing::info!(?bind_address, "starting log server");
+        if let Err(err) = axum::serve(tcp_listener, router).await {
+            tracing::error!(?err, "log server failed");
+        }
+    });
+    Ok(())
 }
