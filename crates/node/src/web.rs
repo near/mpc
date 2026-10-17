@@ -1,11 +1,13 @@
 use crate::config::SecretsConfig;
 use crate::indexer::migrations::ContractMigrationInfo;
+use crate::mpc_state::{ChainSubscriptions, ChainSubscriptionsSlot};
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{Json, serve};
+use chain_gateway::errors::NearViewClientError;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
@@ -14,16 +16,16 @@ use mpc_node_config::{
     SignatureConfig, TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
+use near_contract_transport::{ObservedState, TransportError, WatchContractState};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
-use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{Encoder, TextEncoder, default_registry};
 use recent_transactions::SharedRecentTransactions;
 use serde::Serialize;
 use std::net::SocketAddr;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, PoisonError};
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc};
 
 pub mod recent_transactions;
 
@@ -64,9 +66,7 @@ struct WebServerState {
     root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
-    /// Receiver for contract state
-    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
-    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    chain_subscriptions: ChainSubscriptionsSlot,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
     nearcore_config: serde_json::Value,
@@ -254,18 +254,37 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
-async fn migrations(state: State<WebServerState>) -> Json<(u64, ContractMigrationInfo)> {
-    Json(state.migration_state_receiver.borrow().clone())
+async fn migrations(
+    state: State<WebServerState>,
+) -> Result<Json<(u64, ContractMigrationInfo)>, (StatusCode, String)> {
+    let observed = latest(&state.chain_subscriptions, |subscriptions| {
+        subscriptions.migration_info.latest()
+    })?;
+    Ok(Json((observed.observed_at.into(), observed.value)))
 }
 
-async fn contract_state(state: State<WebServerState>) -> String {
-    let protocol_state = state
-        .protocol_state_receiver
-        .borrow()
-        // Clone to avoid holding a lock
-        .clone();
+async fn contract_state(state: State<WebServerState>) -> Result<String, (StatusCode, String)> {
+    let observed = latest(&state.chain_subscriptions, |subscriptions| {
+        subscriptions.protocol_state.latest()
+    })?;
+    Ok(near_mpc_contract_interface::types::protocol_state_to_string(&observed.value))
+}
 
-    near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state)
+/// 503 until the indexer has subscribed, and while the view fails.
+fn latest<T>(
+    slot: &ChainSubscriptionsSlot,
+    read: impl FnOnce(
+        &mut ChainSubscriptions<NearViewClientError>,
+    ) -> Result<ObservedState<T>, TransportError<NearViewClientError>>,
+) -> Result<ObservedState<T>, (StatusCode, String)> {
+    let Some(subscriptions) = slot.get() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "indexer has not subscribed to the contract yet".to_string(),
+        ));
+    };
+    let mut subscriptions = subscriptions.lock().unwrap_or_else(PoisonError::into_inner);
+    read(&mut subscriptions).map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))
 }
 
 async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
@@ -340,8 +359,7 @@ pub async fn start_web_server(
     debug_request_sender: broadcast::Sender<DebugRequest>,
     bind_address: SocketAddr,
     static_web_data: StaticWebData,
-    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
-    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    chain_subscriptions: ChainSubscriptionsSlot,
     config: ConfigFile,
     nearcore_config: serde_json::Value,
     recent_transactions: SharedRecentTransactions,
@@ -371,8 +389,7 @@ pub async fn start_web_server(
         .with_state(WebServerState {
             root_task_handle,
             debug_request_sender,
-            protocol_state_receiver,
-            migration_state_receiver,
+            chain_subscriptions,
             static_web_data,
             node_config: NodeConfigResponse::from(config),
             nearcore_config,

@@ -5,7 +5,9 @@ use std::cmp::max;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, Mutex, OnceLock};
 
+use chain_gateway::errors::NearViewClientError;
 use ed25519_dalek::VerifyingKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
@@ -69,6 +71,10 @@ impl<E> ChainSubscriptions<E> {
         }
     }
 }
+
+/// The node's subscriptions, set by the indexer once it has subscribed and read by the debug
+/// pages. One cursor is shared, so the cached value is deserialized once per change.
+pub type ChainSubscriptionsSlot = Arc<OnceLock<Mutex<ChainSubscriptions<NearViewClientError>>>>;
 
 /// The contract-derived state the node runs against.
 pub struct MpcState {

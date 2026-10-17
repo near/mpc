@@ -1,7 +1,6 @@
 use aes_gcm::{Aes256Gcm, Key};
 use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
-use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
@@ -12,7 +11,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
-use tokio::sync::{RwLock, watch};
+use tokio::sync::RwLock;
 
 use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
@@ -29,6 +28,7 @@ use crate::metrics::{
     MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, SUCCEEDED_OUTCOME_LABEL, TRIPLE_GENERATION_TASK_LABEL,
 };
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
+use crate::mpc_state::ChainSubscriptionsSlot;
 use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -116,9 +116,6 @@ impl OneNodeTestConfig {
                 let _ = root_task.set(root_task_handle);
                 let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
-                let (_, dummy_protocol_state_receiver) =
-                    watch::channel(ProtocolContractState::NotInitialized);
-                let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
@@ -126,8 +123,7 @@ impl OneNodeTestConfig {
                     debug_request_sender.clone(),
                     self.config.web_ui,
                     static_web_data(&self.secrets, None),
-                    dummy_protocol_state_receiver,
-                    dummy_migration_state_receiver,
+                    ChainSubscriptionsSlot::default(),
                     self.config.clone(),
                     serde_json::json!({}),
                     SharedRecentTransactions::default(),

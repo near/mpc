@@ -10,6 +10,7 @@ use crate::{
     indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
     keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
+    mpc_state::ChainSubscriptionsSlot,
     profiler,
     tracing::init_logging,
     tracking::{self, start_root_task},
@@ -30,7 +31,6 @@ use mpc_node_config::{
     ConfigFile, ForeignChainsConfig, StartConfig, foreign_chains::resolve_with_embedded,
 };
 use near_mpc_contract_interface::types::Ed25519PublicKey;
-use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
 use std::{
     path::PathBuf,
@@ -39,7 +39,7 @@ use std::{
 };
 use tee_authority::tee_authority::TeeAuthority;
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
+use tokio::sync::{RwLock, broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -190,11 +190,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
     let root_task_handle = Arc::new(OnceLock::new());
 
-    let (protocol_state_sender, protocol_state_receiver) =
-        watch::channel(ProtocolContractState::NotInitialized);
-
-    let (migration_state_sender, migration_state_receiver) =
-        watch::channel((0, Default::default()));
+    let chain_subscriptions = ChainSubscriptionsSlot::default();
 
     // Buffer behind the recent-transactions debug page. The indexer forwards
     // records over `recent_tx_sender`; the drain task records them into the
@@ -210,8 +206,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             debug_request_sender.clone(),
             node_config.web_ui,
             static_web_data(&secrets, attestation),
-            protocol_state_receiver,
-            migration_state_receiver,
+            chain_subscriptions.clone(),
             config.node.clone(),
             read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
@@ -241,8 +236,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         persistent_secrets.near_signer_key.clone(),
         respond_config,
         indexer_exit_sender,
-        protocol_state_sender,
-        migration_state_sender,
+        chain_subscriptions,
         *tls_public_key,
         node_config.foreign_chains.clone(),
         RecentTransactionsLogger::new(recent_tx_sender),

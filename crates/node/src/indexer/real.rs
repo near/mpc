@@ -1,5 +1,4 @@
 use super::handler::listen_blocks;
-use super::migrations::ContractMigrationInfo;
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
@@ -9,22 +8,23 @@ use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use crate::mpc_state::{ChainSubscriptions, MpcState};
+use crate::mpc_state::{ChainSubscriptions, ChainSubscriptionsSlot, MpcState};
 use crate::types::LogTransaction;
 use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
-use near_contract_transport::{ObservedState, Subscription, WatchContractState};
 use near_indexer::Indexer;
-use near_mpc_contract_interface::types::{Ed25519PublicKey, ProtocolContractState};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+#[cfg(feature = "network-hardship-simulation")]
+use tokio::sync::watch;
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -60,8 +60,7 @@ pub fn spawn_real_indexer(
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
-    migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
+    chain_subscriptions: ChainSubscriptionsSlot,
     tls_public_key: VerifyingKey,
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
@@ -187,16 +186,12 @@ pub fn spawn_real_indexer(
                 Ed25519PublicKey::from(&tls_public_key),
             )
             .await;
-            tokio::spawn(relay(
-                subscriptions.protocol_state.clone(),
-                protocol_state_sender,
-                |observed| observed.value,
-            ));
-            tokio::spawn(relay(
-                subscriptions.migration_info.clone(),
-                migration_state_sender,
-                |observed| (observed.observed_at.into(), observed.value),
-            ));
+            if chain_subscriptions
+                .set(std::sync::Mutex::new(subscriptions.clone()))
+                .is_err()
+            {
+                tracing::error!("chain subscriptions were already published for the debug pages")
+            };
             let mpc_state = MpcState::watch(
                 subscriptions,
                 mpc_indexer_config.port_override,
@@ -271,25 +266,6 @@ pub fn spawn_real_indexer(
         mpc_state,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
-    }
-}
-
-/// Feeds a debug page's receiver from a subscription.
-async fn relay<T, U, E>(
-    mut subscription: Subscription<T, E>,
-    sender: watch::Sender<U>,
-    map: impl Fn(ObservedState<T>) -> U,
-) where
-    T: Clone + Send + Sync,
-    E: Clone + Send + Sync,
-{
-    loop {
-        if let Ok(observed) = subscription.latest() {
-            sender.send_replace(map(observed));
-        }
-        if subscription.changed().await.is_err() {
-            return;
-        }
     }
 }
 
