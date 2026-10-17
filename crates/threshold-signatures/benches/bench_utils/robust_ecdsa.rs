@@ -117,3 +117,66 @@ pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
 pub type RobustECDSAPreparedPresig =
     PreparedPresig<robust_ecdsa::PresignOutput, ecdsa::KeygenOutput>;
 pub type RobustECDSASig = PreparedSig<robust_ecdsa::RerandomizedPresignOutput>;
+
+/// Prepared protocols for the v2 robust ecdsa signing benchmark
+pub struct RobustEcdsaV2PreparedSign {
+    pub protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
+    )>,
+    pub key_packages: Vec<(Participant, ecdsa::KeygenOutput)>,
+    pub participants: Vec<Participant>,
+    pub seeds: HashMap<Participant, u64>,
+    pub coordinator: Participant,
+    pub tweak: ecdsa::Tweak,
+    pub msg_hash: ecdsa::Scalar,
+}
+
+/// Used to prepare v2 robust ecdsa signing protocols for benchmarking
+pub fn robust_ecdsa_v2_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    num_participants: usize,
+    rng: &mut R,
+) -> RobustEcdsaV2PreparedSign {
+    let participants = generate_participants_with_random_ids(num_participants, rng);
+    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
+    let coordinator = key_packages[rng.gen_range(0..key_packages.len())].0;
+    let tweak = ecdsa::Tweak::new(threshold_signatures::frost_core::random_nonzero::<
+        ecdsa::Secp256K1Sha256,
+        _,
+    >(rng));
+    let msg_hash =
+        threshold_signatures::frost_core::random_nonzero::<ecdsa::Secp256K1Sha256, _>(rng);
+
+    let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
+    let mut seeds = HashMap::with_capacity(participants.len());
+
+    for (p, keygen_out) in &key_packages {
+        let seed = rng.next_u64();
+        let rng_p = MockCryptoRng::seed_from_u64(seed);
+        let protocol = robust_ecdsa::sign(
+            &participants,
+            coordinator,
+            *p,
+            robust_ecdsa::SignArguments {
+                keygen_out: keygen_out.clone(),
+                max_malicious: (*MAX_MALICIOUS).into(),
+            },
+            tweak,
+            msg_hash,
+            rng_p,
+        )
+        .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = ecdsa::SignatureOption>>)
+        .expect("Building the signing protocol should succeed");
+        protocols.push((*p, protocol));
+        seeds.insert(*p, seed);
+    }
+    RobustEcdsaV2PreparedSign {
+        protocols,
+        key_packages,
+        participants,
+        seeds,
+        coordinator,
+        tweak,
+        msg_hash,
+    }
+}
