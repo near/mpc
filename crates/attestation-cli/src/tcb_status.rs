@@ -246,10 +246,11 @@ fn shortfalls(tcb_info: &TcbInfo, pck: &PckIdentity, report: &TDReport10) -> Vec
 /// The platform-half SVNs one accepted level puts out of reach. Clearing all of
 /// them puts the platform on that level.
 ///
-/// Mirrors the per-level predicate of the private `match_platform_tcb` in
+/// Mirrors the per-level predicate of the private `find_tcb_level` in
 /// `dcap-qvl`'s `src/verify.rs`: a level is cleared only when PCESVN and every
 /// SGX and TDX component sit at or above it. The first two TDX components are
-/// the module's, so they carry the module remedy.
+/// the module's, so they carry the module remedy; when the quote selects a
+/// module identity, that identity judges them instead and they are skipped.
 fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) -> Vec<Shortfall> {
     let short = |component: String, have: u8, needs: u8, remedy| {
         (have < needs).then_some(Shortfall {
@@ -259,12 +260,18 @@ fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) ->
             remedy,
         })
     };
+    let module_components = if tdx_module(&report.tee_tcb_svn).0.is_some() {
+        2
+    } else {
+        0
+    };
     let tdx = level
         .tcb
         .tdx_components
         .iter()
         .zip(report.tee_tcb_svn)
         .enumerate()
+        .skip(module_components)
         .filter_map(|(index, (needs, have))| {
             let remedy = if index < 2 {
                 UPDATE_TDX_MODULE
@@ -307,7 +314,7 @@ fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) ->
 /// module's ISV SVN. A zero selector means the quote names no identity, and
 /// Intel's base `tdxModule` entry applies instead.
 ///
-/// Mirrors the private `match_tdx_module_identity` in `dcap-qvl`'s
+/// Mirrors the private `tdx_module_identity` in `dcap-qvl`'s
 /// `src/verify.rs`, which surfaces only the converged status, not these.
 pub fn tdx_module(tee_tcb_svn: &[u8; 16]) -> (Option<String>, u8) {
     let [isv_svn, selector, ..] = *tee_tcb_svn;
@@ -583,6 +590,26 @@ mod tests {
                 .iter()
                 .all(|shortfall| shortfall.have + 1 == shortfall.needs)
         );
+    }
+
+    #[test]
+    fn shortfalls__should_leave_the_module_components_to_the_module_identity() {
+        // Given
+        let claims = fixture_claims();
+        let pck = &claims.platform.pck;
+        let report = claims.report.as_td10().expect("fixture is a TDX quote");
+        let tcb_info = demanding_tcb_info(pck, report);
+
+        // When
+        let shortfalls = shortfalls(&tcb_info, pck, report);
+
+        // Then
+        let named: Vec<_> = shortfalls
+            .iter()
+            .map(|shortfall| shortfall.component.as_str())
+            .collect();
+        assert!(!named.contains(&"TDX TCB component 0"));
+        assert!(!named.contains(&"TDX TCB component 1"));
     }
 
     #[test]

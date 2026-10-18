@@ -76,24 +76,44 @@ pub struct VerifiedReport {
 }
 
 /// Parsed quote report, mirroring `dcap_qvl::quote::Report`.
+#[expect(clippy::large_enum_variant)]
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub enum Report {
     SgxEnclave(EnclaveReport),
     TD10(TDReport10),
     TD15(TDReport15),
+    TD15Ex(TDReport15Ex),
 }
 
 impl Report {
     /// Mirrors `dcap_qvl::quote::Report::as_td10`: returns the TD10 view of
-    /// either a `TD10` or a `TD15` report.
+    /// a `TD10`, `TD15` or `TD15Ex` report.
     pub fn as_td10(&self) -> Option<&TDReport10> {
         match self {
             Report::TD10(report) => Some(report),
             Report::TD15(report) => Some(&report.base),
+            Report::TD15Ex(report) => Some(&report.base.base),
             Report::SgxEnclave(_) => None,
         }
     }
+}
+
+/// Mirror of `dcap_qvl::quote::TDReport15Ex`.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+pub struct TDReport15Ex {
+    pub base: TDReport15,
+    pub vmid: u8,
+    pub td_id: [u8; 32],
+    pub dev_info: [u8; 48],
+    pub init_service_td_hash: [u8; 48],
+    pub init_service_td_attributes: [u8; 8],
+    pub init_cpu_svn: [u8; 16],
+    pub init_tee_tcb_svn: [u8; 16],
+    pub init_tee_fmspc: [u8; 12],
+    pub cur_service_td_hash: [u8; 48],
+    pub cur_service_td_attributes: [u8; 8],
 }
 
 /// Mirror of `dcap_qvl::quote::TDReport10`.
@@ -155,6 +175,8 @@ pub enum TcbStatus {
     ConfigurationNeeded,
     SWHardeningNeeded,
     Revoked,
+    TDRelaunchAdvised,
+    TDRelaunchAdvisedConfigurationNeeded,
 }
 
 /// Mirror of `dcap_qvl::tcb_info::TcbStatusWithAdvisory`.
