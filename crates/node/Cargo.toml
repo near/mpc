@@ -28,7 +28,6 @@ foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-factory = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
-gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }

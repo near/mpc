@@ -42,9 +42,7 @@ pub mod types {
         LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
     };
 
-    pub use updates::{
-        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, Update, UpdateHash, UpdateId,
-    };
+    pub use updates::{Update, UpdateHash};
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
@@ -81,7 +79,7 @@ pub use near_mpc_crypto_types::near_sdk;
 #[cfg(feature = "k256")]
 pub use near_mpc_crypto_types::k256;
 
-#[cfg(feature = "ed25519-dalek")]
+#[cfg(feature = "curve25519-dalek")]
 pub use near_mpc_crypto_types::curve25519_dalek;
 #[cfg(feature = "ed25519-dalek")]
 pub use near_mpc_crypto_types::ed25519_dalek;

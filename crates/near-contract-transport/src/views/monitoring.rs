@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use near_account_id::AccountId;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -11,16 +13,26 @@ use crate::{
     },
 };
 
-pub struct MonitoringTask<T, ViewError> {
+/// A handle on a view's monitoring task, returned by [`ViewCall::subscribe`].
+///
+/// Clones share the task and see the same observations, but track
+/// [`changed()`](crate::WatchContractState::changed) independently; a clone starts with the
+/// observation current at cloning already seen. The task is cancelled when the last clone is
+/// dropped.
+pub struct Subscription<T, ViewError> {
     pub(crate) cached: Result<ObservedState<T>, TransportError<ViewError>>,
-    pub last_observed: tokio::sync::watch::Receiver<Result<SerializedObservation, ViewError>>,
-    _task_handle: JoinHandle<()>,
-    _drop_guard: DropGuard,
+    pub(crate) last_observed: watch::Receiver<Result<SerializedObservation, ViewError>>,
+    task: Arc<MonitoringTask>,
     deserializer: Deserializer<T>,
 }
 
-impl<T, ViewError> MonitoringTask<T, ViewError> {
-    pub async fn new<Viewer>(view_call: ViewCall<Viewer, T>) -> Self
+struct MonitoringTask {
+    _task_handle: JoinHandle<()>,
+    _drop_guard: DropGuard,
+}
+
+impl<T, ViewError> Subscription<T, ViewError> {
+    pub(super) async fn new<Viewer>(view_call: ViewCall<Viewer, T>) -> Self
     where
         Viewer: ViewContract<Error = ViewError> + HasPollInterval + Send + 'static,
     {
@@ -28,22 +40,37 @@ impl<T, ViewError> MonitoringTask<T, ViewError> {
     }
 }
 
-impl<T, ViewError> MonitoringTask<T, ViewError>
+impl<T, ViewError> Subscription<T, ViewError>
 where
     ViewError: Clone,
 {
-    pub fn update_cache(&mut self) {
+    pub(super) fn update_cache(&mut self) {
         let last_observed = self.last_observed.borrow_and_update().clone();
         let res = deserialize_res(last_observed, self.deserializer);
         self.cached = res;
     }
 }
 
+impl<T, ViewError> Clone for Subscription<T, ViewError>
+where
+    ViewError: Clone,
+{
+    fn clone(&self) -> Self {
+        let mut last_observed = self.last_observed.clone();
+        let cached = deserialize_res(last_observed.borrow_and_update().clone(), self.deserializer);
+        Self {
+            cached,
+            last_observed,
+            task: Arc::clone(&self.task),
+            deserializer: self.deserializer,
+        }
+    }
+}
+
 /// Spawns a monitoring task with tokio.
-/// Cancels the spawned task when dropped.
 pub(crate) async fn make_monitoring_task<Viewer, T>(
     view_call: ViewCall<Viewer, T>,
-) -> MonitoringTask<T, Viewer::Error>
+) -> Subscription<T, Viewer::Error>
 where
     Viewer: ViewContract + HasPollInterval + Send + 'static,
 {
@@ -64,11 +91,13 @@ where
     ));
     let cached = deserialize_res(observed_state, view_call.deserializer);
 
-    MonitoringTask {
+    Subscription {
         cached,
         last_observed,
-        _task_handle,
-        _drop_guard: cancel_token.drop_guard(),
+        task: Arc::new(MonitoringTask {
+            _task_handle,
+            _drop_guard: cancel_token.drop_guard(),
+        }),
         deserializer: view_call.deserializer,
     }
 }
@@ -141,7 +170,7 @@ mod tests {
         HasPollInterval, Json, ObservedState, SerializedObservation, ViewArgs,
         mock::{Call, MockViewContract, MockViewError},
         views::{
-            monitoring::{MonitoringTask, make_monitoring_task, modify, monitor},
+            monitoring::{Subscription, make_monitoring_task, modify, monitor},
             view_call::ViewCall,
         },
     };
@@ -436,7 +465,7 @@ mod tests {
     async fn setup_task(
         call: Call,
         mock_response: Result<SerializedObservation, MockViewError>,
-    ) -> (MockViewContract, MonitoringTask<Vec<u8>, MockViewError>) {
+    ) -> (MockViewContract, Subscription<Vec<u8>, MockViewError>) {
         let viewer = MockViewContract::new(mock_response);
         let view_call = ViewCall::new::<Json>(
             viewer.clone(),
