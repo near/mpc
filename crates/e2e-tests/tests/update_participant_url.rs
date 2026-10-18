@@ -61,5 +61,5 @@ fn participant_url(state: &ProtocolContractState, account_id: &AccountId) -> Opt
         .participants
         .iter()
         .find(|(a, _, _)| a == account_id)
-        .map(|(_, _, info)| info.url.clone())
+        .map(|(_, _, info)| info.url.to_string())
 }

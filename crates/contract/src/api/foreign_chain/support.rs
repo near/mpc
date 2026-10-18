@@ -977,7 +977,7 @@ mod tests {
         DestinationNodeInfo {
             signer_account_pk: node_id.account_public_key.clone(),
             destination_node_info: dtos::ParticipantInfo {
-                url: "https://new-node.example.com".to_string(),
+                url: "https://new-node.example.com".try_into().unwrap(),
                 tls_public_key: node_id.tls_public_key.clone(),
             },
         }

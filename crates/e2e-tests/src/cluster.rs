@@ -1010,6 +1010,7 @@ impl MpcCluster {
         node_index: usize,
         url: String,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
+        let url = url.try_into().context("participant url over the bound")?;
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .update_participant_url(url)
@@ -1532,7 +1533,9 @@ fn build_participants(
             account_id,
             ParticipantId(participant_id as u32),
             ParticipantInfo {
-                url: format!("http://127.0.0.1:{}", ports.p2p_port(i)),
+                url: format!("http://127.0.0.1:{}", ports.p2p_port(i))
+                    .try_into()
+                    .unwrap(),
                 tls_public_key: pubkey,
             },
         ));
@@ -1568,7 +1571,7 @@ fn build_participants_from_nodes(
             account,
             id,
             ParticipantInfo {
-                url: nodes[node_idx].p2p_url(),
+                url: nodes[node_idx].p2p_url().try_into().unwrap(),
                 tls_public_key: nodes[node_idx].p2p_public_key(),
             },
         ));

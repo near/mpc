@@ -379,7 +379,7 @@ async fn start_migration_and_wait(
     let destination_node_info = DestinationNodeInfo {
         signer_account_pk: target_signer_pk,
         destination_node_info: ParticipantInfo {
-            url: target_p2p_url,
+            url: target_p2p_url.try_into()?,
             tls_public_key: target_p2p_key.clone(),
         },
     };
