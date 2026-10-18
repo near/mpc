@@ -10,6 +10,7 @@ use crate::sandbox::{
         interface::IntoContractType,
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
+        sandbox_mpc_contract::SandboxMpcContract,
         transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
@@ -23,11 +24,10 @@ use mpc_contract::primitives::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     },
 };
+use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ReconstructionThreshold;
-use near_mpc_contract_interface::{method_names, types as dtos};
-use near_workspaces::{Account, Contract};
+use near_workspaces::Account;
 use rstest::rstest;
-use serde_json::json;
 use std::{assert_matches, collections::BTreeMap};
 use test_utils::sandbox::SandboxWorker;
 
@@ -126,13 +126,11 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(running.keyset.epoch_id, epoch_id);
 
     // verify that the contract's `public_key` view method returns the key for the new domain
-    let contract_public_key: dtos::PublicKey = contract
-        .view(method_names::PUBLIC_KEY)
-        .args_json(json!({"domain_id": domain_id}))
+    let contract_public_key = contract
+        .public_key(Some(dtos::DomainId(domain_id)))
         .await
         .unwrap()
-        .json()
-        .unwrap();
+        .value;
     assert_eq!(contract_public_key, public_key);
 
     Ok(())
@@ -228,8 +226,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
         // verify that the contract's `public_key` view method fails for the cancelled domain
         let public_key_result = contract
-            .view(method_names::PUBLIC_KEY)
-            .args_json(json!({"domain_id": next_domain_id}))
+            .public_key(Some(dtos::DomainId(next_domain_id)))
             .await;
         assert!(
             public_key_result.is_err(),
@@ -327,7 +324,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
 
 struct ResharingTestContext {
     _worker: SandboxWorker,
-    contract: Contract,
+    contract: SandboxMpcContract,
     persistent_participants: Vec<Account>,
     new_participant_accounts: Vec<Account>,
     threshold_parameters: GovernanceThresholdParameters,

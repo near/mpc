@@ -111,3 +111,8 @@ topo_order_commits = true
 sort_commits = "oldest"
 # Process submodules commits
 recurse_submodules = false
+
+[remote.github]
+# Pin the repo so PR metadata resolves without relying on the local `origin` remote.
+owner = "near"
+repo = "mpc"

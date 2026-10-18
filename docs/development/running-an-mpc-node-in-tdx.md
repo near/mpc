@@ -146,12 +146,13 @@ several providers to choose from, such as
 
    Several values in the previous file can be modified:
       - `IMAGE_TAG` and `IMAGE_HASH`: Find a docker image of the MPC node in
-      [mpc-node-gcp/tags](https://hub.docker.com/r/nearone/mpc-node-gcp/tags). Images with
-      suffix `-tee` are TEE enabled. The latest image should be `IMAGE_TAG=latest-tee`. To obtain the `IMAGE-HASH` execute:
+      [mpc-node/tags](https://hub.docker.com/r/nearone/mpc-node/tags), either a
+      release tag such as `3.17.1` or a `<branch>-<short-sha>` tag. To obtain the
+      `IMAGE-HASH` execute:
 
       ```bash
-      docker pull nearone/mpc-node-gcp:IMAGE_TAG
-      docker inspect nearone/mpc-node-gcp:IMAGE_TAG | jq .[0].Id
+      docker pull nearone/mpc-node:IMAGE_TAG
+      docker inspect nearone/mpc-node:IMAGE_TAG | jq .[0].Id
       ```
 
       - `NEAR_BOOT_NODES`: can be obtained executing
@@ -163,7 +164,7 @@ several providers to choose from, such as
    ```yml
    services:
       mpc-node:
-         image: nearone/mpc-node-gcp:$IMAGE_TAG
+         image: nearone/mpc-node:$IMAGE_TAG
          container_name: mpc-node
          network_mode: "host"
          restart: unless-stopped

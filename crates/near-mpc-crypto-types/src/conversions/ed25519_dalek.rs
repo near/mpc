@@ -1,13 +1,6 @@
 use super::CryptoConversionError;
 use crate::crypto::Ed25519PublicKey;
 use crate::primitives::Ed25519Signature;
-use curve25519_dalek::edwards::CompressedEdwardsY;
-
-impl From<CompressedEdwardsY> for Ed25519PublicKey {
-    fn from(point: CompressedEdwardsY) -> Self {
-        Ed25519PublicKey::from(point.to_bytes())
-    }
-}
 
 impl From<&ed25519_dalek::VerifyingKey> for Ed25519PublicKey {
     fn from(vk: &ed25519_dalek::VerifyingKey) -> Self {
@@ -66,19 +59,6 @@ mod tests {
 
         // then
         assert_matches!(result, Err(CryptoConversionError::InvalidPublicKey));
-    }
-
-    #[test]
-    fn compressed_edwards_y_to_ed25519_public_key() {
-        // given
-        let vk = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]).verifying_key();
-        let compressed = curve25519_dalek::edwards::CompressedEdwardsY(vk.to_bytes());
-
-        // when
-        let dto = Ed25519PublicKey::from(compressed);
-
-        // then
-        assert_eq!(dto.as_bytes(), &vk.to_bytes());
     }
 
     #[test]

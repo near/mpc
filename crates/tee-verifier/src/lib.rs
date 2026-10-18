@@ -75,10 +75,8 @@ impl TeeVerifier {
     /// [`Self::verify_quote`].
     ///
     /// Applies no policy ([`QuotePolicy::claims_only`]), so an accepted quote
-    /// gets the same report as from [`Self::verify_quote`]. It can also reject
-    /// collateral that [`Self::verify_quote`] accepts, since it parses more of
-    /// it, including the PCK CRL issuer chain, which nothing authenticates. It
-    /// costs slightly more gas.
+    /// gets the same report as from [`Self::verify_quote`]. It costs slightly
+    /// more gas.
     ///
     /// [`CollateralDates`]: tee_verifier_interface::CollateralDates
     #[result_serializer(borsh)]

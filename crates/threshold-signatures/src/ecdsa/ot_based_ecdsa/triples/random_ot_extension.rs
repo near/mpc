@@ -117,12 +117,12 @@ pub async fn random_ot_extension_sender(
 
         let mut small_q_j = DoubleBitVector::zero();
         for (q_i, chi_i) in q.column_chunks(j).zip(chi.iter()) {
-            small_q_j ^= q_i.gf_mul(chi_i);
+            small_q_j.xor_mut(&q_i.gf_mul(chi_i));
         }
 
         let delta_j_x =
             DoubleBitVector::conditional_select(&DoubleBitVector::zero(), &small_x, delta_j);
-        is_consistent &= small_q_j.ct_eq(&(small_t_j ^ delta_j_x));
+        is_consistent &= small_q_j.ct_eq(&small_t_j.xor(&delta_j_x));
     }
     if !bool::from(is_consistent) {
         return Err(ProtocolError::QMatrixConsistencyCheckFailed {
@@ -136,7 +136,7 @@ pub async fn random_ot_extension_sender(
 
     for (i, q_i) in q.rows().take(params.batch_size).enumerate() {
         let v0_i = hash_to_scalar(i, q_i);
-        let v1_i = hash_to_scalar(i, &(q_i ^ delta));
+        let v1_i = hash_to_scalar(i, &q_i.xor(&delta));
         out.push((v0_i, v1_i));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
@@ -170,7 +170,7 @@ pub async fn random_ot_extension_receiver(
     // Step 1
     let x: BitMatrix = b
         .bits()
-        .map(|b_i| BitVector::conditional_select(&BitVector::zero(), &!BitVector::zero(), b_i))
+        .map(|b_i| BitVector::conditional_select(&BitVector::zero(), &BitVector::zero().not(), b_i))
         .collect();
 
     // Step 2
@@ -205,7 +205,7 @@ pub async fn random_ot_extension_receiver(
         .map(|j| {
             let mut small_t_j = DoubleBitVector::zero();
             for (t_i, chi_i) in t.column_chunks(j).zip(chi.iter()) {
-                small_t_j ^= t_i.gf_mul(chi_i);
+                small_t_j.xor_mut(&t_i.gf_mul(chi_i));
             }
             small_t_j
         })
