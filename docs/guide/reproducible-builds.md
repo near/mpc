@@ -29,6 +29,9 @@ security and verification purposes.
 
 The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
 
+**Build from a clean clone on the branch CI built**, not a `git worktree`: the node
+embeds git metadata from `.git`, so a different checkout gives a different digest.
+
 **Build both node and launcher images** (default behavior):
 
 ```bash
@@ -84,8 +87,8 @@ them. To trust no cache at all, add `--option substitute false`: Nix then builds
 every other package too, which takes hours, and the digest matches only if every
 package in the image rebuilds bit for bit. Even then, some inputs remain
 pre-built binaries, pinned by their hash, such as the Rust toolchain from the
-Rust project, the Google Cloud CLI in the GCP image, and the bootstrap tools and
-compilers that nixpkgs builds the rest with.
+Rust project and the bootstrap tools and compilers that nixpkgs builds the rest
+with.
 
 Each image is built in the exact layout pushed to Docker Hub, so the SHA-256 of
 its `manifest.json` equals the digest of the published `-nix` tag. The same
@@ -102,9 +105,9 @@ Take the full `<commit-hash>` from `main` or the release branch, since GitHub
 also serves commits from any fork under `near/mpc`. For a release that includes
 these images, the version tag works too (e.g. `github:near/mpc/3.17.0#…`):
 our releases are immutable, so their tags cannot be moved. Use
-`mpc-node-gcp-image` or `mpc-launcher-image` for the other images. From a
-checkout, `.#packages.x86_64-linux.mpc-node-image` gives the same digest only
-with a clean working tree, because the node binary embeds the commit hash.
+`mpc-launcher-image` for the launcher image. From a checkout,
+`.#packages.x86_64-linux.mpc-node-image` gives the same digest only with a clean
+working tree, because the node binary embeds the commit hash.
 
 ## mpc-contract
 

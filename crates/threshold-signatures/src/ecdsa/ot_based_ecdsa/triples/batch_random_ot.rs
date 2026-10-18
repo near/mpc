@@ -1,6 +1,7 @@
 use k256::Scalar;
 use rand_core::CryptoRngCore;
 use sha2::{Digest, Sha256};
+#[cfg(test)]
 use std::sync::Arc;
 use subtle::ConditionallySelectable;
 
@@ -111,7 +112,7 @@ pub async fn batch_random_ot_sender(
     Ok((big_k0, big_k1))
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn batch_random_ot_sender_many<const N: usize>(
     mut chan: PrivateChannel,
     mut rng: impl CryptoRngCore,
@@ -279,7 +280,7 @@ pub(super) async fn batch_random_ot_receiver(
     Ok((delta, big_k))
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 #[allow(clippy::too_many_lines)]
 pub async fn batch_random_ot_receiver_many<const N: usize>(
     mut chan: PrivateChannel,

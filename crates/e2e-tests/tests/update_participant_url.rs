@@ -1,7 +1,5 @@
 use crate::common;
 
-use backon::{ConstantBuilder, Retryable};
-use e2e_tests::MpcCluster;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use rand::{SeedableRng, rngs::StdRng};
@@ -40,21 +38,12 @@ async fn update_participant_url__should_keep_signing_after_url_update() {
     );
 
     // Then
-    (|| async {
-        let url = participant_url(&cluster, &account_id).await?;
-        anyhow::ensure!(
-            url.as_deref() == Some(new_url.as_str()),
-            "url not yet updated: {url:?}"
-        );
-        Ok::<_, anyhow::Error>(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(60),
-    )
-    .await
-    .expect("contract did not reflect the updated url");
+    cluster
+        .wait_for_state(common::INDEXER_SYNC_TIMEOUT, |state| {
+            participant_url(state, &account_id).as_deref() == Some(new_url.as_str())
+        })
+        .await
+        .expect("contract did not reflect the updated url");
 
     common::send_sign_request(&cluster, &running, &mut rng, &user)
         .await
@@ -62,19 +51,15 @@ async fn update_participant_url__should_keep_signing_after_url_update() {
 }
 
 /// Reads the registered URL of `account_id` from the contract's Running state.
-async fn participant_url(
-    cluster: &MpcCluster,
-    account_id: &AccountId,
-) -> anyhow::Result<Option<String>> {
-    let state = cluster.get_contract_state().await?;
+fn participant_url(state: &ProtocolContractState, account_id: &AccountId) -> Option<String> {
     let ProtocolContractState::Running(running) = state else {
-        anyhow::bail!("contract is not in Running state");
+        return None;
     };
-    Ok(running
+    running
         .parameters
         .participants
         .participants
-        .into_iter()
+        .iter()
         .find(|(a, _, _)| a == account_id)
-        .map(|(_, _, info)| info.url))
+        .map(|(_, _, info)| info.url.clone())
 }

@@ -445,7 +445,6 @@ impl MpcNodeSetup {
                 latest_allowed_hash_file_path: "latest_allowed_hash.txt".into(),
                 authority: TeeAuthorityConfig::Local,
             },
-            gcp: None,
             log: LogConfig {
                 format: LogFormat::Plain,
                 filter: Some("debug".to_string()),
