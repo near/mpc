@@ -35,6 +35,7 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

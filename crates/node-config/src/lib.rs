@@ -5,8 +5,8 @@ pub use foreign_chains::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
 };
 pub use start::{
-    ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
-    SecretsStartConfig, StartConfig, default_pccs_endpoints,
+    ChainId, DownloadConfigType, LogConfig, LogFormat, NearInitConfig, SecretsStartConfig,
+    StartConfig, default_pccs_endpoints,
 };
 
 use anyhow::Context;

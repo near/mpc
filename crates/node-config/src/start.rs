@@ -18,8 +18,6 @@ pub struct StartConfig {
     pub secrets: SecretsStartConfig,
     /// TEE authority and image hash monitoring settings.
     pub tee: launcher_interface::types::TeeConfig,
-    /// GCP keyshare storage settings. Optional — omit if not using GCP.
-    pub gcp: Option<GcpStartConfig>,
     /// NEAR node initialization settings. Required for `start-with-config-file`
     /// so the node can self-initialize when `config.json` is absent.
     /// When using the legacy `start` command (behind `start.sh`), this is
@@ -164,15 +162,6 @@ impl std::fmt::Debug for SecretsStartConfig {
     }
 }
 
-/// GCP keyshare storage configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GcpStartConfig {
-    /// GCP secret ID for storing the root keyshare.
-    pub keyshare_secret_id: String,
-    /// GCP project ID.
-    pub project_id: String,
-}
-
 /// NEAR chain / network identifier.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -249,26 +238,6 @@ mod tests {
 
         // Then
         assert_matches!(result, Err(_));
-    }
-
-    /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
-    /// string "gcp" (see crates/tee-launcher/src/config.rs).
-    /// This test ensures the TOML field name for GCP config is still "gcp".
-    /// If this field is renamed, update the launcher's blocked key list too.
-    #[test]
-    fn gcp_toml_field_name_is_gcp() {
-        let gcp = GcpStartConfig {
-            keyshare_secret_id: "test".into(),
-            project_id: "test".into(),
-        };
-        let mut table = toml::Table::new();
-        table.insert("gcp".to_string(), toml::Value::try_from(&gcp).unwrap());
-        let toml_str = toml::to_string(&table).unwrap();
-        let parsed: toml::Table = toml::from_str(&toml_str).unwrap();
-        assert!(
-            parsed.contains_key("gcp"),
-            "GCP field name changed — update tee-launcher's TEE-restricted key list"
-        );
     }
 
     /// A single bare-URL entry (no `tls` override) parses as a one-element

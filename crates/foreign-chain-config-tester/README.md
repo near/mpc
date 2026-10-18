@@ -56,7 +56,6 @@ abstract   alchemy           ✗ failed
 adi        -                 – skipped (not configured)
 aptos      alchemy           ✗ failed
 aptos      public            ✓ ok
-bitcoin    public            ✓ ok
 ethereum   -                 – skipped (not configured)
 fogo       public            ✓ ok
 solana     alchemy           ✗ failed

@@ -34,9 +34,7 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::{
-        measurements::MeasurementVotes, proposal::LauncherHashVotes, tee_state::NodeAttestation,
-    },
+    tee::{measurements::MeasurementVotes, tee_state::NodeAttestation},
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -859,15 +857,16 @@ impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
     }
 }
 
-impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
+impl IntoInterfaceType<dtos::LauncherHashVotes> for &Votes<AuthenticatedAccountId> {
     fn into_dto_type(self) -> dtos::LauncherHashVotes {
-        dtos::LauncherHashVotes {
-            vote_by_account: self
-                .vote_by_account
-                .iter()
-                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+        dtos::LauncherHashVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
                 .collect(),
-        }
+        )
     }
 }
 

@@ -6,7 +6,7 @@ This module implements two threshold ECDSA signing schemes over the **Secp256k1*
 
 Both schemes share common types defined in this module:
 
-- **`Signature`** -- ECDSA signature containing the full point `big_r` and scalar `s`, with a `verify(public_key, msg_hash)` method
+- **`Signature`** -- ECDSA signature containing the full point `big_r` and scalar `s`, with `verify(public_key, msg_hash)` and `recovery_id(public_key, msg_hash)` methods
 - **`RerandomizationArguments`** -- binds a presignature to a specific signing context (public key, tweak, message hash, participants) before use. Derives a deterministic scalar `delta` via HKDF-SHA3-256 that rerandomizes the presignature nonce, mitigating Wagner attacks (see \[[GS21](https://eprint.iacr.org/2021/1330.pdf)\])
 - **`KeygenOutput`** / **`Tweak`** -- Secp256k1-specialized aliases for the curve-generic DKG output types. `Tweak` allows deriving different signing keys from a single DKG output
 - **Type aliases** -- `Scalar`, `Element`, `Polynomial`, `PolynomialCommitment`, `CoefficientCommitment` specialized to `Secp256K1Sha256`

@@ -88,7 +88,6 @@ pub fn make_key_storage_config(
     KeyStorageConfig {
         home_dir,
         local_encryption_key,
-        gcp: None,
     }
 }
 
