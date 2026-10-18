@@ -208,13 +208,8 @@ pub enum VerificationResultWithCollateralDates {
 ///
 /// A caller typically uses [`Self::earliest_expiration_date`] as the
 /// attestation's expiry. The unprefixed fields span all of the collateral (TCB
-/// Info, QE Identity, both CRLs, the four certificate chains); the `qe_iden_*`
-/// fields only QE Identity and its issuer chain.
-///
-/// Not every date is authenticated: `dcap-qvl` also reads the PCK CRL issuer
-/// chain and any extra certificates in the other chains, which no signature
-/// check covers. Since the expiry is a minimum, such certificates can only make
-/// it earlier. TODO(#4659): use only verified certificates.
+/// Info, QE Identity, both CRLs, the verified certificate chains); the
+/// `qe_iden_*` fields only QE Identity and its issuer chain.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct CollateralDates {

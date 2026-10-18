@@ -20,7 +20,7 @@ http = { workspace = true }
 httpmock = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tonic = { workspace = true, features = ["codegen", "router", "server"] }
 
 [lints]
