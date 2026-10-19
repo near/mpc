@@ -187,7 +187,7 @@ where
         let mut request_lines = Vec::new();
         let EligibleLeadersAndHeights {
             eligible_leaders,
-            maximum_height,
+            reference_height,
             ..
         } = self.eligible_leaders_and_heights();
         let online_participants = self.network_api.alive_participants();
@@ -241,7 +241,7 @@ where
             )?;
         }
 
-        writeln!(f, "Maximum block height known: {}", maximum_height)?;
+        writeln!(f, "Reference block height: {}", reference_height)?;
 
         writeln!(f, "Recent {}s:", RequestType::get_type())?;
         for (_, _, debug_line) in request_lines {
