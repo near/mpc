@@ -1294,8 +1294,10 @@ version = "3.17.0"
 dependencies = [
  "anyhow",
  "axum",
+ "chain-gateway",
  "clap",
  "ed25519-dalek 2.2.0",
+ "libc",
  "mpc-node",
  "near-account-id 2.6.0",
  "near-contract-transport",
@@ -1872,6 +1874,7 @@ dependencies = [
  "test-utils",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

@@ -39,15 +39,6 @@ cargo run -p foreign-chain-config-tester -- --config /path/to/config.yaml
 
 ```yaml
 foreign_chains:
-  bitcoin:
-    timeout_sec: 30
-    max_retries: 3
-    expected_network_fingerprint: "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
-    providers:
-      public:
-        rpc_url: "https://bitcoin-testnet-rpc.publicnode.com"
-        auth:
-          kind: none
   abstract:
     timeout_sec: 30
     max_retries: 3
@@ -343,15 +334,6 @@ Same steps as the testnet example; verify with the config tester before deployin
 
 ```yaml
 foreign_chains:
-  bitcoin:
-    timeout_sec: 30
-    max_retries: 3
-    expected_network_fingerprint: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-    providers:
-      public:
-        rpc_url: "https://bitcoin-rpc.publicnode.com"
-        auth:
-          kind: none
   abstract:
     timeout_sec: 30
     max_retries: 3

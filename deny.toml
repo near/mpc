@@ -50,6 +50,13 @@ ignore = [
   "RUSTSEC-2026-0359", # wasmtime stack overflow dropping a long chain of recursive types
   "RUSTSEC-2026-0362", # wasmtime may not enforce the async-entrypoint requirement
   "RUSTSEC-2026-0363", # wasmtime component-model handle tables are charged to no limit
+  # TODO(#4839): remove once cargo can resolve zip >= 9.0.0.
+  # zip comes only from nearcore's near-rosetta-rpc via utoipa-swagger-ui, whose build script
+  # never calls the vulnerable `extract` APIs: it writes entries as plain files from a pinned
+  # Swagger UI release archive.
+  "RUSTSEC-2026-0367", # zip extraction preserves SUID/SGID bits
+  "RUSTSEC-2026-0368", # zip extraction creates symlinks pointing outside the destination
+  "RUSTSEC-2026-0369", # zip extraction applies Unix permissions through symlinks
   # TODO(#4423): remove once cargo can resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore 2.14.0-rc.2 and
   # near-crypto 0.37.4 pin it to =1.16.2, so the fix cannot be resolved until they move. The
