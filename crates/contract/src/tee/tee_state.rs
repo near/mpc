@@ -76,10 +76,9 @@ pub enum TeeValidationResult {
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
-    /// Block time at which this entry was accepted. Restamped by every accepted submission, so
-    /// a submitter can recognize its own on chain. `None` for an entry stored before the contract
-    /// recorded this, and the init block time for a mocked entry nobody submitted (see
-    /// [`TeeState::with_mocked_participant_attestations`]).
+    /// Block time at which this entry was accepted, restamped by every accepted submission.
+    /// `None` for an entry stored before the contract recorded this, and the init block time for
+    /// a mocked entry nobody submitted (see [`TeeState::with_mocked_participant_attestations`]).
     pub(crate) accepted_at_seconds: Option<u64>,
 }
 
@@ -1971,8 +1970,6 @@ mod tests {
         );
     }
 
-    /// The stamp is what lets a submitter tell a rejection from a landing, so only an accepted
-    /// submission may move it.
     #[rstest]
     #[case::rejected(MockAttestation::Invalid, ACCEPTED_AT_SECONDS)]
     #[case::accepted_again(MockAttestation::Valid, RESUBMITTED_AT_SECONDS)]

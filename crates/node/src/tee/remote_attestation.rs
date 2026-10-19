@@ -63,8 +63,8 @@ pub struct AttestationSubmitter<T, A> {
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
 /// participant's attestation and TLS public key, using the provided [`TransactionSender`] and
-/// retrying with backoff while [`TransactionStatus::NotExecuted`] is observed. Retries are
-/// unbounded; the caller stops them by dropping this future, as
+/// retrying with backoff while the send fails or [`TransactionStatus::NotExecuted`] is observed.
+/// Retries are unbounded; the caller stops them by dropping this future, as
 /// [`periodic_attestation_submission`] does when a round times out.
 async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,

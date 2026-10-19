@@ -279,6 +279,10 @@ async fn observe_tx_result(
     }
 }
 
+fn status_or_not_executed(observed: anyhow::Result<TransactionStatus>) -> TransactionStatus {
+    observed.unwrap_or(TransactionStatus::NotExecuted)
+}
+
 /// Attempts to ensure that a function call with the given method and args is
 /// included on-chain. Submits the transaction, waits `TRANSACTION_TIMEOUT` for
 /// it to be included, then observes once whether it had its intended on-chain
@@ -344,7 +348,7 @@ async fn ensure_send_transaction(
         .inc();
 
     (
-        transaction_status.unwrap_or(TransactionStatus::NotExecuted),
+        status_or_not_executed(transaction_status),
         SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at),
     )
 }
@@ -352,7 +356,7 @@ async fn ensure_send_transaction(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{TransactionStatus, attestation_submission_status};
+    use super::{TransactionStatus, attestation_submission_status, status_or_not_executed};
     use near_mpc_contract_interface::types::{
         MockAttestation, VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
     };
@@ -398,5 +402,14 @@ mod tests {
 
         // Then
         assert_eq!(status, expected);
+    }
+
+    #[test]
+    fn status_or_not_executed__should_report_a_failed_observation_as_not_executed() {
+        // When
+        let status = status_or_not_executed(Err(anyhow::anyhow!("view call failed")));
+
+        // Then
+        assert_eq!(status, TransactionStatus::NotExecuted);
     }
 }
