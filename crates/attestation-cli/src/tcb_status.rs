@@ -209,6 +209,7 @@ fn evaluate(
     }
 }
 
+// TODO(#4852): use dcap-qvl's matching here and below once it exposes it.
 /// Every SVN that keeps the platform off Intel's nearest accepted TCB level.
 ///
 /// Explanatory only: the status already says whether the platform clears the
