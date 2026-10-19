@@ -34,6 +34,7 @@ pub struct SignRequestArgs {
     pub path: String,
     #[serde(rename = "payload_v2")]
     pub payload: Payload,
+    /// The domain whose distributed key the signing key is derived from.
     pub domain_id: DomainId,
 }
 
