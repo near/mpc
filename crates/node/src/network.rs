@@ -61,7 +61,8 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     ) -> anyhow::Result<()>;
     /// Sends a message to everyone on a best-effort basis about the current height of our indexer.
     fn send_indexer_height(&self, height: IndexerHeightMessage);
-    /// Dropped when there is no outgoing connection to `recipient_id`.
+    /// Dropped when there is no outgoing connection to `recipient_id`, or when the peer negotiated
+    /// a version below [`CONNECTED_PEERS_MIN_PROTOCOL_VERSION`].
     fn send_connected_peers(&self, recipient_id: ParticipantId, message: ConnectedPeersMessage);
 
     /// Waits for `required_ready_count` number of connections (a freebie is included for the node itself)
@@ -1008,8 +1009,9 @@ pub mod testing {
 
     #[async_trait::async_trait]
     impl NodeConnectivityInterface for TestConnectivityInterface {
+        /// A negotiated version is only known once both directions are up, as in production.
         fn is_bidirectionally_connected(&self) -> bool {
-            true
+            self.protocol_version.is_some()
         }
 
         fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
@@ -1320,7 +1322,8 @@ mod tests {
         // Given
         let me = ParticipantId::from_raw(1);
         let peers = [2, 3, 4].map(ParticipantId::from_raw);
-        let participants = vec![me, peers[0], peers[1], peers[2]];
+        let disconnected = ParticipantId::from_raw(5);
+        let participants = vec![me, peers[0], peers[1], peers[2], disconnected];
         let versions = HashMap::from([
             (peers[0], NetworkProtocolVersion::Sep2026),
             (peers[1], NetworkProtocolVersion::Oct2026),
@@ -1336,7 +1339,10 @@ mod tests {
         let recipients: Vec<_> = sent.iter().map(|(recipient, _)| *recipient).collect();
         assert_eq!(recipients, vec![peers[1], peers[2]]);
         for (_, message) in sent {
-            assert_eq!(message.peers, peers);
+            assert_eq!(
+                message.peers, peers,
+                "a disconnected peer must not be listed"
+            );
         }
     }
 

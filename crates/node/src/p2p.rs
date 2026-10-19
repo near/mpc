@@ -496,7 +496,7 @@ impl PersistentConnection {
         };
         let peer_version = conn.peer_network_protocol_version();
         if !peer_version.supports(CONNECTED_PEERS_MIN_PROTOCOL_VERSION) {
-            tracing::error!(
+            tracing::warn!(
                 target_participant_id = %self.target_participant_id,
                 ?peer_version,
                 "not sending connected peers: the peer cannot parse the packet"
