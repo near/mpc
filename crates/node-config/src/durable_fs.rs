@@ -1,21 +1,12 @@
-//! Writing files so they survive a crash or a power loss.
-//!
-//! Replacing a file with `rename` is atomic, but the rename is only durable once
-//! the directory holding the file has been fsynced: until then a power loss can
-//! undo it and bring the previous file back, even though the writer already moved
-//! on. The same holds for a newly created file or link. These helpers do the full
-//! sequence so callers don't have to remember the directory fsync.
+//! File writes that survive a power loss. A rename, or a newly created file, is
+//! only durable once its directory is fsynced.
 
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-/// Atomically and durably replaces `path` with `contents`.
-///
-/// Writes a sibling `<path>.tmp`, fsyncs it, renames it over `path`, then fsyncs
-/// the parent directory. A crash at any point leaves either the old or the new
-/// file, never a partial one, and once this returns the new file survives a power
-/// loss. Creates `path` if it doesn't exist; the parent directory must exist.
+/// Atomically and durably replaces (or creates) `path` via a sibling `<path>.tmp`.
+/// The parent directory must exist.
 pub fn write_file_durably(path: &Path, contents: &[u8]) -> io::Result<()> {
     let tmp_path = path.with_added_extension("tmp");
     {
@@ -26,8 +17,7 @@ pub fn write_file_durably(path: &Path, contents: &[u8]) -> io::Result<()> {
     rename_durably(&tmp_path, path)
 }
 
-/// Renames `from` to `to`, replacing `to` if it exists, and fsyncs the parent
-/// directory of each so the rename survives a power loss.
+/// Renames `from` over `to` and fsyncs both parent directories.
 pub fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     fs::rename(from, to)?;
     sync_parent_dir(to)?;
@@ -37,13 +27,12 @@ pub fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Fsyncs the directory that contains `path`, which makes a create, rename or
-/// link of `path` durable. The file itself must be synced separately.
+/// Fsyncs the directory containing `path`. Does not sync the file itself.
 pub fn sync_parent_dir(path: &Path) -> io::Result<()> {
     fs::File::open(parent_dir(path))?.sync_all()
 }
 
-/// `path.parent()`, with a bare file name meaning the current directory.
+/// A bare file name's parent is `.`, not the empty path.
 fn parent_dir(path: &Path) -> &Path {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent,

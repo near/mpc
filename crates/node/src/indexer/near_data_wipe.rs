@@ -52,8 +52,7 @@ pub(crate) fn wipe_near_data_if_requested(
     // Move the store aside in one atomic rename, so the data dir is gone for good
     // even if the process dies before the (best-effort) delete below runs.
     match std::fs::rename(hot_store_path, &trash_path) {
-        // Make the move durable before deleting: otherwise a power loss could bring the
-        // store back while the token stays recorded, and the wipe would not be retried.
+        // Before deleting: if the move were lost, the recorded token would block a retry.
         Ok(()) => {
             sync_parent_dir(hot_store_path)?;
             sync_parent_dir(&trash_path)?;

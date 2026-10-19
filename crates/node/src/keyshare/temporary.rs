@@ -150,8 +150,6 @@ impl PendingKeyshareStorageHandle {
     }
 }
 
-/// Fsyncs the directory holding `path`, so a file just created there survives a
-/// power loss (syncing the file alone doesn't persist its directory entry).
 async fn sync_parent_dir_async(path: PathBuf) -> anyhow::Result<()> {
     tokio::task::spawn_blocking(move || sync_parent_dir(&path))
         .await

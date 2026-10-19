@@ -47,10 +47,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
 
         tracing::debug!(?approved_hashes, "writing approved hashes to disk");
 
-        // Temp file + fsync + rename + directory fsync: a crash never leaves a partial
-        // file, and once this returns the launcher sees the new list on its next boot.
-        // Without the directory fsync a power loss shortly after the rename could hand
-        // the launcher the previous list, so it would boot the old image.
+        // Durable, not just atomic: after a power loss the launcher must not boot from the previous list.
         let contents = serde_json::to_vec_pretty(&approved_hashes).map_err(io::Error::other)?;
         let file_path = self.file_path.clone();
         tokio::task::spawn_blocking(move || write_file_durably(&file_path, &contents))
