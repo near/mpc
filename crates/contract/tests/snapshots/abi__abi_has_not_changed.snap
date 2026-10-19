@@ -1104,6 +1104,11 @@ expression: abi
                         2,
                         "TD15",
                         "Report__TD15"
+                      ],
+                      [
+                        3,
+                        "TD15Ex",
+                        "Report__TD15Ex"
                       ]
                     ]
                   }
@@ -1121,6 +1126,11 @@ expression: abi
                 "Report__TD15": {
                   "Struct": [
                     "TDReport15"
+                  ]
+                },
+                "Report__TD15Ex": {
+                  "Struct": [
+                    "TDReport15Ex"
                   ]
                 },
                 "String": {
@@ -1213,6 +1223,54 @@ expression: abi
                     ]
                   ]
                 },
+                "TDReport15Ex": {
+                  "Struct": [
+                    [
+                      "base",
+                      "TDReport15"
+                    ],
+                    [
+                      "vmid",
+                      "u8"
+                    ],
+                    [
+                      "td_id",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "dev_info",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "init_service_td_hash",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "init_service_td_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "init_cpu_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "init_tee_tcb_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "init_tee_fmspc",
+                      "[u8; 12]"
+                    ],
+                    [
+                      "cur_service_td_hash",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "cur_service_td_attributes",
+                      "[u8; 8]"
+                    ]
+                  ]
+                },
                 "TcbStatus": {
                   "Enum": {
                     "tag_width": 1,
@@ -1251,6 +1309,16 @@ expression: abi
                         6,
                         "Revoked",
                         "TcbStatus__Revoked"
+                      ],
+                      [
+                        7,
+                        "TDRelaunchAdvised",
+                        "TcbStatus__TDRelaunchAdvised"
+                      ],
+                      [
+                        8,
+                        "TDRelaunchAdvisedConfigurationNeeded",
+                        "TcbStatus__TDRelaunchAdvisedConfigurationNeeded"
                       ]
                     ]
                   }
@@ -1283,6 +1351,12 @@ expression: abi
                   "Struct": null
                 },
                 "TcbStatus__SWHardeningNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__TDRelaunchAdvised": {
+                  "Struct": null
+                },
+                "TcbStatus__TDRelaunchAdvisedConfigurationNeeded": {
                   "Struct": null
                 },
                 "TcbStatus__UpToDate": {
@@ -1379,6 +1453,16 @@ expression: abi
                   "Struct": [
                     "String"
                   ]
+                },
+                "[u8; 12]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 12,
+                      "end": 12
+                    },
+                    "elements": "u8"
+                  }
                 },
                 "[u8; 16]": {
                   "Sequence": {
