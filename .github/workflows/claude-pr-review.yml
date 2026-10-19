@@ -7,7 +7,7 @@ concurrency:
 on:
   pull_request:
     types: [opened, ready_for_review]  # When PR is ready for review (not draft)
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] only owners and members can start a review
     types: [created]  # Listen for @claude mentions in PR comments
 
 permissions: {}
