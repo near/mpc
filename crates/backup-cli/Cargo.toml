@@ -26,6 +26,9 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[build-dependencies]
+built = { workspace = true }
+
 [dev-dependencies]
 libc = { workspace = true }
 mpc-node = { workspace = true, features = ["test-utils"] }

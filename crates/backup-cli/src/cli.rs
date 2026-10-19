@@ -1,6 +1,8 @@
-use std::{fmt, net::SocketAddr, str::FromStr};
+use std::{fmt, net::SocketAddr, str::FromStr, sync::LazyLock};
 
 use near_account_id::AccountId;
+
+use crate::built_info;
 
 /// A network address that can be either an IP:port or a hostname:port.
 ///
@@ -51,8 +53,17 @@ impl fmt::Display for NodeAddress {
     }
 }
 
+static VERSION: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{} (commit {}) ({})",
+        built_info::PKG_VERSION,
+        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
+        built_info::RUSTC_VERSION,
+    )
+});
+
 #[derive(clap::Parser, Debug)]
-#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(version = VERSION.as_str())]
 pub struct Args {
     /// Home directory for storing backup service secrets and configuration.
     #[arg(long, env("BACKUP_HOME_DIR"))]
