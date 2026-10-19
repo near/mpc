@@ -127,6 +127,13 @@ impl Payload {
     }
 }
 
+/// Response to a CKD request: the derived key, ElGamal-encrypted to the
+/// request's app public key.
+///
+/// For an app key pair `(x, app_pk = x·g1)` and an ephemeral scalar `y` chosen
+/// by the MPC network, `big_y = y·g1` and `big_c = derived_key + y·app_pk`;
+/// decrypt with `derived_key = big_c - x·big_y`. Neither field is a public
+/// key: the field type is reused for its 48-byte compressed G1 point encoding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
