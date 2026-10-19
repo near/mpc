@@ -7,6 +7,7 @@ edition = { workspace = true }
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
+chain-gateway = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }
@@ -26,6 +27,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+libc = { workspace = true }
 mpc-node = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 tempfile = { workspace = true }
