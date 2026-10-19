@@ -25,6 +25,11 @@ const PCS_TIMEOUT: Duration = Duration::from_secs(30);
 const UPDATE_TDX_MODULE: &str = "update the TDX module (SEAM loader)";
 const UPDATE_BIOS: &str = "update BIOS/microcode";
 
+/// The leading `tee_tcb_svn` bytes that belong to the TDX module (its ISV SVN
+/// and identity selector) rather than the platform. `dcap-qvl` hard-codes the
+/// same 2.
+const MODULE_TDX_COMPONENTS: usize = 2;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum EvaluationDataSet {
     Standard,
@@ -261,7 +266,7 @@ fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) ->
         })
     };
     let module_components = if tdx_module(&report.tee_tcb_svn).0.is_some() {
-        2
+        MODULE_TDX_COMPONENTS
     } else {
         0
     };
@@ -273,7 +278,7 @@ fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) ->
         .enumerate()
         .skip(module_components)
         .filter_map(|(index, (needs, have))| {
-            let remedy = if index < 2 {
+            let remedy = if index < MODULE_TDX_COMPONENTS {
                 UPDATE_TDX_MODULE
             } else {
                 UPDATE_BIOS
