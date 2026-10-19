@@ -173,26 +173,6 @@ pub fn chain_entry_matching(
     }
 }
 
-pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
-    let chain = format!("{chain:?}").to_lowercase();
-    let provider = |name: &str| ProviderConfig {
-        base_url: format!("{name}.{chain}.example.com"),
-        auth_scheme: AuthScheme::None,
-        chain_routing: ChainRouting::Embedded,
-    };
-    let mut providers =
-        NonEmptyBTreeMap::new(ProviderId(format!("alchemy-{chain}")), provider("alchemy"));
-    providers.insert(
-        ProviderId(format!("quicknode-{chain}")),
-        provider("quicknode"),
-    );
-    providers.insert(ProviderId(format!("public-{chain}")), provider("public"));
-    ChainEntry {
-        providers,
-        quorum: 1,
-    }
-}
-
 /// JSON wire format used for the contract's `init` call.
 ///
 /// Scaffold for cross-version compatibility: when a wire-breaking change to
