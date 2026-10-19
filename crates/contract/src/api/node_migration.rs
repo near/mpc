@@ -4,6 +4,7 @@
 use crate::api::common::require_deposit;
 use crate::dto_mapping::{IntoContractType, TryIntoContractType};
 use crate::errors::{self, Error, InvalidParameters, InvalidState};
+use crate::node_migrations::NodeMigrations;
 use crate::primitives::key_state::Keyset;
 use crate::primitives::participants::{ParticipantInfo, Participants};
 use crate::state::ProtocolContractState;
@@ -108,6 +109,7 @@ impl MpcContract {
         assert_tls_key_unclaimed(
             running_state.parameters.participants(),
             &self.tee_state,
+            &self.node_migrations,
             &account_id,
             &destination_node_info.destination_node_info.tls_public_key,
         )?;
@@ -241,6 +243,7 @@ impl MpcContract {
         assert_tls_key_unclaimed(
             running_state.parameters.participants(),
             &self.tee_state,
+            &self.node_migrations,
             &account_id,
             &expected_destination_node
                 .destination_node_info
@@ -349,16 +352,21 @@ fn assert_destination_tls_key_changed(
 }
 
 /// Rejects `tls_public_key` when an account other than `account_id` already holds it,
-/// either as a participant or as the owner of a stored attestation.
+/// either as a participant, as the owner of a stored attestation or as the destination of its
+/// node migration.
 fn assert_tls_key_unclaimed(
     participants: &Participants,
     tee_state: &TeeState,
+    node_migrations: &NodeMigrations,
     account_id: &AccountId,
     tls_public_key: &dtos::Ed25519PublicKey,
 ) -> Result<(), Error> {
     let claimants = [
         participants.account_with_tls_key(tls_public_key).cloned(),
         tee_state.attestation_owner(tls_public_key),
+        node_migrations
+            .account_migrating_to(tls_public_key)
+            .cloned(),
     ];
     let Some(claimant) = claimants
         .into_iter()
@@ -1162,6 +1170,34 @@ mod tests {
         assert_eq!(
             migration_info(&contract, &account_id),
             (account_id.clone(), None, None)
+        );
+    }
+
+    #[test]
+    fn start_node_migration__should_reject_a_tls_key_another_account_is_migrating_to() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let (account_id, _, _) = running_state.parameters.participants().participants()[0].clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let destination = gen_random_destination_info();
+        contract
+            .node_migrations
+            .set_destination_node_info(gen_account_id(), destination.clone());
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::TlsKeyAlreadyClaimed { .. })
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id, None, None)
         );
     }
 
