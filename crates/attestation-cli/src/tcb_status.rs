@@ -315,7 +315,8 @@ fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) ->
 /// Intel's base `tdxModule` entry applies instead.
 ///
 /// Mirrors the private `tdx_module_identity` in `dcap-qvl`'s
-/// `src/verify.rs`, which surfaces only the converged status, not these.
+/// `src/verify.rs`; `dcap-qvl` exposes neither the identity nor the module's
+/// ISV SVN.
 pub fn tdx_module(tee_tcb_svn: &[u8; 16]) -> (Option<String>, u8) {
     let [isv_svn, selector, ..] = *tee_tcb_svn;
     (

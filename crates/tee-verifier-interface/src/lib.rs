@@ -347,6 +347,35 @@ mod tests {
     }
 
     #[test]
+    fn as_td10__should_return_td15_ex_innermost_base() {
+        // Given
+        let base = sample_td10();
+        let td15_ex = Report::TD15Ex(TDReport15Ex {
+            base: TDReport15 {
+                base: base.clone(),
+                tee_tcb_svn2: [0; 16],
+                mr_service_td: [0; 48],
+            },
+            vmid: 0,
+            td_id: [0; 32],
+            dev_info: [0; 48],
+            init_service_td_hash: [0; 48],
+            init_service_td_attributes: [0; 8],
+            init_cpu_svn: [0; 16],
+            init_tee_tcb_svn: [0; 16],
+            init_tee_fmspc: [0; 12],
+            cur_service_td_hash: [0; 48],
+            cur_service_td_attributes: [0; 8],
+        });
+
+        // When
+        let unwrapped = td15_ex.as_td10();
+
+        // Then
+        assert_eq!(unwrapped, Some(&base));
+    }
+
+    #[test]
     fn as_td10__should_return_td10_itself() {
         // Given
         let td10 = sample_td10();
