@@ -596,20 +596,19 @@ where
     /// Returns the set of participants that are eligible to be leaders for the requests,
     /// the reference height their staleness is measured against, and our own indexer height.
     ///
-    /// The reference height is the height that a majority of alive participants has reached, or
-    /// our own height if that is higher. Peers self-report their heights, and the majority keeps a
-    /// minority of them from raising the reference height so far that every honest participant
-    /// looks stale. Our own height is trusted, so a lagging majority cannot make participants far
-    /// behind us eligible.
+    /// The reference height is the height that a majority of alive participants has reached. Peers
+    /// self-report their heights, and the majority keeps a minority of them from raising the
+    /// reference height so far that every honest participant looks stale. Our own height is only
+    /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
+    /// eligible leaders.
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
         let height_of =
             |participant: &ParticipantId| indexer_heights.get(participant).copied().unwrap_or(0);
         let my_indexer_height = height_of(&self.my_participant_id);
-        let reference_height = majority_height(alive_participants.iter().map(height_of))
-            .unwrap_or(0)
-            .max(my_indexer_height);
+        let reference_height =
+            majority_height(alive_participants.iter().map(height_of)).unwrap_or(0);
         let eligible_leaders = self
             .all_participants
             .iter()
@@ -1366,21 +1365,6 @@ mod tests {
         let eligible = pending_requests.eligible_leaders_and_heights();
         assert_eq!(eligible.reference_height, 120);
         assert_eq!(eligible.eligible_leaders, peers.copied().collect());
-    }
-
-    #[test]
-    fn eligible_leaders_and_heights__should_not_measure_staleness_below_our_own_height() {
-        // Given
-        let (pending_requests, setup) = TestSetup::new();
-        let me = setup.participant_ids[TestSetup::MY_INDEX];
-        setup.network_api.set_height(me, 120);
-
-        // When
-        let eligible = pending_requests.eligible_leaders_and_heights();
-
-        // Then
-        assert_eq!(eligible.reference_height, 120);
-        assert_eq!(eligible.eligible_leaders, HashSet::from([me]));
     }
 
     #[rstest]
