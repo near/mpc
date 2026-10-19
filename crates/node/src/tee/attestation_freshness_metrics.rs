@@ -5,7 +5,7 @@
 //! alert still fires on a frozen gauge. At rest both advance hourly, as both are read from the
 //! entry stored on chain.
 
-use near_mpc_contract_interface::types::{GetAttestationResponse, VerifiedAttestation};
+use near_mpc_contract_interface::types::{StoredAttestation, VerifiedAttestation};
 
 use crate::metrics::{
     MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS, MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS,
@@ -14,13 +14,12 @@ use crate::metrics::{
 const NO_ATTESTATION_STORED: i64 = 0;
 const NO_EXPIRY: i64 = -1;
 
-pub(crate) fn record_stored_attestation(stored: Option<&GetAttestationResponse>) {
-    MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.set(expiry_gauge_value(
-        stored.map(GetAttestationResponse::attestation),
-    ));
-    if let Some(landed_at) = stored.and_then(GetAttestationResponse::accepted_at_seconds) {
+pub(crate) fn record_stored_attestation(stored: Option<&StoredAttestation>) {
+    MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS
+        .set(expiry_gauge_value(stored.map(|stored| &stored.attestation)));
+    if let Some(stored) = stored {
         MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS
-            .set(i64::try_from(landed_at).unwrap_or(i64::MAX));
+            .set(i64::try_from(stored.accepted_at_seconds).unwrap_or(i64::MAX));
     }
 }
 
@@ -36,7 +35,7 @@ fn expiry_gauge_value(stored: Option<&VerifiedAttestation>) -> i64 {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use near_mpc_contract_interface::types::{MockAttestation, StoredAttestation};
+    use near_mpc_contract_interface::types::MockAttestation;
     use rstest::rstest;
 
     const EXPIRES_AT: u64 = 1_754_000_000;
@@ -51,20 +50,16 @@ mod tests {
         })
     }
 
-    fn current(accepted_at_seconds: Option<u64>) -> GetAttestationResponse {
-        GetAttestationResponse::Current(StoredAttestation {
-            attestation: mock_with_expiry(Some(EXPIRES_AT)),
-            accepted_at_seconds,
-        })
-    }
-
     #[test]
-    fn record_stored_attestation__should_keep_the_last_acceptance_time_for_an_unstamped_entry() {
+    fn record_stored_attestation__should_set_both_gauges_from_the_stored_entry() {
         // Given
-        record_stored_attestation(Some(&current(Some(LANDED_AT))));
+        let stored = StoredAttestation {
+            attestation: mock_with_expiry(Some(EXPIRES_AT)),
+            accepted_at_seconds: LANDED_AT,
+        };
 
         // When
-        record_stored_attestation(Some(&current(None)));
+        record_stored_attestation(Some(&stored));
 
         // Then
         assert_eq!(

@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation::VerifiedAttestation;
 use near_mpc_contract_interface::types::{
     self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
@@ -31,7 +32,7 @@ use crate::{
     tee::{
         measurements::AllowedMeasurements,
         proposal::{AllowedLauncherImages, StoredDockerImageHashes},
-        tee_state::{NodeAttestation, TeeState},
+        tee_state::{NodeAttestation, NodeId, TeeState},
         verifier_votes::TeeVerifierVotes,
     },
     update::ContractUpdateVotes,
@@ -55,31 +56,70 @@ struct OldTeeState {
     allowed_launcher_images: AllowedLauncherImages,
     votes: Votes<AuthenticatedAccountId>,
     launcher_votes: OldLauncherHashVotes,
-    stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
     allowed_measurements: AllowedMeasurements,
     measurement_votes: OldMeasurementVotes,
 }
 
-impl From<OldTeeState> for TeeState {
-    fn from(old: OldTeeState) -> Self {
+impl OldTeeState {
+    fn migrate(self) -> (TeeState, Vec<AccountId>) {
+        let (stored_attestations, unstamped_entry_owners) =
+            migrate_stored_attestations(self.stored_attestations);
         // Pending votes are dropped rather than migrated; participants re-vote after the
         // upgrade.
-        TeeState {
-            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
-            allowed_launcher_images: old.allowed_launcher_images,
-            votes: old.votes,
+        let tee_state = TeeState {
+            allowed_docker_image_hashes: self.allowed_docker_image_hashes,
+            allowed_launcher_images: self.allowed_launcher_images,
+            votes: self.votes,
             launcher_votes: Votes::new(
                 StorageKey::LauncherHashVotesByVoter,
                 StorageKey::LauncherHashVotesByProposal,
             ),
-            stored_attestations: old.stored_attestations,
-            allowed_measurements: old.allowed_measurements,
+            stored_attestations,
+            allowed_measurements: self.allowed_measurements,
             measurement_votes: Votes::new(
                 StorageKey::MeasurementVotesByVoter,
                 StorageKey::MeasurementVotesByProposal,
             ),
+        };
+        (tee_state, unstamped_entry_owners)
+    }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldNodeAttestation {
+    node_id: NodeId,
+    verified_attestation: VerifiedAttestation,
+    accepted_at_seconds: Option<u64>,
+}
+
+fn migrate_stored_attestations(
+    mut old: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
+) -> (
+    IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    Vec<AccountId>,
+) {
+    let entries: Vec<_> = old.drain().collect();
+    old.flush();
+
+    let mut migrated = IterableMap::new(StorageKey::StoredAttestations);
+    let mut unstamped_entry_owners = Vec::new();
+    for (tls_public_key, entry) in entries {
+        match entry.accepted_at_seconds {
+            Some(accepted_at_seconds) => {
+                migrated.insert(
+                    tls_public_key,
+                    NodeAttestation {
+                        node_id: entry.node_id,
+                        verified_attestation: entry.verified_attestation,
+                        accepted_at_seconds,
+                    },
+                );
+            }
+            None => unstamped_entry_owners.push(entry.node_id.account_id),
         }
     }
+    (migrated, unstamped_entry_owners)
 }
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
@@ -109,20 +149,68 @@ impl From<MpcContract> for crate::MpcContract {
             "Contract must be in running state when migrating."
         );
 
-        crate::MpcContract {
+        let (tee_state, unstamped_entry_owners) = old.tee_state.migrate();
+        let mut contract = crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             contract_update_votes: old.contract_update_votes,
             config: old.config,
-            tee_state: old.tee_state.into(),
+            tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
+        };
+        for account_id in &unstamped_entry_owners {
+            contract.return_attestation_storage_grant(account_id);
         }
+        contract
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::primitives::test_utils::node_id_for;
+    use mpc_attestation::attestation::MockAttestation;
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
+
+    #[test]
+    fn migrate_stored_attestations__should_evict_entries_without_an_acceptance_time() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let accepted_at = 1_800_000_000;
+        let stamped = node_id_for(&"alice.near".parse().unwrap());
+        let unstamped = node_id_for(&"bob.near".parse().unwrap());
+        let mut old = IterableMap::new(StorageKey::StoredAttestations);
+        for (node_id, accepted_at_seconds) in [(&stamped, Some(accepted_at)), (&unstamped, None)] {
+            old.insert(
+                node_id.tls_public_key.clone(),
+                OldNodeAttestation {
+                    node_id: node_id.clone(),
+                    verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+                    accepted_at_seconds,
+                },
+            );
+        }
+        old.flush();
+
+        // When
+        let (migrated, unstamped_entry_owners) = migrate_stored_attestations(old);
+
+        // Then
+        let migrated: Vec<_> = migrated
+            .values()
+            .map(|entry| (entry.node_id.clone(), entry.accepted_at_seconds))
+            .collect();
+        assert_eq!(
+            (migrated, unstamped_entry_owners),
+            (vec![(stamped, accepted_at)], vec![unstamped.account_id])
+        );
     }
 }

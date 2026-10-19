@@ -5010,15 +5010,13 @@ expression: abi
           "description": "An attestation as the contract stores it.",
           "type": "object",
           "required": [
+            "accepted_at_seconds",
             "attestation"
           ],
           "properties": {
             "accepted_at_seconds": {
-              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it. `None` for an entry stored before the contract recorded it.",
-              "type": [
-                "integer",
-                "null"
-              ],
+              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it.",
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },

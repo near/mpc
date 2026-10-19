@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_mpc_contract_interface::types::{
-    AllowedMpcDockerImageHash, Ed25519PublicKey, GetAttestationResponse,
+    AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation,
 };
 use tokio::sync::watch;
 
@@ -97,7 +97,7 @@ pub async fn monitor_allowed_launcher_compose_hashes(
 }
 
 pub async fn monitor_my_attestation(
-    sender: watch::Sender<Option<GetAttestationResponse>>,
+    sender: watch::Sender<Option<StoredAttestation>>,
     indexer_state: Arc<IndexerState>,
     tls_public_key: Ed25519PublicKey,
 ) {
