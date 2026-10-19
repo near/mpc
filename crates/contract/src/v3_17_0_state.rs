@@ -7,9 +7,11 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{
-    CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+    self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
     AccountId, require,
@@ -20,10 +22,65 @@ use crate::{
     config::Config,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
+    primitives::{
+        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
+        votes::Votes,
+    },
     state::ProtocolContractState,
-    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
+    storage_keys::StorageKey,
+    tee::{
+        measurements::AllowedMeasurements,
+        proposal::{AllowedLauncherImages, StoredDockerImageHashes},
+        tee_state::{NodeAttestation, TeeState},
+        verifier_votes::TeeVerifierVotes,
+    },
     update::ContractUpdateVotes,
 };
+
+/// Shadow of the `3.17.0` `LauncherHashVotes` layout.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldLauncherHashVotes {
+    vote_by_account: BTreeMap<AuthenticatedParticipantId, dtos::LauncherVoteAction>,
+}
+
+/// Shadow of the `3.17.0` `MeasurementVotes` layout.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldMeasurementVotes {
+    vote_by_account: BTreeMap<AuthenticatedParticipantId, dtos::MeasurementVoteAction>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: StoredDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: Votes<AuthenticatedAccountId>,
+    launcher_votes: OldLauncherHashVotes,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: OldMeasurementVotes,
+}
+
+impl From<OldTeeState> for TeeState {
+    fn from(old: OldTeeState) -> Self {
+        // Pending votes are dropped rather than migrated; participants re-vote after the
+        // upgrade.
+        TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: old.allowed_launcher_images,
+            votes: old.votes,
+            launcher_votes: Votes::new(
+                StorageKey::LauncherHashVotesByVoter,
+                StorageKey::LauncherHashVotesByProposal,
+            ),
+            stored_attestations: old.stored_attestations,
+            allowed_measurements: old.allowed_measurements,
+            measurement_votes: Votes::new(
+                StorageKey::MeasurementVotesByVoter,
+                StorageKey::MeasurementVotesByProposal,
+            ),
+        }
+    }
+}
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see earlier `v*_state.rs` modules in git history
@@ -36,7 +93,7 @@ pub struct MpcContract {
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     contract_update_votes: ContractUpdateVotes,
     config: Config,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     foreign_chains: Lazy<ForeignChainsMetadata>,
@@ -59,7 +116,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             contract_update_votes: old.contract_update_votes,
             config: old.config,
-            tee_state: old.tee_state,
+            tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,

@@ -21,18 +21,6 @@ BorshSchemaContainer {
                 "ProposedGovernanceThresholdParameters",
             ],
         },
-        "(AuthenticatedParticipantId, LauncherVoteAction)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "LauncherVoteAction",
-            ],
-        },
-        "(AuthenticatedParticipantId, MeasurementVoteAction)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "MeasurementVoteAction",
-            ],
-        },
         "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -125,16 +113,6 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)",
-        },
-        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, LauncherVoteAction)",
-        },
-        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, MeasurementVoteAction)",
         },
         "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
             length_width: 4,
@@ -555,49 +533,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "LauncherHashVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>",
-                    ),
-                ],
-            ),
-        },
         "LauncherImageHash": Struct {
             fields: UnnamedFields(
                 [
                     "[u8; 32]",
-                ],
-            ),
-        },
-        "LauncherVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "LauncherVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "LauncherVoteAction__Remove",
-                ),
-            ],
-        },
-        "LauncherVoteAction__Add": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
-                ],
-            ),
-        },
-        "LauncherVoteAction__Remove": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
                 ],
             ),
         },
@@ -617,45 +556,6 @@ BorshSchemaContainer {
                     (
                         "prefix",
                         "Vec<u8>",
-                    ),
-                ],
-            ),
-        },
-        "MeasurementVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "MeasurementVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "MeasurementVoteAction__Remove",
-                ),
-            ],
-        },
-        "MeasurementVoteAction__Add": Struct {
-            fields: UnnamedFields(
-                [
-                    "ExpectedMeasurements",
-                ],
-            ),
-        },
-        "MeasurementVoteAction__Remove": Struct {
-            fields: UnnamedFields(
-                [
-                    "ExpectedMeasurements",
-                ],
-            ),
-        },
-        "MeasurementVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>",
                     ),
                 ],
             ),
@@ -1103,7 +1003,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "launcher_votes",
-                        "LauncherHashVotes",
+                        "Votes<AuthenticatedAccountId>",
                     ),
                     (
                         "stored_attestations",
@@ -1115,7 +1015,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "measurement_votes",
-                        "MeasurementVotes",
+                        "Votes<AuthenticatedAccountId>",
                     ),
                 ],
             ),

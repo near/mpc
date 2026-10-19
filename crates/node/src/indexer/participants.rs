@@ -603,7 +603,7 @@ mod tests {
                 account_id.parse().unwrap(),
                 ParticipantId(i as u32),
                 ParticipantInfo {
-                    url,
+                    url: url.try_into().unwrap(),
                     tls_public_key: pk.parse().unwrap(),
                 },
             ));
@@ -682,7 +682,7 @@ mod tests {
         // Given
         let mut entries = create_chain_participant_infos().participants;
         let original_count = entries.len();
-        entries[0].2.url = "http://:3000".to_string();
+        entries[0].2.url = "http://:3000".try_into().unwrap();
         let account = entries[0].0.clone();
         let params = GovernanceThresholdParameters {
             participants: Participants {
@@ -711,7 +711,7 @@ mod tests {
     fn convert_participant_infos__should_apply_port_override_to_unreachable_participant() {
         // Given
         let mut entries = create_chain_participant_infos().participants;
-        entries[0].2.url = "http://:3000".to_string();
+        entries[0].2.url = "http://:3000".try_into().unwrap();
         let account = entries[0].0.clone();
         let params = GovernanceThresholdParameters {
             participants: Participants {
