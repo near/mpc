@@ -16,8 +16,8 @@ jobs:
     runs-on: warp-ubuntu-2604-x64-2x
     environment: production
     permissions:
-      contents: write
-      actions: read
+      contents: write # creates the draft release
+      actions: read # downloads the contract from the build run
 
     steps:
       - name: Checkout

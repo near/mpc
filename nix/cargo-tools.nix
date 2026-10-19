@@ -14,6 +14,7 @@ let
       cargoHash,
       postPatch ? null,
       buildFeatures ? null,
+      cargoBuildFlags ? null,
     }:
     rustPlatform.buildRustPackage (
       {
@@ -24,11 +25,8 @@ let
         inherit cargoHash;
         doCheck = false;
       }
-      // lib.optionalAttrs (postPatch != null) {
-        inherit postPatch;
-      }
-      // lib.optionalAttrs (buildFeatures != null) {
-        inherit buildFeatures;
+      // lib.filterAttrs (_: value: value != null) {
+        inherit postPatch buildFeatures cargoBuildFlags;
       }
     );
 in
@@ -72,9 +70,11 @@ in
 
   (buildTool {
     pname = "zizmor";
-    version = "1.25.2";
-    hash = "sha256-7QdSHT/CRPFRnjpQ/QypX4s451kpz5sv8IAqfs8+bQM=";
-    cargoHash = "sha256-DW0a7Qr8q3fD9ZkSbf9R4KBhPOVEVPTqYwQ9sF4Btiw=";
+    version = "1.30.1";
+    hash = "sha256-P/5ISQ5IPpEILq+egE1XRgwyEzPis3930439aOhrFtU=";
+    cargoHash = "sha256-SX8Q/iAWn4w5ebNoz6r8rf3zw6Smwv43Oat+tiVvgaY=";
+    # Some of its crates declare a rust-version newer than nixpkgs' rustc, which still builds them
+    cargoBuildFlags = [ "--ignore-rust-version" ];
   })
 
   (buildTool {

@@ -22,6 +22,8 @@ on:
   schedule:
     - cron: "5 0 * * 0"
 
+permissions: {}
+
 jobs:
   # Downstream gates use `if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}`.
   # `!cancelled()` overrides GitHub's implicit `success()` on `needs`, so a
@@ -34,8 +36,8 @@ jobs:
     name: "Detect non-docs changes"
     permissions:
       contents: read
-      pull-requests: read
-    uses: ./.github/workflows/changes.yml
+      pull-requests: read # the called workflow lists the files the pull request changes
+    uses: $/.github/workflows/changes.yml
 
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
@@ -62,7 +64,7 @@ jobs:
           sudo apt-get install -y repro-env
 
       - name: Cache repro-env packages
-        uses: ./.github/actions/cache-repro-env-pkgs
+        uses: $/.github/actions/cache-repro-env-pkgs
         with:
           save: ${{ github.ref == 'refs/heads/main' }}
 
@@ -101,7 +103,7 @@ jobs:
           sudo apt-get install -y liblzma-dev repro-env
 
       - name: Cache repro-env packages
-        uses: ./.github/actions/cache-repro-env-pkgs
+        uses: $/.github/actions/cache-repro-env-pkgs
 
       - name: Build Rust launcher docker image
         shell: bash
@@ -148,7 +150,7 @@ jobs:
 
       - name: Install Nix
         if: needs.changes.outputs.code_changed != 'false'
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
         with:
           project-cache: true
 
@@ -164,7 +166,9 @@ jobs:
 
       - name: Run cargo-nextest
         if: needs.changes.outputs.code_changed != 'false'
-        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
+        env:
+          NEXTEST_ARGS: ${{ matrix.nextest-args }}
+        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked $NEXTEST_ARGS
 
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
@@ -182,7 +186,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
         with:
           project-cache: true
 
@@ -213,7 +217,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
         with:
           project-cache: true
 
@@ -249,7 +253,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
         with:
           project-cache: true
 
@@ -262,7 +266,7 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     permissions:
       contents: read
-    uses: ./.github/workflows/nix-build-mpc-node.yml
+    uses: $/.github/workflows/nix-build-mpc-node.yml
 
   fast-ci-checks:
     name: "Fast CI checks"
@@ -276,7 +280,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
         with:
           project-cache: true
 
@@ -307,7 +311,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
         with:
           project-cache: true
 
@@ -361,7 +365,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
         with:
           project-cache: true
 
@@ -374,7 +378,7 @@ jobs:
     runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # lists the issues the pull request closes
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

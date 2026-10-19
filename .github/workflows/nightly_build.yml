@@ -1,5 +1,8 @@
 name: Build MPC with nearcore branch
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -12,8 +15,11 @@ on:
   schedule:
     - cron: '0 1 * * *' # Nightly at 1:00 UTC (every day)
 
+permissions: {}
+
 jobs:
   build-mpc:
+    name: "Build mpc-node"
     runs-on: warp-ubuntu-2604-x64-8x
     environment: production
     permissions:
