@@ -778,11 +778,12 @@ mod tests {
         BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV,
         CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, Curve,
         DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GovernanceThreshold,
-        GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint, K256Scalar,
-        K256Signature, KeyEventId, Keyset, LauncherImageHash, MockAttestation, ParticipantId,
-        ParticipantInfo, Participants, Payload, ProposedGovernanceThresholdParameters, Protocol,
-        ProviderConfig, ProviderId, PublicKey, ReconstructionThreshold, SignRequestArgs,
+        ExpectedMeasurements, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
+        K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
+        MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
+        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
+        ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
         SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
         VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
         VerifyForeignTransactionResponse,
@@ -1039,6 +1040,16 @@ mod tests {
         handle.vote_cancel_resharing().await.unwrap();
         handle
             .vote_add_launcher_hash(LauncherImageHash::from([7u8; 32]))
+            .await
+            .unwrap();
+        handle
+            .vote_add_os_measurement(ExpectedMeasurements {
+                mrtd: MrtdHash::from([7u8; 48]),
+                rtmr0: Rtmr0Hash::from([7u8; 48]),
+                rtmr1: Rtmr1Hash::from([7u8; 48]),
+                rtmr2: Rtmr2Hash::from([7u8; 48]),
+                key_provider_event_digest: KeyProviderEventDigest::from([7u8; 48]),
+            })
             .await
             .unwrap();
         handle
