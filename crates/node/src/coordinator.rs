@@ -4,6 +4,7 @@ use crate::db::SecretDB;
 use crate::foreign_chain_policy::{
     SupportersByForeignChain, foreign_tx_required_active_signers, spawn_supporters_by_foreign_chain,
 };
+use crate::foreign_chain_rpc_policy::{RpcQuorumsByChain, spawn_rpc_quorums_resolver};
 use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
@@ -111,6 +112,10 @@ where
     TransactionSender: tx_sender::TransactionSender + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
+        let (rpc_quorums_receiver, _rpc_quorums_resolver_task) = spawn_rpc_quorums_resolver(
+            self.indexer.foreign_chain_rpc_whitelist_receiver.clone(),
+            self.config_file.foreign_chains.clone(),
+        );
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             if let Some(epoch_id) = current_epoch_id(&state) {
@@ -180,6 +185,7 @@ where
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer.foreign_chain_supporters_receiver.clone(),
+                                rpc_quorums_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -378,6 +384,7 @@ where
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+        rpc_quorums_receiver: watch::Receiver<RpcQuorumsByChain>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -730,6 +737,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     supporters_by_foreign_chain,
+                    rpc_quorums_receiver,
                     foreign_tx_required_active_signers,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),

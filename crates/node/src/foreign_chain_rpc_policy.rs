@@ -1,12 +1,14 @@
-//! Log-only check that the node's local foreign-chain RPC config matches the
-//! on-chain whitelist (`allowed_foreign_chain_providers`).
+//! Resolves the on-chain RPC whitelist (`allowed_foreign_chain_providers`) against the node's
+//! local foreign-chain config into the per-chain [`RpcQuorum`] verification enforces.
 //!
-//! On a fresh deployment with an unvoted whitelist, the verifier emits one
-//! [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist) info per configured chain — expected during rollout,
-//! clears once the whitelist is populated and the watch channel updates.
+//! On a fresh deployment with an unvoted whitelist, every configured chain reports
+//! [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist) at info and no chain is eligible.
+//! That clears once the whitelist is populated and the watch channel updates.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 
+use foreign_chain_inspector::RpcQuorum;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
     foreign_chains::RpcProviderName,
@@ -16,35 +18,159 @@ use near_mpc_contract_interface::types::{
 };
 use tokio::sync::watch;
 
-/// Subscribes to the contract's `allowed_foreign_chain_providers` whitelist (published by
-/// `monitor_allowed_foreign_chain_providers` in [`crate::indexer::tee`]) and logs any divergence
-/// from the local config. Processes the current value immediately, then reacts to each change.
-///
-/// `run` owns no I/O: the polling and retry live in the monitor adapter, so when the chain gateway
-/// exposes a native subscription only the adapter changes, and `run` can be driven from an
-/// in-memory [`watch::channel`] in tests.
-pub(crate) async fn run(
-    mut whitelist_rx: watch::Receiver<BTreeMap<dtos::ForeignChain, ChainEntry>>,
+use crate::indexer::foreign_chain::ForeignChainRpcWhitelist;
+use crate::metrics;
+use crate::tracking::{self, AutoAbortTask};
+
+/// The chains this node may verify, each with the quorum its whitelisted providers must reach.
+pub(crate) type RpcQuorumsByChain = BTreeMap<dtos::ForeignChain, RpcQuorum>;
+
+/// Resolves the whitelist against `local` now and again on every change, logging the
+/// diagnostics of each resolution. Must be called from a tracked task; dropping the returned
+/// [`AutoAbortTask`] stops the resolver.
+pub(crate) fn spawn_rpc_quorums_resolver(
+    mut whitelist_rx: watch::Receiver<ForeignChainRpcWhitelist>,
     local: ForeignChainsConfig,
-) {
-    loop {
-        let diagnostics = {
-            let whitelist = whitelist_rx.borrow_and_update();
-            compare(&local, &whitelist)
-        };
-        if diagnostics.is_empty() {
-            tracing::info!(
-                "foreign-chain whitelist verifier: local config matches contract whitelist"
-            );
-        } else {
-            for d in &diagnostics {
-                log_diagnostic(d);
+) -> (watch::Receiver<RpcQuorumsByChain>, AutoAbortTask<()>) {
+    let initial = resolve_and_report(&local, &whitelist_rx.borrow_and_update());
+    let (sender, receiver) = watch::channel(initial);
+
+    let task = tracking::spawn("foreign-chain RPC quorums resolver", async move {
+        loop {
+            tokio::select! {
+                changed = whitelist_rx.changed() => {
+                    if changed.is_err() {
+                        tracing::info!("whitelist sender dropped, stopping foreign-chain RPC quorums resolver");
+                        break;
+                    }
+                }
+                _ = sender.closed() => {
+                    tracing::debug!("all receivers dropped, stopping foreign-chain RPC quorums resolver");
+                    break;
+                }
             }
+            let quorums = resolve_and_report(&local, &whitelist_rx.borrow_and_update());
+            sender.send_if_modified(|existing| {
+                if *existing != quorums {
+                    *existing = quorums;
+                    true
+                } else {
+                    false
+                }
+            });
         }
-        if whitelist_rx.changed().await.is_err() {
-            // Sender dropped: the indexer is shutting down, nothing left to verify against.
-            break;
+    });
+    (receiver, task)
+}
+
+fn resolve_and_report(
+    local: &ForeignChainsConfig,
+    whitelist: &ForeignChainRpcWhitelist,
+) -> RpcQuorumsByChain {
+    let resolution = resolve_rpc_quorums(local, whitelist);
+    if resolution.diagnostics.is_empty() {
+        tracing::info!("foreign-chain RPC policy: local config matches contract whitelist");
+    }
+    for diagnostic in &resolution.diagnostics {
+        log_diagnostic(diagnostic);
+    }
+    let eligible = resolution.eligible();
+    for (chain, quorum) in &eligible {
+        tracing::info!(
+            ?chain,
+            required = quorum.required,
+            whitelisted = ?quorum.whitelisted,
+            "foreign chain is eligible for verification"
+        );
+    }
+    publish_metrics(local, &resolution.quorums);
+    eligible
+}
+
+/// Gauges cover every locally configured chain, so a chain that drops out of the whitelist
+/// reads as zero instead of keeping its last value.
+fn publish_metrics(local: &ForeignChainsConfig, quorums: &BTreeMap<dtos::ForeignChain, RpcQuorum>) {
+    for (chain, _) in local.iter_chains() {
+        let (required, whitelisted) = quorums.get(&chain).map_or((0, 0), |quorum| {
+            (quorum.required.get(), quorum.whitelisted.len())
+        });
+        metrics::FOREIGN_CHAIN_RPC_QUORUM_REQUIRED
+            .with_label_values(&[chain.label()])
+            .set(i64::try_from(required).unwrap_or(i64::MAX));
+        metrics::FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED
+            .with_label_values(&[chain.label()])
+            .set(i64::try_from(whitelisted).unwrap_or(i64::MAX));
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Resolution {
+    /// Every locally configured chain the whitelist covers, reachable quorum or not.
+    quorums: BTreeMap<dtos::ForeignChain, RpcQuorum>,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl Resolution {
+    fn eligible(&self) -> RpcQuorumsByChain {
+        self.quorums
+            .iter()
+            .filter(|(_, quorum)| quorum.is_reachable())
+            .map(|(chain, quorum)| (*chain, quorum.clone()))
+            .collect()
+    }
+}
+
+fn resolve_rpc_quorums(
+    local: &ForeignChainsConfig,
+    whitelist: &ForeignChainRpcWhitelist,
+) -> Resolution {
+    let mut quorums = BTreeMap::new();
+    let mut diagnostics = Vec::new();
+
+    for (chain, local_cfg) in local.iter_chains() {
+        let Some(whitelist_entry) = whitelist.get(&chain) else {
+            diagnostics.push(Diagnostic {
+                chain,
+                provider: None,
+                kind: DiagnosticKind::ChainNotInWhitelist,
+            });
+            continue;
+        };
+        let Some(required) = usize::try_from(whitelist_entry.quorum)
+            .ok()
+            .and_then(NonZeroUsize::new)
+        else {
+            diagnostics.push(Diagnostic {
+                chain,
+                provider: None,
+                kind: DiagnosticKind::UnusableQuorum {
+                    quorum: whitelist_entry.quorum,
+                },
+            });
+            continue;
+        };
+        let whitelisted =
+            whitelisted_providers(chain, local_cfg, whitelist_entry, &mut diagnostics);
+        let quorum = RpcQuorum {
+            required,
+            whitelisted,
+        };
+        if !quorum.is_reachable() {
+            diagnostics.push(Diagnostic {
+                chain,
+                provider: None,
+                kind: DiagnosticKind::BelowQuorum {
+                    whitelisted: quorum.whitelisted.len(),
+                    required,
+                },
+            });
         }
+        quorums.insert(chain, quorum);
+    }
+
+    Resolution {
+        quorums,
+        diagnostics,
     }
 }
 
@@ -58,6 +184,15 @@ struct Diagnostic {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DiagnosticKind {
     ChainNotInWhitelist,
+    /// The contract never stores a zero quorum, nor one beyond this target's address space.
+    UnusableQuorum {
+        quorum: u64,
+    },
+    /// Fewer local providers match the whitelist than the voted quorum needs.
+    BelowQuorum {
+        whitelisted: usize,
+        required: NonZeroUsize,
+    },
     ProviderNotInWhitelist,
     BaseUrlMismatch {
         local_rpc_url: String,
@@ -97,33 +232,14 @@ fn is_informational(kind: &DiagnosticKind) -> bool {
     matches!(kind, DiagnosticKind::ChainNotInWhitelist)
 }
 
-fn compare(
-    local: &ForeignChainsConfig,
-    whitelist: &BTreeMap<dtos::ForeignChain, ChainEntry>,
-) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
-
-    for (chain, local_cfg) in local.iter_chains() {
-        let Some(whitelist_entry) = whitelist.get(&chain) else {
-            diagnostics.push(Diagnostic {
-                chain,
-                provider: None,
-                kind: DiagnosticKind::ChainNotInWhitelist,
-            });
-            continue;
-        };
-        compare_chain(chain, local_cfg, whitelist_entry, &mut diagnostics);
-    }
-
-    diagnostics
-}
-
-fn compare_chain(
+/// The local providers that match their whitelist entry; every mismatch is reported in `out`.
+fn whitelisted_providers(
     chain: dtos::ForeignChain,
     local: &ForeignChainConfig,
     whitelist: &ChainEntry,
     out: &mut Vec<Diagnostic>,
-) {
+) -> BTreeSet<ProviderId> {
+    let mut whitelisted = BTreeSet::new();
     for (local_name, local_provider) in local.providers.iter() {
         let contract_id = ProviderId(local_name.as_str().to_string());
         let Some(contract_provider) = whitelist.providers.get(&contract_id) else {
@@ -134,8 +250,13 @@ fn compare_chain(
             });
             continue;
         };
-        compare_provider(chain, local_name, local_provider, contract_provider, out);
+        let mismatches = compare_provider(chain, local_name, local_provider, contract_provider);
+        if mismatches.is_empty() {
+            whitelisted.insert(contract_id);
+        }
+        out.extend(mismatches);
     }
+    whitelisted
 }
 
 fn compare_provider(
@@ -143,8 +264,8 @@ fn compare_provider(
     name: &RpcProviderName,
     local: &ForeignChainProviderConfig,
     contract: &ProviderConfig,
-    out: &mut Vec<Diagnostic>,
-) {
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
     let local_url = local.rpc_url.as_str();
     if !base_url_matches(local_url, &contract.base_url) {
         out.push(Diagnostic {
@@ -181,7 +302,8 @@ fn compare_provider(
         }
     }
 
-    compare_auth(chain, name, &local.auth, &contract.auth_scheme, out);
+    compare_auth(chain, name, &local.auth, &contract.auth_scheme, &mut out);
+    out
 }
 
 /// Path-boundary-aware prefix check. `https://api.example.com/v2` matches `/v2`,
@@ -218,33 +340,30 @@ fn starts_with_at_boundary(s: &str, prefix: &str) -> bool {
         .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#'))
 }
 
+#[derive(Debug)]
 enum RoutingCheck {
     Ok,
     Mismatch,
     Unknown,
 }
 
-/// Substring-based (not a strict parse): `?xnetwork=ethereum` will satisfy
-/// `QueryParam { name: "network", value: "ethereum" }`. Acceptable for advisory
-/// diagnostics; tighten with [`Url::parse`](url::Url::parse) if this ever drives enforcement.
 fn chain_routing_satisfied(local_url: &str, routing: &ChainRouting) -> RoutingCheck {
-    match routing {
-        ChainRouting::Embedded => RoutingCheck::Ok,
-        ChainRouting::PathSegment { segment } => {
-            if local_url.contains(&format!("/{segment}")) {
-                RoutingCheck::Ok
-            } else {
-                RoutingCheck::Mismatch
-            }
-        }
-        ChainRouting::QueryParam { name, value } => {
-            if local_url.contains(&format!("{name}={value}")) {
-                RoutingCheck::Ok
-            } else {
-                RoutingCheck::Mismatch
-            }
-        }
-        _ => RoutingCheck::Unknown,
+    let found = match routing {
+        ChainRouting::Embedded => return RoutingCheck::Ok,
+        ChainRouting::PathSegment { segment } => url::Url::parse(local_url).is_ok_and(|url| {
+            url.path_segments()
+                .is_some_and(|mut segments| segments.any(|found| found == segment))
+        }),
+        ChainRouting::QueryParam { name, value } => url::Url::parse(local_url).is_ok_and(|url| {
+            url.query_pairs()
+                .any(|(found_name, found_value)| found_name == *name && found_value == *value)
+        }),
+        _ => return RoutingCheck::Unknown,
+    };
+    if found {
+        RoutingCheck::Ok
+    } else {
+        RoutingCheck::Mismatch
     }
 }
 
@@ -370,10 +489,10 @@ fn log_diagnostic(d: &Diagnostic) {
             tracing::error!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist contains a variant this node binary doesn't recognize; upgrade the node");
         }
         kind if is_informational(kind) => {
-            tracing::info!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist verifier");
+            tracing::info!(?chain, provider, kind = ?d.kind, "foreign-chain RPC policy");
         }
         _ => {
-            tracing::warn!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist mismatch");
+            tracing::warn!(?chain, provider, kind = ?d.kind, "foreign-chain RPC policy: whitelist mismatch");
         }
     }
 }
@@ -431,8 +550,20 @@ mod tests {
         }
     }
 
+    /// The per-provider diagnostics, without the per-chain quorum verdict they imply.
+    fn provider_mismatches(
+        local: &ForeignChainsConfig,
+        whitelist: &BTreeMap<dtos::ForeignChain, ChainEntry>,
+    ) -> Vec<Diagnostic> {
+        resolve_rpc_quorums(local, whitelist)
+            .diagnostics
+            .into_iter()
+            .filter(|diagnostic| !matches!(diagnostic.kind, DiagnosticKind::BelowQuorum { .. }))
+            .collect()
+    }
+
     #[test]
-    fn compare__should_be_empty_when_local_and_whitelist_match() {
+    fn resolve_rpc_quorums__should_be_empty_when_local_and_whitelist_match() {
         // Given
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -462,14 +593,14 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
     }
 
     #[test]
-    fn compare__should_emit_chain_not_in_whitelist_when_chain_missing_from_contract() {
+    fn resolve_rpc_quorums__should_emit_chain_not_in_whitelist_when_chain_missing_from_contract() {
         // Given: local configures Ethereum, contract has no whitelist entry yet.
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -481,7 +612,7 @@ mod tests {
         let whitelist = BTreeMap::new();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -490,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_provider_not_in_whitelist_when_local_has_extra_provider() {
+    fn resolve_rpc_quorums__should_emit_provider_not_in_whitelist_when_local_has_extra_provider() {
         // Given: contract has alchemy, local has alchemy + ankr.
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[
@@ -523,7 +654,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -535,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_base_url_mismatch_when_local_rpc_url_has_wrong_prefix() {
+    fn resolve_rpc_quorums__should_emit_base_url_mismatch_when_local_rpc_url_has_wrong_prefix() {
         // Given: contract says base_url is alchemy.com, local points at infura.io.
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -562,7 +693,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -570,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_chain_routing_mismatch_when_path_segment_missing() {
+    fn resolve_rpc_quorums__should_emit_chain_routing_mismatch_when_path_segment_missing() {
         // Given: contract says PathSegment "eth", local rpc_url doesn't contain it.
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -599,7 +730,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -607,7 +738,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_chain_routing_mismatch_when_query_param_missing() {
+    fn resolve_rpc_quorums__should_emit_chain_routing_mismatch_when_query_param_missing() {
         // Given: contract says QueryParam{name: "network", value: "ethereum"}, local rpc_url
         // doesn't carry it.
         let local = ForeignChainsConfig {
@@ -638,7 +769,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -646,7 +777,8 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_auth_variant_mismatch_when_local_uses_none_and_contract_uses_header() {
+    fn resolve_rpc_quorums__should_emit_auth_variant_mismatch_when_local_uses_none_and_contract_uses_header()
+     {
         // Given
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -676,7 +808,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -690,7 +822,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_auth_name_mismatch_when_query_param_names_differ() {
+    fn resolve_rpc_quorums__should_emit_auth_name_mismatch_when_query_param_names_differ() {
         // Given
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -727,7 +859,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -789,13 +921,13 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_header_scheme_mismatch_when_schemes_differ() {
+    fn resolve_rpc_quorums__should_emit_header_scheme_mismatch_when_schemes_differ() {
         // Given: same Header name, different scheme tag.
         let local = local_header_eth("authorization", Some("Bearer"));
         let whitelist = contract_header_eth("authorization", Some("Basic"));
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -807,13 +939,13 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_header_scheme_mismatch_when_one_side_is_none() {
+    fn resolve_rpc_quorums__should_emit_header_scheme_mismatch_when_one_side_is_none() {
         // Given: local omits the scheme tag, contract requires one.
         let local = local_header_eth("authorization", None);
         let whitelist = contract_header_eth("authorization", Some("Bearer"));
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -825,13 +957,13 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_both_header_name_and_scheme_mismatch_when_both_differ() {
+    fn resolve_rpc_quorums__should_emit_both_header_name_and_scheme_mismatch_when_both_differ() {
         // Given: header name AND scheme both differ.
         let local = local_header_eth("authorization", Some("Bearer"));
         let whitelist = contract_header_eth("x-api-key", Some("Basic"));
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then: two independent diagnostics for the same provider.
         assert_eq!(diags.len(), 2);
@@ -849,39 +981,39 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_accept_matching_header_name_and_scheme() {
+    fn resolve_rpc_quorums__should_accept_matching_header_name_and_scheme() {
         // Given: header name AND scheme both match.
         let local = local_header_eth("authorization", Some("Bearer"));
         let whitelist = contract_header_eth("authorization", Some("Bearer"));
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
     }
 
     #[test]
-    fn compare__should_accept_header_names_differing_only_in_case() {
+    fn resolve_rpc_quorums__should_accept_header_names_differing_only_in_case() {
         // Given: the same header, voted in capitalised and configured lowercase.
         let local = local_header_eth("authorization", Some("Bearer"));
         let whitelist = contract_header_eth("Authorization", Some("Bearer"));
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
     }
 
     #[test]
-    fn compare__should_emit_header_name_mismatch_when_names_differ_beyond_case() {
+    fn resolve_rpc_quorums__should_emit_header_name_mismatch_when_names_differ_beyond_case() {
         // Given
         let local = local_header_eth("authorization", Some("Bearer"));
         let whitelist = contract_header_eth("X-Api-Key", Some("Bearer"));
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -895,7 +1027,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_path_placeholder_mismatch_when_placeholders_differ() {
+    fn resolve_rpc_quorums__should_emit_path_placeholder_mismatch_when_placeholders_differ() {
         // Given: local Path placeholder is "{KEY}", contract Path placeholder is "{TOKEN}".
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -932,7 +1064,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert_eq!(diags.len(), 1);
@@ -946,7 +1078,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_accept_matching_path_placeholders() {
+    fn resolve_rpc_quorums__should_accept_matching_path_placeholders() {
         // Given: both local and contract use the placeholder "{KEY}".
         let local = ForeignChainsConfig {
             ethereum: Some(local_chain(&[(
@@ -983,16 +1115,16 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
     }
 
     #[test]
-    fn compare__should_be_silent_when_whitelist_has_chain_not_configured_locally() {
+    fn resolve_rpc_quorums__should_be_silent_when_whitelist_has_chain_not_configured_locally() {
         // Given: local has no chains; whitelist has Ethereum with one provider.
-        // The verifier doesn't warn when the whitelist is a superset — operators
+        // The resolver doesn't warn when the whitelist is a superset — operators
         // intentionally run on subsets.
         let local = ForeignChainsConfig::default();
         let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
@@ -1013,7 +1145,7 @@ mod tests {
         .collect();
 
         // When
-        let diags = compare(&local, &whitelist);
+        let diags = provider_mismatches(&local, &whitelist);
 
         // Then
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
@@ -1113,5 +1245,216 @@ mod tests {
             "https://acme7.abstract-testnet.quiknode.pro@evil.com/",
             WILDCARD
         ));
+    }
+
+    fn matching_eth_provider(name: &str) -> (ForeignChainProviderConfig, ProviderConfig) {
+        let base_url = format!("https://{name}.example.com/v2/");
+        (
+            local_provider(&base_url, AuthConfig::None),
+            contract_provider(&base_url, ChainRouting::Embedded, AuthScheme::None),
+        )
+    }
+
+    /// Ethereum with `names` configured locally and whitelisted with `quorum`.
+    fn eth_resolution(
+        names: &[&str],
+        quorum: u64,
+    ) -> (
+        ForeignChainsConfig,
+        BTreeMap<dtos::ForeignChain, ChainEntry>,
+    ) {
+        let providers: Vec<_> = names
+            .iter()
+            .map(|name| (*name, matching_eth_provider(name)))
+            .collect();
+        let local = ForeignChainsConfig {
+            ethereum: Some(local_chain(
+                &providers
+                    .iter()
+                    .map(|(name, (local, _))| (*name, local.clone()))
+                    .collect::<Vec<_>>(),
+            )),
+            ..Default::default()
+        };
+        let whitelist = BTreeMap::from([(
+            dtos::ForeignChain::Ethereum,
+            contract_chain_entry(
+                &providers
+                    .iter()
+                    .map(|(name, (_, contract))| (*name, contract.clone()))
+                    .collect::<Vec<_>>(),
+                quorum,
+            ),
+        )]);
+        (local, whitelist)
+    }
+
+    fn provider_ids(names: &[&str]) -> BTreeSet<ProviderId> {
+        names
+            .iter()
+            .map(|name| ProviderId(name.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn resolve_rpc_quorums__should_make_a_chain_eligible_when_the_quorum_is_reachable() {
+        // Given
+        let (local, whitelist) = eth_resolution(&["alchemy", "quicknode"], 2);
+
+        // When
+        let resolution = resolve_rpc_quorums(&local, &whitelist);
+
+        // Then
+        assert_eq!(
+            resolution.eligible(),
+            BTreeMap::from([(
+                dtos::ForeignChain::Ethereum,
+                RpcQuorum {
+                    required: NonZeroUsize::new(2).unwrap(),
+                    whitelisted: provider_ids(&["alchemy", "quicknode"]),
+                },
+            )])
+        );
+        assert!(resolution.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn resolve_rpc_quorums__should_omit_a_chain_with_fewer_whitelisted_providers_than_the_quorum() {
+        // Given
+        let (local, whitelist) = eth_resolution(&["alchemy"], 2);
+
+        // When
+        let resolution = resolve_rpc_quorums(&local, &whitelist);
+
+        // Then
+        assert!(resolution.eligible().is_empty());
+        assert_eq!(
+            resolution.quorums[&dtos::ForeignChain::Ethereum].whitelisted,
+            provider_ids(&["alchemy"])
+        );
+        assert_eq!(
+            resolution.diagnostics,
+            vec![Diagnostic {
+                chain: dtos::ForeignChain::Ethereum,
+                provider: None,
+                kind: DiagnosticKind::BelowQuorum {
+                    whitelisted: 1,
+                    required: NonZeroUsize::new(2).unwrap(),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn resolve_rpc_quorums__should_not_count_a_mismatching_provider_towards_the_quorum() {
+        // Given: two whitelisted providers, but the local quicknode URL is on another host.
+        let (_, whitelist) = eth_resolution(&["alchemy", "quicknode"], 1);
+        let local = ForeignChainsConfig {
+            ethereum: Some(local_chain(&[
+                ("alchemy", matching_eth_provider("alchemy").0),
+                (
+                    "quicknode",
+                    local_provider("https://elsewhere.example.com/v2/", AuthConfig::None),
+                ),
+            ])),
+            ..Default::default()
+        };
+
+        // When
+        let resolution = resolve_rpc_quorums(&local, &whitelist);
+
+        // Then
+        assert_eq!(
+            resolution.quorums[&dtos::ForeignChain::Ethereum].whitelisted,
+            provider_ids(&["alchemy"])
+        );
+        assert_matches!(
+            resolution.diagnostics.as_slice(),
+            [Diagnostic {
+                kind: DiagnosticKind::BaseUrlMismatch { .. },
+                ..
+            }]
+        );
+    }
+
+    #[test]
+    fn resolve_rpc_quorums__should_skip_a_chain_with_an_unusable_quorum() {
+        // Given
+        let (local, whitelist) = eth_resolution(&["alchemy"], 0);
+
+        // When
+        let resolution = resolve_rpc_quorums(&local, &whitelist);
+
+        // Then
+        assert!(resolution.quorums.is_empty());
+        assert_eq!(
+            resolution.diagnostics,
+            vec![Diagnostic {
+                chain: dtos::ForeignChain::Ethereum,
+                provider: None,
+                kind: DiagnosticKind::UnusableQuorum { quorum: 0 },
+            }]
+        );
+    }
+
+    #[test]
+    fn chain_routing_satisfied__should_match_a_whole_path_segment_only() {
+        // Given
+        let routing = ChainRouting::PathSegment {
+            segment: "eth".to_string(),
+        };
+
+        // When, then
+        assert_matches!(
+            chain_routing_satisfied("https://rpc.ankr.com/eth", &routing),
+            RoutingCheck::Ok
+        );
+        assert_matches!(
+            chain_routing_satisfied("https://rpc.ankr.com/ethereum", &routing),
+            RoutingCheck::Mismatch
+        );
+    }
+
+    #[test]
+    fn chain_routing_satisfied__should_match_a_whole_query_parameter_only() {
+        // Given
+        let routing = ChainRouting::QueryParam {
+            name: "network".to_string(),
+            value: "ethereum".to_string(),
+        };
+
+        // When, then
+        assert_matches!(
+            chain_routing_satisfied("https://lb.drpc.org/ogrpc?network=ethereum", &routing),
+            RoutingCheck::Ok
+        );
+        assert_matches!(
+            chain_routing_satisfied("https://lb.drpc.org/ogrpc?xnetwork=ethereum", &routing),
+            RoutingCheck::Mismatch
+        );
+    }
+
+    const REPUBLISH_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+    #[tokio::test]
+    async fn spawn_rpc_quorums_resolver__should_republish_when_the_whitelist_changes() {
+        let (root, _root_handle) = crate::tracking::start_root_task("test-root", async move {
+            // Given: Ethereum configured locally but not whitelisted yet.
+            let (local, whitelist) = eth_resolution(&["alchemy"], 1);
+            let (whitelist_sender, whitelist_receiver) = watch::channel(BTreeMap::new());
+            let (mut quorums, _task) = spawn_rpc_quorums_resolver(whitelist_receiver, local);
+            assert!(quorums.borrow().is_empty());
+
+            // When
+            whitelist_sender.send(whitelist).unwrap();
+            tokio::time::timeout(REPUBLISH_WAIT, quorums.changed())
+                .await
+                .unwrap()
+                .unwrap();
+
+            // Then
+            assert!(quorums.borrow().contains_key(&dtos::ForeignChain::Ethereum));
+        });
+        root.await;
     }
 }

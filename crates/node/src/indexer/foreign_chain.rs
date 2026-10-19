@@ -12,6 +12,9 @@ const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
 
+/// The contract's per-chain RPC provider whitelist.
+pub type ForeignChainRpcWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
+
 /// Returns once the first supporters snapshot is read, then keeps it updated in
 /// the background. Mirrors `monitor_contract_state`: the receiver always holds a
 /// real value, and a failed refresh keeps the previous one.

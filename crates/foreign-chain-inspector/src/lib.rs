@@ -161,6 +161,13 @@ pub struct RpcQuorum {
     pub whitelisted: BTreeSet<ProviderId>,
 }
 
+impl RpcQuorum {
+    /// Whether enough providers are whitelisted for the quorum to ever be met.
+    pub fn is_reachable(&self) -> bool {
+        self.whitelisted.len() >= self.required.get()
+    }
+}
+
 impl<Inspector> FanOut<Inspector> {
     pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
         Self {
@@ -300,42 +307,6 @@ where
         }
 
         Ok(verdict)
-    }
-}
-
-impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
-where
-    Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
-    Inspector::TransactionId: Clone + Send + 'static,
-    Inspector::Finality: Clone + Send + 'static,
-    Inspector::Extractor: Clone + Send + 'static,
-    Inspector::ExtractedValue: Send + 'static + Clone + PartialEq + Eq + Hash + std::fmt::Debug,
-    Recorder: TimeProviderCall + Clone + 'static,
-{
-    type TransactionId = Inspector::TransactionId;
-    type Finality = Inspector::Finality;
-    type Extractor = Inspector::Extractor;
-    type ExtractedValue = Inspector::ExtractedValue;
-
-    /// Accepts a unanimous verdict from any single provider.
-    // TODO: callers pass the chain's voted `RpcQuorum` to `extract_with_quorum` instead
-    // (near/mpc-private#558).
-    async fn extract(
-        &self,
-        tx_id: Self::TransactionId,
-        finality: Self::Finality,
-        extractors: Vec<Self::Extractor>,
-    ) -> Result<Verdict<Self::ExtractedValue>, ForeignChainInspectionError> {
-        let any_single_provider = RpcQuorum {
-            required: NonZeroUsize::MIN,
-            whitelisted: self
-                .inspectors
-                .iter()
-                .map(|(provider, _)| provider.clone())
-                .collect(),
-        };
-        self.extract_with_quorum(&any_single_provider, tx_id, finality, extractors)
-            .await
     }
 }
 

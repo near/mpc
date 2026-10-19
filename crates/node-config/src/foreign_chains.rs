@@ -241,7 +241,8 @@ impl ForeignChainsConfig {
     }
 }
 
-/// A slug fills exactly one host label, the same span the whitelist verifier matches `{}` against.
+/// A slug fills exactly one host label, the same span the node's whitelist base-URL match
+/// accepts for `{}`.
 fn validate_slug(slug: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
         !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),

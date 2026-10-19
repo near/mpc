@@ -4,6 +4,7 @@ mod sign;
 pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
+use crate::foreign_chain_rpc_policy::RpcQuorumsByChain;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
 use crate::providers::EcdsaSignatureProvider;
@@ -196,6 +197,7 @@ pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
     supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+    rpc_quorums: watch::Receiver<RpcQuorumsByChain>,
     /// [`foreign_tx_required_active_signers`](crate::foreign_chain_policy::foreign_tx_required_active_signers)
     /// of the running domains; `None` when there is no ForeignTx domain.
     foreign_tx_required_active_signers: Option<u64>,
@@ -207,6 +209,7 @@ impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+        rpc_quorums: watch::Receiver<RpcQuorumsByChain>,
         foreign_tx_required_active_signers: Option<u64>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
@@ -216,6 +219,7 @@ impl VerifyForeignTxProvider {
             config,
             inspectors,
             supporters_by_foreign_chain,
+            rpc_quorums,
             foreign_tx_required_active_signers,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
