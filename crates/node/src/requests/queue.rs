@@ -601,9 +601,6 @@ where
     /// minority of them from raising the reference height so far that every honest participant
     /// looks stale.
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
-        // Collect the indexer heights and alive participants. Calculate the reference height
-        // from the alive nodes and our own height. Then, filter out the participants that are not
-        // alive or are too stale.
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
         let height_of =
@@ -1260,7 +1257,6 @@ mod tests {
     #[expect(non_snake_case)]
     fn test_pending_requests__should_fallback_leader() {
         // Given
-        // a request queue
         let (mut pending_requests, mut setup) = TestSetup::new();
 
         // Indexer 0 is offline; indexer 2 is stale.
