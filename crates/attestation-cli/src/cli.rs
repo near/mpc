@@ -9,10 +9,8 @@ use crate::tcb_status::EvaluationDataSet;
 
 static VERSION: LazyLock<String> = LazyLock::new(|| {
     format!(
-        "{}\n(release {}) (build_time {}) (commit {}) ({})",
+        "{} (commit {}) ({})",
         built_info::PKG_VERSION,
-        built_info::PKG_VERSION,
-        built_info::BUILT_TIME_UTC,
         built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
         built_info::RUSTC_VERSION,
     )
