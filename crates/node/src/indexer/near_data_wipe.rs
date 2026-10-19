@@ -10,7 +10,7 @@
 //! next startup.
 
 use crate::home_paths::{near_data_trash_dir, wipe_token_file};
-use std::io::Write;
+use mpc_node_config::durable_fs::{sync_parent_dir, write_file_durably};
 use std::path::{Component, Path};
 
 /// Cleans any leftover wipe trash, then — if `requested_token` is non-zero and
@@ -52,7 +52,12 @@ pub(crate) fn wipe_near_data_if_requested(
     // Move the store aside in one atomic rename, so the data dir is gone for good
     // even if the process dies before the (best-effort) delete below runs.
     match std::fs::rename(hot_store_path, &trash_path) {
-        Ok(()) => {}
+        // Make the move durable before deleting: otherwise a power loss could bring the
+        // store back while the token stays recorded, and the wipe would not be retried.
+        Ok(()) => {
+            sync_parent_dir(hot_store_path)?;
+            sync_parent_dir(&trash_path)?;
+        }
         // Fresh node: nothing to wipe.
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(err) => {
@@ -137,25 +142,13 @@ fn read_last_token(token_path: &Path) -> u64 {
     }
 }
 
-/// Atomically records the token: write a temp file, fsync it, then `rename` it into
-/// place and fsync the parent dir. The old file stays intact until the rename, so a
-/// crash mid-write can't leave a truncated token that reads as 0 and triggers an
-/// extra wipe next boot.
+/// Atomically and durably records the token, so a crash mid-write can't leave a
+/// truncated token that reads as 0 and triggers an extra wipe next boot.
 fn write_last_token(token_path: &Path, token: u64) -> std::io::Result<()> {
     if let Some(parent) = token_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp_path = token_path.with_extension("tmp");
-    {
-        let mut tmp = std::fs::File::create(&tmp_path)?;
-        tmp.write_all(token.to_string().as_bytes())?;
-        tmp.sync_all()?;
-    }
-    std::fs::rename(&tmp_path, token_path)?;
-    // fsync the dir so the rename (the durable record) survives a crash.
-    if let Some(parent) = token_path.parent() {
-        std::fs::File::open(parent)?.sync_all()?;
-    }
+    write_file_durably(token_path, token.to_string().as_bytes())?;
     tracing::info!(?token_path, token, "recorded near-data wipe token");
     Ok(())
 }

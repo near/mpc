@@ -3,6 +3,7 @@ use crate::db;
 use crate::home_paths::{permanent_key_link, permanent_keys_dir};
 use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
+use mpc_node_config::durable_fs::{rename_durably, sync_parent_dir};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
@@ -43,8 +44,8 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()> {
         let cipher = Aes128Gcm::new(&self.encryption_key.into());
         let encrypted = db::encrypt(&cipher, data);
-        // Write the new permanent keyshare to a separate file, and then create a link to it.
-        // That way, we don't lose any keys if we somehow mess up.
+        // Write the new permanent keyshare to a separate file, and then point the `key`
+        // link at it. That way, we don't lose any keys if we somehow mess up.
         let keyfile_for_epoch = self.permanent_key_dir.join(identifier);
         let mut file = tokio::fs::File::create_new(&keyfile_for_epoch)
             .await
@@ -57,16 +58,34 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
             .context("Failed to sync PermanentKeyshareData file")?;
         drop(file);
 
+        // Swap the `key` link in one atomic rename, never leaving a moment with no `key`
+        // at all (`load` would then report no keyshare), and fsync both directories so
+        // the new file and the swapped link survive a power loss.
         let keyfile = permanent_key_link(&self.home_dir);
-        tokio::fs::remove_file(&keyfile).await.ok();
-        tokio::fs::hard_link(&keyfile_for_epoch, &keyfile)
-            .await
-            .context("Failed to link PermanentKeyshareData file")?;
+        let keyfile_tmp = keyfile.with_added_extension("tmp");
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            sync_parent_dir(&keyfile_for_epoch)
+                .context("Failed to sync the permanent keys directory")?;
+            match std::fs::remove_file(&keyfile_tmp) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    return Err(err).context("Failed to remove a stale temporary key link");
+                }
+            }
+            std::fs::hard_link(&keyfile_for_epoch, &keyfile_tmp)
+                .context("Failed to link PermanentKeyshareData file")?;
+            rename_durably(&keyfile_tmp, &keyfile).context("Failed to replace the key link")?;
+            Ok(())
+        })
+        .await
+        .context("key link task failed")??;
         Ok(())
     }
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::keyshare::local::LocalPermanentKeyStorageBackend;
     use crate::keyshare::permanent::PermanentKeyStorageBackend;
@@ -85,5 +104,23 @@ mod tests {
         storage.store(b"456", "id2").await.unwrap();
         assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
         assert!(std::fs::exists(dir.path().join("permanent_keys/id1")).unwrap());
+    }
+
+    #[tokio::test]
+    async fn store__should_replace_key_link_even_with_stale_temp_link() {
+        // Given: a temporary link left behind by a crash during an earlier store
+        let dir = tempfile::tempdir().unwrap();
+        let storage = LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16])
+            .await
+            .unwrap();
+        storage.store(b"123", "id1").await.unwrap();
+        std::fs::write(dir.path().join("key.tmp"), b"stale").unwrap();
+
+        // When
+        storage.store(b"456", "id2").await.unwrap();
+
+        // Then
+        assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
+        assert!(!std::fs::exists(dir.path().join("key.tmp")).unwrap());
     }
 }
