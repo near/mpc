@@ -1,13 +1,27 @@
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use mpc_primitives::hash::NodeImageHash;
 
+use crate::built_info;
 use crate::tcb_status::EvaluationDataSet;
+
+static VERSION: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{}\n(release {}) (build_time {}) (commit {}) ({})",
+        built_info::PKG_VERSION,
+        built_info::PKG_VERSION,
+        built_info::BUILT_TIME_UTC,
+        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
+        built_info::RUSTC_VERSION,
+    )
+});
 
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
 #[command(about = "Standalone verification tool for MPC node TEE attestations")]
+#[command(version = VERSION.as_str())]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
