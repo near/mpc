@@ -476,8 +476,8 @@ pub(super) struct EligibleLeadersAndHeights {
     pub my_indexer_height: u64,
 }
 
-/// Returns the highest height reached by more than half of `heights`, or `None` if `heights` is
-/// empty.
+/// Returns the highest height reached by more than half of `heights` (their lower median), or
+/// `None` if `heights` is empty.
 fn majority_height(heights: impl IntoIterator<Item = u64>) -> Option<u64> {
     let mut heights: Vec<u64> = heights.into_iter().collect();
     heights.sort_unstable_by_key(|height| Reverse(*height));
@@ -599,7 +599,8 @@ where
     /// The reference height is the height that a majority of alive participants has reached, or
     /// our own height if that is higher. Peers self-report their heights, and the majority keeps a
     /// minority of them from raising the reference height so far that every honest participant
-    /// looks stale.
+    /// looks stale. Our own height is trusted, so a lagging majority cannot make participants far
+    /// behind us eligible.
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
@@ -1346,7 +1347,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn get_requests_to_attempt__should_not_attempt_as_preferred_leader_when_a_majority_is_ahead() {
         // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
@@ -1369,7 +1369,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn eligible_leaders_and_heights__should_not_measure_staleness_below_our_own_height() {
         // Given
         let (pending_requests, setup) = TestSetup::new();
