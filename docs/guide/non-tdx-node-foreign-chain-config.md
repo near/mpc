@@ -28,6 +28,17 @@ foreign_chains:
       val: "YOUR_FLUXRPC_API_KEY"
 ```
 
+## Whitelist and quorum
+
+The contract whitelists, per chain, the RPC providers and a quorum: how many of them must
+agree before the node signs. The node serves a chain only when at least that many of its
+configured providers match the whitelist entry: provider name, base URL, chain routing and
+auth scheme. Providers outside the whitelist are allowed and still queried: they can veto a
+verdict but do not count towards the quorum, and the node warns about them. Whenever the
+whitelist changes, the node logs which chains it serves and why a provider does not count;
+see [the contract whitelist gauges](node-operator-metrics.md#the-contract-whitelist) and
+their alert.
+
 ## Testnet example
 
 Replace `YOUR_*` with your keys and `YOUR-SLUG` with your QuickNode endpoint name. Verify before
