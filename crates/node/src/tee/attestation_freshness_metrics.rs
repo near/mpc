@@ -5,7 +5,6 @@
 //! alert still fires on a frozen gauge. At rest both advance hourly, as both are read from the
 //! entry stored on chain after every submission.
 
-use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_mpc_contract_interface::types::{GetAttestationResponse, VerifiedAttestation};
 
 use crate::metrics::{
@@ -19,19 +18,9 @@ pub(crate) fn record_stored_attestation(stored: Option<&GetAttestationResponse>)
     MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.set(expiry_gauge_value(
         stored.map(GetAttestationResponse::attestation),
     ));
-    if let Some(landed_at) = stored.and_then(landed_at_seconds) {
+    if let Some(landed_at) = stored.and_then(GetAttestationResponse::accepted_at_seconds) {
         MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS
             .set(i64::try_from(landed_at).unwrap_or(i64::MAX));
-    }
-}
-
-fn landed_at_seconds(stored: &GetAttestationResponse) -> Option<u64> {
-    match stored {
-        GetAttestationResponse::Current(stored) => stored.accepted_at_seconds,
-        // TODO(#4498): remove once every deployed contract stamps the acceptance time
-        GetAttestationResponse::Legacy(attestation) => attestation
-            .expiry_timestamp_seconds()
-            .and_then(|expiry| expiry.checked_sub(DEFAULT_EXPIRATION_DURATION_SECONDS)),
     }
 }
 
@@ -51,7 +40,7 @@ mod tests {
     use rstest::rstest;
 
     const EXPIRES_AT: u64 = 1_754_000_000;
-    const LANDED_AT: u64 = EXPIRES_AT - DEFAULT_EXPIRATION_DURATION_SECONDS;
+    const LANDED_AT: u64 = 1_753_000_000;
 
     fn mock_with_expiry(expiry_timestamp_seconds: Option<u64>) -> VerifiedAttestation {
         VerifiedAttestation::Mock(MockAttestation::WithConstraints {
@@ -85,25 +74,6 @@ mod tests {
             ),
             (EXPIRES_AT as i64, LANDED_AT as i64)
         );
-    }
-
-    #[rstest]
-    #[case::stamped(current(Some(LANDED_AT)), Some(LANDED_AT))]
-    #[case::carried_over_by_the_migration(current(None), None)]
-    #[case::legacy_contract(
-        GetAttestationResponse::Legacy(mock_with_expiry(Some(EXPIRES_AT))),
-        Some(LANDED_AT)
-    )]
-    #[case::legacy_without_expiry(GetAttestationResponse::Legacy(mock_with_expiry(None)), None)]
-    fn landed_at_seconds__should_read_the_acceptance_time(
-        #[case] stored: GetAttestationResponse,
-        #[case] expected: Option<u64>,
-    ) {
-        // When
-        let landed_at = landed_at_seconds(&stored);
-
-        // Then
-        assert_eq!(landed_at, expected);
     }
 
     #[rstest]

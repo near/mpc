@@ -185,12 +185,11 @@ async fn submit_tx(
 }
 
 fn attestation_submission_status(
-    stored: Option<&GetAttestationResponse>,
+    stored: Option<&VerifiedAttestation>,
     dstack_submitted: bool,
 ) -> TransactionStatus {
-    match stored.map(GetAttestationResponse::attestation) {
+    match stored {
         None => TransactionStatus::NotExecuted,
-        // The contract stores a mock placeholder for each initial participant
         Some(VerifiedAttestation::Mock(_)) if dstack_submitted => TransactionStatus::NotExecuted,
         Some(_) => TransactionStatus::Unknown,
     }
@@ -259,7 +258,9 @@ async fn observe_tx_result(
             record_stored_attestation(stored_attestation.as_ref());
 
             Ok(attestation_submission_status(
-                stored_attestation.as_ref(),
+                stored_attestation
+                    .as_ref()
+                    .map(GetAttestationResponse::attestation),
                 matches!(
                     args.proposed_participant_attestation,
                     Attestation::Dstack(_)
@@ -351,12 +352,28 @@ async fn ensure_send_transaction(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{GetAttestationResponse, TransactionStatus, attestation_submission_status};
-    use near_mpc_contract_interface::types::{MockAttestation, VerifiedAttestation};
+    use super::{TransactionStatus, attestation_submission_status};
+    use near_mpc_contract_interface::types::{
+        MockAttestation, VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
+    };
     use rstest::rstest;
 
-    const STORED_MOCK: GetAttestationResponse =
-        GetAttestationResponse::Legacy(VerifiedAttestation::Mock(MockAttestation::Valid));
+    const STORED_MOCK: VerifiedAttestation = VerifiedAttestation::Mock(MockAttestation::Valid);
+
+    fn stored_dstack() -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(VerifiedDstackAttestation {
+            mpc_image_hash: [0; 32].into(),
+            launcher_compose_hash: [0; 32].into(),
+            expiry_timestamp_seconds: 0,
+            measurements: VerifiedMeasurements {
+                mrtd: [0; 48].into(),
+                rtmr0: [0; 48].into(),
+                rtmr1: [0; 48].into(),
+                rtmr2: [0; 48].into(),
+                key_provider_event_digest: [0; 48].into(),
+            },
+        })
+    }
 
     #[rstest]
     #[case::nothing_stored(None, true, TransactionStatus::NotExecuted)]
@@ -366,8 +383,13 @@ mod tests {
         TransactionStatus::NotExecuted
     )]
     #[case::mock_stored_for_a_mock_submission(Some(STORED_MOCK), false, TransactionStatus::Unknown)]
+    #[case::dstack_stored_for_a_dstack_submission(
+        Some(stored_dstack()),
+        true,
+        TransactionStatus::Unknown
+    )]
     fn attestation_submission_status__should_be_not_executed_while_no_stored_entry_can_be_ours(
-        #[case] stored: Option<GetAttestationResponse>,
+        #[case] stored: Option<VerifiedAttestation>,
         #[case] dstack_submitted: bool,
         #[case] expected: TransactionStatus,
     ) {

@@ -78,9 +78,9 @@ async fn submit_remote_attestation(
 
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
-        let propose_join_args_clone = submit_participant_info_args.clone();
-        let chain_args =
-            ChainSendTransactionRequest::SubmitParticipantInfo(Box::new(propose_join_args_clone));
+        let chain_args = ChainSendTransactionRequest::SubmitParticipantInfo(Box::new(
+            submit_participant_info_args.clone(),
+        ));
 
         async move {
             let attestation_submission_response = tx_sender
@@ -190,16 +190,11 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             self.tls_public_key.clone(),
         )
         .await;
-        let outcome = if submission.is_ok() {
-            MPC_TEE_ATTESTATION_OUTCOME_SENT
-        } else {
-            MPC_TEE_ATTESTATION_OUTCOME_FAILURE
-        };
-        MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
-            .with_label_values(&[outcome])
-            .inc();
-        if let Err(error) = submission {
-            tracing::error!(?error, "attestation submission failed");
+        match submission {
+            Ok(()) => MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
+                .with_label_values(&[MPC_TEE_ATTESTATION_OUTCOME_SENT])
+                .inc(),
+            Err(error) => tracing::error!(?error, "attestation submission failed"),
         }
     }
 }
@@ -428,7 +423,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
-    async fn periodic_attestation_submission__should_not_resend_a_sent_attestation() {
+    async fn periodic_attestation_submission__should_not_resend_when_the_status_is_unknown() {
         // Given
         let setup = test_setup();
         let handle = setup.spawn_periodic(1);
