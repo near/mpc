@@ -13,7 +13,7 @@ pub use near_mpc_crypto_types::{CKDAppPublicKey, CKDAppPublicKeyPV, CkdAppId};
 pub struct CKDRequestArgs {
     /// Selects the derived key together with the calling account: the key is
     /// bound to `(caller account id, derivation_path)`, and distinct paths
-    /// yield unrelated keys.
+    /// yield distinct keys.
     pub derivation_path: String,
     /// Ephemeral key the response is encrypted to; freely chosen per request
     /// and without influence on the derived key.
