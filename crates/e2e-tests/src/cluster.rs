@@ -20,9 +20,10 @@ use near_mpc_contract_interface::{
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
         ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters, InitConfig,
-        MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, Update,
+        MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, ParticipantUrl,
+        Participants, Payload, ProposedGovernanceThresholdParameters, Protocol,
+        ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
+        SignRequestArgs, TeeVerifierCodeHash, Update,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -30,7 +31,7 @@ use tokio::sync::OnceCell;
 
 use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::CallMpc;
-use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
+use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts, localhost_with_port};
 use crate::near_sandbox::NearSandbox;
 use crate::test_dir::TestDir;
 use test_port_allocator::TestPorts;
@@ -1008,7 +1009,7 @@ impl MpcCluster {
     pub async fn update_participant_url(
         &self,
         node_index: usize,
-        url: String,
+        url: ParticipantUrl,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
@@ -1145,7 +1146,7 @@ impl MpcNodeState {
         }
     }
 
-    pub fn p2p_url(&self) -> String {
+    pub fn p2p_url(&self) -> ParticipantUrl {
         match self {
             MpcNodeState::Running(n) => n.setup().p2p_url(),
             MpcNodeState::Stopped(s) => s.p2p_url(),
@@ -1532,7 +1533,7 @@ fn build_participants(
             account_id,
             ParticipantId(participant_id as u32),
             ParticipantInfo {
-                url: format!("http://127.0.0.1:{}", ports.p2p_port(i)),
+                url: localhost_with_port(ports.p2p_port(i)),
                 tls_public_key: pubkey,
             },
         ));

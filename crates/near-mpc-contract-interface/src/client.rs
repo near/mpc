@@ -53,7 +53,7 @@ use crate::types::{
     DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
     ForeignChainsConfigs, GetAttestationResponse, GovernanceThresholdParameters, InitConfig,
     KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash,
-    MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ProposalHash,
+    MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
     ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey, SignRequestArgs,
     SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
     VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
@@ -453,7 +453,7 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn update_participant_url(
         &self,
-        url: String,
+        url: ParticipantUrl,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&UpdateParticipantUrlArgs::new(url))?;
         self.call(FunctionCallArgs::new(
@@ -857,7 +857,7 @@ mod tests {
                     "alice.near".parse().unwrap(),
                     ParticipantId(0),
                     ParticipantInfo {
-                        url: "http://localhost:7".to_string(),
+                        url: "http://localhost:7".try_into().unwrap(),
                         tls_public_key: Ed25519PublicKey::from([7u8; 32]),
                     },
                 )],
@@ -1060,7 +1060,7 @@ mod tests {
             .await
             .unwrap();
         handle
-            .update_participant_url("http://localhost:7".to_string())
+            .update_participant_url("http://localhost:7".try_into().unwrap())
             .await
             .unwrap();
         handle
@@ -1073,7 +1073,7 @@ mod tests {
             .start_node_migration(DestinationNodeInfo {
                 signer_account_pk: Ed25519PublicKey::from([7u8; 32]),
                 destination_node_info: ParticipantInfo {
-                    url: "http://localhost:7".to_string(),
+                    url: "http://localhost:7".try_into().unwrap(),
                     tls_public_key: Ed25519PublicKey::from([7u8; 32]),
                 },
             })

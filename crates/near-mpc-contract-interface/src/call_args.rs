@@ -4,10 +4,10 @@ use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
     Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId,
     ExpectedMeasurements, ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId,
-    Keyset, LauncherImageHash, NodeImageHash, ProposedGovernanceThresholdParameters, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    Keyset, LauncherImageHash, NodeImageHash, ParticipantUrl,
+    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
+    SignatureResponse, TeeVerifierCodeHash, UpdateHash, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -83,7 +83,7 @@ pub struct VoteTeeVerifierChangeArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct UpdateParticipantUrlArgs {
-    pub url: String,
+    pub url: ParticipantUrl,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
