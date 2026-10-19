@@ -145,11 +145,6 @@ frost-core = { version = "3.0.0", default-features = false, features = [
 frost-ed25519 = { version = "3.0.0", default-features = false }
 frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
-gcloud-sdk = { version = "0.32.0", default-features = false, features = [
-    "google-cloud-secretmanager-v1",
-    "google-rpc",
-    "tls-webpki-roots",
-] }
 group = "0.13"
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
@@ -238,7 +233,7 @@ tikv-jemallocator = { version = "0.6.0", features = [
     "unprefixed_malloc_on_supported_platforms",
 ] }
 time = "0.3.45"
-tokio = { version = "1.52.2", features = ["full", "test-util"] }
+tokio = { version = "1.52.2", features = ["full"] }
 tokio-metrics = { version = "0.5.0" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }

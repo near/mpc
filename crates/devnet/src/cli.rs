@@ -341,12 +341,7 @@ impl MpcVoteApprovedHashCmd {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcTerraformDeployInfraCmd {
-    /// If true, deletes the keyshares from the GCP secrets manager. This is useful if you wish to
-    /// deploy a new contract and need to re-generate the key.
-    #[clap(long)]
-    pub reset_keyshares: bool,
-}
+pub struct MpcTerraformDeployInfraCmd {}
 
 #[derive(clap::Parser)]
 pub struct MpcTerraformDeployNomadCmd {

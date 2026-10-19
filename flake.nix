@@ -73,11 +73,11 @@
               pname = "tee-launcher";
             };
             registryImage = pkgs.callPackage ./nix/registry-image.nix { };
-            nodeImage = pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; };
           in
           {
-            mpc-node-image = registryImage nodeImage;
-            mpc-node-gcp-image = registryImage (nodeImage.override { withGcloud = true; });
+            mpc-node-image = registryImage (
+              pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; }
+            );
             mpc-launcher-image = registryImage (
               pkgs.callPackage ./nix/mpc-launcher-image.nix { inherit tee-launcher; }
             );

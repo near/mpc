@@ -119,8 +119,10 @@ pub struct RunArgs {
     /// NEAR JSON-RPC endpoint used to poll the contract state — a NEAR RPC provider's URL, not
     /// the MPC node's address. A provider api key, if any, is passed as a query parameter of
     /// this URL; only the scheme and host ever reach the logs.
+    /// Without it, the contract is read through an embedded NEAR node, which expects its config,
+    /// genesis and node key in the home directory.
     #[arg(long, env("BACKUP_RPC_URL"), hide_env_values = true)]
-    pub rpc_url: String,
+    pub rpc_url: Option<String>,
     /// NEAR chain id (e.g. mainnet, testnet). Required by the RPC client; the contract state
     /// is read with a view call, which does not consume it.
     #[arg(long, env, default_value = "mainnet")]
@@ -131,6 +133,7 @@ pub struct RunArgs {
     #[command(flatten)]
     pub node: NodeConnectionArgs,
     /// How often to poll the contract state, in seconds.
+    /// Without --rpc-url, only the delay before re-attempting a failed backup.
     #[arg(long, env, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
     pub poll_interval_seconds: u64,
     /// Address to serve /health, /status and /metrics on (e.g. 127.0.0.1:8080).

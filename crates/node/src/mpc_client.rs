@@ -50,7 +50,7 @@ const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
 #[derive(Clone)]
 pub struct MpcClient {
     config: Arc<ConfigFile>,
-    client: Arc<MeshNetworkClient>,
+    network_client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
@@ -113,7 +113,7 @@ impl MpcClient {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
-        client: Arc<MeshNetworkClient>,
+        network_client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
@@ -127,7 +127,7 @@ impl MpcClient {
     ) -> Self {
         Self {
             config,
-            client,
+            network_client,
             sign_request_store,
             ckd_request_store,
             verify_foreign_tx_request_store,
@@ -152,14 +152,6 @@ impl MpcClient {
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
-        let client = self.client.clone();
-        let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
-            loop {
-                client.emit_metrics();
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        });
-
         // Reads every asset store directly, so the owned-asset gauges do not
         // depend on any generation loop iterating.
         let asset_metrics_reporter = tracking::spawn("report asset metrics", {
@@ -248,7 +240,6 @@ impl MpcClient {
         );
 
         let _ = monitor_passive_channels.await?;
-        metrics_emitter.await?;
         asset_metrics_reporter.await?;
         monitor_chain.await?;
         let _ = robust_ecdsa_background_tasks.await?;
@@ -272,15 +263,15 @@ impl MpcClient {
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
                 Clock::real(),
-                self.client.all_participant_ids(),
-                self.client.my_participant_id(),
-                self.client.clone(),
+                self.network_client.all_participant_ids(),
+                self.network_client.my_participant_id(),
+                self.network_client.clone(),
             );
         let mut pending_ckds = PendingRequests::<CKDRequest, contract_args::CKDRespondArgs>::new(
             Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
+            self.network_client.all_participant_ids(),
+            self.network_client.my_participant_id(),
+            self.network_client.clone(),
         );
 
         let mut pending_verify_foreign_txs = PendingRequests::<
@@ -288,9 +279,9 @@ impl MpcClient {
             contract_args::VerifyForeignTransactionRespondArgs,
         >::new(
             Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
+            self.network_client.all_participant_ids(),
+            self.network_client.my_participant_id(),
+            self.network_client.clone(),
         )
         .with_eligible_leaders_refiner(
             self.verify_foreign_tx_provider
@@ -310,7 +301,7 @@ impl MpcClient {
                         break;
                     };
 
-                    self.client.update_indexer_height(block_update.block.height.into());
+                    self.network_client.update_indexer_height(block_update.block.height.into());
 
                     let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 

@@ -1,20 +1,18 @@
 use crate::sandbox::utils::{
-    consts::GAS_FOR_VOTE_RESHARED,
     mpc_contract::get_state,
-    transactions::{execute_async_handle_calls, execute_async_transactions},
+    sandbox_mpc_contract::SandboxMpcContract,
+    transactions::{CallMpcContract, all_receipts_successful, execute_async_handle_calls},
 };
 use dtos::{AttemptId, EpochId, KeyEventId};
 use mpc_contract::primitives::thresholds::{
     GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
-use near_workspaces::{Account, Contract};
-use serde_json::json;
+use near_workspaces::Account;
 use std::collections::BTreeMap;
 
 pub async fn conclude_resharing(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     all_participants: &[Account],
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
@@ -46,7 +44,10 @@ pub async fn conclude_resharing(
     Ok(())
 }
 
-pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> anyhow::Result<()> {
+pub async fn vote_cancel_reshaing(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+) -> anyhow::Result<()> {
     execute_async_handle_calls(accounts, contract, |handle| async move {
         handle.vote_cancel_resharing().await
     })
@@ -54,7 +55,7 @@ pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> 
 }
 
 pub async fn vote_new_parameters(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     prospective_epoch_id: u64,
     proposal: &GovernanceThresholdParameters,
     persistent_participants: &[Account],
@@ -88,7 +89,7 @@ pub async fn vote_new_parameters(
 }
 
 pub async fn start_reshare_instance(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
@@ -116,28 +117,21 @@ pub async fn start_reshare_instance(
         })
         .unwrap();
     let result = leader
-        .call(contract.id(), method_names::START_RESHARE_INSTANCE)
-        .args_json(json!({"key_event_id": key_event_id}))
-        .transact()
+        .call_mpc(contract.id())
+        .start_reshare_instance(key_event_id)
         .await?;
-    if !result.is_success() {
-        anyhow::bail!("{result:#?}");
-    }
+    all_receipts_successful(result)?;
     Ok(())
 }
 
 pub async fn vote_reshared(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
-    execute_async_transactions(
-        accounts,
-        contract,
-        method_names::VOTE_RESHARED,
-        &json!({"key_event_id": key_event_id}),
-        GAS_FOR_VOTE_RESHARED,
-    )
+    execute_async_handle_calls(accounts, contract, |handle| async move {
+        handle.vote_reshared(key_event_id).await
+    })
     .await
 }
 
@@ -146,7 +140,7 @@ pub async fn vote_reshared(
 /// and voting reshared to complete the transition.
 pub async fn do_resharing(
     remaining_accounts: &[Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     new_threshold_parameters: GovernanceThresholdParameters,
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {

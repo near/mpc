@@ -9,7 +9,7 @@ use crate::{
     storage_keys::StorageKey,
     tee::measurements::{AllowedMeasurements, MeasurementVotes},
     tee::proposal::{
-        AllowedLauncherImageInsertion, AllowedLauncherImages, LauncherHashVotes, NodeImageHash,
+        AllowedLauncherImageInsertion, AllowedLauncherImages, NodeImageHash,
         StoredDockerImageHashes,
     },
 };
@@ -89,7 +89,7 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: StoredDockerImageHashes,
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
-    pub(crate) launcher_votes: LauncherHashVotes,
+    pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
     /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
     /// Attestations are stored for any valid participant that has submitted one, not
     /// just for the currently active participants. Callers must not assume this map is
@@ -108,7 +108,10 @@ impl Default for TeeState {
                 StorageKey::CodeHashVotesByVoter,
                 StorageKey::CodeHashVotesByProposal,
             ),
-            launcher_votes: Default::default(),
+            launcher_votes: Votes::new(
+                StorageKey::LauncherHashVotesByVoter,
+                StorageKey::LauncherHashVotesByProposal,
+            ),
             stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: Default::default(),
             measurement_votes: Default::default(),
@@ -396,13 +399,12 @@ impl TeeState {
     }
 
     /// Casts a vote for adding or removing a launcher image hash.
-    /// Returns the total number of votes for the same action.
     pub fn vote_launcher(
         &mut self,
         action: LauncherVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.launcher_votes.vote(action, participant)
+        voter: AuthenticatedAccountId,
+    ) -> &VoterSet<AuthenticatedAccountId> {
+        self.launcher_votes.vote(voter, action.to_proposal_hash())
     }
 
     /// Adds a launcher image to the allowed set, computing compose hashes for all currently
@@ -413,7 +415,7 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
         ttl: Duration,
     ) -> AllowedLauncherImageInsertion {
-        self.launcher_votes.clear_votes();
+        self.launcher_votes.clear();
         let mpc_image_hashes = self
             .allowed_docker_image_hashes
             .get_image_hashes(tee_upgrade_deadline_duration);
@@ -423,7 +425,7 @@ impl TeeState {
 
     /// Removes a launcher image from the allowed set. Clears launcher votes.
     pub fn remove_launcher_image(&mut self, launcher_hash: &LauncherImageHash) -> bool {
-        self.launcher_votes.clear_votes();
+        self.launcher_votes.clear();
         self.allowed_launcher_images.remove(launcher_hash)
     }
 
@@ -472,7 +474,8 @@ impl TeeState {
     pub fn clean_non_participant_votes(&mut self, participants: &Participants) {
         self.votes
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
-        self.launcher_votes = self.launcher_votes.get_remaining_votes(participants);
+        self.launcher_votes
+            .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
         self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
     }
 
@@ -622,8 +625,8 @@ pub(crate) enum AttestationCheckError {
 mod tests {
     use super::*;
     use crate::primitives::test_utils::{
-        authenticate_account_as, authenticate_as, bogus_ed25519_near_public_key,
-        bogus_ed25519_public_key, create_node_id, gen_participant, gen_participants, node_id_for,
+        authenticate_account_as, bogus_ed25519_near_public_key, bogus_ed25519_public_key,
+        create_node_id, gen_participant, gen_participants, node_id_for,
     };
     use crate::tee::{
         proposal::get_docker_compose_hash,
@@ -1884,17 +1887,17 @@ mod tests {
         let mut tee_state = TeeState::default();
 
         // P0 votes for a launcher hash
-        let auth_id = authenticate_as(&account_ids[0], &all_participants);
+        let voter = authenticate_account_as(&account_ids[0], &all_participants);
         let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
-        tee_state.launcher_votes.vote(launcher_action, &auth_id);
+        tee_state.vote_launcher(launcher_action, voter);
 
-        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 1);
+        assert_eq!(tee_state.launcher_votes.all().len(), 1);
 
         // New participant set excludes P0
         let new_participants = all_participants.subset(1..3);
         tee_state.clean_non_participant_votes(&new_participants);
 
-        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 0);
+        assert!(tee_state.launcher_votes.all().is_empty());
     }
 
     #[test]
