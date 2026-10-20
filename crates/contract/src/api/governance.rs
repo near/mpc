@@ -466,6 +466,13 @@ mod tests {
             GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
             BTreeMap::new(),
         );
+        assert_matches!(
+            contract.tee_state.reverify_and_cleanup_participants(
+                proposal.participants(),
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            ),
+            TeeValidationResult::Full
+        );
         let outsider: AccountId = "outsider.near".parse().unwrap();
 
         // When
