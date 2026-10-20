@@ -67,8 +67,9 @@ pub struct MpcContract {
     tee_verifier_votes: TeeVerifierVotes,
     /// A row is removed at zero, so the map holds no entry for an account with none.
     available_attestation_grants: IterableMap<AccountId, u32>,
-    /// Pending votes for new parameters, kept outside [`ProtocolContractState`] so they can be
-    /// storage-backed. Emptied on every protocol state transition except a resharing cancellation.
+    // TODO(#2825): make these storage-backed `Votes`, which is why they live outside the state.
+    /// Pending votes for new parameters; emptied on every protocol state transition except a
+    /// resharing cancellation.
     parameters_votes: GovernanceThresholdParametersVotes,
 }
 
