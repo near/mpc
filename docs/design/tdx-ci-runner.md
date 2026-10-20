@@ -60,8 +60,12 @@ The workflow can live in the public `near/mpc` repo: neither `schedule` nor
 branch, including an unmerged edit of the workflow itself, so two things bound what a
 dispatch can do:
 
-- The SSH key lives in an `environment` secret with the deployment branch restricted to
-  `main` — the pattern `docker_build_node.yml` already uses.
+- The SSH key lives in an `environment` secret whose deployment branches are restricted
+  to `main`. This is how the repo already stops a release being published from a dev
+  branch: `release.yml` and `docker_node_release.yml` are `workflow_dispatch`-only and
+  take their Docker Hub credentials from the `production` environment, so a dispatch off
+  `main` starts but gets no secrets. Note `production` also allows `release/*`, so the
+  TDX job wants an environment of its own rather than reusing it.
 - The key is restricted to a **forced command** on the host, so it invokes the test script
   and nothing else:
 
@@ -239,11 +243,13 @@ hardware. Tracked in [#4717](https://github.com/near/mpc/issues/4717).
 2. **Where does the workflow live** — `near/mpc` or infra-ops — and who holds the SSH
    key? SRE call.
 3. **Who can trigger a run, and does a manual one need approval?** `workflow_dispatch` is
-   open to anyone with write access, on any branch. Restricting the environment's
-   deployment branch to `main` already means a dispatch from any other branch gets no key
-   and cannot reach the host — that is all the existing `production` environment does.
-   Adding required reviewers would gate manual runs as well, but it would also stall the
-   nightly, which sits in `Waiting` until someone approves and fails after 30 days if
-   nobody does. Gating both would need two environments chosen by `github.event_name`.
+   open to anyone with write access, on any branch. A deployment-branch restriction on
+   the environment is the proven answer here — it is what keeps a release from being
+   published off a dev branch — but it needs a dedicated environment, since `production`
+   also allows `release/*`.
+   Whether a manual run additionally needs a second pair of eyes is open. Required
+   reviewers would gate it, but they would also stall the nightly, which sits in
+   `Waiting` until someone approves and fails after 30 days if nobody does — so gating
+   both would need two environments chosen by `github.event_name`.
 4. **How do failures get reported?** GitHub check annotations, an artifact, Slack, or all
    three.
