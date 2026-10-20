@@ -14,6 +14,8 @@ pub use resolve::{
     resolve_with_embedded,
 };
 
+pub mod provider_identity;
+
 mod auth;
 mod embedded;
 mod resolve;
