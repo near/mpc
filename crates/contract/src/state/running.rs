@@ -34,8 +34,6 @@ pub struct RunningContractState {
     pub keyset: Keyset,
     /// The current participants and threshold.
     pub parameters: GovernanceThresholdParameters,
-    /// Votes for proposals for a new set of participants and threshold.
-    pub parameters_votes: GovernanceThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
     /// The previous epoch id for a resharing state that was cancelled.
@@ -57,7 +55,6 @@ impl RunningContractState {
             domains,
             keyset,
             parameters,
-            parameters_votes: GovernanceThresholdParametersVotes::default(),
             add_domains_votes: remaining_add_domain_votes,
             previously_cancelled_resharing_epoch_id: None,
         }
@@ -107,6 +104,7 @@ impl RunningContractState {
         &mut self,
         prospective_epoch_id: EpochId,
         proposal: &ProposedGovernanceThresholdParameters,
+        votes: &mut GovernanceThresholdParametersVotes,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id();
 
@@ -118,7 +116,7 @@ impl RunningContractState {
             .into());
         }
 
-        if self.process_new_parameters_proposal(proposal)? {
+        if self.process_new_parameters_proposal(proposal, votes)? {
             return Ok(self.transition_to_resharing_no_checks(proposal));
         }
         Ok(None)
@@ -139,10 +137,12 @@ impl RunningContractState {
 
     /// Casts a vote for `proposal`, removing any previous votes by [`env::signer_account_id()`](near_sdk::env::signer_account_id).
     /// Fails if the proposal is invalid or the signer is not a proposed participant.
-    /// Returns true if all participants of the proposed parameters voted for it.
+    /// Returns true if all participants of the proposed parameters voted for it; pending votes
+    /// are then cleared.
     pub(super) fn process_new_parameters_proposal(
-        &mut self,
+        &self,
         proposal: &ProposedGovernanceThresholdParameters,
+        votes: &mut GovernanceThresholdParametersVotes,
     ) -> Result<bool, Error> {
         // ensure the proposal is valid against the current parameters
         self.parameters
@@ -191,17 +191,18 @@ impl RunningContractState {
         // If the signer is not a participant of the current epoch, they can only vote after
         // `threshold` participant of the current epoch have casted their vote to admit them.
         if AuthenticatedAccountId::new(self.parameters.participants()).is_err() {
-            let n_votes = self
-                .parameters_votes
-                .n_votes(proposal, self.parameters.participants());
+            let n_votes = votes.n_votes(proposal, self.parameters.participants());
             if n_votes < self.parameters.threshold().value() {
                 return Err(VoteError::VoterPending.into());
             }
         }
 
         // finally, vote.
-        let n_votes = self.parameters_votes.vote(proposal, candidate);
-        Ok(new_num_participants == n_votes)
+        let accepted = new_num_participants == votes.vote(proposal, candidate);
+        if accepted {
+            votes.clear();
+        }
+        Ok(accepted)
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
@@ -279,13 +280,14 @@ pub mod running_tests {
             state.parameters.threshold().value()
         );
         let mut env = Environment::new(None, None, None);
+        let mut votes = GovernanceThresholdParametersVotes::default();
         let participants = state.parameters.participants().clone();
         // Assert that random proposals get rejected.
         for (account_id, _, _) in participants.participants() {
             let ksp = gen_proposed_threshold_params(30);
             env.set_signer(account_id);
             let _ = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
+                .vote_new_parameters(state.keyset.epoch_id.next(), &ksp, &mut votes)
                 .unwrap_err();
         }
         // Assert that proposals of the wrong epoch ID get rejected.
@@ -293,10 +295,10 @@ pub mod running_tests {
             let ksp = gen_valid_params_proposal(&state.parameters);
             env.set_signer(&participants.participants()[0].0);
             let _ = state
-                .vote_new_parameters(state.keyset.epoch_id, &ksp)
+                .vote_new_parameters(state.keyset.epoch_id, &ksp, &mut votes)
                 .unwrap_err();
             let _ = state
-                .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
+                .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp, &mut votes)
                 .unwrap_err();
         }
         // Assert that disagreeing proposals do not reach consensus.
@@ -323,7 +325,7 @@ pub mod running_tests {
             env.set_signer(account_id);
             assert!(
                 state
-                    .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
+                    .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i], &mut votes)
                     .unwrap()
                     .is_none()
             );
@@ -343,7 +345,7 @@ pub mod running_tests {
             n_votes += 1;
             env.set_signer(account_id);
             let res = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal, &mut votes)
                 .unwrap();
             if n_votes < proposal.participants().len() || num_domains == 0 {
                 assert!(res.is_none());
@@ -359,7 +361,7 @@ pub mod running_tests {
             n_votes += 1;
             env.set_signer(account_id);
             let res = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal, &mut votes)
                 .unwrap();
             if n_votes < proposal.participants().len() || num_domains == 0 {
                 assert!(res.is_none());
@@ -371,10 +373,7 @@ pub mod running_tests {
             // If there are no domains, we should transition directly to Running with a higher
             // epoch ID, not resharing.
             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-            assert_eq!(
-                state.parameters_votes,
-                GovernanceThresholdParametersVotes::default()
-            );
+            assert_eq!(votes.n_votes(&proposal, proposal.participants()), 0);
             assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
         } else {
             let resharing = resharing.unwrap();
@@ -598,7 +597,11 @@ pub mod running_tests {
         env.set_signer(&signer);
 
         // When voting with an empty per_domain_thresholds map (legacy shape)
-        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+        let res = state.vote_new_parameters(
+            state.keyset.epoch_id.next(),
+            &proposal,
+            &mut GovernanceThresholdParametersVotes::default(),
+        );
 
         // Then the vote is recorded without error
         assert!(
@@ -620,7 +623,11 @@ pub mod running_tests {
         threshold_updates.insert(DomainId(9999), ReconstructionThreshold::new(2));
         let proposal = proposal.with_per_domain_thresholds(threshold_updates);
         let err = state
-            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .vote_new_parameters(
+                state.keyset.epoch_id.next(),
+                &proposal,
+                &mut GovernanceThresholdParametersVotes::default(),
+            )
             .unwrap_err();
 
         // Then the unknown-domain guard rejects it
@@ -737,7 +744,11 @@ pub mod running_tests {
         threshold_updates.insert(domain_id, ReconstructionThreshold::new(1));
         let proposal = proposal.with_per_domain_thresholds(threshold_updates);
         let err = state
-            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .vote_new_parameters(
+                state.keyset.epoch_id.next(),
+                &proposal,
+                &mut GovernanceThresholdParametersVotes::default(),
+            )
             .unwrap_err();
 
         // Then the updated value (not the stored value) is validated and rejected
@@ -773,7 +784,11 @@ pub mod running_tests {
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(domain_id, ReconstructionThreshold::new(3));
         let proposal = proposal.with_per_domain_thresholds(threshold_updates);
-        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+        let res = state.vote_new_parameters(
+            state.keyset.epoch_id.next(),
+            &proposal,
+            &mut GovernanceThresholdParametersVotes::default(),
+        );
 
         // Then the vote is recorded without error
         assert!(
@@ -801,7 +816,11 @@ pub mod running_tests {
         );
         let proposal = proposal.with_per_domain_thresholds(threshold_updates);
         let err = state
-            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .vote_new_parameters(
+                state.keyset.epoch_id.next(),
+                &proposal,
+                &mut GovernanceThresholdParametersVotes::default(),
+            )
             .unwrap_err();
 
         // Then the updated value is validated against the proposed participants
@@ -853,7 +872,11 @@ pub mod running_tests {
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(caitsith_id, ReconstructionThreshold::new(3));
         let proposal = proposal.with_per_domain_thresholds(threshold_updates);
-        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+        let res = state.vote_new_parameters(
+            state.keyset.epoch_id.next(),
+            &proposal,
+            &mut GovernanceThresholdParametersVotes::default(),
+        );
 
         // Then CaitSith domains may diverge in threshold.
         assert!(res.is_ok(), "Expected acceptance: {res:?}");

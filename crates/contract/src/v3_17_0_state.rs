@@ -14,7 +14,7 @@ use near_mpc_contract_interface::types::{
     self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
-    AccountId, require,
+    AccountId, env,
     store::{IterableMap, Lazy, LookupMap},
 };
 
@@ -23,10 +23,16 @@ use crate::{
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
-        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
+        domain::{AddDomainsVotes, DomainRegistry},
+        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
+        threshold_votes::GovernanceThresholdParametersVotes,
+        thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
     },
-    state::ProtocolContractState,
+    state::{
+        ProtocolContractState, initializing::InitializingContractState,
+        running::RunningContractState,
+    },
     storage_keys::StorageKey,
     tee::{
         measurements::AllowedMeasurements,
@@ -82,12 +88,53 @@ impl From<OldTeeState> for TeeState {
     }
 }
 
+/// Shadow of the `3.17.0` `GovernanceThresholdParametersVotes` layout.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldGovernanceThresholdParametersVotes {
+    proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
+}
+
+/// Shadow of the `3.17.0` `RunningContractState` layout.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldRunningContractState {
+    domains: DomainRegistry,
+    keyset: Keyset,
+    parameters: GovernanceThresholdParameters,
+    parameters_votes: OldGovernanceThresholdParametersVotes,
+    add_domains_votes: AddDomainsVotes,
+    previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+impl From<OldRunningContractState> for RunningContractState {
+    fn from(old: OldRunningContractState) -> Self {
+        // Pending parameter votes are dropped rather than migrated; participants re-vote
+        // after the upgrade.
+        RunningContractState {
+            domains: old.domains,
+            keyset: old.keyset,
+            parameters: old.parameters,
+            add_domains_votes: old.add_domains_votes,
+            previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
+        }
+    }
+}
+
+/// Shadow of the `3.17.0` `ProtocolContractState` layout. Only `Running` is migrated, so
+/// the trailing `Resharing` variant is omitted and fails to deserialize. Borsh encodes
+/// `Box<T>` as `T`.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+enum OldProtocolContractState {
+    NotInitialized,
+    Initializing(Box<InitializingContractState>),
+    Running(OldRunningContractState),
+}
+
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see earlier `v*_state.rs` modules in git history
 /// for examples) so state written by the `3.17.0` contract still deserializes during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
-    protocol_state: ProtocolContractState,
+    protocol_state: OldProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
@@ -104,13 +151,12 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
-        require!(
-            matches!(old.protocol_state, ProtocolContractState::Running(_)),
-            "Contract must be in running state when migrating."
-        );
+        let OldProtocolContractState::Running(running_state) = old.protocol_state else {
+            env::panic_str("Contract must be in running state when migrating.");
+        };
 
         crate::MpcContract {
-            protocol_state: old.protocol_state,
+            protocol_state: ProtocolContractState::Running(running_state.into()),
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
@@ -123,6 +169,7 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         }
     }
 }

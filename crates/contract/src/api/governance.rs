@@ -52,10 +52,11 @@ impl MpcContract {
         let proposed_participants = proposal.participants();
         match validation_result {
             TeeValidationResult::Full => {
-                if let Some(new_state) = self
-                    .protocol_state
-                    .vote_new_parameters(prospective_epoch_id, &proposal)?
-                {
+                if let Some(new_state) = self.protocol_state.vote_new_parameters(
+                    prospective_epoch_id,
+                    &proposal,
+                    &mut self.parameters_votes,
+                )? {
                     self.protocol_state = new_state;
                 }
                 Ok(())
@@ -99,6 +100,7 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
             self.protocol_state = new_state;
+            self.parameters_votes.clear();
         }
         Ok(())
     }
@@ -124,7 +126,6 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
-    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
     use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
@@ -486,11 +487,49 @@ mod tests {
             Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == outsider
         );
         // Check that vote was not accepted.
+        assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
+        assert!(contract.parameters_votes.is_empty());
+    }
+
+    #[test]
+    fn vote_add_domains__should_clear_pending_parameter_votes_on_transition() {
+        // Given
+        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap(),
+            BTreeMap::new(),
+        );
+        vote_params(&mut contract, &signer, &proposal).unwrap();
+        assert!(!contract.parameters_votes.is_empty());
+        let new_domain = dtos::DomainConfig {
+            id: DomainId(domain_id.0 + 1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        };
+
+        // When
+        for (account_id, _, _) in participants.participants() {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
+            contract.vote_add_domains(vec![new_domain.clone()]).unwrap();
+        }
+
+        // Then
         assert_matches!(
             &contract.protocol_state,
-            ProtocolContractState::Running(state)
-                if state.parameters_votes == GovernanceThresholdParametersVotes::default()
+            ProtocolContractState::Initializing(_)
         );
+        assert!(contract.parameters_votes.is_empty());
     }
 
     #[test]

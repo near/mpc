@@ -30,7 +30,8 @@ mod sandbox_test_methods;
 pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
-    foreign_chains_metadata::ForeignChainsMetadata, tee::tee_state::TeeState,
+    foreign_chains_metadata::ForeignChainsMetadata,
+    primitives::threshold_votes::GovernanceThresholdParametersVotes, tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
 use config::Config;
@@ -66,6 +67,9 @@ pub struct MpcContract {
     tee_verifier_votes: TeeVerifierVotes,
     /// A row is removed at zero, so the map holds no entry for an account with none.
     available_attestation_grants: IterableMap<AccountId, u32>,
+    /// Pending votes for new parameters, kept outside [`ProtocolContractState`] so they can be
+    /// storage-backed. Emptied on every protocol state transition except a resharing cancellation.
+    parameters_votes: GovernanceThresholdParametersVotes,
 }
 
 impl Default for MpcContract {

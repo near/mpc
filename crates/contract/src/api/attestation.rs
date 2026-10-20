@@ -344,6 +344,7 @@ impl MpcContract {
                     BTreeMap::new(),
                 );
                 let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
+                self.parameters_votes.clear();
                 if let Some(resharing) = res {
                     self.protocol_state = ProtocolContractState::Resharing(resharing);
                 }

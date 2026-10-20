@@ -11,6 +11,7 @@ use crate::primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
+    threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     },
@@ -129,13 +130,14 @@ impl ProtocolContractState {
         &mut self,
         prospective_epoch_id: EpochId,
         proposed_parameters: &ProposedGovernanceThresholdParameters,
+        votes: &mut GovernanceThresholdParametersVotes,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
             ProtocolContractState::Running(state) => {
-                state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
+                state.vote_new_parameters(prospective_epoch_id, proposed_parameters, votes)
             }
             ProtocolContractState::Resharing(state) => {
-                state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
+                state.vote_new_parameters(prospective_epoch_id, proposed_parameters, votes)
             }
             _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
         }

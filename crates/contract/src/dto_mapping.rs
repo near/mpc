@@ -14,6 +14,7 @@ use mpc_attestation::{
     collateral::Collateral,
 };
 use near_mpc_contract_interface::types as dtos;
+use std::collections::BTreeMap;
 
 use crate::{
     config::Config,
@@ -23,7 +24,6 @@ use crate::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
     },
@@ -804,21 +804,6 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 // --- Voting types ---
 
-impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
-    for &GovernanceThresholdParametersVotes
-{
-    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotes {
-        let proposal_by_account = self
-            .proposal_by_account
-            .iter()
-            .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
-            .collect();
-        dtos::GovernanceThresholdParametersVotes {
-            proposal_by_account,
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     fn into_dto_type(self) -> dtos::AddDomainsVotes {
         dtos::AddDomainsVotes {
@@ -979,7 +964,10 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            parameters_votes: (&self.parameters_votes).into_dto_type(),
+            // Pending votes are stored hash-only, so their proposals can't be reported.
+            parameters_votes: dtos::GovernanceThresholdParametersVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
             add_domains_votes: (&self.add_domains_votes).into_dto_type(),
             previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }
