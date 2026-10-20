@@ -73,7 +73,6 @@ in
     version = "1.31.1";
     hash = "sha256-6BWZ9tPSbTjqTiOgBW+id6omjpjeA/1mFrFDG8ClVvs=";
     cargoHash = "sha256-6Hkc3eVbAILyYwI+bqT9hHXSdqeAhNmgAG/Gz2sTxfY=";
-    # Some of its crates declare a rust-version newer than nixpkgs' rustc, which still builds them
     cargoBuildFlags = [ "--ignore-rust-version" ];
   })
 

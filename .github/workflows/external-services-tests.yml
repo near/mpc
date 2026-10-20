@@ -32,7 +32,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        # zizmor: ignore[cache-poisoning] tag runs publish nothing
+        # zizmor: ignore[cache-poisoning]
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
