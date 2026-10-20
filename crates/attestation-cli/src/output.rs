@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 
 use dcap_qvl::{TcbStatus, policy::PckIdentity, quote::TDReport10};
 
-use crate::tcb_status::{self, Report, TcbVerdict};
+use crate::tcb_status::{self, EarlyDemotion, Report, TcbVerdict};
 use crate::verify::VerificationResult;
 
 pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
@@ -19,7 +19,7 @@ pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
     println!();
     println!("--- Failure Details ---");
     match err {
-        VerificationError::TcbStatusNotUpToDate(status) => {
+        VerificationError::TcbStatusNotUpToDate { status, .. } => {
             println!("Reason:          TCB status is not up to date");
             println!("TCB Status:      {status}");
             println!("Expected Status: UpToDate");
@@ -106,19 +106,32 @@ pub fn print_tcb_status(report: &Report) {
     println!("=== MPC Node Platform TCB Status ===");
 
     // The PCK numbers come from the certificate a successful verification read,
-    // not from the collateral, so both rows carry identical values and whichever
-    // verified will do. The verdicts themselves do differ, which is the point of
-    // showing two rows.
-    let pck = match (&report.served, &report.standard) {
-        (TcbVerdict::Verified { claims, .. }, _) | (_, TcbVerdict::Verified { claims, .. }) => {
-            Some(&claims.platform.pck)
-        }
+    // not from the collateral, so every row carries identical values and
+    // whichever verified will do. The verdicts themselves do differ, which is
+    // the point of showing three rows.
+    let pck = match (&report.served, &report.standard, &report.early) {
+        (TcbVerdict::Verified { claims, .. }, _, _)
+        | (_, Some(TcbVerdict::Verified { claims, .. }), _)
+        | (_, _, Some(TcbVerdict::Verified { claims, .. })) => Some(&claims.platform.pck),
         _ => None,
     };
     print_platform(&report.td_report, pck);
 
     print_verdict("served by the node", &report.served);
-    print_verdict("Intel `standard`", &report.standard);
+    if let Some(standard) = &report.standard {
+        print_verdict("Intel `standard`", standard);
+    }
+    if let Some(early) = &report.early {
+        print_verdict("Intel `early`", early);
+    }
+
+    if let Some(EarlyDemotion { cleared, demoted }) = report.early_demotion() {
+        println!();
+        println!(
+            "This platform clears TCB recovery set {cleared} but not set {demoted}, which Intel \
+             publishes and has yet to promote."
+        );
+    }
 }
 
 fn print_verdict(label: &str, verdict: &TcbVerdict) {

@@ -17,6 +17,7 @@ mod presign;
 mod protocol;
 mod sign;
 mod snapshot;
+mod triples;
 
 use crate::KeygenOutput;
 use crate::participants::Participant;
@@ -51,6 +52,7 @@ pub use simulator_bench::{
     BenchConfig, LatencyModel, SimulationMetrics, bench_simulation, run_simulation,
 };
 pub use snapshot::ProtocolSnapshot;
+pub use triples::deal_triple;
 
 // Taken from https://github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/frost-secp256k1/tests/common_traits_tests.rs#L9
 #[allow(clippy::unnecessary_literal_unwrap)]

@@ -4,13 +4,20 @@ version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
 
+[features]
+sandbox = ["dep:anyhow", "dep:near-sandbox", "dep:near-workspaces"]
+
 [dependencies]
+anyhow = { workspace = true, optional = true }
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
 mpc-attestation = { workspace = true, features = ["test-utils", "local-verify"] }
 mpc-primitives = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
+near-sandbox = { workspace = true, optional = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
+near-workspaces = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }

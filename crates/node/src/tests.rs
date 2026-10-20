@@ -7,8 +7,10 @@ use near_mpc_contract_interface::types::{
     ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
-use std::collections::BTreeMap;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    assert_matches,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 use tokio::sync::{RwLock, watch};
 
@@ -35,7 +37,6 @@ use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
 use aes_gcm::aead::Generate;
-use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
@@ -51,7 +52,6 @@ use std::sync::{Arc, OnceLock};
 use tokio::time::timeout;
 
 pub mod common;
-pub(crate) mod dto_conversions;
 
 mod asset_generation_signing_contention;
 mod basic_cluster;
@@ -67,8 +67,8 @@ mod update_participant_url;
 mod verify_foreign_tx_gating;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
-const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
-const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
+const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_mins(1);
+const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_mins(1);
 
 /// Data needed to start running a test node.
 pub struct OneNodeTestConfig {
@@ -88,7 +88,6 @@ pub fn make_key_storage_config(
     KeyStorageConfig {
         home_dir,
         local_encryption_key,
-        gcp: None,
     }
 }
 
@@ -115,7 +114,7 @@ impl OneNodeTestConfig {
 
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
-                let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+                let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
@@ -226,7 +225,10 @@ impl IntegrationTestSetup {
                     desired_presignatures_to_buffer: 5,
                     timeout_sec: 60,
                 },
-                signature: SignatureConfig { timeout_sec: 60 },
+                signature: SignatureConfig {
+                    timeout_sec: 60,
+                    online_presign: true,
+                },
                 ckd: CKDConfig { timeout_sec: 60 },
                 foreign_chains: ForeignChainsConfig::default(),
                 triple: TripleConfig {
@@ -290,7 +292,7 @@ pub async fn request_signature_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     let payload = match domain.protocol {
-        Protocol::CaitSith | Protocol::DamgardEtAl => {
+        Protocol::CaitSith | Protocol::RobustEcdsa => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
 
@@ -499,7 +501,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: bitcoin_tx_id.into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
             domain_id: domain.id.0.into(),
             payload_version: ForeignTxPayloadVersion::V1,

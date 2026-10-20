@@ -327,7 +327,7 @@ pub async fn monitor_contract_state(
 
             let (height, protocol_state) = match indexer_state
                 .view_client
-                .get_mpc_contract_state_dto(indexer_state.mpc_contract_id.clone())
+                .get_mpc_contract_state_dto()
                 .await
             {
                 Ok(contract_state) => contract_state,
@@ -561,7 +561,7 @@ mod tests {
     use mpc_contract::state::{
         ProtocolContractState as InternalContractState, test_utils::gen_resharing_state,
     };
-    use near_indexer_primitives::types::AccountId;
+    use near_account_id::AccountId;
     use near_mpc_contract_interface::types::AccountId as DtoAccountId;
     use near_mpc_contract_interface::types::{
         GovernanceThreshold, GovernanceThresholdParameters, ParticipantId, ParticipantInfo,
@@ -603,7 +603,7 @@ mod tests {
                 account_id.parse().unwrap(),
                 ParticipantId(i as u32),
                 ParticipantInfo {
-                    url,
+                    url: url.try_into().unwrap(),
                     tls_public_key: pk.parse().unwrap(),
                 },
             ));
@@ -682,7 +682,7 @@ mod tests {
         // Given
         let mut entries = create_chain_participant_infos().participants;
         let original_count = entries.len();
-        entries[0].2.url = "http://:3000".to_string();
+        entries[0].2.url = "http://:3000".try_into().unwrap();
         let account = entries[0].0.clone();
         let params = GovernanceThresholdParameters {
             participants: Participants {
@@ -711,7 +711,7 @@ mod tests {
     fn convert_participant_infos__should_apply_port_override_to_unreachable_participant() {
         // Given
         let mut entries = create_chain_participant_infos().participants;
-        entries[0].2.url = "http://:3000".to_string();
+        entries[0].2.url = "http://:3000".try_into().unwrap();
         let account = entries[0].0.clone();
         let params = GovernanceThresholdParameters {
             participants: Participants {

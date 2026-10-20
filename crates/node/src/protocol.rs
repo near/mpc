@@ -289,9 +289,9 @@ impl MessageCounters {
 mod tests {
     use super::{MessageCounters, run_protocol};
     use crate::network::testing::{new_task_channel_for_test, run_test_clients};
-    use crate::network::{MeshNetworkClient, NetworkTaskChannel, ParticipantNotInChannelError};
-    use crate::primitives::{ChannelId, MpcMessage, MpcMessageKind, MpcPeerMessage, UniqueId};
-    use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind};
+    use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+    use crate::primitives::{ChannelId, MpcMessage, MpcPeerMessage, UniqueId};
     use crate::tests::into_participant_ids;
     use crate::tracking;
     use std::collections::VecDeque;
@@ -341,10 +341,9 @@ mod tests {
         .await;
     }
 
-    /// A [`Computation`] from outside the participant set must error, not crash the node.
     #[test_log::test(tokio::test)]
     #[expect(non_snake_case)]
-    async fn run_protocol__should_reject_computation_from_non_participant() {
+    async fn run_protocol__should_ignore_computation_from_non_participant() {
         tracking::testing::start_root_task_with_periodic_dump(async {
             // Given
             let ids = into_participant_ids(&generate_participants(3));
@@ -356,17 +355,27 @@ mod tests {
             };
             let (mut channel, raw_sender) =
                 new_task_channel_for_test(task_id.into(), ids[0], ids[0], participants);
+            let channel_id = ChannelId(UniqueId::new(ids[0], 0, 0));
             raw_sender
                 .send(MpcPeerMessage {
                     from: outsider,
                     message: MpcMessage {
-                        channel_id: ChannelId(UniqueId::new(outsider, 0, 0)),
+                        channel_id,
                         kind: MpcMessageKind::Computation(vec![vec![1u8]]),
                     },
                 })
                 .unwrap();
+            raw_sender
+                .send(MpcPeerMessage {
+                    from: ids[1],
+                    message: MpcMessage {
+                        channel_id,
+                        kind: MpcMessageKind::Computation(vec![vec![2u8]]),
+                    },
+                })
+                .unwrap();
             let protocol = ScriptedProtocol {
-                script: [Action::Wait].into(),
+                script: [Action::Wait, Action::Return(42)].into(),
             };
 
             // When
@@ -375,14 +384,10 @@ mod tests {
                 run_protocol("scripted", &mut channel, protocol),
             )
             .await
-            .expect("run_protocol must return an error, not hang or panic");
+            .expect("the out-of-set Computation must not stall the computation");
 
             // Then
-            let err = result.expect_err("out-of-set Computation must be rejected");
-            assert!(
-                err.downcast_ref::<ParticipantNotInChannelError>().is_some(),
-                "expected ParticipantNotInChannelError, got: {err:#}"
-            );
+            assert_eq!(result.unwrap(), 42);
         })
         .await;
     }

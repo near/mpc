@@ -1,6 +1,7 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
+use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use near_mpc_contract_interface::types::{
     Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
@@ -17,7 +18,7 @@ pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol)
     matches!(
         (purpose, protocol),
         (DomainPurpose::Sign, Protocol::CaitSith)
-            | (DomainPurpose::Sign, Protocol::DamgardEtAl)
+            | (DomainPurpose::Sign, Protocol::RobustEcdsa)
             | (DomainPurpose::Sign, Protocol::Frost)
             | (DomainPurpose::ForeignTx, Protocol::CaitSith)
             | (DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation)
@@ -36,10 +37,31 @@ pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
     Ok(())
 }
 
+/// Validates `domains` against a participant set of `n = num_participants` governed at
+/// `governance`: each domain's ReconstructionThreshold `t` satisfies `2 <= t <= n` and
+/// [`Protocol::required_active_signers`]` <= n`, and `governance` meets the absolute and
+/// relative bounds for `n` and is at least the largest `t` among them. Call this at every
+/// point where the participant set, the GovernanceThreshold, or a ReconstructionThreshold
+/// changes.
+pub fn validate_domains_against_governance(
+    domains: &[DomainConfig],
+    num_participants: u64,
+    governance: GovernanceThreshold,
+) -> Result<(), Error> {
+    for domain in domains {
+        validate_domain_reconstruction_threshold(domain, num_participants)?;
+    }
+    GovernanceThresholdParameters::validate_governance_against_reconstruction(
+        num_participants,
+        governance,
+        max_reconstruction_threshold(domains),
+    )
+}
+
 /// Validates the per-domain reconstruction threshold against the participant
-/// count. Universal bound `2 <= t <= n` plus, for [`DamgardEtAl`](Protocol::DamgardEtAl), the
-/// honest-majority bound `2t - 1 <= n`.
-pub fn validate_domain_reconstruction_threshold(
+/// count. Universal bound `2 <= t <= n` plus the per-scheme bound
+/// [`Protocol::required_active_signers`]` <= n`.
+fn validate_domain_reconstruction_threshold(
     domain: &DomainConfig,
     num_participants: u64,
 ) -> Result<(), Error> {
@@ -54,20 +76,16 @@ pub fn validate_domain_reconstruction_threshold(
         }
         .into());
     }
-    if domain.protocol == Protocol::DamgardEtAl {
-        let required = t.checked_mul(2).and_then(|x| x.checked_sub(1)).ok_or(
-            DomainError::ReconstructionThresholdOverflow {
-                reconstruction_threshold: t,
-            },
-        )?;
-        if required > num_participants {
-            return Err(DomainError::InsufficientParticipantsForProtocol {
-                protocol: domain.protocol,
-                required,
-                participants: num_participants,
-            }
-            .into());
+    let required = domain
+        .protocol
+        .required_active_signers(domain.reconstruction_threshold);
+    if required > num_participants {
+        return Err(DomainError::InsufficientParticipantsForProtocol {
+            protocol: domain.protocol,
+            required,
+            participants: num_participants,
         }
+        .into());
     }
     Ok(())
 }
@@ -75,7 +93,7 @@ pub fn validate_domain_reconstruction_threshold(
 /// The largest [`ReconstructionThreshold`] across `domains`, or `None` if there are none
 /// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
 /// Feeds [`GovernanceThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::GovernanceThresholdParameters::validate_governance_against_reconstruction).
-pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
+fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
     domains
         .iter()
         .map(|domain| domain.reconstruction_threshold)
@@ -85,7 +103,7 @@ pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<Reconstr
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainRegistry {
     domains: Vec<DomainConfig>,
@@ -235,7 +253,7 @@ impl DomainRegistry {
 
 /// Tracks votes to add domains. Each participant can at any given time vote for a list of domains
 /// to add.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AddDomainsVotes {
     pub(crate) proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
@@ -271,9 +289,7 @@ impl AddDomainsVotes {
         let remaining_votes = self
             .proposal_by_account
             .iter()
-            .filter(|&(participant_id, _vote)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
+            .filter(|&(participant_id, _vote)| participants.is_participant(participant_id))
             .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
             .collect();
         AddDomainsVotes {
@@ -288,7 +304,9 @@ pub mod tests {
     use super::{
         AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry, Protocol,
         is_valid_protocol_for_purpose, validate_domain_purpose,
+        validate_domain_reconstruction_threshold,
     };
+    use crate::errors::{DomainError, Error};
     use crate::primitives::test_utils::{
         gen_authenticated_participants, gen_participants, infer_purpose_from_protocol,
     };
@@ -325,7 +343,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(3),
-                protocol: Protocol::DamgardEtAl,
+                protocol: Protocol::RobustEcdsa,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
@@ -384,7 +402,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(4),
-                protocol: Protocol::DamgardEtAl,
+                protocol: Protocol::RobustEcdsa,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
@@ -442,7 +460,7 @@ pub mod tests {
     #[rstest]
     #[case(Protocol::CaitSith, DomainPurpose::Sign)]
     #[case(Protocol::Frost, DomainPurpose::Sign)]
-    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign)]
+    #[case(Protocol::RobustEcdsa, DomainPurpose::Sign)]
     #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
     fn test_infer_purpose_from_protocol(
         #[case] protocol: Protocol,
@@ -454,7 +472,7 @@ pub mod tests {
     #[rstest]
     // Valid combinations
     #[case(DomainPurpose::Sign, Protocol::CaitSith, true)]
-    #[case(DomainPurpose::Sign, Protocol::DamgardEtAl, true)]
+    #[case(DomainPurpose::Sign, Protocol::RobustEcdsa, true)]
     #[case(DomainPurpose::Sign, Protocol::Frost, true)]
     #[case(DomainPurpose::ForeignTx, Protocol::CaitSith, true)]
     #[case(DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation, true)]
@@ -462,7 +480,7 @@ pub mod tests {
     #[case(DomainPurpose::Sign, Protocol::ConfidentialKeyDerivation, false)]
     #[case(DomainPurpose::ForeignTx, Protocol::Frost, false)]
     #[case(DomainPurpose::ForeignTx, Protocol::ConfidentialKeyDerivation, false)]
-    #[case(DomainPurpose::ForeignTx, Protocol::DamgardEtAl, false)]
+    #[case(DomainPurpose::ForeignTx, Protocol::RobustEcdsa, false)]
     #[case(DomainPurpose::CKD, Protocol::CaitSith, false)]
     fn test_valid_protocol_purpose_combinations(
         #[case] purpose: DomainPurpose,
@@ -475,10 +493,10 @@ pub mod tests {
     #[rstest]
     #[case(Protocol::CaitSith, DomainPurpose::Sign, true)]
     #[case(Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
-    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    #[case(Protocol::RobustEcdsa, DomainPurpose::Sign, true)]
     #[case(Protocol::Frost, DomainPurpose::Sign, true)]
     #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD, true)]
-    #[case(Protocol::DamgardEtAl, DomainPurpose::ForeignTx, false)]
+    #[case(Protocol::RobustEcdsa, DomainPurpose::ForeignTx, false)]
     #[case(Protocol::Frost, DomainPurpose::ForeignTx, false)]
     #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::Sign, false)]
     #[case(Protocol::CaitSith, DomainPurpose::CKD, false)]
@@ -771,5 +789,60 @@ pub mod tests {
             result.domains()[2].reconstruction_threshold,
             ReconstructionThreshold::new(2)
         );
+    }
+
+    fn sign_domain(protocol: Protocol, threshold: u64) -> DomainConfig {
+        DomainConfig {
+            id: DomainId(0),
+            protocol,
+            reconstruction_threshold: ReconstructionThreshold::new(threshold),
+            purpose: DomainPurpose::Sign,
+        }
+    }
+
+    #[test]
+    fn validate_domain_reconstruction_threshold__should_accept_robust_ecdsa_at_required_signers_bound()
+     {
+        // Given t = 3, so RobustEcdsa requires 2t - 1 = 5 active signers
+        let domain = sign_domain(Protocol::RobustEcdsa, 3);
+
+        // When
+        let result = validate_domain_reconstruction_threshold(&domain, 5);
+
+        // Then
+        result.unwrap();
+    }
+
+    #[test]
+    fn validate_domain_reconstruction_threshold__should_reject_robust_ecdsa_below_required_signers()
+    {
+        // Given t = 3 with only n = 4 participants, although t <= n holds
+        let domain = sign_domain(Protocol::RobustEcdsa, 3);
+
+        // When
+        let err = validate_domain_reconstruction_threshold(&domain, 4).unwrap_err();
+
+        // Then
+        assert_eq!(
+            err,
+            Error::from(DomainError::InsufficientParticipantsForProtocol {
+                protocol: Protocol::RobustEcdsa,
+                required: 5,
+                participants: 4,
+            })
+        );
+    }
+
+    #[test]
+    fn validate_domain_reconstruction_threshold__should_accept_cait_sith_when_threshold_equals_participants()
+     {
+        // Given t = n = 4, which RobustEcdsa would reject
+        let domain = sign_domain(Protocol::CaitSith, 4);
+
+        // When
+        let result = validate_domain_reconstruction_threshold(&domain, 4);
+
+        // Then
+        result.unwrap();
     }
 }

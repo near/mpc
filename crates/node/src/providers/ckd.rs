@@ -2,11 +2,10 @@ mod key_generation;
 mod key_resharing;
 mod sign;
 
+use crate::network::wire_format::{CKDTaskId, MpcTaskId};
 use std::{collections::HashMap, sync::Arc};
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
-use near_mpc_contract_interface::types::KeyEventId;
 use threshold_signatures::confidential_key_derivation::{
     BLS12381SHA256, ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
@@ -18,24 +17,10 @@ use mpc_node_config::ConfigFile;
 use crate::{
     config::{MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
-    primitives::MpcTaskId,
     providers::{DomainKeyshare, SignatureProvider},
     storage::CKDRequestStorage,
-    types::{CKDId, SignatureId},
+    types::SignatureId,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum CKDTaskId {
-    KeyGeneration { key_event: KeyEventId },
-    KeyResharing { key_event: KeyEventId },
-    Ckd { id: CKDId },
-}
-
-impl From<CKDTaskId> for MpcTaskId {
-    fn from(value: CKDTaskId) -> Self {
-        MpcTaskId::CKDTaskId(value)
-    }
-}
 
 #[derive(Clone)]
 pub struct CKDProvider {

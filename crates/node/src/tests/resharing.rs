@@ -19,7 +19,7 @@ use super::DEFAULT_BLOCK_TIME;
 fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
     match protocol {
         Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
-        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
+        Protocol::CaitSith | Protocol::Frost | Protocol::RobustEcdsa => DomainPurpose::Sign,
     }
 }
 
@@ -31,7 +31,7 @@ fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
 #[case(1, Protocol::Frost, 3)]
 #[case(2, Protocol::ConfidentialKeyDerivation, 3)]
 // TODO(#1946): re-enable once it is no longer flaky
-// #[case(3, Protocol::DamgardEtAl, 5)]
+// #[case(3, Protocol::RobustEcdsa, 5)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
     #[case] protocol: Protocol,

@@ -27,7 +27,9 @@ impl<C: Ciphersuite> Polynomial<C> {
         if coefficients.is_empty() {
             return Err(ProtocolError::EmptyOrZeroCoefficients);
         }
-        // count the number of zero coeffs before spotting the first non-zero
+        // Comparing secret coefficients to zero is intentional: the scan stops at the
+        // highest non-zero coefficient, so its timing reveals only the degree, which
+        // the commitment to the polynomial publishes anyway.
         let count = coefficients
             .iter()
             .rev()
@@ -185,7 +187,9 @@ impl<C: Ciphersuite> Polynomial<C> {
         self.coefficients
             .first_mut()
             .map_or(Err(ProtocolError::EmptyOrZeroCoefficients), |first| {
-                if v == <C::Group as Group>::Field::zero() && coefficients_len == 1 {
+                // The public length check goes first so that the secret `v` is only
+                // compared when it decides the outcome.
+                if coefficients_len == 1 && v == <C::Group as Group>::Field::zero() {
                     Err(ProtocolError::EmptyOrZeroCoefficients)
                 } else {
                     *first = v;

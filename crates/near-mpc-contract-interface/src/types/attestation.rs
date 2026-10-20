@@ -1,8 +1,12 @@
 use std::fmt;
 
+use crate::types::tee::ExpectedMeasurements;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};
+use mpc_primitives::hash::{
+    KeyProviderEventDigest, LauncherDockerComposeHash, MrtdHash, NodeImageHash, Rtmr0Hash,
+    Rtmr1Hash, Rtmr2Hash,
+};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 
@@ -90,6 +94,62 @@ impl VerifiedAttestation {
     }
 }
 
+/// An attestation as the contract stores it.
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StoredAttestation {
+    pub attestation: VerifiedAttestation,
+    /// Block time at which the contract accepted this attestation. Every accepted submission
+    /// restamps it, so a submitter can tell whether its own submission landed. `None` for an
+    /// entry stored before the contract recorded it.
+    pub accepted_at_seconds: Option<u64>,
+}
+
+/// What `get_attestation` returns. Nodes are upgraded before the contract, so a node has to read
+/// both the current shape and the one that predates
+/// [`StoredAttestation::accepted_at_seconds`].
+///
+/// TODO(#4498): collapse into [`StoredAttestation`] once every deployed contract stamps it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetAttestationResponse {
+    Current(StoredAttestation),
+    Legacy(VerifiedAttestation),
+}
+
+impl GetAttestationResponse {
+    pub fn attestation(&self) -> &VerifiedAttestation {
+        match self {
+            GetAttestationResponse::Current(stored) => &stored.attestation,
+            GetAttestationResponse::Legacy(attestation) => attestation,
+        }
+    }
+
+    /// `None` both for an entry the contract reports without an acceptance time and for a
+    /// [`Legacy`](GetAttestationResponse::Legacy) response, which has no such field at all.
+    pub fn accepted_at_seconds(&self) -> Option<u64> {
+        match self {
+            GetAttestationResponse::Current(stored) => stored.accepted_at_seconds,
+            GetAttestationResponse::Legacy(_) => None,
+        }
+    }
+}
+
 #[derive(
     Clone,
     Debug,
@@ -136,11 +196,11 @@ pub struct VerifiedDstackAttestation {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifiedMeasurements {
-    pub mrtd: Sha384Digest,
-    pub rtmr0: Sha384Digest,
-    pub rtmr1: Sha384Digest,
-    pub rtmr2: Sha384Digest,
-    pub key_provider_event_digest: Sha384Digest,
+    pub mrtd: MrtdHash,
+    pub rtmr0: Rtmr0Hash,
+    pub rtmr1: Rtmr1Hash,
+    pub rtmr2: Rtmr2Hash,
+    pub key_provider_event_digest: KeyProviderEventDigest,
 }
 
 #[derive(
@@ -195,7 +255,7 @@ pub enum MockAttestation {
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
         /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
-        expected_measurements: Option<VerifiedMeasurements>,
+        expected_measurements: Option<ExpectedMeasurements>,
     },
 }
 
@@ -254,11 +314,8 @@ impl fmt::Debug for DstackAttestation {
             if debug_str.len() <= max_bytes {
                 debug_str
             } else {
-                format!(
-                    "{}... (truncated {} bytes)",
-                    &debug_str[..max_bytes],
-                    debug_str.len() - max_bytes
-                )
+                let (kept, dropped) = debug_str.split_at(debug_str.floor_char_boundary(max_bytes));
+                format!("{kept}... (truncated {} bytes)", dropped.len())
             }
         }
 
@@ -268,47 +325,6 @@ impl fmt::Debug for DstackAttestation {
             .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
             .finish()
     }
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-// This is a hand-maintained mirror of the verified `attestation::AppCompose` — the
-// security-relevant subset, NOT the type used during attestation verification. Keep its security
-// fields in sync with the verified struct, or it can drift.
-// TODO(#3425): dedupe with `attestation::AppCompose` (single source of truth) — pending team decision.
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct AppCompose {
-    pub manifest_version: u32,
-    pub name: String,
-    pub runner: String,
-    pub docker_compose_file: String,
-    pub kms_enabled: bool,
-    pub tproxy_enabled: Option<bool>,
-    pub gateway_enabled: Option<bool>,
-    pub public_logs: bool,
-    pub public_sysinfo: bool,
-    pub local_key_provider_enabled: bool,
-    pub key_provider_id: Option<String>,
-    pub allowed_envs: Vec<String>,
-    pub no_instance_id: bool,
-    pub secure_time: Option<bool>,
-    pub pre_launch_script: Option<String>,
-    pub init_script: Option<String>,
-    pub bash_script: Option<String>,
 }
 
 /// Trusted Computing Base information structure
@@ -382,4 +398,77 @@ pub struct EventLog {
     pub event: String,
     /// The payload data associated with the event
     pub event_payload: String,
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+    const EXPIRES_AT_SECONDS: u64 = 1_800_604_800;
+
+    fn mock() -> VerifiedAttestation {
+        VerifiedAttestation::Mock(MockAttestation::Valid)
+    }
+
+    fn mock_with_constraints() -> VerifiedAttestation {
+        VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(EXPIRES_AT_SECONDS),
+            expected_measurements: None,
+        })
+    }
+
+    /// Its hash fields serialize as hex strings through a hand-written impl, which
+    /// `#[serde(untagged)]` replays out of a buffered `Content` rather than straight off the wire.
+    fn dstack() -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(VerifiedDstackAttestation {
+            mpc_image_hash: [0x11; 32].into(),
+            launcher_compose_hash: [0x22; 32].into(),
+            expiry_timestamp_seconds: EXPIRES_AT_SECONDS,
+            measurements: VerifiedMeasurements {
+                mrtd: [0x33; 48].into(),
+                rtmr0: [0x44; 48].into(),
+                rtmr1: [0x55; 48].into(),
+                rtmr2: [0x66; 48].into(),
+                key_provider_event_digest: [0x77; 48].into(),
+            },
+        })
+    }
+
+    #[rstest]
+    fn get_attestation_response__should_read_a_current_response(
+        #[values(mock(), mock_with_constraints(), dstack())] attestation: VerifiedAttestation,
+        #[values(Some(ACCEPTED_AT_SECONDS), None)] accepted_at_seconds: Option<u64>,
+    ) {
+        // Given: an entry the current contract stores, stamped or carried over by the migration
+        let stored = StoredAttestation {
+            attestation,
+            accepted_at_seconds,
+        };
+        let response = serde_json::to_string(&stored).unwrap();
+
+        // When
+        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
+
+        // Then
+        assert_eq!(parsed, GetAttestationResponse::Current(stored));
+    }
+
+    #[rstest]
+    fn get_attestation_response__should_read_a_response_from_a_contract_without_the_timestamp(
+        #[values(mock(), mock_with_constraints(), dstack())] attestation: VerifiedAttestation,
+    ) {
+        // Given
+        let response = serde_json::to_string(&attestation).unwrap();
+
+        // When
+        let parsed: GetAttestationResponse = serde_json::from_str(&response).unwrap();
+
+        // Then
+        assert_eq!(parsed, GetAttestationResponse::Legacy(attestation));
+    }
 }

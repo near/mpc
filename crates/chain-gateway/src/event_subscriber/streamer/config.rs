@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
 use derive_more::{Deref, DerefMut};
-use near_account_id::AccountId;
+use near_indexer_primitives::types::AccountId;
 
-use crate::event_subscriber::{
-    block_events::BlockEventId,
-    subscriber::{BlockEventSubscription, BlockEventSubscriptions},
+use crate::{
+    account_id_compat::to_near_internal,
+    event_subscriber::{
+        block_events::BlockEventId,
+        subscriber::{BlockEventSubscription, BlockEventSubscriptions},
+    },
 };
 
 pub(super) struct StreamerConfig {
@@ -46,7 +49,7 @@ impl From<BlockEventSubscriptions> for StreamerConfig {
                     method_name,
                 } => {
                     receipt_executor_events
-                        .entry(transaction_outcome_executor_id)
+                        .entry(to_near_internal(&transaction_outcome_executor_id))
                         .or_default()
                         .entry(method_name)
                         .or_default()
@@ -57,7 +60,7 @@ impl From<BlockEventSubscriptions> for StreamerConfig {
                     method_name,
                 } => {
                     receipt_receiver_events
-                        .entry(receipt_receiver_id)
+                        .entry(to_near_internal(&receipt_receiver_id))
                         .or_default()
                         .entry(method_name)
                         .or_default()

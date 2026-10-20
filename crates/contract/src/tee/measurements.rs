@@ -1,97 +1,14 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
-use near_sdk::{log, near};
-use std::collections::BTreeMap;
+use mpc_attestation::attestation;
+use near_mpc_contract_interface::types::{ExpectedMeasurements, MeasurementVoteAction};
+use near_sdk::log;
 
-use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
+use crate::dto_mapping::IntoContractType as _;
+use crate::primitives::proposal_hash::{Borsh, Sha256, ToProposalHash};
 
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
-    MrtdHash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR0 TDX measurement.
-    Rtmr0Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR1 TDX measurement.
-    Rtmr1Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR2 TDX measurement.
-    Rtmr2Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the key provider event.
-    KeyProviderEventDigest, 48
-);
-
-/// Tracks votes for adding or removing OS measurements.
-/// Each participant can have at most one active vote at a time.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MeasurementVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
-}
-
-impl MeasurementVotes {
-    /// Casts a vote for the given action and returns the total number of participants
-    /// who have voted for the same action. Replaces any previous vote by this participant.
-    pub fn vote(
-        &mut self,
-        action: MeasurementVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .vote_by_account
-            .insert(participant.clone(), action.clone())
-            .is_some()
-        {
-            log!("removed old measurement vote for signer");
-        }
-        let total = self.count_votes(&action);
-        log!("total measurement votes for action: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given action.
-    fn count_votes(&self, action: &MeasurementVoteAction) -> u64 {
-        u64::try_from(
-            self.vote_by_account
-                .values()
-                .filter(|a| *a == action)
-                .count(),
-        )
-        .expect("participant count should not overflow u64")
-    }
-
-    /// Clears all measurement votes.
-    pub fn clear_votes(&mut self) {
-        self.vote_by_account.clear();
-    }
-
-    /// Returns a new [`MeasurementVotes`] containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .vote_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        MeasurementVotes {
-            vote_by_account: remaining,
-        }
-    }
-}
-
-/// The action a participant is voting for on an OS measurement set.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MeasurementVoteAction {
-    Add(ContractExpectedMeasurements),
-    Remove(ContractExpectedMeasurements),
+impl ToProposalHash for MeasurementVoteAction {
+    type Serializer = Borsh;
+    type Hasher = Sha256;
 }
 
 /// Collection of allowed OS measurements. Managed via voting (add requires threshold,
@@ -105,13 +22,13 @@ pub enum MeasurementVoteAction {
     derive(borsh::BorshSchema)
 )]
 pub(crate) struct AllowedMeasurements {
-    entries: Vec<ContractExpectedMeasurements>,
+    entries: Vec<ExpectedMeasurements>,
 }
 
 impl AllowedMeasurements {
     /// Adds a new measurement set to the allowed list.
     /// Returns `false` if the measurement is already in the list.
-    pub fn add(&mut self, measurement: ContractExpectedMeasurements) -> bool {
+    pub fn add(&mut self, measurement: ExpectedMeasurements) -> bool {
         if self.entries.contains(&measurement) {
             log!("measurement already in allowed list");
             return false;
@@ -122,7 +39,7 @@ impl AllowedMeasurements {
 
     /// Removes a measurement set from the allowed list.
     /// Returns `false` if the measurement was not found or if removal would leave the list empty.
-    pub fn remove(&mut self, measurement: &ContractExpectedMeasurements) -> bool {
+    pub fn remove(&mut self, measurement: &ExpectedMeasurements) -> bool {
         let would_remain = self.entries.iter().filter(|e| *e != measurement).count();
         if would_remain == 0 {
             return false;
@@ -133,67 +50,48 @@ impl AllowedMeasurements {
     }
 
     /// Returns all allowed measurements.
-    pub fn entries(&self) -> &[ContractExpectedMeasurements] {
+    pub fn entries(&self) -> &[ExpectedMeasurements] {
         &self.entries
     }
 
     /// Converts to attestation-crate types for verification.
-    pub fn to_attestation_measurements(&self) -> Vec<ExpectedMeasurements> {
+    pub fn to_attestation_measurements(&self) -> Vec<attestation::ExpectedMeasurements> {
         self.entries
             .iter()
             .cloned()
-            .map(ExpectedMeasurements::from)
+            .map(|m| m.into_contract_type())
             .collect()
     }
 }
 
-/// On-chain representation of expected TDX measurements.
-/// Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with
-/// contract-compatible serialization (hex strings in JSON, borsh for storage).
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema, schemars::JsonSchema)
-)]
-pub struct ContractExpectedMeasurements {
-    pub mrtd: MrtdHash,
-    pub rtmr0: Rtmr0Hash,
-    pub rtmr1: Rtmr1Hash,
-    pub rtmr2: Rtmr2Hash,
-    pub key_provider_event_digest: KeyProviderEventDigest,
-}
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{ExpectedMeasurements, MeasurementVoteAction, ToProposalHash};
+    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
-    fn from(m: ExpectedMeasurements) -> Self {
-        Self {
-            mrtd: MrtdHash::from(m.rtmrs.mrtd),
-            rtmr0: Rtmr0Hash::from(m.rtmrs.rtmr0),
-            rtmr1: Rtmr1Hash::from(m.rtmrs.rtmr1),
-            rtmr2: Rtmr2Hash::from(m.rtmrs.rtmr2),
-            key_provider_event_digest: KeyProviderEventDigest::from(m.key_provider_event_digest),
-        }
-    }
-}
+    /// Golden value computed independently (Python hashlib over the borsh bytes:
+    /// 1-byte variant tag + the five 48-byte digests), so a change to the encoding
+    /// or hashing fails here.
+    #[test]
+    fn measurement_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let measurement = ExpectedMeasurements {
+            mrtd: MrtdHash::from([0xCD; 48]),
+            rtmr0: Rtmr0Hash::from([0xCD; 48]),
+            rtmr1: Rtmr1Hash::from([0xCD; 48]),
+            rtmr2: Rtmr2Hash::from([0xCD; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([0xCD; 48]),
+        };
 
-impl From<ContractExpectedMeasurements> for ExpectedMeasurements {
-    fn from(m: ContractExpectedMeasurements) -> Self {
-        Self {
-            rtmrs: Measurements {
-                mrtd: m.mrtd.into(),
-                rtmr0: m.rtmr0.into(),
-                rtmr1: m.rtmr1.into(),
-                rtmr2: m.rtmr2.into(),
-            },
-            key_provider_event_digest: m.key_provider_event_digest.into(),
-        }
+        // When / Then
+        assert_eq!(
+            MeasurementVoteAction::Add(measurement).to_proposal_hash(),
+            "179aaa73073c7493dc33b55de9a28735d28f94975b662f22a6aaa63d6c059fcc"
+                .parse()
+                .unwrap()
+        );
     }
 }

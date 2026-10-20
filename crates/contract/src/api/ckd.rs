@@ -2,20 +2,25 @@
 
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState, TeeError};
-use crate::primitives::ckd::{CKDRequest, app_public_key_check, ckd_output_check};
-use crate::primitives::signature::YieldIndex;
+use crate::primitives::ckd::{app_public_key_check, ckd_output_check};
 use crate::{MpcContract, MpcContractExt, pending_requests};
-use dtos::{DomainId, DomainPurpose};
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{self as dtos, CKDRequestArgs, CKDResponse};
-use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
+use near_mpc_contract_interface::types as dtos;
+use near_sdk::{CryptoHash, Gas, NearToken, PromiseError, PromiseOrValue, env, log, near, require};
 
 #[near]
 impl MpcContract {
-    fn add_ckd_request(&mut self, request: CKDRequest, data_id: CryptoHash) {
+    fn add_ckd_request(&mut self, request: dtos::CKDRequest, data_id: CryptoHash) {
         pending_requests::push_pending_yield(&mut self.pending_ckd_requests, request, data_id);
     }
 
+    /// The derived key is fully determined by the calling account id (taken
+    /// implicitly from the predecessor), the derivation path and the domain —
+    /// no other account can obtain the same key. `app_public_key` does not
+    /// influence the derived key: it is a caller-chosen ephemeral key the
+    /// response is encrypted to; see [`dtos::CKDResponse`] for the encryption
+    /// layout and how to decrypt.
+    ///
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each ckd request.
     ///
@@ -25,17 +30,17 @@ impl MpcContract {
     /// where the derived key is intentionally public (no encryption).
     #[handle_result]
     #[payable]
-    pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
+    pub fn request_app_private_key(&mut self, request: dtos::CKDRequestArgs) {
         log!(
             "request_app_private_key: predecessor={:?}, request={:?}",
             env::predecessor_account_id(),
             request
         );
 
-        let domain_id: DomainId = request.domain_id;
+        let domain_id = request.domain_id;
         let (_, predecessor) = self.check_request_preconditions(
             domain_id,
-            DomainPurpose::CKD,
+            dtos::DomainPurpose::CKD,
             Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas),
             MINIMUM_CKD_REQUEST_DEPOSIT,
         );
@@ -43,13 +48,11 @@ impl MpcContract {
         match &request.app_public_key {
             dtos::CKDAppPublicKey::AppPublicKey(_) => {}
             dtos::CKDAppPublicKey::AppPublicKeyPV(pk) => {
-                if !app_public_key_check(pk) {
-                    env::panic_str("app public key check failed")
-                }
+                require!(app_public_key_check(pk), "app public key check failed");
             }
         }
 
-        let request = CKDRequest::new(
+        let request = dtos::CKDRequest::new(
             request.app_public_key,
             domain_id,
             &predecessor,
@@ -71,7 +74,11 @@ impl MpcContract {
     }
 
     #[handle_result]
-    pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
+    pub fn respond_ckd(
+        &mut self,
+        request: dtos::CKDRequest,
+        response: dtos::CKDResponse,
+    ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
@@ -94,9 +101,10 @@ impl MpcContract {
         match &request.app_public_key {
             dtos::CKDAppPublicKey::AppPublicKey(_) => {}
             dtos::CKDAppPublicKey::AppPublicKeyPV(app_pk) => {
-                if !ckd_output_check(&request.app_id, &response, app_pk, &public_key) {
-                    env::panic_str("CKD output check failed");
-                }
+                require!(
+                    ckd_output_check(&request.app_id, &response, app_pk, &public_key),
+                    "CKD output check failed"
+                );
             }
         }
 
@@ -109,10 +117,10 @@ impl MpcContract {
 
     /// Presence check for a pending CKD request, exposed as a view call.
     ///
-    /// See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]
+    /// See [`Self::get_pending_request`] for the contract: the returned [`dtos::YieldIndex`]
     /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
     /// `Some`/`None` distinction is meaningful.
-    pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
+    pub fn get_pending_ckd_request(&self, request: &dtos::CKDRequest) -> Option<dtos::YieldIndex> {
         self.pending_ckd_requests
             .get(request)
             .and_then(|q| q.first().cloned())
@@ -129,9 +137,9 @@ impl MpcContract {
     #[private]
     pub fn return_ck_and_clean_state_on_success(
         &mut self,
-        request: CKDRequest,
-        #[callback_result] ck: Result<CKDResponse, PromiseError>,
-    ) -> PromiseOrValue<CKDResponse> {
+        request: dtos::CKDRequest,
+        #[callback_result] ck: Result<dtos::CKDResponse, PromiseError>,
+    ) -> PromiseOrValue<dtos::CKDResponse> {
         match ck {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
@@ -139,14 +147,11 @@ impl MpcContract {
                     &mut self.pending_ckd_requests,
                     &request,
                 );
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                let promise = Self::ext_self()
+                    .with_static_gas(Gas::from_tgas(self.config.fail_on_timeout_tera_gas))
+                    .with_unused_gas_weight(0)
+                    .fail_on_timeout();
+                PromiseOrValue::Promise(promise.as_return())
             }
         }
     }
@@ -166,7 +171,10 @@ mod tests {
     };
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
     use crate::state::ProtocolContractState;
-    use dtos::{Attestation, Curve, MockAttestation, Protocol};
+    use dtos::{
+        Attestation, CKDRequest, CKDRequestArgs, CKDResponse, Curve, DomainPurpose,
+        MockAttestation, Protocol,
+    };
     use elliptic_curve::{Field as _, Group};
     use k256::{self, elliptic_curve};
     use near_mpc_contract_interface::types::CKDAppPublicKey;

@@ -1,13 +1,17 @@
+use std::cmp::max;
 use std::future::Future;
 use std::path::Path;
+use std::time::Duration;
 
 use near_account_id::AccountId;
 use near_async::ActorSystem;
-use near_contract_transport::{ViewArgs, ViewContract};
+use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_store::db::RocksDB;
 use nearcore::NearConfig;
 use tokio::sync::mpsc::Receiver;
+use tokio_util::sync::CancellationToken;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
 use crate::event_subscriber;
@@ -16,8 +20,11 @@ use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
-use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
-use near_contract_transport::{BlockHeight, ObservedState};
+use crate::node_config::NodeConfig;
+use crate::primitives::{
+    FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction, view_when_synced,
+};
+use near_contract_transport::SerializedObservation;
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -27,6 +34,7 @@ pub struct ChainGateway {
     client: NearClientActorHandle,
     /// For sending transactions to the blockchain.
     rpc_handler: NearRpcActorHandle,
+    expected_block_time: Duration,
 }
 
 impl IsSyncing for ChainGateway {
@@ -38,13 +46,13 @@ impl IsSyncing for ChainGateway {
 
 impl ViewContract for ChainGateway {
     type Error = NearViewClientError;
-    type ObservedAt = BlockHeight;
+
     async fn view_contract(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> Result<ObservedState, Self::Error> {
-        self.view_client.view_contract(contract_id, view_args).await
+    ) -> Result<SerializedObservation, Self::Error> {
+        view_when_synced(self, || self.view_client.view_near(contract_id, view_args)).await
     }
 }
 
@@ -69,13 +77,33 @@ impl SubmitSignedTransaction for ChainGateway {
     }
 }
 
+/// This is a floor in case we run a localnet with a super short block time.
+const MIN_CHAIN_GATEWAY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const MAX_POLLS_PER_BLOCK: u32 = 2;
+
+fn poll_interval(expected_block_time: Duration) -> PollInterval {
+    PollInterval::new(max(
+        expected_block_time
+            .checked_div(MAX_POLLS_PER_BLOCK)
+            .unwrap_or(Duration::ZERO),
+        MIN_CHAIN_GATEWAY_POLL_INTERVAL,
+    ))
+    .expect("at least the 50ms floor")
+}
+
+impl HasPollInterval for ChainGateway {
+    fn poll_interval(&self) -> PollInterval {
+        poll_interval(self.expected_block_time)
+    }
+}
+
 /// Handle to the background thread running the nearcore node.
 ///
 /// Provides liveness checking via [`is_node_alive`](Self::is_node_alive) and
 /// shutdown via [`send_shutdown`](Self::send_shutdown).
 pub struct NodeHandle {
     thread_handle: std::thread::JoinHandle<()>,
-    shutdown_sender: Option<tokio::sync::oneshot::Sender<()>>,
+    shutdown: CancellationToken,
 }
 
 impl NodeHandle {
@@ -87,21 +115,34 @@ impl NodeHandle {
     /// Sends the shutdown signal to the nearcore node.
     /// Returns `true` if the signal was sent, `false` if already sent or node already dead.
     pub fn send_shutdown(&mut self) -> bool {
-        self.shutdown_sender
-            .take()
-            .map(|tx| tx.send(()).is_ok())
-            .unwrap_or(false)
+        let sent = self.is_node_alive() && !self.shutdown.is_cancelled();
+        self.shutdown.cancel();
+        sent
+    }
+}
+
+/// Tells the node to stop, then blocks until every [`RocksDB`] instance in the process is closed,
+/// not just this node's databases. So if two handles are dropped one by one on the same thread,
+/// for example as fields of one struct, the first drop also waits for the second node. If nothing
+/// else stops that node, only its own handle's drop would tell it to, and that drop can't start
+/// while the first one is waiting, so the first drop waits forever. To avoid this, call
+/// [`NodeHandle::send_shutdown`] on every handle before dropping any of them
+impl Drop for NodeHandle {
+    fn drop(&mut self) {
+        self.send_shutdown();
+        RocksDB::block_until_all_instances_are_dropped();
     }
 }
 
 impl ChainGateway {
-    /// Spawns a near node with `indexer_config`.
+    /// Spawns a NEAR node with [`NodeConfig`].
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
     /// Returns a stream for BlockUpdates if BlockEventSubscriptions is not None.
     pub async fn start(
-        indexer_config: near_indexer::IndexerConfig,
+        node_config: NodeConfig,
         subscriber: Option<BlockEventSubscriptions>,
+        shutdown: CancellationToken,
     ) -> Result<
         (
             ChainGateway,
@@ -110,6 +151,7 @@ impl ChainGateway {
         ),
         ChainGatewayError,
     > {
+        let NodeConfig(indexer_config) = node_config;
         let near_config: NearConfig = indexer_config.load_near_config().map_err(|err| {
             ChainGatewayError::FailureLoadingConfig {
                 msg: err.to_string(),
@@ -124,14 +166,15 @@ impl ChainGateway {
         });
 
         let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
-        let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+        let shutdown = shutdown.child_token();
+        let stop_unless_started = shutdown.clone().drop_guard();
 
         let thread_handle = std::thread::spawn(move || {
             run_node(
                 ready_sender,
                 near_config,
                 &home_dir,
-                shutdown_receiver,
+                shutdown,
                 streamer_setup,
             )
         });
@@ -139,7 +182,7 @@ impl ChainGateway {
         let (chain_gateway, stream) = ready_receiver.await.expect("startup thread died")?;
         let node_handle = NodeHandle {
             thread_handle,
-            shutdown_sender: Some(shutdown_sender),
+            shutdown: stop_unless_started.disarm(),
         };
         Ok((chain_gateway, node_handle, stream))
     }
@@ -151,9 +194,15 @@ fn run_node(
     ready_sender: tokio::sync::oneshot::Sender<RunNodeResult>,
     near_config: nearcore::NearConfig,
     home_dir: &Path,
-    mut shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
+    shutdown: CancellationToken,
     streamer_setup: Option<StreamerSetup>,
 ) {
+    let expected_block_time: std::time::Duration = near_config
+        .config
+        .consensus
+        .min_block_production_delay
+        .try_into()
+        .expect("block time must be non-negative");
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -161,6 +210,7 @@ fn run_node(
 
     rt.block_on(async move {
         let actor_system = ActorSystem::new();
+        let _stop_actors = StopActorSystemOnDrop(actor_system.clone());
         let near_node =
             match nearcore::start_with_config(home_dir, near_config, actor_system.clone()).await {
                 Ok(node) => node,
@@ -188,16 +238,13 @@ fn run_node(
             tracing::info!(
                 "chain-gateway waiting for node to finish syncing before streaming blocks."
             );
-            let synced = await_sync_or_shutdown(client.wait_for_full_sync(), async {
-                let _ = (&mut shutdown_receiver).await;
-            })
-            .await;
+            let synced =
+                await_sync_or_shutdown(client.wait_for_full_sync(), shutdown.cancelled()).await;
             if !synced {
                 tracing::info!("shutdown requested before sync completed; exiting startup.");
                 let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {
                     msg: "shutdown requested before node finished syncing".to_string(),
                 }));
-                actor_system.stop();
                 return;
             }
 
@@ -224,20 +271,12 @@ fn run_node(
                 view_client,
                 client,
                 rpc_handler,
+                expected_block_time,
             },
             stream,
         )));
 
-        match shutdown_receiver.await {
-            Ok(()) => {
-                tracing::info!("node gracefully shutting down actor system");
-            }
-            _ => {
-                tracing::info!("shutdown sender was dropped, shutting down actor system");
-            }
-        }
-
-        actor_system.stop();
+        shutdown.cancelled().await;
     });
 }
 
@@ -247,6 +286,14 @@ struct StreamerSetup {
     subscriber: BlockEventSubscriptions,
     indexer_config: near_indexer::IndexerConfig,
     near_config: NearConfig,
+}
+
+struct StopActorSystemOnDrop(ActorSystem);
+
+impl Drop for StopActorSystemOnDrop {
+    fn drop(&mut self) {
+        self.0.stop();
+    }
 }
 
 async fn await_sync_or_shutdown(
@@ -262,8 +309,35 @@ async fn await_sync_or_shutdown(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::await_sync_or_shutdown;
+    use super::{
+        MAX_POLLS_PER_BLOCK, MIN_CHAIN_GATEWAY_POLL_INTERVAL, await_sync_or_shutdown, poll_interval,
+    };
     use std::future::pending;
+    use std::time::Duration;
+
+    #[test]
+    fn poll_interval__should_fit_max_polls_within_a_block() {
+        // Given
+        let block_time = Duration::from_secs(1);
+
+        // When
+        let interval = poll_interval(block_time);
+
+        // Then
+        assert_eq!(Duration::from(interval) * MAX_POLLS_PER_BLOCK, block_time);
+    }
+
+    #[test]
+    fn poll_interval__should_not_go_below_the_floor() {
+        // Given
+        let block_time = MIN_CHAIN_GATEWAY_POLL_INTERVAL;
+
+        // When
+        let interval = poll_interval(block_time);
+
+        // Then
+        assert_eq!(Duration::from(interval), MIN_CHAIN_GATEWAY_POLL_INTERVAL);
+    }
 
     #[tokio::test]
     async fn await_sync_or_shutdown__should_return_true_when_sync_completes_first() {

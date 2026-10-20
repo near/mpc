@@ -136,6 +136,28 @@ pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usi
     mock_id
 }
 
+pub fn setup_evm_chain_id_mock(server: &MockServer, chain_id: u64) -> usize {
+    server
+        .mock(|when, then| {
+            when.method(POST);
+            then.respond_with(move |req: &HttpMockRequest| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
+                let response_body = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "result": format!("{chain_id:#x}"),
+                    "id": body["id"].clone(),
+                });
+                HttpMockResponse::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .body(serde_json::to_string(&response_body).unwrap())
+                    .build()
+            });
+        })
+        .id
+}
+
 pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
     let mock_id = server.mock(|when, then| {
         auth.apply(when.method(POST));

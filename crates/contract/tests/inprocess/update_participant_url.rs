@@ -14,12 +14,14 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    ParticipantInfo as DtoParticipantInfo, ProtocolContractState,
+    ParticipantInfo as DtoParticipantInfo, ParticipantUrl, ProtocolContractState,
 };
 use near_sdk::{NearToken, testing_env};
-use std::str::FromStr;
+use std::{assert_matches, str::FromStr};
 
-use assert_matches::assert_matches;
+fn relocated_url() -> ParticipantUrl {
+    "https://relocated.example.com:9000".try_into().unwrap()
+}
 
 fn participant_info(contract: &MpcContract, account_id: &AccountId) -> DtoParticipantInfo {
     let ProtocolContractState::Running(running) = contract.state() else {
@@ -45,7 +47,7 @@ fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     let mut contract = init_contract(&parameters, None);
     let (account_id, _, original_info) = participant_list[0].clone();
     let (other_account, _, other_info) = participant_list[1].clone();
-    let new_url = "https://relocated.example.com:9000".to_string();
+    let new_url = relocated_url();
     assert_ne!(original_info.url, new_url);
 
     // When
@@ -77,7 +79,7 @@ fn update_participant_url__should_reject_when_no_deposit_attached() {
     // panics via `require_deposit` before the URL is updated
     // When, Then
     testing_env!(participant_context(&account_id));
-    let _ = contract.update_participant_url("https://relocated.example.com:9000".to_string());
+    let _ = contract.update_participant_url(relocated_url());
 }
 
 #[test]
@@ -91,7 +93,7 @@ fn update_participant_url__should_reject_non_participant() {
 
     // When
     testing_env!(participant_context(&outsider));
-    let result = contract.update_participant_url("https://outsider.example.com:9000".to_string());
+    let result = contract.update_participant_url(relocated_url());
 
     // Then
     assert_matches!(
@@ -113,7 +115,7 @@ fn update_participant_url__should_reject_when_not_running() {
 
     // When
     testing_env!(participant_context(&account_id));
-    let result = contract.update_participant_url("https://relocated.example.com:9000".to_string());
+    let result = contract.update_participant_url(relocated_url());
 
     // Then
     assert_matches!(

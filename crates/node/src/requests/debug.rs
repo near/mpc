@@ -32,7 +32,7 @@ pub(super) struct CompletedRequests<RequestType, ChainRespondArgsType> {
     requests: BinaryHeap<CompletedRequest<RequestType, ChainRespondArgsType>>,
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Default
+impl<RequestType: Request, ChainRespondArgsType> Default
     for CompletedRequests<RequestType, ChainRespondArgsType>
 {
     fn default() -> Self {
@@ -42,7 +42,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Default
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialEq
+impl<RequestType: Request, ChainRespondArgsType> PartialEq
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn eq(&self, other: &Self) -> bool {
@@ -51,12 +51,12 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialEq
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Eq
+impl<RequestType: Request, ChainRespondArgsType> Eq
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialOrd
+impl<RequestType: Request, ChainRespondArgsType> PartialOrd
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -64,7 +64,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialOrd
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Ord
+impl<RequestType: Request, ChainRespondArgsType> Ord
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -89,7 +89,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
+impl<RequestType: Request, ChainRespondArgsType> Debug
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -187,7 +187,7 @@ where
         let mut request_lines = Vec::new();
         let EligibleLeadersAndHeights {
             eligible_leaders,
-            maximum_height,
+            reference_height,
             ..
         } = self.eligible_leaders_and_heights();
         let online_participants = self.network_api.alive_participants();
@@ -241,7 +241,7 @@ where
             )?;
         }
 
-        writeln!(f, "Maximum block height known: {}", maximum_height)?;
+        writeln!(f, "Reference block height: {}", reference_height)?;
 
         writeln!(f, "Recent {}s:", RequestType::get_type())?;
         for (_, _, debug_line) in request_lines {

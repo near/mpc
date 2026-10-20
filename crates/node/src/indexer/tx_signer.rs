@@ -1,5 +1,6 @@
 use crate::config::RespondConfig;
 use crate::indexer::types::ChainSendTransactionRequest;
+use chain_gateway::account_id_compat::to_near_internal;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ecdsa::signature::Signer;
 use near_account_id::AccountId;
@@ -59,10 +60,10 @@ impl TransactionSigner {
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
         let transaction = Transaction::V0(TransactionV0 {
-            signer_id: self.account_id.clone(),
+            signer_id: to_near_internal(&self.account_id),
             public_key: near_core_public_key,
             nonce: self.make_nonce(block_height),
-            receiver_id,
+            receiver_id: to_near_internal(&receiver_id),
             block_hash,
             actions: vec![action.into()],
         });

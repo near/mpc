@@ -1,7 +1,7 @@
 use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
 
-use super::RerandomizedPresignOutput;
+use super::{PresignOutput, RerandomizedPresignOutput};
 use crate::ReconstructionThreshold;
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
@@ -78,19 +78,35 @@ where
         coordinator,
         me,
         public_key,
-        presignature,
+        presignature.into(),
         msg_hash,
     );
     Ok(make_protocol(ctx, fut))
 }
 
-/// Performs signing from any participant's perspective (except the coordinator)
-fn do_sign_participant(
-    mut chan: SharedChannel,
+pub(crate) async fn sign_round(
+    chan: &mut SharedChannel,
     participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
-    presignature: &RerandomizedPresignOutput,
+    public_key: AffinePoint,
+    presignature: &PresignOutput,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    if me == coordinator {
+        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
+    } else {
+        do_sign_participant(chan, participants, coordinator, me, presignature, msg_hash)
+    }
+}
+
+/// Performs signing from any participant's perspective (except the coordinator)
+fn do_sign_participant(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     // Round 1
@@ -105,22 +121,22 @@ fn do_sign_participant(
 
 /// Performs signing from only the coordinator's perspective
 async fn do_sign_coordinator(
-    mut chan: SharedChannel,
-    participants: ParticipantList,
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
     me: Participant,
     public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     // Round 1
-    let s_i = compute_signature_share(&participants, me, &presignature, msg_hash)?;
+    let s_i = compute_signature_share(participants, me, presignature, msg_hash)?;
     // Spec 1.4 is non-existent for a coordinator
 
     let wait0 = chan.next_waitpoint();
     // Receive sj
     // Spec 1.5
     let mut s = s_i;
-    for (_, s_j) in recv_from_others::<Scalar>(&chan, wait0, &participants, me).await? {
+    for (_, s_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
         // Spec 1.6
         s += s_j;
     }
@@ -148,7 +164,7 @@ async fn do_sign_coordinator(
 fn compute_signature_share(
     participants: &ParticipantList,
     me: Participant,
-    presignature: &RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<Scalar, ProtocolError> {
     // Round 1
@@ -167,28 +183,25 @@ fn compute_signature_share(
     Ok(msg_hash * k_i + r * sigma_i)
 }
 
-/// Wraps the coordinator and the participant into a single functions to be called
 async fn fut_wrapper(
-    chan: SharedChannel,
+    mut chan: SharedChannel,
     participants: ParticipantList,
     coordinator: Participant,
     me: Participant,
     public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
+    presignature: PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    if me == coordinator {
-        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
-    } else {
-        do_sign_participant(
-            chan,
-            &participants,
-            coordinator,
-            me,
-            &presignature,
-            msg_hash,
-        )
-    }
+    sign_round(
+        &mut chan,
+        &participants,
+        coordinator,
+        me,
+        public_key,
+        &presignature,
+        msg_hash,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -314,18 +327,19 @@ mod test {
             &participants,
             &mut rng,
             |comms, p_list, p, _rng_p| {
-                let presignature = &presignatures.iter().find(|(pp, _)| *pp == p).unwrap().1;
-                let rerandomized =
-                    crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput::new_without_rerandomization(
-                        presignature,
-                    );
+                let presignature = presignatures
+                    .iter()
+                    .find(|(pp, _)| *pp == p)
+                    .unwrap()
+                    .1
+                    .clone();
                 fut_wrapper(
                     comms.shared_channel(),
                     p_list,
                     coordinator,
                     p,
                     public_key.to_affine(),
-                    rerandomized,
+                    presignature,
                     msg_scalar,
                 )
             },

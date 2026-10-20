@@ -3,18 +3,16 @@
 
 use crate::crypto_shared::types::PublicKeyExtendedConversionError;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::key_state::KeyEventId;
 use crate::{MpcContract, MpcContractExt};
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos};
-use near_sdk::{Gas, NearToken, Promise, env, log, near};
+use near_sdk::{Gas, env, log, near};
 
 #[near]
 impl MpcContract {
     /// Starts a new attempt to generate a key for the current domain.
     /// This only succeeds if the signer is the leader (the participant with the lowest ID).
     #[handle_result]
-    pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn start_keygen_instance(&mut self, key_event_id: dtos::KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
 
         self.assert_caller_is_attested_participant_and_protocol_active();
@@ -41,7 +39,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_pk(
         &mut self,
-        key_event_id: KeyEventId,
+        key_event_id: dtos::KeyEventId,
         public_key: dtos::PublicKey,
     ) -> Result<(), Error> {
         log!(
@@ -72,7 +70,7 @@ impl MpcContract {
     /// Starts a new attempt to reshare the key for the current domain.
     /// This only succeeds if the signer is the leader (the participant with the lowest ID).
     #[handle_result]
-    pub fn start_reshare_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn start_reshare_instance(&mut self, key_event_id: dtos::KeyEventId) -> Result<(), Error> {
         log!(
             "start_reshare_instance: signer={}",
             env::signer_account_id()
@@ -97,7 +95,7 @@ impl MpcContract {
     ///    - Same as the last case, except that all domains' keys have been reshared now, and the
     ///      state transitions into Running with the newly reshared keys.
     #[handle_result]
-    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn vote_reshared(&mut self, key_event_id: dtos::KeyEventId) -> Result<(), Error> {
         log!(
             "vote_reshared: signer={}, resharing_id={:?}",
             env::signer_account_id(),
@@ -112,65 +110,52 @@ impl MpcContract {
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.
-            // Note: MpcContract::vote_update uses filtering to ensure correctness even if this cleanup fails.
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::REMOVE_NON_PARTICIPANT_UPDATE_VOTES.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
-                )
+            // Note: MpcContract::vote_contract_update uses filtering to ensure correctness even if this cleanup fails.
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.remove_non_participant_update_votes_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .remove_non_participant_contract_update_votes()
                 .detach();
             // Spawn a promise to drop votes cast by non-participants.
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEAN_TEE_STATUS.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.clean_tee_status_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(self.config.clean_tee_status_tera_gas))
+                .with_unused_gas_weight(0)
+                .clean_tee_status()
                 .detach();
             // Spawn a bounded sweep over stored attestations to prune invalid / expired entries.
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEAN_INVALID_ATTESTATIONS.to_string(),
-                    serde_json::to_vec(&serde_json::json!({
-                        "max_scan": RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN
-                    }))
-                    .unwrap(),
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.clean_invalid_attestations_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.clean_invalid_attestations_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .clean_invalid_attestations(RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN)
                 .detach();
             // Spawn a promise to clean up orphaned node migrations for non-participants
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEANUP_ORPHANED_NODE_MIGRATIONS.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.cleanup_orphaned_node_migrations_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .cleanup_orphaned_node_migrations()
                 .detach();
             // Spawn a promise to clean up foreign chain data for non-participants
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEAN_FOREIGN_CHAIN_DATA.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config.clean_foreign_chain_data_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .clean_foreign_chain_data()
                 .detach();
             // Spawn a promise to drop verifier-change votes cast by non-participants
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    Gas::from_tgas(
-                        self.config
-                            .remove_non_participant_tee_verifier_votes_tera_gas,
-                    ),
-                )
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(
+                    self.config
+                        .remove_non_participant_tee_verifier_votes_tera_gas,
+                ))
+                .with_unused_gas_weight(0)
+                .remove_non_participant_tee_verifier_votes()
                 .detach();
         }
 
@@ -221,7 +206,10 @@ impl MpcContract {
     /// Casts a vote to abort the current key event instance. If succesful, the contract aborts the
     /// instance and a new instance with the next attempt_id can be started.
     #[handle_result]
-    pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn vote_abort_key_event_instance(
+        &mut self,
+        key_event_id: dtos::KeyEventId,
+    ) -> Result<(), Error> {
         log!(
             "vote_abort_key_event_instance: signer={}",
             env::signer_account_id()

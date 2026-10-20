@@ -2,7 +2,9 @@
 
 use crate::MpcContract;
 use crate::errors::{Error, InvalidParameters};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{AccountId, env};
+use std::assert_matches;
 
 impl MpcContract {
     /// Get our own account id as a voter. Returns an error if we are not a participant.
@@ -53,7 +55,7 @@ impl MpcContract {
             .tee_state
             .is_caller_an_attested_participant(participants);
 
-        assert_matches::assert_matches!(
+        assert_matches!(
             attestation_check,
             Ok(()),
             "Caller must be an attested participant"
@@ -63,21 +65,9 @@ impl MpcContract {
     /// Ensures the current call originates from the signer account itself.
     /// Panics if `signer_account_id` and `predecessor_account_id` differ.
     ///
-    /// This enforces the network-wide policy that **all governance methods must be called
+    /// This can be used to enforce the policy that **all governance methods must be called
     /// directly from the participant's own NEAR account**, never forwarded through another
     /// contract such as a multisig.
-    ///
-    /// This check reaches every signer-authenticated mutating method through one of three
-    /// paths (the list below is illustrative, not exhaustive):
-    /// - Called directly: `vote_new_parameters`, `vote_add_domains`, `vote_cancel_resharing`,
-    ///   `vote_cancel_keygen`, `register_foreign_chain_support`, `submit_participant_info`,
-    ///   and the node-migration methods.
-    /// - Via [`Self::voter_or_panic`]: `propose_update`, `vote_update`, `remove_update_vote`,
-    ///   `vote_code_hash`, the launcher/OS-measurement votes,
-    ///   `vote_update_foreign_chain_providers`, and `verify_tee`.
-    /// - Via [`Self::assert_caller_is_attested_participant_and_protocol_active`]: the key-event
-    ///   votes `vote_pk`, `vote_reshared`, `vote_abort_key_event_instance`, and the leader-only
-    ///   `start_keygen_instance` / `start_reshare_instance`, plus the `respond*` callbacks.
     pub(crate) fn assert_caller_is_signer() -> AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
@@ -89,5 +79,37 @@ impl MpcContract {
         );
 
         signer_id
+    }
+
+    /// TLS key of the node that signed the current transaction, which must be one of the
+    /// account's
+    /// 1. active participant node, or
+    /// 2. new node, while the account migrates to it.
+    ///
+    /// A node counts as the signer when its attestation was submitted under the transaction's
+    /// signer key.
+    pub(crate) fn signer_node_tls_key(
+        &self,
+        signer_account_id: &AccountId,
+    ) -> Option<Ed25519PublicKey> {
+        // Checked before the migration record: an account voted out between
+        // `start_node_migration` and `conclude_node_migration` keeps its record.
+        let participant_info = self
+            .protocol_state
+            .active_participants()
+            .info(signer_account_id)?;
+        let signer_pk = Ed25519PublicKey::try_from(&env::signer_account_pk()).ok()?;
+        let is_signers_node = |tls_key: &Ed25519PublicKey| {
+            self.tee_state
+                .verify_signer_attestation(tls_key, signer_account_id, &signer_pk)
+                .is_ok()
+        };
+
+        if is_signers_node(&participant_info.tls_public_key) {
+            return Some(participant_info.tls_public_key.clone());
+        }
+        let migration = self.node_migrations.ongoing_migration(signer_account_id)?;
+        let destination_tls_key = &migration.destination_node_info.tls_public_key;
+        is_signers_node(destination_tls_key).then(|| destination_tls_key.clone())
     }
 }

@@ -1,33 +1,27 @@
+#![expect(non_snake_case)]
+
 use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use std::collections::BTreeMap;
-
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
-use e2e_tests::mpc_node::ProcessGuard;
+use e2e_tests::mpc_node::{MpcNodeSetup, ProcessGuard};
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
     ProtocolContractState,
 };
 use rand::SeedableRng;
+use rstest::rstest;
+use test_port_allocator::reserve_port;
 
-/// Mirror of the production [`node::indexer::migrations::ContractMigrationInfo`]
-/// type. Used to deserialize the `/debug/migrations` response strictly so the
-/// readiness asserts compare typed fields rather than substring-match the
-/// JSON body.
-type ContractMigrationInfo =
-    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
-
-const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
-const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
-const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
-const BACKUP_TIMEOUT: Duration = Duration::from_secs(60);
+const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_mins(2);
+const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_mins(1);
+const BACKUP_TIMEOUT: Duration = Duration::from_mins(1);
 
 struct BackupService {
     home_dir: e2e_tests::TestDir,
@@ -60,6 +54,33 @@ impl BackupService {
             "backup-cli generate-keys failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    fn must_init_near_node(&self, node: &MpcNodeSetup) {
+        let output = Command::new(node.binary_path())
+            .args(["init", "--chain-id", "mpc-localnet", "--dir"])
+            .arg(self.home_dir.path())
+            .arg("--genesis")
+            .arg(node.home_dir().join("genesis.json"))
+            .output()
+            .expect("failed to run mpc-node init");
+        assert!(
+            output.status.success(),
+            "mpc-node init failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let config = std::fs::read(node.home_dir().join("config.json"))
+            .expect("failed to read the node's NEAR config");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&config).expect("failed to parse the node's NEAR config");
+        config["rpc"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
+        config["network"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
+        std::fs::write(
+            self.home_dir.path().join("config.json"),
+            serde_json::to_vec_pretty(&config).expect("failed to serialize the NEAR config"),
+        )
+        .expect("failed to write the NEAR config");
     }
 
     fn public_key(&self) -> anyhow::Result<Ed25519PublicKey> {
@@ -121,8 +142,6 @@ impl BackupService {
                 "--home-dir",
                 self.must_get_home_dir_str(),
                 "run",
-                "--rpc-url",
-                args.rpc_url,
                 "--near-chain-id",
                 args.chain_id,
                 "--mpc-contract-account-id",
@@ -136,6 +155,7 @@ impl BackupService {
                 "--poll-interval-seconds",
                 "1",
             ])
+            .args(args.rpc_url.into_iter().flat_map(|url| ["--rpc-url", url]))
             .spawn()
             .context("failed to spawn backup-cli run")?;
         Ok(RunningBackupService {
@@ -186,7 +206,7 @@ struct RunningBackupService {
 }
 
 struct RunArgs<'a> {
-    rpc_url: &'a str,
+    rpc_url: Option<&'a str>,
     chain_id: &'a str,
     contract_account_id: &'a str,
     node_migration_address: &'a str,
@@ -229,25 +249,25 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
 }
 
 /// Fetch one node's `/debug/migrations` endpoint and deserialize the body
-/// into the typed [`ContractMigrationInfo`] map (the second element of the
-/// `(indexer_height, ContractMigrationInfo)` tuple the endpoint returns).
+/// into the typed [`MigrationInfo`] map (the second element of the
+/// `(indexer_height, MigrationInfo)` tuple the endpoint returns).
 async fn fetch_debug_migration_info(
     http_client: &reqwest::Client,
     web_addr: &str,
-) -> anyhow::Result<ContractMigrationInfo> {
+) -> anyhow::Result<MigrationInfo> {
     let body = http_client
         .get(format!("http://{web_addr}/debug/migrations"))
         .send()
         .await?
         .text()
         .await?;
-    let (_indexer_height, info) = serde_json::from_str::<(u64, ContractMigrationInfo)>(&body)
+    let (_indexer_height, info) = serde_json::from_str::<(u64, MigrationInfo)>(&body)
         .with_context(|| format!("failed to parse /debug/migrations: {body}"))?;
     Ok(info)
 }
 
-/// Poll a node's `/debug/migrations` endpoint with `INDEXER_SYNC_TIMEOUT`,
-/// re-running `check` against the typed [`ContractMigrationInfo`] until it
+/// Poll a node's `/debug/migrations` endpoint with `common::INDEXER_SYNC_TIMEOUT`,
+/// re-running `check` against the typed [`MigrationInfo`] until it
 /// returns `Ok` (or the timeout elapses). `description` is interpolated
 /// into the timeout error.
 async fn wait_for_debug_migration<F>(
@@ -256,7 +276,7 @@ async fn wait_for_debug_migration<F>(
     check: F,
 ) -> anyhow::Result<()>
 where
-    F: Fn(&ContractMigrationInfo) -> anyhow::Result<()>,
+    F: Fn(&MigrationInfo) -> anyhow::Result<()>,
 {
     let http_client = reqwest::Client::new();
     (|| async {
@@ -267,7 +287,8 @@ where
         ConstantBuilder::default()
             .with_delay(common::POLL_INTERVAL)
             .with_max_times(
-                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+                (common::INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis())
+                    as usize,
             ),
     )
     .await
@@ -301,15 +322,13 @@ async fn register_backup_service_and_wait(
     backup_service: &BackupService,
 ) -> anyhow::Result<()> {
     let backup_public_key = backup_service.public_key()?;
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let backup_service_info = BackupServiceInfo {
+        public_key: backup_public_key.clone(),
+    };
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
 
     let outcome = cluster
-        .register_backup_service(
-            source_idx,
-            BackupServiceInfo {
-                public_key: backup_public_key.clone(),
-            },
-        )
+        .register_backup_service(source_idx, backup_service_info.clone())
         .await
         .context("failed to register backup service")?;
     anyhow::ensure!(
@@ -318,41 +337,24 @@ async fn register_backup_service_and_wait(
         outcome.failure_message()
     );
 
-    (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
-            .await
-            .context("failed to view migration info")?;
-        let entry = info.get(&source_account_id);
-        anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(0).unwrap_or(&serde_json::Value::Null).is_null()),
-            "node has not indexed backup registration yet"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
-    .await
-    .context("timed out waiting for node to index backup registration")?;
+    cluster
+        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
+            info.get(&source_account_id)
+                .is_some_and(|(backup, _)| backup.as_ref() == Some(&backup_service_info))
+        })
+        .await
+        .context("timed out waiting for node to index backup registration")?;
 
     let source_web_addr = match &cluster.nodes[source_idx] {
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("source node not running"),
     };
-    let source_account: AccountId = source_account_id
-        .parse()
-        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     wait_for_debug_migration(
         &source_web_addr,
         "source node debug endpoint to show backup registration",
         |info| {
             let actual = info
-                .get(&source_account)
+                .get(&source_account_id)
                 .and_then(|(backup, _)| backup.as_ref())
                 .map(|b| &b.public_key);
             anyhow::ensure!(
@@ -392,13 +394,14 @@ async fn get_keyshares_from_source(
     )
 }
 
-/// Start node migration on the contract and wait for confirmation.
+/// Start node migration on the contract, wait for confirmation, and return the
+/// submitted [`DestinationNodeInfo`].
 async fn start_migration_and_wait(
     cluster: &e2e_tests::MpcCluster,
     source_idx: usize,
     target_idx: usize,
-) -> anyhow::Result<()> {
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+) -> anyhow::Result<DestinationNodeInfo> {
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
     let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
@@ -411,7 +414,7 @@ async fn start_migration_and_wait(
         },
     };
     let outcome = cluster
-        .start_node_migration(source_idx, destination_node_info)
+        .start_node_migration(source_idx, destination_node_info.clone())
         .await
         .context("failed to start node migration")?;
     anyhow::ensure!(
@@ -420,27 +423,15 @@ async fn start_migration_and_wait(
         outcome.failure_message()
     );
 
-    (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
-            .await
-            .context("failed to view migration info")?;
-        let entry = info.get(&source_account_id);
-        anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
-            "contract has not indexed node migration yet"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
-    .await
-    .context("timed out waiting for contract to reflect node migration")?;
+    cluster
+        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
+            info.get(&source_account_id)
+                .is_some_and(|(_, destination)| {
+                    destination.as_ref() == Some(&destination_node_info)
+                })
+        })
+        .await
+        .context("timed out waiting for contract to reflect node migration")?;
 
     // Wait for the target's own indexer to ingest start_node_migration
     // before backup-cli does PUT keyshares. Otherwise the target's
@@ -462,15 +453,12 @@ async fn start_migration_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("target node not running"),
     };
-    let source_account: AccountId = source_account_id
-        .parse()
-        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     wait_for_debug_migration(
         &target_web_addr,
         "target node to index node migration",
         |info| {
             let actual = info
-                .get(&source_account)
+                .get(&source_account_id)
                 .and_then(|(_, destination)| destination.as_ref())
                 .map(|d| &d.destination_node_info.tls_public_key);
             anyhow::ensure!(
@@ -482,7 +470,7 @@ async fn start_migration_and_wait(
     )
     .await?;
 
-    Ok(())
+    Ok(destination_node_info)
 }
 
 /// PUT keyshares to the target node via the backup CLI.
@@ -518,53 +506,28 @@ async fn wait_for_migration_completion(
     source_idx: usize,
     target_idx: usize,
 ) -> anyhow::Result<()> {
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
 
-    (|| async {
-        let state = cluster
-            .get_contract_state()
-            .await
-            .context("failed to get contract state")?;
-        anyhow::ensure!(
-            running_state_matches_participant_key(&state, &source_account_id, &target_p2p_key),
-            "target node not yet active participant"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (MIGRATION_COMPLETION_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis())
-                    as usize,
-            ),
-    )
-    .await
-    .context("timed out waiting for migration to complete")?;
+    cluster
+        .wait_for_state(MIGRATION_COMPLETION_TIMEOUT, |state| {
+            running_state_matches_participant_key(
+                state,
+                source_account_id.as_str(),
+                &target_p2p_key,
+            )
+        })
+        .await
+        .context("timed out waiting for migration to complete")?;
 
-    (|| async {
-        let migration_info: serde_json::Value = cluster
-            .view_migration_info()
-            .await
-            .context("failed to view migration info")?;
-        let entry = migration_info
-            .get(&source_account_id)
-            .context("account not found in migration info")?;
-        let destination = entry.get(1).unwrap_or(&serde_json::Value::Null);
-        anyhow::ensure!(
-            destination.is_null(),
-            "migration destination should be cleared after completion"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(20),
-    )
-    .await
-    .context("migration state did not clear")
+    cluster
+        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
+            info.get(&source_account_id)
+                .is_some_and(|(_, destination)| destination.is_none())
+        })
+        .await
+        .context("migration state did not clear")?;
+    Ok(())
 }
 
 /// Returns the sorted (filename, length) pairs of files in the node's
@@ -750,19 +713,31 @@ fn must_get_running_epoch_and_domains(state: &ProtocolContractState) -> (u64, us
     (running.keyset.epoch_id.get(), running.keyset.domains.len())
 }
 
+enum ContractStateSource {
+    JsonRpc,
+    EmbeddedNode,
+}
+
+#[rstest]
+#[case::json_rpc(ContractStateSource::JsonRpc, common::BACKUP_SERVICE_RUN_PORT_SEED)]
+#[case::embedded_node(
+    ContractStateSource::EmbeddedNode,
+    common::BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED
+)]
 #[tokio::test]
-#[expect(non_snake_case)]
-async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resharing() {
+async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resharing(
+    #[case] contract_state_source: ContractStateSource,
+    #[case] port_seed: u16,
+) {
     let backup_cli = must_get_backup_cli_path();
 
     // Given
     let source_idx = 0;
-    let (cluster, _running) =
-        common::must_setup_cluster(common::BACKUP_SERVICE_RUN_PORT_SEED, |c| {
-            c.num_nodes = 2;
-            c.threshold = 2;
-        })
-        .await;
+    let (cluster, _running) = common::must_setup_cluster(port_seed, |c| {
+        c.num_nodes = 2;
+        c.threshold = 2;
+    })
+    .await;
 
     let backup_service = BackupService::must_get_new(backup_cli);
     backup_service.must_generate_keys();
@@ -770,16 +745,24 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
         .await
         .expect("register_backup_service_and_wait failed");
 
-    let source_migration_addr = match &cluster.nodes[source_idx] {
-        MpcNodeState::Running(n) => n.migration_web_ui_address(),
-        _ => panic!("source node not running"),
+    let MpcNodeState::Running(source) = &cluster.nodes[source_idx] else {
+        panic!("source node not running");
     };
+    let source_migration_addr = source.migration_web_ui_address();
     wait_for_migration_port(&source_migration_addr)
         .await
         .expect("migration port never became reachable");
 
     let (initial_epoch_id, num_domains) =
         must_get_running_epoch_and_domains(&cluster.get_contract_state().await.unwrap());
+
+    let rpc_url = match contract_state_source {
+        ContractStateSource::JsonRpc => Some(cluster.sandbox.rpc_url()),
+        ContractStateSource::EmbeddedNode => {
+            backup_service.must_init_near_node(source.setup());
+            None
+        }
+    };
 
     // When
     assert!(
@@ -788,7 +771,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     );
     let _service = backup_service
         .run(RunArgs {
-            rpc_url: &cluster.sandbox.rpc_url(),
+            rpc_url: rpc_url.as_deref(),
             chain_id: &cluster.sandbox.chain_id().expect("sandbox chain id"),
             contract_account_id: cluster.contract.account_id().as_str(),
             node_migration_address: &source_migration_addr,
@@ -962,7 +945,7 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         &cluster,
         a_idx,
         a0_indexer_height_before_kill,
-        Duration::from_secs(60),
+        Duration::from_mins(1),
     )
     .await
     .expect("A0's indexer did not resume + advance within 60s after restart");
@@ -1011,40 +994,26 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
         .await;
     let source_idx = 0;
     let target_idx = 2;
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
     assert_eq!(
-        cluster.nodes[target_idx].account_id().to_string(),
-        source_account_id,
+        cluster.nodes[target_idx].account_id(),
+        &source_account_id,
         "migration target must share the source account"
     );
 
     // When: the source registers a migration destination.
-    start_migration_and_wait(&cluster, source_idx, target_idx)
+    let destination_node_info = start_migration_and_wait(&cluster, source_idx, target_idx)
         .await
         .expect("start_migration_and_wait failed");
 
-    // Then: migration_info reports a pending destination for the source.
-    (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
-            .await
-            .context("failed to view migration info")?;
-        let entry = info.get(&source_account_id);
-        anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
-            "contract has not indexed migration information yet"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
-    .await
-    .expect("timed out waiting for migration info");
+    // Then: migration_info holds exactly that destination and no backup service for the source.
+    let expected = (None, Some(destination_node_info));
+    cluster
+        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
+            info.get(&source_account_id) == Some(&expected)
+        })
+        .await
+        .expect("timed out waiting for migration info");
 
     // When: the source cancels the migration.
     let outcome = cluster
@@ -1058,27 +1027,12 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
     );
 
     // Then: migration_info no longer shows a destination for that account.
-    (|| async {
-        let info: serde_json::Value = cluster
-            .view_migration_info()
-            .await
-            .context("failed to view migration info")?;
-        let entry = info.get(&source_account_id);
-        anyhow::ensure!(
-            entry.is_none(),
-            "expected destination to be cleared after cancel, got {entry:?}"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
-    .await
-    .expect("timed out waiting for contract to reflect cancelled migration");
+    cluster
+        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
+            info.get(&source_account_id).is_none()
+        })
+        .await
+        .expect("timed out waiting for contract to reflect cancelled migration");
 
     // And: cancelling again fails — the record was already removed
     let outcome = cluster

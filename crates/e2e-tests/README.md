@@ -112,7 +112,7 @@ pub struct NearBlockchain { /* root_client + rpc_url */ }
 
 impl NearBlockchain {
     pub fn new(rpc_url: &str, chain_id: &str, root_account: &str,
-        root_secret: near_kit::SecretKey) -> anyhow::Result<Self>;
+        root_secret: near_kit::signer::SecretKey) -> anyhow::Result<Self>;
     pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
         keys: &[SigningKey]) -> anyhow::Result<()>;
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
@@ -124,25 +124,16 @@ impl NearBlockchain {
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
 client. It exposes `account_id()`, `client()`, `call` (signed by the contract
-account), `call_from_with_deposit` (untyped escape hatch for calls with no typed
-method yet), `view`, and `state()` (parsed `ProtocolContractState`).
+account), `view`, and `state()`.
 
-#### `NearKitCaller<T>` — signer-bound caller (`caller` module)
+#### `NearKitCaller<T>` — signer-bound caller (`near-contract-transport`, feature `near-kit`)
 
-Binds a signer to a non-contract account (nodes voting, users submitting sign
-requests) and implements the `CallContract` transport trait, s.t. typed calls can go
-through `MpcContractHandle`
-The `T` parameter is the wait level: how far a call waits
-before returning (e.g. `Final`, `ExecutedOptimistic`,...).
-Finality influences the return type (`T::Response`).
+Binds a signer to an account and implements the `CallContract` and `ViewContract` transport
+traits, s.t. typed calls and views go through `MpcContractHandle`.
 
 ```rust
 pub trait CallMpc: Sized {
     fn call_mpc(self, contract_id: &AccountId) -> MpcContractHandle<Self>;
-}
-
-pub trait WithWaitLevel {
-    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
 }
 ```
 
@@ -181,13 +172,16 @@ The entry point for tests. `MpcCluster::start(config)` does everything:
 6. Deploy the compiled MPC contract WASM to `mpc.sandbox`.
 7. Create `nodeN.sandbox` accounts, each with a `near_signer_key` and a
    disjoint `operator_key` as full-access keys.
-8. Call `init()` on the contract with the initial participants.
+8. Call `init()` on the contract with the initial participants and the
+   tee-verifier account.
 9. Call `submit_participant_info` for each initial participant (with a
    `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
 10. Deploy the tee-verifier WASM to `tee-verifier.sandbox` and vote it in from
-    every participant, for topology parity with production. Mock attestations
-    are verified without calling it, so the verifier stays idle; the
-    cross-contract flow is covered by the mpc-contract sandbox tests.
+    every participant, for topology parity with production. The vote is a no-op
+    on the current contract, which trusts the verifier from init; it configures
+    the verifier on production builds that predate the init argument. Mock
+    attestations are verified without calling it, so the verifier stays idle;
+    the cross-contract flow is covered by the mpc-contract sandbox tests.
 11. Spawn the `mpc-node` binaries (start *before* adding domains so key
     generation has running nodes to talk to).
 12. Sleep briefly and assert no node exited early.
@@ -200,17 +194,17 @@ The returned cluster exposes:
 - **Node lifecycle:** `kill_nodes`, `start_nodes`, `reset_and_start_nodes`
   (wipe + start + wait for health), `kill_all`.
 - **Contract state:** `get_contract_state`, `wait_for_state`,
-  `wait_for_node_healthy`, `get_tee_accounts`.
+  `wait_for_migration_info` (one subscription per view, shared by every wait;
+  `state` is subscribed when the cluster is created, `migration_info` on first
+  use), `wait_for_node_healthy`; other views via `cluster.mpc_contract_handle`,
+  waited on with `.subscribe().await.wait_for(..)`.
 - **Resharing:** `start_resharing`, `start_resharing_and_wait`,
   `vote_cancel_resharing_from`, `add_domains_and_wait`, `start_add_domains`.
 - **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.
 - **Data management:** `wipe_db`, `set_block_ingestion`.
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
   `send_verify_foreign_transaction`.
-- **Foreign chains:** `view_foreign_chains_supported_by_contract`,
-  `view_foreign_chain_configurations`, `view_available_foreign_chains`,
-  `view_foreign_chains_configs`, `view_allowed_foreign_chain_providers`,
-  `register_foreign_chain_config`, `whitelist_foreign_chains`,
+- **Foreign chains:** `view_allowed_foreign_chain_providers`, `whitelist_foreign_chains`,
   `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
@@ -235,6 +229,7 @@ pub struct MpcClusterConfig {
     pub migration_targets: Vec<usize>,          // source node indices
     pub init_format: ContractInitFormat,
     pub foreign_chains: ForeignChainsClusterConfig,
+    pub tls_trust_roots: Option<PathBuf>,       // nodes' TLS roots, via SSL_CERT_FILE
 }
 
 pub struct ForeignChainsClusterConfig {
@@ -390,7 +385,7 @@ logs, stderr.log any panic)
 ## Test layout conventions
 
 - Follow the `<subject>__should_<assertion>` or `<subject>__<scenario>` naming
-  from `docs/engineering-standards.md`.
+  from `docs/development/engineering-standards.md`.
 - Reserve a unique `port_seed` constant in `tests/common.rs` before adding a
   new test. Don't reuse someone else's seed, even if the test is short.
 - Prefer `common::must_setup_cluster` over calling `MpcCluster::start` directly;
@@ -399,13 +394,13 @@ logs, stderr.log any panic)
   allocator, the per-cluster artifact directory (`cluster.test_dir`), and the
   deterministic key generation rather than creating state outside the cluster.
 - Arithmetic in tests uses raw `+`/`-`/`*`/`/`; overflow panics are the
-  desired failure mode (see `CLAUDE.md`).
+  desired failure mode (see `AGENTS.md`).
 
 ---
 
 ## Related documents
 
-- [`docs/engineering-standards.md`](../../docs/engineering-standards.md) —
+- [`docs/development/engineering-standards.md`](../../docs/development/engineering-standards.md) —
   test naming, panic policy, I/O separation.
 - [Issue #2440](https://github.com/near/mpc/issues/2440) — `MpcNode` design.
 - [Issue #2441](https://github.com/near/mpc/issues/2441) — `MpcCluster`

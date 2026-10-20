@@ -156,7 +156,7 @@ RUSTDOCFLAGS = "-D warnings"
 
 [tasks.check-markdown-links]
 command = "lychee"
-args = ["--no-progress", "."]
+args = ["--no-progress", "--hidden", "."]
 
 [tasks.sandbox-image-version]
 description = "Check that sandbox Docker image version matches nearcore"

@@ -1,11 +1,8 @@
+use crate::indexer::SubmissionBaseline;
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
-use k256::{
-    AffinePoint, Scalar, Secp256k1,
-    ecdsa::RecoveryId,
-    elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
-};
+use k256::{AffinePoint, Scalar, ecdsa::RecoveryId};
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
@@ -19,26 +16,20 @@ use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
-#[expect(deprecated)]
-use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
-
 const MAX_GAS: Gas = Gas::from_teragas(300);
 
-const MAX_RECOVERY_ID: u8 = 3;
+const RECOVERY_ID_FAILED: &str = "failed to compute the recovery id of the ECDSA signature";
 
 fn k256_signature_response(
     big_r: AffinePoint,
     s: Scalar,
-    recovery_id: u8,
-) -> anyhow::Result<dtos::SignatureResponse> {
-    if recovery_id > MAX_RECOVERY_ID {
-        anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
-    }
-    Ok(dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+    recovery_id: RecoveryId,
+) -> dtos::SignatureResponse {
+    dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
         big_r: dtos::K256AffinePoint::from(big_r),
         s: dtos::K256Scalar::from(s),
-        recovery_id,
-    }))
+        recovery_id: recovery_id.to_byte(),
+    })
 }
 pub trait ChainRespondArgs {}
 
@@ -55,7 +46,6 @@ pub enum ChainSendTransactionRequest {
     VotePk(contract_args::VotePkArgs),
     StartKeygen(contract_args::StartKeygenArgs),
     VoteReshared(contract_args::VoteResharedArgs),
-    RegisterForeignChainConfig(contract_args::RegisterForeignChainConfigArgs),
     RegisterForeignChainsConfig(contract_args::RegisterForeignChainsConfigArgs),
     StartReshare(contract_args::StartReshareArgs),
     VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs),
@@ -69,10 +59,10 @@ pub enum ChainSendTransactionRequest {
     SubmitParticipantInfo {
         #[serde(flatten)]
         args: Box<contract_args::SubmitParticipantInfoArgs>,
-        /// Pre-submit expiry baseline for the landing check. Skipped from serialization so it never
-        /// reaches the on-chain call args.
+        /// What was stored before submitting, for the landing check. Skipped from serialization
+        /// so it never reaches the on-chain call args.
         #[serde(skip)]
-        pre_submit_expiry: Option<u64>,
+        baseline: SubmissionBaseline,
     },
 
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
@@ -86,11 +76,6 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::CKDRespond(_) => RESPOND_CKD,
             ChainSendTransactionRequest::VotePk(_) => VOTE_PK,
             ChainSendTransactionRequest::VoteReshared(_) => VOTE_RESHARED,
-            ChainSendTransactionRequest::RegisterForeignChainConfig(_) =>
-            {
-                #[expect(deprecated)]
-                REGISTER_FOREIGN_CHAIN_CONFIG
-            }
             ChainSendTransactionRequest::RegisterForeignChainsConfig(_) => {
                 REGISTER_FOREIGN_CHAINS_CONFIG
             }
@@ -114,7 +99,6 @@ impl ChainSendTransactionRequest {
             | Self::CKDRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
-            | Self::RegisterForeignChainConfig(_)
             | Self::RegisterForeignChainsConfig(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
@@ -152,17 +136,18 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
         response: &Signature,
         public_key: &VerifyingKey,
     ) -> anyhow::Result<Self> {
-        let recovery_id = brute_force_recovery_id(
-            &public_key.to_element().to_affine(),
-            response,
-            request
-                .payload
-                .as_ecdsa()
-                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
-        )?;
+        let recovery_id = response
+            .recovery_id(
+                &public_key.to_element().to_affine(),
+                request
+                    .payload
+                    .as_ecdsa()
+                    .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
+            )
+            .context(RECOVERY_ID_FAILED)?;
         Ok(contract_args::SignatureRespondArgs::new(
             request.into_contract_interface_type(),
-            k256_signature_response(response.big_r, response.s, recovery_id)?,
+            k256_signature_response(response.big_r, response.s, recovery_id),
         ))
     }
 
@@ -184,28 +169,6 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
     }
 }
 
-/// Brute forces the recovery id to find a recovery_id that matches the public key
-pub(crate) fn brute_force_recovery_id(
-    expected_pk: &AffinePoint,
-    signature: &Signature,
-    msg_hash: &[u8; 32],
-) -> anyhow::Result<u8> {
-    let partial_signature = k256::ecdsa::Signature::from_scalars(
-        <<Secp256k1 as CurveArithmetic>::Scalar as Reduce<<Secp256k1 as Curve>::Uint>>
-        ::reduce_bytes(&signature.big_r.x()), signature.s)
-        .context("Cannot create signature from cait_sith signature")?;
-    let expected_pk = match k256::ecdsa::VerifyingKey::from_affine(*expected_pk) {
-        Ok(pk) => pk,
-        _ => anyhow::bail!("The affine point cannot be transformed into a verifying key"),
-    };
-    match RecoveryId::trial_recovery_from_prehash(&expected_pk, msg_hash, &partial_signature) {
-        Ok(rec_id) => Ok(rec_id.to_byte()),
-        _ => anyhow::bail!(
-            "No recovery id found for such a tuple of public key, signature, message hash"
-        ),
-    }
-}
-
 pub trait VerifyForeignTransactionRespondArgsExt {
     fn from_signature(
         request: VerifyForeignTxRequest,
@@ -224,16 +187,14 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
         signature: Signature,
         public_key: VerifyingKey,
     ) -> anyhow::Result<Self> {
-        let recovery_id = brute_force_recovery_id(
-            &public_key.to_element().to_affine(),
-            &signature,
-            payload_hash.as_ref(),
-        )?;
+        let recovery_id = signature
+            .recovery_id(&public_key.to_element().to_affine(), payload_hash.as_ref())
+            .context(RECOVERY_ID_FAILED)?;
 
         let dto_signature = dtos::K256Signature {
             big_r: dtos::K256AffinePoint::from(signature.big_r),
             s: dtos::K256Scalar::from(signature.s),
-            recovery_id,
+            recovery_id: recovery_id.to_byte(),
         };
         Ok(contract_args::VerifyForeignTransactionRespondArgs::new(
             dtos::VerifyForeignTransactionRequest {
@@ -250,63 +211,9 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
     }
 }
 
-// TODO(#1957): This code does not belong here in the indexer module
-#[cfg(test)]
-mod recovery_id_tests {
-    use crate::indexer::types::brute_force_recovery_id;
-    use k256::AffinePoint;
-    use k256::ecdsa::{RecoveryId, SigningKey};
-    use k256::elliptic_curve::{PrimeField, point::DecompressPoint};
-    use rand::rngs::OsRng;
-    use threshold_signatures::ecdsa::Signature;
-
-    #[test]
-    fn test_brute_force_recovery_id() {
-        for _ in 0..256 {
-            // generate a pair of ecdsa keys
-            let mut rng = OsRng;
-            let signing_key = SigningKey::random(&mut rng);
-
-            // compute a signature with recovery id
-            let prehash: [u8; 32] = rand::random();
-            match signing_key.sign_prehash_recoverable(&prehash) {
-                // match signing_key.sign_digest_recoverable(digest) {
-                Ok((signature, recid)) => {
-                    let (r, s) = signature.split_scalars();
-
-                    // Create a full signature
-                    // any big_r creation works here as we only need its x coordinate during brute force (big_r.x())
-
-                    let r_bytes = r.to_repr();
-                    let hypothetical_big_r = AffinePoint::decompress(&r_bytes, 0.into()).unwrap();
-
-                    let full_sig = Signature {
-                        big_r: hypothetical_big_r,
-                        s: *s.as_ref(),
-                    };
-
-                    let tested_recid = brute_force_recovery_id(
-                        signing_key.verifying_key().as_affine(),
-                        &full_sig,
-                        &prehash,
-                    )
-                    .unwrap();
-
-                    // compute recovery_id using our function
-                    let tested_recid = RecoveryId::from_byte(tested_recid).unwrap();
-
-                    assert!(tested_recid.is_x_reduced() == recid.is_x_reduced());
-                    assert!(tested_recid.is_y_odd() == recid.is_y_odd());
-                }
-                Err(_) => panic!("The signature in the test has failed"),
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod request_serialization_tests {
-    use super::{ChainSendTransactionRequest, contract_args, dtos};
+    use super::{ChainSendTransactionRequest, SubmissionBaseline, contract_args, dtos};
 
     fn mock_submit_args() -> contract_args::SubmitParticipantInfoArgs {
         contract_args::SubmitParticipantInfoArgs::new(
@@ -315,21 +222,24 @@ mod request_serialization_tests {
         )
     }
 
-    /// The request serializes as the on-chain call args, so the node-internal `pre_submit_expiry`
-    /// must not leak into the payload — it has to serialize exactly like the bare args. Guards the
+    /// The request serializes as the on-chain call args, so the node-internal baseline must not
+    /// leak into the payload — it has to serialize exactly like the bare args. Guards the
     /// `#[serde(flatten)]` + `#[serde(skip)]` on the [`SubmitParticipantInfo`] variant.
     #[test]
     #[expect(non_snake_case)]
     fn submit_participant_info__should_serialize_as_bare_args() {
         let request = ChainSendTransactionRequest::SubmitParticipantInfo {
             args: Box::new(mock_submit_args()),
-            pre_submit_expiry: Some(123),
+            baseline: SubmissionBaseline {
+                accepted_at_seconds: Some(123),
+                expiry_timestamp_seconds: Some(456),
+            },
         };
 
         let request_json = serde_json::to_string(&request).unwrap();
         let args_json = serde_json::to_string(&mock_submit_args()).unwrap();
 
         assert_eq!(request_json, args_json);
-        assert!(!request_json.contains("pre_submit_expiry"));
+        assert!(!request_json.contains("baseline"));
     }
 }

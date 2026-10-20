@@ -4,6 +4,7 @@ use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types
 
 use self::stats::IndexerStats;
 use anyhow::Context;
+use chain_gateway::account_id_compat::to_near_internal;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
@@ -20,12 +21,12 @@ use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
+    MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
@@ -70,7 +71,10 @@ impl IndexerState {
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            view_client: IndexerViewClient { view_client },
+            view_client: IndexerViewClient {
+                view_client,
+                mpc_contract_id: mpc_contract_id.clone(),
+            },
             client: IndexerClient { client },
             rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
@@ -82,21 +86,14 @@ impl IndexerState {
 #[derive(Clone)]
 pub(crate) struct IndexerViewClient {
     view_client: MultithreadRuntimeHandle<ViewClientActor>,
+    /// AccountId for the mpc contract.
+    mpc_contract_id: AccountId,
 }
 
-// TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
-// We should remove this account_id parameter...
-//
-// example:
-// indexer_state.view_client.get_mpc_tee_accounts(indexer_state.mpc_contract_id.clone()).await
-// =>
-// indexer_state.view_client.get_mpc_tee_accounts().await
-// This pattern repeats for all the methods.
 // TODO(#1956): There is a lot of duplicate code here that could be simplified
 impl IndexerViewClient {
     pub(crate) async fn get_pending_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_signature_request: &dtos::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> = serde_json::to_string(
@@ -106,7 +103,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_PENDING_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -136,7 +133,6 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_pending_ckd_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_ckd_request: &dtos::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> = serde_json::to_string(
@@ -146,7 +142,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_PENDING_CKD_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -176,7 +172,6 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_pending_verify_foreign_tx_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
@@ -187,7 +182,7 @@ impl IndexerViewClient {
             .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -217,9 +212,8 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_participant_attestation(
         &self,
-        mpc_contract_id: &AccountId,
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
+    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::GetAttestationResponse>> {
         let get_attestation_args: Vec<u8> = serde_json::to_string(
             &contract_args::GetAttestationArgs::new(participant_tls_public_key),
         )
@@ -227,7 +221,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: GET_ATTESTATION.to_string(),
             args: get_attestation_args.into(),
         };
@@ -246,9 +240,13 @@ impl IndexerViewClient {
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
-                Option<near_mpc_contract_interface::types::VerifiedAttestation>,
+                Option<near_mpc_contract_interface::types::GetAttestationResponse>,
             >(&call_result.result)
-            .context("failed to deserialize pending request response"),
+            .with_context(|| {
+                // An untagged enum names no field when nothing matches, so carry the response.
+                let response = String::from_utf8_lossy(&call_result.result);
+                format!("failed to deserialize get_attestation response: {response}")
+            }),
             _ => {
                 anyhow::bail!("Unexpected result from a view client function call");
             }
@@ -257,56 +255,23 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_foreign_chains_configs(
         &self,
-        mpc_contract_id: &AccountId,
     ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
-        self.get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAINS_CONFIGS)
-            .await
+        self.get_mpc_state(GET_FOREIGN_CHAINS_CONFIGS).await
     }
 
     pub(crate) async fn get_available_chains(
         &self,
-        mpc_contract_id: &AccountId,
     ) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
-        self.get_mpc_state(mpc_contract_id.clone(), GET_AVAILABLE_FOREIGN_CHAINS)
-            .await
+        self.get_mpc_state(GET_AVAILABLE_FOREIGN_CHAINS).await
     }
 
-    /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
     pub(crate) async fn get_allowed_foreign_chain_providers(
         &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
-            method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
-            args: vec![].into(),
-        };
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
+    ) -> anyhow::Result<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
+        let (_block_height, whitelist) =
+            self.get_mpc_state(ALLOWED_FOREIGN_CHAIN_PROVIDERS).await?;
 
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => borsh::from_slice::<
-                std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
-            >(&result.result)
-            .with_context(|| {
-                let preview: String = result
-                    .result
-                    .iter()
-                    .take(32)
-                    .map(|b| format!("{b:02x}"))
-                    .collect();
-                format!(
-                    "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
-                    result.result.len(),
-                    result.result.len().min(32),
-                )
-            }),
-            _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
-        }
+        Ok(whitelist)
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
@@ -319,53 +284,36 @@ impl IndexerViewClient {
 
     pub(crate) async fn get_mpc_contract_state_dto(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
-        self.get_mpc_state(mpc_contract_id, STATE).await
+        self.get_mpc_state(STATE).await
     }
 
     pub(crate) async fn get_mpc_allowed_image_hashes(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<dtos::AllowedMpcDockerImageHash>)> {
-        let (block_height, entries): (u64, AllowedDockerImageHashesResponse) = self
-            .get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
-            .await?;
+        let (block_height, entries): (u64, AllowedDockerImageHashesResponse) =
+            self.get_mpc_state(ALLOWED_DOCKER_IMAGE_HASHES).await?;
 
         Ok((block_height, entries))
     }
     pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES)
-            .await
-    }
-
-    pub(crate) async fn get_mpc_tee_accounts(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<dtos::NodeId>)> {
-        self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
+        self.get_mpc_state(ALLOWED_LAUNCHER_COMPOSE_HASHES).await
     }
 
     pub(crate) async fn get_mpc_migration_info(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
-        self.get_mpc_state(mpc_contract_id, MIGRATION_INFO).await
+        self.get_mpc_state(MIGRATION_INFO).await
     }
 
-    async fn get_mpc_state<State>(
-        &self,
-        mpc_contract_id: AccountId,
-        endpoint: &str,
-    ) -> anyhow::Result<(u64, State)>
+    async fn get_mpc_state<State>(&self, endpoint: &str) -> anyhow::Result<(u64, State)>
     where
         State: for<'de> Deserialize<'de>,
     {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
+            account_id: to_near_internal(&self.mpc_contract_id),
             method_name: endpoint.to_string(),
             args: vec![].into(),
         };
@@ -389,40 +337,56 @@ impl IndexerViewClient {
     }
 }
 
-pub(crate) trait ReadAttestationExpiry: Send + Sync {
-    /// The attestation expiry currently stored for `tls_public_key`, or `None` if none is stored or
-    /// the stored attestation carries no expiry (an unstamped mock — e.g. from an older contract or
-    /// a genesis sentinel).
-    fn read_stored_attestation_expiry<'a>(
-        &'a self,
-        tls_public_key: &'a dtos::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>;
+/// What was stored on chain for this node's TLS key just before it submitted. The landing check
+/// confirms a submission by observing a change against it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SubmissionBaseline {
+    /// `None` when nothing is stored, or no acceptance time is known for it.
+    pub accepted_at_seconds: Option<u64>,
+    /// TODO(#4498): remove along with the expiry fallback it feeds.
+    pub expiry_timestamp_seconds: Option<u64>,
 }
 
-pub(crate) struct RealAttestationExpiryReader {
+impl SubmissionBaseline {
+    pub(crate) fn from_stored(stored: Option<&dtos::GetAttestationResponse>) -> Self {
+        Self {
+            accepted_at_seconds: stored.and_then(dtos::GetAttestationResponse::accepted_at_seconds),
+            expiry_timestamp_seconds: stored
+                .and_then(|stored| stored.attestation().expiry_timestamp_seconds()),
+        }
+    }
+}
+
+pub(crate) trait ReadSubmissionBaseline: Send + Sync {
+    /// An empty baseline is not proof that nothing is stored: an entry can be stored with
+    /// neither an acceptance time nor an expiry.
+    fn read_submission_baseline(
+        &self,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> impl Future<Output = anyhow::Result<SubmissionBaseline>> + Send;
+}
+
+pub(crate) struct RealSubmissionBaselineReader {
     indexer_state: Arc<IndexerState>,
 }
 
-impl RealAttestationExpiryReader {
+impl RealSubmissionBaselineReader {
     pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
         Self { indexer_state }
     }
 }
 
-impl ReadAttestationExpiry for RealAttestationExpiryReader {
-    fn read_stored_attestation_expiry<'a>(
-        &'a self,
-        tls_public_key: &'a dtos::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
-    {
-        Box::pin(async move {
-            let stored = self
-                .indexer_state
-                .view_client
-                .get_participant_attestation(&self.indexer_state.mpc_contract_id, tls_public_key)
-                .await?;
-            Ok(stored.and_then(|attestation| attestation.expiry_timestamp_seconds()))
-        })
+impl ReadSubmissionBaseline for RealSubmissionBaselineReader {
+    async fn read_submission_baseline(
+        &self,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> anyhow::Result<SubmissionBaseline> {
+        let stored = self
+            .indexer_state
+            .view_client
+            .get_participant_attestation(tls_public_key)
+            .await?;
+        Ok(SubmissionBaseline::from_stored(stored.as_ref()))
     }
 }
 
@@ -559,8 +523,6 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    /// Watcher that tracks node IDs that have TEE attestations in the contract.
-    pub attested_nodes_receiver: watch::Receiver<Vec<dtos::NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
@@ -568,14 +530,63 @@ pub struct IndexerAPI<TransactionSender> {
     /// registered supporters (by TLS key). Seeded with the first successful read
     /// before the indexer hands it back, so it always holds a real value.
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
-
-    pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SubmissionBaseline, SyncProgress, dtos};
+    use rstest::rstest;
+
+    const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
+    const EXPIRES_AT_SECONDS: u64 = 1_800_604_800;
+
+    fn mock_with_expiry() -> dtos::VerifiedAttestation {
+        dtos::VerifiedAttestation::Mock(dtos::MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(EXPIRES_AT_SECONDS),
+            expected_measurements: None,
+        })
+    }
+
+    fn current(accepted_at_seconds: Option<u64>) -> dtos::GetAttestationResponse {
+        dtos::GetAttestationResponse::Current(dtos::StoredAttestation {
+            attestation: mock_with_expiry(),
+            accepted_at_seconds,
+        })
+    }
+
+    #[rstest]
+    #[case::nothing_stored(None, None, None)]
+    #[case::stamped(
+        Some(current(Some(ACCEPTED_AT_SECONDS))),
+        Some(ACCEPTED_AT_SECONDS),
+        Some(EXPIRES_AT_SECONDS)
+    )]
+    #[case::carried_over_by_the_migration(Some(current(None)), None, Some(EXPIRES_AT_SECONDS))]
+    #[case::legacy_contract(
+        Some(dtos::GetAttestationResponse::Legacy(mock_with_expiry())),
+        None,
+        Some(EXPIRES_AT_SECONDS)
+    )]
+    fn from_stored__should_carry_both_timestamps(
+        #[case] stored: Option<dtos::GetAttestationResponse>,
+        #[case] expected_accepted_at: Option<u64>,
+        #[case] expected_expiry: Option<u64>,
+    ) {
+        // When
+        let baseline = SubmissionBaseline::from_stored(stored.as_ref());
+
+        // Then
+        assert_eq!(
+            baseline,
+            SubmissionBaseline {
+                accepted_at_seconds: expected_accepted_at,
+                expiry_timestamp_seconds: expected_expiry,
+            }
+        );
+    }
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();

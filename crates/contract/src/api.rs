@@ -5,7 +5,6 @@ pub mod authorization;
 pub mod ckd;
 pub mod common;
 pub mod foreign_chain;
-pub mod foreign_chain_support;
 pub mod governance;
 pub mod key_events;
 pub mod keys;

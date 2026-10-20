@@ -1,7 +1,9 @@
+mod bounded_string;
 mod bounded_vec;
 mod btreemap;
 mod btreeset;
 
+pub use bounded_string::BoundedString;
 pub use bounded_vec::{
     BoundedVec, BoundedVecOutOfBounds, NonEmptyBoundedVec, NonEmptyVec, OptBoundedVecToVec,
     UpperBoundedVec, hex_serde, witnesses,

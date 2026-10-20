@@ -48,7 +48,7 @@ pub fn gen_valid_params_proposal(
         let _ = new_participants.insert_with_id(account_id, info.clone(), id);
     }
     // The proposed (final) participant count must satisfy every protocol's
-    // bound. `DamgardEtAl` requires `n >= 2t - 1`, which forces `n >= 3` at the
+    // bound. `RobustEcdsa` requires `n >= 2t - 1`, which forces `n >= 3` at the
     // fixtures' minimum `t = 2` (the same floor `gen_threshold_params` applies
     // to the initial params). The bound is on the final count, so clamp `new_n`
     // and derive how many participants to add from it; this keeps the original

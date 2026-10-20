@@ -28,9 +28,9 @@ url = { workspace = true }
 x509-parser = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 hex = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
 test-utils = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 

@@ -1,14 +1,11 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+pub use near_mpc_contract_interface::types::MigrationInfo as ContractMigrationInfo;
 use tokio::sync::watch;
 
 use crate::{indexer::IndexerState, migration_service::types::MigrationInfo};
-
-pub type ContractMigrationInfo =
-    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
 const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -41,8 +38,9 @@ pub async fn monitor_migrations(
                 let response = fetch_migrations_once(indexer_state.clone()).await;
                 tracing::debug!(target: "indexer", "fetched mpc migration state at block {}: {:?}", response.0, response.1);
 
+                let mut migration_info_changed = false;
                 migration_state_sender.send_if_modified(|watched_state| {
-                    let migration_info_changed = watched_state.1 != response.1;
+                    migration_info_changed = watched_state.1 != response.1;
                     if *watched_state != response {
                         if migration_info_changed {
                             tracing::info!("contract migration state changed: {:?}", response);
@@ -53,6 +51,12 @@ pub async fn monitor_migrations(
                         false
                     }
                 });
+
+                // Re-deriving an unchanged view would repeat its diagnostics on every tick.
+                if !migration_info_changed {
+                    continue;
+                }
+
                 let my_migration_state = MigrationInfo::from_contract_state(
                     &my_near_account_id,
                     &my_p2p_public_key,
@@ -81,11 +85,7 @@ async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, Contra
 
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match indexer_state
-            .view_client
-            .get_mpc_migration_info(indexer_state.mpc_contract_id.clone())
-            .await
-        {
+        match indexer_state.view_client.get_mpc_migration_info().await {
             Ok(res) => {
                 return res;
             }
