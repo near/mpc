@@ -10,7 +10,7 @@ use crate::{
         NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
     },
     network::{
-        connected_peers::CONNECTED_PEERS_MIN_PROTOCOL_VERSION,
+        connected_peers::{CONNECTED_PEERS_MIN_PROTOCOL_VERSION, ConnectedPeersNotSent},
         constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION},
         handshake::{
             DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID,
@@ -20,7 +20,7 @@ use crate::{
         {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
     },
     primitives::{
-        ConnectedPeersMessage, IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId,
+        ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId,
         PeerIndexerHeightMessage, PeerMessage,
     },
     protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
@@ -188,7 +188,7 @@ impl Packet {
         match &self {
             Packet::Ping => networking_metrics::PING_MESSAGE,
             Packet::IndexerHeight(_) => networking_metrics::INDEXER_HEIGHT_MESSAGE,
-            Packet::ConnectedPeers(_) => networking_metrics::CONNECTED_PEERS_MESSAGE,
+            Packet::ConnectedPeersInfo(_) => networking_metrics::CONNECTED_PEERS_MESSAGE,
             Packet::MpcMessage(MpcMessage { kind, .. }) => match kind {
                 MpcMessageKind::Start(_) => networking_metrics::MPC_START_MESSAGE,
                 MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
@@ -447,8 +447,8 @@ impl OutgoingConnection {
         Ok(())
     }
 
-    fn send_connected_peers(&self, msg: ConnectedPeersMessage) -> anyhow::Result<()> {
-        self.sender.send(Packet::ConnectedPeers(msg))?;
+    fn send_connected_peers_info(&self, msg: ConnectedPeersInfo) -> anyhow::Result<()> {
+        self.sender.send(Packet::ConnectedPeersInfo(msg))?;
         Ok(())
     }
 }
@@ -490,20 +490,21 @@ impl PersistentConnection {
         }
     }
 
-    fn send_connected_peers(&self, message: ConnectedPeersMessage) {
-        let Some(conn) = self.connectivity.any_outgoing_connection() else {
-            return;
-        };
-        let peer_version = conn.peer_network_protocol_version();
-        if !peer_version.supports(CONNECTED_PEERS_MIN_PROTOCOL_VERSION) {
-            tracing::warn!(
-                target_participant_id = %self.target_participant_id,
-                ?peer_version,
-                "not sending connected peers: the peer cannot parse the packet"
-            );
-            return;
+    fn send_connected_peers_info(
+        &self,
+        message: ConnectedPeersInfo,
+    ) -> Result<(), ConnectedPeersNotSent> {
+        let peer = self.target_participant_id;
+        let conn = self
+            .connectivity
+            .any_outgoing_connection()
+            .ok_or(ConnectedPeersNotSent::PeerNotConnected(peer))?;
+        let version = conn.peer_network_protocol_version();
+        if !version.supports(CONNECTED_PEERS_MIN_PROTOCOL_VERSION) {
+            return Err(ConnectedPeersNotSent::PeerNotSupportingMessage { peer, version });
         }
-        let _ = conn.send_connected_peers(message);
+        conn.send_connected_peers_info(message)
+            .map_err(|_| ConnectedPeersNotSent::PeerNotConnected(peer))
     }
     const MIN_CONNECTION_ID: u32 = 0;
 
@@ -896,7 +897,7 @@ async fn incoming_connection_handler(
                         message,
                     }))?;
                 }
-                Packet::ConnectedPeers(_) => {
+                Packet::ConnectedPeersInfo(_) => {
                     // TODO(#398): record the row once the receiving side tracks it.
                 }
             }
@@ -1086,10 +1087,15 @@ impl MeshNetworkTransportSender for TlsMeshSender {
         }
     }
 
-    fn send_connected_peers(&self, recipient_id: ParticipantId, message: ConnectedPeersMessage) {
-        if let Some(conn) = self.connections.get(&recipient_id) {
-            conn.send_connected_peers(message);
-        }
+    fn send_connected_peers_info(
+        &self,
+        recipient_id: ParticipantId,
+        message: ConnectedPeersInfo,
+    ) -> Result<(), ConnectedPeersNotSent> {
+        self.connections
+            .get(&recipient_id)
+            .ok_or(ConnectedPeersNotSent::PeerNotConnected(recipient_id))?
+            .send_connected_peers_info(message)
     }
 
     async fn wait_for_ready(
@@ -1231,8 +1237,8 @@ mod tests {
         },
         p2p::testing::{generate_test_p2p_configs, port_seed},
         primitives::{
-            ChannelId, ConnectedPeersMessage, MpcMessage, MpcStartMessage, ParticipantId,
-            PeerMessage, UniqueId,
+            ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage,
+            UniqueId,
         },
         protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
         tracking::{self, testing::start_root_task_with_periodic_dump},
@@ -1562,12 +1568,13 @@ mod tests {
         };
 
         // When
-        persistent_connection.send_connected_peers(ConnectedPeersMessage {
-            peers: vec![ParticipantId::from_raw(2)],
+        let result = persistent_connection.send_connected_peers_info(ConnectedPeersInfo {
+            peers: vec![(ParticipantId::from_raw(2), 7)],
         });
 
         // Then
-        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeers(_)));
+        assert_eq!(result.is_ok(), expected_sent);
+        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
         assert_eq!(sent, expected_sent);
     }
 

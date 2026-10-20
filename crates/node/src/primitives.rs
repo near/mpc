@@ -225,8 +225,10 @@ pub struct PeerIndexerHeightMessage {
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct ConnectedPeersMessage {
-    pub peers: Vec<ParticipantId>,
+pub struct ConnectedPeersInfo {
+    /// Ourselves and every peer we are bidirectionally connected to, each with the latest indexer
+    /// height we know for it.
+    pub peers: Vec<(ParticipantId, u64)>,
 }
 
 pub enum PeerMessage {

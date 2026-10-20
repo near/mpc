@@ -15,7 +15,7 @@ pub enum NetworkProtocolVersion {
     Jan2026 = 8,
     /// Adds [`EcdsaTaskId::OnlinePresignSignature`](crate::network::wire_format::EcdsaTaskId::OnlinePresignSignature).
     Sep2026 = 9,
-    /// Adds [`Packet::ConnectedPeers`](crate::network::wire_format::Packet::ConnectedPeers).
+    /// Adds [`Packet::ConnectedPeersInfo`](crate::network::wire_format::Packet::ConnectedPeersInfo).
     Oct2026 = 10,
     #[num_enum(catch_all)]
     Unknown(u32),

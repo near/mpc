@@ -5,7 +5,7 @@
 //! [`NetworkProtocolVersion`](crate::protocol_version::NetworkProtocolVersion) check decides.
 
 use crate::primitives::{
-    ConnectedPeersMessage, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
+    ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
 };
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -20,7 +20,7 @@ pub enum Packet {
     Ping = 0,
     MpcMessage(MpcMessage) = 1,
     IndexerHeight(IndexerHeightMessage) = 2,
-    ConnectedPeers(ConnectedPeersMessage) = 3,
+    ConnectedPeersInfo(ConnectedPeersInfo) = 3,
 }
 
 #[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -195,7 +195,7 @@ mod tests {
         VerifyForeignTxTaskId,
     };
     use crate::primitives::{
-        ChannelId, ConnectedPeersMessage, IndexerHeightMessage, MpcMessage, MpcStartMessage,
+        ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage,
         ParticipantId, UniqueId,
     };
     use borsh::BorshSerialize;
@@ -246,8 +246,11 @@ mod tests {
                     kind: MpcMessageKind::Success,
                 }),
                 Packet::IndexerHeight(IndexerHeightMessage { height: 4 }),
-                Packet::ConnectedPeers(ConnectedPeersMessage {
-                    peers: vec![ParticipantId::from_raw(5), ParticipantId::from_raw(7)],
+                Packet::ConnectedPeersInfo(ConnectedPeersInfo {
+                    peers: vec![
+                        (ParticipantId::from_raw(5), 10),
+                        (ParticipantId::from_raw(7), 20),
+                    ],
                 }),
             ]),
             rows(&[
