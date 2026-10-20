@@ -76,7 +76,7 @@ async fn submit_remote_attestation(
     stored_attestation: watch::Receiver<Option<GetAttestationResponse>>,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
-) -> anyhow::Result<()> {
+) {
     let dstack_submitted = matches!(attestation, Attestation::Dstack(_));
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
@@ -118,7 +118,7 @@ async fn submit_remote_attestation(
         .without_max_times()
         .build();
 
-    set_attestation
+    let _ = set_attestation
         .retry(exponential_backoff)
         .sleep(tokio::time::sleep)
         .notify(|error, duration| {
@@ -128,7 +128,7 @@ async fn submit_remote_attestation(
                 "failed to submit attestation"
             );
         })
-        .await
+        .await;
 }
 
 fn can_be_own_attestation(stored: Option<&VerifiedAttestation>, dstack_submitted: bool) -> bool {
@@ -206,19 +206,16 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             // fail on a stale view of the allowed hashes
             tracing::warn!("Attestation is not valid: {error}");
         }
-        let submission = submit_remote_attestation(
+        submit_remote_attestation(
             self.tx_sender.clone(),
             self.stored_attestation.clone(),
             attestation,
             self.tls_public_key.clone(),
         )
         .await;
-        match submission {
-            Ok(()) => MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
-                .with_label_values(&[MPC_TEE_ATTESTATION_OUTCOME_SENT])
-                .inc(),
-            Err(error) => tracing::error!(?error, "attestation submission failed"),
-        }
+        MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
+            .with_label_values(&[MPC_TEE_ATTESTATION_OUTCOME_SENT])
+            .inc();
     }
 }
 
