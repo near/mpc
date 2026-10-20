@@ -675,9 +675,7 @@ pub mod running_tests {
         let mut state = gen_running_state(0);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        // Use the GovernanceThreshold as the ReconstructionThreshold (the maximum allowed).
-        let governance_value = state.parameters.threshold().value();
-        let reconstruction_threshold = ReconstructionThreshold::new(governance_value);
+        let reconstruction_threshold = ReconstructionThreshold::from(state.parameters.threshold());
         let proposal = single_domain_proposal(
             &state,
             Protocol::CaitSith,
