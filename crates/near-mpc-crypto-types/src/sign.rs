@@ -28,13 +28,13 @@ use mpc_primitives::domain::DomainId;
     derive(schemars::JsonSchema)
 )]
 pub struct SignRequestArgs {
-    /// Selects the signing key together with the calling account: the key is
-    /// bound to `(caller account id, path)`, and distinct paths yield
-    /// distinct keys.
+    /// Identifies the derived key. The key is determined by the caller's
+    /// account ID and this derivation path. Different paths produce
+    /// different keys.
     pub path: String,
     #[serde(rename = "payload_v2")]
     pub payload: Payload,
-    /// The domain whose distributed key the signing key is derived from.
+    /// Identifies the domain whose distributed key is used to derive the signing key.
     pub domain_id: DomainId,
 }
 

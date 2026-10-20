@@ -11,14 +11,14 @@ pub use near_mpc_crypto_types::{CKDAppPublicKey, CKDAppPublicKeyPV, CkdAppId};
     derive(schemars::JsonSchema)
 )]
 pub struct CKDRequestArgs {
-    /// Selects the derived key together with the calling account: the key is
-    /// bound to `(caller account id, derivation_path)`, and distinct paths
-    /// yield distinct keys.
+    /// Identifies the derived key. The key is determined by the caller's
+    /// account ID and this derivation path. Different paths produce
+    /// different keys.
     pub derivation_path: String,
-    /// Ephemeral key the response is encrypted to; freely chosen per request
-    /// and without influence on the derived key.
+    /// Public key used to encrypt the response. Can be chosen independently
+    /// for each request and does not affect the derived key.
     pub app_public_key: CKDAppPublicKey,
-    /// The CKD-capable domain whose distributed key the derivation uses.
+    /// Identifies the CKD domain used to derive the key.
     pub domain_id: DomainId,
 }
 
