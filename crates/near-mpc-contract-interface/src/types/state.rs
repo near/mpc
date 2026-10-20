@@ -7,6 +7,7 @@ use crate::types::PublicKeyExtended;
 use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::ProposalHash;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -165,18 +166,28 @@ pub struct ProposedGovernanceThresholdParameters {
 // Voting Types
 // =============================================================================
 
-/// Votes for threshold parameter changes. Always empty: the contract stores only proposal
-/// hashes and no longer reports pending votes. Kept for wire compatibility.
-// TODO(#2825): report the hash-keyed tally instead, like `MeasurementVotes`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+/// Voters grouped by the [`ProposalHash`] of the [`ProposedGovernanceThresholdParameters`]
+/// they voted for.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct GovernanceThresholdParametersVotes {
-    pub proposal_by_account:
-        BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
-}
+pub struct GovernanceThresholdParametersVotes(
+    pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>,
+);
 
 /// Votes for adding new domains.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
