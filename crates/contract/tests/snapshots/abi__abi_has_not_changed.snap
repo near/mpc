@@ -816,7 +816,7 @@ expression: abi
       },
       {
         "name": "request_app_private_key",
-        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in\n [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)\n to support use cases\n where the derived key is intentionally public (no encryption).",
+        "doc": " The derived key is fully determined by the calling account id (taken\n implicitly from the predecessor), the derivation path and the domain —\n no other account can obtain the same key. `app_public_key` does not\n influence the derived key: it is a caller-chosen ephemeral key the\n response is encrypted to; see [`dtos::CKDResponse`] for the encryption\n layout and how to decrypt.\n\n To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in\n [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)\n to support use cases\n where the derived key is intentionally public (no encryption).",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -2884,7 +2884,7 @@ expression: abi
           }
         },
         "CKDRequest": {
-          "description": "CKD request with derived app_id.",
+          "description": "A CKD request as tracked by the contract, with the app id already derived from the caller's account id and derivation path via [`derive_app_id`](crate::kdf::derive_app_id).",
           "type": "object",
           "required": [
             "app_id",
@@ -2912,17 +2912,29 @@ expression: abi
           ],
           "properties": {
             "app_public_key": {
-              "$ref": "#/definitions/CKDAppPublicKey"
+              "description": "Public key used to encrypt the response. Can be chosen independently for each request and does not affect the derived key.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CKDAppPublicKey"
+                }
+              ]
             },
             "derivation_path": {
+              "description": "Identifies the derived key. The key is determined by the caller's account ID and this derivation path. Different paths produce different keys.",
               "type": "string"
             },
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "description": "Identifies the CKD domain used to derive the key.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainId"
+                }
+              ]
             }
           }
         },
         "CKDResponse": {
+          "description": "Response to a CKD request: the derived key, ElGamal-encrypted to the request's app public key (`pk1` in the publicly-verifiable variant).\n\nFor an app key pair `(a, A = a·G1)` and an ephemeral scalar `y` chosen by the MPC network, `big_y` holds `Y = y·G1` and `big_c` holds `C = derived_key + y·A`; decrypt with `derived_key = C - a·Y`. The derived key is a BLS signature on the app id under the domain's public key; verify it as such before use. Neither field is a public key: the field type is reused for its 48-byte compressed G1 point encoding.",
           "type": "object",
           "required": [
             "big_c",
@@ -4424,6 +4436,7 @@ expression: abi
           ]
         },
         "PromiseOrValueCKDResponse": {
+          "description": "Response to a CKD request: the derived key, ElGamal-encrypted to the request's app public key (`pk1` in the publicly-verifiable variant).\n\nFor an app key pair `(a, A = a·G1)` and an ephemeral scalar `y` chosen by the MPC network, `big_y` holds `Y = y·G1` and `big_c` holds `C = derived_key + y·A`; decrypt with `derived_key = C - a·Y`. The derived key is a BLS signature on the app id under the domain's public key; verify it as such before use. Neither field is a public key: the field type is reused for its 48-byte compressed G1 point encoding.",
           "type": "object",
           "required": [
             "big_c",
@@ -4842,9 +4855,15 @@ expression: abi
           ],
           "properties": {
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "description": "Identifies the domain whose distributed key is used to derive the signing key.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainId"
+                }
+              ]
             },
             "path": {
+              "description": "Identifies the derived key. The key is determined by the caller's account ID and this derivation path. Different paths produce different keys.",
               "type": "string"
             },
             "payload_v2": {
