@@ -232,8 +232,6 @@ pub enum InvalidCandidateSet {
     NewParticipantIdsNotContiguous,
     #[error("New Participant ids need to not skip any unused participant ids.")]
     NewParticipantIdsTooHigh,
-    #[error("Participant url is {len} bytes, exceeding the {max} byte limit.")]
-    ParticipantUrlTooLong { len: usize, max: usize },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

@@ -13,6 +13,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
+pub const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
@@ -42,6 +43,7 @@ pub const BACKUP_SERVICE_RUN_PORT_SEED: u16 = 25;
 pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 26;
 pub const FOREIGN_CHAIN_PROBE_PORT_SEED: u16 = 27;
 pub const RPC_PRESET_REGISTRATION_PORT_SEED: u16 = 28;
+pub const BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED: u16 = 29;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -88,10 +90,9 @@ pub async fn must_setup_cluster(
         .expect("failed to start cluster");
 
     let protocol_state = cluster
-        .wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
+        .wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
         .await
         .expect("cluster did not reach Running state");
     let ProtocolContractState::Running(running) = protocol_state else {

@@ -346,7 +346,9 @@ backup-cli \
 
 Notes:
 
+- Run `backup-cli run` under a supervisor such as systemd, so it restarts after a crash or reboot.
 - No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
+- Without `--rpc-url`, the state comes from a NEAR node that `backup-cli` embeds, with [requirements comparable to an MPC node](node-requirements.md). The node expects `config.json`, `genesis.json` and `node_key.json` in `$BACKUP_HOME_DIR`, initialized the way [`deployment/start.sh`](../../deployment/start.sh) does for an MPC node, and nothing is backed up until it has synced. The startup probe below does not apply: a contract state that cannot be read is logged at `error` and the service waits for the next one, and `--poll-interval-seconds` only delays the re-attempt of a failed backup.
 - The endpoint is probed at startup: if the contract state cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. When starting at boot, before the network is up, rely on the supervisor's restart policy.
 - The encryption key again comes from `BACKUP_ENCRYPTION_KEY_HEX` (Step 3), never the command line, where `ps` would expose it for the lifetime of the service.
 - Keyshares already backed up are never re-fetched or overwritten, so restarting the service is safe and older epochs' files are kept.

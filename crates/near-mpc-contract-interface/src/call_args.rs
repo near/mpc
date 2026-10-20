@@ -2,10 +2,11 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
+    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId,
+    ExpectedMeasurements, ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId,
+    Keyset, LauncherImageHash, NodeImageHash, ParticipantUrl,
     ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, TeeVerifierCodeHash, UpdateHash, UpdateId, VerifyForeignTransactionRequest,
+    SignatureResponse, TeeVerifierCodeHash, UpdateHash, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -13,6 +14,16 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct InitArgs {
+    pub parameters: GovernanceThresholdParameters,
+    pub tee_verifier_account_id: AccountId,
+    pub init_config: Option<InitConfig>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct InitRunningArgs {
+    pub domains: Vec<DomainConfig>,
+    pub next_domain_id: u64,
+    pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
     pub tee_verifier_account_id: AccountId,
     pub init_config: Option<InitConfig>,
@@ -55,6 +66,16 @@ pub struct VoteMpcNodeManifestDigestArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddLauncherHashArgs {
+    pub launcher_hash: LauncherImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddOsMeasurementArgs {
+    pub measurement: ExpectedMeasurements,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteTeeVerifierChangeArgs {
     pub candidate_account_id: AccountId,
     pub expected_code_hash: TeeVerifierCodeHash,
@@ -62,7 +83,7 @@ pub struct VoteTeeVerifierChangeArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct UpdateParticipantUrlArgs {
-    pub url: String,
+    pub url: ParticipantUrl,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -124,21 +145,9 @@ pub struct VoteResharedArgs {
     pub key_event_id: KeyEventId,
 }
 
-// TODO(#4513): drop once production runs the vote-then-submit API.
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteUpdateArgs {
-    pub id: UpdateId,
-}
-
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteContractUpdateArgs {
     pub update_hash: UpdateHash,
-}
-
-// TODO(#4513): drop once production runs the vote-then-submit API.
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct RemoveUpdateProposalArgs {
-    pub id: UpdateId,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -181,6 +190,11 @@ pub struct VoteAbortKeyEventInstanceArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct CleanInvalidAttestationsArgs {
+    pub max_scan: u32,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
