@@ -99,17 +99,18 @@ struct ParallelToMultiplicationTaskOutputMany {
 
 /// Rejects a round message from a peer that does not carry one entry per batch instance.
 trait CheckBatchLen {
-    fn check_batch_len(&self, batch_size: usize) -> Result<(), ProtocolError>;
+    fn check_batch_len(&self, batch_size: usize, from: Participant) -> Result<(), ProtocolError>;
 }
 
 impl<T> CheckBatchLen for Vec<T> {
-    fn check_batch_len(&self, batch_size: usize) -> Result<(), ProtocolError> {
+    fn check_batch_len(&self, batch_size: usize, from: Participant) -> Result<(), ProtocolError> {
         if self.len() == batch_size {
             Ok(())
         } else {
             Err(ProtocolError::UnexpectedLength {
                 expected: batch_size,
                 actual: self.len(),
+                participant: from,
             })
         }
     }
@@ -127,13 +128,13 @@ struct PolynomialCommitmentsMessageMany {
 }
 
 impl CheckBatchLen for PolynomialCommitmentsMessageMany {
-    fn check_batch_len(&self, batch_size: usize) -> Result<(), ProtocolError> {
-        self.big_e_v.check_batch_len(batch_size)?;
-        self.big_f_v.check_batch_len(batch_size)?;
-        self.big_l_v.check_batch_len(batch_size)?;
-        self.randomizer_v.check_batch_len(batch_size)?;
-        self.phi_proof0_v.check_batch_len(batch_size)?;
-        self.phi_proof1_v.check_batch_len(batch_size)
+    fn check_batch_len(&self, batch_size: usize, from: Participant) -> Result<(), ProtocolError> {
+        self.big_e_v.check_batch_len(batch_size, from)?;
+        self.big_f_v.check_batch_len(batch_size, from)?;
+        self.big_l_v.check_batch_len(batch_size, from)?;
+        self.randomizer_v.check_batch_len(batch_size, from)?;
+        self.phi_proof0_v.check_batch_len(batch_size, from)?;
+        self.phi_proof1_v.check_batch_len(batch_size, from)
     }
 }
 
@@ -217,7 +218,7 @@ async fn do_generation_many(
         .any(|all_commitments| !all_commitments.full())
     {
         let (from, commitments) = chan.recv::<Vec<Commitment>>(wait0).await?;
-        commitments.check_batch_len(batch_size)?;
+        commitments.check_batch_len(batch_size, from)?;
         for (acv, commit) in all_commitments_vec.iter_mut().zip(commitments.iter()) {
             acv.put(from, *commit);
         }
@@ -375,7 +376,7 @@ async fn do_generation_many(
             recv_from_others::<PolynomialCommitmentsMessageMany>(&chan, wait2, &participants, me)
                 .await?
         {
-            their.check_batch_len(batch_size)?;
+            their.check_batch_len(batch_size, from)?;
             for (
                 all_commitments,
                 their_big_e,
@@ -460,14 +461,14 @@ async fn do_generation_many(
         }
 
         // Spec 3.5 + 3.6
-        for (_, (a_j_i_v, b_j_i_v)) in recv_from_others::<(
+        for (from, (a_j_i_v, b_j_i_v)) in recv_from_others::<(
             Vec<SerializableScalar<C>>,
             Vec<SerializableScalar<C>>,
         )>(&chan, wait3, &participants, me)
         .await?
         {
-            a_j_i_v.check_batch_len(batch_size)?;
-            b_j_i_v.check_batch_len(batch_size)?;
+            a_j_i_v.check_batch_len(batch_size, from)?;
+            b_j_i_v.check_batch_len(batch_size, from)?;
             for ((a_i, b_i), (a_j_i, b_j_i)) in a_i_v
                 .iter_mut()
                 .zip(b_i_v.iter_mut())
@@ -533,8 +534,8 @@ async fn do_generation_many(
         )>(&chan, wait4, &participants, me)
         .await?
         {
-            big_c_j_v.check_batch_len(batch_size)?;
-            their_phi_proofs.check_batch_len(batch_size)?;
+            big_c_j_v.check_batch_len(batch_size, from)?;
+            their_phi_proofs.check_batch_len(batch_size, from)?;
             for ((((big_e_j_zero, big_f), big_c_j), their_phi_proof), big_c) in big_e_j_zero_v
                 .iter()
                 .zip(big_f_v.iter())
@@ -655,8 +656,8 @@ async fn do_generation_many(
     )
     .await?
     {
-        their_hat_big_c_i_points.check_batch_len(batch_size)?;
-        their_phi_proofs.check_batch_len(batch_size)?;
+        their_hat_big_c_i_points.check_batch_len(batch_size, from)?;
+        their_phi_proofs.check_batch_len(batch_size, from)?;
         for ((their_point, their_phi_proof), hat_big_c) in their_hat_big_c_i_points
             .iter()
             .zip(their_phi_proofs.iter())
@@ -701,10 +702,10 @@ async fn do_generation_many(
     }
 
     // Spec 5.5 + 5.6
-    for (_, c_j_i_v) in
+    for (from, c_j_i_v) in
         recv_from_others::<Vec<SerializableScalar<C>>>(&chan, wait6, &participants, me).await?
     {
-        c_j_i_v.check_batch_len(batch_size)?;
+        c_j_i_v.check_batch_len(batch_size, from)?;
         for (c_i, c_j_i) in c_i_v.iter_mut().zip(c_j_i_v.iter()) {
             *c_i += c_j_i.0;
         }
@@ -879,8 +880,14 @@ mod test {
     use rstest::rstest;
 
     use crate::{
-        crypto::random::Randomness,
-        ecdsa::{ProjectivePoint, Scalar, ot_based_ecdsa::triples::generate_triple},
+        crypto::{
+            proofs::{dlog, strobe_transcript::Transcript},
+            random::Randomness,
+        },
+        ecdsa::{
+            CoefficientCommitment, PolynomialCommitment, ProjectivePoint, Scalar,
+            ot_based_ecdsa::triples::generate_triple,
+        },
         participants::{Participant, ParticipantList},
         protocol::Protocol,
         test_utils::{
@@ -890,14 +897,14 @@ mod test {
     use frost_core::serialization::SerializableScalar;
 
     use super::{
-        C, CheckBatchLen, PolynomialCommitmentsMessageMany, TripleGenerationOutput,
+        C, CheckBatchLen, PolynomialCommitmentsMessageMany, ProtocolError, TripleGenerationOutput,
         TripleGenerationOutputMany, do_generation_many, generate_triple_many,
         triple_generation_max_incoming_buffer_entries,
     };
 
-    /// The pre-#4557 encoding of a batched round: fixed-size arrays sized by a const generic.
-    /// Kept only to pin that moving to [`Vec`] left the bytes on the wire untouched, which is why
-    /// a node running either representation can take part in the same batch.
+    /// The `[T; N]` const-generic encoding of a batched round that preceded [`Vec`].
+    /// Kept only to pin that the move to [`Vec`] left the bytes on the wire untouched, which is
+    /// why a node running either representation can take part in the same batch.
     #[serde_with::serde_as]
     #[derive(serde::Serialize)]
     struct LegacyFixedArrays<const N: usize> {
@@ -927,39 +934,117 @@ mod test {
         assert_eq!(legacy, current);
     }
 
+    const BATCH_SIZE: usize = 3;
+
     #[rstest]
-    #[case::too_short(2, false)]
-    #[case::exact(3, true)]
-    #[case::too_long(4, false)]
+    #[case::too_short(BATCH_SIZE - 1, false)]
+    #[case::exact(BATCH_SIZE, true)]
+    #[case::too_long(BATCH_SIZE + 1, false)]
     fn check_batch_len__should_accept_only_a_vector_of_the_batch_size(
         #[case] peer_len: usize,
         #[case] accepted: bool,
     ) {
         // Given
+        let from = Participant::from(7u32);
         let received = vec![0u8; peer_len];
 
         // When
-        let result = received.check_batch_len(3);
+        let result = received.check_batch_len(BATCH_SIZE, from);
 
         // Then
-        assert_eq!(result.is_ok(), accepted, "{result:?}");
+        match result {
+            Ok(()) => assert!(accepted),
+            Err(ProtocolError::UnexpectedLength {
+                expected,
+                actual,
+                participant,
+            }) => {
+                assert!(!accepted);
+                assert_eq!(
+                    (expected, actual, participant),
+                    (BATCH_SIZE, peer_len, from)
+                );
+            }
+            Err(e) => panic!("unexpected error: {e:?}"),
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum Field {
+        BigE,
+        BigF,
+        BigL,
+        Randomizer,
+        PhiProof0,
+        PhiProof1,
+    }
+
+    /// A well-formed message carrying exactly one entry per field.
+    fn single_instance_message(rng: &mut MockCryptoRng) -> PolynomialCommitmentsMessageMany {
+        let commitment =
+            PolynomialCommitment::new(&[CoefficientCommitment::new(ProjectivePoint::GENERATOR)])
+                .unwrap();
+        let x = Scalar::generate_biased(&mut *rng);
+        let k = Scalar::generate_biased(&mut *rng);
+        let proof = dlog::prove_with_nonce(
+            &mut Transcript::new(b"test"),
+            dlog::Statement::<C> {
+                public: &(ProjectivePoint::GENERATOR * x),
+            },
+            &dlog::Witness::<C> {
+                x: SerializableScalar(x),
+            },
+            (k, ProjectivePoint::GENERATOR * k),
+        )
+        .unwrap();
+
+        PolynomialCommitmentsMessageMany {
+            big_e_v: vec![commitment.clone()],
+            big_f_v: vec![commitment.clone()],
+            big_l_v: vec![commitment],
+            randomizer_v: vec![Randomness::random(rng)],
+            phi_proof0_v: vec![proof.clone()],
+            phi_proof1_v: vec![proof],
+        }
     }
 
     #[test]
-    fn polynomial_commitments_message__should_reject_a_field_of_the_wrong_length() {
-        // Given a message whose randomizers alone carry an entry too many
+    fn polynomial_commitments_message__should_accept_one_entry_per_field() {
+        // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let message = PolynomialCommitmentsMessageMany {
-            big_e_v: Vec::new(),
-            big_f_v: Vec::new(),
-            big_l_v: Vec::new(),
-            randomizer_v: vec![Randomness::random(&mut rng)],
-            phi_proof0_v: Vec::new(),
-            phi_proof1_v: Vec::new(),
-        };
+        let message = single_instance_message(&mut rng);
 
         // When
-        let result = message.check_batch_len(0);
+        let result = message.check_batch_len(1, Participant::from(0u32));
+
+        // Then
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[rstest]
+    #[case::big_e(Field::BigE)]
+    #[case::big_f(Field::BigF)]
+    #[case::big_l(Field::BigL)]
+    #[case::randomizer(Field::Randomizer)]
+    #[case::phi_proof0(Field::PhiProof0)]
+    #[case::phi_proof1(Field::PhiProof1)]
+    fn polynomial_commitments_message__should_reject_any_field_of_the_wrong_length(
+        #[case] longer: Field,
+    ) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let mut message = single_instance_message(&mut rng);
+        match longer {
+            Field::BigE => message.big_e_v.push(message.big_e_v[0].clone()),
+            Field::BigF => message.big_f_v.push(message.big_f_v[0].clone()),
+            Field::BigL => message.big_l_v.push(message.big_l_v[0].clone()),
+            Field::Randomizer => message.randomizer_v.push(Randomness::random(&mut rng)),
+            Field::PhiProof0 => message.phi_proof0_v.push(message.phi_proof0_v[0].clone()),
+            Field::PhiProof1 => message.phi_proof1_v.push(message.phi_proof1_v[0].clone()),
+        }
+
+        // When
+        let result = message.check_batch_len(1, Participant::from(0u32));
 
         // Then
         assert!(result.is_err(), "{result:?}");
