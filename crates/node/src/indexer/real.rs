@@ -66,7 +66,6 @@ pub fn spawn_real_indexer(
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
-    foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
 ) -> (
@@ -76,6 +75,8 @@ pub fn spawn_real_indexer(
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
+        oneshot::channel();
+    let (foreign_chain_rpc_whitelist_sender_oneshot, foreign_chain_rpc_whitelist_receiver_oneshot) =
         oneshot::channel();
     let (baseline_reader_sender, baseline_reader_receiver) = oneshot::channel();
 
@@ -220,16 +221,16 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-                watch::channel(std::collections::BTreeMap::new());
-            tokio::spawn(monitor_allowed_foreign_chain_providers(
-                foreign_chain_whitelist_sender,
-                indexer_state.clone(),
-            ));
-            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver,
-                foreign_chains.clone(),
-            ));
+            let foreign_chain_rpc_whitelist_receiver =
+                monitor_allowed_foreign_chain_providers(indexer_state.clone()).await;
+            if foreign_chain_rpc_whitelist_sender_oneshot
+                .send(foreign_chain_rpc_whitelist_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain RPC whitelist receiver back to main driver."
+                )
+            };
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
@@ -328,6 +329,10 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain supporters receiver must be returned by indexer");
 
+    let foreign_chain_rpc_whitelist_receiver = foreign_chain_rpc_whitelist_receiver_oneshot
+        .blocking_recv()
+        .expect("foreign chain RPC whitelist receiver must be returned by indexer");
+
     let baseline_reader = baseline_reader_receiver
         .blocking_recv()
         .expect("submission baseline reader must be returned by indexer");
@@ -340,6 +345,7 @@ pub fn spawn_real_indexer(
         allowed_launcher_compose_receiver,
         my_migration_info_receiver,
         foreign_chain_supporters_receiver,
+        foreign_chain_rpc_whitelist_receiver,
     };
 
     (indexer_api, baseline_reader)

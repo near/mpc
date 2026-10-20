@@ -14,14 +14,16 @@ request whose target chain was not in it. A single node that registers an empty 
 feature down. That is what this design fixes.
 
 It builds on the per-chain RPC whitelist (`ForeignChainRpcWhitelist`), which holds,
-per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`,
-stored for a deferred quorum policy and not yet consumed: verification compares every
-configured provider, see [Verification behavior](#verification-behavior)).
+per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`):
+how many whitelisted providers must agree before a node signs a verdict (see
+[Verification behavior](#verification-behavior)).
 
 ## Design: two sets of chains
 
 > **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
 > [Foreign Chain Transaction Verification Design — Terminology](../archive/design/foreign-chain-transactions.md#terminology).
+> Since the RPC quorum is enforced, this doc redefines *RPC quorum* and *covers* in
+> [Per-node registration](#per-node-registration).
 
 The network distinguishes the **whitelisted** set (vote-driven policy, `allowed_foreign_chain_providers()`)
 from the **available** set (servable right now, `get_available_foreign_chains()`):
@@ -57,19 +59,23 @@ misconfigured for a chain — an operational anomaly that alerting surfaces (see
 
 ## Verification behavior
 
-Each node fans the query out to its whitelisted providers for `C` and accepts a
-result only when every provider that reached a verdict reached the same one; providers
-that fail to answer are tolerated. On any disagreement the node errors out and produces
-no signature share.
+For a request, the node fans the query out to every configured provider of `C` and
+accepts a result only when every provider that reached a verdict reached the same one
+and at least `quorum` of those are whitelisted. Providers that fail to answer are
+tolerated within that bound. A provider outside the whitelist can veto a verdict but
+never counts towards the quorum. Disagreement is reported as a mismatch, a unanimous
+verdict short of the quorum as a sub-quorum; either way the node produces no signature
+share.
 
 **A disagreement outcome must be terminal — the leader must not re-attempt the
 request.** Implementation requirement, not current behavior: the generic queue
 retries every request, so the foreign-tx path must special-case a disagreement
-as non-retryable. The fan out already distinguishes the two outcomes in its
-return value: when no provider reaches a verdict it propagates the underlying
-error, and only genuine disagreement between verdicts reports a mismatch.
-Whether the no-verdict outcome should retry while disagreement stays terminal
-is tracked in [#3477](https://github.com/near/mpc/issues/3477).
+as non-retryable. The fan out already distinguishes the outcomes in its return
+value: when no provider reaches a verdict it propagates the underlying error, a
+unanimous verdict short of the quorum reports a sub-quorum, and only genuine
+disagreement between verdicts reports a mismatch. Whether the no-verdict and
+sub-quorum outcomes should retry while disagreement stays terminal is tracked in
+[#3477](https://github.com/near/mpc/issues/3477).
 
 ## Participant selection
 
@@ -102,6 +108,12 @@ underlying queue — which could subsume this limitation — is tracked in
 
 ## Per-node registration
 
+Each node resolves the whitelist against its local RPC config. A configured provider is
+*whitelisted* for `C` when its id, base URL, chain routing and auth scheme match `C`'s
+entry. A node *covers* `C` when at least `C`'s **RPC quorum** (`ChainEntry.quorum`) of its
+configured providers are whitelisted, not when one is. The node registers the chains it
+covers and re-registers whenever a whitelist change alters that set.
+
 Per-node registration (`register_foreign_chains_config` / `get_foreign_chains_configs`)
 reports which chains each node currently covers,
 and serves two roles:
@@ -113,7 +125,8 @@ and serves two roles:
   whitelisted chain, monitoring should fire for *us* (maintainers), who nudge the operator. Ideally
   operators run their own coverage alert and fix the gap first.
 
-Registration reflects each node's *current* config.
+Registration reflects the chains the node covers under its *current* config and the
+*current* whitelist.
 
 Registrations are keyed by the node's TLS public key rather than its NEAR account. The
 contract accepts a registration only from the account's node in the current participant set,
@@ -123,9 +136,10 @@ so a migrating operator's new node can register before it becomes active.
 ## Guarantees preserved
 
 **Safety** — the network signs an observation only if ≥ `signing_threshold`
-participants each independently verified it, each against its own configured providers
-(see [Verification behavior](#verification-behavior)). Fewer than
-`signing_threshold` cannot force a false attestation.
+participants each independently verified it, each against at least `quorum` of the
+whitelisted providers (see [Verification behavior](#verification-behavior)). Fewer than
+`signing_threshold` participants, or fewer than `quorum` providers at any of them,
+cannot force a false attestation.
 
 **Liveness** — a request is accepted only when `C` is available (≥ `signing_threshold`
 participants cover it), so an accepted request can reach the signing threshold; and a

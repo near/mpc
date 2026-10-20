@@ -684,6 +684,28 @@ pub static MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGau
         .unwrap()
     });
 
+pub static FOREIGN_CHAIN_RPC_QUORUM_REQUIRED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_quorum_required",
+            "Whitelisted RPC providers that must agree on a verdict, as voted on the contract; \
+             0 while the chain is not whitelisted",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+pub static FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_providers_whitelisted",
+            "Configured RPC providers that match the contract whitelist and count towards the \
+             quorum; 0 while the chain is not whitelisted",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
 pub static FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
         prometheus::register_int_gauge_vec!(

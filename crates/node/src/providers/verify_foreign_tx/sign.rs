@@ -18,11 +18,12 @@ use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
-use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
+use foreign_chain_inspector::{EthereumFinality, RpcQuorum};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
+use crate::foreign_chain_rpc_policy::RpcQuorumsByChain;
 use crate::metrics;
 use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::MeasuredFanOut;
@@ -197,6 +198,10 @@ impl VerifyForeignTxProvider {
             .inspect_err(|_| {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
+        let quorum =
+            rpc_quorum_for(&self.rpc_quorums.borrow(), request.chain()).inspect_err(|_| {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
+            })?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(request) => {
@@ -216,7 +221,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -229,7 +234,7 @@ impl VerifyForeignTxProvider {
                     .solana
                     .as_ref()
                     .context("no inspector configured for Solana")?;
-                execute_svm_request(inspector, request).await?
+                execute_svm_request(inspector, &quorum, request).await?
             }
             dtos::ForeignChainRpcRequest::Fogo(request) => {
                 let inspector = self
@@ -237,7 +242,7 @@ impl VerifyForeignTxProvider {
                     .fogo
                     .as_ref()
                     .context("no inspector configured for Fogo")?;
-                execute_svm_request(inspector, request).await?
+                execute_svm_request(inspector, &quorum, request).await?
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
                 let inspector = self
@@ -255,7 +260,12 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(transaction_id, block_confirmations, extractors)
+                        .extract_with_quorum(
+                            &quorum,
+                            transaction_id,
+                            block_confirmations,
+                            extractors,
+                        )
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -279,7 +289,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -303,7 +313,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -327,7 +337,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -351,7 +361,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -375,7 +385,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -399,7 +409,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -423,7 +433,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -447,7 +457,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -472,7 +482,7 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -501,7 +511,7 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(tx_id, finality, extractors)
+                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -527,7 +537,7 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(tx_id, finality, extractors)
+                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -552,6 +562,7 @@ impl VerifyForeignTxProvider {
 
 async fn execute_svm_request<Chain>(
     inspector: &MeasuredFanOut<SvmInspector<HttpClient, Chain>>,
+    quorum: &RpcQuorum,
     request: &dtos::SvmRpcRequest,
 ) -> anyhow::Result<Vec<dtos::ExtractedValue>>
 where
@@ -568,7 +579,7 @@ where
 
     let values = require_extracted(
         inspector
-            .extract(tx_id, finality, extractors)
+            .extract_with_quorum(quorum, tx_id, finality, extractors)
             .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
             .await
             .context("timed out during execution of foreign chain request")??,
@@ -583,6 +594,28 @@ where
 )]
 struct ChainNotAvailableError {
     requested: dtos::ForeignChain,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "requested chain {requested:?} has no reachable RPC quorum on this node: too few of its \
+     configured providers match the contract whitelist"
+)]
+struct ChainBelowRpcQuorumError {
+    requested: dtos::ForeignChain,
+}
+
+/// A chain has a quorum entry only while enough of its whitelisted providers are configured.
+fn rpc_quorum_for(
+    rpc_quorums: &RpcQuorumsByChain,
+    foreign_chain: dtos::ForeignChain,
+) -> Result<RpcQuorum, ChainBelowRpcQuorumError> {
+    rpc_quorums
+        .get(&foreign_chain)
+        .cloned()
+        .ok_or(ChainBelowRpcQuorumError {
+            requested: foreign_chain,
+        })
 }
 
 /// A chain counts as available when the supporters map has an entry for it:

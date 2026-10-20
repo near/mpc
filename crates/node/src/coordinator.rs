@@ -4,6 +4,7 @@ use crate::db::SecretDB;
 use crate::foreign_chain_policy::{
     SupportersByForeignChain, foreign_tx_required_active_signers, spawn_supporters_by_foreign_chain,
 };
+use crate::foreign_chain_rpc_policy::{RpcQuorumsByChain, spawn_rpc_quorums_resolver};
 use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
@@ -33,7 +34,7 @@ use crate::providers::{DomainKeyshare, EcdsaSignatureProvider};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
-use crate::tracking::{self};
+use crate::tracking::{self, AutoAbortTask};
 use crate::web::DebugRequest;
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -111,6 +112,10 @@ where
     TransactionSender: tx_sender::TransactionSender + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
+        let (rpc_quorums_receiver, _rpc_quorums_resolver_task) = spawn_rpc_quorums_resolver(
+            self.indexer.foreign_chain_rpc_whitelist_receiver.clone(),
+            self.config_file.foreign_chains.clone(),
+        );
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             if let Some(epoch_id) = current_epoch_id(&state) {
@@ -180,6 +185,7 @@ where
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer.foreign_chain_supporters_receiver.clone(),
+                                rpc_quorums_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -378,6 +384,7 @@ where
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+        rpc_quorums_receiver: watch::Receiver<RpcQuorumsByChain>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -436,7 +443,8 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await;
+        let _foreign_chains_registrar =
+            spawn_foreign_chains_registrar(chain_txn_sender.clone(), rpc_quorums_receiver.clone());
 
         let resolve_peer_address =
             move |participant_id| peer_address_from_state(&contract_state_receiver, participant_id);
@@ -730,6 +738,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     supporters_by_foreign_chain,
+                    rpc_quorums_receiver,
                     foreign_tx_required_active_signers,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
@@ -1076,16 +1085,37 @@ fn stop_initializing(
     }
 }
 
-/// An empty config still registers so that dropping every chain propagates.
+/// Registers the chains with a reachable RPC quorum, again whenever they change. Must be
+/// called from a tracked task; dropping the returned [`AutoAbortTask`] stops the registrar.
+fn spawn_foreign_chains_registrar(
+    chain_txn_sender: impl tx_sender::TransactionSender + 'static,
+    mut rpc_quorums_receiver: watch::Receiver<RpcQuorumsByChain>,
+) -> AutoAbortTask<()> {
+    tracking::spawn("foreign chains registrar", async move {
+        let mut registered = None;
+        loop {
+            let chains: std::collections::BTreeSet<_> = rpc_quorums_receiver
+                .borrow_and_update()
+                .keys()
+                .copied()
+                .collect();
+            if registered.as_ref() != Some(&chains) {
+                register_foreign_chains(&chain_txn_sender, chains.clone()).await;
+                registered = Some(chains);
+            }
+            if rpc_quorums_receiver.changed().await.is_err() {
+                break;
+            }
+        }
+    })
+}
+
+/// An empty set still registers so that dropping every chain propagates.
 async fn register_foreign_chains(
     chain_txn_sender: &impl tx_sender::TransactionSender,
-    foreign_chains: &mpc_node_config::ForeignChainsConfig,
+    chains: std::collections::BTreeSet<dtos::ForeignChain>,
 ) {
-    let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
-        .iter_chains()
-        .map(|(chain, _)| chain)
-        .collect::<std::collections::BTreeSet<_>>()
-        .into();
+    let foreign_chains_config: dtos::ForeignChainsConfig = chains.into();
     if let Err(err) = chain_txn_sender
         .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
             contract_args::RegisterForeignChainsConfigArgs::new(foreign_chains_config),
@@ -1114,8 +1144,9 @@ fn make_initializing_stop_fn(
 mod tests {
     use super::{
         current_epoch_id, participants_change_requires_restart, peer_address_from_state,
-        register_foreign_chains, stop_running,
+        register_foreign_chains, spawn_foreign_chains_registrar, stop_running,
     };
+    use crate::foreign_chain_rpc_policy::RpcQuorumsByChain;
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
         base_config, me, participant, resharing, running,
@@ -1123,15 +1154,15 @@ mod tests {
     use crate::indexer::types::ChainSendTransactionRequest;
     use crate::primitives::ParticipantId;
     use crate::tests::common::MockTransactionSender;
+    use crate::tracking::start_root_task;
     use ed25519_dalek::SigningKey;
-    use mpc_node_config::foreign_chains::RpcProviderName;
-    use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
+    use foreign_chain_inspector::RpcQuorum;
     use mpc_primitives::EpochId;
     use near_mpc_contract_interface::types as dtos;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
-    use std::num::NonZeroU64;
+    use std::num::NonZeroUsize;
     use std::{assert_matches, collections::BTreeSet};
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::error::TryRecvError;
@@ -1335,29 +1366,14 @@ mod tests {
 
     #[tokio::test]
     async fn register_foreign_chains__should_send_registration() {
-        // Given: a node config covering Solana.
-        let foreign_chains = ForeignChainsConfig {
-            solana: Some(ForeignChainConfig {
-                timeout_sec: NonZeroU64::new(30).unwrap(),
-                max_retries: NonZeroU64::new(3).unwrap(),
-                expected_network_fingerprint: None,
-                providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
-                    RpcProviderName::from("public".to_string()),
-                    ForeignChainProviderConfig {
-                        rpc_url: "https://rpc.public.example.com".to_string(),
-                        auth: Default::default(),
-                    },
-                ),
-            }),
-            ..Default::default()
-        };
+        // Given
         let (sender, mut receiver) = mpsc::channel(10);
         let txn_sender = MockTransactionSender {
             transaction_sender: sender,
         };
 
         // When
-        register_foreign_chains(&txn_sender, &foreign_chains).await;
+        register_foreign_chains(&txn_sender, BTreeSet::from([dtos::ForeignChain::Solana])).await;
 
         // Then
         let expected: dtos::ForeignChainsConfig =
@@ -1368,5 +1384,57 @@ mod tests {
                 if args.foreign_chains_config == expected
         );
         assert_matches!(receiver.try_recv(), Err(TryRecvError::Empty));
+    }
+
+    fn solana_quorum() -> RpcQuorumsByChain {
+        RpcQuorumsByChain::from([(
+            dtos::ForeignChain::Solana,
+            RpcQuorum {
+                required: NonZeroUsize::MIN,
+                whitelisted: BTreeSet::from([dtos::ProviderId("public".to_string())]),
+            },
+        )])
+    }
+
+    async fn next_registration(
+        receiver: &mut mpsc::Receiver<ChainSendTransactionRequest>,
+    ) -> dtos::ForeignChainsConfig {
+        let request = tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv())
+            .await
+            .expect("timed out waiting for a registration")
+            .expect("transaction sender dropped");
+        let ChainSendTransactionRequest::RegisterForeignChainsConfig(args) = request else {
+            panic!("expected a foreign chains registration, got {request:?}");
+        };
+        args.foreign_chains_config
+    }
+
+    #[tokio::test]
+    async fn spawn_foreign_chains_registrar__should_register_the_eligible_chains_on_every_change() {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let (quorums_sender, quorums_receiver) = watch::channel(RpcQuorumsByChain::new());
+            let (sender, mut receiver) = mpsc::channel(10);
+            let txn_sender = MockTransactionSender {
+                transaction_sender: sender,
+            };
+            let _registrar = spawn_foreign_chains_registrar(txn_sender, quorums_receiver);
+            assert_eq!(
+                next_registration(&mut receiver).await,
+                BTreeSet::new().into()
+            );
+            assert_matches!(receiver.try_recv(), Err(TryRecvError::Empty));
+
+            // When
+            quorums_sender.send(solana_quorum()).unwrap();
+
+            // Then
+            assert_eq!(
+                next_registration(&mut receiver).await,
+                BTreeSet::from([dtos::ForeignChain::Solana]).into()
+            );
+            assert_matches!(receiver.try_recv(), Err(TryRecvError::Empty));
+        });
+        root.await;
     }
 }

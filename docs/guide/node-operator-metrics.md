@@ -137,6 +137,18 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check. Solana has no probe and is left out of both
 gauges.
 
+### The contract whitelist
+
+Whenever the contract's per-chain provider whitelist changes, the node matches its
+configured providers against it:
+
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_foreign_chain_rpc_quorum_required` | whitelisted providers that must agree on a verdict; 0 while the chain is not whitelisted |
+| `mpc_foreign_chain_rpc_providers_whitelisted` | configured providers that match the whitelist entry; 0 while the chain is not whitelisted |
+
+`whitelisted` must reach `required` for the node to serve the chain.
+
 ## Recommended alerts
 
 ```promql
@@ -193,6 +205,10 @@ increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  f
 # expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
 # 2h hold waits for two rounds to agree.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
+
+# Warn: the node cannot serve a whitelisted chain: too few of its configured providers
+# match the whitelist entry. The node logs why each provider does not count.
+mpc_foreign_chain_rpc_providers_whitelisted < mpc_foreign_chain_rpc_quorum_required  for 15m
 
 # Warn: no backup for over a day. Only meaningful once backups are being taken
 # against this node.

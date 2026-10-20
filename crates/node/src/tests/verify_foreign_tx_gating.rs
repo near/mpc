@@ -11,10 +11,13 @@ use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    AuthScheme, ChainEntry, ChainRouting, DomainConfig, DomainId, DomainPurpose, ForeignChain,
+    Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
 };
 use near_time::Clock;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::num::NonZeroU64;
 use std::time::Duration;
@@ -58,9 +61,29 @@ fn must_start_bitcoin_rpc_mock() -> MockServer {
     server
 }
 
+const BITCOIN_PROVIDER: &str = "public";
+
+/// Whitelists the single mock provider of [`bitcoin_only_config`] with a quorum of one.
+fn bitcoin_whitelist(rpc_url: &str) -> BTreeMap<ForeignChain, ChainEntry> {
+    BTreeMap::from([(
+        ForeignChain::Bitcoin,
+        ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                ProviderId(BITCOIN_PROVIDER.to_string()),
+                ProviderConfig {
+                    base_url: rpc_url.to_string(),
+                    auth_scheme: AuthScheme::None,
+                    chain_routing: ChainRouting::Embedded,
+                },
+            ),
+            quorum: 1,
+        },
+    )])
+}
+
 fn bitcoin_only_config(rpc_url: &str) -> ForeignChainsConfig {
-    let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
-        RpcProviderName::from("public".to_string()),
+    let providers = NonEmptyBTreeMap::new(
+        RpcProviderName::from(BITCOIN_PROVIDER.to_string()),
         ForeignChainProviderConfig {
             rpc_url: rpc_url.parse().unwrap(),
             auth: AuthConfig::None,
@@ -137,6 +160,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
         contract.add_domains(vec![foreign_tx_domain.clone()]);
+        contract.whitelist_foreign_chain_providers(bitcoin_whitelist(&rpc_mock.base_url()));
     }
 
     let _runs = setup

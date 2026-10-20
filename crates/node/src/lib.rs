@@ -44,7 +44,7 @@ mod coordinator;
 mod db;
 mod foreign_chain_policy;
 mod foreign_chain_probe;
-mod foreign_chain_whitelist_verifier;
+mod foreign_chain_rpc_policy;
 mod home_paths;
 mod indexer;
 mod key_events;

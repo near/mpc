@@ -3,7 +3,7 @@
 pub mod common;
 
 use crate::common::{
-    FixedResponseRpcClient, SequentialResponseMockClientBuilder, fan_out_of,
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, any_single_provider, fan_out_of,
     mock_client_from_fixed_response,
 };
 
@@ -341,7 +341,12 @@ macro_rules! evm_inspector_tests {
 
                 // when
                 let response = fan_out
-                .extract(tx_id, EthereumFinality::Finalized, vec![EvmExtractor::BlockHash])
+                .extract_with_quorum(
+                    &any_single_provider(3),
+                    tx_id,
+                    EthereumFinality::Finalized,
+                    vec![EvmExtractor::BlockHash],
+                )
                 .await;
 
                 // then

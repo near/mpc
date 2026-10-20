@@ -103,7 +103,7 @@ by field. The config from the file takes precedence.
 1. `validate()` runs on the resolved config, a failure aborts startup.
 
 The resolved config lives only in memory and is never written back to disk. All consumers
-(inspectors, probe, `register_foreign_chains`, whitelist verifier, web UI) receive the resolved
+(inspectors, probe, RPC policy resolver, web UI) receive the resolved
 config instead of the file's `foreign_chains`. Since it is the same type, their code doesn't change.
 
 Resolution returns each outcome as a diagnostic. The node logs every pair with its source and

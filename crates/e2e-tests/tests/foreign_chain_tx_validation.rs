@@ -4,7 +4,7 @@ use std::num::NonZeroU64;
 use crate::common;
 
 use anyhow::Context;
-use e2e_tests::cluster::placeholder_chain_entry;
+use e2e_tests::cluster::chain_entry_matching;
 use e2e_tests::foreign_chain_mock::{
     MOCK_BLOCK_HASH, MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock,
     setup_starknet_mock,
@@ -220,22 +220,16 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    let whitelist: BTreeMap<_, _> = [
-        ForeignChain::Bitcoin,
-        ForeignChain::Abstract,
-        ForeignChain::Bnb,
-        ForeignChain::Starknet,
-        ForeignChain::Base,
-        ForeignChain::Arbitrum,
-        ForeignChain::HyperEvm,
-        ForeignChain::Avalanche,
-        ForeignChain::Adi,
-        ForeignChain::Ethereum,
-        ForeignChain::Polygon,
-    ]
-    .into_iter()
-    .map(|chain| (chain, placeholder_chain_entry(chain)))
-    .collect();
+    // Every provider of every configured chain is whitelisted and must agree, so a
+    // signature proves the node matched its config against the whitelist and reached
+    // the full quorum.
+    let whitelist: BTreeMap<_, _> = fc_config
+        .iter_chains()
+        .map(|(chain, config)| {
+            let quorum = config.providers.len() as u64;
+            (chain, chain_entry_matching(config, quorum))
+        })
+        .collect();
     let expected_chains: std::collections::BTreeSet<ForeignChain> =
         whitelist.keys().copied().collect();
 
