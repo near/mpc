@@ -9,10 +9,13 @@
 No CI job runs on TDX hardware today, and none verifies an attestation against live
 collateral. Real-TDX runs happen only when someone hand-drives the deploy scripts.
 
-The agreed design: a **nightly GitHub-hosted job SSHes into a dedicated TDX host (Eva)**,
-triggers the existing bash scripts against a freshly published node/launcher image,
-and collects a results file. No self-hosted runner, no new test framework — the first
-version reuses what already exists.
+The agreed design: a **nightly job on our existing CI runners SSHes into a dedicated TDX
+host**, triggers the existing bash scripts against a freshly published node/launcher
+image, and collects a results file. No new test framework — the first version reuses what
+already exists, and is meant to be replaced once the scenarios move to the Rust harness.
+
+The runner stays off the TDX host on purpose; [Why the runner is not on the TDX
+host](#why-the-runner-is-not-on-the-tdx-host) covers the alternatives.
 
 Deliberately staged:
 
@@ -27,11 +30,11 @@ Deliberately staged:
 ## Architecture
 
 ```
-GitHub Actions (hosted runner, nightly)
+GitHub Actions (our existing CI runners, nightly)
   │  1. resolve main HEAD → image tag → manifest digests
-  │  2. ssh ubuntu@<eva>  (key from repo secret)
+  │  2. ssh <ci user>@<tdx host>  (key from an environment secret)
   ▼
-Eva (dedicated TDX host)
+TDX host (dedicated to CI)
   │  deploy-tee-cluster.sh  → localnet + 3 CVMs
   │  test-*.sh              → assertions, write results file
   ▼
@@ -40,23 +43,77 @@ GitHub Actions
 ```
 
 The cluster scripts — `deploy-tee-cluster.sh` and the `test-*.sh` scenarios — live in
-`tools/tee-cluster` in `mpc-private`, already checked out on the host.
+`tools/tee-cluster` in `mpc-private` and are checked out on the host once; they change
+rarely and are not versioned against the commit under test. The `near/mpc` checkout is
+different: the scripts build the contract from it, so the job updates it to the resolved
+SHA on every run.
 
 Each run starts a localnet blockchain and CVMs from scratch, and destroys them at the end.
 No state is carried between runs, so a run can never pass because of something a previous
 one left behind.
 
-Nothing but reviewed scripts runs on Eva, and the runner stays ephemeral and GitHub-hosted.
+The job runs on the same runners as the rest of CI (`warp-ubuntu-2604-x64-*`), so this
+adds no runner infrastructure.
+
 The workflow can live in the public `near/mpc` repo: neither `schedule` nor
 `workflow_dispatch` can be triggered from a fork. A collaborator can still dispatch any
-branch, including an unmerged edit of the workflow itself, so the SSH key belongs in an
-`environment` secret with the deployment branch restricted to `main` — the pattern
-`docker_build_node.yml` already uses. Infra-ops is equally viable, and an SRE call.
+branch, including an unmerged edit of the workflow itself, so two things bound what a
+dispatch can do:
 
-### Host: Eva
+- The SSH key lives in an `environment` secret with the deployment branch restricted to
+  `main` — the pattern `docker_build_node.yml` already uses.
+- The key is restricted to a **forced command** on the host, so it invokes the test script
+  and nothing else:
+
+  ```
+  command="/home/<ci user>/run-tdx-ci.sh",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA...
+  ```
+
+  CI therefore holds one remote call on one unprivileged account, not a shell. The account
+  still needs the dstack socket, Docker and the signing keychain, so this bounds the blast
+  radius rather than removing it.
+
+Infra-ops is equally viable as a home for the workflow, and an SRE call.
+
+### Why the runner is not on the TDX host
+
+A self-hosted Actions runner on the TDX host is the obvious alternative, and on its own
+terms a better one: the host would poll GitHub outbound, with no inbound SSH and no
+long-lived key to steal. We are not doing it in the first version, for one structural
+reason.
+
+**Whatever drives a run has to outlive the machine under test.** We want a job that
+reinstalls the host's OS, so a run starts from a known-good state rather than from
+whatever the last one left behind. A runner living on the host cannot do that — it would
+be wiping the machine executing it, and the reinstall drops its registration along with
+everything else.
+
+Stated plainly: that reinstall job does not exist yet. Host provisioning is stage 1,
+manual today, and nobody has committed to automating it. This choice is partly justified
+by work we have not done.
+
+| Option | Shape | Trade-off |
+|---|---|---|
+| Runner on the TDX host | The host registers an Actions runner and runs the job locally. | Cannot drive an OS reinstall, and leaves a persistent runner attached to a public repo. |
+| Golden image ships the runner | An external job triggers the reinstall; the image carries the runner, which registers on boot and then runs the tests. | Probably the right end state. Needs automated provisioning first, a registration token injected at install time, and two workflow runs to correlate. |
+| External job + SSH (**chosen**) | The job runs on our existing CI runners and invokes one script over SSH. | Simplest thing that works today, and the control path survives a reinstall. |
+
+The second and third are not exclusive — a reinstall has to be driven from off the host
+either way, so the question is only whether the tests run locally afterwards.
+
+On the public-repo point: GitHub advises against self-hosted runners on public
+repositories because a fork's pull request can run code on them. That specific risk does
+not apply here, since neither `schedule` nor `workflow_dispatch` can be triggered from a
+fork — but a persistent runner on a physical host is a standing invitation for the next
+workflow to use it.
+
+**If we decide not to automate reinstalls, the first option wins and we should switch.**
+
+### Host requirements
 
 A server dedicated to CI, running the same setup we use for our testnet and mainnet hosts,
-so CVMs on it produce measurements matching production.
+so CVMs on it produce measurements matching production. Which machine that is belongs in
+the host inventory in `mpc-private`, not here.
 
 ### Image selection
 
@@ -156,7 +213,7 @@ So a PR-built launcher cannot run in a CVM — harmless for a nightly job on pub
 
 The nightly run does verify a real quote against live collateral: the localnet deploys the
 real `tee-verifier` contract, which calls `dcap_qvl::verify::verify` at the current block
-time. But it covers only Eva's platform, once a night, and only when the whole cluster
+time. But it covers one host's platform, once a night, and only when the whole cluster
 comes up. The rest of the fleet runs different firmware — which is what went wrong when
 Intel promoted TCB-R 20 on 2026-08-13.
 
@@ -168,6 +225,9 @@ hardware. Tracked in [#4717](https://github.com/near/mpc/issues/4717).
 - **Automate host setup.** Bringing a box to a clean OS with TDX and dstack is manual
   today (stage 1). A provisioning workflow would make a replacement or a second host
   reproducible instead of a day's work.
+- **Reinstall the host to a golden state before a run.** Today a run inherits whatever
+  the previous one left on the box. A job that reimages the host first would make each
+  run start from a known state — and it is the reason the runner stays off the host.
 - **Replace the bash with real test infrastructure.** The scripts were written to be
   driven by hand, and they assert by printing. Moving the scenarios to the Rust e2e
   harness (stage 5) gets proper assertions, failure messages and reporting. Keeping JUnit
@@ -176,7 +236,7 @@ hardware. Tracked in [#4717](https://github.com/near/mpc/issues/4717).
 ## Open questions
 
 1. **How long does a full run take?** Nobody has measured it.
-2. **Where does the workflow live** — `near/mpc` or infra-ops — and where is the SSH key
-   kept? SRE call.
+2. **Where does the workflow live** — `near/mpc` or infra-ops — and who holds the SSH
+   key? SRE call.
 3. **How do failures get reported?** GitHub check annotations, an artifact, Slack, or all
    three.
