@@ -17,18 +17,18 @@ launcher-interface = { workspace = true }
 libc = { workspace = true }
 mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }
-near-contract-transport = { workspace = true, features = ["traits"] }
+near-contract-transport = { workspace = true, features = ["near-kit", "traits"] }
 near-indexer-primitives = { workspace = true }
 near-kit = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
 near-mpc-crypto-types = { workspace = true, features = ["ed25519-dalek", "blstrs"] }
+near-mpc-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-sandbox = { workspace = true }
 rand = { workspace = true }
 rcgen = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 test-port-allocator = { workspace = true }
@@ -44,7 +44,6 @@ contract-history = { workspace = true }
 group = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
-near-mpc-sdk = { workspace = true }
 regex = { workspace = true }
 rstest = { workspace = true }
 threshold-signatures = { workspace = true }

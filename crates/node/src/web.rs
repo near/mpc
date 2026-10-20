@@ -11,7 +11,7 @@ use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, TripleConfig,
+    SignatureConfig, TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -98,6 +98,8 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    foreign_chains_rpc_preset: Option<RpcPreset>,
     foreign_chains_provider_counts: ForeignChainsProviderCounts,
     cores: Option<usize>,
     separate_asset_generation_runtime: bool,
@@ -118,6 +120,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
+            foreign_chains_rpc_preset: config.foreign_chains.rpc_preset,
             foreign_chains_provider_counts: config.foreign_chains.into(),
             cores: config.cores,
             separate_asset_generation_runtime: config.separate_asset_generation_runtime,
@@ -559,7 +562,7 @@ mod tests {
                 )),
                 adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
                 fogo: Some(test_chain(PROVIDER_PUBLIC, FOGO_RPC_URL, AuthConfig::None)),
-                rpc_preset: None,
+                rpc_preset: Some(RpcPreset::Testnet),
                 credentials: BTreeMap::from([(
                     CREDENTIALS_PROVIDER.to_string().into(),
                     ProviderCredentials {
@@ -588,6 +591,10 @@ mod tests {
             .expect("response must serialize as a JSON object");
 
         // Then — provider counts are safe to expose; sensitive details are not.
+        assert_eq!(
+            object.get("foreign_chains_rpc_preset"),
+            Some(&serde_json::json!("testnet"))
+        );
         let counts = object
             .get("foreign_chains_provider_counts")
             .expect("response must contain `foreign_chains_provider_counts`")

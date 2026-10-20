@@ -133,15 +133,21 @@ timeout_sec = 60
 # your QuickNode endpoint name. See "Foreign chain RPC providers" in
 # docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md for details, and verify
 # with crates/foreign-chain-config-tester before deploying.
-
-[mpc_node_config.node.foreign_chains.bitcoin]
-timeout_sec = 30
-max_retries = 3
-# Genesis block hash, as block explorers render it.
-expected_network_fingerprint = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
-
-[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
-rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
+#
+# Recommended (only starting from node 3.17), drop the per-chain
+# sections: select a provider preset and give per-provider credentials.
+# Per-chain sections take precedence.
+#
+# [mpc_node_config.node.foreign_chains]
+# rpc_preset = "testnet"  # mainnet: "mainnet"
+#
+# [mpc_node_config.node.foreign_chains.credentials]
+# alchemy    = { val = "YOUR_ALCHEMY_API_KEY" }
+# quicknode  = { val = "YOUR_QUICKNODE_API_KEY", slug = "YOUR-SLUG" }
+# geomi      = { val = "YOUR_GEOMI_API_KEY" }
+# tatum      = { val = "YOUR_TATUM_API_KEY" }
+# chainstack = { val = "YOUR_CHAINSTACK_API_KEY" }
+# fluxrpc    = { val = "YOUR_FLUXRPC_API_KEY" }  # mainnet only
 
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
@@ -470,16 +476,6 @@ kind = "none"
 
 # ─── Mainnet variant ─────────────────────────────────────────────────────────
 # For a mainnet node, replace the testnet foreign_chains sections above with:
-#
-# [mpc_node_config.node.foreign_chains.bitcoin]
-# timeout_sec = 30
-# max_retries = 3
-# # Genesis block hash, as block explorers render it.
-# expected_network_fingerprint = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-#
-# [mpc_node_config.node.foreign_chains.bitcoin.providers.public]
-# rpc_url = "https://bitcoin-rpc.publicnode.com"
-#
 # [mpc_node_config.node.foreign_chains.abstract]
 # timeout_sec = 30
 # max_retries = 3

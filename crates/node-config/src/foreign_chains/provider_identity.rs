@@ -5,13 +5,17 @@
 //!
 //! The host of a whitelisted [`ProviderConfig::base_url`] can have one `{}` label, in any position.
 //! It matches exactly one label of the local host, for example a QuickNode slug. Any other `{` or
-//! `}` in the host makes the `base_url` invalid, as [`parse_base_url`] describes.
+//! `}` in the host makes the `base_url` invalid, see [`InvalidBaseUrl`].
 //!
-//! When more than one whitelist provider matches the host, [`find_match`] selects one with these
-//! rules, in this order:
-//! 1. An exact host comes before a `{}` host.
-//! 2. A longer base path prefix comes before a shorter one.
+//! When more than one whitelist provider matches the host, [`find_match`] selects the most
+//! specific one, so a local provider that conforms to one entry never gets mismatches from a
+//! broader entry. The rules apply in this order:
+//! 1. An exact host comes before a `{}` host: `api.quiknode.pro` before `{}.quiknode.pro`.
+//! 2. A longer base path prefix comes before a shorter one: for
+//!    `https://api.example.com/v1/beta/x`, `api.example.com/v1/beta` before `api.example.com/v1`.
 //! 3. A lower [`ProviderId`] comes before a higher one.
+
+use std::cmp::Reverse;
 
 use near_mpc_contract_interface::types::{
     AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
@@ -76,61 +80,95 @@ pub fn find_match<'w>(
     auth: ConfiguredAuth<'_>,
 ) -> Option<WhitelistMatch<'w>> {
     let path = path_segments(rpc_url);
-    let mut best: Option<(Rank, &ProviderId, &ProviderConfig, Url)> = None;
-    for (id, whitelisted) in entry.providers.iter() {
-        let Some(base) = parse_base_url(&whitelisted.base_url) else {
-            continue;
-        };
-        if !host_matches(&base, rpc_url) {
-            continue;
-        }
-        let base_path = path_segments(&base);
-        let exact_host = !base.host_str().is_some_and(|host| host.contains(WILDCARD));
-        let prefix_len = path.starts_with(&base_path).then_some(base_path.len());
-        let rank: Rank = (exact_host, prefix_len);
-        // Ids come in ascending order, so on a tie the lower id stays.
-        if best
-            .as_ref()
-            .is_none_or(|(best_rank, ..)| rank > *best_rank)
-        {
-            best = Some((rank, id, whitelisted, base));
-        }
-    }
-
-    let (_, id, whitelisted, base) = best?;
-    let path_mismatch = first_path_mismatch(whitelisted, &base, &path, auth);
+    let best = entry
+        .providers
+        .iter()
+        .filter_map(|(id, whitelisted)| Candidate::if_host_matches(id, whitelisted, rpc_url, &path))
+        .max_by_key(|candidate| {
+            (
+                candidate.exact_host,
+                candidate.base_path_prefix_len,
+                Reverse(candidate.id),
+            )
+        })?;
+    let path_mismatch = first_path_mismatch(best.whitelisted, &best.base, &path, auth);
     let path_mismatch = path_mismatch.as_ref();
-    let mismatches = compare_base_url(&base, rpc_url, path_mismatch)
+    let mismatches = compare_base_url(&best.base, rpc_url, path_mismatch)
         .into_iter()
         .chain(compare_chain_routing(
-            &whitelisted.chain_routing,
+            &best.whitelisted.chain_routing,
             rpc_url,
             path_mismatch,
         ))
-        .chain(compare_auth(auth, &whitelisted.auth_scheme, path_mismatch))
+        .chain(compare_auth(
+            auth,
+            &best.whitelisted.auth_scheme,
+            path_mismatch,
+        ))
         .collect();
     Some(WhitelistMatch {
-        id,
-        whitelisted,
+        id: best.id,
+        whitelisted: best.whitelisted,
         mismatches,
     })
 }
 
-type Rank = (bool, Option<usize>);
+struct Candidate<'w> {
+    id: &'w ProviderId,
+    whitelisted: &'w ProviderConfig,
+    base: Url,
+    exact_host: bool,
+    base_path_prefix_len: Option<usize>,
+}
+
+impl<'w> Candidate<'w> {
+    fn if_host_matches(
+        id: &'w ProviderId,
+        whitelisted: &'w ProviderConfig,
+        rpc_url: &Url,
+        path: &[&str],
+    ) -> Option<Self> {
+        let base = parse_base_url(&whitelisted.base_url).ok()?;
+        if !host_matches(&base, rpc_url) {
+            return None;
+        }
+        let base_path = path_segments(&base);
+        Some(Self {
+            id,
+            whitelisted,
+            exact_host: !base.host_str().is_some_and(|host| host.contains(WILDCARD)),
+            base_path_prefix_len: path.starts_with(&base_path).then_some(base_path.len()),
+            base,
+        })
+    }
+}
 
 const WILDCARD: &str = "{}";
 
-/// Returns [`None`] for a `base_url` that does not parse, or whose host has a `{` or `}` other than
-/// one whole `{}` label. Such a whitelist provider can never match.
-pub fn parse_base_url(base_url: &str) -> Option<Url> {
-    let url = Url::parse(base_url).ok()?;
+/// A whitelist provider whose `base_url` fails here can never match.
+pub fn parse_base_url(base_url: &str) -> Result<Url, InvalidBaseUrl> {
+    let url = Url::parse(base_url).map_err(InvalidBaseUrl::Parse)?;
     let braced_labels: Vec<&str> = url
-        .host_str()?
+        .host_str()
+        .ok_or(InvalidBaseUrl::NoHost)?
         .split('.')
         .filter(|label| label.contains(['{', '}']))
         .collect();
-    let valid = braced_labels.is_empty() || braced_labels == [WILDCARD];
-    valid.then_some(url)
+    if braced_labels.is_empty() || braced_labels == [WILDCARD] {
+        Ok(url)
+    } else {
+        Err(InvalidBaseUrl::Wildcard)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidBaseUrl {
+    #[error("Failed to parse the base URL: {0}")]
+    Parse(url::ParseError),
+    #[error("The base URL has no host")]
+    NoHost,
+    #[error("The base URL host has a brace outside a whole `{{}}` label")]
+    Wildcard,
 }
 
 /// Expects a `base` that [`parse_base_url`] accepted.
@@ -365,7 +403,7 @@ mod tests {
         }
     }
 
-    fn must_find_match<'w>(
+    fn find_match_with_str<'w>(
         entry: &'w ChainEntry,
         rpc_url: &str,
         auth: ConfiguredAuth<'_>,
@@ -392,22 +430,26 @@ mod tests {
     }
 
     #[rstest]
-    #[case::exact_host("https://eth.alchemy.com/v2/", true)]
-    #[case::wildcard_in_the_first_label("https://{}.base-sepolia.quiknode.pro", true)]
-    #[case::wildcard_in_the_second_label("https://api.{}.example.com", true)]
-    #[case::not_a_url("eth.alchemy.com/v2/", false)]
-    #[case::wildcard_inside_a_label("https://api-{}.example.com", false)]
-    #[case::two_wildcards("https://{}.{}.example.org", false)]
-    #[case::stray_brace("https://api{.example.com", false)]
+    #[case::exact_host("https://eth.alchemy.com/v2/", Ok(()))]
+    #[case::wildcard_in_the_first_label("https://{}.base-sepolia.quiknode.pro", Ok(()))]
+    #[case::wildcard_in_the_second_label("https://api.{}.example.com", Ok(()))]
+    #[case::not_a_url(
+        "eth.alchemy.com/v2/",
+        Err(InvalidBaseUrl::Parse(url::ParseError::RelativeUrlWithoutBase))
+    )]
+    #[case::no_host("mailto:ops@example.com", Err(InvalidBaseUrl::NoHost))]
+    #[case::wildcard_inside_a_label("https://api-{}.example.com", Err(InvalidBaseUrl::Wildcard))]
+    #[case::two_wildcards("https://{}.{}.example.org", Err(InvalidBaseUrl::Wildcard))]
+    #[case::stray_brace("https://api{.example.com", Err(InvalidBaseUrl::Wildcard))]
     fn parse_base_url__should_accept_at_most_one_whole_wildcard_label(
         #[case] base_url: &str,
-        #[case] expected_valid: bool,
+        #[case] expected: Result<(), InvalidBaseUrl>,
     ) {
         // When
         let base = parse_base_url(base_url);
 
         // Then
-        assert_eq!(base.is_some(), expected_valid);
+        assert_eq!(base.map(|_| ()), expected);
     }
 
     #[rstest]
@@ -423,7 +465,7 @@ mod tests {
         let entry = must_host_patterns();
 
         // When
-        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = find_match_with_str(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
         assert_eq!(whitelist_match, Some((expected, vec![])));
@@ -447,7 +489,7 @@ mod tests {
         let entry = must_host_patterns();
 
         // When
-        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = find_match_with_str(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
         assert_eq!(whitelist_match, None);
@@ -473,7 +515,7 @@ mod tests {
         ]);
 
         // When
-        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = find_match_with_str(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
         assert_eq!(whitelist_match, Some((expected_id, expected_mismatches)));
@@ -495,7 +537,7 @@ mod tests {
         let entry = must_chain_entry(&[("alchemy", whitelisted("https://eth.alchemy.com/v2/"))]);
 
         // When
-        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = find_match_with_str(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
         assert_eq!(whitelist_match, Some(("alchemy", expected_mismatches)));
@@ -520,7 +562,7 @@ mod tests {
         )]);
 
         // When
-        let whitelist_match = must_find_match(&entry, rpc_url, ConfiguredAuth::None);
+        let whitelist_match = find_match_with_str(&entry, rpc_url, ConfiguredAuth::None);
 
         // Then
         assert_eq!(whitelist_match, Some(("ankr", expected_mismatches)));
@@ -549,7 +591,7 @@ mod tests {
         let rpc_url = format!("https://lb.drpc.org/ogrpc{query}");
 
         // When
-        let whitelist_match = must_find_match(&entry, &rpc_url, ConfiguredAuth::None);
+        let whitelist_match = find_match_with_str(&entry, &rpc_url, ConfiguredAuth::None);
 
         // Then
         assert_eq!(whitelist_match, Some(("drpc", expected_mismatches)));
@@ -579,7 +621,7 @@ mod tests {
 
         // When
         let whitelist_match =
-            must_find_match(&entry, rpc_url, ConfiguredAuth::Path { placeholder });
+            find_match_with_str(&entry, rpc_url, ConfiguredAuth::Path { placeholder });
 
         // Then
         assert_eq!(whitelist_match, Some(("alchemy", expected_mismatches)));
@@ -600,7 +642,7 @@ mod tests {
         let entry = must_chain_entry(&[("ankr", path_auth("https://rpc.ankr.com", routing))]);
 
         // When
-        let whitelist_match = must_find_match(&entry, rpc_url, API_KEY);
+        let whitelist_match = find_match_with_str(&entry, rpc_url, API_KEY);
 
         // Then
         assert_eq!(whitelist_match, Some(("ankr", expected_mismatches)));
@@ -616,7 +658,7 @@ mod tests {
 
         // When
         let whitelist_match =
-            must_find_match(&entry, "https://rpc.ankr.com/v2/eth/{api_key}", API_KEY);
+            find_match_with_str(&entry, "https://rpc.ankr.com/v2/eth/{api_key}", API_KEY);
 
         // Then
         assert_eq!(whitelist_match, Some(("ankr", vec![Mismatch::BaseUrl])));
@@ -663,7 +705,7 @@ mod tests {
         let entry = must_chain_entry(&[("geomi", header_auth(whitelisted_scheme))]);
 
         // When
-        let whitelist_match = must_find_match(&entry, GEOMI_URL, configured);
+        let whitelist_match = find_match_with_str(&entry, GEOMI_URL, configured);
 
         // Then
         assert_eq!(whitelist_match, Some(("geomi", expected_mismatches)));
@@ -691,7 +733,7 @@ mod tests {
         )]);
 
         // When
-        let whitelist_match = must_find_match(
+        let whitelist_match = find_match_with_str(
             &entry,
             "https://lb.drpc.org/ogrpc",
             ConfiguredAuth::Query { name: configured },

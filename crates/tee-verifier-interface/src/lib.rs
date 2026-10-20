@@ -76,24 +76,44 @@ pub struct VerifiedReport {
 }
 
 /// Parsed quote report, mirroring `dcap_qvl::quote::Report`.
+#[expect(clippy::large_enum_variant)]
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub enum Report {
     SgxEnclave(EnclaveReport),
     TD10(TDReport10),
     TD15(TDReport15),
+    TD15Ex(TDReport15Ex),
 }
 
 impl Report {
     /// Mirrors `dcap_qvl::quote::Report::as_td10`: returns the TD10 view of
-    /// either a `TD10` or a `TD15` report.
+    /// a `TD10`, `TD15` or `TD15Ex` report.
     pub fn as_td10(&self) -> Option<&TDReport10> {
         match self {
             Report::TD10(report) => Some(report),
             Report::TD15(report) => Some(&report.base),
+            Report::TD15Ex(report) => Some(&report.base.base),
             Report::SgxEnclave(_) => None,
         }
     }
+}
+
+/// Mirror of `dcap_qvl::quote::TDReport15Ex`.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+pub struct TDReport15Ex {
+    pub base: TDReport15,
+    pub vmid: u8,
+    pub td_id: [u8; 32],
+    pub dev_info: [u8; 48],
+    pub init_service_td_hash: [u8; 48],
+    pub init_service_td_attributes: [u8; 8],
+    pub init_cpu_svn: [u8; 16],
+    pub init_tee_tcb_svn: [u8; 16],
+    pub init_tee_fmspc: [u8; 12],
+    pub cur_service_td_hash: [u8; 48],
+    pub cur_service_td_attributes: [u8; 8],
 }
 
 /// Mirror of `dcap_qvl::quote::TDReport10`.
@@ -155,6 +175,8 @@ pub enum TcbStatus {
     ConfigurationNeeded,
     SWHardeningNeeded,
     Revoked,
+    TDRelaunchAdvised,
+    TDRelaunchAdvisedConfigurationNeeded,
 }
 
 /// Mirror of `dcap_qvl::tcb_info::TcbStatusWithAdvisory`.
@@ -208,13 +230,8 @@ pub enum VerificationResultWithCollateralDates {
 ///
 /// A caller typically uses [`Self::earliest_expiration_date`] as the
 /// attestation's expiry. The unprefixed fields span all of the collateral (TCB
-/// Info, QE Identity, both CRLs, the four certificate chains); the `qe_iden_*`
-/// fields only QE Identity and its issuer chain.
-///
-/// Not every date is authenticated: `dcap-qvl` also reads the PCK CRL issuer
-/// chain and any extra certificates in the other chains, which no signature
-/// check covers. Since the expiry is a minimum, such certificates can only make
-/// it earlier. TODO(#4659): use only verified certificates.
+/// Info, QE Identity, both CRLs, the verified certificate chains); the
+/// `qe_iden_*` fields only QE Identity and its issuer chain.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct CollateralDates {
@@ -324,6 +341,35 @@ mod tests {
 
         // When
         let unwrapped = td15.as_td10();
+
+        // Then
+        assert_eq!(unwrapped, Some(&base));
+    }
+
+    #[test]
+    fn as_td10__should_return_td15_ex_innermost_base() {
+        // Given
+        let base = sample_td10();
+        let td15_ex = Report::TD15Ex(TDReport15Ex {
+            base: TDReport15 {
+                base: base.clone(),
+                tee_tcb_svn2: [0; 16],
+                mr_service_td: [0; 48],
+            },
+            vmid: 0,
+            td_id: [0; 32],
+            dev_info: [0; 48],
+            init_service_td_hash: [0; 48],
+            init_service_td_attributes: [0; 8],
+            init_cpu_svn: [0; 16],
+            init_tee_tcb_svn: [0; 16],
+            init_tee_fmspc: [0; 12],
+            cur_service_td_hash: [0; 48],
+            cur_service_td_attributes: [0; 8],
+        });
+
+        // When
+        let unwrapped = td15_ex.as_td10();
 
         // Then
         assert_eq!(unwrapped, Some(&base));

@@ -6,7 +6,6 @@ use crate::sandbox::{
         },
         resharing_utils::do_resharing,
         transactions::execute_async_handle_calls,
-        views::ViewMpcContract,
     },
 };
 use anyhow::Result;
@@ -30,7 +29,7 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
 {
     // Given
     let SandboxTestSetup {
-        worker,
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -49,9 +48,8 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
     })
     .await?;
 
-    let contract_handle = worker.view_mpc(contract.id());
     let votes_before: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract_handle.contract_update_votes().await?.value;
+        contract.contract_update_votes().await?.value;
 
     assert_eq!(
         votes_before,
@@ -70,7 +68,7 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone().try_into().unwrap(),
+                    url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
@@ -96,7 +94,7 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
     // Then
     let final_participants = assert_running_return_participants(&contract).await?;
     let votes_after: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract_handle.contract_update_votes().await?.value;
+        contract.contract_update_votes().await?.value;
 
     assert_eq!(
         votes_after,
@@ -171,7 +169,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone().try_into().unwrap(),
+                    url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),

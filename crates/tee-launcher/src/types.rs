@@ -99,8 +99,7 @@ impl PortMapping {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
-    use std::num::NonZeroU16;
+    use std::{assert_matches, num::NonZeroU16};
 
     use super::*;
 
@@ -127,9 +126,7 @@ mod tests {
         let result = serde_json::from_value::<PortMapping>(json);
 
         // then
-        assert_matches!(result, Err(e) => {
-            assert!(e.to_string().contains("nonzero"), "expected nonzero port error, got: {e}");
-        });
+        assert_matches!(result, Err(e) if e.to_string().contains("nonzero"));
     }
 
     #[test]
@@ -141,9 +138,7 @@ mod tests {
         let result = serde_json::from_value::<PortMapping>(json);
 
         // then
-        assert_matches!(result, Err(e) => {
-            assert!(e.to_string().contains("u16"), "expected u16 range error, got: {e}");
-        });
+        assert_matches!(result, Err(e) if e.to_string().contains("u16"));
     }
 
     // --- docker_compose_value output format ---
@@ -182,11 +177,13 @@ some_opaque_field = true
         let result = toml::from_str::<Config>(toml_str);
 
         // then
-        assert_matches!(result, Ok(config) => {
-            assert_eq!(config.launcher_config.image_reference, "nearone/mpc-node");
-            assert_eq!(config.mpc_node_config["home_dir"].as_str(), Some("/data"));
-            assert_eq!(config.mpc_node_config["some_opaque_field"].as_bool(), Some(true));
-        });
+        let config = result.unwrap();
+        assert_eq!(config.launcher_config.image_reference, "nearone/mpc-node");
+        assert_eq!(config.mpc_node_config["home_dir"].as_str(), Some("/data"));
+        assert_eq!(
+            config.mpc_node_config["some_opaque_field"].as_bool(),
+            Some(true)
+        );
     }
 
     #[test]
@@ -205,9 +202,10 @@ home_dir = "/data"
         let result = toml::from_str::<Config>(toml_str);
 
         // then
-        assert_matches!(result, Ok(config) => {
-            assert_eq!(config.launcher_config.image_reference, "ghcr.io/nearone/mpc-node");
-        });
+        assert_eq!(
+            result.unwrap().launcher_config.image_reference,
+            "ghcr.io/nearone/mpc-node"
+        );
     }
 
     #[test]
@@ -245,8 +243,6 @@ port_mappings = []
         let result = toml::from_str::<Config>(toml_str);
 
         // then
-        assert_matches!(result, Err(e) => {
-            assert!(e.to_string().contains("mpc_node_config"), "expected missing field error, got: {e}");
-        });
+        assert_matches!(result, Err(e) if e.to_string().contains("mpc_node_config"));
     }
 }

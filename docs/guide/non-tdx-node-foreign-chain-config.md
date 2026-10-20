@@ -1,5 +1,32 @@
 # Foreign chain config for non-TDX nodes
 
+## Credentials only (Recommended)
+
+Requires node release 3.17 or later. Earlier releases ignore `rpc_preset` and `credentials` and run without foreign chains.
+
+Instead of the full `foreign_chains` section below, select the node's embedded provider preset
+and give one credentials entry per provider. The node enables every preset (chain, provider) pair
+whose provider has credentials, plus the providers that need none; chains you configure in full
+take precedence:
+
+```yaml
+foreign_chains:
+  rpc_preset: testnet  # mainnet: mainnet
+  credentials:
+    alchemy:
+      val: "YOUR_ALCHEMY_API_KEY"
+    quicknode:
+      val: "YOUR_QUICKNODE_API_KEY"
+      slug: "YOUR-SLUG"
+    geomi:
+      val: "YOUR_GEOMI_API_KEY"
+    tatum:
+      val: "YOUR_TATUM_API_KEY"
+    chainstack:
+      val: "YOUR_CHAINSTACK_API_KEY"
+    fluxrpc:  # mainnet only
+      val: "YOUR_FLUXRPC_API_KEY"
+```
 
 ## Testnet example
 
@@ -12,15 +39,6 @@ cargo run -p foreign-chain-config-tester -- --config /path/to/config.yaml
 
 ```yaml
 foreign_chains:
-  bitcoin:
-    timeout_sec: 30
-    max_retries: 3
-    expected_network_fingerprint: "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
-    providers:
-      public:
-        rpc_url: "https://bitcoin-testnet-rpc.publicnode.com"
-        auth:
-          kind: none
   abstract:
     timeout_sec: 30
     max_retries: 3
@@ -308,4 +326,309 @@ foreign_chains:
         rpc_url: "https://testnet.fogo.io"
         auth:
           kind: none
+```
+
+## Mainnet example
+
+Same steps as the testnet example; verify with the config tester before deploying.
+
+```yaml
+foreign_chains:
+  abstract:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "2741"
+    providers:
+      abstract-mainnet:
+        rpc_url: "https://api.mainnet.abs.xyz"
+        auth:
+          kind: none
+      alchemy:
+        rpc_url: "https://abstract-mainnet.g.alchemy.com/v2/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.abstract-mainnet.quiknode.pro/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "0x534e5f4d41494e"
+    providers:
+      publicnode:
+        rpc_url: "https://starknet-rpc.publicnode.com"
+        auth:
+          kind: none
+      alchemy:
+        rpc_url: "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.strk-mainnet.quiknode.pro/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+  aptos:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "1"
+    providers:
+      public:
+        rpc_url: "https://fullnode.mainnet.aptoslabs.com/v1"
+        auth:
+          kind: none
+      alchemy:
+        rpc_url: "https://aptos-mainnet.g.alchemy.com/v2/{API_KEY}/v1"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.aptos-mainnet.quiknode.pro/{api_key}/v1"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      geomi:
+        rpc_url: "https://api.mainnet.aptoslabs.com/v1"
+        auth:
+          kind: header
+          name: "Authorization"
+          scheme: "Bearer"
+          token:
+            val: "YOUR_GEOMI_API_KEY"
+  sui:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"
+    providers:
+      public:
+        rpc_url: "https://archive.mainnet.sui.io"
+        auth:
+          kind: none
+      alchemy:
+        rpc_url: "https://sui-mainnet.g.alchemy.com"
+        auth:
+          kind: header
+          name: "Authorization"
+          scheme: "Bearer"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
+        auth:
+          kind: header
+          name: "x-token"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+    providers:
+      public:
+        rpc_url: "https://api.mainnet-beta.solana.com"
+        auth:
+          kind: none
+      alchemy:
+        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.solana-mainnet.quiknode.pro/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      tatum:
+        rpc_url: "https://solana-mainnet.gateway.tatum.io"
+        auth:
+          kind: header
+          name: "x-api-key"
+          token:
+            val: "YOUR_TATUM_API_KEY"
+  bnb:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "56"
+    providers:
+      alchemy:
+        rpc_url: "https://bnb-mainnet.g.alchemy.com/v2/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.bsc.quiknode.pro/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      tatum:
+        rpc_url: "https://bsc-mainnet.gateway.tatum.io"
+        auth:
+          kind: header
+          name: "x-api-key"
+          token:
+            val: "YOUR_TATUM_API_KEY"
+  base:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "8453"
+    providers:
+      alchemy:
+        rpc_url: "https://base-mainnet.g.alchemy.com/v2/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.base-mainnet.quiknode.pro/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      tatum:
+        rpc_url: "https://base-mainnet.gateway.tatum.io"
+        auth:
+          kind: header
+          name: "x-api-key"
+          token:
+            val: "YOUR_TATUM_API_KEY"
+  arbitrum:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "42161"
+    providers:
+      alchemy:
+        rpc_url: "https://arb-mainnet.g.alchemy.com/v2/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.arbitrum-mainnet.quiknode.pro/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      tatum:
+        rpc_url: "https://arbitrum-one-mainnet.gateway.tatum.io"
+        auth:
+          kind: header
+          name: "x-api-key"
+          token:
+            val: "YOUR_TATUM_API_KEY"
+  polygon:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "137"
+    providers:
+      alchemy:
+        rpc_url: "https://polygon-mainnet.g.alchemy.com/v2/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_ALCHEMY_API_KEY"
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.matic.quiknode.pro/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      tatum:
+        rpc_url: "https://polygon-mainnet.gateway.tatum.io"
+        auth:
+          kind: header
+          name: "x-api-key"
+          token:
+            val: "YOUR_TATUM_API_KEY"
+  avalanche:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "43114"
+    providers:
+      public:
+        rpc_url: "https://api.avax.network/ext/bc/C/rpc"
+        auth:
+          kind: none
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.avalanche-mainnet.quiknode.pro/{api_key}/ext/bc/C/rpc"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      tatum:
+        rpc_url: "https://avax-mainnet.gateway.tatum.io"
+        auth:
+          kind: header
+          name: "x-api-key"
+          token:
+            val: "YOUR_TATUM_API_KEY"
+  hyper_evm:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "999"
+    providers:
+      public:
+        rpc_url: "https://rpc.hyperliquid.xyz/evm"
+        auth:
+          kind: none
+      quicknode:
+        rpc_url: "https://YOUR-SLUG.hype-mainnet.quiknode.pro/{api_key}/evm"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "YOUR_QUICKNODE_API_KEY"
+      chainstack:
+        rpc_url: "https://hyperliquid-mainnet.core.chainstack.com/{API_KEY}/evm"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            val: "YOUR_CHAINSTACK_API_KEY"
+  fogo:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"
+    providers:
+      public:
+        rpc_url: "https://mainnet.fogo.io"
+        auth:
+          kind: none
+      fluxrpc:
+        rpc_url: "https://eu.fogo.fluxrpc.com"
+        auth:
+          kind: query
+          name: "key"
+          token:
+            val: "YOUR_FLUXRPC_API_KEY"
 ```
