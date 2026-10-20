@@ -1074,6 +1074,7 @@ dependencies = [
  "anyhow",
  "attestation",
  "bs58 0.5.1",
+ "built",
  "clap",
  "dcap-qvl",
  "hex",
@@ -1294,6 +1295,7 @@ version = "3.17.0"
 dependencies = [
  "anyhow",
  "axum",
+ "built",
  "chain-gateway",
  "clap",
  "ed25519-dalek 2.2.0",
@@ -3820,6 +3822,7 @@ name = "foreign-chain-config-tester"
 version = "3.17.0"
 dependencies = [
  "anyhow",
+ "built",
  "clap",
  "foreign-chain-health-check",
  "foreign-chain-rpc-factory",
