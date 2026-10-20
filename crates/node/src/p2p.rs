@@ -466,7 +466,7 @@ impl PersistentConnection {
             Some(expected) => self
                 .connectivity
                 .outgoing_connection_asserting(expected)
-                .map_err(|_| SendError::ConnectionLost(peer))?,
+                .map_err(|source| SendError::ConnectionLost { peer, source })?,
             None => self
                 .connectivity
                 .any_outgoing_connection()

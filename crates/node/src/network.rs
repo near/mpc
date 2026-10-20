@@ -17,7 +17,7 @@ use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
-use conn::{ConnectionVersion, NodeConnectivityInterface};
+use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
@@ -74,8 +74,12 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
 pub enum SendError {
     #[error("no outgoing connection to {0}")]
     PeerNotConnected(ParticipantId),
-    #[error("the connection to {0} the packet was pinned to is gone")]
-    ConnectionLost(ParticipantId),
+    #[error("the connection to {peer} the packet was pinned to is gone")]
+    ConnectionLost {
+        peer: ParticipantId,
+        #[source]
+        source: ConnectionError,
+    },
     #[error("{peer} negotiated {version}, which cannot parse the message")]
     PeerNotSupportingMessage {
         peer: ParticipantId,
@@ -1021,6 +1025,8 @@ pub mod testing {
     pub struct TestMeshTransport {
         pub(super) participant_ids: Vec<ParticipantId>,
         pub(super) senders: HashMap<ParticipantId, tokio::sync::mpsc::UnboundedSender<PeerMessage>>,
+        /// Keeps the channels behind `senders` open when nobody receives from them.
+        _receivers: Vec<tokio::sync::mpsc::UnboundedReceiver<PeerMessage>>,
         /// Protocol version each peer is reported to run; a peer missing here reports `None`.
         pub(super) protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
         /// Peers reported as not bidirectionally connected; every other peer is.
@@ -1033,9 +1039,17 @@ pub mod testing {
             participant_ids: Vec<ParticipantId>,
             protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
         ) -> Self {
+            let (senders, receivers) = participant_ids
+                .iter()
+                .map(|participant| {
+                    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+                    ((*participant, sender), receiver)
+                })
+                .unzip();
             Self {
                 participant_ids,
-                senders: HashMap::new(),
+                senders,
+                _receivers: receivers,
                 protocol_versions,
                 disconnected: HashSet::new(),
                 packets_sent: std::sync::Mutex::new(Vec::new()),
@@ -1118,20 +1132,19 @@ pub mod testing {
             })
         }
 
-        /// Records the call, and delivers the packet when the recipient has an inbound channel.
         fn send(
             &self,
             recipient_id: ParticipantId,
             packet: Packet,
             _connection_version: Option<ConnectionVersion>,
         ) -> Result<(), SendError> {
-            self.transport
-                .packets_sent
-                .lock()
-                .expect("packet recorder must not be poisoned")
-                .push((recipient_id, packet.clone()));
+            let sender = self
+                .transport
+                .senders
+                .get(&recipient_id)
+                .ok_or(SendError::PeerNotConnected(recipient_id))?;
             let from = self.my_participant_id;
-            let message = match packet {
+            let message = match packet.clone() {
                 Packet::Ping => return Ok(()),
                 Packet::MpcMessage(message) => PeerMessage::Mpc(MpcPeerMessage { from, message }),
                 Packet::IndexerHeight(message) => {
@@ -1141,9 +1154,14 @@ pub mod testing {
                     PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo { from, info })
                 }
             };
-            if let Some(sender) = self.transport.senders.get(&recipient_id) {
-                let _ = sender.send(message);
-            }
+            sender
+                .send(message)
+                .map_err(|_| SendError::PeerNotConnected(recipient_id))?;
+            self.transport
+                .packets_sent
+                .lock()
+                .expect("packet recorder must not be poisoned")
+                .push((recipient_id, packet));
             Ok(())
         }
 
