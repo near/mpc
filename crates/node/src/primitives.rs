@@ -224,6 +224,11 @@ pub struct PeerIndexerHeightMessage {
     pub message: IndexerHeightMessage,
 }
 
+pub struct PeerConnectedPeersInfo {
+    pub from: ParticipantId,
+    pub info: ConnectedPeersInfo,
+}
+
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct ConnectedPeersInfo {
     /// Ourselves and every peer we are bidirectionally connected to, each with the latest indexer
@@ -234,6 +239,7 @@ pub struct ConnectedPeersInfo {
 pub enum PeerMessage {
     Mpc(MpcPeerMessage),
     IndexerHeight(PeerIndexerHeightMessage),
+    ConnectedPeersInfo(PeerConnectedPeersInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -7,13 +7,14 @@
 use crate::primitives::{
     ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
 };
+use crate::protocol_version::NetworkProtocolVersion;
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::fmt::Debug;
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum Packet {
@@ -21,6 +22,18 @@ pub enum Packet {
     MpcMessage(MpcMessage) = 1,
     IndexerHeight(IndexerHeightMessage) = 2,
     ConnectedPeersInfo(ConnectedPeersInfo) = 3,
+}
+
+impl Packet {
+    /// Lowest handshake version that can parse this packet.
+    pub fn min_protocol_version(&self) -> NetworkProtocolVersion {
+        match self {
+            Packet::Ping | Packet::MpcMessage(_) | Packet::IndexerHeight(_) => {
+                NetworkProtocolVersion::Dec2025
+            }
+            Packet::ConnectedPeersInfo(_) => NetworkProtocolVersion::Oct2026,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

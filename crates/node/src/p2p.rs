@@ -10,17 +10,16 @@ use crate::{
         NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
     },
     network::{
-        connected_peers::{CONNECTED_PEERS_MIN_PROTOCOL_VERSION, ConnectedPeersNotSent},
         constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION},
         handshake::{
             DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID,
             p2p_handshake_dialer, p2p_handshake_listener,
         },
         wire_format::{MpcMessageKind, Packet},
-        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+        {MeshNetworkTransportReceiver, MeshNetworkTransportSender, SendError},
     },
     primitives::{
-        ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId,
+        MpcMessage, MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo,
         PeerIndexerHeightMessage, PeerMessage,
     },
     protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
@@ -437,18 +436,8 @@ impl OutgoingConnection {
         self.closed.cancelled().await;
     }
 
-    fn send_mpc_message(&self, msg: MpcMessage) -> anyhow::Result<()> {
-        self.sender.send(Packet::MpcMessage(msg))?;
-        Ok(())
-    }
-
-    fn send_indexer_height(&self, msg: IndexerHeightMessage) -> anyhow::Result<()> {
-        self.sender.send(Packet::IndexerHeight(msg))?;
-        Ok(())
-    }
-
-    fn send_connected_peers_info(&self, msg: ConnectedPeersInfo) -> anyhow::Result<()> {
-        self.sender.send(Packet::ConnectedPeersInfo(msg))?;
+    fn send(&self, packet: Packet) -> anyhow::Result<()> {
+        self.sender.send(packet)?;
         Ok(())
     }
 }
@@ -467,44 +456,28 @@ async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
 impl PersistentConnection {
     const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
-    /// Sends a message over the connection. If the connection was reset, fail.
-    fn send_mpc_message(
+    fn send(
         &self,
-        expected_version: ConnectionVersion,
-        msg: MpcMessage,
-    ) -> anyhow::Result<()> {
-        self.connectivity
-            .outgoing_connection_asserting(expected_version)
-            .with_context(|| format!("Cannot send MPC message to {}", self.target_participant_id))?
-            .send_mpc_message(msg)
-            .with_context(|| {
-                format!("Cannot send MPC message to {}", self.target_participant_id)
-            })?;
-        Ok(())
-    }
-
-    /// Sends a message over the connection. This is done on a best-effort basis.
-    fn send_indexer_height(&self, height: IndexerHeightMessage) {
-        if let Some(conn) = self.connectivity.any_outgoing_connection() {
-            let _ = conn.send_indexer_height(height);
-        }
-    }
-
-    fn send_connected_peers_info(
-        &self,
-        message: ConnectedPeersInfo,
-    ) -> Result<(), ConnectedPeersNotSent> {
+        packet: Packet,
+        connection_version: Option<ConnectionVersion>,
+    ) -> Result<(), SendError> {
         let peer = self.target_participant_id;
-        let conn = self
-            .connectivity
-            .any_outgoing_connection()
-            .ok_or(ConnectedPeersNotSent::PeerNotConnected(peer))?;
+        let conn = match connection_version {
+            Some(expected) => self
+                .connectivity
+                .outgoing_connection_asserting(expected)
+                .map_err(|_| SendError::ConnectionLost(peer))?,
+            None => self
+                .connectivity
+                .any_outgoing_connection()
+                .ok_or(SendError::PeerNotConnected(peer))?,
+        };
         let version = conn.peer_network_protocol_version();
-        if !version.supports(CONNECTED_PEERS_MIN_PROTOCOL_VERSION) {
-            return Err(ConnectedPeersNotSent::PeerNotSupportingMessage { peer, version });
+        if !version.supports(packet.min_protocol_version()) {
+            return Err(SendError::PeerNotSupportingMessage { peer, version });
         }
-        conn.send_connected_peers_info(message)
-            .map_err(|_| ConnectedPeersNotSent::PeerNotConnected(peer))
+        conn.send(packet)
+            .map_err(|_| SendError::PeerNotConnected(peer))
     }
     const MIN_CONNECTION_ID: u32 = 0;
 
@@ -897,8 +870,11 @@ async fn incoming_connection_handler(
                         message,
                     }))?;
                 }
-                Packet::ConnectedPeersInfo(_) => {
-                    // TODO(#398): record the row once the receiving side tracks it.
+                Packet::ConnectedPeersInfo(info) => {
+                    message_sender.send(PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo {
+                        from: peer_id,
+                        info,
+                    }))?;
                 }
             }
 
@@ -1070,32 +1046,13 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     fn send(
         &self,
         recipient_id: ParticipantId,
-        message: MpcMessage,
-        connection_version: ConnectionVersion,
-    ) -> anyhow::Result<()> {
+        packet: Packet,
+        connection_version: Option<ConnectionVersion>,
+    ) -> Result<(), SendError> {
         self.connections
             .get(&recipient_id)
-            .ok_or_else(|| anyhow!("Recipient not found"))?
-            .send_mpc_message(connection_version, message)
-            .with_context(|| format!("Cannot send MPC message to recipient {}", recipient_id))?;
-        Ok(())
-    }
-
-    fn send_indexer_height(&self, height: IndexerHeightMessage) {
-        for conn in self.connections.values() {
-            conn.send_indexer_height(height.clone());
-        }
-    }
-
-    fn send_connected_peers_info(
-        &self,
-        recipient_id: ParticipantId,
-        message: ConnectedPeersInfo,
-    ) -> Result<(), ConnectedPeersNotSent> {
-        self.connections
-            .get(&recipient_id)
-            .ok_or(ConnectedPeersNotSent::PeerNotConnected(recipient_id))?
-            .send_connected_peers_info(message)
+            .ok_or(SendError::PeerNotConnected(recipient_id))?
+            .send(packet, connection_version)
     }
 
     async fn wait_for_ready(
@@ -1312,8 +1269,8 @@ mod tests {
                 sender0
                     .send(
                         participant1,
-                        msg0to1.clone(),
-                        sender0.connectivity(participant1).connection_version(),
+                        Packet::MpcMessage(msg0to1.clone()),
+                        Some(sender0.connectivity(participant1).connection_version()),
                     )
                     .unwrap();
                 let PeerMessage::Mpc(msg) = receiver1.receive().await.unwrap() else {
@@ -1329,8 +1286,8 @@ mod tests {
                 sender1
                     .send(
                         participant0,
-                        msg1to0.clone(),
-                        sender1.connectivity(participant0).connection_version(),
+                        Packet::MpcMessage(msg1to0.clone()),
+                        Some(sender1.connectivity(participant0).connection_version()),
                     )
                     .unwrap();
 
@@ -1568,9 +1525,12 @@ mod tests {
         };
 
         // When
-        let result = persistent_connection.send_connected_peers_info(ConnectedPeersInfo {
-            peers: vec![(ParticipantId::from_raw(2), 7)],
-        });
+        let result = persistent_connection.send(
+            Packet::ConnectedPeersInfo(ConnectedPeersInfo {
+                peers: vec![(ParticipantId::from_raw(2), 7)],
+            }),
+            None,
+        );
 
         // Then
         assert_eq!(result.is_ok(), expected_sent);
