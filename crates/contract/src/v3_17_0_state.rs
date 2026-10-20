@@ -7,7 +7,7 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{
@@ -24,13 +24,15 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
-        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
+        key_state::{
+            AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
+        },
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
     },
     state::{
-        ProtocolContractState, initializing::InitializingContractState,
+        ProtocolContractState, initializing::InitializingContractState, key_event::KeyEvent,
         running::RunningContractState,
     },
     storage_keys::StorageKey,
@@ -119,14 +121,23 @@ impl From<OldRunningContractState> for RunningContractState {
     }
 }
 
-/// Shadow of the `3.17.0` `ProtocolContractState` layout. Only `Running` is migrated, so
-/// the trailing `Resharing` variant is omitted and fails to deserialize.
-#[expect(clippy::large_enum_variant)]
+/// Shadow of the `3.17.0` `ResharingContractState` layout.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldResharingContractState {
+    previous_running_state: OldRunningContractState,
+    reshared_keys: Vec<KeyForDomain>,
+    resharing_key: KeyEvent,
+    cancellation_requests: BTreeSet<AuthenticatedAccountId>,
+    per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
+}
+
+/// Shadow of the `3.17.0` `ProtocolContractState` layout.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 enum OldProtocolContractState {
     NotInitialized,
     Initializing(InitializingContractState),
     Running(OldRunningContractState),
+    Resharing(OldResharingContractState),
 }
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh

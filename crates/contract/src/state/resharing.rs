@@ -21,8 +21,8 @@ use near_sdk::near;
 /// This state keeps the previous running state because:
 ///  - The previous running state's GovernanceThresholdParameters are needed in order to facilitate the
 ///    possible re-proposal of a new GovernanceThresholdParameters, in case the currently proposed set of
-///    participants are no longer all online. For tracking the votes we also use the same
-///    tracking structure in the running state.
+///    participants are no longer all online. Re-proposal votes are tallied in
+///    [`MpcContract`](crate::MpcContract)'s `parameters_votes`, not here.
 ///  - The previous running state's keys are needed to copy the public keys.
 ///  - We use the previous running state's DomainRegistry.
 #[near(serializers=[borsh])]
