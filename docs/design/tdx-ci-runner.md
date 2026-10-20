@@ -238,5 +238,12 @@ hardware. Tracked in [#4717](https://github.com/near/mpc/issues/4717).
 1. **How long does a full run take?** Nobody has measured it.
 2. **Where does the workflow live** — `near/mpc` or infra-ops — and who holds the SSH
    key? SRE call.
-3. **How do failures get reported?** GitHub check annotations, an artifact, Slack, or all
+3. **Who can trigger a run, and does a manual one need approval?** `workflow_dispatch` is
+   open to anyone with write access, on any branch. Restricting the environment's
+   deployment branch to `main` already means a dispatch from any other branch gets no key
+   and cannot reach the host — that is all the existing `production` environment does.
+   Adding required reviewers would gate manual runs as well, but it would also stall the
+   nightly, which sits in `Waiting` until someone approves and fails after 30 days if
+   nobody does. Gating both would need two environments chosen by `github.event_name`.
+4. **How do failures get reported?** GitHub check annotations, an artifact, Slack, or all
    three.
