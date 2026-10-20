@@ -1,5 +1,5 @@
 use crate::types::primitives::AccountId;
-use crate::types::state::{AuthenticatedAccountId, AuthenticatedParticipantId};
+use crate::types::state::AuthenticatedAccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::{
     KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, ProposalHash, Rtmr0Hash,
@@ -96,18 +96,25 @@ pub enum MeasurementVoteAction {
     Remove(ExpectedMeasurements),
 }
 
-/// Tracks votes for adding or removing OS measurements.
-/// Each participant can have at most one active vote at a time.
+/// Voters grouped by the [`ProposalHash`] of the [`MeasurementVoteAction`] they voted for.
 #[derive(
-    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
 )]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct MeasurementVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
-}
+pub struct MeasurementVotes(pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>);
 
 /// The action a participant is voting for on a launcher image hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -164,7 +171,6 @@ pub struct CodeHashesVotes(pub BTreeMap<NodeImageHash, BTreeSet<AuthenticatedAcc
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::types::participants::ParticipantId;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -271,20 +277,19 @@ mod tests {
     }
 
     #[test]
-    fn measurement_votes__should_serialize_participant_ids_as_object_keys() {
+    fn measurement_votes__should_serialize_as_a_transparent_map_keyed_by_proposal_hash() {
         // Given
-        let votes = MeasurementVotes {
-            vote_by_account: BTreeMap::from([(
-                AuthenticatedParticipantId(ParticipantId::new(7)),
-                MeasurementVoteAction::Add(measurements(0x01)),
-            )]),
-        };
+        let proposal = ProposalHash::new([0xCD; 32]);
+        let votes = MeasurementVotes(BTreeMap::from([(
+            proposal,
+            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
+        )]));
 
         // When
         let json = serde_json::to_value(&votes).unwrap();
 
         // Then
-        assert_eq!(json["vote_by_account"]["7"]["Add"]["mrtd"], "01".repeat(48));
+        assert_eq!(json[proposal.as_hex()][0], "alice.near");
     }
 
     #[test]

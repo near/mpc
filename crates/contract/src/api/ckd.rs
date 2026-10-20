@@ -14,6 +14,13 @@ impl MpcContract {
         pending_requests::push_pending_yield(&mut self.pending_ckd_requests, request, data_id);
     }
 
+    /// The derived key is fully determined by the calling account id (taken
+    /// implicitly from the predecessor), the derivation path and the domain —
+    /// no other account can obtain the same key. `app_public_key` does not
+    /// influence the derived key: it is a caller-chosen ephemeral key the
+    /// response is encrypted to; see [`dtos::CKDResponse`] for the encryption
+    /// layout and how to decrypt.
+    ///
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each ckd request.
     ///
