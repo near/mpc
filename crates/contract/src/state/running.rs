@@ -705,42 +705,68 @@ pub mod running_tests {
         }
     }
 
+    #[rstest]
+    #[case::no_old_votes(0)]
+    #[case::one_old_vote(1)]
+    #[case::one_below_threshold(2)]
+    fn process_new_parameters_proposal__should_defer_added_participants_until_threshold_old_participants_voted(
+        #[case] n_old_votes: u64,
+    ) {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        assert!(
+            n_old_votes < state.parameters.threshold().value(),
+            "case must stay below the fixture's threshold"
+        );
+        let mut env = Environment::new(None, None, None);
+        for old in retained.iter().take(n_old_votes as usize) {
+            env.set_signer(old);
+            state.process_new_parameters_proposal(&proposal).unwrap();
+        }
+
+        for voter in &added {
+            env.set_signer(voter);
+
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
+
+            // Then
+            assert_matches!(result.unwrap_err(), Error::Vote(VoteError::VoterPending));
+        }
+    }
+
     #[test]
-    fn process_new_parameters_proposal__should_defer_added_participants_until_threshold_old_participants_voted()
+    fn process_new_parameters_proposal__should_admit_added_participants_once_threshold_old_participants_voted()
      {
-        let threshold = gen_participants_update()
-            .state
-            .parameters
-            .threshold()
-            .value();
-        for n_old_votes in 0..threshold {
-            // Given
-            let ParticipantsUpdate {
-                mut state,
-                proposal,
-                retained,
-                added,
-                ..
-            } = gen_participants_update();
-            let mut env = Environment::new(None, None, None);
-            for old in retained.iter().take(n_old_votes as usize) {
-                env.set_signer(old);
-                state.process_new_parameters_proposal(&proposal).unwrap();
-            }
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        let threshold = state.parameters.threshold().value();
+        let mut env = Environment::new(None, None, None);
+        for old in retained.iter().take(threshold as usize) {
+            env.set_signer(old);
+            state.process_new_parameters_proposal(&proposal).unwrap();
+        }
 
-            for voter in &added {
-                env.set_signer(voter);
+        for voter in &added {
+            env.set_signer(voter);
 
-                // When
-                let result = state.process_new_parameters_proposal(&proposal);
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
 
-                // Then
-                assert_matches!(
-                    result.unwrap_err(),
-                    Error::Vote(VoteError::VoterPending),
-                    "added participant voted after {n_old_votes} old votes"
-                );
-            }
+            // Then
+            assert_matches!(result, Ok(_));
         }
     }
 
