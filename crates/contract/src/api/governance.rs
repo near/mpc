@@ -125,7 +125,9 @@ mod tests {
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
     use crate::primitives::participants::Participants;
-    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::test_utils::{
+        authenticate_account_as, bogus_tee_verifier_account_id, gen_participants,
+    };
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::find_leader;
@@ -546,9 +548,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn vote_reshared__should_clear_pending_parameter_votes_on_transition() {
-        // Given: a contract in Resharing holding a pending re-proposal vote
+    /// Drives a 3-participant Running contract with one domain into Resharing: every
+    /// participant votes `proposal`, a key refresh keeping participants and threshold.
+    fn resharing_contract_with_domain() -> (
+        MpcContract,
+        Participants,
+        DomainId,
+        ProposedGovernanceThresholdParameters,
+    ) {
         let (mut contract, participants, _, domain_id) = setup_running_contract_with_domain(
             3,
             GovernanceThreshold::new(2),
@@ -559,25 +566,54 @@ mod tests {
                 .unwrap(),
             BTreeMap::new(),
         );
-        let accounts: Vec<AccountId> = participants
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect();
-        for account_id in &accounts {
+        for (account_id, _, _) in participants.participants() {
             vote_params(&mut contract, account_id, &proposal).unwrap();
         }
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Resharing(_)
+        );
+        (contract, participants, domain_id, proposal)
+    }
+
+    #[test]
+    fn vote_new_parameters__should_record_a_re_proposal_vote_while_resharing() {
+        // Given
+        let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
+        let (voter, _, _) = &participants.participants()[0];
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(voter.clone())
+                .predecessor_account_id(voter.clone())
+                .build()
+        );
+
+        // When: a participant re-proposes at the next prospective epoch
+        let result =
+            contract.vote_new_parameters(dtos::EpochId::new(2), (&proposal).into_dto_type());
+
+        // Then
+        assert_matches!(result, Ok(()));
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Resharing(_)
+        );
+        assert!(!contract.parameters_votes.is_empty());
+    }
+
+    #[test]
+    fn vote_reshared__should_clear_pending_parameter_votes_on_transition() {
+        // Given: a Resharing contract holding a pending re-proposal vote
+        let (mut contract, participants, domain_id, proposal) = resharing_contract_with_domain();
+        let voter = authenticate_account_as(&participants.participants()[0].0, &participants);
+        contract.parameters_votes.vote(&proposal, voter);
+        assert!(!contract.parameters_votes.is_empty());
+
+        // When: the resharing completes
         let ProtocolContractState::Resharing(resharing) = &contract.protocol_state else {
             panic!("expected Resharing state");
         };
         let (leader, _) = find_leader(&resharing.resharing_key);
-        attested_context(&participants, &accounts[0]);
-        contract
-            .vote_new_parameters(dtos::EpochId::new(2), (&proposal).into_dto_type())
-            .unwrap();
-        assert!(!contract.parameters_votes.is_empty());
-
-        // When: the resharing completes
         let key_event_id = KeyEventId {
             attempt_id: AttemptId::new(),
             domain_id,
@@ -585,7 +621,7 @@ mod tests {
         };
         attested_context(&participants, &leader);
         contract.start_reshare_instance(key_event_id).unwrap();
-        for account_id in &accounts {
+        for (account_id, _, _) in participants.participants() {
             attested_context(&participants, account_id);
             contract.vote_reshared(key_event_id).unwrap();
         }
