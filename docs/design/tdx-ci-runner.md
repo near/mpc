@@ -6,14 +6,14 @@
 
 ## TL;DR
 
-No CI job runs on TDX hardware today, and none verifies an attestation against live
-collateral. Real-TDX runs happen only when someone hand-drives the deploy scripts.
+**The problem.** No CI job runs on TDX hardware today, and none verifies an attestation
+against live collateral. Real-TDX runs happen only when someone hand-drives the deploy
+scripts.
 
-The agreed design: a **nightly job on our existing CI runners SSHes into a dedicated TDX
-host**, triggers the existing bash scripts against a freshly published node/launcher
+**The solution.** A nightly job on our existing CI runners SSHes into a dedicated TDX
+host, triggers the existing bash scripts against a freshly published node/launcher
 image, and collects a results file. No new test framework — the first version reuses what
 already exists, and is meant to be replaced once the scenarios move to the Rust harness.
-
 The runner stays off the TDX host on purpose; [Why the runner is not on the TDX
 host](#why-the-runner-is-not-on-the-tdx-host) covers the alternatives.
 
@@ -44,13 +44,14 @@ GitHub Actions
 
 The cluster scripts — `deploy-tee-cluster.sh` and the `test-*.sh` scenarios — live in
 `tools/tee-cluster` in `mpc-private` and are checked out on the host once; they change
-rarely and are not versioned against the commit under test. The `near/mpc` checkout is
-different: the scripts build the contract from it, so the job updates it to the resolved
-SHA on every run.
+rarely and are not tied to the commit under test. The `near/mpc` checkout is tied to it:
+the scripts build the contract from that tree, so the job moves it to the commit being
+tested (see [Image selection](#image-selection)).
 
-Each run starts a localnet blockchain and CVMs from scratch, and destroys them at the end.
-No state is carried between runs, so a run can never pass because of something a previous
-one left behind.
+Each run starts a localnet blockchain and CVMs from scratch and destroys them at the end,
+so no cluster state carries over. The host itself does — OS, dstack and the checkouts
+persist — which is what the golden-state reinstall under [Future work](#future-work)
+would fix.
 
 The job runs on the same runners as the rest of CI (`warp-ubuntu-2604-x64-*`), so this
 adds no runner infrastructure.
@@ -61,11 +62,11 @@ branch, including an unmerged edit of the workflow itself, so two things bound w
 dispatch can do:
 
 - The SSH key lives in an `environment` secret whose deployment branches are restricted
-  to `main`. This is how the repo already stops a release being published from a dev
+  to `main`. The repo already leans on this to stop a release being published off a dev
   branch: `release.yml` and `docker_node_release.yml` are `workflow_dispatch`-only and
-  take their Docker Hub credentials from the `production` environment, so a dispatch off
-  `main` starts but gets no secrets. Note `production` also allows `release/*`, so the
-  TDX job wants an environment of its own rather than reusing it.
+  draw their secrets from the `production` environment, so a dispatch from elsewhere
+  starts but gets nothing. `production` also allows `release/*`, so the TDX job wants its
+  own environment.
 - The key is restricted to a **forced command** on the host, so it invokes the test script
   and nothing else:
 
@@ -81,37 +82,23 @@ Infra-ops is equally viable as a home for the workflow, and an SRE call.
 
 ### Why the runner is not on the TDX host
 
-A self-hosted Actions runner on the TDX host is the obvious alternative, and on its own
-terms a better one: the host would poll GitHub outbound, with no inbound SSH and no
-long-lived key to steal. We are not doing it in the first version, for one structural
-reason.
-
-**Whatever drives a run has to outlive the machine under test.** We want a job that
-reinstalls the host's OS, so a run starts from a known-good state rather than from
-whatever the last one left behind. A runner living on the host cannot do that — it would
-be wiping the machine executing it, and the reinstall drops its registration along with
-everything else.
-
-Stated plainly: that reinstall job does not exist yet. Host provisioning is stage 1,
-manual today, and nobody has committed to automating it. This choice is partly justified
-by work we have not done.
+A self-hosted Actions runner on the host would be better on its own terms: outbound
+polling, no inbound SSH, no long-lived key to steal. The blocker is that **whatever
+drives a run has to outlive the machine under test** — we want a job that reinstalls the
+host's OS first, and a runner cannot wipe the machine it is running on.
 
 | Option | Shape | Trade-off |
 |---|---|---|
-| Runner on the TDX host | The host registers an Actions runner and runs the job locally. | Cannot drive an OS reinstall, and leaves a persistent runner attached to a public repo. |
+| Runner on the TDX host | The host registers an Actions runner and runs the job locally. | Cannot drive an OS reinstall. Also a persistent runner on a public repo, which GitHub advises against — though no fork can trigger `schedule` or `workflow_dispatch`. |
 | Golden image ships the runner | An external job triggers the reinstall; the image carries the runner, which registers on boot and then runs the tests. | Probably the right end state. Needs automated provisioning first, a registration token injected at install time, and two workflow runs to correlate. |
 | External job + SSH (**chosen**) | The job runs on our existing CI runners and invokes one script over SSH. | Simplest thing that works today, and the control path survives a reinstall. |
 
-The second and third are not exclusive — a reinstall has to be driven from off the host
-either way, so the question is only whether the tests run locally afterwards.
+The last two are not exclusive: a reinstall has to be driven from off the host either
+way, so the only question is whether the tests then run locally.
 
-On the public-repo point: GitHub advises against self-hosted runners on public
-repositories because a fork's pull request can run code on them. That specific risk does
-not apply here, since neither `schedule` nor `workflow_dispatch` can be triggered from a
-fork — but a persistent runner on a physical host is a standing invitation for the next
-workflow to use it.
-
-**If we decide not to automate reinstalls, the first option wins and we should switch.**
+The reinstall job does not exist yet — host provisioning is stage 1 and manual — so this
+choice is partly justified by work we have not done. **If we decide not to automate
+reinstalls, the first option wins and we should switch.**
 
 ### Host requirements
 
@@ -129,25 +116,19 @@ Two workflows publish on every push to `main`, both calling `deployment/build-im
 | `.github/workflows/docker_build_rust_launcher.yml` | `nearone/mpc-launcher` |
 
 The tag is `<sanitized-branch>-<7-char-sha>` (`build-images.sh:231-241`), so `main-abc1234`
-for a merge to `main`. There is no `latest`. The 7 characters are a fixed truncation of the
-SHA rather than `git rev-parse --short`, so the job can form the tag from a commit without
-asking the registry.
+for a merge to `main`. There is no `latest`.
 
-The nightly job therefore takes `main` HEAD, forms `main-${SHA::7}`, resolves that tag to a
-manifest digest for each image, and passes both to `deploy-tee-cluster.sh` as
-`MPC_MANIFEST_DIGEST` and `LAUNCHER_MANIFEST_DIGEST`. A failure then names the exact commit
-under test rather than a 24-hour window.
+**Everything in a run pins to one commit.** The job takes `main` HEAD, forms
+`main-${SHA::7}`, resolves both tags to manifest digests, and passes them to
+`deploy-tee-cluster.sh` as `MPC_MANIFEST_DIGEST` and `LAUNCHER_MANIFEST_DIGEST`. The CVM
+pulls by digest and never by tag: the contract allow-lists a digest via
+`vote_mpc_node_manifest_digest` and the launcher reads the approved one from
+`/mnt/shared/image-digest.bin`, and nothing measured can bind to a mutable pointer. The
+`near/mpc` checkout moves to the same SHA, since the scripts build the contract from it.
+A failure then names one commit rather than a 24-hour window.
 
-**The CVM pulls by digest, not by tag.** `deploy-tee-cluster.sh` requires
-`MPC_MANIFEST_DIGEST` and `LAUNCHER_MANIFEST_DIGEST` up front; the tag is only how CI
-looks them up. The design forces
-this — the contract allow-lists a digest via `vote_mpc_node_manifest_digest`, and the
-launcher reads the approved one from `/mnt/shared/image-digest.bin`. A tag is a mutable
-pointer, and nothing measured can bind to it.
-
-**The contract must be built from the same commit as the image.** `deploy-tee-cluster.sh`
-builds it from `$MPC_REPO_ROOT`, so the job must check that out at the resolved SHA rather
-than inherit whatever was last left on the host by hand.
+Both images are public, so the job needs no registry credentials — the SSH key is the
+only secret it holds.
 
 **Needs a fallback.** Node and launcher are published by two independent workflows, so HEAD's
 tag can be missing or half-present when the job fires. Fall back to the most recent commit
@@ -207,13 +188,11 @@ repeating them here buys nothing but runtime on a machine we only have one of.
 
 ## Constraints
 
-**One server supports about six nodes.** A 6-node TEE network on a single host is stable;
-at 10 nodes, triple generation timed out frequently and signing became unreliable, and
-dropping to 8 active nodes fixed it (mpc-private, `resources/experiment-log/2026-01-21-testnet-tee-10-notes-with-automation-one-server/`).
-Two nodes is the smallest cluster that runs at all, but at 2-of-2 both nodes have to
-survive every resharing, so no node can be replaced or rejected. Three is the minimum that
-covers those tests, which makes two clusters the ceiling on one server. We run one at a
-time.
+**One server supports about six nodes, and we run one cluster at a time.** A 6-node TEE
+network on a single host is stable; at 10, triple generation timed out frequently and
+signing became unreliable (mpc-private, `resources/experiment-log/2026-01-21-testnet-tee-10-notes-with-automation-one-server/`).
+A cluster needs three nodes: two would run, but at 2-of-2 no node can be replaced or
+rejected, which is exactly what the upgrade and migration tests do.
 
 **The launcher must come from Docker Hub.** The contract derives the allowed compose hash
 by filling `crates/contract/assets/launcher_docker_compose.yaml.template`
@@ -236,9 +215,9 @@ hardware. Tracked in [#4717](https://github.com/near/mpc/issues/4717).
 - **Automate host setup.** Bringing a box to a clean OS with TDX and dstack is manual
   today (stage 1). A provisioning workflow would make a replacement or a second host
   reproducible instead of a day's work.
-- **Reinstall the host to a golden state before a run.** Today a run inherits whatever
-  the previous one left on the box. A job that reimages the host first would make each
-  run start from a known state — and it is the reason the runner stays off the host.
+- **Reinstall the host to a golden state before a run.** The cluster is rebuilt each run
+  but the host is not, so a run inherits whatever the last one left on the box. Reimaging
+  first would fix that — and it is the reason the runner stays off the host.
 - **Replace the bash with real test infrastructure.** The scripts were written to be
   driven by hand, and they assert by printing. Moving the scenarios to the Rust e2e
   harness (stage 5) gets proper assertions, failure messages and reporting. Keeping JUnit
