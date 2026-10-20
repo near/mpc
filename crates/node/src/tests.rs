@@ -32,7 +32,7 @@ use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, SyncMode, TripleConfig,
+    SignatureConfig, SyncMode, TripleBatchSize, TripleConfig,
 };
 
 use crate::primitives::ParticipantId;
@@ -240,6 +240,7 @@ impl IntegrationTestSetup {
                     desired_triples_to_buffer: 10,
                     parallel_triple_generation_stagger_time_sec: 1,
                     timeout_sec: 120,
+                    batch_size: TripleBatchSize::default(),
                 },
                 number_of_responder_keys: 0,
                 web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), ports.web_ui_port(i)),
