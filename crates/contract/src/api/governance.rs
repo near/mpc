@@ -124,7 +124,9 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
+    use crate::state::ProtocolContractState;
     use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
@@ -482,6 +484,12 @@ mod tests {
         assert_matches!(
             result.unwrap_err(),
             Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == outsider
+        );
+        // Check that vote was not accepted.
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Running(state)
+                if state.parameters_votes == GovernanceThresholdParametersVotes::default()
         );
     }
 
