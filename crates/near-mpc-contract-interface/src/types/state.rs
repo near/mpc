@@ -165,7 +165,9 @@ pub struct ProposedGovernanceThresholdParameters {
 // Voting Types
 // =============================================================================
 
-/// Votes for threshold parameter changes.
+/// Votes for threshold parameter changes. Always empty: the contract stores only proposal
+/// hashes and no longer reports pending votes. Kept for wire compatibility.
+// TODO(#2825): report the hash-keyed tally instead, like `MeasurementVotes`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
