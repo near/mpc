@@ -691,18 +691,19 @@ pub mod running_tests {
      {
         // Given
         let ParticipantsUpdate {
-            mut state,
+            state,
             proposal,
             removed,
             ..
         } = gen_participants_update();
         let mut env = Environment::new(None, None, None);
+        let mut votes = GovernanceThresholdParametersVotes::default();
 
         for voter in &removed {
             env.set_signer(voter);
 
             // When
-            let result = state.process_new_parameters_proposal(&proposal);
+            let result = state.process_new_parameters_proposal(&proposal, &mut votes);
 
             // Then
             assert_matches!(
@@ -721,7 +722,7 @@ pub mod running_tests {
     ) {
         // Given
         let ParticipantsUpdate {
-            mut state,
+            state,
             proposal,
             retained,
             added,
@@ -732,16 +733,19 @@ pub mod running_tests {
             "case must stay below the fixture's threshold"
         );
         let mut env = Environment::new(None, None, None);
+        let mut votes = GovernanceThresholdParametersVotes::default();
         for old in retained.iter().take(n_old_votes as usize) {
             env.set_signer(old);
-            state.process_new_parameters_proposal(&proposal).unwrap();
+            state
+                .process_new_parameters_proposal(&proposal, &mut votes)
+                .unwrap();
         }
 
         for voter in &added {
             env.set_signer(voter);
 
             // When
-            let result = state.process_new_parameters_proposal(&proposal);
+            let result = state.process_new_parameters_proposal(&proposal, &mut votes);
 
             // Then
             assert_matches!(result.unwrap_err(), Error::Vote(VoteError::VoterPending));
@@ -753,7 +757,7 @@ pub mod running_tests {
      {
         // Given
         let ParticipantsUpdate {
-            mut state,
+            state,
             proposal,
             retained,
             added,
@@ -761,16 +765,19 @@ pub mod running_tests {
         } = gen_participants_update();
         let threshold = state.parameters.threshold().value();
         let mut env = Environment::new(None, None, None);
+        let mut votes = GovernanceThresholdParametersVotes::default();
         for old in retained.iter().take(threshold as usize) {
             env.set_signer(old);
-            state.process_new_parameters_proposal(&proposal).unwrap();
+            state
+                .process_new_parameters_proposal(&proposal, &mut votes)
+                .unwrap();
         }
 
         for voter in &added {
             env.set_signer(voter);
 
             // When
-            let result = state.process_new_parameters_proposal(&proposal);
+            let result = state.process_new_parameters_proposal(&proposal, &mut votes);
 
             // Then
             assert_matches!(result, Ok(_));
@@ -782,13 +789,14 @@ pub mod running_tests {
      {
         // Given
         let ParticipantsUpdate {
-            mut state,
+            state,
             proposal,
             retained,
             added,
             ..
         } = gen_participants_update();
         let mut env = Environment::new(None, None, None);
+        let mut votes = GovernanceThresholdParametersVotes::default();
 
         // When
         let accepted: Vec<bool> = retained
@@ -796,7 +804,9 @@ pub mod running_tests {
             .chain(&added)
             .map(|voter| {
                 env.set_signer(voter);
-                state.process_new_parameters_proposal(&proposal).unwrap()
+                state
+                    .process_new_parameters_proposal(&proposal, &mut votes)
+                    .unwrap()
             })
             .collect();
 
