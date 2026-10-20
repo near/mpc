@@ -120,12 +120,12 @@ impl From<OldRunningContractState> for RunningContractState {
 }
 
 /// Shadow of the `3.17.0` `ProtocolContractState` layout. Only `Running` is migrated, so
-/// the trailing `Resharing` variant is omitted and fails to deserialize. Borsh encodes
-/// `Box<T>` as `T`.
+/// the trailing `Resharing` variant is omitted and fails to deserialize.
+#[expect(clippy::large_enum_variant)]
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 enum OldProtocolContractState {
     NotInitialized,
-    Initializing(Box<InitializingContractState>),
+    Initializing(InitializingContractState),
     Running(OldRunningContractState),
 }
 
