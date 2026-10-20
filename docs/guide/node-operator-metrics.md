@@ -42,7 +42,7 @@ participant set. These gauges tell you how much runway is left:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under two hours old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
+| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
 | `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node is already out. `-1` means an attestation is stored that carries no expiry. |
 
 ## Foreign chain RPC providers

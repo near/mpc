@@ -3,7 +3,6 @@ use super::IndexerState;
 use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
-use crate::tee::attestation_freshness_metrics::record_stored_attestation;
 use crate::types::{
     LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
     SubmittedTxMetadata,
@@ -12,14 +11,12 @@ use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
-use near_mpc_contract_interface::types::{
-    Attestation, Ed25519PublicKey, GetAttestationResponse, VerifiedAttestation,
-};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::time;
 
 const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
@@ -30,11 +27,6 @@ pub trait TransactionSender: Clone + Send + Sync {
         &self,
         transaction: ChainSendTransactionRequest,
     ) -> impl Future<Output = Result<(), TransactionProcessorError>> + Send;
-
-    fn send_and_wait(
-        &self,
-        transaction: ChainSendTransactionRequest,
-    ) -> impl Future<Output = Result<TransactionStatus, TransactionProcessorError>> + Send;
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -45,7 +37,7 @@ pub enum TransactionProcessorError {
 
 #[derive(Clone, Debug)]
 pub struct TransactionProcessorHandle {
-    transaction_sender: mpsc::Sender<TransactionSenderSubmission>,
+    transaction_sender: mpsc::Sender<ChainSendTransactionRequest>,
 }
 
 impl TransactionProcessorHandle {
@@ -60,13 +52,10 @@ impl TransactionProcessorHandle {
             .context("Failed to initialize transaction signers")?;
 
         let (transaction_sender, mut transaction_receiver) =
-            mpsc::channel::<TransactionSenderSubmission>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
+            mpsc::channel::<ChainSendTransactionRequest>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
 
         tokio::spawn(async move {
-            while let Some(transaction_submission) = transaction_receiver.recv().await {
-                let tx_request = transaction_submission.transaction;
-                let tx_response_channel = transaction_submission.response_sender;
-
+            while let Some(tx_request) = transaction_receiver.recv().await {
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
                 let tx_logger = tx_logger.clone();
@@ -76,7 +65,7 @@ impl TransactionProcessorHandle {
                         return;
                     };
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                    let (transaction_status, recent_transaction) = ensure_send_transaction(
+                    let recent_transaction = ensure_send_transaction(
                         tx_signer.clone(),
                         indexer_state,
                         tx_request,
@@ -85,10 +74,6 @@ impl TransactionProcessorHandle {
                     .await;
 
                     tx_logger.log_transaction(recent_transaction);
-
-                    if let Some(tx_response_channel) = tx_response_channel {
-                        let _ = tx_response_channel.send(transaction_status);
-                    }
                 });
             }
         });
@@ -103,41 +88,14 @@ impl TransactionSender for TransactionProcessorHandle {
         transaction: ChainSendTransactionRequest,
     ) -> Result<(), TransactionProcessorError> {
         self.transaction_sender
-            .send(TransactionSenderSubmission {
-                transaction,
-                response_sender: None,
-            })
-            .await
-            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)
-    }
-
-    async fn send_and_wait(
-        &self,
-        transaction: ChainSendTransactionRequest,
-    ) -> Result<TransactionStatus, TransactionProcessorError> {
-        let (response_sender, response_receiver) = oneshot::channel();
-
-        self.transaction_sender
-            .send(TransactionSenderSubmission {
-                transaction,
-                response_sender: Some(response_sender),
-            })
-            .await
-            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)?;
-
-        response_receiver
+            .send(transaction)
             .await
             .map_err(|_| TransactionProcessorError::ProcessorIsClosed)
     }
 }
 
-struct TransactionSenderSubmission {
-    transaction: ChainSendTransactionRequest,
-    response_sender: Option<oneshot::Sender<TransactionStatus>>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum TransactionStatus {
+#[derive(Debug)]
+enum TransactionStatus {
     Executed,
     NotExecuted,
     Unknown,
@@ -182,17 +140,6 @@ async fn submit_tx(
         signature,
         block_height: block.header.height,
     })
-}
-
-fn attestation_submission_status(
-    stored: Option<&VerifiedAttestation>,
-    dstack_submitted: bool,
-) -> TransactionStatus {
-    match stored {
-        None => TransactionStatus::NotExecuted,
-        Some(VerifiedAttestation::Mock(_)) if dstack_submitted => TransactionStatus::NotExecuted,
-        Some(_) => TransactionStatus::Unknown,
-    }
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -249,24 +196,6 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
-        SubmitParticipantInfo(args) => {
-            let stored_attestation = indexer_state
-                .view_client
-                .get_participant_attestation(&args.tls_public_key)
-                .await?;
-
-            record_stored_attestation(stored_attestation.as_ref());
-
-            Ok(attestation_submission_status(
-                stored_attestation
-                    .as_ref()
-                    .map(GetAttestationResponse::attestation),
-                matches!(
-                    args.proposed_participant_attestation,
-                    Attestation::Dstack(_)
-                ),
-            ))
-        }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
         | StartReshare(_)
@@ -274,13 +203,10 @@ async fn observe_tx_result(
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
+        | SubmitParticipantInfo(_)
         | ConcludeNodeMigration(_)
         | RegisterForeignChainsConfig(_) => Ok(TransactionStatus::Unknown),
     }
-}
-
-fn status_or_not_executed(observed: anyhow::Result<TransactionStatus>) -> TransactionStatus {
-    observed.unwrap_or(TransactionStatus::NotExecuted)
 }
 
 /// Attempts to ensure that a function call with the given method and args is
@@ -292,7 +218,7 @@ async fn ensure_send_transaction(
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
-) -> (TransactionStatus, SubmittedTransaction) {
+) -> SubmittedTransaction {
     let method = request.method();
     let signer = SignerContext {
         account_id: tx_signer.account_id().clone(),
@@ -319,10 +245,7 @@ async fn ensure_send_transaction(
                 .with_label_values(&[method, "local_error"])
                 .inc();
             tracing::error!(%err, "Failed to forward transaction {:?}", request);
-            return (
-                TransactionStatus::NotExecuted,
-                SubmittedTransaction::submit_failed(signer, submitted_at),
-            );
+            return SubmittedTransaction::submit_failed(signer, submitted_at);
         }
     };
 
@@ -347,69 +270,5 @@ async fn ensure_send_transaction(
         .with_label_values(&[method, outcome_label])
         .inc();
 
-    (
-        status_or_not_executed(transaction_status),
-        SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at),
-    )
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::{TransactionStatus, attestation_submission_status, status_or_not_executed};
-    use near_mpc_contract_interface::types::{
-        MockAttestation, VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
-    };
-    use rstest::rstest;
-
-    const STORED_MOCK: VerifiedAttestation = VerifiedAttestation::Mock(MockAttestation::Valid);
-
-    fn stored_dstack() -> VerifiedAttestation {
-        VerifiedAttestation::Dstack(VerifiedDstackAttestation {
-            mpc_image_hash: [0; 32].into(),
-            launcher_compose_hash: [0; 32].into(),
-            expiry_timestamp_seconds: 0,
-            measurements: VerifiedMeasurements {
-                mrtd: [0; 48].into(),
-                rtmr0: [0; 48].into(),
-                rtmr1: [0; 48].into(),
-                rtmr2: [0; 48].into(),
-                key_provider_event_digest: [0; 48].into(),
-            },
-        })
-    }
-
-    #[rstest]
-    #[case::nothing_stored(None, true, TransactionStatus::NotExecuted)]
-    #[case::mock_stored_for_a_dstack_submission(
-        Some(STORED_MOCK),
-        true,
-        TransactionStatus::NotExecuted
-    )]
-    #[case::mock_stored_for_a_mock_submission(Some(STORED_MOCK), false, TransactionStatus::Unknown)]
-    #[case::dstack_stored_for_a_dstack_submission(
-        Some(stored_dstack()),
-        true,
-        TransactionStatus::Unknown
-    )]
-    fn attestation_submission_status__should_be_not_executed_while_no_stored_entry_can_be_ours(
-        #[case] stored: Option<VerifiedAttestation>,
-        #[case] dstack_submitted: bool,
-        #[case] expected: TransactionStatus,
-    ) {
-        // When
-        let status = attestation_submission_status(stored.as_ref(), dstack_submitted);
-
-        // Then
-        assert_eq!(status, expected);
-    }
-
-    #[test]
-    fn status_or_not_executed__should_report_a_failed_observation_as_not_executed() {
-        // When
-        let status = status_or_not_executed(Err(anyhow::anyhow!("view call failed")));
-
-        // Then
-        assert_eq!(status, TransactionStatus::NotExecuted);
-    }
+    SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at)
 }

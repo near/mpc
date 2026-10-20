@@ -4,15 +4,19 @@ use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_mpc_contract_interface::types::{AllowedMpcDockerImageHash, ChainEntry, ForeignChain};
+use near_mpc_contract_interface::types::{
+    AllowedMpcDockerImageHash, ChainEntry, Ed25519PublicKey, ForeignChain, GetAttestationResponse,
+};
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
+use crate::tee::attestation_freshness_metrics::record_stored_attestation;
 
 const ALLOWED_HASHES_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_mins(5);
+const MY_ATTESTATION_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     sender: watch::Sender<T>,
@@ -142,5 +146,34 @@ pub async fn monitor_allowed_foreign_chain_providers(
             }
         });
         tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
+    }
+}
+
+pub async fn monitor_my_attestation(
+    sender: watch::Sender<Option<GetAttestationResponse>>,
+    indexer_state: Arc<IndexerState>,
+    tls_public_key: Ed25519PublicKey,
+) {
+    indexer_state.client.wait_for_full_sync().await;
+
+    loop {
+        tokio::time::sleep(MY_ATTESTATION_REFRESH_INTERVAL).await;
+        match indexer_state
+            .view_client
+            .get_participant_attestation(&tls_public_key)
+            .await
+        {
+            Ok(stored) => {
+                record_stored_attestation(stored.as_ref());
+                sender.send_if_modified(|previous| {
+                    let modified = *previous != stored;
+                    *previous = stored;
+                    modified
+                });
+            }
+            Err(e) => {
+                tracing::error!(target: "mpc", "error reading this node's attestation from chain: {:?}", e)
+            }
+        }
     }
 }

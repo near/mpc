@@ -3,10 +3,9 @@
 //! Both are absolute timestamps rather than remaining durations: a node that stops re-attesting
 //! also stops updating them, and only the absolute form keeps decaying towards now, so a staleness
 //! alert still fires on a frozen gauge. At rest both advance hourly, as both are read from the
-//! entry stored on chain after every submission.
+//! entry stored on chain.
 
 use near_mpc_contract_interface::types::{GetAttestationResponse, VerifiedAttestation};
-use near_time::Clock;
 
 use crate::metrics::{
     MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS, MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS,
@@ -14,26 +13,14 @@ use crate::metrics::{
 
 const NO_ATTESTATION_STORED: i64 = 0;
 const NO_EXPIRY: i64 = -1;
-const STALE_LANDING_AGE_SECONDS: i64 = 90 * 60;
 
 pub(crate) fn record_stored_attestation(stored: Option<&GetAttestationResponse>) {
     MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.set(expiry_gauge_value(
         stored.map(GetAttestationResponse::attestation),
     ));
     if let Some(landed_at) = stored.and_then(GetAttestationResponse::accepted_at_seconds) {
-        let landed_at = i64::try_from(landed_at).unwrap_or(i64::MAX);
-        MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.set(landed_at);
-        let landing_age = Clock::real()
-            .now_utc()
-            .unix_timestamp()
-            .saturating_sub(landed_at);
-        if landing_age > STALE_LANDING_AGE_SECONDS {
-            tracing::warn!(
-                accepted_at_seconds = landed_at,
-                "no attestation from this node accepted in over 90 minutes; its recent \
-                 submit_participant_info transactions were likely rejected"
-            );
-        }
+        MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS
+            .set(i64::try_from(landed_at).unwrap_or(i64::MAX));
     }
 }
 
