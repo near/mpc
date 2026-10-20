@@ -177,7 +177,17 @@ CVMs running. More parallelism means another server, not another job.
 
 ## What the run covers
 
-To start, exactly what the scripts do today:
+**Goal: the flows that need real TDX hardware, and nothing else.** Anything a mock
+attestation can reach belongs in the Rust e2e tests, where it is faster and cheaper to
+run. What only a real machine exercises:
+
+| Component | Flow |
+|---|---|
+| **Node** | Asking dstack for a real TDX quote over `/var/run/dstack.sock`, with the NEAR account and P2P TLS keys bound into `report_data`, and submitting it via `submit_participant_info`. |
+| **Launcher** | Extending RTMR3 with the manifest digest, deriving the compose hash from a real `app_compose`, and launching the node image by the digest the node wrote to `/mnt/shared/image-digest.bin`. |
+| **Contract** | The TEE gate on participants, and the `tee-verifier` contract running `verify_quote` — a real DCAP verification against collateral fetched live, inside the gas budget. |
+
+To start, the run does exactly what the scripts do today:
 
 | Script | What it does |
 |---|---|
@@ -188,15 +198,12 @@ To start, exactly what the scripts do today:
 | `test-hash-override.sh override-reject` | A node launched with an unapproved hash is rejected. |
 | `test-migration.sh` | A full `backup-cli` migration: keyshares out of one node, into a replacement, and back. |
 
-Even this much is the first CI signal for parts no current job touches: real quote
-generation, DCAP verification against live collateral, the launcher's RTMR3 extension,
-compose-hash derivation from a real `app_compose`, and the contract's TEE gate against a
-real quote.
+That already covers every row above, and none of it has CI signal today.
 
-Later the run can be extended, but only with TEE-specific flows the Rust e2e tests cannot
-reach. They already cover resharing (`test_key_resharing`) and `backup-cli` migration
-(`migration_service__should_migrate_nodes_via_backup_cli`) with a mock attestation, and
-anything they can do is cheaper to test there.
+Later the run can be extended, but only against that goal. The Rust e2e tests already
+cover resharing (`test_key_resharing`) and `backup-cli` migration
+(`migration_service__should_migrate_nodes_via_backup_cli`) with a mock attestation, so
+repeating them here buys nothing but runtime on a machine we only have one of.
 
 ## Constraints
 
