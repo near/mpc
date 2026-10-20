@@ -491,13 +491,13 @@ mod tests {
     async fn periodic_attestation_submission__should_not_resend_while_an_attestation_is_stored() {
         // Given
         let setup = test_setup();
-        let handle = setup.spawn_periodic(1);
+        let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When
         tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL).await;
 
         // Then
-        assert_eq!(setup.sender().attempts(), 1);
+        assert_eq!(setup.sender().attempts(), TEST_SUBMISSION_COUNT);
         handle.abort();
     }
 
@@ -506,13 +506,13 @@ mod tests {
         // Given
         let setup = test_setup();
         setup.stored_attestation.send_replace(None);
-        let handle = setup.spawn_periodic(1);
+        let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When
         tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL).await;
 
         // Then
-        assert!(setup.sender().attempts() > 1);
+        assert!(setup.sender().attempts() > TEST_SUBMISSION_COUNT);
         handle.abort();
     }
 
