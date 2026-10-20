@@ -33,7 +33,8 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 const BACKOFF_FACTOR: f32 = 1.5;
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_hours(1);
 const ATTESTATION_LANDING_TIMEOUT: Duration = Duration::from_secs(10);
-const STALE_LANDING_AGE_SECONDS: i64 = 90 * 60;
+const STALE_LANDING_AGE_SECONDS: i64 =
+    ATTESTATION_RESUBMISSION_INTERVAL.as_secs().cast_signed() * 3 / 2;
 
 pub(crate) trait GenerateAttestation: Send + Sync {
     fn generate_attestation(
@@ -276,8 +277,9 @@ fn warn_if_no_recent_acceptance(stored: Option<&GetAttestationResponse>) {
         if landing_age > STALE_LANDING_AGE_SECONDS {
             tracing::warn!(
                 accepted_at_seconds = landed_at,
-                "no attestation from this node accepted in over 90 minutes; its recent \
-                 submit_participant_info transactions were likely rejected"
+                landing_age_seconds = landing_age,
+                "no attestation from this node accepted recently; its submit_participant_info \
+                 transactions were likely rejected"
             );
         }
     }
