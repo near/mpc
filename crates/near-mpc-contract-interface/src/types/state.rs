@@ -189,15 +189,25 @@ pub struct GovernanceThresholdParametersVotes(
     pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>,
 );
 
-/// Votes for adding new domains.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+/// Voters grouped by the [`ProposalHash`] of the [`DomainConfig`] list they voted to add.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct AddDomainsVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
-}
+pub struct AddDomainsVotes(pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>);
 
 // =============================================================================
 // Key Event Types

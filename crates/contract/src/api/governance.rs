@@ -645,6 +645,63 @@ mod tests {
     }
 
     #[test]
+    fn state__should_report_add_domains_votes_by_proposal_hash() {
+        // Given: two participants propose the same domain and a third a different one
+        let (mut contract, participants, _, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let domain = |protocol| {
+            vec![dtos::DomainConfig {
+                id: DomainId(domain_id.0 + 1),
+                protocol,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            }]
+        };
+        let (caitsith, frost) = (domain(Protocol::CaitSith), domain(Protocol::Frost));
+        let voters: Vec<_> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, id, _)| (account_id.clone(), *id))
+            .collect();
+
+        // When
+        for (account_id, domains) in [
+            (&voters[0].0, &caitsith),
+            (&voters[1].0, &caitsith),
+            (&voters[2].0, &frost),
+        ] {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
+            contract.vote_add_domains(domains.clone()).unwrap();
+        }
+
+        // Then
+        let dtos::ProtocolContractState::Running(running) = contract.state() else {
+            panic!("expected Running state");
+        };
+        let expected = dtos::AddDomainsVotes(BTreeMap::from([
+            (
+                caitsith.to_proposal_hash(),
+                [voters[0].1, voters[1].1]
+                    .map(dtos::AuthenticatedParticipantId)
+                    .into(),
+            ),
+            (
+                frost.to_proposal_hash(),
+                [voters[2].1].map(dtos::AuthenticatedParticipantId).into(),
+            ),
+        ]));
+        assert_eq!(running.add_domains_votes, expected);
+    }
+
+    #[test]
     fn vote_new_parameters__should_record_a_re_proposal_vote_while_resharing() {
         // Given
         let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
