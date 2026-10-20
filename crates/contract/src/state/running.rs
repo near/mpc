@@ -636,12 +636,12 @@ pub mod running_tests {
         state: &RunningContractState,
         protocol: Protocol,
         purpose: DomainPurpose,
-        threshold: u64,
+        reconstruction_threshold: ReconstructionThreshold,
     ) -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(state.domains.next_domain_id()),
             protocol,
-            reconstruction_threshold: ReconstructionThreshold::new(threshold),
+            reconstruction_threshold,
             purpose,
         }]
     }
@@ -654,7 +654,13 @@ pub mod running_tests {
         let mut state = gen_running_state_with_params(1, 5, 5);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 3);
+        let reconstruction_threshold = ReconstructionThreshold::new(3);
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::CaitSith,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -669,10 +675,13 @@ pub mod running_tests {
         let mut state = gen_running_state(0);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        // Use the GovernanceThreshold as the ReconstructionThreshold (the maximum allowed).
-        let governance = state.parameters.threshold().value();
-        let proposal =
-            single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, governance);
+        let reconstruction_threshold = ReconstructionThreshold::from(state.parameters.threshold());
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::CaitSith,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -857,7 +866,13 @@ pub mod running_tests {
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 2);
+        let reconstruction_threshold = ReconstructionThreshold::new(2);
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::CaitSith,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -873,7 +888,13 @@ pub mod running_tests {
         let mut state = gen_running_state_with_params(1, 4, 3);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal = single_domain_proposal(&state, Protocol::Frost, DomainPurpose::Sign, 3);
+        let reconstruction_threshold = ReconstructionThreshold::new(3);
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::Frost,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);
