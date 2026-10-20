@@ -260,10 +260,14 @@ pub mod running_tests {
     use rstest::rstest;
 
     use super::RunningContractState;
-    use crate::errors::{Error, InvalidThreshold};
+    use crate::errors::{Error, InvalidState, InvalidThreshold, VoteError};
     use crate::primitives::domain::AddDomainsVotes;
+    use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
+    use crate::primitives::thresholds::{
+        GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    };
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
         gen_running_state, gen_running_state_with_params, gen_valid_params_proposal,
@@ -271,6 +275,8 @@ pub mod running_tests {
     use near_mpc_contract_interface::types::{
         DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     };
+    use near_sdk::AccountId;
+    use std::assert_matches;
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
@@ -635,6 +641,169 @@ pub mod running_tests {
             err.to_string().contains("not in the current registry"),
             "Expected UnknownDomainInProposal, got: {err}"
         );
+    }
+
+    struct ParticipantsUpdate {
+        state: RunningContractState,
+        proposal: ProposedGovernanceThresholdParameters,
+        retained: Vec<AccountId>,
+        removed: Vec<AccountId>,
+        added: Vec<AccountId>,
+    }
+
+    fn account_ids(participants: &Participants) -> Vec<AccountId> {
+        participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect()
+    }
+
+    /// Proposal that replaces the last current participants with added ones.
+    fn gen_participants_update() -> ParticipantsUpdate {
+        const NUM_PARTICIPANTS: usize = 5;
+        const GOVERNANCE_THRESHOLD: u64 = 3;
+        const NUM_REPLACED: usize = 2;
+        const NUM_RETAINED: usize = NUM_PARTICIPANTS - NUM_REPLACED;
+
+        let state = gen_running_state_with_params(1, NUM_PARTICIPANTS, GOVERNANCE_THRESHOLD);
+        let mut proposed = state.parameters.participants().subset(0..NUM_RETAINED);
+        proposed.add_random_participants_till_n(NUM_PARTICIPANTS);
+
+        let mut retained = account_ids(state.parameters.participants());
+        let removed = retained.split_off(NUM_RETAINED);
+        let added = account_ids(&proposed).split_off(NUM_RETAINED);
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(proposed, state.parameters.threshold()).unwrap(),
+            BTreeMap::new(),
+        );
+        ParticipantsUpdate {
+            state,
+            proposal,
+            retained,
+            removed,
+            added,
+        }
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_reject_current_participants_left_out_of_the_proposal()
+     {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            removed,
+            ..
+        } = gen_participants_update();
+        let mut env = Environment::new(None, None, None);
+
+        for voter in &removed {
+            env.set_signer(voter);
+
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
+
+            // Then
+            assert_matches!(
+                result.unwrap_err(),
+                Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == *voter
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::no_old_votes(0)]
+    #[case::one_old_vote(1)]
+    #[case::one_below_threshold(2)]
+    fn process_new_parameters_proposal__should_defer_added_participants_until_threshold_old_participants_voted(
+        #[case] n_old_votes: u64,
+    ) {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        assert!(
+            n_old_votes < state.parameters.threshold().value(),
+            "case must stay below the fixture's threshold"
+        );
+        let mut env = Environment::new(None, None, None);
+        for old in retained.iter().take(n_old_votes as usize) {
+            env.set_signer(old);
+            state.process_new_parameters_proposal(&proposal).unwrap();
+        }
+
+        for voter in &added {
+            env.set_signer(voter);
+
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
+
+            // Then
+            assert_matches!(result.unwrap_err(), Error::Vote(VoteError::VoterPending));
+        }
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_admit_added_participants_once_threshold_old_participants_voted()
+     {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        let threshold = state.parameters.threshold().value();
+        let mut env = Environment::new(None, None, None);
+        for old in retained.iter().take(threshold as usize) {
+            env.set_signer(old);
+            state.process_new_parameters_proposal(&proposal).unwrap();
+        }
+
+        for voter in &added {
+            env.set_signer(voter);
+
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
+
+            // Then
+            assert_matches!(result, Ok(_));
+        }
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_return_true_only_once_every_proposed_participant_voted()
+     {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        let mut env = Environment::new(None, None, None);
+
+        // When
+        let accepted: Vec<bool> = retained
+            .iter()
+            .chain(&added)
+            .map(|voter| {
+                env.set_signer(voter);
+                state.process_new_parameters_proposal(&proposal).unwrap()
+            })
+            .collect();
+
+        // Then
+        let mut expected = vec![false; retained.len() + added.len()];
+        *expected.last_mut().unwrap() = true;
+        assert_eq!(accepted, expected);
     }
 
     /// Builds a [`DomainConfig`] for the next domain id with the given protocol,
