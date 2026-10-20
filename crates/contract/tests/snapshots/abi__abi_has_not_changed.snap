@@ -3764,21 +3764,6 @@ expression: abi
             }
           }
         },
-        "GovernanceThresholdParametersVotes": {
-          "description": "Votes for threshold parameter changes. Always empty: the contract stores only proposal hashes and no longer reports pending votes. Kept for wire compatibility.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
-              }
-            }
-          }
-        },
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
@@ -4828,7 +4813,14 @@ expression: abi
               "$ref": "#/definitions/GovernanceThresholdParameters"
             },
             "parameters_votes": {
-              "$ref": "#/definitions/GovernanceThresholdParametersVotes"
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/AuthenticatedAccountId"
+                },
+                "uniqueItems": true
+              }
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [
