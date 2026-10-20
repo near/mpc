@@ -19,9 +19,9 @@ use crate::call_args::{
     SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
     SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
     VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs, VoteAddLauncherHashArgs,
-    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs,
-    VoteNewParametersArgs, VotePkArgs, VoteResharedArgs, VoteTeeVerifierChangeArgs,
-    VoteUpdateForeignChainProvidersArgs,
+    VoteAddOsMeasurementArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
+    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs, VoteResharedArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -42,9 +42,9 @@ use crate::method_names::{
     START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
     TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
-    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST,
-    VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED, VOTE_TEE_VERIFIER_CHANGE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
+    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
@@ -53,7 +53,7 @@ use crate::types::{
     DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
     ForeignChainsConfigs, GetAttestationResponse, GovernanceThresholdParameters, InitConfig,
     KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash,
-    MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ProposalHash,
+    MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
     ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey, SignRequestArgs,
     SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
     VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
@@ -421,6 +421,19 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn vote_add_os_measurement(
+        &self,
+        measurement: ExpectedMeasurements,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteAddOsMeasurementArgs::new(measurement))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_ADD_OS_MEASUREMENT,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
     pub async fn vote_tee_verifier_change(
         &self,
         candidate_account_id: AccountId,
@@ -440,7 +453,7 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn update_participant_url(
         &self,
-        url: String,
+        url: ParticipantUrl,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&UpdateParticipantUrlArgs::new(url))?;
         self.call(FunctionCallArgs::new(
@@ -765,11 +778,12 @@ mod tests {
         BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV,
         CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, Curve,
         DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GovernanceThreshold,
-        GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint, K256Scalar,
-        K256Signature, KeyEventId, Keyset, LauncherImageHash, MockAttestation, ParticipantId,
-        ParticipantInfo, Participants, Payload, ProposedGovernanceThresholdParameters, Protocol,
-        ProviderConfig, ProviderId, PublicKey, ReconstructionThreshold, SignRequestArgs,
+        ExpectedMeasurements, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
+        K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
+        MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
+        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
+        ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
         SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
         VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
         VerifyForeignTransactionResponse,
@@ -843,7 +857,7 @@ mod tests {
                     "alice.near".parse().unwrap(),
                     ParticipantId(0),
                     ParticipantInfo {
-                        url: "http://localhost:7".to_string(),
+                        url: "http://localhost:7".try_into().unwrap(),
                         tls_public_key: Ed25519PublicKey::from([7u8; 32]),
                     },
                 )],
@@ -1029,6 +1043,16 @@ mod tests {
             .await
             .unwrap();
         handle
+            .vote_add_os_measurement(ExpectedMeasurements {
+                mrtd: MrtdHash::from([7u8; 48]),
+                rtmr0: Rtmr0Hash::from([7u8; 48]),
+                rtmr1: Rtmr1Hash::from([7u8; 48]),
+                rtmr2: Rtmr2Hash::from([7u8; 48]),
+                key_provider_event_digest: KeyProviderEventDigest::from([7u8; 48]),
+            })
+            .await
+            .unwrap();
+        handle
             .vote_tee_verifier_change(
                 "verifier.near".parse().unwrap(),
                 TeeVerifierCodeHash::new([7u8; 32]),
@@ -1036,7 +1060,7 @@ mod tests {
             .await
             .unwrap();
         handle
-            .update_participant_url("http://localhost:7".to_string())
+            .update_participant_url("http://localhost:7".try_into().unwrap())
             .await
             .unwrap();
         handle
@@ -1049,7 +1073,7 @@ mod tests {
             .start_node_migration(DestinationNodeInfo {
                 signer_account_pk: Ed25519PublicKey::from([7u8; 32]),
                 destination_node_info: ParticipantInfo {
-                    url: "http://localhost:7".to_string(),
+                    url: "http://localhost:7".try_into().unwrap(),
                     tls_public_key: Ed25519PublicKey::from([7u8; 32]),
                 },
             })

@@ -2710,6 +2710,8 @@ near contract call-function as-read-only \
   now
 ```
 
+Shows the voters grouped by the proposal hash of the action they voted for: the SHA-256 of the borsh-encoded `MeasurementVoteAction`. May include former participants' votes, which don't count toward the threshold.
+
 ### Deploy New CVM and Migrate Key Shares
 
 After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
