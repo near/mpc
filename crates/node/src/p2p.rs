@@ -490,21 +490,35 @@ impl PersistentConnection {
         }
     }
 
-    fn send_connected_peers(&self, message: ConnectedPeersMessage) {
-        let Some(conn) = self.connectivity.any_outgoing_connection() else {
-            return;
-        };
+    fn send_connected_peers(&self, message: &ConnectedPeersMessage) {
+        if let Some(conn) =
+            self.outgoing_connection_supporting(CONNECTED_PEERS_MIN_PROTOCOL_VERSION)
+        {
+            let _ = conn.send_connected_peers(message.clone());
+        }
+    }
+
+    /// The current outgoing connection, if the peer advertised `required` or newer on it. The
+    /// version belongs to the returned connection, so a reconnect to an older binary cannot slip
+    /// in between the check and the send.
+    fn outgoing_connection_supporting(
+        &self,
+        required: NetworkProtocolVersion,
+    ) -> Option<Arc<OutgoingConnection>> {
+        let conn = self.connectivity.any_outgoing_connection()?;
         let peer_version = conn.peer_network_protocol_version();
-        if !peer_version.supports(CONNECTED_PEERS_MIN_PROTOCOL_VERSION) {
-            tracing::warn!(
+        if !peer_version.supports(required) {
+            tracing::debug!(
                 target_participant_id = %self.target_participant_id,
                 ?peer_version,
-                "not sending connected peers: the peer cannot parse the packet"
+                ?required,
+                "skipping packet: the peer advertised an older protocol version"
             );
-            return;
+            return None;
         }
-        let _ = conn.send_connected_peers(message);
+        Some(conn)
     }
+
     const MIN_CONNECTION_ID: u32 = 0;
 
     pub fn new(
@@ -1086,9 +1100,9 @@ impl MeshNetworkTransportSender for TlsMeshSender {
         }
     }
 
-    fn send_connected_peers(&self, recipient_id: ParticipantId, message: ConnectedPeersMessage) {
-        if let Some(conn) = self.connections.get(&recipient_id) {
-            conn.send_connected_peers(message);
+    fn send_connected_peers(&self, message: ConnectedPeersMessage) {
+        for conn in self.connections.values() {
+            conn.send_connected_peers(&message);
         }
     }
 
@@ -1562,7 +1576,7 @@ mod tests {
         };
 
         // When
-        persistent_connection.send_connected_peers(ConnectedPeersMessage {
+        persistent_connection.send_connected_peers(&ConnectedPeersMessage {
             peers: vec![ParticipantId::from_raw(2)],
         });
 

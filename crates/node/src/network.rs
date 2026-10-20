@@ -7,9 +7,7 @@ pub mod indexer_heights;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;
-use crate::network::connected_peers::{
-    CONNECTED_PEERS_BROADCAST_INTERVAL, CONNECTED_PEERS_MIN_PROTOCOL_VERSION,
-};
+use crate::network::connected_peers::CONNECTED_PEERS_BROADCAST_INTERVAL;
 use crate::network::indexer_heights::IndexerHeightTracker;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use crate::primitives::{
@@ -61,9 +59,10 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     ) -> anyhow::Result<()>;
     /// Sends a message to everyone on a best-effort basis about the current height of our indexer.
     fn send_indexer_height(&self, height: IndexerHeightMessage);
-    /// Dropped when there is no outgoing connection to `recipient_id`, or when the peer negotiated
-    /// a version below [`CONNECTED_PEERS_MIN_PROTOCOL_VERSION`].
-    fn send_connected_peers(&self, recipient_id: ParticipantId, message: ConnectedPeersMessage);
+    /// Sends our connected peers to everyone on a best-effort basis. Skips a peer without an
+    /// outgoing connection, or whose connection advertised a version below
+    /// [`CONNECTED_PEERS_MIN_PROTOCOL_VERSION`](crate::network::connected_peers::CONNECTED_PEERS_MIN_PROTOCOL_VERSION).
+    fn send_connected_peers(&self, message: ConnectedPeersMessage);
 
     /// Waits for `required_ready_count` number of connections (a freebie is included for the node itself)
     /// to the given `peers` to be bidirectionally established at the same time.
@@ -258,14 +257,8 @@ impl MeshNetworkClient {
                         .is_bidirectionally_connected()
             })
             .collect();
-        let message = ConnectedPeersMessage { peers };
-        // An older peer cannot parse the packet and would tear the connection down.
-        for recipient in self.participants_supporting(CONNECTED_PEERS_MIN_PROTOCOL_VERSION) {
-            if recipient != me {
-                self.transport_sender
-                    .send_connected_peers(recipient, message.clone());
-            }
-        }
+        self.transport_sender
+            .send_connected_peers(ConnectedPeersMessage { peers });
     }
 
     pub fn select_random_active_participants_including_me(
@@ -984,8 +977,7 @@ pub mod testing {
         pub(super) protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
         /// Peers reported as not bidirectionally connected; every other peer is.
         pub(super) disconnected: HashSet<ParticipantId>,
-        pub(super) connected_peers_sent:
-            std::sync::Mutex<Vec<(ParticipantId, ConnectedPeersMessage)>>,
+        pub(super) connected_peers_sent: std::sync::Mutex<Vec<ConnectedPeersMessage>>,
     }
 
     /// Every participant reported to run the current protocol version.
@@ -1083,16 +1075,12 @@ pub mod testing {
         // TODO(#2753): add test coverage
         fn send_indexer_height(&self, _height: crate::primitives::IndexerHeightMessage) {}
 
-        fn send_connected_peers(
-            &self,
-            recipient_id: ParticipantId,
-            message: ConnectedPeersMessage,
-        ) {
+        fn send_connected_peers(&self, message: ConnectedPeersMessage) {
             self.transport
                 .connected_peers_sent
                 .lock()
                 .expect("connected peers recorder must not be poisoned")
-                .push((recipient_id, message));
+                .push(message);
         }
 
         async fn wait_for_ready(
@@ -1105,7 +1093,7 @@ pub mod testing {
     }
 
     impl TestMeshTransportSender {
-        pub fn take_connected_peers_sent(&self) -> Vec<(ParticipantId, ConnectedPeersMessage)> {
+        pub fn take_connected_peers_sent(&self) -> Vec<ConnectedPeersMessage> {
             let mut sent = self
                 .transport
                 .connected_peers_sent
@@ -1167,7 +1155,7 @@ pub mod testing {
         my_participant_id: ParticipantId,
     ) -> Arc<super::MeshNetworkClient> {
         let protocol_versions = current_protocol_versions(&participants);
-        new_test_client_with_versions(participants, my_participant_id, protocol_versions).0
+        new_test_client_with_versions(participants, my_participant_id, protocol_versions)
     }
 
     /// Like [`new_test_client`], with the protocol version each peer is reported to run.
@@ -1175,13 +1163,13 @@ pub mod testing {
         participants: Vec<ParticipantId>,
         my_participant_id: ParticipantId,
         protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
-    ) -> (Arc<super::MeshNetworkClient>, Arc<TestMeshTransportSender>) {
+    ) -> Arc<super::MeshNetworkClient> {
         let transport = TestMeshTransport {
             participant_ids: participants,
             protocol_versions,
             ..Default::default()
         };
-        new_test_client_over(transport, my_participant_id)
+        new_test_client_over(transport, my_participant_id).0
     }
 
     /// Like [`new_test_client`], over `transport`, whose participants are the client's.
@@ -1321,35 +1309,13 @@ mod tests {
             (peers[0], NetworkProtocolVersion::Jan2026),
             (peers[1], NetworkProtocolVersion::Dec2025),
         ]);
-        let (client, _) = new_test_client_with_versions(participants, me, versions);
+        let client = new_test_client_with_versions(participants, me, versions);
 
         // When
         let supporting = client.participants_supporting(NetworkProtocolVersion::Jan2026);
 
         // Then
         assert_eq!(supporting, vec![me, peers[0]]);
-    }
-
-    #[test]
-    fn broadcast_connected_peers__should_send_only_to_peers_negotiating_oct2026() {
-        // Given
-        let me = ParticipantId::from_raw(1);
-        let peers = [2, 3, 4].map(ParticipantId::from_raw);
-        let participants = vec![me, peers[0], peers[1], peers[2]];
-        let versions = HashMap::from([
-            (peers[0], NetworkProtocolVersion::Sep2026),
-            (peers[1], NetworkProtocolVersion::Oct2026),
-            (peers[2], NetworkProtocolVersion::Unknown(42)),
-        ]);
-        let (client, transport) = new_test_client_with_versions(participants, me, versions);
-
-        // When
-        client.broadcast_connected_peers();
-
-        // Then
-        let sent = transport.take_connected_peers_sent();
-        let recipients: Vec<_> = sent.iter().map(|(recipient, _)| *recipient).collect();
-        assert_eq!(recipients, vec![peers[1], peers[2]]);
     }
 
     #[test]
@@ -1369,7 +1335,7 @@ mod tests {
         client.broadcast_connected_peers();
 
         // Then
-        let [(_, message)]: [_; 1] = transport.take_connected_peers_sent().try_into().unwrap();
+        let [message]: [_; 1] = transport.take_connected_peers_sent().try_into().unwrap();
         assert_eq!(message.peers, vec![connected]);
     }
 
