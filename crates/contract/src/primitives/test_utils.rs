@@ -3,7 +3,7 @@ use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
-        participants::{ParticipantInfo, Participants},
+        participants::{ParticipantInfo, ParticipantUrl, Participants},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
             ProposedGovernanceThresholdParameters, governance_threshold_lower_relative_bound,
@@ -125,11 +125,15 @@ fn test_random_account_id() {
     assert_ne!(acc1, acc2, "Random keys should be different");
 }
 
+pub fn gen_participant_url(i: usize) -> ParticipantUrl {
+    format!("https://www.near{}.com", i).try_into().unwrap()
+}
+
 pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: format!("https://www.near{}.com", i).try_into().unwrap(),
+            url: gen_participant_url(i),
             tls_public_key: bogus_ed25519_public_key(),
         },
     )
