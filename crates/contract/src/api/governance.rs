@@ -120,11 +120,13 @@ mod tests {
         submit_attestation, submit_valid_attestations,
     };
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::errors::{DomainError, InvalidCandidateSet, InvalidThreshold};
+    use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
+    use crate::state::ProtocolContractState;
     use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
@@ -451,6 +453,43 @@ mod tests {
                 reconstruction_threshold: 4,
                 governance_threshold: 3,
             })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_a_caller_that_is_not_a_participant() {
+        // Given
+        let (mut contract, participants, _, _) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+        assert_matches!(
+            contract.tee_state.reverify_and_cleanup_participants(
+                proposal.participants(),
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            ),
+            TeeValidationResult::Full
+        );
+        let outsider: AccountId = "outsider.near".parse().unwrap();
+
+        // When
+        let result = vote_params(&mut contract, &outsider, &proposal);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == outsider
+        );
+        // Check that vote was not accepted.
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Running(state)
+                if state.parameters_votes == GovernanceThresholdParametersVotes::default()
         );
     }
 
