@@ -37,9 +37,9 @@ pub fn select_image_hash(
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
     use near_mpc_bounded_collections::NonEmptyVec;
+    use std::assert_matches;
 
     use super::*;
 
@@ -72,9 +72,7 @@ mod tests {
         let result = select_image_hash(Some(&approved), &digest('f'), Some(&override_digest));
 
         // then
-        assert_matches!(result, Ok(selected) => {
-            assert_eq!(selected, override_digest);
-        });
+        assert_eq!(result.unwrap(), override_digest);
     }
 
     #[test]
@@ -100,9 +98,7 @@ mod tests {
         let result = select_image_hash(Some(&approved), &digest('f'), None);
 
         // then
-        assert_matches!(result, Ok(selected) => {
-            assert_eq!(selected, newest);
-        });
+        assert_eq!(result.unwrap(), newest);
     }
 
     #[test]
@@ -114,9 +110,7 @@ mod tests {
         let result = select_image_hash(None, &default, None);
 
         // then
-        assert_matches!(result, Ok(selected) => {
-            assert_eq!(selected, default);
-        });
+        assert_eq!(result.unwrap(), default);
     }
 
     #[test]
@@ -129,9 +123,7 @@ mod tests {
         let result = select_image_hash(None, &default, Some(&override_digest));
 
         // then
-        assert_matches!(result, Ok(selected) => {
-            assert_eq!(selected, default);
-        });
+        assert_eq!(result.unwrap(), default);
     }
 
     // --- approved_hashes JSON key alignment ---

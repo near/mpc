@@ -402,7 +402,9 @@ fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> 
     let mpc_setup = account.get_mpc_participant().unwrap();
     ParticipantInfo {
         tls_public_key: (&mpc_setup.p2p_public_key).into(),
-        url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
+        url: format!("http://mpc-node-{}.service.mpc.consul:3000", index)
+            .try_into()
+            .unwrap(),
     }
 }
 

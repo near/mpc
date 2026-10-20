@@ -34,8 +34,8 @@ impl TryFrom<&Bls12381G2PublicKey> for blstrs::G2Projective {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use group::Group;
+    use std::assert_matches;
 
     #[test]
     fn roundtrip_g1_projective() {

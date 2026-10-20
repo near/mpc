@@ -9,6 +9,7 @@ To ensure consistent high quality code, every PR must conform to the following p
 - [Measure performance](#measure-performance)
 - [Name capability traits after the action](#name-capability-traits-after-the-action)
 - [Write helpful code comments](#write-helpful-code-comments)
+- [Declare referencing types first](#declare-referencing-types-first)
 
 Beyond our engineering standards,
 The Rust library team maintains a set of [API guidelines](https://rust-lang.github.io/api-guidelines/about.html).
@@ -368,3 +369,26 @@ but reviewers are the only safeguard. When a backticked word merely looks
 like an item but is not one (an algorithm name, a type in a crate we
 deliberately do not depend on, a `cfg(test)` item rustdoc cannot see),
 leave it as a plain code span.
+
+## Declare referencing types first
+If type `A` references type `B`, declare `A` before `B`. Readers then meet the most significant types first and drill down into the details.
+
+```rust
+// Don't
+pub enum SkipReason { ... }
+
+pub struct Resolved {
+    pub skipped: Vec<SkipReason>,
+}
+
+// Do
+pub struct Resolved {
+    pub skipped: Vec<SkipReason>,
+}
+
+pub enum SkipReason { ... }
+```
+
+When two types reference each other, declare the one closer to the public API first.
+
+**Scope.** This applies to new code, and to files you are already reworking. It is not a request to reorder existing files in bulk.

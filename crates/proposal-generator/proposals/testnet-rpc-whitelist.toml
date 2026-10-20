@@ -1,5 +1,7 @@
 # Testnet RPC provider whitelist
 
+# TODO(near/mpc-private#720): Drop Bitcoin on the next whitelist announcement. Needs a contract
+# change first: `vote_update_foreign_chain_providers` can replace a chain's entry but not remove it.
 [chains.Bitcoin]
 quorum = 1
 
@@ -145,6 +147,11 @@ quorum = 3
 [chains.Solana.providers.alchemy]
 base_url = "https://solana-devnet.g.alchemy.com/v2/"
 auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Solana.providers.public]
+base_url = "https://api.devnet.solana.com"
+auth_scheme = "None"
 chain_routing = "Embedded"
 
 [chains.Solana.providers.quicknode]

@@ -116,11 +116,10 @@ mod test {
         deal_triple, expected_buffer_by_role, generate_participants, run_keygen, run_protocol,
         run_sign,
     };
-    use assert_matches::assert_matches;
     use k256::{PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
     use rand_core::SeedableRng;
     use rstest::rstest;
-    use std::collections::HashMap;
+    use std::{assert_matches, collections::HashMap};
 
     const MSG: &[u8] = b"presign and sign in one go";
 

@@ -199,10 +199,9 @@ async fn test_multi_domain() {
     // then: contract returns to Running, the cancelled domain is absent from
     // both keyset and registry, and next_domain_id has advanced past it.
     cluster
-        .wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
+        .wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
         .await
         .expect("contract did not return to Running after cancellation");
     let running = running_state(&cluster).await.expect("running_state failed");

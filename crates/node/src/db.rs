@@ -217,6 +217,7 @@ impl SecretDBUpdate {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     #[test]
     fn test_encrypt_decrypt() {
@@ -308,6 +309,6 @@ mod tests {
         let result = SecretDB::new(dir.path(), key);
 
         // Then
-        assert_matches::assert_matches!(result, Ok(_));
+        assert_matches!(result, Ok(_));
     }
 }

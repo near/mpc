@@ -17,12 +17,14 @@ traits = [
     "dep:tracing",
 ]
 test-utils = ["traits"]
+near-kit = ["dep:near-kit", "traits"]
 
 [dependencies]
 borsh = { workspace = true, optional = true }
 derive_more = { workspace = true }
 near-account-id = { workspace = true, optional = true }
 near-gas = { workspace = true }
+near-kit = { workspace = true, optional = true }
 near-token = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
@@ -32,8 +34,8 @@ tokio-util = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

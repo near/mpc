@@ -1,6 +1,6 @@
 # Embedding foreign chain configs in the node image
 
-**Status:** Proposed — tracked by [#4611](https://github.com/near/mpc/issues/4611)\
+**Status:** Implemented — designed in [#4611](https://github.com/near/mpc/issues/4611), implemented in [#4630](https://github.com/near/mpc/issues/4630)\
 **Date:** 2026-10-01
 
 ## Background
@@ -92,23 +92,22 @@ Testnet and mainnet credentials are separate by construction, since each node ru
 The unit of resolution is a (chain, provider) pair, taken whole from one source — never merged field
 by field. The config from the file takes precedence.
 
-1. **Embedded Config pairs.** Each embedded (chain, provider) is validated during parsing that:
-     - either provider's `auth` is `none` or `credentials` has an entry for that provider
-     - its `rpc_url` contains `{slug}`, the entry must also have a slug which is substituted into `rpc_url`.
-
-     If validation fails, entry is dropped with a warning.
-1. **Node Config pairs.** Each (chain, provider) in the node config's `foreign_chains` overrides embedded config, and logs warning if it exists in both but constructed rpc_url differs.
+1. **Node config pairs** are kept as written. An embedded pair they replace is reported as
+   overridden, noting whether its `rpc_url` differs.
+1. **Embedded pairs** the node config lacks are enabled when `auth` is `none` or the provider has
+   `credentials`: the API key fills the token, the slug replaces `{slug}`. Otherwise they're
+   skipped: no credentials, no slug, or an `rpc_url` the node config already uses.
 1. **Chain-level fields** (`timeout_sec`, `max_retries`,`expected_network_fingerprint`) come from
    the file when it defines the chain, otherwise from the embedded config.
 1. **Empty chains** — a chain with no providers left — are dropped.
-1. `validate()` runs on the resolved config.
+1. `validate()` runs on the resolved config, a failure aborts startup.
 
 The resolved config lives only in memory and is never written back to disk. All consumers
 (inspectors, probe, `register_foreign_chains`, whitelist verifier, web UI) receive the resolved
 config instead of the file's `foreign_chains`. Since it is the same type, their code doesn't change.
 
-At startup the node logs each pair with its source (`embedded` or `node_config`), and warns
-if same pair is defined in both places but differ, so that operators can remove them.
+Resolution returns each outcome as a diagnostic. The node logs every pair with its source and
+warns about skipped embedded pairs and overrides with a differing `rpc_url`.
 
 ## Migration
 

@@ -31,9 +31,6 @@ jobs:
       - name: Build mpc-node image
         run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-node .#mpc-node-image
 
-      - name: Build mpc-node-gcp image
-        run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-node-gcp .#mpc-node-gcp-image
-
       - name: Build mpc-launcher image
         run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-launcher .#mpc-launcher-image
 
@@ -41,7 +38,7 @@ jobs:
         run: sha256sum out/*/manifest.json
 
       - name: Upload images
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: images
           path: out
@@ -60,7 +57,7 @@ jobs:
 
     steps:
       - name: Download images
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: images
           path: out
@@ -74,6 +71,6 @@ jobs:
       - name: Push images
         run: |
           tag="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}-nix"
-          for image in mpc-node mpc-node-gcp mpc-launcher; do
+          for image in mpc-node mpc-launcher; do
             skopeo copy --preserve-digests "dir:out/$image" "docker://docker.io/nearone/$image:$tag"
           done

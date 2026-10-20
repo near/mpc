@@ -2,10 +2,10 @@ use std::io::Write;
 use std::path::Path;
 
 use clap::Parser;
-use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use launcher_interface::types::{
     ApprovedHashes, DockerSha256Digest, TeeAuthorityConfig, TeeConfig,
 };
+use mpc_primitives::hash::MPC_IMAGE_HASH_EVENT;
 
 use compose::launch_mpc_container;
 use config::{intercept_node_config, validate_image_reference};
@@ -58,8 +58,7 @@ pub async fn run() -> Result<(), LauncherError> {
     }
 
     let tee_config = build_tee_config(args.platform, manifest_digest.clone());
-    let mpc_node_config =
-        intercept_node_config(config.mpc_node_config, &tee_config, args.platform)?;
+    let mpc_node_config = intercept_node_config(config.mpc_node_config, &tee_config)?;
 
     write_config_atomically(&mpc_node_config)?;
 

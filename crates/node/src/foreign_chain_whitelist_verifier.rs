@@ -21,7 +21,7 @@ use mpc_node_config::{
     ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
     foreign_chains::{
         RpcProviderName,
-        provider_identity::{self, Mismatch, WhitelistMatch},
+        provider_identity::{self, InvalidBaseUrl, Mismatch, WhitelistMatch},
     },
 };
 use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderConfig, ProviderId};
@@ -69,6 +69,7 @@ enum DiagnosticKind {
     UnparseableBaseUrl {
         whitelist_id: ProviderId,
         whitelist_base_url: String,
+        reason: InvalidBaseUrl,
     },
     ProviderNotInWhitelist,
     Misconfigured {
@@ -105,16 +106,17 @@ fn compare_chain(
     let mut diagnostics: Vec<Diagnostic> = whitelist_entry
         .providers
         .iter()
-        .filter(|(_, whitelist_provider)| {
-            provider_identity::parse_base_url(&whitelist_provider.base_url).is_none()
-        })
-        .map(|(whitelist_id, whitelist_provider)| Diagnostic {
-            chain,
-            local_name: None,
-            kind: DiagnosticKind::UnparseableBaseUrl {
-                whitelist_id: whitelist_id.clone(),
-                whitelist_base_url: whitelist_provider.base_url.clone(),
-            },
+        .filter_map(|(whitelist_id, whitelist_provider)| {
+            let reason = provider_identity::parse_base_url(&whitelist_provider.base_url).err()?;
+            Some(Diagnostic {
+                chain,
+                local_name: None,
+                kind: DiagnosticKind::UnparseableBaseUrl {
+                    whitelist_id: whitelist_id.clone(),
+                    whitelist_base_url: whitelist_provider.base_url.clone(),
+                    reason,
+                },
+            })
         })
         .collect();
     let mut first_local_name_by_whitelist_id: BTreeMap<&ProviderId, &RpcProviderName> =
@@ -178,11 +180,13 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
         DiagnosticKind::UnparseableBaseUrl {
             whitelist_id,
             whitelist_base_url,
+            reason,
         } => {
             tracing::error!(
                 ?chain,
                 %whitelist_id,
                 whitelist_base_url,
+                %reason,
                 "foreign chain whitelist: cannot parse the on chain whitelist entry, contact the NEAR MPC team"
             );
         }
@@ -398,11 +402,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::not_a_url("slug.quiknode.pro")]
-    #[case::wildcard_inside_a_label("https://{}-eth.quiknode.pro")]
-    #[case::two_wildcards("https://{}.{}.quiknode.pro")]
+    #[case::not_a_url(
+        "slug.quiknode.pro",
+        InvalidBaseUrl::Parse(url::ParseError::RelativeUrlWithoutBase)
+    )]
+    #[case::wildcard_inside_a_label("https://{}-eth.quiknode.pro", InvalidBaseUrl::Wildcard)]
+    #[case::two_wildcards("https://{}.{}.quiknode.pro", InvalidBaseUrl::Wildcard)]
     fn compare__should_emit_unparseable_base_url_and_still_match_the_other_entries(
         #[case] base_url: &str,
+        #[case] reason: InvalidBaseUrl,
     ) {
         // Given
         let local = must_local_ethereum(&[
@@ -429,6 +437,7 @@ mod tests {
             kind: DiagnosticKind::UnparseableBaseUrl {
                 whitelist_id: ProviderId("quicknode".to_string()),
                 whitelist_base_url: base_url.to_string(),
+                reason,
             },
         };
         assert_eq!(

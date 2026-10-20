@@ -90,8 +90,7 @@ pub fn validate_chain_entry(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
-    use std::collections::BTreeMap;
+    use std::{assert_matches, collections::BTreeMap};
 
     fn provider(id: &str) -> (ProviderId, ProviderConfig) {
         (

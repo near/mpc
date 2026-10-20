@@ -1,11 +1,8 @@
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AuthScheme, ChainEntry, ChainRouting, ForeignChain, Protocol, ProviderConfig, ProviderId,
 };
 use near_sdk::{CurveType, PublicKey};
-use serde_json::json;
-use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use crate::sandbox::common::SandboxTestSetup;
@@ -22,13 +19,7 @@ async fn test_key_version() -> anyhow::Result<()> {
         .build()
         .await;
 
-    let version: u32 = contract
-        .view(method_names::LATEST_KEY_VERSION)
-        .args_json(json!({}))
-        .await
-        .unwrap()
-        .json()
-        .unwrap();
+    let version = contract.latest_key_version(None).await?.value;
     assert_eq!(version, 0);
     Ok(())
 }
@@ -44,15 +35,8 @@ async fn test_public_key() -> anyhow::Result<()> {
         .build()
         .await;
 
-    let key: String = contract
-        .view(method_names::PUBLIC_KEY)
-        .args_json(json!({}))
-        .await
-        .unwrap()
-        .json()
-        .unwrap();
-    println!("{:?}", key);
-    let pk = PublicKey::from_str(&key)?;
+    let key = contract.public_key(None).await?.value;
+    let pk = PublicKey::from_str(&String::from(&key))?;
     assert_eq!(pk.curve_type(), CurveType::SECP256K1);
     Ok(())
 }
@@ -68,17 +52,11 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
         .build()
         .await;
 
-    let key: String = contract
-        .view(method_names::DERIVED_PUBLIC_KEY)
-        .args_json(json!({
-            "path": "test",
-            "predecessor": "alice.near"
-        }))
-        .await
-        .unwrap()
-        .json()
-        .unwrap();
-    let pk = PublicKey::from_str(&key)?;
+    let key = contract
+        .derived_public_key("test".to_string(), "alice.near".parse()?, None)
+        .await?
+        .value;
+    let pk = PublicKey::from_str(&String::from(&key))?;
     assert_eq!(pk.curve_type(), CurveType::SECP256K1);
     Ok(())
 }
@@ -127,11 +105,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
     }
 
     // Sanity check: nothing applied yet (only 5 of 6 threshold votes cast).
-    let whitelist_before: BTreeMap<ForeignChain, ChainEntry> = contract
-        .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-        .args_json(json!({}))
-        .await?
-        .json()?;
+    let whitelist_before = contract.allowed_foreign_chain_providers().await?.value;
     assert!(
         whitelist_before.is_empty(),
         "chain should not be applied yet (only 5 of 6 threshold votes cast)"
@@ -148,11 +122,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
     );
 
     // Then
-    let whitelist: BTreeMap<ForeignChain, ChainEntry> = contract
-        .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-        .args_json(json!({}))
-        .await?
-        .json()?;
+    let whitelist = contract.allowed_foreign_chain_providers().await?.value;
     let stored = whitelist
         .get(&ForeignChain::Ethereum)
         .expect("Ethereum entry should be present after 6 matching votes");

@@ -1,4 +1,3 @@
-use crate::crypto_shared::types::k256_types;
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 use k256::{
     Secp256k1,
@@ -12,7 +11,7 @@ use near_mpc_contract_interface::types as dtos;
 pub struct TweakNotOnCurve;
 
 pub fn derive_key_secp256k1(
-    public_key: &k256_types::PublicKey,
+    public_key: &k256::AffinePoint,
     tweak: &Tweak,
 ) -> Result<dtos::Secp256k1PublicKey, TweakNotOnCurve> {
     let tweak = k256::Scalar::from_repr(tweak.as_bytes().into())

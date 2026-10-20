@@ -17,7 +17,6 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 ed25519-dalek = { workspace = true }
 mpc-primitives = { workspace = true }
