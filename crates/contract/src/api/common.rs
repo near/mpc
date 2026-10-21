@@ -155,8 +155,6 @@ pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
     }
 }
 
-/// Accounts that claim the TLS key: participants in the given sets whose entry carries it,
-/// accounts migrating to it and the owner of the attestation stored under it.
 pub(crate) fn tls_key_claimants<'a>(
     participant_sets: impl IntoIterator<Item = &'a Participants>,
     node_migrations: &'a NodeMigrations,

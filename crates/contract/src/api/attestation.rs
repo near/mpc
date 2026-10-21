@@ -497,7 +497,7 @@ mod tests {
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        create_node_id, gen_participants,
+        create_node_id, gen_account_id, gen_participants,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
@@ -629,7 +629,7 @@ mod tests {
     }
 
     #[rstest]
-    fn submit_participant_info__should_reject_a_tls_key_assigned_to_another_account(
+    fn submit_participant_info__should_accept_an_assigned_tls_key_only_from_its_assignee(
         #[values(
             TlsKeyAssignment::Participant,
             TlsKeyAssignment::DroppedParticipant,
@@ -637,21 +637,41 @@ mod tests {
             TlsKeyAssignment::MigrationDestination
         )]
         assignment: TlsKeyAssignment,
-        #[values(false, true)] outsider_already_holds_the_key: bool,
     ) {
         // Given
-        let (mut contract, _, tls_public_key) = contract_assigning_tls_key(assignment);
-        let outsider: AccountId = "outsider.near".parse().unwrap();
-        if outsider_already_holds_the_key {
-            contract
-                .tee_state
-                .verify_and_store_mock(
-                    create_node_id(&outsider, &tls_public_key),
-                    MpcMockAttestation::Valid,
-                    Duration::MAX,
-                )
-                .unwrap();
-        }
+        let (mut contract, assignee, tls_public_key) = contract_assigning_tls_key(assignment);
+        let outsider = gen_account_id();
+
+        // When
+        let outsider_result =
+            prepay_and_submit_mock_attestation(&mut contract, &outsider, tls_public_key.clone());
+        let assignee_result =
+            prepay_and_submit_mock_attestation(&mut contract, &assignee, tls_public_key);
+
+        // Then
+        assert_matches!(
+            outsider_result,
+            Err(Error::AttestationSubmission(
+                AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+            ))
+        );
+        assert_matches!(assignee_result, Ok(()));
+    }
+
+    #[test]
+    fn submit_participant_info__should_reject_an_outsider_refreshing_an_assigned_tls_key() {
+        // Given
+        let (mut contract, _, tls_public_key) =
+            contract_assigning_tls_key(TlsKeyAssignment::Participant);
+        let outsider = gen_account_id();
+        contract
+            .tee_state
+            .verify_and_store_mock(
+                create_node_id(&outsider, &tls_public_key),
+                MpcMockAttestation::Valid,
+                Duration::MAX,
+            )
+            .unwrap();
 
         // When
         let result = prepay_and_submit_mock_attestation(&mut contract, &outsider, tls_public_key);
@@ -663,26 +683,6 @@ mod tests {
                 AttestationSubmissionError::TlsKeyOwnedByOtherAccount
             ))
         );
-    }
-
-    #[rstest]
-    fn submit_participant_info__should_accept_the_account_a_tls_key_is_assigned_to(
-        #[values(
-            TlsKeyAssignment::Participant,
-            TlsKeyAssignment::DroppedParticipant,
-            TlsKeyAssignment::ProposedParticipant,
-            TlsKeyAssignment::MigrationDestination
-        )]
-        assignment: TlsKeyAssignment,
-    ) {
-        // Given
-        let (mut contract, assignee, tls_public_key) = contract_assigning_tls_key(assignment);
-
-        // When
-        let result = prepay_and_submit_mock_attestation(&mut contract, &assignee, tls_public_key);
-
-        // Then
-        assert_matches!(result, Ok(()));
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
