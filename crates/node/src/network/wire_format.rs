@@ -2,7 +2,7 @@
 //!
 //! A discriminant, once assigned, is never reused or given to another variant. Retiring one is
 //! only safe once no deployed node can still send it, which the handshake's
-//! [`NetworkProtocolVersion`](crate::protocol_version::NetworkProtocolVersion) check decides.
+//! [`NetworkProtocolVersion`] check decides.
 
 use crate::primitives::{
     ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
