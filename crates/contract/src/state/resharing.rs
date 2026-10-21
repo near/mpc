@@ -77,7 +77,6 @@ impl ResharingContractState {
                     self.previous_running_state.domains.clone(),
                     self.previous_running_state.keyset.clone(),
                     self.previous_running_state.parameters.clone(),
-                    self.previous_running_state.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(
@@ -158,7 +157,6 @@ impl ResharingContractState {
                     new_domains,
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
                     self.resharing_key.proposed_parameters().clone(),
-                    self.previous_running_state.add_domains_votes.clone(),
                 )));
             }
         }
@@ -215,7 +213,6 @@ pub mod tests {
     };
     use crate::{
         primitives::{
-            domain::AddDomainsVotes,
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
             threshold_votes::GovernanceThresholdParametersVotes,
@@ -357,7 +354,6 @@ pub mod tests {
         assert_eq!(running_state.keyset.domains, state.reshared_keys);
         assert_eq!(running_state.keyset.domains.len(), num_domains);
         assert_eq!(running_state.domains, state.previous_running_state.domains);
-        assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
     }
 
     #[rstest]

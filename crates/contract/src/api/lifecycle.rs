@@ -2,7 +2,7 @@
 //! state and config views.
 
 use crate::config::Config;
-use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
+use crate::dto_mapping::{IntoInterfaceType, PendingVotes, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
@@ -57,7 +57,6 @@ impl MpcContract {
                 DomainRegistry::default(),
                 Keyset::new(EpochId::new(0), Vec::new()),
                 parameters,
-                AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
@@ -77,6 +76,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            add_domains_votes: AddDomainsVotes::default(),
         })
     }
 
@@ -135,10 +135,7 @@ impl MpcContract {
         Ok(MpcContract {
             config,
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
-                domains,
-                keyset,
-                parameters,
-                AddDomainsVotes::default(),
+                domains, keyset, parameters,
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
@@ -157,6 +154,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            add_domains_votes: AddDomainsVotes::default(),
         })
     }
 
@@ -188,8 +186,11 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
-        let parameters_votes = (&self.parameters_votes).into_dto_type();
-        (&self.protocol_state, parameters_votes).into_dto_type()
+        let votes = PendingVotes {
+            parameters: (&self.parameters_votes).into_dto_type(),
+            add_domains: (&self.add_domains_votes).into_dto_type(),
+        };
+        (&self.protocol_state, votes).into_dto_type()
     }
 
     pub fn config(&self) -> dtos::Config {

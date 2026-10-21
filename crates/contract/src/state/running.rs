@@ -34,8 +34,6 @@ pub struct RunningContractState {
     pub keyset: Keyset,
     /// The current participants and threshold.
     pub parameters: GovernanceThresholdParameters,
-    /// Votes for proposals to add new domains.
-    pub add_domains_votes: AddDomainsVotes,
     /// The previous epoch id for a resharing state that was cancelled.
     /// This epoch id is tracked, as the next time the state transitions to resharing,
     /// we can't reuse a previously cancelled epoch id.
@@ -47,15 +45,11 @@ impl RunningContractState {
         domains: DomainRegistry,
         keyset: Keyset,
         parameters: GovernanceThresholdParameters,
-        add_domains_votes: AddDomainsVotes,
     ) -> Self {
-        let remaining_add_domain_votes =
-            add_domains_votes.get_remaining_votes(parameters.participants());
         RunningContractState {
             domains,
             keyset,
             parameters,
-            add_domains_votes: remaining_add_domain_votes,
             previously_cancelled_resharing_epoch_id: None,
         }
     }
@@ -72,7 +66,6 @@ impl RunningContractState {
                     self.domains.clone(),
                     self.keyset.clone(),
                     self.parameters.clone(),
-                    self.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(
@@ -92,7 +85,6 @@ impl RunningContractState {
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
                 proposal.parameters().clone(),
-                self.add_domains_votes.clone(),
             );
             None
         }
@@ -202,12 +194,13 @@ impl RunningContractState {
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
-    /// If the number of votes for the same set of new domains reaches the number of participants,
-    /// returns the InitializingContractState we should transition into to generate keys for these
-    /// new domains.
+    /// Once every participant voted for the same set of new domains, returns the
+    /// InitializingContractState we should transition into to generate keys for these new
+    /// domains; pending votes are then cleared.
     pub fn vote_add_domains(
-        &mut self,
+        &self,
         domains: Vec<DomainConfig>,
+        votes: &mut AddDomainsVotes,
     ) -> Result<Option<InitializingContractState>, Error> {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
@@ -226,8 +219,7 @@ impl RunningContractState {
             self.parameters.threshold(),
         )?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
-        let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
-        if self.parameters.participants().len() as u64 == n_votes {
+        if votes.vote(&domains, participant, self.parameters.participants()) {
             let new_domains = self.domains.add_domains(domains.clone())?;
             Ok(Some(InitializingContractState {
                 generated_keys: self.keyset.domains.clone(),
@@ -376,7 +368,6 @@ pub mod running_tests {
             // epoch ID, not resharing.
             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
             assert_eq!(votes.n_votes(&proposal, proposal.participants()), 0);
-            assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
         } else {
             let resharing = resharing.unwrap();
             assert_eq!(
@@ -418,7 +409,7 @@ pub mod running_tests {
         #[case] purpose: DomainPurpose,
     ) {
         // Given
-        let mut state = gen_running_state(1);
+        let state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let next_id = state.domains.next_domain_id();
@@ -431,7 +422,9 @@ pub mod running_tests {
         }];
 
         // When
-        let err = state.vote_add_domains(invalid_domain).unwrap_err();
+        let err = state
+            .vote_add_domains(invalid_domain, &mut AddDomainsVotes::default())
+            .unwrap_err();
 
         // Then
         assert!(
@@ -454,13 +447,15 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_threshold_below_two() {
         // Given a running state and a proposal carrying t = 1
-        let mut state = gen_running_state(1);
+        let state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = proposal_with_threshold(&state, 1);
 
         // When voting to add the domain
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let err = state
+            .vote_add_domains(proposal, &mut AddDomainsVotes::default())
+            .unwrap_err();
 
         // Then the universal lower bound is enforced
         assert!(
@@ -473,14 +468,16 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_threshold_exceeding_participants() {
         // Given a running state and a proposal whose threshold > n
-        let mut state = gen_running_state(1);
+        let state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let n = state.parameters.participants().len() as u64;
         let proposal = proposal_with_threshold(&state, n + 1);
 
         // When voting to add the domain
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let err = state
+            .vote_add_domains(proposal, &mut AddDomainsVotes::default())
+            .unwrap_err();
 
         // Then the upper bound is enforced
         assert!(
@@ -493,7 +490,7 @@ pub mod running_tests {
     fn vote_add_domains__should_accept_reconstruction_threshold_equal_to_governance() {
         // Given a Frost proposal where the ReconstructionThreshold == the
         // GovernanceThreshold (the new upper boundary case).
-        let mut state = gen_running_state(1);
+        let state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let governance = state.parameters.threshold().value();
@@ -506,7 +503,7 @@ pub mod running_tests {
         }];
 
         // When voting to add the domain — vote is recorded without error
-        let res = state.vote_add_domains(proposal);
+        let res = state.vote_add_domains(proposal, &mut AddDomainsVotes::default());
 
         // Then the call succeeds (single voter is below quorum, so no transition)
         assert!(
@@ -521,7 +518,7 @@ pub mod running_tests {
         // GovernanceThreshold (but is still <= participant count).
         // GovernanceThreshold 4 < participant count 5, so `governance + 1 <= n`:
         // the rejection comes from the threshold relation, not the n ceiling.
-        let mut state = gen_running_state_with_params(1, 5, 4);
+        let state = gen_running_state_with_params(1, 5, 4);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let governance = state.parameters.threshold().value();
@@ -534,7 +531,9 @@ pub mod running_tests {
         }];
 
         // When
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let err = state
+            .vote_add_domains(proposal, &mut AddDomainsVotes::default())
+            .unwrap_err();
 
         // Then the GovernanceThreshold/ReconstructionThreshold relation is enforced via the
         // canonical validate_governance_against_reconstruction helper.
@@ -552,7 +551,7 @@ pub mod running_tests {
         // Given a running state and a RobustEcdsa proposal with `2t - 1 > n`.
         // gen_threshold_params produces n in [3, 30]; pick t = n so that
         // 2t - 1 > n holds (universally true for n >= 2).
-        let mut state = gen_running_state(1);
+        let state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let n = state.parameters.participants().len() as u64;
@@ -565,7 +564,9 @@ pub mod running_tests {
         }];
 
         // When voting to add the domain
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let err = state
+            .vote_add_domains(proposal, &mut AddDomainsVotes::default())
+            .unwrap_err();
 
         // Then the RobustEcdsa-specific bound is enforced
         assert!(
@@ -833,7 +834,7 @@ pub mod running_tests {
         // Given a Running state already holding a CaitSith domain at t = 2
         // (the fixture default) and a proposal for a second CaitSith at t = 3.
         // GovernanceThreshold 5 so a reconstruction threshold of 3 is allowed.
-        let mut state = gen_running_state_with_params(1, 5, 5);
+        let state = gen_running_state_with_params(1, 5, 5);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let reconstruction_threshold = ReconstructionThreshold::new(3);
@@ -845,7 +846,7 @@ pub mod running_tests {
         );
 
         // When
-        let res = state.vote_add_domains(proposal);
+        let res = state.vote_add_domains(proposal, &mut AddDomainsVotes::default());
 
         // Then CaitSith domains may carry independent thresholds.
         assert!(res.is_ok(), "Expected acceptance: {res:?}");
@@ -854,7 +855,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_accept_first_caitsith_at_any_valid_threshold() {
         // Given a Running state with no CaitSith domain.
-        let mut state = gen_running_state(0);
+        let state = gen_running_state(0);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let reconstruction_threshold = ReconstructionThreshold::from(state.parameters.threshold());
@@ -866,7 +867,7 @@ pub mod running_tests {
         );
 
         // When
-        let res = state.vote_add_domains(proposal);
+        let res = state.vote_add_domains(proposal, &mut AddDomainsVotes::default());
 
         // Then
         assert!(res.is_ok(), "Expected acceptance: {res:?}");
@@ -877,7 +878,7 @@ pub mod running_tests {
         // Given a Running state with no existing CaitSith and a proposal
         // adding two CaitSith domains at different thresholds.
         // GovernanceThreshold 5 so reconstruction thresholds 2 and 3 are allowed.
-        let mut state = gen_running_state_with_params(0, 5, 5);
+        let state = gen_running_state_with_params(0, 5, 5);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let next_id = state.domains.next_domain_id();
@@ -897,7 +898,7 @@ pub mod running_tests {
         ];
 
         // When
-        let res = state.vote_add_domains(proposal);
+        let res = state.vote_add_domains(proposal, &mut AddDomainsVotes::default());
 
         // Then
         assert!(res.is_ok(), "Expected acceptance: {res:?}");
@@ -1061,7 +1062,7 @@ pub mod running_tests {
     fn vote_add_domains__should_accept_caitsith_threshold_matching_existing() {
         // Given a Running state with a CaitSith domain at t = 2 (fixture
         // default) and a matching proposal.
-        let mut state = gen_running_state(1);
+        let state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let reconstruction_threshold = ReconstructionThreshold::new(2);
@@ -1073,7 +1074,7 @@ pub mod running_tests {
         );
 
         // When
-        let res = state.vote_add_domains(proposal);
+        let res = state.vote_add_domains(proposal, &mut AddDomainsVotes::default());
 
         // Then
         assert!(res.is_ok(), "Expected acceptance: {res:?}");
@@ -1083,7 +1084,7 @@ pub mod running_tests {
     fn vote_add_domains__should_accept_non_caitsith_domain_with_differing_threshold() {
         // Given a Running state with a CaitSith domain at t = 2 and a Frost
         // proposal at a different threshold.
-        let mut state = gen_running_state_with_params(1, 4, 3);
+        let state = gen_running_state_with_params(1, 4, 3);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let reconstruction_threshold = ReconstructionThreshold::new(3);
@@ -1095,7 +1096,7 @@ pub mod running_tests {
         );
 
         // When
-        let res = state.vote_add_domains(proposal);
+        let res = state.vote_add_domains(proposal, &mut AddDomainsVotes::default());
 
         // Then
         assert!(res.is_ok(), "Expected acceptance: {res:?}");

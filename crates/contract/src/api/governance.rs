@@ -3,6 +3,7 @@
 use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{Error, InvalidParameters};
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
+use crate::state::ProtocolContractState;
 use crate::tee::tee_state::TeeValidationResult;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
@@ -59,6 +60,11 @@ impl MpcContract {
                 )? {
                     self.protocol_state = new_state;
                 }
+                // Without domains the proposal applies directly; drop votes of dropped participants.
+                if let ProtocolContractState::Running(state) = &self.protocol_state {
+                    self.add_domains_votes
+                        .retain(state.parameters.participants());
+                }
                 Ok(())
             }
             TeeValidationResult::Partial {
@@ -98,7 +104,10 @@ impl MpcContract {
             domains,
         );
 
-        if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
+        if let Some(new_state) = self
+            .protocol_state
+            .vote_add_domains(domains, &mut self.add_domains_votes)?
+        {
             self.protocol_state = new_state;
             self.parameters_votes.clear();
         }
@@ -127,17 +136,19 @@ mod tests {
     use crate::primitives::participants::Participants;
     use crate::primitives::proposal_hash::ToProposalHash;
     use crate::primitives::test_utils::{
-        authenticate_account_as, bogus_tee_verifier_account_id, gen_participants,
+        authenticate_account_as, authenticate_as, bogus_tee_verifier_account_id, gen_participants,
     };
     use crate::primitives::thresholds::GovernanceThresholdParameters;
-    use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::find_leader;
     use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
     use rand::rngs::OsRng;
-    use std::{assert_matches, collections::BTreeMap};
+    use std::{
+        assert_matches,
+        collections::{BTreeMap, BTreeSet},
+    };
 
     /// Sets up the voting context and calls [`MpcContract::vote_new_parameters`] with the
     /// given parameters.
@@ -496,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn vote_add_domains__should_clear_pending_parameter_votes_on_transition() {
+    fn vote_add_domains__should_clear_pending_votes_on_transition() {
         // Given
         let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
             3,
@@ -534,6 +545,63 @@ mod tests {
             ProtocolContractState::Initializing(_)
         );
         assert!(contract.parameters_votes.is_empty());
+        assert!(contract.add_domains_votes.is_empty());
+    }
+
+    #[test]
+    fn vote_reshared__should_retain_add_domains_votes_of_current_participants() {
+        // Given: an add-domains vote is pending when a key refresh starts
+        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let domains = vec![dtos::DomainConfig {
+            id: DomainId(domain_id.0 + 1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        }];
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(signer.clone())
+                .predecessor_account_id(signer.clone())
+                .build()
+        );
+        contract.vote_add_domains(domains.clone()).unwrap();
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap(),
+            BTreeMap::new(),
+        );
+        for (account_id, _, _) in participants.participants() {
+            vote_params(&mut contract, account_id, &proposal).unwrap();
+        }
+        let ProtocolContractState::Resharing(resharing) = &contract.protocol_state else {
+            panic!("expected Resharing state");
+        };
+        let (leader, _) = find_leader(&resharing.resharing_key);
+
+        // When: the resharing completes with the same participants
+        let key_event_id = KeyEventId {
+            attempt_id: AttemptId::new(),
+            domain_id,
+            epoch_id: EpochId::new(1),
+        };
+        attested_context(&participants, &leader);
+        contract.start_reshare_instance(key_event_id).unwrap();
+        for (account_id, _, _) in participants.participants() {
+            attested_context(&participants, account_id);
+            contract.vote_reshared(key_event_id).unwrap();
+        }
+
+        // Then
+        assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
+        let voter = authenticate_as(&signer, &participants);
+        assert_eq!(
+            contract.add_domains_votes.all(),
+            BTreeMap::from([(domains.to_proposal_hash(), BTreeSet::from([voter]))])
+        );
     }
 
     /// Installs a context where `account_id` calls as an attested participant: `init_running`

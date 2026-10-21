@@ -23,7 +23,6 @@ use crate::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        proposal_hash::ToProposalHash,
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
@@ -615,13 +614,14 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 mod test_conversions {
     use super::{
         GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, Keyset,
-        ParticipantInfo, ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
+        ParticipantInfo, PendingVotes, ProposedGovernanceThresholdParameters,
+        ProtocolContractState, dtos,
     };
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
-            // Parameter votes live on `MpcContract`, which this path lacks: the tally is empty.
-            (&state, dtos::GovernanceThresholdParametersVotes::default()).into_dto_type()
+            // Vote tallies live on `MpcContract`, which this path lacks: they are reported empty.
+            (&state, PendingVotes::default()).into_dto_type()
         }
     }
 
@@ -808,15 +808,14 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     fn into_dto_type(self) -> dtos::AddDomainsVotes {
-        let mut votes = dtos::AddDomainsVotes::default();
-        for (participant, domains) in &self.proposal_by_account {
-            votes
-                .0
-                .entry(domains.to_proposal_hash())
-                .or_default()
-                .insert(participant.into_dto_type());
-        }
-        votes
+        dtos::AddDomainsVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
+                .collect(),
+        )
     }
 }
 
@@ -977,37 +976,32 @@ impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContrac
     }
 }
 
-/// Parameter votes live on [`crate::MpcContract`], so the caller supplies the converted tally.
-impl IntoInterfaceType<dtos::RunningContractState>
-    for (
-        &RunningContractState,
-        dtos::GovernanceThresholdParametersVotes,
-    )
-{
+/// Vote tallies that live on [`crate::MpcContract`] rather than on the protocol state.
+#[derive(Default)]
+pub(crate) struct PendingVotes {
+    pub(crate) parameters: dtos::GovernanceThresholdParametersVotes,
+    pub(crate) add_domains: dtos::AddDomainsVotes,
+}
+
+impl IntoInterfaceType<dtos::RunningContractState> for (&RunningContractState, PendingVotes) {
     fn into_dto_type(self) -> dtos::RunningContractState {
-        let (state, parameters_votes) = self;
+        let (state, votes) = self;
         dtos::RunningContractState {
             domains: (&state.domains).into_dto_type(),
             keyset: (&state.keyset).into_dto_type(),
             parameters: (&state.parameters).into_dto_type(),
-            parameters_votes,
-            add_domains_votes: (&state.add_domains_votes).into_dto_type(),
+            parameters_votes: votes.parameters,
+            add_domains_votes: votes.add_domains,
             previously_cancelled_resharing_epoch_id: state.previously_cancelled_resharing_epoch_id,
         }
     }
 }
 
-impl IntoInterfaceType<dtos::ResharingContractState>
-    for (
-        &ResharingContractState,
-        dtos::GovernanceThresholdParametersVotes,
-    )
-{
+impl IntoInterfaceType<dtos::ResharingContractState> for (&ResharingContractState, PendingVotes) {
     fn into_dto_type(self) -> dtos::ResharingContractState {
-        let (state, parameters_votes) = self;
+        let (state, votes) = self;
         dtos::ResharingContractState {
-            previous_running_state: (&state.previous_running_state, parameters_votes)
-                .into_dto_type(),
+            previous_running_state: (&state.previous_running_state, votes).into_dto_type(),
             reshared_keys: state
                 .reshared_keys
                 .iter()
@@ -1024,24 +1018,19 @@ impl IntoInterfaceType<dtos::ResharingContractState>
     }
 }
 
-impl IntoInterfaceType<dtos::ProtocolContractState>
-    for (
-        &ProtocolContractState,
-        dtos::GovernanceThresholdParametersVotes,
-    )
-{
+impl IntoInterfaceType<dtos::ProtocolContractState> for (&ProtocolContractState, PendingVotes) {
     fn into_dto_type(self) -> dtos::ProtocolContractState {
-        let (state, parameters_votes) = self;
+        let (state, votes) = self;
         match state {
             ProtocolContractState::NotInitialized => dtos::ProtocolContractState::NotInitialized,
             ProtocolContractState::Initializing(state) => {
                 dtos::ProtocolContractState::Initializing(state.into_dto_type())
             }
             ProtocolContractState::Running(state) => {
-                dtos::ProtocolContractState::Running((state, parameters_votes).into_dto_type())
+                dtos::ProtocolContractState::Running((state, votes).into_dto_type())
             }
             ProtocolContractState::Resharing(state) => {
-                dtos::ProtocolContractState::Resharing((state, parameters_votes).into_dto_type())
+                dtos::ProtocolContractState::Resharing((state, votes).into_dto_type())
             }
         }
     }

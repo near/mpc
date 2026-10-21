@@ -96,6 +96,12 @@ struct OldGovernanceThresholdParametersVotes {
     proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
 }
 
+/// Shadow of the `3.17.0` `AddDomainsVotes` layout.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldAddDomainsVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<dtos::DomainConfig>>,
+}
+
 /// Shadow of the `3.17.0` `RunningContractState` layout.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldRunningContractState {
@@ -103,19 +109,18 @@ struct OldRunningContractState {
     keyset: Keyset,
     parameters: GovernanceThresholdParameters,
     parameters_votes: OldGovernanceThresholdParametersVotes,
-    add_domains_votes: AddDomainsVotes,
+    add_domains_votes: OldAddDomainsVotes,
     previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
 impl From<OldRunningContractState> for RunningContractState {
     fn from(old: OldRunningContractState) -> Self {
-        // Pending parameter votes are dropped rather than migrated; participants re-vote
-        // after the upgrade.
+        // Pending parameter and add-domains votes are dropped rather than migrated;
+        // participants re-vote after the upgrade.
         RunningContractState {
             domains: old.domains,
             keyset: old.keyset,
             parameters: old.parameters,
-            add_domains_votes: old.add_domains_votes,
             previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
         }
     }
@@ -181,6 +186,7 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            add_domains_votes: AddDomainsVotes::default(),
         }
     }
 }
