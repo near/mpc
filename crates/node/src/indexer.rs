@@ -213,7 +213,10 @@ impl IndexerViewClient {
     pub(crate) async fn get_participant_attestation(
         &self,
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::GetAttestationResponse>> {
+    ) -> anyhow::Result<(
+        u64,
+        Option<near_mpc_contract_interface::types::GetAttestationResponse>,
+    )> {
         let get_attestation_args: Vec<u8> = serde_json::to_string(
             &contract_args::GetAttestationArgs::new(participant_tls_public_key),
         )
@@ -246,7 +249,8 @@ impl IndexerViewClient {
                 // An untagged enum names no field when nothing matches, so carry the response.
                 let response = String::from_utf8_lossy(&call_result.result);
                 format!("failed to deserialize get_attestation response: {response}")
-            }),
+            })
+            .map(|stored| (query_response.block_height, stored)),
             _ => {
                 anyhow::bail!("Unexpected result from a view client function call");
             }
