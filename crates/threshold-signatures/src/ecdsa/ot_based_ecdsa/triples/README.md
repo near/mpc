@@ -7,7 +7,7 @@ Triples are the foundational building block for OT-based ECDSA presigning -- eac
 ## Public API
 
 - **`generate_triple(participants, me, threshold, rng)`** -- generates a single triple
-- **`generate_triple_many<N>(participants, me, threshold, rng)`** -- generates N triples at once
+- **`generate_triple_many(participants, me, threshold, batch_size, rng)`** -- generates `batch_size` triples at once
 - **`TripleShare`** -- secret share `(a, b, c)`
 - **`TriplePub`** -- public commitments `(A, B, C)` plus participant/threshold metadata
 

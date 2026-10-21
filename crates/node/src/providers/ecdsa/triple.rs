@@ -280,13 +280,13 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol =
-            threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<N, _, _>(
-                &cs_participants,
-                me.into(),
-                self.reconstruction_threshold,
-                OsRng,
-            )?;
+        let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many(
+            &cs_participants,
+            me.into(),
+            self.reconstruction_threshold,
+            N,
+            OsRng,
+        )?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = Self::run(channel, protocol).await?;
         metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
