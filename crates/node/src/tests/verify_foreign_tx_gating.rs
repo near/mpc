@@ -1,3 +1,4 @@
+use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::participants::ContractState;
 use crate::metrics::{ONLINE_PRESIGN_MODE_LABEL, STORED_PRESIGNATURE_MODE_LABEL};
 use crate::p2p::testing::{NodeTestPorts, port_seed};
@@ -218,19 +219,20 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
     );
 }
 
-/// Signatures a cluster led, by signing flow.
-struct SignaturesLed {
-    online_presign: u64,
-    stored_presignature: u64,
+/// A running 4-node cluster whose only domain is `domain`, a ForeignTx one, so every signature
+/// it leads serves a verify-foreign-tx request. Every node owns triples.
+struct ForeignTxCluster {
+    // Declared first so the nodes stop before the indexer, mock and temp dir they use are dropped.
+    _nodes: Vec<AutoAbortTask<anyhow::Result<()>>>,
+    indexer: FakeIndexerManager,
+    domain: DomainConfig,
+    _rpc_mock: MockServer,
+    _temp_dir: tempfile::TempDir,
 }
 
-/// Starts a 4-node cluster with `signature.online_presign` set as given, waits until every node
-/// owns triples, and serves one verify-foreign-tx request. Returns the signatures led while
-/// serving it; the cluster's only domain is a ForeignTx one, so all of them served the request.
-async fn must_serve_one_verify_foreign_tx_request(
-    case: u16,
-    online_presign: bool,
-) -> SignaturesLed {
+/// Starts the cluster with `signature.online_presign` set as given, and waits until every node
+/// owns triples.
+async fn must_start_foreign_tx_cluster(case: u16, online_presign: bool) -> ForeignTxCluster {
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
@@ -252,7 +254,7 @@ async fn must_serve_one_verify_foreign_tx_request(
         config.config.foreign_chains = bitcoin_only_config(&rpc_mock.base_url());
         config.config.signature.online_presign = online_presign;
     }
-    let foreign_tx_domain = DomainConfig {
+    let domain = DomainConfig {
         id: DomainId(0),
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(THRESHOLD as u64),
@@ -261,12 +263,13 @@ async fn must_serve_one_verify_foreign_tx_request(
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(vec![foreign_tx_domain.clone()]);
+        contract.add_domains(vec![domain.clone()]);
     }
-    let _runs = std::mem::take(&mut setup.configs)
+    let nodes = setup
+        .configs
         .into_iter()
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
-        .collect::<Vec<_>>();
+        .collect();
     setup
         .indexer
         .wait_for_contract_state(
@@ -280,25 +283,12 @@ async fn must_serve_one_verify_foreign_tx_request(
         "every node to own triples",
     )
     .await;
-    let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
-    let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
-
-    assert!(
-        request_verify_foreign_tx_and_await_response(
-            &mut setup.indexer,
-            "user0",
-            &foreign_tx_domain,
-            [42u8; 32],
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-        )
-        .await
-        .is_some()
-    );
-
-    SignaturesLed {
-        online_presign: signatures_led(ONLINE_PRESIGN_MODE_LABEL) - online_presign_before,
-        stored_presignature: signatures_led(STORED_PRESIGNATURE_MODE_LABEL)
-            - stored_presignature_before,
+    ForeignTxCluster {
+        _nodes: nodes,
+        indexer: setup.indexer,
+        domain,
+        _rpc_mock: rpc_mock,
+        _temp_dir: temp_dir,
     }
 }
 
@@ -306,12 +296,28 @@ async fn must_serve_one_verify_foreign_tx_request(
 #[test_log::test]
 #[expect(non_snake_case)]
 async fn verify_foreign_tx__should_presign_online_when_online_presign_is_enabled() {
-    // Given, When
-    let led = must_serve_one_verify_foreign_tx_request(0, true).await;
+    // Given
+    let mut cluster = must_start_foreign_tx_cluster(0, true).await;
+    let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
+    let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
+
+    // When
+    let response = request_verify_foreign_tx_and_await_response(
+        &mut cluster.indexer,
+        "user0",
+        &cluster.domain,
+        [42u8; 32],
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    )
+    .await;
 
     // Then
-    assert!(led.online_presign > 0);
-    assert_eq!(led.stored_presignature, 0);
+    assert!(response.is_some());
+    assert!(signatures_led(ONLINE_PRESIGN_MODE_LABEL) > online_presign_before);
+    assert_eq!(
+        signatures_led(STORED_PRESIGNATURE_MODE_LABEL),
+        stored_presignature_before
+    );
 }
 
 #[tokio::test]
@@ -319,10 +325,26 @@ async fn verify_foreign_tx__should_presign_online_when_online_presign_is_enabled
 #[expect(non_snake_case)]
 async fn verify_foreign_tx__should_sign_from_stored_presignatures_when_online_presign_is_disabled()
 {
-    // Given, When
-    let led = must_serve_one_verify_foreign_tx_request(1, false).await;
+    // Given
+    let mut cluster = must_start_foreign_tx_cluster(1, false).await;
+    let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
+    let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
+
+    // When
+    let response = request_verify_foreign_tx_and_await_response(
+        &mut cluster.indexer,
+        "user0",
+        &cluster.domain,
+        [42u8; 32],
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    )
+    .await;
 
     // Then
-    assert!(led.stored_presignature > 0);
-    assert_eq!(led.online_presign, 0);
+    assert!(response.is_some());
+    assert!(signatures_led(STORED_PRESIGNATURE_MODE_LABEL) > stored_presignature_before);
+    assert_eq!(
+        signatures_led(ONLINE_PRESIGN_MODE_LABEL),
+        online_presign_before
+    );
 }
