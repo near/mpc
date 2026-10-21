@@ -1162,4 +1162,53 @@ mod tests {
             ))
         );
     }
+
+    #[test]
+    fn parameters_votes_dto__should_turn_a_legacy_report_into_the_contract_hashes() {
+        use crate::primitives::proposal_hash::ToProposalHash;
+        use crate::primitives::test_utils::gen_proposed_threshold_params;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        // Given: the per-voter report of a contract that still stores full proposals
+        let proposal = gen_proposed_threshold_params(5);
+        let legacy = serde_json::json!({
+            "proposal_by_account": { "alice.near": (&proposal).into_dto_type() }
+        });
+
+        // When
+        let votes: dtos::GovernanceThresholdParametersVotes =
+            serde_json::from_value(legacy).unwrap();
+
+        // Then: keyed by the hash the contract computes for the same proposal
+        let voter = dtos::AuthenticatedAccountId("alice.near".parse().unwrap());
+        assert_eq!(
+            votes.0,
+            BTreeMap::from([(proposal.to_proposal_hash(), BTreeSet::from([voter]))])
+        );
+    }
+
+    #[test]
+    fn add_domains_votes_dto__should_turn_a_legacy_report_into_the_contract_hashes() {
+        use crate::primitives::proposal_hash::ToProposalHash;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        // Given: the per-voter report of a contract that still stores full domain lists
+        let domains = vec![dtos::DomainConfig {
+            id: dtos::DomainId(1),
+            protocol: dtos::Protocol::CaitSith,
+            reconstruction_threshold: dtos::ReconstructionThreshold::new(2),
+            purpose: dtos::DomainPurpose::Sign,
+        }];
+        let legacy = serde_json::json!({ "proposal_by_account": { "3": domains } });
+
+        // When
+        let votes: dtos::AddDomainsVotes = serde_json::from_value(legacy).unwrap();
+
+        // Then: keyed by the hash the contract computes for the same domain list
+        let voter = dtos::AuthenticatedParticipantId(dtos::ParticipantId(3));
+        assert_eq!(
+            votes.0,
+            BTreeMap::from([(domains.to_proposal_hash(), BTreeSet::from([voter]))])
+        );
+    }
 }
