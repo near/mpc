@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.17.2] - 2026-10-21
+
+### 🐛 Bug Fixes
+
+- [#4879](https://github.com/near/mpc/pull/4879)(@gilcu3): *(node)* Update ca certificates (#4878) (#4879)
+
+
 ## [3.17.1] - 2026-10-15
 
 ### ⚙️ Miscellaneous Tasks
