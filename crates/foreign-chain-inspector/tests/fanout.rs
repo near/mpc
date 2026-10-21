@@ -14,10 +14,11 @@ use std::{assert_matches, pin::Pin, sync::Arc, time::Duration};
 use crate::common::fan_out_of;
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ProviderFailure,
-    TimeProviderCall, Verdict,
+    RpcQuorum, TimeProviderCall, Verdict,
 };
 use near_mpc_contract_interface::types::ProviderId;
 use rstest::rstest;
+use std::num::NonZeroUsize;
 use tokio::sync::mpsc;
 
 mockall::mock! {
@@ -552,5 +553,166 @@ mod tolerate_errors {
 
         // Then
         assert_matches!(result, Ok(Verdict::TransactionFailed));
+    }
+}
+
+mod quorum {
+    use super::*;
+
+    /// `required` of the providers named by `whitelisted` (indices into the fan-out).
+    fn quorum(required: usize, whitelisted: &[usize]) -> RpcQuorum {
+        RpcQuorum {
+            required: NonZeroUsize::new(required).unwrap(),
+            whitelisted: whitelisted
+                .iter()
+                .map(|index| ProviderId(format!("provider-{index}")))
+                .collect(),
+        }
+    }
+
+    fn transient() -> ResponseFn {
+        err(|| ForeignChainInspectionError::RpcRequestFailed("connection refused".to_string()))
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_accept_the_verdict_when_exactly_the_quorum_of_whitelisted_providers_agree()
+     {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![1])),
+            mock_returning(transient()),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1, 2]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_eq!(result.unwrap(), Verdict::Extracted(vec![1]));
+    }
+
+    /// Providers 0 and 1 are whitelisted with a quorum of two; provider 1 fails. An extra
+    /// agreeing provider outside the whitelist must not make up for it.
+    #[rstest]
+    #[case::whitelisted_provider_fails(vec![ok(vec![1]), transient()])]
+    #[case::provider_outside_the_whitelist_agrees(vec![ok(vec![1]), transient(), ok(vec![1])])]
+    #[tokio::test]
+    async fn fan_out__should_return_sub_quorum_when_too_few_whitelisted_providers_agree(
+        #[case] responses: Vec<ResponseFn>,
+    ) {
+        // Given
+        let fan_out = fan_out_of(responses.into_iter().map(mock_returning).collect());
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::SubQuorum {
+                agreeing: 1,
+                required,
+            }) if required.get() == 2
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_never_accept_a_verdict_reached_only_outside_the_whitelist() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(transient()),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(1, &[1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::SubQuorum { agreeing: 0, .. })
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_let_a_provider_outside_the_whitelist_veto_the_verdict() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![9])),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_report_disagreement_rather_than_sub_quorum() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![9])),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_propagate_the_provider_error_when_nobody_reaches_a_verdict() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(transient()),
+            mock_returning(transient()),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(1, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::RpcRequestFailed(_))
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out_extract__should_accept_a_unanimous_verdict_from_a_single_provider() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(transient()),
+        ]);
+
+        // When
+        let result = fan_out.extract((), (), vec![]).await;
+
+        // Then
+        assert_eq!(result.unwrap(), Verdict::Extracted(vec![1]));
     }
 }
