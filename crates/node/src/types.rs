@@ -278,8 +278,7 @@ pub enum SubmittedTransactionStatus {
     /// The transaction's intended effect was not observed before the timeout
     /// (it may have been rejected, e.g. for a stale nonce, or simply delayed).
     NotExecuted,
-    /// The transaction type has no on-chain effect we verify, so the outcome is
-    /// not determinable from contract state.
+    /// The outcome was not determined from contract state.
     Unknown,
     /// An error occurred while trying to observe the on-chain effect.
     ObserveError,
