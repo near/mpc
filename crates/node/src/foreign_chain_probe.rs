@@ -3,17 +3,21 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
+use std::num::NonZeroUsize;
 
 use foreign_chain_health_check::probe::{
     ProbeReport, ProviderHealth, ProviderStatus, probe_all_providers,
 };
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
-use mpc_node_config::{ForeignChainConfig, ForeignChainsConfig};
+use mpc_node_config::ForeignChainsConfig;
+use mpc_node_config::foreign_chains::RpcProviderName;
+use mpc_node_config::foreign_chains::provider_identity::{
+    ProviderWhitelistMatches, WhitelistConformingProviders,
+};
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
-use crate::foreign_chain_whitelist_verifier::find_whitelist_match;
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
 use crate::tick::Tick;
@@ -80,7 +84,7 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
 }
 
 /// A probed chain judged against the provider whitelist. `whitelisted` is the number of whitelist
-/// providers that a local provider counts for, see [`counted_whitelist_id`].
+/// providers that a local provider counts for, see [`WhitelistConformingProviders`].
 #[derive(Debug, PartialEq, Eq)]
 enum ChainHealth {
     Healthy,
@@ -112,7 +116,12 @@ fn judge(
         }
         let health = match whitelist.get(&chain) {
             None => ChainHealth::NotWhitelisted,
-            Some(whitelist_entry) => judge_chain(&probed_rows, local_chain, whitelist_entry),
+            Some(whitelist_entry) => judge_chain(
+                &probed_rows,
+                &ProviderWhitelistMatches::for_chain(local_chain, whitelist_entry)
+                    .whitelist_conforming_providers(),
+                whitelist_entry.quorum,
+            ),
         };
         health_per_chain.insert(chain, health);
     }
@@ -123,56 +132,36 @@ fn judge(
 /// when all of them are.
 fn judge_chain(
     probed_rows: &[&ProviderHealth],
-    local_chain: &ForeignChainConfig,
-    whitelist_entry: &dtos::ChainEntry,
+    conforming: &WhitelistConformingProviders,
+    quorum: u64,
 ) -> ChainHealth {
-    let mut counted_whitelist_ids: BTreeSet<&dtos::ProviderId> = BTreeSet::new();
-    let mut unhealthy_whitelist_ids: BTreeSet<&dtos::ProviderId> = BTreeSet::new();
-    for row in probed_rows {
-        let Some(whitelist_id) =
-            counted_whitelist_id(local_chain, &row.provider.0, whitelist_entry)
-        else {
-            continue;
-        };
-        counted_whitelist_ids.insert(whitelist_id);
-        if !row.status.is_healthy() {
-            unhealthy_whitelist_ids.insert(whitelist_id);
-        }
-    }
-
-    let whitelisted = counted_whitelist_ids.len();
-    let quorum_met =
-        usize::try_from(whitelist_entry.quorum).is_ok_and(|quorum| whitelisted >= quorum);
+    let whitelisted = conforming.whitelist_provider_count();
+    let quorum_met = usize::try_from(quorum).is_ok_and(|quorum| {
+        NonZeroUsize::new(quorum).is_none_or(|quorum| conforming.meets_quorum(quorum))
+    });
     if !quorum_met {
-        ChainHealth::BelowQuorum {
+        return ChainHealth::BelowQuorum {
             whitelisted,
-            quorum: whitelist_entry.quorum,
-        }
-    } else if !unhealthy_whitelist_ids.is_empty() {
-        ChainHealth::UnhealthyProviders {
-            unhealthy: unhealthy_whitelist_ids.len(),
-            whitelisted,
-        }
-    } else {
-        ChainHealth::Healthy
+            quorum,
+        };
     }
-}
 
-/// Probe rows name a provider by its local config name.
-fn counted_whitelist_id<'w>(
-    local_chain: &ForeignChainConfig,
-    local_name: &str,
-    whitelist_entry: &'w dtos::ChainEntry,
-) -> Option<&'w dtos::ProviderId> {
-    let (_, local_provider) = local_chain
-        .providers
+    // Probe rows name a provider by its local config name.
+    let unhealthy: BTreeSet<&dtos::ProviderId> = probed_rows
         .iter()
-        .find(|(name, _)| name.as_str() == local_name)?;
-    let whitelist_match = find_whitelist_match(whitelist_entry, local_provider)?;
-    whitelist_match
-        .mismatches
-        .is_empty()
-        .then_some(whitelist_match.id)
+        .filter(|row| !row.status.is_healthy())
+        .filter_map(|row| {
+            conforming.whitelist_provider_id(&RpcProviderName::from(row.provider.0.clone()))
+        })
+        .collect();
+    if unhealthy.is_empty() {
+        ChainHealth::Healthy
+    } else {
+        ChainHealth::UnhealthyProviders {
+            unhealthy: unhealthy.len(),
+            whitelisted,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -281,8 +270,7 @@ mod tests {
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::tick::MockTicker;
     use foreign_chain_health_check::probe::ProviderCounts;
-    use mpc_node_config::foreign_chains::RpcProviderName;
-    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
+    use mpc_node_config::{AuthConfig, ForeignChainConfig, ForeignChainProviderConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use prometheus::core::Collector as _;
     use rstest::rstest;

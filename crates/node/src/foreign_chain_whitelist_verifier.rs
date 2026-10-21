@@ -18,15 +18,16 @@
 use std::collections::BTreeMap;
 
 use mpc_node_config::{
-    ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
+    ForeignChainConfig, ForeignChainsConfig,
     foreign_chains::{
         RpcProviderName,
-        provider_identity::{self, InvalidBaseUrl, Mismatch, WhitelistMatch},
+        provider_identity::{
+            self, InvalidBaseUrl, Mismatch, ProviderWhitelistMatch, ProviderWhitelistMatches,
+        },
     },
 };
 use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderConfig, ProviderId};
 use tokio::sync::watch;
-use url::Url;
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
@@ -119,45 +120,48 @@ fn compare_chain(
             })
         })
         .collect();
+    let matches = ProviderWhitelistMatches::for_chain(local_config, whitelist_entry);
     let mut first_local_name_by_whitelist_id: BTreeMap<&ProviderId, &RpcProviderName> =
         BTreeMap::new();
-    for (local_name, local_provider) in local_config.providers.iter() {
+    for (local_name, provider_match) in matches.iter() {
         let diagnostic = |kind| Diagnostic {
             chain,
             local_name: Some(local_name.clone()),
             kind,
         };
-        let Some(whitelist_match) = find_whitelist_match(whitelist_entry, local_provider) else {
-            diagnostics.push(diagnostic(DiagnosticKind::ProviderNotInWhitelist));
-            continue;
+        let whitelist_id = match provider_match {
+            ProviderWhitelistMatch::Unlisted => {
+                diagnostics.push(diagnostic(DiagnosticKind::ProviderNotInWhitelist));
+                continue;
+            }
+            ProviderWhitelistMatch::Conforming { id }
+            | ProviderWhitelistMatch::Misconfigured { id, .. } => *id,
         };
         let first_local_name = *first_local_name_by_whitelist_id
-            .entry(whitelist_match.id)
+            .entry(whitelist_id)
             .or_insert(local_name);
         if first_local_name != local_name {
             diagnostics.push(diagnostic(DiagnosticKind::Duplicate {
-                whitelist_id: whitelist_match.id.clone(),
+                whitelist_id: whitelist_id.clone(),
                 first_local_name: first_local_name.clone(),
             }));
         }
-        diagnostics.extend(whitelist_match.mismatches.into_iter().map(|mismatch| {
-            diagnostic(DiagnosticKind::Misconfigured {
-                whitelist_id: whitelist_match.id.clone(),
-                whitelist_provider: whitelist_match.whitelisted.clone(),
-                mismatch,
-            })
-        }));
+        if let ProviderWhitelistMatch::Misconfigured {
+            whitelisted,
+            mismatches,
+            ..
+        } = provider_match
+        {
+            diagnostics.extend(mismatches.iter().map(|mismatch| {
+                diagnostic(DiagnosticKind::Misconfigured {
+                    whitelist_id: whitelist_id.clone(),
+                    whitelist_provider: (*whitelisted).clone(),
+                    mismatch: mismatch.clone(),
+                })
+            }));
+        }
     }
     diagnostics
-}
-
-/// A local `rpc_url` that does not parse matches nothing.
-pub(crate) fn find_whitelist_match<'w>(
-    whitelist_entry: &'w ChainEntry,
-    local_provider: &ForeignChainProviderConfig,
-) -> Option<WhitelistMatch<'w>> {
-    let local_url = Url::parse(&local_provider.rpc_url).ok()?;
-    provider_identity::find_match(whitelist_entry, &local_url, (&local_provider.auth).into())
 }
 
 fn log_diagnostics(diagnostics: &[Diagnostic]) {
@@ -244,7 +248,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
 mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
-    use mpc_node_config::{AuthConfig, TokenConfig};
+    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
     use rstest::rstest;
@@ -481,18 +485,23 @@ mod tests {
         );
     }
 
-    #[test]
-    fn compare__should_emit_duplicate_when_two_providers_match_one_entry() {
+    #[rstest]
+    #[case::both_conform(local_path_auth("https://slug-b.quiknode.pro/{api_key}"), vec![])]
+    #[case::second_is_misconfigured(
+        local_provider("https://slug-b.quiknode.pro", AuthConfig::None),
+        vec![Mismatch::AuthKind { local: "None", whitelisted: "Path" }]
+    )]
+    fn compare__should_emit_duplicate_before_mismatches_when_two_providers_match_one_entry(
+        #[case] second_provider: ForeignChainProviderConfig,
+        #[case] second_mismatches: Vec<Mismatch>,
+    ) {
         // Given
         let local = must_local_ethereum(&[
             (
                 "quicknode-a",
                 local_path_auth("https://slug-a.quiknode.pro/{api_key}"),
             ),
-            (
-                "quicknode-b",
-                local_path_auth("https://slug-b.quiknode.pro/{api_key}"),
-            ),
+            ("quicknode-b", second_provider),
         ]);
         let whitelist = must_ethereum_whitelist(&[("quicknode", quicknode())]);
 
@@ -500,11 +509,23 @@ mod tests {
         let diagnostics = compare(&local, &whitelist);
 
         // Then
-        let expected = DiagnosticKind::Duplicate {
+        let duplicate = DiagnosticKind::Duplicate {
             whitelist_id: ProviderId("quicknode".to_string()),
             first_local_name: RpcProviderName::from("quicknode-a".to_string()),
         };
-        assert_eq!(diagnostics, vec![diagnostic("quicknode-b", expected)]);
+        let misconfigured =
+            second_mismatches
+                .into_iter()
+                .map(|mismatch| DiagnosticKind::Misconfigured {
+                    whitelist_id: ProviderId("quicknode".to_string()),
+                    whitelist_provider: quicknode(),
+                    mismatch,
+                });
+        let expected: Vec<Diagnostic> = std::iter::once(duplicate)
+            .chain(misconfigured)
+            .map(|kind| diagnostic("quicknode-b", kind))
+            .collect();
+        assert_eq!(diagnostics, expected);
     }
 
     /// Each local value that must not appear in logs contains this marker.
