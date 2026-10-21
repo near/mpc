@@ -54,13 +54,13 @@ impl NodeMigrations {
         self.ongoing_migrations.remove(account_id)
     }
 
-    pub(crate) fn account_migrating_to(
+    pub(crate) fn accounts_migrating_to(
         &self,
         tls_public_key: &Ed25519PublicKey,
-    ) -> Option<&AccountId> {
+    ) -> impl Iterator<Item = &AccountId> {
         self.ongoing_migrations
             .iter()
-            .find(|(_, destination)| {
+            .filter(|(_, destination)| {
                 destination.destination_node_info.tls_public_key == *tls_public_key
             })
             .map(|(account_id, _)| account_id)

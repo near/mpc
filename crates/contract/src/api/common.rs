@@ -1,6 +1,9 @@
 //! Plumbing shared by more than one feature
 
 use crate::errors::{InvalidParameters, RequestError, TeeError};
+use crate::node_migrations::NodeMigrations;
+use crate::primitives::participants::Participants;
+use crate::tee::tee_state::TeeState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{
@@ -150,6 +153,22 @@ pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
         log!("refund {amount} to {account_id}");
         Promise::new(account_id.clone()).transfer(amount).detach();
     }
+}
+
+/// Accounts that claim the TLS key: participants in the given sets whose entry carries it,
+/// accounts migrating to it and the owner of the attestation stored under it.
+pub(crate) fn tls_key_claimants<'a>(
+    participant_sets: impl IntoIterator<Item = &'a Participants>,
+    node_migrations: &'a NodeMigrations,
+    tee_state: &'a TeeState,
+    tls_public_key: &'a dtos::Ed25519PublicKey,
+) -> impl Iterator<Item = AccountId> {
+    participant_sets
+        .into_iter()
+        .filter_map(|participants| participants.account_with_tls_key(tls_public_key))
+        .chain(node_migrations.accounts_migrating_to(tls_public_key))
+        .cloned()
+        .chain(tee_state.attestation_owner(tls_public_key))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

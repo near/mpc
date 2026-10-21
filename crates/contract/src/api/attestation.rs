@@ -1,5 +1,6 @@
 //! TEE attestation lifecycle
 
+use crate::api::common::tls_key_claimants;
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::primitives::domain::validate_domains_against_governance;
@@ -170,32 +171,23 @@ impl MpcContract {
         account_id: &AccountId,
         tls_public_key: &dtos::Ed25519PublicKey,
     ) -> Result<bool, Error> {
-        let owner = self.tee_state.attestation_owner(tls_public_key);
-        if self
-            .tls_key_assignees(tls_public_key)
-            .chain(&owner)
-            .any(|claimant| claimant != account_id)
-        {
-            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
-        }
-        Ok(owner.is_none())
-    }
-
-    /// Accounts that an existing or prospective participant entry, or an ongoing node
-    /// migration, assigns the TLS key to.
-    fn tls_key_assignees(
-        &self,
-        tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> impl Iterator<Item = &AccountId> {
-        [
+        let existing_and_prospective_participants = [
             self.protocol_state
                 .threshold_parameters_or_panic()
                 .participants(),
             self.protocol_state.active_participants(),
-        ]
-        .into_iter()
-        .filter_map(|participants| participants.account_with_tls_key(tls_public_key))
-        .chain(self.node_migrations.account_migrating_to(tls_public_key))
+        ];
+        if tls_key_claimants(
+            existing_and_prospective_participants,
+            &self.node_migrations,
+            &self.tee_state,
+            tls_public_key,
+        )
+        .any(|claimant| &claimant != account_id)
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
+        }
+        Ok(self.tee_state.attestation_owner(tls_public_key).is_none())
     }
 
     fn assert_attestation_storage_grant_available(
