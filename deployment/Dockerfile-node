@@ -8,6 +8,11 @@ RUN \
     repro-sources-list.sh && \
     apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
+    : "Distrust the emSign roots and AAA Certificate Services, which cross-signed the emSign intermediates whose keys are public (RUSTSEC-2026-0382)" && \
+    sed -i -e '/^mozilla\/emSign_/s/^/!/' -e '/^mozilla\/Comodo_AAA_Services_root\.crt$/s/^/!/' /etc/ca-certificates.conf && \
+    : "update-ca-certificates is offline and deterministic: it rebuilds the bundle and hash links from the installed certificates only" && \
+    update-ca-certificates && \
+    ! openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt | openssl pkcs7 -print_certs -noout | grep -qE 'emSign|AAA Certificate Services' && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 

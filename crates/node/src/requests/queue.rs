@@ -10,6 +10,7 @@ use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
@@ -25,8 +26,8 @@ pub trait NetworkAPIForRequests: Send + Sync + 'static {
 
 /// The minimum time that must elapse before we'll consider each request for another attempt.
 pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
-/// A participant is considered stale if its indexer's highest height is this many blocks behind
-/// the highest height of all participants.
+/// A participant is considered stale if its indexer's highest height is more than this many
+/// blocks behind the reference height of [`PendingRequests::eligible_leaders_and_heights`].
 const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
@@ -471,8 +472,16 @@ impl DropReason {
 
 pub(super) struct EligibleLeadersAndHeights {
     pub eligible_leaders: HashSet<ParticipantId>,
-    pub maximum_height: u64,
+    pub reference_height: u64,
     pub my_indexer_height: u64,
+}
+
+/// Returns the highest height reached by more than half of `heights` (their lower median), or
+/// `None` if `heights` is empty.
+fn majority_height(heights: impl IntoIterator<Item = u64>) -> Option<u64> {
+    let mut heights: Vec<u64> = heights.into_iter().collect();
+    heights.sort_unstable_by_key(|height| Reverse(*height));
+    heights.get(heights.len() / 2).copied()
 }
 
 impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
@@ -585,35 +594,33 @@ where
     }
 
     /// Returns the set of participants that are eligible to be leaders for the requests,
-    /// the maximum height available across alive participants, and our own indexer height.
+    /// the reference height their staleness is measured against, and our own indexer height.
+    ///
+    /// The reference height is the height that a majority of alive participants has reached. Peers
+    /// self-report their heights, and the majority keeps a minority of them from raising the
+    /// reference height so far that every honest participant looks stale. Our own height is only
+    /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
+    /// eligible leaders.
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
-        // Collect the indexer heights and alive participants. Calculate maximum available height
-        // from the alive nodes. Then, filter out the participants that are not alive or are too
-        // stale.
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
-        let maximum_height = alive_participants
-            .iter()
-            .map(|p| indexer_heights.get(p).copied().unwrap_or(0))
-            .max()
-            .unwrap_or(0);
-        let my_indexer_height = indexer_heights
-            .get(&self.my_participant_id)
-            .copied()
-            .unwrap_or(0);
+        let height_of =
+            |participant: &ParticipantId| indexer_heights.get(participant).copied().unwrap_or(0);
+        let my_indexer_height = height_of(&self.my_participant_id);
+        let reference_height =
+            majority_height(alive_participants.iter().map(height_of)).unwrap_or(0);
         let eligible_leaders = self
             .all_participants
             .iter()
             .filter(|p| {
                 alive_participants.contains(p)
-                    && indexer_heights.get(p).copied().unwrap_or(0) + STALE_PARTICIPANT_THRESHOLD
-                        >= maximum_height
+                    && height_of(p).saturating_add(STALE_PARTICIPANT_THRESHOLD) >= reference_height
             })
             .copied()
             .collect::<HashSet<_>>();
         EligibleLeadersAndHeights {
             eligible_leaders,
-            maximum_height,
+            reference_height,
             my_indexer_height,
         }
     }
@@ -780,8 +787,9 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest};
+    use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height};
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
         CHECK_EACH_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
@@ -798,6 +806,7 @@ mod tests {
     use near_mpc_contract_interface::call_args as contract_args;
     use near_mpc_contract_interface::types::{Payload, Tweak};
     use near_time::{Duration, FakeClock};
+    use rstest::rstest;
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
     use threshold_signatures::test_utils::generate_participants;
@@ -1247,14 +1256,12 @@ mod tests {
     #[test_log::test]
     #[expect(non_snake_case)]
     fn test_pending_requests__should_fallback_leader() {
-        // Given: a request queue
+        // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
 
-        // Indexer 0 is offline; indexer 2 is stale. We let indexer 0 have a higher height than
-        // normal. This is to test a pathological case, in case some node reports an incorrectly high
-        // height and we want to allow shutting down that node to be a mitigation.
+        // Indexer 0 is offline; indexer 2 is stale.
         setup.network_api.bring_down(setup.participant_ids[0]);
-        setup.network_api.set_height(setup.participant_ids[0], 120); // ignored because offline
+        setup.network_api.set_height(setup.participant_ids[0], 100);
         setup.network_api.set_height(setup.participant_ids[1], 100);
         setup.network_api.set_height(setup.participant_ids[2], 80); // stale
         setup.network_api.set_height(setup.participant_ids[3], 100);
@@ -1264,7 +1271,8 @@ mod tests {
         let _req3 = setup.add_request_leader_order(&[3, 1]);
         setup.update(&mut pending_requests);
 
-        // Then: Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
+        // Then
+        // Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
         // we should attempt these.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 2);
@@ -1276,26 +1284,30 @@ mod tests {
         drop(to_attempt1);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
-        // Bring up node 0. This causes node 1 to itself realize it is stale, so it should refuse to
-        // attempt any signatures, even if it were the preferred leader.
+        // Bring up node 0. It is again the first available leader for req1 and req2, so node 1
+        // should only attempt req4, for which it is the preferred leader.
         setup.network_api.bring_up(setup.participant_ids[0]);
         let req4 = setup.add_request_leader_order(&[1]);
         setup.update(&mut pending_requests);
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as trying req4.
-        setup.network_api.bring_down(setup.participant_ids[0]);
-        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         let to_attempt2 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt2.len(), 3);
+        assert_eq!(to_attempt2.len(), 1);
+        assert_eq!(to_attempt2[0].request.id, req4.id);
+
+        drop(to_attempt2);
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+
+        // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as req4.
+        setup.network_api.bring_down(setup.participant_ids[0]);
+        let to_attempt3 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt3.len(), 3);
         assert!(set_equals(
-            &to_attempt2.iter().map(|a| a.request.id).collect::<Vec<_>>(),
+            &to_attempt3.iter().map(|a| a.request.id).collect::<Vec<_>>(),
             &[req1.id, req2.id, req4.id]
         ));
 
         // Node 0 actually manages to complete req1 and req4 somehow. Node 1 should not retry
         // these anymore.
-        drop(to_attempt2);
+        drop(to_attempt3);
         setup.add_indexed_respond_tx(req1.id);
         setup.add_indexed_respond_tx(req4.id);
         setup.update(&mut pending_requests);
@@ -1303,9 +1315,75 @@ mod tests {
         setup.update(&mut pending_requests);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
-        let to_attempt3 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt3.len(), 1);
-        assert_eq!(to_attempt3[0].request.id, req2.id);
+        let to_attempt4 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt4.len(), 1);
+        assert_eq!(to_attempt4[0].request.id, req2.id);
+    }
+
+    /// A single peer reporting a far higher height than everyone else must neither overflow the
+    /// staleness check nor make the other participants stale.
+    #[rstest]
+    #[case::slightly_ahead(120)]
+    #[case::at_maximum_height(u64::MAX)]
+    fn eligible_leaders_and_heights__should_ignore_a_single_peer_far_ahead(
+        #[case] peer_height: u64,
+    ) {
+        // Given
+        let (pending_requests, setup) = TestSetup::new();
+        setup
+            .network_api
+            .set_height(setup.participant_ids[0], peer_height);
+
+        // When
+        let eligible = pending_requests.eligible_leaders_and_heights();
+
+        // Then
+        assert_eq!(eligible.reference_height, 100);
+        assert_eq!(
+            eligible.eligible_leaders,
+            setup.participant_ids.iter().copied().collect()
+        );
+    }
+
+    #[test]
+    fn get_requests_to_attempt__should_not_attempt_as_preferred_leader_when_a_majority_is_ahead() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let me = setup.participant_ids[TestSetup::MY_INDEX];
+        let _req = setup.add_request_leader();
+        setup.update(&mut pending_requests);
+        let peers = setup.participant_ids.iter().filter(|p| **p != me);
+        for peer in peers.clone() {
+            setup.network_api.set_height(*peer, 120);
+        }
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert!(to_attempt.is_empty());
+        let eligible = pending_requests.eligible_leaders_and_heights();
+        assert_eq!(eligible.reference_height, 120);
+        assert_eq!(eligible.eligible_leaders, peers.copied().collect());
+    }
+
+    #[rstest]
+    #[case::no_heights(vec![], None)]
+    #[case::single_height(vec![100], Some(100))]
+    #[case::one_of_two_ahead(vec![100, 120], Some(100))]
+    #[case::one_of_three_ahead(vec![100, 120, 100], Some(100))]
+    #[case::two_of_three_ahead(vec![120, 100, 130], Some(120))]
+    #[case::half_ahead(vec![120, 100, 120, 100], Some(100))]
+    #[case::three_of_four_ahead(vec![120, 100, 130, 120], Some(120))]
+    fn majority_height__should_return_highest_height_reached_by_more_than_half(
+        #[case] heights: Vec<u64>,
+        #[case] expected: Option<u64>,
+    ) {
+        // When
+        let majority = majority_height(heights);
+
+        // Then
+        assert_eq!(majority, expected);
     }
 
     #[test_log::test]
