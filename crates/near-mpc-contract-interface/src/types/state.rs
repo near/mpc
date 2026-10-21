@@ -9,6 +9,7 @@ use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::ProposalHash;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::primitives::DomainId;
@@ -175,7 +176,6 @@ pub struct ProposedGovernanceThresholdParameters {
     PartialEq,
     Eq,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
     derive_more::Deref,
@@ -188,6 +188,42 @@ pub struct ProposedGovernanceThresholdParameters {
 pub struct GovernanceThresholdParametersVotes(
     pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>,
 );
+
+/// Also accepts the pre-tally report (`{"proposal_by_account": {...}}`) of contracts that
+/// still store full proposals, so a newer reader can follow an older contract across an upgrade.
+impl<'de> Deserialize<'de> for GovernanceThresholdParametersVotes {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Tally(BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>),
+            Legacy {
+                proposal_by_account:
+                    BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
+            },
+        }
+        Ok(Self(match Repr::deserialize(deserializer)? {
+            Repr::Tally(tally) => tally,
+            Repr::Legacy {
+                proposal_by_account,
+            } => tally_by_proposal_hash(proposal_by_account),
+        }))
+    }
+}
+
+/// Groups per-voter proposals by the hash the contract stores for them: SHA-256 of the
+/// Borsh encoding, which the DTOs share with the contract types.
+pub(crate) fn tally_by_proposal_hash<V: Ord, P: BorshSerialize>(
+    proposal_by_voter: BTreeMap<V, P>,
+) -> BTreeMap<ProposalHash, BTreeSet<V>> {
+    let mut tally: BTreeMap<ProposalHash, BTreeSet<V>> = BTreeMap::new();
+    for (voter, proposal) in proposal_by_voter {
+        let bytes = borsh::to_vec(&proposal).expect("borsh serialization must succeed");
+        let hash = ProposalHash::new(sha2::Sha256::digest(bytes).into());
+        tally.entry(hash).or_default().insert(voter);
+    }
+    tally
+}
 
 /// Votes for adding new domains.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -511,5 +547,31 @@ mod tests {
 
         // Then
         assert_eq!(parsed.per_domain_thresholds.len(), 0);
+    }
+
+    #[test]
+    fn parameters_votes_deserialize_the_legacy_empty_report() {
+        let votes: super::GovernanceThresholdParametersVotes =
+            serde_json::from_str(r#"{"proposal_by_account":{}}"#).unwrap();
+
+        assert_eq!(votes, super::GovernanceThresholdParametersVotes::default());
+    }
+
+    #[test]
+    fn parameters_votes_roundtrip_the_tally() {
+        let votes =
+            super::GovernanceThresholdParametersVotes(std::collections::BTreeMap::from([(
+                mpc_primitives::hash::ProposalHash::new([7u8; 32]),
+                std::collections::BTreeSet::from([super::AuthenticatedAccountId(
+                    "alice.near".parse().unwrap(),
+                )]),
+            )]));
+
+        let json = serde_json::to_string(&votes).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<super::GovernanceThresholdParametersVotes>(&json).unwrap(),
+            votes
+        );
     }
 }
