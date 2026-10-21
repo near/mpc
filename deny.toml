@@ -46,6 +46,11 @@ ignore = [
   # handshake transcript stays authenticated: the flaw only lets a peer send handshake
   # messages that should be encrypted in plaintext without rustls rejecting them.
   "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
+  # TODO(#4423): remove once cargo can resolve rustls-webpki >= 0.103.16, blocked by the same pin.
+  # No root we trust chains to the distrusted keys: webpki-roots and webpki-root-certs >= 1.0.10
+  # drop emSign ECC Root CA - G3, and the node image also deselects AAA Certificate Services,
+  # the only other root that cross-signed those intermediates.
+  "RUSTSEC-2026-0382", # rustls-webpki accepts paths through distrusted emSign intermediates
 ]
 
 [bans]
