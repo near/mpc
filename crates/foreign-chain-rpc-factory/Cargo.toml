@@ -14,5 +14,17 @@ mpc-node-config = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 url = { workspace = true }
 
+[dev-dependencies]
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+rcgen = { workspace = true, features = ["x509-parser"] }
+rstest = { workspace = true }
+rustls = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+x509-parser = { workspace = true }
+
 [lints]
 workspace = true
