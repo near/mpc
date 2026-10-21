@@ -59,14 +59,14 @@ pub enum RequestType {
 
 pub type RequestId = CryptoHash;
 
-/// The trait that defines common functionality of MPC requests:
-/// currently CKD and signatures
+/// The trait that defines common functionality of MPC requests.
 pub trait Request {
     fn get_id(&self) -> RequestId;
     fn get_receipt_id(&self) -> CryptoHash;
     fn get_entropy(&self) -> [u8; 32];
     fn get_timestamp_nanosec(&self) -> u64;
     fn get_domain_id(&self) -> DomainId;
+    fn get_foreign_chain(&self) -> Option<dtos::ForeignChain>;
     fn get_type() -> RequestType;
 }
 
@@ -210,6 +210,10 @@ impl Request for CKDRequest {
         self.domain_id
     }
 
+    fn get_foreign_chain(&self) -> Option<dtos::ForeignChain> {
+        None
+    }
+
     fn get_type() -> RequestType {
         RequestType::CKD
     }
@@ -236,6 +240,10 @@ impl Request for SignatureRequest {
         self.domain
     }
 
+    fn get_foreign_chain(&self) -> Option<dtos::ForeignChain> {
+        None
+    }
+
     fn get_type() -> RequestType {
         RequestType::Signature
     }
@@ -260,6 +268,10 @@ impl Request for VerifyForeignTxRequest {
 
     fn get_domain_id(&self) -> DomainId {
         self.domain_id
+    }
+
+    fn get_foreign_chain(&self) -> Option<dtos::ForeignChain> {
+        Some(self.request.chain())
     }
 
     fn get_type() -> RequestType {
