@@ -520,12 +520,7 @@ async fn run_receive_message(
             indexer_heights.set_height(message.from, message.message.height);
         }
         PeerMessage::ConnectedPeersInfo(message) => {
-            if let Some(&(_, height)) = message
-                .info
-                .peers
-                .iter()
-                .find(|(peer, _)| *peer == message.from)
-            {
+            if let Some(&height) = message.info.peers.get(&message.from) {
                 indexer_heights.set_height(message.from, height);
             }
             // TODO(#398): store the sender's connected-peers list, so participant selection can
@@ -1368,7 +1363,7 @@ mod tests {
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
     use rstest::rstest;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeMap, HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -1482,7 +1477,7 @@ mod tests {
 
         // Then
         let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
-        let listed: Vec<_> = message.peers.iter().map(|(peer, _)| *peer).collect();
+        let listed: Vec<_> = message.peers.keys().copied().collect();
         assert_eq!(listed, vec![me, connected]);
     }
 
@@ -1501,7 +1496,7 @@ mod tests {
 
         // Then
         let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
-        assert_eq!(message.peers, vec![(me, 100), (peer, 90)]);
+        assert_eq!(message.peers, BTreeMap::from([(me, 100), (peer, 90)]));
     }
 
     #[test]
@@ -1759,7 +1754,7 @@ mod tests {
         // Given
         let mut node = ReceivingNode::new();
         let info = ConnectedPeersInfo {
-            peers: vec![(ORIGINATOR, 42), (ME, 7)],
+            peers: BTreeMap::from([(ORIGINATOR, 42), (ME, 7)]),
         };
 
         // When

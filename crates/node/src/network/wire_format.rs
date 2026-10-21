@@ -216,6 +216,7 @@ mod tests {
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::KeyEventId;
+    use std::collections::BTreeMap;
     use std::fmt::Debug;
 
     fn uid(counter: u32) -> UniqueId {
@@ -260,10 +261,10 @@ mod tests {
                 }),
                 Packet::IndexerHeight(IndexerHeightMessage { height: 4 }),
                 Packet::ConnectedPeersInfo(ConnectedPeersInfo {
-                    peers: vec![
+                    peers: BTreeMap::from([
                         (ParticipantId::from_raw(5), 10),
                         (ParticipantId::from_raw(7), 20),
-                    ],
+                    ]),
                 }),
             ]),
             rows(&[

@@ -1206,7 +1206,7 @@ mod tests {
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use rstest::rstest;
     use rustls::ClientConfig;
-    use std::{sync::Arc, time::Duration};
+    use std::{collections::BTreeMap, sync::Arc, time::Duration};
     use tokio::{
         io::AsyncReadExt,
         net::{TcpListener, TcpStream},
@@ -1527,7 +1527,7 @@ mod tests {
         // When
         let result = persistent_connection.send(
             Packet::ConnectedPeersInfo(ConnectedPeersInfo {
-                peers: vec![(ParticipantId::from_raw(2), 7)],
+                peers: BTreeMap::from([(ParticipantId::from_raw(2), 7)]),
             }),
             None,
         );
