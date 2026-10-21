@@ -18,12 +18,17 @@ docker run --rm -v "$FIXTURES:/fixtures:ro" --entrypoint sh "$NODE_IMAGE_NAME" -
 cd /fixtures
 # 2026-10-24 UTC, inside the validity of every fixture, so the check does not expire with the forged leaves.
 at="-attime 1792800000"
+kept_root=/usr/share/ca-certificates/mozilla/ISRG_Root_X1.crt
 # $1: label, $2: distrusted root, $3: untrusted chain, $4: leaf, $5...: image store args
 check() {
   label=$1 root=$2 chain=$3 leaf=$4; shift 4
   # A rejection only counts if the chain validates when its root is trusted.
   openssl verify $at -CAfile "$root" -untrusted "$chain" "$leaf" >/dev/null 2>&1 \
     || { echo "$label: control failed, bad fixture"; exit 1; }
+  # It also only counts if the store args load a store that trusts a root the image keeps.
+  # Otherwise a missing, empty or misconfigured store would reject everything.
+  openssl verify $at "$@" "$kept_root" >/dev/null 2>&1 \
+    || { echo "$label: control failed, image store does not trust $kept_root"; exit 1; }
   if openssl verify $at -show_chain "$@" -untrusted "$chain" "$leaf" >/tmp/out 2>&1; then
     echo "$label: image trusts the forged certificate"; cat /tmp/out; exit 1
   fi
