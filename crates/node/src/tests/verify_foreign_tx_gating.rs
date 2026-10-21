@@ -172,7 +172,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
 
     // When
     let parked_before = crate::requests::metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
-        .with_label_values(&["verify_foreign_tx"])
+        .with_label_values(&["verify_foreign_tx", "bitcoin"])
         .get();
     {
         let mut contract = setup.indexer.contract_mut().await;
@@ -212,7 +212,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
     // attempted and rejected.
     assert!(
         crate::requests::metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
-            .with_label_values(&["verify_foreign_tx"])
+            .with_label_values(&["verify_foreign_tx", "bitcoin"])
             .get()
             > parked_before,
         "expected the request to park with no refined eligible leader"
