@@ -614,7 +614,10 @@ impl MpcTaskId {
             MpcTaskId::VerifyForeignTxTaskId(task) => (
                 ECDSA_PROTOCOL_SCHEME_LABEL,
                 match task {
-                    VerifyForeignTxTaskId::VerifyForeignTx { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
+                    VerifyForeignTxTaskId::VerifyForeignTx { .. }
+                    | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. } => {
+                        VERIFY_FOREIGN_TX_TASK_LABEL
+                    }
                 },
             ),
         };

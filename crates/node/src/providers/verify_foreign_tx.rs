@@ -6,6 +6,7 @@ pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
+use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use foreign_chain_inspector::FanOut;
@@ -61,6 +62,11 @@ pub(crate) struct ForeignChainInspectors<Client> {
 
 /// A [`FanOut`] whose provider calls are reported to the node's Prometheus metrics.
 pub(crate) type MeasuredFanOut<Inspector> = FanOut<Inspector, ProviderCallMetrics>;
+
+/// Handshake protocol version that introduced
+/// [`VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign`].
+pub const VERIFY_FOREIGN_TX_ONLINE_PRESIGN_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
+    NetworkProtocolVersion::Oct2026;
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
@@ -238,6 +244,17 @@ impl VerifyForeignTxProvider {
                 } => {
                     self.make_verify_foreign_tx_follower(channel, id, presignature_id)
                         .await?;
+                }
+                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+                    id,
+                    paired_triple_id,
+                } => {
+                    self.make_verify_foreign_tx_online_presign_follower(
+                        channel,
+                        id,
+                        paired_triple_id,
+                    )
+                    .await?;
                 }
             },
             _ => anyhow::bail!(
