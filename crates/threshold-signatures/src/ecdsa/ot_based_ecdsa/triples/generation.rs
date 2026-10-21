@@ -911,7 +911,7 @@ mod test {
         #[serde_as(as = "[_; N]")]
         scalars: [SerializableScalar<C>; N],
         #[serde_as(as = "[_; N]")]
-        commitments: [Randomness; N],
+        randomizers: [Randomness; N],
     }
 
     #[test]
@@ -920,13 +920,13 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let scalars: [SerializableScalar<C>; 3] =
             std::array::from_fn(|_| SerializableScalar::<C>(Scalar::generate_biased(&mut rng)));
-        let commitments: [Randomness; 3] = std::array::from_fn(|_| Randomness::random(&mut rng));
+        let randomizers: [Randomness; 3] = std::array::from_fn(|_| Randomness::random(&mut rng));
 
         // When each is encoded the way the protocol encodes a round message
-        let current = rmp_serde::encode::to_vec(&(scalars.to_vec(), commitments.to_vec())).unwrap();
+        let current = rmp_serde::encode::to_vec(&(scalars.to_vec(), randomizers.to_vec())).unwrap();
         let legacy = rmp_serde::encode::to_vec(&LegacyFixedArrays {
             scalars,
-            commitments,
+            randomizers,
         })
         .unwrap();
 
