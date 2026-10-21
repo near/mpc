@@ -699,8 +699,12 @@ where
                 .refine_eligible_leaders
                 .refine(&request.request, &eligible_leaders);
             if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
+                let chain = request
+                    .request
+                    .get_foreign_chain()
+                    .map_or("", |chain| chain.label());
                 metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
-                    .with_label_values(&[&RequestType::get_type().to_string()])
+                    .with_label_values(&[RequestType::get_type().to_string().as_str(), chain])
                     .inc();
             }
             match request.process(

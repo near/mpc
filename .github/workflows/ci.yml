@@ -78,6 +78,11 @@ jobs:
           export NODE_IMAGE_NAME=test_image_tag_ci
           ./scripts/check-mpc-node-docker-starts.sh
 
+      - name: Check mpc-node docker image rejects the compromised eMudhra intermediates
+        run: |
+          export NODE_IMAGE_NAME=test_image_tag_ci
+          ./scripts/check-mpc-node-docker-ca-store.sh
+
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
     needs: changes

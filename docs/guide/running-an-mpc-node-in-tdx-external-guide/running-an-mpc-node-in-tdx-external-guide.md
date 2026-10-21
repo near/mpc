@@ -2168,7 +2168,7 @@ If the node’s key has not been added to the account, this operation will fail.
 
 #### Verifying the attestation was accepted
 
-The MPC node emits no explicit "submitted" log line. Once the verification poll observes the attestation on-chain it logs `INFO mpc_node::indexer::tx_sender: node found dstack attestation on chain attestation_age=... attestation_is_fresh=true`, but the authoritative check is on-chain.
+The MPC node does not log whether the contract accepted its attestation; the authoritative check is on-chain.
 
 First, list every TEE-attested node by calling `get_tee_accounts` (no args) and confirm your `account_id` and `tls_public_key` are present:
 
@@ -2915,7 +2915,7 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
 
 ### `submit_participant_info` failures
 
-When the contract rejects a submission the node retries on a backoff and logs a generic line every attempt:
+When the contract rejects a submission while no TEE attestation is stored for the node's TLS key, the node retries on a backoff and logs a generic line every attempt:
 
 ```
 ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
@@ -2923,7 +2923,7 @@ ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
   cause=attestation submission was not executed backoff_duration=60s
 ```
 
-This line **doesn't tell you why** — `cause` is one of `attestation submission was not executed` (most common), `attestation submission has unknown response`, or `failed to submit transaction` (lower-level RPC send failure). None of these carry the underlying reason. The actual failure shows up in one of three places.
+This line **doesn't tell you why**: `cause` is `attestation submission was not executed` (most common) or `failed to submit transaction` (the node's transaction processor has stopped). Neither carries the underlying reason. Once a TEE attestation is stored for the key, a rejected resubmission logs no such line: an hour later, at the start of the next round, the node logs `WARN ... no attestation from this node accepted recently` and submits again. The actual failure shows up in one of three places.
 
 #### 1. Client-side pre-flight WARN — in the node logs
 
@@ -2960,7 +2960,7 @@ The error after `err=` is the NEAR runtime error. Common ones:
 
 #### 3. Contract-rejection errors — only visible on the explorer / RPC
 
-If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
+If the transaction reaches execution and the contract panics, the node logs only the generic retry line above, or, once a TEE attestation is stored for its key, the transaction hash (`sending tx …`) and, at the start of the next round, the warning above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call. The error appears under the action's status / logs. The contract wraps the attestation-side error like this:
 
 ```
 Smart contract panicked: the submitted attestation failed verification, reason: custom error: `...`

@@ -7,3 +7,5 @@ pub const MAX_MESSAGE_SIZE_BYTES: usize = 100 * 1024 * 1024;
 /// Timeout in seconds for reading messages from the network peers.
 /// This is to prevent hanging peer connections.
 pub const MESSAGE_READ_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
+
+pub const CONNECTED_PEERS_BROADCAST_INTERVAL: Duration = Duration::from_secs(1);

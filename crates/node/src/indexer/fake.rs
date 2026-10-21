@@ -722,7 +722,7 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, Into::into(abort.key_event_id));
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
-                    ChainSendTransactionRequest::SubmitParticipantInfo { .. } => {
+                    ChainSendTransactionRequest::SubmitParticipantInfo(_) => {
                         // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }
                     ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {
@@ -1078,6 +1078,7 @@ impl FakeIndexerManager {
             watch::channel(vec![]);
         let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
             watch::channel(vec![]);
+        let (_my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
@@ -1097,6 +1098,7 @@ impl FakeIndexerManager {
             allowed_docker_images_receiver,
             allowed_launcher_compose_receiver,
             my_migration_info_receiver,
+            my_attestation_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
         };
 
