@@ -224,7 +224,7 @@ impl MeshNetworkClient {
                 continue;
             }
             let peer_height = *indexer_heights.get(&participant).unwrap_or(&0);
-            if my_height <= peer_height + mpc_node_config::MAX_INDEXER_HEIGHT_DIFF
+            if my_height <= peer_height.saturating_add(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF)
                 && self
                     .transport_sender
                     .connectivity(participant)
@@ -1207,8 +1207,8 @@ mod tests {
     };
     use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::network::testing::{
-        TestMeshTransportSender, new_test_client_with_versions, new_test_transports,
-        run_test_clients,
+        TestMeshTransportSender, new_test_client, new_test_client_with_versions,
+        new_test_transports, run_test_clients,
     };
     use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId};
     use crate::primitives::{ChannelId, MpcMessage, MpcStartMessage, ParticipantId, UniqueId};
@@ -1245,6 +1245,24 @@ mod tests {
 
         // Then
         assert_eq!(supporting, vec![me, peers[0]]);
+    }
+
+    #[test]
+    fn all_alive_participant_ids__should_include_peer_reporting_maximum_height() {
+        // Given
+        let participants = into_participant_ids(&generate_participants(2));
+        let (me, peer) = (participants[0], participants[1]);
+        let client = new_test_client(participants.clone(), me);
+        client.update_indexer_height(100);
+        client.indexer_heights.set_height(peer, u64::MAX);
+
+        // When
+        let alive = client.all_alive_participant_ids();
+
+        // Then
+        let mut expected = participants;
+        expected.sort();
+        assert_eq!(alive, expected);
     }
 
     #[tokio::test]

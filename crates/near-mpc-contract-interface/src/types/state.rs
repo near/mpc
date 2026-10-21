@@ -447,7 +447,7 @@ mod tests {
                 "alice.near".parse().unwrap(),
                 ParticipantId(0),
                 ParticipantInfo {
-                    url: "https://alice.com".to_string(),
+                    url: "https://alice.com".try_into().unwrap(),
                     tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                         .parse()
                         .unwrap(),
