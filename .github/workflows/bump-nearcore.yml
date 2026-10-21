@@ -12,7 +12,7 @@ on:
 concurrency:
   group: bump-nearcore
 
-permissions: {}
+permissions: {} # restrict all permissions
 
 jobs:
   bump:
