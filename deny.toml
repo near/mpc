@@ -74,6 +74,15 @@ ignore = [
   "RUSTSEC-2026-0346", # rustls client session values expose TLS secrets through `Debug`
   "RUSTSEC-2026-0348", # rustls Brotli certificate decompression can allocate up to 1 GiB
   "RUSTSEC-2026-0349", # rustls ServerHello can downgrade later handshakes to classical kx
+  # TODO(#4423): remove once cargo can resolve rustls-webpki >= 0.103.16, blocked by the same pin
+  # (it requires aws-lc-rs ^1.18). The bundled webpki-roots and webpki-root-certs no longer ship
+  # `emSign ECC Root CA - G3`, but clients verifying against the OS store through
+  # rustls-platform-verifier or rustls-native-certs still trust it while ca-certificates does.
+  "RUSTSEC-2026-0382", # rustls-webpki accepts paths through distrusted emSign intermediates
+  # Flags webpki-root-certs 0.26.11, which jsonrpsee pulls in through rustls-platform-verifier 0.5.
+  # That version is a semver-trick shim re-exporting the roots of webpki-root-certs 1.x, which is
+  # locked at the patched 1.0.10.
+  "RUSTSEC-2026-0383", # webpki-root-certs bundles the distrusted `emSign ECC Root CA - G3`
   # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
   # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
   "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry
