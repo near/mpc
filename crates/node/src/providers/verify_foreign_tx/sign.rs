@@ -25,7 +25,10 @@ use tokio_util::time::FutureExt;
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
 use crate::primitives::ParticipantId;
-use crate::providers::verify_foreign_tx::MeasuredFanOut;
+use crate::providers::ecdsa::triple::participants_from_triples;
+use crate::providers::verify_foreign_tx::{
+    MeasuredFanOut, VERIFY_FOREIGN_TX_ONLINE_PRESIGN_MIN_PROTOCOL_VERSION,
+};
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
@@ -118,13 +121,40 @@ impl VerifyForeignTxProvider {
             )
             .await?;
 
-        // Build and validate the request before the presignature is popped, so invalid/malicious
-        // requests don't cost a presignature.
+        // Build and validate the request before a triple pair or presignature is popped, so
+        // invalid/malicious requests don't cost one.
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
+        if self.config.signature.online_presign
+            && let Some((paired_triple_id, triples)) = self
+                .ecdsa_signature_provider
+                .try_take_triples_among_supporters(
+                    &keyshare,
+                    VERIFY_FOREIGN_TX_ONLINE_PRESIGN_MIN_PROTOCOL_VERSION,
+                    |participant| chain_supporters.contains(participant),
+                )?
+        {
+            let channel = self.ecdsa_signature_provider.new_channel_for_task(
+                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+                    id,
+                    paired_triple_id,
+                },
+                participants_from_triples(&triples.0, &triples.1),
+            )?;
+            let (signature, public_key) = self
+                .ecdsa_signature_provider
+                .make_online_presign_signature_leader_given_parameters(
+                    sign_request,
+                    keyshare,
+                    triples,
+                    channel,
+                )
+                .await?;
+            return Ok(((response_payload, signature), public_key));
+        }
         let (presignature_id, presignature) = await_with_slow_hook(
             PRESIGNATURE_TAKE_GRACE_PERIOD,
             keyshare
@@ -161,6 +191,32 @@ impl VerifyForeignTxProvider {
         id: SignatureId,
         presignature_id: UniqueId,
     ) -> anyhow::Result<()> {
+        let sign_request = self.verified_follower_sign_request(id).await?;
+        self.ecdsa_signature_provider
+            .make_signature_follower_given_request(channel, presignature_id, sign_request)
+            .await
+    }
+
+    pub(super) async fn make_verify_foreign_tx_online_presign_follower(
+        &self,
+        channel: NetworkTaskChannel,
+        id: SignatureId,
+        paired_triple_id: UniqueId,
+    ) -> anyhow::Result<()> {
+        let sign_request = self.verified_follower_sign_request(id).await?;
+        self.ecdsa_signature_provider
+            .make_online_presign_signature_follower_given_request(
+                channel,
+                paired_triple_id,
+                sign_request,
+            )
+            .await
+    }
+
+    async fn verified_follower_sign_request(
+        &self,
+        id: SignatureId,
+    ) -> anyhow::Result<SignatureRequest> {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
         let foreign_tx_request = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
@@ -176,11 +232,7 @@ impl VerifyForeignTxProvider {
             )
             .await?;
 
-        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
-
-        self.ecdsa_signature_provider
-            .make_signature_follower_given_request(channel, presignature_id, sign_request)
-            .await
+        build_signature_request(&foreign_tx_request, &response_payload)
     }
 
     // TODO(#2677): Any negative verdict or errors here only makes this node abstain from
