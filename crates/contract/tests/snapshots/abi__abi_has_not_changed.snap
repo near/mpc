@@ -5014,7 +5014,7 @@ expression: abi
           ],
           "properties": {
             "accepted_at_seconds": {
-              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it, so a submitter can tell whether its own submission landed. `None` for an entry stored before the contract recorded it.",
+              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it. `None` for an entry stored before the contract recorded it.",
               "type": [
                 "integer",
                 "null"
