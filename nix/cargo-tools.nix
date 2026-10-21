@@ -14,7 +14,6 @@ let
       cargoHash,
       postPatch ? null,
       buildFeatures ? null,
-      cargoBuildFlags ? null,
     }:
     rustPlatform.buildRustPackage (
       {
@@ -25,8 +24,11 @@ let
         inherit cargoHash;
         doCheck = false;
       }
-      // lib.filterAttrs (_: value: value != null) {
-        inherit postPatch buildFeatures cargoBuildFlags;
+      // lib.optionalAttrs (postPatch != null) {
+        inherit postPatch;
+      }
+      // lib.optionalAttrs (buildFeatures != null) {
+        inherit buildFeatures;
       }
     );
 in
@@ -73,7 +75,6 @@ in
     version = "1.31.1";
     hash = "sha256-6BWZ9tPSbTjqTiOgBW+id6omjpjeA/1mFrFDG8ClVvs=";
     cargoHash = "sha256-6Hkc3eVbAILyYwI+bqT9hHXSdqeAhNmgAG/Gz2sTxfY=";
-    cargoBuildFlags = [ "--ignore-rust-version" ];
   })
 
   (buildTool {
