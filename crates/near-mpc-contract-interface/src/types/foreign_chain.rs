@@ -155,6 +155,20 @@ pub struct VerifyForeignTransactionRequest {
 pub struct VerifyForeignTransactionRequestV2 {
     pub request: ForeignChainRpcRequest,
     pub domain_id: DomainId,
+    /// One value per extractor, in extractor order. A
+    /// [`ForeignTxVerificationOutcome::Verified`] answer means the extracted
+    /// values equal these.
+    pub expected_values: Vec<ExtractedValue>,
+}
+
+impl VerifyForeignTransactionRequestV2 {
+    /// SHA-256 of the Borsh encoded [`Self::expected_values`], as
+    /// [`ForeignTxSignPayloadV2::expected_values_hash`] carries it.
+    pub fn expected_values_hash(&self) -> std::io::Result<Hash256> {
+        let mut hasher = sha2::Sha256::new();
+        borsh::BorshSerialize::serialize(&self.expected_values, &mut hasher)?;
+        Ok(Hash256(hasher.finalize().into()))
+    }
 }
 
 #[derive(
@@ -182,10 +196,8 @@ pub struct VerifyForeignTransactionResponse {
 /// Response to a [`VerifyForeignTransactionRequestV2`].
 ///
 /// [`Self::payload_hash`] is the hash of the [`ForeignTxSignPayload::V2`]
-/// built from the request, [`Self::request_block_height`], [`Self::yield_id`]
-/// and the outcome. A [`ForeignTxVerificationResponseOutcome::Verified`]
-/// response omits the extracted values, so recomputing its hash takes the
-/// values the caller expects.
+/// built from the request, the hash of its expected values,
+/// [`Self::request_block_height`], [`Self::yield_id`] and [`Self::outcome`].
 #[derive(
     Debug,
     Clone,
@@ -208,32 +220,7 @@ pub struct VerifyForeignTransactionResponseV2 {
     pub signature: SignatureResponse,
     pub request_block_height: NearBlockHeight,
     pub yield_id: YieldId,
-    pub outcome: ForeignTxVerificationResponseOutcome,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub enum ForeignTxVerificationResponseOutcome {
-    Verified {},
-    NegativeVerdict {
-        verdict: ForeignTxVerificationNegativeVerdict,
-    },
-    Inconclusive {},
+    pub outcome: ForeignTxVerificationOutcome,
 }
 
 #[derive(
@@ -1864,6 +1851,9 @@ pub enum ForeignTxVerificationNegativeVerdict {
     TransactionNotFound,
     AccountNotFound,
     NonCanonicalBlock,
+    /// The transaction was found, but its extracted values differ from
+    /// [`VerifyForeignTransactionRequestV2::expected_values`].
+    ValuesMismatch,
 }
 
 /// Canonical payload for foreign-chain transaction verification signatures.
@@ -1938,6 +1928,8 @@ pub struct ForeignTxSignPayloadV1 {
 )]
 pub struct ForeignTxSignPayloadV2 {
     pub request: ForeignChainRpcRequest,
+    /// See [`VerifyForeignTransactionRequestV2::expected_values_hash`].
+    pub expected_values_hash: Hash256,
     /// The block the request's yield was created in.
     pub request_block_height: NearBlockHeight,
     /// The one yield this payload answers.
@@ -1963,9 +1955,14 @@ pub struct ForeignTxSignPayloadV2 {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub enum ForeignTxVerificationOutcome {
-    Verified { values: Vec<ExtractedValue> },
-    NegativeVerdict(ForeignTxVerificationNegativeVerdict),
-    Inconclusive,
+    /// The extracted values equal the expected ones.
+    Verified {},
+    Negative {
+        verdict: ForeignTxVerificationNegativeVerdict,
+    },
+    /// The network could not reach a verdict. This says nothing about the
+    /// transaction.
+    Inconclusive {},
 }
 
 impl ForeignTxSignPayload {
@@ -2411,51 +2408,48 @@ mod tests {
     #[test]
     fn foreign_tx_sign_payload_v2__should_have_consistent_hashes() {
         // Given
-        let request = ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
-            tx_id: EvmTxId([0xab; 32]),
-            extractors: [EvmExtractor::BlockHash].into(),
-            finality: EvmFinality::Finalized,
-        });
+        let request = VerifyForeignTransactionRequestV2 {
+            request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId([0xab; 32]),
+                extractors: [EvmExtractor::BlockHash].into(),
+                finality: EvmFinality::Finalized,
+            }),
+            domain_id: DomainId(0),
+            expected_values: vec![ExtractedValue::EvmExtractedValue(
+                EvmExtractedValue::BlockHash(Hash256([0xef; 32])),
+            )],
+        };
+        let negative = |verdict| ForeignTxVerificationOutcome::Negative { verdict };
         let outcomes = [
-            (
-                "verified",
-                ForeignTxVerificationOutcome::Verified {
-                    values: vec![ExtractedValue::EvmExtractedValue(
-                        EvmExtractedValue::BlockHash(Hash256([0xef; 32])),
-                    )],
-                },
-            ),
+            ("verified", ForeignTxVerificationOutcome::Verified {}),
             (
                 "transaction_failed",
-                ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxVerificationNegativeVerdict::TransactionFailed,
-                ),
+                negative(ForeignTxVerificationNegativeVerdict::TransactionFailed),
             ),
             (
                 "log_index_out_of_bounds",
-                ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds,
-                ),
+                negative(ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds),
             ),
             (
                 "transaction_not_found",
-                ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxVerificationNegativeVerdict::TransactionNotFound,
-                ),
+                negative(ForeignTxVerificationNegativeVerdict::TransactionNotFound),
             ),
             (
                 "account_not_found",
-                ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxVerificationNegativeVerdict::AccountNotFound,
-                ),
+                negative(ForeignTxVerificationNegativeVerdict::AccountNotFound),
             ),
             (
                 "non_canonical_block",
-                ForeignTxVerificationOutcome::NegativeVerdict(
-                    ForeignTxVerificationNegativeVerdict::NonCanonicalBlock,
-                ),
+                negative(ForeignTxVerificationNegativeVerdict::NonCanonicalBlock),
             ),
-            ("inconclusive", ForeignTxVerificationOutcome::Inconclusive),
+            (
+                "values_mismatch",
+                negative(ForeignTxVerificationNegativeVerdict::ValuesMismatch),
+            ),
+            (
+                "inconclusive",
+                ForeignTxVerificationOutcome::Inconclusive {},
+            ),
         ];
 
         // When
@@ -2463,7 +2457,8 @@ mod tests {
             .into_iter()
             .map(|(name, outcome)| {
                 let payload = ForeignTxSignPayload::V2(ForeignTxSignPayloadV2 {
-                    request: request.clone(),
+                    request: request.request.clone(),
+                    expected_values_hash: request.expected_values_hash().unwrap(),
                     request_block_height: NearBlockHeight(0x0102_0304_0506_0708),
                     yield_id: YieldId([0xcd; 32]),
                     outcome,
@@ -2489,16 +2484,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case::verified(ForeignTxVerificationResponseOutcome::Verified {}, json!({"Verified": {}}))]
-    #[case::negative_verdict(
-        ForeignTxVerificationResponseOutcome::NegativeVerdict {
+    #[case::verified(ForeignTxVerificationOutcome::Verified {}, json!({"Verified": {}}))]
+    #[case::negative(
+        ForeignTxVerificationOutcome::Negative {
             verdict: ForeignTxVerificationNegativeVerdict::TransactionNotFound,
         },
-        json!({"NegativeVerdict": {"verdict": "TransactionNotFound"}})
+        json!({"Negative": {"verdict": "TransactionNotFound"}})
     )]
-    #[case::inconclusive(ForeignTxVerificationResponseOutcome::Inconclusive {}, json!({"Inconclusive": {}}))]
-    fn foreign_tx_response_outcome__should_serialize_every_arm_as_an_object(
-        #[case] outcome: ForeignTxVerificationResponseOutcome,
+    #[case::inconclusive(ForeignTxVerificationOutcome::Inconclusive {}, json!({"Inconclusive": {}}))]
+    fn foreign_tx_verification_outcome__should_serialize_every_arm_as_an_object(
+        #[case] outcome: ForeignTxVerificationOutcome,
         #[case] expected: serde_json::Value,
     ) {
         assert_eq!(serde_json::to_value(outcome).unwrap(), expected);
