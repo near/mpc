@@ -269,9 +269,8 @@ pub fn spawn_real_indexer(
             // race it against `shutdown_token.cancelled()`: when the parent
             // cancels the token, the select! arm completes, `block_on`
             // returns, the indexer's tokio runtime drops, and every
-            // `tokio::spawn`'d monitor task (each holding
-            // `Arc<IndexerState>` → `Arc<RocksDB>`) is aborted as the
-            // runtime is dropped. That's what lets
+            // `tokio::spawn`'d monitor task (each holding handles into
+            // neard) is aborted as the runtime is dropped. That's what lets
             // `RocksDB::block_until_all_instances_are_dropped()` in `run.rs`
             // actually return on the SIGTERM path.
             #[cfg(feature = "network-hardship-simulation")]
