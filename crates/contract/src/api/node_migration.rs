@@ -361,7 +361,7 @@ fn assert_tls_key_unclaimed(
     tls_public_key: &dtos::Ed25519PublicKey,
 ) -> Result<(), Error> {
     let Some(claimant) =
-        tls_key_claimants([participants], node_migrations, tee_state, tls_public_key)
+        tls_key_claimants(&[participants], node_migrations, tee_state, tls_public_key)
             .find(|claimant| claimant != account_id)
     else {
         return Ok(());

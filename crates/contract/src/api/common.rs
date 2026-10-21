@@ -155,17 +155,16 @@ pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
     }
 }
 
-pub(crate) fn tls_key_claimants<'a>(
-    participant_sets: impl IntoIterator<Item = &'a Participants>,
-    node_migrations: &'a NodeMigrations,
-    tee_state: &'a TeeState,
-    tls_public_key: &'a dtos::Ed25519PublicKey,
+pub(crate) fn tls_key_claimants(
+    participant_sets: &[&Participants],
+    node_migrations: &NodeMigrations,
+    tee_state: &TeeState,
+    tls_public_key: &dtos::Ed25519PublicKey,
 ) -> impl Iterator<Item = AccountId> {
     participant_sets
-        .into_iter()
-        .filter_map(|participants| participants.account_with_tls_key(tls_public_key))
+        .iter()
+        .filter_map(|participants| participants.account_with_tls_key(tls_public_key).cloned())
         .chain(node_migrations.accounts_migrating_to(tls_public_key))
-        .cloned()
         .chain(tee_state.attestation_owner(tls_public_key))
 }
 

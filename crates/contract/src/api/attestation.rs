@@ -178,7 +178,7 @@ impl MpcContract {
             self.protocol_state.active_participants(),
         ];
         if tls_key_claimants(
-            existing_and_prospective_participants,
+            &existing_and_prospective_participants,
             &self.node_migrations,
             &self.tee_state,
             tls_public_key,
