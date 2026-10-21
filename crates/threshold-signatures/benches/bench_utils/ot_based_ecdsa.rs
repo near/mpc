@@ -36,7 +36,7 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
     for p in &participants {
         let seed = rng.next_u64();
         let rng_p = MockCryptoRng::seed_from_u64(seed);
-        let protocol = generate_triple_many::<2, _, _>(&participants, *p, threshold, rng_p)
+        let protocol = generate_triple_many(&participants, *p, threshold, 2, rng_p)
             .expect("Triple generation should succeed");
         protocols.push((*p, Box::new(protocol)));
         seeds.insert(*p, seed);
