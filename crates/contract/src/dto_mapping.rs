@@ -1173,4 +1173,28 @@ mod tests {
             ))
         );
     }
+
+    #[test]
+    fn parameters_votes_dto__should_turn_a_legacy_report_into_the_contract_hashes() {
+        use crate::primitives::proposal_hash::ToProposalHash;
+        use crate::primitives::test_utils::gen_proposed_threshold_params;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        // Given: the per-voter report of a contract that still stores full proposals
+        let proposal = gen_proposed_threshold_params(5);
+        let legacy = serde_json::json!({
+            "proposal_by_account": { "alice.near": (&proposal).into_dto_type() }
+        });
+
+        // When
+        let votes: dtos::GovernanceThresholdParametersVotes =
+            serde_json::from_value(legacy).unwrap();
+
+        // Then: keyed by the hash the contract computes for the same proposal
+        let voter = dtos::AuthenticatedAccountId("alice.near".parse().unwrap());
+        assert_eq!(
+            votes.0,
+            BTreeMap::from([(proposal.to_proposal_hash(), BTreeSet::from([voter]))])
+        );
+    }
 }
