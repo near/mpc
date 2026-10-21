@@ -67,9 +67,6 @@ async fn monitor_tee_state<Fetcher, T, FetcherResponse, E>(
     }
 }
 
-/// This future returns a [`watch::Receiver`] that will be continuously updated
-/// with the latest allowed [`AllowedMpcDockerImageHash`]es when a change is
-/// detected on the MPC smart contract.
 pub async fn monitor_allowed_docker_images<V: ViewContract + Clone + Send + Sync + 'static>(
     sender: watch::Sender<Vec<AllowedMpcDockerImageHash>>,
     contract: MpcContractHandle<V>,
@@ -79,9 +76,6 @@ pub async fn monitor_allowed_docker_images<V: ViewContract + Clone + Send + Sync
     monitor_tee_state(sender, &fetcher).await
 }
 
-/// This future returns a [`watch::Receiver`] that will be continuously updated
-/// with the allowed [`LauncherDockerComposeHash`]es when a change is detected
-/// on the MPC smart contract.
 pub async fn monitor_allowed_launcher_compose_hashes<
     V: ViewContract + Clone + Send + Sync + 'static,
 >(
