@@ -115,8 +115,7 @@ impl VerifiedAttestation {
 pub struct StoredAttestation {
     pub attestation: VerifiedAttestation,
     /// Block time at which the contract accepted this attestation. Every accepted submission
-    /// restamps it, so a submitter can tell whether its own submission landed. `None` for an
-    /// entry stored before the contract recorded it.
+    /// restamps it. `None` for an entry stored before the contract recorded it.
     pub accepted_at_seconds: Option<u64>,
 }
 
