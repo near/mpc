@@ -1662,6 +1662,91 @@ mod tests {
         verify_cold_queue_internal_consistency(&queue, 1);
     }
 
+    // Timing probe, no bound: prints how long it takes to classify every asset
+    // of a production-size queue after an alive-set change. Run with
+    // `--no-capture` to see the numbers.
+    #[test]
+    #[expect(non_snake_case)]
+    fn discard__should_classify_the_whole_queue_and_report_timing() {
+        use super::ColdQueueDiscardResult;
+        use crate::assets::test_utils::{make_presign, make_triple};
+        use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
+        use crate::providers::ecdsa::triple::PairedTriple;
+        use std::time::{Duration, Instant};
+
+        fn classify_all<T>(
+            queue: &mut ColdQueue<T, Vec<ParticipantId>>,
+        ) -> (Duration, usize, usize) {
+            let started = Instant::now();
+            let (mut online, mut offline) = (0, 0);
+            loop {
+                match queue.discard() {
+                    ColdQueueDiscardResult::Discarded(_) => offline += 1,
+                    ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable => online += 1,
+                    ColdQueueDiscardResult::NotDiscardedAndNoneAvailable => break,
+                }
+            }
+            (started.elapsed(), online, offline)
+        }
+
+        // Given: 16384 triples and presignatures over 11-of-17 participant sets
+        let all: Vec<ParticipantId> = (0..17).map(ParticipantId::from_raw).collect();
+        let alive = Arc::new(Mutex::new(all.clone()));
+        let fetcher: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync> = {
+            let alive = alive.clone();
+            Arc::new(move || alive.lock().unwrap().clone())
+        };
+        let mut triples = ColdQueue::new(
+            FakeClock::default().clock(),
+            |cond: &Vec<ParticipantId>, val: &PairedTriple| {
+                val.is_subset_of_active_participants(cond)
+            },
+            fetcher.clone(),
+        );
+        let mut presigns = ColdQueue::new(
+            FakeClock::default().clock(),
+            |cond: &Vec<ParticipantId>, val: &PresignOutputWithParticipants| {
+                val.is_subset_of_active_participants(cond)
+            },
+            fetcher,
+        );
+        let base_triple = make_triple(&all[..11]);
+        let base_presign = make_presign(&all[..11]);
+        let id0 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
+        let n: usize = std::env::var("QUEUE_SIZE")
+            .ok()
+            .and_then(|size| size.parse().ok())
+            .unwrap_or(16384);
+        for i in 0..n {
+            let id = id0.add_to_counter(i as u32).unwrap();
+            let participants: Vec<_> = (0..11).map(|k| all[(i + k) % all.len()]).collect();
+            let mut triple = base_triple.clone();
+            triple.0.1.participants = participants.iter().map(|p| p.raw().into()).collect();
+            triple.1.1.participants = triple.0.1.participants.clone();
+            triples.ingest(id, triple);
+            let mut presign = base_presign.clone();
+            presign.participants = participants;
+            presigns.ingest(id, presign);
+        }
+
+        // When: one participant leaves, which marks every asset unknown
+        *alive.lock().unwrap() = all[1..].to_vec();
+        triples.update_condition_value();
+        presigns.update_condition_value();
+        let (triples_elapsed, triples_online, triples_offline) = classify_all(&mut triples);
+        let (presigns_elapsed, presigns_online, presigns_offline) = classify_all(&mut presigns);
+
+        // Then
+        eprintln!(
+            "triples: classified {n} in {triples_elapsed:?} ({:?} per asset): {triples_online} online, {triples_offline} offline",
+            triples_elapsed / n as u32
+        );
+        eprintln!(
+            "presignatures: classified {n} in {presigns_elapsed:?} ({:?} per asset): {presigns_online} online, {presigns_offline} offline",
+            presigns_elapsed / n as u32
+        );
+    }
+
     // Takes the asset matching the supplied participant set, then reopens the
     // store from the same DB: only the taken asset is deleted from disk.
     #[tokio::test]
