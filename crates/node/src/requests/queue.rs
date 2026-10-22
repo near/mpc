@@ -1460,27 +1460,25 @@ mod tests {
     #[test_log::test]
     #[expect(non_snake_case)]
     fn test_pending_requests__should_attempt_as_secondary_after_failover_interval() {
-        // Given: a request whose leader order puts us second, with all participants alive
+        // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
-        // When: less than the failover interval has elapsed
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+        // When
+        let attempts_initially = pending_requests.get_requests_to_attempt();
         setup.advance_clock(LEADER_FAILOVER_INTERVAL - CHECK_EACH_REQUEST_INTERVAL);
-
-        // Then: we do not attempt yet
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // When: the failover interval elapses without a response on chain
+        let attempts_before_slot = pending_requests.get_requests_to_attempt();
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let attempts_at_slot = pending_requests.get_requests_to_attempt();
 
-        // Then: we attempt the request as the backup leader, attributed to ourselves
-        let to_attempt = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt.len(), 1);
-        assert_eq!(to_attempt[0].request.id, req.id);
+        // Then
+        assert_eq!(attempts_initially.len(), 0);
+        assert_eq!(attempts_before_slot.len(), 0);
+        assert_eq!(attempts_at_slot.len(), 1);
+        assert_eq!(attempts_at_slot[0].request.id, req.id);
         assert_eq!(
-            to_attempt[0]
+            attempts_at_slot[0]
                 .computation_progress
                 .lock()
                 .unwrap()
@@ -1492,75 +1490,74 @@ mod tests {
     #[test_log::test]
     #[expect(non_snake_case)]
     fn test_pending_requests__should_attempt_as_tertiary_after_two_failover_intervals() {
-        // Given: a request whose leader order puts us third, with all participants alive
+        // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader_order(&[0, 2, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
-        // When: only one failover interval has elapsed
+        // When
         setup.advance_clock(LEADER_FAILOVER_INTERVAL);
-
-        // Then: we do not attempt yet
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // When: the second failover interval elapses without a response on chain
+        let attempts_after_one_interval = pending_requests.get_requests_to_attempt();
         setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+        let attempts_after_two_intervals = pending_requests.get_requests_to_attempt();
 
-        // Then: we attempt the request as the second backup leader
-        let to_attempt = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt.len(), 1);
-        assert_eq!(to_attempt[0].request.id, req.id);
+        // Then
+        assert_eq!(attempts_after_one_interval.len(), 0);
+        assert_eq!(attempts_after_two_intervals.len(), 1);
+        assert_eq!(attempts_after_two_intervals[0].request.id, req.id);
     }
 
     #[test_log::test]
     #[expect(non_snake_case)]
     fn test_pending_requests__should_shift_failover_slot_when_prior_leader_offline() {
-        // Given: a request whose leader order puts us third, but the second participant is down
+        // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
         setup.network_api.bring_down(setup.participant_ids[2]);
         let req = setup.add_request_leader_order(&[0, 2, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
-        // When: one failover interval elapses without a response on chain
+        // When
         setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+        let attempts_at_secondary_slot = pending_requests.get_requests_to_attempt();
 
-        // Then: we attempt at the secondary's slot, since our rank shifted down
-        let to_attempt = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt.len(), 1);
-        assert_eq!(to_attempt[0].request.id, req.id);
+        // Then
+        assert_eq!(attempts_at_secondary_slot.len(), 1);
+        assert_eq!(attempts_at_secondary_slot[0].request.id, req.id);
     }
 
     #[test_log::test]
     #[expect(non_snake_case)]
     fn test_pending_requests__should_not_attempt_beyond_failover_depth() {
-        // Given: a request whose leader order puts us at rank MAX_LEADER_FAILOVER_DEPTH
+        // Given
         let (mut pending_requests, mut setup) = TestSetup::with_participant_count(5);
         let _req = setup.add_request_leader_order(&[0, 2, 3, 4, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
-        // When: far more time elapses than our slot would require
+        // When
         setup.advance_clock(10 * LEADER_FAILOVER_INTERVAL);
+        let attempts = pending_requests.get_requests_to_attempt();
 
-        // Then: we never attempt the request
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+        // Then
+        assert_eq!(attempts.len(), 0);
     }
 
     #[test_log::test]
     #[expect(non_snake_case)]
     fn test_pending_requests__should_not_attempt_as_secondary_after_response_indexed() {
-        // Given: a request whose leader order puts us second
+        // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
-        // When: the leader's response lands on chain before our failover slot
+        // When
         setup.advance_clock(LEADER_FAILOVER_INTERVAL / 2);
         setup.add_indexed_respond_tx(req.id);
         setup.update(&mut pending_requests);
         setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+        let attempts_past_slot = pending_requests.get_requests_to_attempt();
 
-        // Then: we do not attempt the request even though our slot has passed
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+        // Then
+        assert_eq!(attempts_past_slot.len(), 0);
     }
 
     #[test_log::test]
