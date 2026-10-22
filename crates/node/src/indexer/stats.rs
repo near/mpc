@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::indexer::IndexerState;
+use chain_gateway::primitives::FetchLatestFinalBlockInfo;
 
 #[derive(Debug, Clone)]
 pub(crate) struct IndexerStats {
@@ -35,10 +36,10 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
 
         let time_to_catch_the_tip_duration = if block_processing_speed > 0.0
             && let Ok(block_height) = indexer_state
-                .view_client
-                .latest_final_block()
+                .gateway
+                .fetch_latest_final_block_info()
                 .await
-                .map(|block| block.header.height)
+                .map(|info| u64::from(info.observed_at))
         {
             // 0 when we're ahead of the chain tip — no catching up needed.
             let blocks_behind = block_height.saturating_sub(stats_copy.last_processed_block_height);

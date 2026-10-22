@@ -1,4 +1,3 @@
-use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
@@ -6,13 +5,14 @@ use ed25519_dalek::VerifyingKey;
 use mpc_primitives::EpochId;
 use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
+use near_contract_transport::ViewContract;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
     GovernanceThresholdParameters, KeyEvent, ProtocolContractState,
 };
 use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use tokio::sync::watch;
 use url::Url;
 
@@ -306,8 +306,8 @@ impl ContractState {
 
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
-pub async fn monitor_contract_state(
-    indexer_state: Arc<IndexerState>,
+pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'static>(
+    contract: MpcContractHandle<V>,
     port_override: Option<u16>,
     protocol_state_sender: watch::Sender<dtos::ProtocolContractState>,
 ) -> watch::Receiver<ContractState> {
@@ -319,20 +319,12 @@ pub async fn monitor_contract_state(
             // first tick returns immediately
             refresh_interval_tick.tick().await;
 
-            //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-            tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-            indexer_state.client.wait_for_full_sync().await;
-
             tracing::debug!(target: "indexer", "querying contract state");
 
-            let (height, protocol_state) = match indexer_state
-                .view_client
-                .get_mpc_contract_state_dto()
-                .await
-            {
-                Ok(contract_state) => contract_state,
+            let (height, protocol_state) = match contract.state().await {
+                Ok(observed) => (observed.observed_at.into(), observed.value),
                 Err(e) => {
-                    tracing::error!(target: "mpc", "error reading config from chain during get_mpc_contract_state: {:?}", e);
+                    tracing::error!(target: "mpc", "error reading config from chain during state: {:?}", e);
                     tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
                     continue;
                 }

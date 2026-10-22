@@ -9,7 +9,7 @@ use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContr
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_store::db::RocksDB;
-use nearcore::NearConfig;
+use nearcore::{NearConfig, NearNode};
 use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
 
@@ -135,6 +135,19 @@ impl Drop for NodeHandle {
 }
 
 impl ChainGateway {
+    pub fn from_near_node(near_node: &NearNode, near_config: &NearConfig) -> Self {
+        Self::new(near_node, expected_block_time(near_config))
+    }
+
+    fn new(near_node: &NearNode, expected_block_time: Duration) -> Self {
+        Self {
+            view_client: NearViewClientActorHandle::new(near_node.view_client.clone()),
+            client: NearClientActorHandle::new(near_node.client.clone()),
+            rpc_handler: NearRpcActorHandle::new(near_node.rpc_handler.clone()),
+            expected_block_time,
+        }
+    }
+
     /// Spawns a NEAR node with [`NodeConfig`].
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
@@ -190,6 +203,15 @@ impl ChainGateway {
 
 type RunNodeResult = Result<(ChainGateway, Option<Receiver<BlockUpdate>>), ChainGatewayError>;
 
+fn expected_block_time(near_config: &NearConfig) -> Duration {
+    near_config
+        .config
+        .consensus
+        .min_block_production_delay
+        .try_into()
+        .expect("block time must be non-negative")
+}
+
 fn run_node(
     ready_sender: tokio::sync::oneshot::Sender<RunNodeResult>,
     near_config: nearcore::NearConfig,
@@ -197,12 +219,7 @@ fn run_node(
     shutdown: CancellationToken,
     streamer_setup: Option<StreamerSetup>,
 ) {
-    let expected_block_time: std::time::Duration = near_config
-        .config
-        .consensus
-        .min_block_production_delay
-        .try_into()
-        .expect("block time must be non-negative");
+    let block_time = expected_block_time(&near_config);
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -228,9 +245,7 @@ fn run_node(
             (indexer, s.subscriber)
         });
 
-        let view_client = NearViewClientActorHandle::new(near_node.view_client);
-        let client = NearClientActorHandle::new(near_node.client);
-        let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
+        let chain_gateway = ChainGateway::new(&near_node, block_time);
 
         let stream = if let Some((indexer, streamer_config)) = indexer_and_params {
             // Don't start the streamer until synced, or its `LatestSynced`
@@ -239,7 +254,8 @@ fn run_node(
                 "chain-gateway waiting for node to finish syncing before streaming blocks."
             );
             let synced =
-                await_sync_or_shutdown(client.wait_for_full_sync(), shutdown.cancelled()).await;
+                await_sync_or_shutdown(chain_gateway.wait_for_full_sync(), shutdown.cancelled())
+                    .await;
             if !synced {
                 tracing::info!("shutdown requested before sync completed; exiting startup.");
                 let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {
@@ -252,7 +268,7 @@ fn run_node(
             match event_subscriber::streamer::start(
                 streamer_config,
                 raw_stream,
-                view_client.clone(),
+                chain_gateway.view_client.clone(),
             )
             .await
             {
@@ -266,15 +282,7 @@ fn run_node(
             None
         };
 
-        let _ = ready_sender.send(Ok((
-            ChainGateway {
-                view_client,
-                client,
-                rpc_handler,
-                expected_block_time,
-            },
-            stream,
-        )));
+        let _ = ready_sender.send(Ok((chain_gateway, stream)));
 
         shutdown.cancelled().await;
     });
