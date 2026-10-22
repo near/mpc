@@ -655,17 +655,13 @@ mod tests {
             .collect();
 
         // When
+        let mut env = Environment::new(Some(0), None, None);
         for (account_id, domains) in [
             (&voters[0].0, &caitsith),
             (&voters[1].0, &caitsith),
             (&voters[2].0, &frost),
         ] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            env.set_signer(account_id);
             contract.vote_add_domains(domains.clone()).unwrap();
         }
 
