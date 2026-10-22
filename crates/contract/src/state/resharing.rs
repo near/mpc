@@ -55,7 +55,7 @@ impl ResharingContractState {
     /// Note that transitioning to a new state implicitly requires `threshold` number of votes from participants of the
     /// previous running state.
     pub fn vote_new_parameters(
-        &mut self,
+        &self,
         prospective_epoch_id: EpochId,
         proposal: &ProposedGovernanceThresholdParameters,
         votes: &mut GovernanceThresholdParametersVotes,
@@ -472,7 +472,7 @@ pub mod tests {
         }
         // We should've gotten a new resharing state.
         assert!(new_state.is_some());
-        let mut new_state = new_state.unwrap();
+        let new_state = new_state.unwrap();
         // New state should start from the beginning, with the epoch ID bumped.
         assert_eq!(new_state.reshared_keys.len(), 0);
         assert_eq!(
