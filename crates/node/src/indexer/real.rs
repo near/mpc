@@ -15,6 +15,7 @@ use crate::indexer::tee::{
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
+use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
@@ -132,10 +133,11 @@ pub fn spawn_real_indexer(
             .await
             .expect("near node has started");
 
+            let gateway = ChainGateway::from_near_node(&near_node, &near_config);
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
             let indexer_state = Arc::new(IndexerState::new(
-                near_node.view_client,
+                gateway,
                 near_node.client,
                 near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
@@ -192,22 +194,22 @@ pub fn spawn_real_indexer(
 
             tokio::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
             ));
 
             tokio::spawn(monitor_allowed_launcher_compose_hashes(
                 allowed_launcher_compose_sender,
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
             ));
 
             tokio::spawn(monitor_my_attestation(
                 my_attestation_sender,
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
                 Ed25519PublicKey::from(&tls_public_key),
             ));
 
             let foreign_chain_supporters_receiver =
-                monitor_foreign_chain_supporters(indexer_state.clone()).await;
+                monitor_foreign_chain_supporters(indexer_state.contract.clone()).await;
             if foreign_chain_supporters_sender_oneshot
                 .send(foreign_chain_supporters_receiver)
                 .is_err()
@@ -221,7 +223,7 @@ pub fn spawn_real_indexer(
                 watch::channel(std::collections::BTreeMap::new());
             tokio::spawn(monitor_foreign_chain_whitelist(
                 foreign_chain_whitelist_sender,
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
             ));
             tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
                 foreign_chain_whitelist_receiver,
@@ -230,7 +232,7 @@ pub fn spawn_real_indexer(
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
                 mpc_indexer_config.port_override,
                 protocol_state_sender,
             )
@@ -246,7 +248,7 @@ pub fn spawn_real_indexer(
             };
 
             let my_migration_info_receiver = monitor_migrations(
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
                 migration_state_sender,
                 my_near_account_id,
                 tls_public_key,
@@ -267,9 +269,8 @@ pub fn spawn_real_indexer(
             // race it against `shutdown_token.cancelled()`: when the parent
             // cancels the token, the select! arm completes, `block_on`
             // returns, the indexer's tokio runtime drops, and every
-            // `tokio::spawn`'d monitor task (each holding
-            // `Arc<IndexerState>` → `Arc<RocksDB>`) is aborted as the
-            // runtime is dropped. That's what lets
+            // `tokio::spawn`'d monitor task (each holding handles into
+            // neard) is aborted as the runtime is dropped. That's what lets
             // `RocksDB::block_until_all_instances_are_dropped()` in `run.rs`
             // actually return on the SIGTERM path.
             #[cfg(feature = "network-hardship-simulation")]
