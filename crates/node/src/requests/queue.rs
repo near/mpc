@@ -37,6 +37,10 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
+/// Maximum attempts we should make for each request when we lead it as a failover
+/// leader. Smaller than the primary's budget to bound the extra assets failover can
+/// burn on a request that keeps failing cluster-wide.
+const MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER: u64 = 5;
 /// How long each backup leader waits after its predecessor before taking over a
 /// still-unresolved request.
 pub const LEADER_FAILOVER_INTERVAL: Duration = Duration::seconds(10);
@@ -263,15 +267,16 @@ enum ComputationProgressStatus {
 }
 
 impl<ChainRespondArgsType: ChainRespondArgs> ComputationProgress<ChainRespondArgsType> {
-    /// If [`Self::attempts`] is less than [`MAX_ATTEMPTS_PER_REQUEST_AS_LEADER`], then increments
+    /// If [`Self::attempts`] is less than `max_attempts`, then increments
     /// [`Self::attempts`] by one and returns [`ComputationProgressStatus::NewAttempt`].
     /// Otherwise returns [`ComputationProgressStatus::MaxAttemptsExceeded`] or
     /// [`ComputationProgressStatus::Pending`].
     fn update_computation_progress(
         &mut self,
         now: near_time::Instant,
+        max_attempts: u64,
     ) -> ComputationProgressStatus {
-        if self.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
+        if self.attempts >= max_attempts {
             ComputationProgressStatus::MaxAttemptsExceeded
         } else if self
             .last_response_submission
@@ -477,29 +482,43 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         progress.presumed_leader = Some(presumed_leader);
         match decision {
             LeaderDecision::Wait(reason) => RequestStatus::Wait(reason),
-            LeaderDecision::Lead { rank } => match progress.update_computation_progress(now) {
-                ComputationProgressStatus::MaxAttemptsExceeded => {
-                    RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
-                }
-                ComputationProgressStatus::Pending => RequestStatus::Wait("pending computation"),
-                ComputationProgressStatus::NewAttempt => {
-                    if rank > 0 {
-                        tracing::info!(target: "request", rank, "attempting request as failover leader");
-                        metrics::MPC_FAILOVER_LEADER_ATTEMPTS_TOTAL
-                            .with_label_values(&[
-                                &RequestType::get_type().to_string(),
-                                &rank.to_string(),
-                            ])
-                            .inc();
+            LeaderDecision::Lead { rank } => {
+                let max_attempts = if rank == 0 {
+                    MAX_ATTEMPTS_PER_REQUEST_AS_LEADER
+                } else {
+                    MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER
+                };
+                match progress.update_computation_progress(now, max_attempts) {
+                    ComputationProgressStatus::MaxAttemptsExceeded if rank > 0 => {
+                        // A failover leader must not drop the request: it stays queued so
+                        // this node can still step up should it later become the primary.
+                        RequestStatus::Wait("failover attempt budget exhausted")
                     }
-                    let attempt = Arc::new(GenerationAttempt {
-                        request: self.request.clone(),
-                        computation_progress: self.computation_progress.clone(),
-                    });
-                    self.active_attempt = Arc::downgrade(&attempt);
-                    RequestStatus::Attempt(attempt)
+                    ComputationProgressStatus::MaxAttemptsExceeded => {
+                        RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
+                    }
+                    ComputationProgressStatus::Pending => {
+                        RequestStatus::Wait("pending computation")
+                    }
+                    ComputationProgressStatus::NewAttempt => {
+                        if rank > 0 {
+                            tracing::info!(target: "request", rank, "attempting request as failover leader");
+                            metrics::MPC_FAILOVER_LEADER_ATTEMPTS_TOTAL
+                                .with_label_values(&[
+                                    &RequestType::get_type().to_string(),
+                                    &rank.to_string(),
+                                ])
+                                .inc();
+                        }
+                        let attempt = Arc::new(GenerationAttempt {
+                            request: self.request.clone(),
+                            computation_progress: self.computation_progress.clone(),
+                        });
+                        self.active_attempt = Arc::downgrade(&attempt);
+                        RequestStatus::Attempt(attempt)
+                    }
                 }
-            },
+            }
         }
     }
 }
@@ -866,7 +885,8 @@ mod tests {
     use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height};
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
-        CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
+        CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL,
+        MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE, REQUEST_EXPIRATION_BLOCKS,
     };
     use crate::tests::into_participant_ids;
@@ -1548,6 +1568,28 @@ mod tests {
 
         // Then
         assert_eq!(attempts.len(), 0);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__failover_leader_should_stop_after_attempt_budget_without_dropping() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+
+        // When
+        let mut attempts_made = 0;
+        for _ in 0..2 * MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER {
+            attempts_made += pending_requests.get_requests_to_attempt().len() as u64;
+            setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        }
+        let still_queued = pending_requests.requests.contains_key(&req.id);
+
+        // Then
+        assert_eq!(attempts_made, MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER);
+        assert!(still_queued);
     }
 
     #[test_log::test]
