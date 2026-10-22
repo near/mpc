@@ -31,7 +31,7 @@ pub struct NodeId {
     pub account_id: AccountId,
     /// TLS public key used by the node for peer-to-peer communication.
     pub tls_public_key: Ed25519PublicKey,
-    /// Full-access Ed25519 public key of the operator account.
+    /// The key the node signs its own transactions with.
     pub account_public_key: Ed25519PublicKey,
 }
 

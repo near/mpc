@@ -34,7 +34,7 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::tee_state::NodeAttestation,
+    tee::tee_state::Node,
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -255,10 +255,10 @@ impl TryIntoContractType<EventLog> for dtos::EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::StoredAttestation> for &NodeAttestation {
+impl IntoInterfaceType<dtos::StoredAttestation> for &Node {
     fn into_dto_type(self) -> dtos::StoredAttestation {
         dtos::StoredAttestation {
-            attestation: self.verified_attestation.clone().into_dto_type(),
+            attestation: self.attestation.clone().into_dto_type(),
             accepted_at_seconds: self.accepted_at_seconds,
         }
     }
