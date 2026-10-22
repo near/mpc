@@ -338,17 +338,16 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         u64::from_le_bytes(hash[0..8].try_into().unwrap())
     }
 
-    /// Selects the leader given the current state of the network.
+    /// The first eligible participant in the leader selection order, or `None` when no
+    /// participant is eligible.
     pub fn current_leader(
         &self,
         eligible_leaders: &HashSet<ParticipantId>,
     ) -> Option<ParticipantId> {
-        for candidate_leader in &self.leader_selection_order {
-            if eligible_leaders.contains(candidate_leader) {
-                return Some(*candidate_leader);
-            }
-        }
-        None
+        self.leader_selection_order
+            .iter()
+            .find(|p| eligible_leaders.contains(p))
+            .copied()
     }
 
     /// Decides whether we should lead this request now, and who we currently consider its
