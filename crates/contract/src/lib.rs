@@ -68,7 +68,6 @@ pub struct MpcContract {
     /// A row is removed at zero, so the map holds no entry for an account with none.
     available_attestation_grants: IterableMap<AccountId, u32>,
     /// Pending votes for new parameters; storage-backed, so kept outside [`ProtocolContractState`].
-    /// Emptied on every protocol state transition except a resharing cancellation.
     parameters_votes: GovernanceThresholdParametersVotes,
     /// Pending votes to add domains; storage-backed, so kept outside [`ProtocolContractState`].
     /// Votes from dropped participants are discarded when a resharing completes.
