@@ -414,7 +414,7 @@ mod tests {
         let (stored_attestation, stored_attestation_receiver) =
             watch::channel(Some(StoredAttestation {
                 attestation: STORED_MOCK,
-                accepted_at_seconds: 0,
+                accepted_at_seconds: Clock::real().now_utc().unix_timestamp().try_into().unwrap(),
             }));
         let submitter = AttestationSubmitter {
             tee_authority,
