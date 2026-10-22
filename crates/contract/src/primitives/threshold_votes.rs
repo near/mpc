@@ -10,9 +10,7 @@ impl ToProposalHash for ProposedGovernanceThresholdParameters {
     type Hasher = Sha256;
 }
 
-/// Tracks votes for proposed threshold parameters; each account can maintain one vote.
-/// Only proposal hashes are stored; callers pass the full proposal with each vote so
-/// acceptance can be checked against its participant set.
+/// Votes on proposed threshold parameters, one per account, stored by proposal hash.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct GovernanceThresholdParametersVotes(Votes<AuthenticatedAccountId>);

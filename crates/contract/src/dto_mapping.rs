@@ -964,7 +964,6 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            // Pending votes are stored hash-only, so their proposals can't be reported.
             parameters_votes: dtos::GovernanceThresholdParametersVotes {
                 proposal_by_account: BTreeMap::new(),
             },
