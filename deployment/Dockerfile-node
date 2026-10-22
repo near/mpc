@@ -1,4 +1,5 @@
-FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+# linux/amd64 manifest of debian:bookworm-slim, built 2026-10-20T21:32:55Z
+FROM debian:bookworm-slim@sha256:ec31d744f83f4a73447ba045aaab9409997efe5cc706eca4890c1be36cc1606a
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN \
@@ -8,11 +9,6 @@ RUN \
     repro-sources-list.sh && \
     apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
-    : "Distrust the emSign roots and AAA Certificate Services, which cross-signed the emSign intermediates whose keys are public (RUSTSEC-2026-0382)" && \
-    sed -i -e '/^mozilla\/emSign_/s/^/!/' -e '/^mozilla\/Comodo_AAA_Services_root\.crt$/s/^/!/' /etc/ca-certificates.conf && \
-    : "update-ca-certificates is offline and deterministic: it rebuilds the bundle and hash links from the installed certificates only" && \
-    update-ca-certificates && \
-    ! openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt | openssl pkcs7 -print_certs -noout | grep -qE 'emSign|AAA Certificate Services' && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 

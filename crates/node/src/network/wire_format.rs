@@ -192,6 +192,11 @@ pub enum VerifyForeignTxTaskId {
         id: VerifyForeignTxId,
         presignature_id: UniqueId,
     } = 0,
+    // TODO(#4793): rename back to `VerifyForeignTx` once the stored-presignature variant is gone.
+    VerifyForeignTxOnlinePresign {
+        id: VerifyForeignTxId,
+        paired_triple_id: UniqueId,
+    } = 1,
 }
 
 impl From<VerifyForeignTxTaskId> for MpcTaskId {
@@ -349,6 +354,10 @@ mod tests {
                 MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTx {
                     id: hash(1),
                     presignature_id: uid(2),
+                }),
+                MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+                    id: hash(1),
+                    paired_triple_id: uid(2),
                 }),
             ]),
         ]

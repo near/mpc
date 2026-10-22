@@ -322,8 +322,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Cancel the indexer's terminal `listen_blocks` race; that lets the
     // indexer thread's `block_on` return, its tokio runtime drop, and every
-    // spawned monitor task (each holding `Arc<IndexerState>` →
-    // `Arc<RocksDB>`) be aborted with the runtime.
+    // spawned monitor task (each holding handles into neard) be aborted
+    // with the runtime.
     info!("Cancelling indexer shutdown token.");
     indexer_shutdown_token.cancel();
 
