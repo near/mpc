@@ -614,12 +614,7 @@ mod tests {
         // Given
         let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
         let (voter, _, _) = &participants.participants()[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(voter.clone())
-                .predecessor_account_id(voter.clone())
-                .build()
-        );
+        Environment::new(Some(0), Some(voter.clone()), None);
 
         // When
         contract
