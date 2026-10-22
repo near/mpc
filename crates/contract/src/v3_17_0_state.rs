@@ -31,7 +31,7 @@ use crate::{
     tee::{
         measurements::AllowedMeasurements,
         proposal::{AllowedLauncherImages, StoredDockerImageHashes},
-        tee_state::{NodeAttestation, TeeState},
+        tee_state::{Node, TeeState},
         verifier_votes::TeeVerifierVotes,
     },
     update::ContractUpdateVotes,
@@ -55,7 +55,7 @@ struct OldTeeState {
     allowed_launcher_images: AllowedLauncherImages,
     votes: Votes<AuthenticatedAccountId>,
     launcher_votes: OldLauncherHashVotes,
-    stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, Node>,
     allowed_measurements: AllowedMeasurements,
     measurement_votes: OldMeasurementVotes,
 }
@@ -72,7 +72,7 @@ impl From<OldTeeState> for TeeState {
                 StorageKey::LauncherHashVotesByVoter,
                 StorageKey::LauncherHashVotesByProposal,
             ),
-            stored_attestations: old.stored_attestations,
+            nodes: old.stored_attestations,
             allowed_measurements: old.allowed_measurements,
             measurement_votes: Votes::new(
                 StorageKey::MeasurementVotesByVoter,

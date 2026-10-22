@@ -8,7 +8,7 @@ use crate::node_migrations::NodeMigrations;
 use crate::primitives::key_state::Keyset;
 use crate::primitives::participants::{ParticipantInfo, Participants};
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{NodeId, TeeQuoteStatus, TeeState};
+use crate::tee::tee_state::TeeState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::types::{self as dtos};
@@ -251,22 +251,21 @@ impl MpcContract {
         )?;
 
         // ensure that this node has a valid TEE quote.
-        let node_id = NodeId {
-            account_id: account_id.clone(),
-            account_public_key: expected_destination_node.signer_account_pk,
-            tls_public_key: expected_destination_node
-                .destination_node_info
-                .tls_public_key
-                .clone(),
-        };
-
-        if !(matches!(
-            self.tee_state.reverify_participants(
-                &node_id,
-                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
-            ),
-            TeeQuoteStatus::Valid
-        )) {
+        let is_attested = self
+            .tee_state
+            .nodes
+            .get(
+                &expected_destination_node
+                    .destination_node_info
+                    .tls_public_key,
+            )
+            .is_some_and(|node| {
+                self.tee_state.has_valid_attestation(
+                    node,
+                    Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+                )
+            });
+        if !is_attested {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation {
                 reason: "destination node TEE quote is invalid".into(),
             }
@@ -398,7 +397,7 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::tee_state::ParticipantInsertion;
+    use crate::tee::tee_state::NodeId;
     use dtos::Ed25519PublicKey;
     use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;
     use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
@@ -996,10 +995,7 @@ mod tests {
                 valid_participant_attestation,
                 tee_upgrade_duration,
             );
-            assert_matches!(
-                insertion_result,
-                Ok(ParticipantInsertion::NewlyInsertedParticipant)
-            );
+            assert_eq!(insertion_result, Ok(true));
         }
 
         pub fn run(&self, contract: &mut MpcContract, keyset: &Keyset) {

@@ -477,7 +477,7 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
 }
 
 /// **Test that [`clean_tee_status()`] is vote-only** — attestations for non-participants
-/// remain in `stored_attestations` after the call. Attestation pruning is handled by the
+/// remain stored after the call. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
 #[test]
 fn clean_tee_status__should_not_touch_attestations() {

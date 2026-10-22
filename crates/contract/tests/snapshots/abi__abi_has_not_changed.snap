@@ -4321,7 +4321,7 @@ expression: abi
               "type": "string"
             },
             "account_public_key": {
-              "description": "Full-access Ed25519 public key of the operator account.",
+              "description": "The key the node signs its own transactions with.",
               "allOf": [
                 {
                   "$ref": "#/definitions/Ed25519PublicKey"

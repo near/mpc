@@ -155,7 +155,7 @@ async fn back_compatibility_without_state(
     )
 }
 
-/// `stored_attestations` keeps entries for non-participants too, so the upgrade under test
+/// The contract stores attestations of non-participants too, so the upgrade under test
 /// carries more entries than [`PARTICIPANT_LEN`].
 const STORED_ATTESTATION_ENTRIES: usize = 25;
 
