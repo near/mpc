@@ -76,9 +76,7 @@ pub enum TeeValidationResult {
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
-    /// Block time at which this entry was accepted, restamped by every accepted submission.
-    /// The init block time for a mocked entry nobody submitted (see
-    /// [`TeeState::with_mocked_participant_attestations`]).
+    /// Block time at which this entry was last stored, restamped by every accepted submission.
     pub(crate) accepted_at_seconds: u64,
 }
 
