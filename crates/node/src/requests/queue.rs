@@ -338,18 +338,6 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         u64::from_le_bytes(hash[0..8].try_into().unwrap())
     }
 
-    /// The first eligible participant in the leader selection order, or `None` when no
-    /// participant is eligible.
-    pub fn current_leader(
-        &self,
-        eligible_leaders: &HashSet<ParticipantId>,
-    ) -> Option<ParticipantId> {
-        self.leader_selection_order
-            .iter()
-            .find(|p| eligible_leaders.contains(p))
-            .copied()
-    }
-
     /// Decides whether we should lead this request now, and who we currently consider its
     /// leader (ourselves when we lead), kept in [`ComputationProgress::presumed_leader`]
     /// for debugging. `None` when no eligible leader exists.
@@ -381,6 +369,18 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             ));
         }
         Some((my_participant_id, LeaderDecision::Lead))
+    }
+
+    /// The first eligible participant in the leader selection order, or `None` when no
+    /// participant is eligible.
+    pub fn current_leader(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+    ) -> Option<ParticipantId> {
+        self.leader_selection_order
+            .iter()
+            .find(|p| eligible_leaders.contains(p))
+            .copied()
     }
 
     /// Our position among the eligible participants in the leader selection order, or `None`
