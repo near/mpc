@@ -559,12 +559,7 @@ mod tests {
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer.clone())
-                .predecessor_account_id(signer.clone())
-                .build()
-        );
+        Environment::new(Some(0), Some(signer.clone()), None);
         contract.vote_add_domains(domains.clone()).unwrap();
         let proposal = ProposedGovernanceThresholdParameters::new(
             GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
