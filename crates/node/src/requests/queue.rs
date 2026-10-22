@@ -485,6 +485,12 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 ComputationProgressStatus::NewAttempt => {
                     if rank > 0 {
                         tracing::info!(target: "request", rank, "attempting request as backup leader");
+                        metrics::MPC_REQUEST_BACKUP_ATTEMPTS_TOTAL
+                            .with_label_values(&[
+                                &RequestType::get_type().to_string(),
+                                &rank.to_string(),
+                            ])
+                            .inc();
                     }
                     let attempt = Arc::new(GenerationAttempt {
                         request: self.request.clone(),
