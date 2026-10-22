@@ -246,7 +246,7 @@ pub static MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL: LazyLock<prometheus::I
             "Number of queue passes where a request had eligible leaders, but none was allowed \
              by the eligible-leaders refiner (e.g. no participant supports the request's \
              foreign chain), so the request stays parked",
-            &["request_type"]
+            &["request_type", "chain"]
         )
         .unwrap()
     });
