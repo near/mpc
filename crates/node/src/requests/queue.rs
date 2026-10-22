@@ -484,8 +484,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 ComputationProgressStatus::Pending => RequestStatus::Wait("pending computation"),
                 ComputationProgressStatus::NewAttempt => {
                     if rank > 0 {
-                        tracing::info!(target: "request", rank, "attempting request as backup leader");
-                        metrics::MPC_REQUEST_BACKUP_ATTEMPTS_TOTAL
+                        tracing::info!(target: "request", rank, "attempting request as failover leader");
+                        metrics::MPC_FAILOVER_LEADER_ATTEMPTS_TOTAL
                             .with_label_values(&[
                                 &RequestType::get_type().to_string(),
                                 &rank.to_string(),
