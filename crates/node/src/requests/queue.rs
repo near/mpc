@@ -368,7 +368,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
                 LeaderDecision::Wait("waiting for our leader failover slot"),
             ));
         }
-        Some((my_participant_id, LeaderDecision::Lead))
+        Some((my_participant_id, LeaderDecision::Lead { rank }))
     }
 
     /// The first eligible participant in the leader selection order, or `None` when no
@@ -477,12 +477,15 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         progress.presumed_leader = Some(presumed_leader);
         match decision {
             LeaderDecision::Wait(reason) => RequestStatus::Wait(reason),
-            LeaderDecision::Lead => match progress.update_computation_progress(now) {
+            LeaderDecision::Lead { rank } => match progress.update_computation_progress(now) {
                 ComputationProgressStatus::MaxAttemptsExceeded => {
                     RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
                 }
                 ComputationProgressStatus::Pending => RequestStatus::Wait("pending computation"),
                 ComputationProgressStatus::NewAttempt => {
+                    if rank > 0 {
+                        tracing::info!(target: "request", rank, "attempting request as backup leader");
+                    }
                     let attempt = Arc::new(GenerationAttempt {
                         request: self.request.clone(),
                         computation_progress: self.computation_progress.clone(),
@@ -496,7 +499,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 }
 
 enum LeaderDecision {
-    Lead,
+    Lead { rank: usize },
     Wait(&'static str),
 }
 
