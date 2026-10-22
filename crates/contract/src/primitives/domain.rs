@@ -259,8 +259,7 @@ impl ToProposalHash for [DomainConfig] {
     type Hasher = Sha256;
 }
 
-/// Tracks votes to add domains; each participant can maintain one vote. Only proposal hashes
-/// are stored; callers pass the full domain list with each vote.
+/// Votes to add domains, one per participant, stored by proposal hash.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct AddDomainsVotes(Votes<AuthenticatedParticipantId>);

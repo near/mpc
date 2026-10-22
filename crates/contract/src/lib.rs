@@ -70,7 +70,6 @@ pub struct MpcContract {
     /// Pending votes for new parameters; storage-backed, so kept outside [`ProtocolContractState`].
     parameters_votes: GovernanceThresholdParametersVotes,
     /// Pending votes to add domains; storage-backed, so kept outside [`ProtocolContractState`].
-    /// Votes from dropped participants are discarded when a resharing completes.
     add_domains_votes: AddDomainsVotes,
 }
 
