@@ -100,6 +100,8 @@ fn migrate_stored_attestations(
     Vec<AccountId>,
 ) {
     let entries: Vec<_> = old.drain().collect();
+    // The rebuilt map shares the storage prefix, so its inserts would read the drained entries
+    // back from storage until the removals are written
     old.flush();
 
     let mut migrated = IterableMap::new(StorageKey::StoredAttestations);
