@@ -237,8 +237,9 @@ pub struct ComputationProgress<ChainRespondArgsType> {
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.
     pub computed_response: Option<ChainRespondArgsType>,
-    /// The leader selected during computation
-    pub selected_leader: Option<ParticipantId>,
+    /// The participant we most recently presumed to be leading the request (ourselves once
+    /// we lead, possibly as a backup). Kept for debugging.
+    pub presumed_leader: Option<ParticipantId>,
     /// The time and when the last response was submitted to chain.
     /// This is used to delay the next retry as well as debugging.
     pub last_response_submission: Option<near_time::Instant>,
@@ -249,7 +250,7 @@ impl<ChainRespondArgsType: ChainRespondArgs> Default for ComputationProgress<Cha
         Self {
             attempts: Default::default(),
             computed_response: Default::default(),
-            selected_leader: Default::default(),
+            presumed_leader: Default::default(),
             last_response_submission: Default::default(),
         }
     }
@@ -350,9 +351,9 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         None
     }
 
-    /// Decides whether we should lead this request now, together with the participant to
-    /// record as the request's current leader (ourselves when we lead). `None` when no
-    /// eligible leader exists.
+    /// Decides whether we should lead this request now, and who we currently consider its
+    /// leader (ourselves when we lead), kept in [`ComputationProgress::presumed_leader`]
+    /// for debugging. `None` when no eligible leader exists.
     fn leader_decision(
         &self,
         eligible_leaders: &HashSet<ParticipantId>,
@@ -468,13 +469,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         if !is_canonical {
             return RequestStatus::Wait("request is not on canonical chain");
         }
-        let Some((selected_leader, decision)) =
+        let Some((presumed_leader, decision)) =
             self.leader_decision(eligible_leaders, my_participant_id, now)
         else {
             return RequestStatus::Wait("no eligible leaders for this request");
         };
         let mut progress = self.computation_progress.lock().unwrap();
-        progress.selected_leader = Some(selected_leader);
+        progress.presumed_leader = Some(presumed_leader);
         match decision {
             LeaderDecision::Wait(reason) => RequestStatus::Wait(reason),
             LeaderDecision::Lead => match progress.update_computation_progress(now) {
@@ -1484,7 +1485,7 @@ mod tests {
                 .computation_progress
                 .lock()
                 .unwrap()
-                .selected_leader,
+                .presumed_leader,
             Some(setup.participant_ids[TestSetup::MY_INDEX])
         );
     }
