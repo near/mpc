@@ -132,6 +132,7 @@ mod tests {
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::find_leader;
+    use crate::tee::test_utils::Environment;
     use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
@@ -518,13 +519,9 @@ mod tests {
         };
 
         // When
+        let mut env = Environment::new(Some(0), None, None);
         for (account_id, _, _) in participants.participants() {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            env.set_signer(account_id);
             contract.vote_add_domains(vec![new_domain.clone()]).unwrap();
         }
 
@@ -540,13 +537,8 @@ mod tests {
     /// mocks each participant's attestation with its TLS key as the account key.
     fn attested_context(participants: &Participants, account_id: &AccountId) {
         let info = participants.info(account_id).unwrap();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .signer_account_pk(near_sdk::PublicKey::from(info.tls_public_key.clone()))
-                .build()
-        );
+        Environment::new(Some(0), Some(account_id.clone()), None)
+            .set_pk(near_sdk::PublicKey::from(info.tls_public_key.clone()));
     }
 
     /// Drives a 3-participant Running contract with one domain into Resharing: every
@@ -622,12 +614,7 @@ mod tests {
         // Given
         let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
         let (voter, _, _) = &participants.participants()[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(voter.clone())
-                .predecessor_account_id(voter.clone())
-                .build()
-        );
+        Environment::new(Some(0), Some(voter.clone()), None);
 
         // When
         contract
@@ -706,12 +693,7 @@ mod tests {
         // Given
         let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
         let (voter, _, _) = &participants.participants()[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(voter.clone())
-                .predecessor_account_id(voter.clone())
-                .build()
-        );
+        Environment::new(Some(0), Some(voter.clone()), None);
 
         // When: a participant re-proposes at the next prospective epoch
         let result =
