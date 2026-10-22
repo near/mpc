@@ -50,44 +50,6 @@ pub enum TeeValidationResult {
     },
 }
 
-/// An MPC node, stored under its TLS key. One account can own many nodes.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
-pub(crate) struct Node {
-    pub(crate) account_id: AccountId,
-    pub(crate) tls_public_key: Ed25519PublicKey,
-    /// The key the node signs its own transactions with.
-    pub(crate) account_public_key: Ed25519PublicKey,
-    pub(crate) attestation: VerifiedAttestation,
-    /// Block time at which this entry was accepted, restamped by every accepted submission.
-    /// `None` for an entry stored before the contract recorded this, and the init block time for
-    /// a mocked entry nobody submitted (see [`TeeState::with_mocked_participant_attestations`]).
-    pub(crate) accepted_at_seconds: Option<u64>,
-}
-
-impl Node {
-    fn new(id: NodeId, attestation: VerifiedAttestation) -> Self {
-        Self {
-            account_id: id.account_id,
-            tls_public_key: id.tls_public_key,
-            account_public_key: id.account_public_key,
-            attestation,
-            accepted_at_seconds: Some(TeeState::current_time_seconds()),
-        }
-    }
-
-    pub(crate) fn id(&self) -> NodeId {
-        NodeId {
-            account_id: self.account_id.clone(),
-            tls_public_key: self.tls_public_key.clone(),
-            account_public_key: self.account_public_key.clone(),
-        }
-    }
-}
-
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
@@ -494,8 +456,8 @@ impl TeeState {
         self.nodes.values().map(Node::id).collect()
     }
 
-    /// Compared by account alone: `with_mocked_participant_attestations` stores a placeholder
-    /// `account_public_key`, so full [`NodeId`] equality would reject legitimate mocked entries.
+    /// Compared by account alone: [`Self::with_mocked_participant_attestations`] stores a
+    /// placeholder signer key, so full [`NodeId`] equality would reject legitimate mocked entries.
     fn node_of(&self, account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> Option<&Node> {
         self.nodes
             .get(tls_public_key)
@@ -509,8 +471,47 @@ impl TeeState {
         tls_public_key: &Ed25519PublicKey,
         signer_public_key: &PublicKey,
     ) -> Option<&Node> {
+        let signer_public_key = Ed25519PublicKey::try_from(signer_public_key).ok()?;
         self.node_of(account_id, tls_public_key)
-            .filter(|node| PublicKey::from(node.account_public_key.clone()) == *signer_public_key)
+            .filter(|node| node.account_public_key == signer_public_key)
+    }
+}
+
+/// An MPC node, stored under its TLS key. One account can own many nodes.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+pub(crate) struct Node {
+    pub(crate) account_id: AccountId,
+    pub(crate) tls_public_key: Ed25519PublicKey,
+    /// The key the node signs its own transactions with.
+    pub(crate) account_public_key: Ed25519PublicKey,
+    pub(crate) attestation: VerifiedAttestation,
+    /// Block time at which this entry was accepted, restamped by every accepted submission.
+    /// `None` for an entry stored before the contract recorded this, and the init block time for
+    /// a mocked entry nobody submitted (see [`TeeState::with_mocked_participant_attestations`]).
+    pub(crate) accepted_at_seconds: Option<u64>,
+}
+
+impl Node {
+    fn new(id: NodeId, attestation: VerifiedAttestation) -> Self {
+        Self {
+            account_id: id.account_id,
+            tls_public_key: id.tls_public_key,
+            account_public_key: id.account_public_key,
+            attestation,
+            accepted_at_seconds: Some(TeeState::current_time_seconds()),
+        }
+    }
+
+    pub(crate) fn id(&self) -> NodeId {
+        NodeId {
+            account_id: self.account_id.clone(),
+            tls_public_key: self.tls_public_key.clone(),
+            account_public_key: self.account_public_key.clone(),
+        }
     }
 }
 
