@@ -1,90 +1,212 @@
-# Robust ECDSA — stub
+This document specifies the signing protocol described in [[DJNPO20](https://eprint.iacr.org/2020/501)].
 
-> **Status: this is not a secure scheme.**
-> The implementation this document used to specify was removed. What remains is a
-> stub that produces valid ECDSA signatures while leaking the signing key, kept so
-> that the surrounding node and
-> contract plumbing stays exercised until a real robust scheme replaces it.
-> TODO(#4383): replace the stub with a real robust scheme.
-> Never add a domain for this protocol on mainnet or testnet.
->
-> The removed specification, including its security analysis of split-view attacks
-> and its differences from the original paper, is available in this file's git
-> history.
+**We deviate from the original scheme in the following ways.** The protocol is a single four-round protocol whose inputs include the message hash and the tweak from round 1. The shares of $a$ and of the blinding value $b$ are dealt under Pedersen commitments in round 1, receivers verify their shares against them, and in round 3 every participant proves in zero knowledge that its $w_i$ opens consistently with its committed $a_i$ and $b_i$, so that a misbehaving dealer or participant is identified by the checking party; the values $W_i = a_i \cdot R$ and the global check $W = w \cdot G$ are removed. Key derivation is applied to the secret shares before round 1, and the last round is asymmetric with a coordinator collecting the signature shares.
 
-We keep the module's type surface, participant-count rules and threshold arithmetic
-(`N = 2t + 1` signers for `t = MaxMalicious`) so that reintroducing a robust scheme
-means rewriting one function rather than rebuilding the node's presignature storage,
-task routing, resharing and contract-side threshold validation around it.
-
-### Note: We denote $\mathcal{P}$ the set of participants included in the DKG and the threshold $t = \mathsf{MaxMalicious}$
-
-# Presigning
-
-A set of parties $\mathcal{P}_1 \subseteq \mathcal{P}$ of size exactly $N_1 = 2t + 1$
-generates a presignature. The input to this phase is the secret key share $x_i$.
-
-**Round 1:**
-
-1. Each $P_i$ samples a random non-zero $k_i$.
-2. $\star$ Each $P_i$ sends $k_i$ to every party.
-3. $\bullet$ Each $P_i$ waits to receive $k_j$ from every other party.
-4. Each $P_i$ computes the nonce $k \gets \sum_j k_j$ and $R \gets k \cdot G$.
-5. $\blacktriangle$ Each $P_i$ *asserts* that $k \neq 0$.
-6. Each $P_i$ sets $\alpha_i, c_i \gets k^{-1}$, $\beta_i \gets k^{-1} \cdot x_i$ and $e_i \gets 0$.
-
-**Output:** the presignature $(R, \alpha_i, \beta_i, c_i, e_i)$.
-
-$\alpha_i$ and $c_i$ are identical across parties rather than secret-shared. Because
-Lagrange coefficients at zero sum to one, $\sum_i \lambda_i \alpha_i = k^{-1}$ holds
-regardless, so the signing phase below recombines them correctly. $\beta_i$ is
-scaled by the party's real key share, so $\sum_i \lambda_i \beta_i = k^{-1} x$.
-
-**Why this leaks the key.** Every presigner learns $k$ in the clear, so given any
-signature $(R, s)$ derived from this presignature the signing key follows from
-$x = (s \cdot k - h) \cdot R_\mathsf{x}^{-1}$. The nonce $\delta$-rerandomization
-below does not help: $\delta$ is derived from public inputs.
+### Note:  We denote $\mathcal{P}$ the set of participants included the DKG and the threshold $t = \mathsf{MaxMalicious}$
 
 # Signing
 
-Unchanged from the removed scheme, and scheme-agnostic: it sums Lagrange-linearized
-shares of $s$ and provides no secrecy of its own.
+In this phase, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}$
+of size $N_1 = 2t + 1$ wishes to generate an ECDSA signature.
 
-A set of parties $\mathcal{P}_2 \subseteq \mathcal{P}_1$ of size $N_2 = 2t + 1$
-generates an ECDSA signature. The inputs to this phase are:
+The inputs to this phase are:
+1) The secret key share $x_i$.
+2) The public key $X$
+3) A tweak $\epsilon$ used during key derivation
+4) The message hash $h= H(m)$
+5) The derived public key $Y = X + \epsilon \cdot G$
 
-1) The presignature $(R, \alpha_i, \beta_i, c_i, e_i)$,
-2) The public key $X$,
-3) A "fresh" public source of entropy $\rho$,
-4) A tweak $\epsilon$ used during key derivation,
-5) The message hash $h = H(m)$,
-6) The derived public key $Y = X + \epsilon \cdot G$.
+**Key Derivation:**
 
-**Rerandomization & Key Derivation:**
-
-1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(Y, \epsilon, h, R, \rho)$
-2. Each $P_i$ rerandomizes the following elements:
-
-    * $R  \gets R^\delta$
-    * $\alpha_i \gets \alpha_i \cdot \delta^{-1}$
-    * $\beta_i \gets (\beta_i + c_i \cdot \epsilon) \cdot \delta^{-1}$
+1. Each $P_i$ derives its signing share $x_i \gets x_i + \epsilon$
 
 **Round 1:**
 
-1. Each $P_i$ computes its signature share $s_i \gets \alpha_i * h + \beta_i \cdot R_\mathsf{x} + e_i$ where $R_\mathsf{x}$ is the x coordinate of $R$.
-2. Each $P_i$ linearizes its signature share $s_i \gets \lambda_i(\mathcal{P}_2) s_i$.
-3. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
+1. Each $P_i$ generates two random, degree $t$ polynomials $f_{k_i}$ and $f_{a_i}$
+2. Each $P_i$ generates a random, degree $t$ polynomial $f_{\rho_i}$.
+3. Each $P_i$ generates three random, degree $2t$ polynomials $f_{b_i}$, $f_{d_i}$, and $f_{e_i}$ and set their constant terms to zero.
+4. Each $P_i$ generates a random, degree $2t$ polynomial $f_{\sigma_i}$ with constant term zero
+5. Each $P_i$ commits to $f_{a_i}$ and $f_{b_i}$:
 
-**Round 1 (Coordinator):**
+$$
+\hat f_{a_i} \gets \mathsf{Com}(f_{a_i}; f_{\rho_i}) \qquad
+\hat f_{b_i} \gets \mathsf{Com}(f_{b_i}; f_{\sigma_i})
+$$
 
-3. $\bullet$ The coordinator waits to receive $s_j$ from every party.
-4. The coordinator sums the received elements $s \gets \sum_j s_j$.
-5. $\blacktriangle$ The coordinator *asserts* that $s\neq 0$
-6. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
-7. $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid ECDSA signature for $h$.
+   * **Pedersen commitment:** $H_{\mathsf{ped}}$ denotes a second generator with unknown discrete logarithm, and $\mathsf{Com}(v; r) = v \cdot G + r \cdot H_{\mathsf{ped}}$. $H_{\mathsf{ped}}$ is a fixed public constant, derived once by hashing a protocol-specific tag to the curve ([RFC 9380](https://www.rfc-editor.org/rfc/rfc9380)), so that no party can know its discrete logarithm.
+
+   * $\mathsf{Com}$ extends coefficientwise to polynomials: for $f(X) = \sum_m f_m X^m$ and $r(X) = \sum_m r_m X^m$, $\mathsf{Com}(f; r)$ is the polynomial with coefficients $\mathsf{Com}(f_m; r_m)$. Since $\mathsf{Com}$ is linear, $\mathsf{Com}(f; r)(j) = \mathsf{Com}(f(j); r(j))$.
+
+$\quad$ *Note: the constant coefficient of* $\hat f_{b_i}$ *is the identity, since* $f_{b_i}$ *and* $f_{\sigma_i}$ *have constant term zero, and is not sent.*
+
+6. $\star$ Each $P_i$ sends $(\hat f_{a_i}, \hat f_{b_i})$ to every party.
+7. $\textcolor{red}{\star}$ Each $P_i$ **privately** sends
+$(k_{ij}, a_{ij}, b_{ij}, d_{ij}, e_{ij}, \rho_{ij}, \sigma_{ij})$ to every party $P_j$ such that:
+
+$$
+k_{ij} \gets f_{k_i}(j) \qquad
+a_{ij} \gets f_{a_i}(j) \qquad
+b_{ij} \gets f_{b_i}(j) \qquad
+d_{ij} \gets f_{d_i}(j) \qquad
+e_{ij} \gets f_{e_i}(j) \qquad
+\rho_{ij} \gets f_{\rho_i}(j) \qquad
+\sigma_{ij} \gets f_{\sigma_i}(j)
+$$
+
+**Round 2:**
+
+1. $\bullet$ Each $P_i$ waits to receive the committed polynomials $(\hat f_{a_j}, \hat f_{b_j})$ from each party $P_j$
+2. Each $P_i$ computes the hash $\eta_i \gets H\big(\{(\hat f_{a_j}, \hat f_{b_j})\}_{j \in \mathcal{P}_1}\big)$
+3. $\bullet$ Each $P_i$ waits to receive $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji}, \rho_{ji}, \sigma_{ji})$ from each party $P_j$
+4. $\blacktriangle$ Each $P_i$ *asserts* the following, identifying $P_j$ as malicious to $P_i$ alone otherwise (the check uses $P_i$'s private shares, so the identification is not transferable):
+
+$$
+\mathsf{Com}(a_{ji}; \rho_{ji}) = \hat f_{a_j}(i) \qquad
+\mathsf{Com}(b_{ji}; \sigma_{ji}) = \hat f_{b_j}(i)
+$$
+
+5. Each $P_i$ sums the shares received from the participants:
+
+$$
+k_i \gets \sum_j k_{ji} \qquad
+a_i \gets \sum_j a_{ji} \qquad
+b_i \gets \sum_j b_{ji} \qquad
+d_i \gets \sum_j d_{ji} \qquad
+e_i \gets \sum_j e_{ji} \qquad
+\rho_i \gets \sum_j \rho_{ji} \qquad
+\sigma_i \gets \sum_j \sigma_{ji}
+$$
+
+6. Each $P_i$ sums the committed polynomials:
+
+$$
+\hat f_a \gets \sum_j \hat f_{a_j} \qquad \hat f_b \gets \sum_j \hat f_{b_j}
+$$
+
+$\quad$ *Note: it follows that* $\hat f_a(i) = \mathsf{Com}(a_i; \rho_i)$ *and* $\hat f_b(i) = \mathsf{Com}(b_i; \sigma_i)$*.*
+
+7. Each $P_i$ computes $R_i \gets k_i \cdot G$
+8. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i \quad$ ($b_i$ being a blinding factor for $a_i \cdot k_i$)
+9. $\star$ Each $P_i$ sends $(R_i, w_i, \eta_i)$ to every party.
+
+**Round 3:**
+
+1. $\bullet$ Each $P_i$ waits to receive $(R_j, w_j, \eta_j)$ from each $P_j$, and $\blacktriangle$ *asserts* that $\eta_j = \eta_i$.
+2. $\blacktriangle$ Each $P_i$ *asserts* that:
+$\forall j \in \set{t+2.. N_1},\quad \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; j) =  R_j$
+3. Each $P_i$ computes $R \gets \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; 0)$
+4. $\blacktriangle$ Each $P_i$ *asserts* that $R \neq Identity$
+5. Each $P_i$ computes $w \gets \mathsf{Interpolation}(w_1, \ldots w_{2 \cdot t+1}; 0)$
+6. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
+7. Each $P_i$ computes $\pi_i \gets \mathsf{Prove}\big(w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i;\ a_i, b_i, \rho_i, \sigma_i\big)$
+
+**Proof of the $w_i$ opening** (sigma protocol, Fiat-Shamir): the statement is $\big(w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i\big)$ with witness $(a_i, b_i, \rho_i, \sigma_i)$ such that:
+
+$$
+w_i \cdot G = a_i \cdot R_i + b_i \cdot G \qquad
+\hat f_a(i) = a_i \cdot G + \rho_i \cdot H_{\mathsf{ped}} \qquad
+\hat f_b(i) = b_i \cdot G + \sigma_i \cdot H_{\mathsf{ped}}
+$$
+
+* $\mathsf{Prove}$:
+   * sample $(u_a, u_b, u_\rho, u_\sigma)$
+   * compute $K_0 \gets u_a \cdot R_i + u_b \cdot G$
+   * compute $K_1 \gets u_a \cdot G + u_\rho \cdot H_{\mathsf{ped}}$
+   * compute $K_2 \gets u_b \cdot G + u_\sigma \cdot H_{\mathsf{ped}}$
+   * compute $e \gets H(\eta_i, i, w_i \cdot G, \hat f_a(i), \hat f_b(i), R_i, K_0, K_1, K_2)$
+   * compute $z_a \gets u_a + e a_i$, $z_b \gets u_b + e b_i$, $z_\rho \gets u_\rho + e \rho_i$, $z_\sigma \gets u_\sigma + e \sigma_i$
+   * output $\pi_i = (e, z_a, z_b, z_\rho, z_\sigma)$
+
+8. $\star$ Each $P_i$ sends $\pi_i$ to every party.
+
+**Round 4:**
+
+1. $\bullet$ Each $P_i$ waits to receive $\pi_j$ from every party.
+2. $\blacktriangle$ For each $j$, each $P_i$ *asserts* that $\mathsf{Verify}\big(w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j;\ \pi_j\big)$ succeeds, identifying $P_j$ as malicious to $P_i$ otherwise ($R_j$ and $w_j$ are not echoed, so the identification is only as transferable as $P_i$'s view of them).
+   * $\mathsf{Verify}$, parsing $\pi_j = (e, z_a, z_b, z_\rho, z_\sigma)$:
+      * compute $K_0 \gets z_a \cdot R_j + z_b \cdot G - e \cdot (w_j \cdot G)$
+      * compute $K_1 \gets z_a \cdot G + z_\rho \cdot H_{\mathsf{ped}} - e \cdot \hat f_a(j)$
+      * compute $K_2 \gets z_b \cdot G + z_\sigma \cdot H_{\mathsf{ped}} - e \cdot \hat f_b(j)$
+      * accept iff $e = H(\eta_i, j, w_j \cdot G, \hat f_a(j), \hat f_b(j), R_j, K_0, K_1, K_2)$
+
+   $\quad$ *Note: the verifier uses its own* $\eta_i$*, asserted equal to* $\eta_j$ *in round 3.*
+
+
+3. Each $P_i$ computes $c_i \gets a_i \cdot w^{-1}$
+4. Each $P_i$ computes $\alpha_i \gets c_i+d_i$
+5. Each $P_i$ computes $\beta_i \gets c_i \cdot x_i$.
+6. Each $P_i$ computes its signature share $s_i \gets \alpha_i \cdot h + \beta_i \cdot R_\mathsf{x} + e_i$ where $R_\mathsf{x}$ is the x coordinate of $R$.
+7. Each $P_i$ linearizes its signature share $s_i \gets \lambda_i(\mathcal{P}_1) s_i$.
+8. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
+
+**Round 4 (Coordinator):**
+
+9. $\bullet$ The coordinator waits to receive $s_j$ from every party.
+10. The coordinator sums the received elements $s \gets \sum_j s_j$.
+11. $\blacktriangle$ The coordinator *asserts* that $s\neq 0$
+12. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\set{\frac{q}{2}..~q-1}$
+13. $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid ECDSA signature for $h$.
 
 **Output:** the signature $(R, s)$.
 
 *Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
 
+
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).
+
+# Differences with [[DJNPO20](https://eprint.iacr.org/2020/501)]
+
+Our specification introduces several modifications to the original paper, aimed at enhancing performance, security, and compatibility. The key changes are:
+
+1. Sign computation optimization
+2. Communication optimization
+3. Identifiable check on the $w$ opening
+4. Key derivation
+5. Outsourcing the message hash
+
+### Sign computation optimization
+We require from the sender to linearize the value $s_i$ before sending it.
+This amortizes the cost of computation for the receiver by $n-1$ lagrange coefficients computation and $n-1$ scalar multiplications.
+The receiver only has to sum up the received values.
+
+### Communication optimization
+The original paper does not consider the existence of a coordinator and treats all the participants symmetrically.
+Such choice can overload the network with $O(n^2)$ messages. Instead, we make the last round asymmetric and require
+that each of the parties would only send their shares to the coordinator which combines them in the corresponding way.
+
+### Identifiable check on the $w$ opening
+The shares of $a$ and $b$ are dealt under Pedersen commitments, and each participant proves that its $w_i$ is consistent with its committed $a_i$ and $b_i$. A dealer or participant failing a check is identified by the party running the check. This replaces the values $W_i = a_i \cdot R$ and the global check $W = w \cdot G$ of the original scheme, making a failed check attributable to a specific party instead of aborting anonymously. The identification is local and non-transferable — the share check uses the receiver's private shares, and there is no complaint or justification round. Misbehavior in the uncommitted values — the $k$, $d$, $e$ shares and the signature shares $s_i$ — is caught only by the interpolation check of round 3 and the coordinator's final assertion, which abort without attribution. The proofs are verified against a consistent transcript: every party echoes the hash $\eta_i$ of all round-1 commitments, and the Fiat-Shamir challenge is bound to it.
+
+### Key derivation
+The key derivation is a feature that allows the holder of a secret key to derive multiple secret keys for different applications (e.g. an MPC node holding a secret key share that uses to derive several clients secret key shares).
+The scheme remains correct after this key derivation.
+
+### Outsourcing the message hash
+Providing the signing protocol with raw hashes as inputs instead of the original messages is beneficial for many use cases, e.g., the signing nodes receive a hashed payload and are required to generate a signature that is valid for a "universal verifier". Note that such API is quite common in cryptographic libraries and has been intensively studied for the non-distributed case in [[PR24](https://link.springer.com/chapter/10.1007/978-3-031-57718-5_10)] and [[R25](https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/729349/uploaded-version.pdf?sequence=1)].
+
+# Security considerations
+
+The nonce is generated in-protocol and bound to a single $(h, \epsilon)$: the message
+hash and tweak are inputs of round 1 and all polynomials are sampled fresh per session,
+so nonce shares never exist independently of the message they sign. For the same reason
+no rerandomization ([[GS21](https://eprint.iacr.org/2021/1330)]) is needed: it protects
+a message-independent presignature, in particular combined with additive key
+derivation, against adaptively chosen messages — with no presignatures, additive key
+derivation alone is safe.
+
+An implementation must enforce the following:
+
+1. **Use exactly $N_1 = 2t + 1$ participants** (enforced at initialization). Larger
+   sets allow a coordinator to run parallel or partially overlapping views of one
+   nonce, yielding signatures with multiplicatively related nonces from which the
+   secret key can be recovered using standard ECDSA nonce-reuse attacks.
+
+2. **All participants must agree on $(h, \epsilon)$ and the signing set $\mathcal{P}_1$.**
+   The coordinator must not be able to present different message hashes, tweaks, or
+   participant lists to different signers.
+
+3. **Never reuse the round-1 polynomials or the shares derived from them** across
+   protocol executions, including failed, aborted, or partially completed ones.
+
+4. **Reject $h = 0$** (the zero message hash), as defense in depth against algebraic
+   split-view variants.
