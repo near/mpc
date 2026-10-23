@@ -297,6 +297,7 @@ impl MpcContract {
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: Default::default(),
+            add_domains_votes: Default::default(),
         }
     }
 }
