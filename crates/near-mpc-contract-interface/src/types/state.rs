@@ -197,7 +197,8 @@ impl<'de> Deserialize<'de> for GovernanceThresholdParametersVotes {
         #[serde(untagged)]
         enum Repr {
             Tally(BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>),
-            // TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded.
+            // TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded; a plain
+            // derive(Deserialize) then suffices.
             Legacy {
                 proposal_by_account:
                     BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
