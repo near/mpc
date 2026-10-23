@@ -83,10 +83,6 @@ method:   derived_public_key
 args:     {"path":"test","predecessor":"alice.near","domain_id":0}
 
 contract: mpc.near
-method:   latest_key_version
-args:     {"signature_scheme":"Secp256k1"}
-
-contract: mpc.near
 method:   available_attestation_grants
 args:     {"account_id":"alice.near"}
 
