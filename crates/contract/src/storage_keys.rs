@@ -46,4 +46,6 @@ pub enum StorageKey {
     LauncherHashVotesByProposal,
     MeasurementVotesByVoter,
     MeasurementVotesByProposal,
+    ParametersVotesByVoter,
+    ParametersVotesByProposal,
 }

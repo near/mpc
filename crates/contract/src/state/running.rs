@@ -198,11 +198,7 @@ impl RunningContractState {
         }
 
         // finally, vote.
-        let accepted = new_num_participants == votes.vote(proposal, candidate);
-        if accepted {
-            votes.clear();
-        }
-        Ok(accepted)
+        Ok(votes.vote(proposal, candidate))
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
