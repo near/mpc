@@ -149,7 +149,7 @@ async fn submit_dstack(submitter: &Account, contract: &SandboxMpcContract) -> Ex
 async fn submit_dstack_verified(
     submitter: &Account,
     contract: &SandboxMpcContract,
-) -> (ExecutionFinalResult, dtos::GetAttestationResponse) {
+) -> (ExecutionFinalResult, dtos::StoredAttestation) {
     let result = submit_dstack(submitter, contract).await;
     assert!(
         result.failures().is_empty(),
@@ -163,7 +163,7 @@ async fn submit_dstack_verified(
 
 async fn stored_fixture_attestation(
     contract: &SandboxMpcContract,
-) -> Option<dtos::GetAttestationResponse> {
+) -> Option<dtos::StoredAttestation> {
     get_participant_attestation(contract, &p2p_tls_key().into())
         .await
         .unwrap()
@@ -440,11 +440,10 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 
     // Then
     assert_eq!(
-        stored.accepted_at_seconds(),
-        Some(VALID_ATTESTATION_TIMESTAMP),
+        stored.accepted_at_seconds, VALID_ATTESTATION_TIMESTAMP,
         "the acceptance time is the pinned block time"
     );
-    let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation().clone() else {
+    let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation else {
         panic!("expected a stored Dstack attestation");
     };
     // The stored measurements are the allowlist entry the fixture matched; select

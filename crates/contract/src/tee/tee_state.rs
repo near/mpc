@@ -76,10 +76,8 @@ pub enum TeeValidationResult {
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
-    /// Block time at which this entry was accepted, restamped by every accepted submission.
-    /// `None` for an entry stored before the contract recorded this, and the init block time for
-    /// a mocked entry nobody submitted (see [`TeeState::with_mocked_participant_attestations`]).
-    pub(crate) accepted_at_seconds: Option<u64>,
+    /// Block time at which this entry was last stored, restamped by every accepted submission.
+    pub(crate) accepted_at_seconds: u64,
 }
 
 #[near(serializers=[borsh])]
@@ -155,7 +153,7 @@ impl TeeState {
                     verified_attestation: VerifiedAttestation::Mock(
                         attestation::MockAttestation::Valid,
                     ),
-                    accepted_at_seconds: Some(Self::current_time_seconds()),
+                    accepted_at_seconds: Self::current_time_seconds(),
                 },
             );
         }
@@ -250,7 +248,7 @@ impl TeeState {
             NodeAttestation {
                 node_id,
                 verified_attestation,
-                accepted_at_seconds: Some(Self::current_time_seconds()),
+                accepted_at_seconds: Self::current_time_seconds(),
             },
         );
 
@@ -1823,10 +1821,7 @@ mod tests {
             .get(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
-        assert_eq!(
-            stored.accepted_at_seconds,
-            Some(VALID_ATTESTATION_TIMESTAMP)
-        );
+        assert_eq!(stored.accepted_at_seconds, VALID_ATTESTATION_TIMESTAMP);
     }
 
     /// Stale code-hash votes from removed participants must not count toward
@@ -1952,7 +1947,7 @@ mod tests {
     const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
     const RESUBMITTED_AT_SECONDS: u64 = ACCEPTED_AT_SECONDS + 3600;
 
-    fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
+    fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> u64 {
         tee_state
             .stored_attestations
             .get(&node_id.tls_public_key)
@@ -1981,7 +1976,7 @@ mod tests {
         // Then
         assert_eq!(
             stamped_accepted_at(&tee_state, &node_id),
-            Some(ACCEPTED_AT_SECONDS)
+            ACCEPTED_AT_SECONDS
         );
     }
 
@@ -2003,9 +1998,6 @@ mod tests {
         let _ = submit_mock(&mut tee_state, &node_id, resubmitted);
 
         // Then
-        assert_eq!(
-            stamped_accepted_at(&tee_state, &node_id),
-            Some(expected_stamp)
-        );
+        assert_eq!(stamped_accepted_at(&tee_state, &node_id), expected_stamp);
     }
 }

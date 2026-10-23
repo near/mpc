@@ -50,12 +50,12 @@ use crate::types::{
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
     CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GetAttestationResponse, GovernanceThresholdParameters, InitConfig,
-    KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash,
-    MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
+    ForeignChainsConfigs, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
+    LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash, MeasurementVotes,
+    MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
     ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey, SignRequestArgs,
-    SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash, Update,
+    UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -717,7 +717,7 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     pub fn get_attestation(
         &self,
         tls_public_key: &Ed25519PublicKey,
-    ) -> ViewCall<C, Option<GetAttestationResponse>> {
+    ) -> ViewCall<C, Option<StoredAttestation>> {
         let args = serde_json::to_vec(&GetAttestationArgs::new(tls_public_key))
             .expect("plain-data args; JSON serialization cannot fail");
         self.view(ViewArgs::new(GET_ATTESTATION, args))
