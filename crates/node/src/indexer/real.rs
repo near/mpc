@@ -1,5 +1,6 @@
 use super::foreign_chain::{
-    ForeignChainWhitelist, monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist,
+    ForeignChainProviderWhitelist, monitor_foreign_chain_supporters,
+    monitor_foreign_chain_whitelist,
 };
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
@@ -66,9 +67,8 @@ pub fn spawn_real_indexer(
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
-    foreign_chain_whitelist_sender: watch::Sender<Option<ForeignChainWhitelist>>,
+    foreign_chain_whitelist_sender: watch::Sender<Option<ForeignChainProviderWhitelist>>,
     tls_public_key: VerifyingKey,
-    foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
 ) -> IndexerAPI<impl TransactionSender> {
@@ -220,10 +220,6 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_sender.subscribe(),
-                foreign_chains.clone(),
-            ));
             tokio::spawn(monitor_foreign_chain_whitelist(
                 foreign_chain_whitelist_sender,
                 indexer_state.clone(),

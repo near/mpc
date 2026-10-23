@@ -87,14 +87,12 @@ pub(crate) fn supporters_by_available_chain(
     }
     supporters
 }
-
-/// The contract's RPC provider whitelist, keyed by chain.
-pub type ForeignChainWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
+pub type ForeignChainProviderWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
 
 /// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
 async fn fetch_foreign_chain_whitelist_with_retry(
     indexer_state: &IndexerState,
-) -> ForeignChainWhitelist {
+) -> ForeignChainProviderWhitelist {
     let mut backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
         .with_max_delay(MAX_BACKOFF_DURATION)
@@ -119,10 +117,9 @@ async fn fetch_foreign_chain_whitelist_with_retry(
 }
 
 /// Publishes the foreign chain whitelist stored in the contract on `sender` once it is first read,
-/// then on every change. Consumed by [`crate::foreign_chain_whitelist_verifier::run`] and
-/// [`crate::foreign_chain_probe::run_periodic_probe`].
+/// then on every change. Consumed by [`crate::foreign_chain_probe::run_periodic_probe`].
 pub async fn monitor_foreign_chain_whitelist(
-    sender: watch::Sender<Option<ForeignChainWhitelist>>,
+    sender: watch::Sender<Option<ForeignChainProviderWhitelist>>,
     indexer_state: Arc<IndexerState>,
 ) {
     indexer_state.client.wait_for_full_sync().await;

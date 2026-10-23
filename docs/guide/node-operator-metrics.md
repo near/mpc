@@ -135,7 +135,9 @@ could not confirm: unreachable, refusing, too slow, serving a different
 network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
-After each round the node also judges every probed chain against the provider
+After each round the node also compares the configured providers with the
+provider whitelist and logs each difference, so a wrong config is reported
+every hour until it is fixed. It then judges every probed chain against the
 whitelist and logs the verdict. Until the node has synced and read the
 whitelist from the contract, it logs that chain health is unknown. It probes
 again as soon as the whitelist is read, and whenever the whitelist changes.
