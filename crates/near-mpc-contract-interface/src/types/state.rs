@@ -254,7 +254,8 @@ impl<'de> Deserialize<'de> for AddDomainsVotes {
         #[serde(untagged)]
         enum Repr {
             Tally(BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>),
-            // TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded.
+            // TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded; a plain
+            // derive(Deserialize) then suffices.
             // Keys stay strings in the untagged buffer, so the participant id is parsed below.
             Legacy {
                 proposal_by_account: BTreeMap<String, Vec<DomainConfig>>,
