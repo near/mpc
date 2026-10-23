@@ -21,10 +21,10 @@ use crate::network::wire_format::EcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::triple::SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE;
 use crate::tests::into_participant_ids;
 use crate::tracking;
 use anyhow::Context;
+use mpc_node_config::TripleBatchSize;
 use rand::SeedableRng as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -36,8 +36,8 @@ use tokio::sync::{mpsc, watch};
 
 const NUM_PARTICIPANTS: usize = 3;
 const THRESHOLD: usize = 3;
-/// Same batch size as production, so the canary sees the real burst shape.
-const TRIPLES_PER_BATCH: usize = SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE;
+/// Largest batch a node will run, so the canary sees the worst burst shape.
+const TRIPLES_PER_BATCH: TripleBatchSize = TripleBatchSize::LEGACY;
 
 /// Upper bound on how long the canary may go unscheduled. Calibrated in
 /// test-release on an unloaded machine: ~130ms max gap with the yield points
@@ -123,7 +123,7 @@ async fn run_triple_gen_client(
     let mut channel = if my_id == ids[0] {
         let task_id = EcdsaTaskId::ManyTriples {
             start: UniqueId::new(my_id, 0, 0),
-            count: TRIPLES_PER_BATCH as u32,
+            count: TRIPLES_PER_BATCH.get() as u32,
         };
         client.new_channel_for_task(task_id, ids.clone())?
     } else {
@@ -140,10 +140,10 @@ async fn run_triple_gen_client(
         &cs_participants,
         my_id.into(),
         ReconstructionThreshold::from(THRESHOLD),
-        TRIPLES_PER_BATCH,
+        TRIPLES_PER_BATCH.get(),
         rng,
     )?;
     let triples = run_protocol("canary triple gen", &mut channel, protocol).await?;
-    assert_eq!(triples.len(), TRIPLES_PER_BATCH);
+    assert_eq!(triples.len(), TRIPLES_PER_BATCH.get());
     Ok(())
 }

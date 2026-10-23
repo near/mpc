@@ -11,6 +11,7 @@ use crate::tests::{
     wait_until,
 };
 use crate::tracking::AutoAbortTask;
+use mpc_node_config::TripleBatchSize;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -225,4 +226,60 @@ async fn cluster__should_sign_from_stored_presignatures_when_online_presign_is_d
         signatures_led(ONLINE_PRESIGN_MODE_LABEL),
         online_presign_before
     );
+}
+
+#[tokio::test]
+#[test_log::test]
+#[expect(non_snake_case)]
+async fn cluster__should_generate_triples_with_a_non_legacy_batch_size() {
+    // Given
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut setup = IntegrationTestSetup::new(
+        Clock::real(),
+        temp_dir.path(),
+        (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{i}").parse().unwrap())
+            .collect(),
+        GOVERNANCE_THRESHOLD,
+        TXN_DELAY_BLOCKS,
+        port_seed::TRIPLE_BATCH_SIZE_TEST,
+        DEFAULT_BLOCK_TIME,
+    );
+    for node in &mut setup.configs {
+        node.config.triple.batch_size = TripleBatchSize::new(8).unwrap();
+    }
+    let domain = DomainConfig {
+        id: DomainId(0),
+        protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
+        purpose: DomainPurpose::Sign,
+    };
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain]);
+    }
+
+    // When
+    let _runs = std::mem::take(&mut setup.configs)
+        .into_iter()
+        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
+        .collect::<Vec<_>>();
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("timeout waiting for keygen to complete");
+
+    // Then
+    // a leader's batch only succeeds once every follower has accepted the non-legacy size, and
+    // with every node on the current version the leader never falls back to the legacy one
+    wait_until(
+        || every_node_owns_triples(NUM_PARTICIPANTS),
+        "triple batches of the configured size",
+    )
+    .await;
 }
