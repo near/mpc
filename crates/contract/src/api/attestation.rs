@@ -1,6 +1,6 @@
 //! TEE attestation lifecycle
 
-use crate::api::common::tls_key_claimants;
+use crate::api::common::tls_key_claimant_other_than;
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::primitives::domain::validate_domains_against_governance;
@@ -135,10 +135,7 @@ impl MpcContract {
         };
 
         // Before any verification: an ungranted or unauthorised submission stops here.
-        self.assert_attestation_storage_grant_available(
-            &node_id.account_id,
-            &node_id.tls_public_key,
-        )?;
+        self.assert_attestation_submission_allowed(&node_id.account_id, &node_id.tls_public_key)?;
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
@@ -166,42 +163,44 @@ impl MpcContract {
         NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
     }
 
-    fn attestation_submission_needs_grant(
+    fn assert_attestation_submission_allowed(
         &self,
         account_id: &AccountId,
         tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
+        self.assert_tls_key_claimable(account_id, tls_public_key)?;
+        let is_reattestation =
+            self.tee_state.attestation_owner(tls_public_key).as_ref() == Some(account_id);
+        if !is_reattestation && self.grants_for(account_id) == 0 {
+            return Err(InvalidParameters::NoAttestationStorageGrant {
+                account_id: account_id.to_string(),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
+    fn assert_tls_key_claimable(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> Result<(), Error> {
         let existing_and_prospective_participants = [
             self.protocol_state
                 .threshold_parameters_or_panic()
                 .participants(),
             self.protocol_state.active_participants(),
         ];
-        if tls_key_claimants(
+        if tls_key_claimant_other_than(
+            account_id,
             &existing_and_prospective_participants,
             &self.node_migrations,
             &self.tee_state,
             tls_public_key,
         )
-        .any(|claimant| &claimant != account_id)
+        .is_some()
         {
             return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
-        }
-        Ok(self.tee_state.attestation_owner(tls_public_key).is_none())
-    }
-
-    fn assert_attestation_storage_grant_available(
-        &self,
-        account_id: &AccountId,
-        tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> Result<(), Error> {
-        if self.attestation_submission_needs_grant(account_id, tls_public_key)?
-            && self.grants_for(account_id) == 0
-        {
-            return Err(InvalidParameters::NoAttestationStorageGrant {
-                account_id: account_id.to_string(),
-            }
-            .into());
         }
         Ok(())
     }
@@ -442,8 +441,9 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. Re-checks that a grant is available before
-    /// storing, since this runs a receipt later than the submission that reserved it.
+    /// [`VerificationResult::Verified`] response. Re-checks the submission before storing, since
+    /// this runs a receipt later than the submission: meanwhile another account may have claimed
+    /// the TLS key, or the grant may have been spent.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
@@ -453,10 +453,7 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        self.assert_attestation_storage_grant_available(
-            &account_id,
-            &context.node_id.tls_public_key,
-        )?;
+        self.assert_attestation_submission_allowed(&account_id, &context.node_id.tls_public_key)?;
 
         let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),

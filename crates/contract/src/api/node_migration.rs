@@ -1,7 +1,7 @@
 //! Node migration: registering a backup service, starting and concluding a
 //! migration to new hardware, and updating a participant's URL.
 
-use crate::api::common::{require_deposit, tls_key_claimants};
+use crate::api::common::{require_deposit, tls_key_claimant_other_than};
 use crate::dto_mapping::{IntoContractType, TryIntoContractType};
 use crate::errors::{self, Error, InvalidParameters, InvalidState};
 use crate::node_migrations::NodeMigrations;
@@ -351,8 +351,8 @@ fn assert_destination_tls_key_changed(
     Ok(())
 }
 
-/// Rejects `tls_public_key` when an account other than `account_id` already holds it,
-/// as one of its [`tls_key_claimants`].
+/// Rejects `tls_public_key` when an account other than `account_id` already holds it
+/// (see [`tls_key_claimant_other_than`]).
 fn assert_tls_key_unclaimed(
     participants: &Participants,
     tee_state: &TeeState,
@@ -360,10 +360,13 @@ fn assert_tls_key_unclaimed(
     account_id: &AccountId,
     tls_public_key: &dtos::Ed25519PublicKey,
 ) -> Result<(), Error> {
-    let Some(claimant) =
-        tls_key_claimants(&[participants], node_migrations, tee_state, tls_public_key)
-            .find(|claimant| claimant != account_id)
-    else {
+    let Some(claimant) = tls_key_claimant_other_than(
+        account_id,
+        &[participants],
+        node_migrations,
+        tee_state,
+        tls_public_key,
+    ) else {
         return Ok(());
     };
     Err(errors::NodeMigrationError::TlsKeyAlreadyClaimed {
