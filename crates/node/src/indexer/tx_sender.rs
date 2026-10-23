@@ -8,9 +8,12 @@ use crate::types::{
     SubmittedTxMetadata,
 };
 use anyhow::Context;
+use chain_gateway::primitives::FetchLatestFinalBlockInfo;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
+use near_contract_transport::ViewContract;
 use near_indexer_primitives::types::Gas;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::future::Future;
@@ -110,15 +113,18 @@ async fn submit_tx(
     params_ser: String,
     gas: Gas,
 ) -> anyhow::Result<SubmittedTxMetadata> {
-    let block = indexer_state.view_client.latest_final_block().await?;
+    let block = indexer_state
+        .gateway
+        .fetch_latest_final_block_info()
+        .await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
         method,
         params_ser.into(),
         gas,
-        block.header.hash,
-        block.header.height,
+        block.value,
+        block.observed_at.into(),
     );
 
     let tx_hash = transaction.get_hash();
@@ -138,13 +144,13 @@ async fn submit_tx(
         tx_hash,
         nonce,
         signature,
-        block_height: block.header.height,
+        block_height: block.observed_at.into(),
     })
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
-async fn observe_tx_result(
-    indexer_state: Arc<IndexerState>,
+async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
+    contract: &MpcContractHandle<C>,
     request: &ChainSendTransactionRequest,
 ) -> anyhow::Result<TransactionStatus> {
     match request {
@@ -152,10 +158,10 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state.
             // A successful respond removes the request from contract state.
-            let pending_request_response = indexer_state
-                .view_client
-                .get_pending_request(&respond_args.request)
-                .await?;
+            let pending_request_response = contract
+                .get_pending_request(respond_args.request.clone())
+                .await?
+                .value;
 
             let transaction_status = match pending_request_response {
                 Some(_) => TransactionStatus::NotExecuted,
@@ -168,10 +174,10 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending ckd request still exists in the contract state.
             // A successful respond removes the request from contract state.
-            let pending_request_response = indexer_state
-                .view_client
-                .get_pending_ckd_request(&respond_args.request)
-                .await?;
+            let pending_request_response = contract
+                .get_pending_ckd_request(respond_args.request.clone())
+                .await?
+                .value;
 
             let transaction_status = match pending_request_response {
                 Some(_) => TransactionStatus::NotExecuted,
@@ -184,10 +190,10 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending verify foreign tx request still exists in the contract state.
             // A successful respond removes the request from contract state.
-            let pending_request_response = indexer_state
-                .view_client
-                .get_pending_verify_foreign_tx_request(&respond_args.request)
-                .await?;
+            let pending_request_response = contract
+                .get_pending_verify_foreign_tx_request(respond_args.request.clone())
+                .await?
+                .value;
 
             let transaction_status = match pending_request_response {
                 Some(_) => TransactionStatus::NotExecuted,
@@ -253,7 +259,7 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
+    let transaction_status = observe_tx_result(&indexer_state.contract, &request).await;
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),

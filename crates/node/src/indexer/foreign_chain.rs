@@ -1,12 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::time::Duration;
 
 use backon::{BackoffBuilder, ExponentialBuilder};
+use near_contract_transport::ViewContract;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
-
-use crate::indexer::IndexerState;
 
 const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_mins(5);
@@ -19,13 +18,11 @@ pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed
 /// Returns once the first supporters snapshot is read, then keeps it updated in
 /// the background. Mirrors `monitor_contract_state`: the receiver always holds a
 /// real value, and a failed refresh keeps the previous one.
-pub async fn monitor_foreign_chain_supporters(
-    indexer_state: Arc<IndexerState>,
+pub async fn monitor_foreign_chain_supporters<V: ViewContract + Clone + Send + Sync + 'static>(
+    contract: MpcContractHandle<V>,
 ) -> watch::Receiver<ForeignChainSupporters> {
-    indexer_state.client.wait_for_full_sync().await;
-
     let initial = loop {
-        match read_supporters(&indexer_state).await {
+        match read_supporters(&contract).await {
             Ok(supporters) => break supporters,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading foreign-chain supporters from chain: {:?}", e);
@@ -38,7 +35,7 @@ pub async fn monitor_foreign_chain_supporters(
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
-            match read_supporters(&indexer_state).await {
+            match read_supporters(&contract).await {
                 Ok(supporters) => {
                     sender.send_if_modified(|previous| {
                         if *previous == supporters {
@@ -60,12 +57,17 @@ pub async fn monitor_foreign_chain_supporters(
 
 /// The two view calls are not atomic: a change finalized between them yields
 /// a transiently inconsistent snapshot, corrected on the next poll.
-async fn read_supporters(indexer_state: &IndexerState) -> anyhow::Result<ForeignChainSupporters> {
-    let ((_, available_chains), (_, configs)) = tokio::try_join!(
-        indexer_state.view_client.get_available_chains(),
-        indexer_state.view_client.get_foreign_chains_configs()
+async fn read_supporters<C: ViewContract + Clone + Send + 'static>(
+    contract: &MpcContractHandle<C>,
+) -> anyhow::Result<ForeignChainSupporters> {
+    let (available_chains, configs) = tokio::try_join!(
+        contract.get_available_foreign_chains(),
+        contract.get_foreign_chains_configs()
     )?;
-    Ok(supporters_by_available_chain(&available_chains, &configs))
+    Ok(supporters_by_available_chain(
+        &available_chains.value,
+        &configs.value,
+    ))
 }
 
 /// Maps each available chain to the TLS keys registered as supporting it;
@@ -87,11 +89,13 @@ pub(crate) fn supporters_by_available_chain(
     }
     supporters
 }
+
+/// The contract's RPC provider whitelist, keyed by chain.
 pub type ForeignChainProviderWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
 
 /// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
-async fn fetch_foreign_chain_whitelist_with_retry(
-    indexer_state: &IndexerState,
+async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send + 'static>(
+    contract: &MpcContractHandle<C>,
 ) -> ForeignChainProviderWhitelist {
     let mut backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
@@ -101,12 +105,8 @@ async fn fetch_foreign_chain_whitelist_with_retry(
         .build();
 
     loop {
-        match indexer_state
-            .view_client
-            .get_allowed_foreign_chain_providers()
-            .await
-        {
-            Ok(whitelist) => return whitelist,
+        match contract.allowed_foreign_chain_providers().await {
+            Ok(observed) => return observed.value,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading allowed_foreign_chain_providers from chain: {:?}", e);
                 let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
@@ -118,14 +118,12 @@ async fn fetch_foreign_chain_whitelist_with_retry(
 
 /// Publishes the foreign chain whitelist stored in the contract on `sender` once it is first read,
 /// then on every change. Consumed by [`crate::foreign_chain_probe::run_periodic_probe`].
-pub async fn monitor_foreign_chain_whitelist(
+pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sync + 'static>(
     sender: watch::Sender<Option<ForeignChainProviderWhitelist>>,
-    indexer_state: Arc<IndexerState>,
+    contract: MpcContractHandle<V>,
 ) {
-    indexer_state.client.wait_for_full_sync().await;
-
     loop {
-        let whitelist = fetch_foreign_chain_whitelist_with_retry(&indexer_state).await;
+        let whitelist = fetch_foreign_chain_whitelist_with_retry(&contract).await;
         sender.send_if_modified(|previous| {
             if previous.as_ref() != Some(&whitelist) {
                 *previous = Some(whitelist);
