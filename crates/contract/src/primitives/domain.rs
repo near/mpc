@@ -305,7 +305,6 @@ impl AddDomainsVotes {
         self.0.clear();
     }
 
-    /// Pending votes keyed by proposal hash.
     pub fn all(&self) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
         self.0.all()
     }
