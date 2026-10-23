@@ -330,6 +330,42 @@ async fn submit_contract_update__should_apply_a_code_update_that_migrates_state(
 }
 
 #[tokio::test]
+async fn submit_contract_update__should_raise_cleanup_gas_budgets_on_migration() {
+    // Given
+    let init_config = near_mpc_contract_interface::types::InitConfig {
+        cleanup_orphaned_node_migrations_tera_gas: Some(3),
+        clean_foreign_chain_data_tera_gas: Some(5),
+        ..Default::default()
+    };
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_init_config(init_config)
+        .build()
+        .await;
+    let old_config = contract.config().await.unwrap().value;
+    assert_eq!(old_config.cleanup_orphaned_node_migrations_tera_gas, 3);
+    assert_eq!(old_config.clean_foreign_chain_data_tera_gas, 5);
+
+    // When
+    vote_and_submit_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
+
+    // Then
+    let config = contract.config().await.unwrap().value;
+    assert_eq!(config.cleanup_orphaned_node_migrations_tera_gas, 7);
+    assert_eq!(config.clean_foreign_chain_data_tera_gas, 8);
+    let expected = near_mpc_contract_interface::types::Config {
+        cleanup_orphaned_node_migrations_tera_gas: 7,
+        clean_foreign_chain_data_tera_gas: 8,
+        ..old_config
+    };
+    assert_eq!(config, expected);
+}
+
+#[tokio::test]
 async fn migration_function_rejects_external_callers() {
     let SandboxTestSetup {
         worker: _worker,

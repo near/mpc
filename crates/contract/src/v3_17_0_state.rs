@@ -19,7 +19,10 @@ use near_sdk::{
 };
 
 use crate::{
-    config::Config,
+    config::{
+        Config, DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
+        DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
+    },
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
@@ -109,13 +112,23 @@ impl From<MpcContract> for crate::MpcContract {
             "Contract must be in running state when migrating."
         );
 
+        // Stored budgets were too low for the mainnet state; raise them to at least the new
+        // defaults but keep an operator-set higher value.
+        let mut config = old.config;
+        config.cleanup_orphaned_node_migrations_tera_gas = config
+            .cleanup_orphaned_node_migrations_tera_gas
+            .max(DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS);
+        config.clean_foreign_chain_data_tera_gas = config
+            .clean_foreign_chain_data_tera_gas
+            .max(DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS);
+
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             contract_update_votes: old.contract_update_votes,
-            config: old.config,
+            config,
             tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
