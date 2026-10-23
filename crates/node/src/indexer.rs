@@ -193,7 +193,7 @@ pub struct IndexerAPI<TransactionSender> {
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
-    pub my_attestation_receiver: watch::Receiver<Option<dtos::GetAttestationResponse>>,
+    pub my_attestation_receiver: watch::Receiver<Option<dtos::StoredAttestation>>,
 
     /// Watcher that tracks the contract's available foreign chains and their
     /// registered supporters (by TLS key). Seeded with the first successful read

@@ -6,7 +6,7 @@ use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_contract_transport::{ObservedState, ViewContract};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::{
-    AllowedMpcDockerImageHash, Ed25519PublicKey, GetAttestationResponse,
+    AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation,
 };
 use tokio::sync::watch;
 
@@ -88,7 +88,7 @@ pub async fn monitor_allowed_launcher_compose_hashes<
 }
 
 pub async fn monitor_my_attestation<V: ViewContract + Clone + Send + Sync + 'static>(
-    sender: watch::Sender<Option<GetAttestationResponse>>,
+    sender: watch::Sender<Option<StoredAttestation>>,
     contract: MpcContractHandle<V>,
     tls_public_key: Ed25519PublicKey,
 ) {
