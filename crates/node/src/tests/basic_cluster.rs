@@ -1,15 +1,14 @@
 use crate::indexer::participants::ContractState;
 use crate::metrics::{
-    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS,
-    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE,
-    ONLINE_PRESIGN_MODE_LABEL, STORED_PRESIGNATURE_MODE_LABEL, SUCCEEDED_OUTCOME_LABEL,
-    TRIPLE_GENERATION_TASK_LABEL,
+    MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, ONLINE_PRESIGN_MODE_LABEL,
+    STORED_PRESIGNATURE_MODE_LABEL,
 };
 use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-    IntegrationTestSetup, request_ckd_and_await_response, request_ckd_pv_and_await_response,
-    request_signature_and_await_response,
+    IntegrationTestSetup, every_node_owns_triples, request_ckd_and_await_response,
+    request_ckd_pv_and_await_response, request_signature_and_await_response, signatures_led,
+    wait_until,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::DomainId;
@@ -23,12 +22,6 @@ const NUM_PARTICIPANTS: usize = 4;
 const GOVERNANCE_THRESHOLD: usize = 3;
 const TXN_DELAY_BLOCKS: u64 = 1;
 
-fn signatures_led(mode: &str) -> u64 {
-    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
-        .with_label_values(&[mode])
-        .get()
-}
-
 fn gauge_total(gauge: &prometheus::IntGaugeVec) -> i64 {
     gauge
         .collect()
@@ -36,27 +29,6 @@ fn gauge_total(gauge: &prometheus::IntGaugeVec) -> i64 {
         .flat_map(|family| family.get_metric())
         .map(|metric| metric.get_gauge().get_value() as i64)
         .sum()
-}
-
-fn every_node_owns_triples() -> bool {
-    let triple_batches_led = MPC_LED_COMPUTATION_DURATION_SECONDS
-        .with_label_values(&[
-            ECDSA_PROTOCOL_SCHEME_LABEL,
-            TRIPLE_GENERATION_TASK_LABEL,
-            SUCCEEDED_OUTCOME_LABEL,
-        ])
-        .get_sample_count();
-    triple_batches_led >= NUM_PARTICIPANTS as u64
-}
-
-async fn wait_until(condition: impl Fn() -> bool, what: &str) {
-    tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
-        while !condition() {
-            tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timeout waiting for {what}"));
 }
 
 async fn wait_until_positive(gauge: &prometheus::IntGaugeVec, what: &str) {
@@ -128,7 +100,11 @@ async fn cluster__should_serve_every_domain_after_keygen() {
         .await
         .expect("timeout waiting for keygen to complete");
 
-    wait_until(every_node_owns_triples, "every node to own triples").await;
+    wait_until(
+        || every_node_owns_triples(NUM_PARTICIPANTS),
+        "every node to own triples",
+    )
+    .await;
     wait_until_positive(&MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, "presignatures").await;
     let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
     assert!(

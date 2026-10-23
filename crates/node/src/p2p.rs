@@ -16,11 +16,11 @@ use crate::{
             p2p_handshake_dialer, p2p_handshake_listener,
         },
         wire_format::{MpcMessageKind, Packet},
-        {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+        {MeshNetworkTransportReceiver, MeshNetworkTransportSender, SendError},
     },
     primitives::{
-        IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
-        PeerMessage,
+        MpcMessage, MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo,
+        PeerIndexerHeightMessage, PeerMessage,
     },
     protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
     tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
@@ -187,6 +187,7 @@ impl Packet {
         match &self {
             Packet::Ping => networking_metrics::PING_MESSAGE,
             Packet::IndexerHeight(_) => networking_metrics::INDEXER_HEIGHT_MESSAGE,
+            Packet::ConnectedPeersInfo(_) => networking_metrics::CONNECTED_PEERS_MESSAGE,
             Packet::MpcMessage(MpcMessage { kind, .. }) => match kind {
                 MpcMessageKind::Start(_) => networking_metrics::MPC_START_MESSAGE,
                 MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
@@ -435,13 +436,8 @@ impl OutgoingConnection {
         self.closed.cancelled().await;
     }
 
-    fn send_mpc_message(&self, msg: MpcMessage) -> anyhow::Result<()> {
-        self.sender.send(Packet::MpcMessage(msg))?;
-        Ok(())
-    }
-
-    fn send_indexer_height(&self, msg: IndexerHeightMessage) -> anyhow::Result<()> {
-        self.sender.send(Packet::IndexerHeight(msg))?;
+    fn send(&self, packet: Packet) -> anyhow::Result<()> {
+        self.sender.send(packet)?;
         Ok(())
     }
 }
@@ -460,27 +456,28 @@ async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
 impl PersistentConnection {
     const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
-    /// Sends a message over the connection. If the connection was reset, fail.
-    fn send_mpc_message(
+    fn send(
         &self,
-        expected_version: ConnectionVersion,
-        msg: MpcMessage,
-    ) -> anyhow::Result<()> {
-        self.connectivity
-            .outgoing_connection_asserting(expected_version)
-            .with_context(|| format!("Cannot send MPC message to {}", self.target_participant_id))?
-            .send_mpc_message(msg)
-            .with_context(|| {
-                format!("Cannot send MPC message to {}", self.target_participant_id)
-            })?;
-        Ok(())
-    }
-
-    /// Sends a message over the connection. This is done on a best-effort basis.
-    fn send_indexer_height(&self, height: IndexerHeightMessage) {
-        if let Some(conn) = self.connectivity.any_outgoing_connection() {
-            let _ = conn.send_indexer_height(height);
+        packet: Packet,
+        connection_version: Option<ConnectionVersion>,
+    ) -> Result<(), SendError> {
+        let peer = self.target_participant_id;
+        let conn = match connection_version {
+            Some(expected) => self
+                .connectivity
+                .outgoing_connection_asserting(expected)
+                .map_err(|source| SendError::ConnectionLost { peer, source })?,
+            None => self
+                .connectivity
+                .any_outgoing_connection()
+                .ok_or(SendError::PeerNotConnected(peer))?,
+        };
+        let version = conn.peer_network_protocol_version();
+        if !version.supports(packet.min_protocol_version()) {
+            return Err(SendError::PeerNotSupportingMessage { peer, version });
         }
+        conn.send(packet)
+            .map_err(|_| SendError::PeerNotConnected(peer))
     }
     const MIN_CONNECTION_ID: u32 = 0;
 
@@ -873,6 +870,12 @@ async fn incoming_connection_handler(
                         message,
                     }))?;
                 }
+                Packet::ConnectedPeersInfo(info) => {
+                    message_sender.send(PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo {
+                        from: peer_id,
+                        info,
+                    }))?;
+                }
             }
 
             let metric_labels = [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
@@ -1043,21 +1046,13 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     fn send(
         &self,
         recipient_id: ParticipantId,
-        message: MpcMessage,
-        connection_version: ConnectionVersion,
-    ) -> anyhow::Result<()> {
+        packet: Packet,
+        connection_version: Option<ConnectionVersion>,
+    ) -> Result<(), SendError> {
         self.connections
             .get(&recipient_id)
-            .ok_or_else(|| anyhow!("Recipient not found"))?
-            .send_mpc_message(connection_version, message)
-            .with_context(|| format!("Cannot send MPC message to recipient {}", recipient_id))?;
-        Ok(())
-    }
-
-    fn send_indexer_height(&self, height: IndexerHeightMessage) {
-        for conn in self.connections.values() {
-            conn.send_indexer_height(height.clone());
-        }
+            .ok_or(SendError::PeerNotConnected(recipient_id))?
+            .send(packet, connection_version)
     }
 
     async fn wait_for_ready(
@@ -1136,6 +1131,7 @@ pub mod testing {
         pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
         pub const PEER_PROTOCOL_VERSION_TEST: TestPorts = TestPorts::mpc_node_tests(30);
         pub const ONLINE_PRESIGN_DISABLED_TEST: TestPorts = TestPorts::mpc_node_tests(31);
+        pub const VERIFY_FOREIGN_TX_ONLINE_PRESIGN_TEST: TestPorts = TestPorts::mpc_node_tests(32);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1193,23 +1189,25 @@ mod tests {
     use crate::{
         config::MpcConfig,
         network::{
-            conn::{AllNodeConnectivities, ConnectionVersion},
-            wire_format::{EcdsaTaskId, MpcTaskId},
+            conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity},
+            wire_format::{EcdsaTaskId, MpcTaskId, Packet},
             {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
         },
         p2p::testing::{generate_test_p2p_configs, port_seed},
         primitives::{
-            ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
+            ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage,
+            UniqueId,
         },
-        protocol_version::CURRENT_PROTOCOL_VERSION,
+        protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
         tracking::{self, testing::start_root_task_with_periodic_dump},
     };
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
     use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rstest::rstest;
     use rustls::ClientConfig;
-    use std::{sync::Arc, time::Duration};
+    use std::{collections::BTreeMap, sync::Arc, time::Duration};
     use tokio::{
         io::AsyncReadExt,
         net::{TcpListener, TcpStream},
@@ -1218,6 +1216,7 @@ mod tests {
         time::timeout,
     };
     use tokio_rustls::TlsAcceptor;
+    use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
     #[test_log::test]
@@ -1271,8 +1270,8 @@ mod tests {
                 sender0
                     .send(
                         participant1,
-                        msg0to1.clone(),
-                        sender0.connectivity(participant1).connection_version(),
+                        Packet::MpcMessage(msg0to1.clone()),
+                        Some(sender0.connectivity(participant1).connection_version()),
                     )
                     .unwrap();
                 let PeerMessage::Mpc(msg) = receiver1.receive().await.unwrap() else {
@@ -1288,8 +1287,8 @@ mod tests {
                 sender1
                     .send(
                         participant0,
-                        msg1to0.clone(),
-                        sender1.connectivity(participant0).connection_version(),
+                        Packet::MpcMessage(msg1to0.clone()),
+                        Some(sender1.connectivity(participant0).connection_version()),
                     )
                     .unwrap();
 
@@ -1497,6 +1496,47 @@ mod tests {
         let mut ids = ids.to_vec();
         ids.sort();
         ids
+    }
+
+    #[rstest]
+    #[case::older_peer(NetworkProtocolVersion::Sep2026, false)]
+    #[case::current_peer(NetworkProtocolVersion::Oct2026, true)]
+    #[case::newer_peer(NetworkProtocolVersion::Unknown(42), true)]
+    #[tokio::test]
+    async fn persistent_connection__should_send_connected_peers_only_to_peers_negotiating_oct2026(
+        #[case] peer_version: NetworkProtocolVersion,
+        #[case] expected_sent: bool,
+    ) {
+        // Given
+        let (sender, mut packets) = mpsc::unbounded_channel();
+        let connection = Arc::new(OutgoingConnection {
+            sender,
+            _sender_task: tokio::spawn(std::future::pending()).into(),
+            _keepalive_task: tokio::spawn(std::future::pending()).into(),
+            closed: CancellationToken::new(),
+            peer_network_protocol_version: peer_version,
+        });
+        let connectivity =
+            Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
+        connectivity.set_outgoing_connection(&connection);
+        let persistent_connection = PersistentConnection {
+            target_participant_id: ParticipantId::from_raw(1),
+            connectivity,
+            _task: tokio::spawn(std::future::pending()).into(),
+        };
+
+        // When
+        let result = persistent_connection.send(
+            Packet::ConnectedPeersInfo(ConnectedPeersInfo {
+                peers: BTreeMap::from([(ParticipantId::from_raw(2), 7)]),
+            }),
+            None,
+        );
+
+        // Then
+        assert_eq!(result.is_ok(), expected_sent);
+        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
+        assert_eq!(sent, expected_sent);
     }
 
     #[tokio::test]

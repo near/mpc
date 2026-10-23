@@ -107,8 +107,12 @@ pub enum ProtocolError {
     #[error("integer overflow")]
     IntegerOverflow,
 
-    #[error("expected vector of length {expected}, got {actual}")]
-    UnexpectedLength { expected: usize, actual: usize },
+    #[error("participant {participant:?} sent a vector of length {actual}, expected {expected}")]
+    UnexpectedLength {
+        expected: usize,
+        actual: usize,
+        participant: Participant,
+    },
 
     #[error("deserialization failed: {0}")]
     DeserializationError(String),

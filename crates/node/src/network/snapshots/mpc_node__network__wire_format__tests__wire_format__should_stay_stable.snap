@@ -5,6 +5,7 @@ expression: table
 Ping => 00
 MpcMessage(MpcMessage { channel_id: ChannelId(UniqueId(0, 1, 1)), kind: Success }) => 01 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 01 03
 IndexerHeight(IndexerHeightMessage { height: 4 }) => 02 04 00 00 00 00 00 00 00
+ConnectedPeersInfo(ConnectedPeersInfo { peers: {5: 10, 7: 20} }) => 03 02 00 00 00 05 00 00 00 0a 00 00 00 00 00 00 00 07 00 00 00 14 00 00 00 00 00 00 00
 
 Start(MpcStartMessage { task_id: EcdsaTaskId(ManyTriples { start: UniqueId(0, 1, 1), count: 64 }), participants: [5] }) => 00 00 02 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 01 40 00 00 00 01 00 00 00 05 00 00 00
 Computation([1 chunks, 3 bytes]) => 01 01 00 00 00 03 00 00 00 01 02 03
@@ -28,3 +29,4 @@ RobustEcdsaTaskId(KeyResharing { key_event: KeyEventId { epoch_id: EpochId(1), d
 RobustEcdsaTaskId(Presignature { id: UniqueId(0, 1, 1), domain_id: DomainId(2) }) => 03 02 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 01 02 00 00 00 00 00 00 00
 RobustEcdsaTaskId(Signature { id: 4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi, presignature_id: UniqueId(0, 1, 2) }) => 03 03 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 02
 VerifyForeignTxTaskId(VerifyForeignTx { id: 4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi, presignature_id: UniqueId(0, 1, 2) }) => 04 00 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 02
+VerifyForeignTxTaskId(VerifyForeignTxOnlinePresign { id: 4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi, paired_triple_id: UniqueId(0, 1, 2) }) => 04 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 02

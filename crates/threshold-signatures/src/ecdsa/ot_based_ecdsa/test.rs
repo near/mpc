@@ -478,7 +478,7 @@ where
     // Generate triples with 6 participants
     for &p in &participants {
         let rng_p = R::seed_from_u64(rng.next_u64());
-        let protocol = generate_triple_many::<2, _, _>(&participants, p, threshold, rng_p);
+        let protocol = generate_triple_many(&participants, p, threshold, 2, rng_p);
         let protocol = protocol.unwrap();
         protocols.push((p, Box::new(protocol)));
     }

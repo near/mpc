@@ -4,7 +4,7 @@ use crate::primitives::participants::Participants;
 use crate::primitives::proposal_hash::{Borsh, Sha256, ToProposalHash};
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
@@ -172,17 +172,6 @@ impl DomainRegistry {
         self.domains.iter().find(|domain| domain.id == id)
     }
 
-    /// Returns the most recently added domain for the given curve, or None
-    /// if no such domain exists. The curve is derived from each domain's
-    /// `protocol`.
-    pub fn most_recent_domain_for_curve(&self, curve: Curve) -> Option<DomainId> {
-        self.domains
-            .iter()
-            .rev()
-            .find(|domain| Curve::from(domain.protocol) == curve)
-            .map(|domain| domain.id)
-    }
-
     /// Constructs a DomainRegistry from its raw fields, but performing basic
     /// validation that the fields could've been produced by a valid
     /// sequence of add_domains and retain_domains calls. This is used for
@@ -308,7 +297,7 @@ impl AddDomainsVotes {
 #[expect(non_snake_case)]
 pub mod tests {
     use super::{
-        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry, Protocol,
+        AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, DomainRegistry, Protocol,
         is_valid_protocol_for_purpose, validate_domain_purpose,
         validate_domain_reconstruction_threshold,
     };
@@ -425,42 +414,6 @@ pub mod tests {
         registry.retain_domains(0);
         assert_eq!(registry.domains, Vec::new());
         assert_eq!(registry.next_domain_id, 6);
-    }
-
-    #[test]
-    fn test_most_recent_domain_for_curve() {
-        let registry = DomainRegistry::from_raw_validated(
-            vec![
-                DomainConfig {
-                    id: DomainId(0),
-                    protocol: Protocol::CaitSith,
-                    reconstruction_threshold: ReconstructionThreshold::new(2),
-                    purpose: DomainPurpose::Sign,
-                },
-                DomainConfig {
-                    id: DomainId(2),
-                    protocol: Protocol::Frost,
-                    reconstruction_threshold: ReconstructionThreshold::new(2),
-                    purpose: DomainPurpose::Sign,
-                },
-                DomainConfig {
-                    id: DomainId(3),
-                    protocol: Protocol::CaitSith,
-                    reconstruction_threshold: ReconstructionThreshold::new(2),
-                    purpose: DomainPurpose::Sign,
-                },
-            ],
-            6,
-        )
-        .unwrap();
-        assert_eq!(
-            registry.most_recent_domain_for_curve(Curve::Secp256k1),
-            Some(DomainId(3))
-        );
-        assert_eq!(
-            registry.most_recent_domain_for_curve(Curve::Edwards25519),
-            Some(DomainId(2))
-        );
     }
 
     #[rstest]
