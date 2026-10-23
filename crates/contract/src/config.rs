@@ -27,11 +27,11 @@ const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 15;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// TODO(#1164): benchmark
-pub(crate) const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 7;
+const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 7;
 /// Prepaid gas for a `remove_non_participant_contract_update_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `clean_foreign_chain_data` call
-pub(crate) const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 8;
+const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 8;
 /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS: u64 = 5;
 /// Gas attached to the cross-contract `verify_quote` call on the TEE verifier.
