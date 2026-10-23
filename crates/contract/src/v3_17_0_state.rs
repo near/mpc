@@ -62,12 +62,11 @@ struct OldTeeState {
 }
 
 impl OldTeeState {
-    fn migrate(self) -> (TeeState, Vec<AccountId>) {
-        let (stored_attestations, unstamped_entry_owners) =
-            migrate_stored_attestations(self.stored_attestations);
+    fn migrate(self) -> TeeState {
+        let stored_attestations = migrate_stored_attestations(self.stored_attestations);
         // Pending votes are dropped rather than migrated; participants re-vote after the
         // upgrade.
-        let tee_state = TeeState {
+        TeeState {
             allowed_docker_image_hashes: self.allowed_docker_image_hashes,
             allowed_launcher_images: self.allowed_launcher_images,
             votes: self.votes,
@@ -81,8 +80,7 @@ impl OldTeeState {
                 StorageKey::MeasurementVotesByVoter,
                 StorageKey::MeasurementVotesByProposal,
             ),
-        };
-        (tee_state, unstamped_entry_owners)
+        }
     }
 }
 
@@ -95,33 +93,26 @@ struct OldNodeAttestation {
 
 fn migrate_stored_attestations(
     mut old: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
-) -> (
-    IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
-    Vec<AccountId>,
-) {
+) -> IterableMap<dtos::Ed25519PublicKey, NodeAttestation> {
     let entries: Vec<_> = old.drain().collect();
     // The rebuilt map shares the storage prefix, so its inserts would read the drained entries
     // back from storage until the removals are written
     old.flush();
 
     let mut migrated = IterableMap::new(StorageKey::StoredAttestations);
-    let mut unstamped_entry_owners = Vec::new();
     for (tls_public_key, entry) in entries {
-        match entry.accepted_at_seconds {
-            Some(accepted_at_seconds) => {
-                migrated.insert(
-                    tls_public_key,
-                    NodeAttestation {
-                        node_id: entry.node_id,
-                        verified_attestation: entry.verified_attestation,
-                        accepted_at_seconds,
-                    },
-                );
-            }
-            None => unstamped_entry_owners.push(entry.node_id.account_id),
+        if let Some(accepted_at_seconds) = entry.accepted_at_seconds {
+            migrated.insert(
+                tls_public_key,
+                NodeAttestation {
+                    node_id: entry.node_id,
+                    verified_attestation: entry.verified_attestation,
+                    accepted_at_seconds,
+                },
+            );
         }
     }
-    (migrated, unstamped_entry_owners)
+    migrated
 }
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
@@ -151,8 +142,8 @@ impl From<MpcContract> for crate::MpcContract {
             "Contract must be in running state when migrating."
         );
 
-        let (tee_state, unstamped_entry_owners) = old.tee_state.migrate();
-        let mut contract = crate::MpcContract {
+        let tee_state = old.tee_state.migrate();
+        crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
@@ -166,11 +157,7 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
-        };
-        for account_id in &unstamped_entry_owners {
-            contract.return_attestation_storage_grant(account_id);
         }
-        contract
     }
 }
 
@@ -203,16 +190,13 @@ mod tests {
         old.flush();
 
         // When
-        let (migrated, unstamped_entry_owners) = migrate_stored_attestations(old);
+        let migrated = migrate_stored_attestations(old);
 
         // Then
         let migrated: Vec<_> = migrated
             .values()
             .map(|entry| (entry.node_id.clone(), entry.accepted_at_seconds))
             .collect();
-        assert_eq!(
-            (migrated, unstamped_entry_owners),
-            (vec![(stamped, accepted_at)], vec![unstamped.account_id])
-        );
+        assert_eq!(migrated, vec![(stamped, accepted_at)]);
     }
 }

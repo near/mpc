@@ -207,7 +207,7 @@ impl MpcContract {
         }
     }
 
-    pub(crate) fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
+    fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let available = self.grants_for(account_id);
         // Checked, not saturating: at `u32::MAX` a returned grant would be dropped silently.
         let Some(returned) = available.checked_add(1) else {
