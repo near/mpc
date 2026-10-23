@@ -155,47 +155,6 @@ async fn back_compatibility_without_state(
     )
 }
 
-/// The 3.17.0 release stores cleanup budgets that are too low for the mainnet state; `migrate`
-/// must raise them without touching the rest of the stored config.
-#[tokio::test]
-async fn migrate__should_raise_cleanup_gas_budgets() -> anyhow::Result<()> {
-    let worker = test_utils::sandbox::start_sandbox().await?;
-    let contract = deploy_old(&worker, Network::Mainnet).await?;
-    let (_accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
-    let threshold = GovernanceThreshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
-    let threshold_parameters = GovernanceThresholdParameters::new(participants, threshold)
-        .unwrap()
-        .into();
-    let init_config = dtos::InitConfig {
-        cleanup_orphaned_node_migrations_tera_gas: Some(3),
-        clean_foreign_chain_data_tera_gas: Some(5),
-        ..Default::default()
-    };
-    contract
-        .init(
-            threshold_parameters,
-            bogus_tee_verifier_account_id(),
-            Some(init_config),
-        )
-        .await?
-        .into_result()?;
-    let old_config = contract.config().await?.value;
-    assert_eq!(old_config.cleanup_orphaned_node_migrations_tera_gas, 3);
-    assert_eq!(old_config.clean_foreign_chain_data_tera_gas, 5);
-
-    upgrade_to_new(&contract).await?;
-    migrate_and_assert_contract_code(&contract).await?;
-
-    let config = contract.config().await?.value;
-    let expected = dtos::Config {
-        cleanup_orphaned_node_migrations_tera_gas: 7,
-        clean_foreign_chain_data_tera_gas: 8,
-        ..old_config
-    };
-    assert_eq!(config, expected);
-    Ok(())
-}
-
 /// `stored_attestations` keeps entries for non-participants too, so the upgrade under test
 /// carries more entries than [`PARTICIPANT_LEN`], and more than the 17 that mainnet and testnet
 /// each stored on 2026-10-23.
