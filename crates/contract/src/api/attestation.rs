@@ -490,7 +490,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, make_public_key_for_curve, setup_tee_test_contract, submit_valid_attestations,
+        NUM_DOMAINS, basic_setup, make_public_key_for_curve, setup_tee_test_contract,
+        submit_valid_attestations,
     };
     use crate::config::Config;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
@@ -501,7 +502,7 @@ mod tests {
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
-    use crate::state::test_utils::gen_running_state_with_params;
+    use crate::state::test_utils::gen_running_state;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{NodeAttestation, TeeState};
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
@@ -553,60 +554,60 @@ mod tests {
             .expect("Expected panic if predecessor != signer");
     }
 
+    /// How the contract ties a TLS key to an account without a stored attestation
     enum TlsKeyAssignment {
+        /// A current participant's key
         Participant,
+        /// The key of a participant the ongoing resharing drops
         DroppedParticipant,
+        /// The key of a newcomer the ongoing resharing adds
         ProposedParticipant,
+        /// The key a participant is migrating to
         MigrationDestination,
     }
 
     fn contract_assigning_tls_key(
         assignment: TlsKeyAssignment,
     ) -> (MpcContract, AccountId, Ed25519PublicKey) {
-        let mut running = gen_running_state_with_params(1, 3, 2);
-        let participants = running.parameters.participants();
-        let (participant, _, participant_info) = participants.participants()[0].clone();
-        let mut proposed = participants.subset(1..3);
-        proposed.add_random_participants_till_n(3);
-        let (newcomer, _, newcomer_info) = proposed.participants()[2].clone();
+        let mut running = gen_running_state(NUM_DOMAINS);
+        let current = running.parameters.participants();
+        let (member, _, member_node) = current.participants()[0].clone();
+        let proposed = {
+            let mut proposed = current.clone();
+            proposed.remove(&member);
+            proposed.add_random_participants_till_n(current.len());
+            proposed
+        };
+        let (newcomer, _, new_node) = proposed.participants().last().unwrap().clone();
         let proposal = ProposedGovernanceThresholdParameters::new(
             GovernanceThresholdParameters::new(proposed, running.parameters.threshold()).unwrap(),
             BTreeMap::new(),
         );
-        let resharing = running
-            .transition_to_resharing_no_checks(&proposal)
-            .unwrap();
+        let resharing_in_progress = ProtocolContractState::Resharing(
+            running
+                .transition_to_resharing_no_checks(&proposal)
+                .unwrap(),
+        );
+        let running = ProtocolContractState::Running(running);
 
-        match assignment {
-            TlsKeyAssignment::Participant => (
-                MpcContract::new_from_protocol_state(ProtocolContractState::Running(running)),
-                participant,
-                participant_info.tls_public_key,
-            ),
-            TlsKeyAssignment::DroppedParticipant => (
-                MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing)),
-                participant,
-                participant_info.tls_public_key,
-            ),
-            TlsKeyAssignment::ProposedParticipant => (
-                MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing)),
-                newcomer,
-                newcomer_info.tls_public_key,
-            ),
+        let (state, owner, node) = match assignment {
+            TlsKeyAssignment::Participant => (running, member, member_node),
+            TlsKeyAssignment::DroppedParticipant => (resharing_in_progress, member, member_node),
+            TlsKeyAssignment::ProposedParticipant => (resharing_in_progress, newcomer, new_node),
             TlsKeyAssignment::MigrationDestination => {
-                let mut contract =
-                    MpcContract::new_from_protocol_state(ProtocolContractState::Running(running));
+                let mut contract = MpcContract::new_from_protocol_state(running);
                 let destination = dtos::DestinationNodeInfo {
                     signer_account_pk: bogus_ed25519_public_key(),
-                    destination_node_info: newcomer_info.into(),
+                    destination_node_info: new_node.clone().into(),
                 };
-                let tls_public_key = destination.destination_node_info.tls_public_key.clone();
                 contract
                     .node_migrations
-                    .set_destination_node_info(participant.clone(), destination);
-                (contract, participant, tls_public_key)
+                    .set_destination_node_info(member.clone(), destination);
+                return (contract, member, new_node.tls_public_key);
             }
-        }
+        };
+        let contract = MpcContract::new_from_protocol_state(state);
+        (contract, owner, node.tls_public_key)
     }
 
     fn prepay_and_submit_mock_attestation(
@@ -629,7 +630,7 @@ mod tests {
     }
 
     #[rstest]
-    fn submit_participant_info__should_accept_an_assigned_tls_key_only_from_its_assignee(
+    fn submit_participant_info__should_accept_an_unattested_assigned_tls_key_only_from_its_owner(
         #[values(
             TlsKeyAssignment::Participant,
             TlsKeyAssignment::DroppedParticipant,
@@ -639,14 +640,14 @@ mod tests {
         assignment: TlsKeyAssignment,
     ) {
         // Given
-        let (mut contract, assignee, tls_public_key) = contract_assigning_tls_key(assignment);
+        let (mut contract, owner, tls_public_key) = contract_assigning_tls_key(assignment);
         let outsider = gen_account_id();
 
         // When
         let outsider_result =
             prepay_and_submit_mock_attestation(&mut contract, &outsider, tls_public_key.clone());
-        let assignee_result =
-            prepay_and_submit_mock_attestation(&mut contract, &assignee, tls_public_key);
+        let owner_result =
+            prepay_and_submit_mock_attestation(&mut contract, &owner, tls_public_key);
 
         // Then
         assert_matches!(
@@ -655,26 +656,26 @@ mod tests {
                 AttestationSubmissionError::TlsKeyOwnedByOtherAccount
             ))
         );
-        assert_matches!(assignee_result, Ok(()));
+        assert_matches!(owner_result, Ok(()));
     }
 
     #[test]
-    fn submit_participant_info__should_reject_an_outsider_refreshing_an_assigned_tls_key() {
+    fn submit_participant_info__should_reject_a_squatter_refreshing_a_participants_tls_key() {
         // Given
         let (mut contract, _, tls_public_key) =
             contract_assigning_tls_key(TlsKeyAssignment::Participant);
-        let outsider = gen_account_id();
+        let squatter = gen_account_id();
         contract
             .tee_state
             .verify_and_store_mock(
-                create_node_id(&outsider, &tls_public_key),
+                create_node_id(&squatter, &tls_public_key),
                 MpcMockAttestation::Valid,
                 Duration::MAX,
             )
             .unwrap();
 
         // When
-        let result = prepay_and_submit_mock_attestation(&mut contract, &outsider, tls_public_key);
+        let result = prepay_and_submit_mock_attestation(&mut contract, &squatter, tls_public_key);
 
         // Then
         assert_matches!(
