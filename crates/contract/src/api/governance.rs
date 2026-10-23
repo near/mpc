@@ -125,6 +125,7 @@ mod tests {
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
     use crate::primitives::participants::Participants;
+    use crate::primitives::proposal_hash::ToProposalHash;
     use crate::primitives::test_utils::{
         authenticate_account_as, bogus_tee_verifier_account_id, gen_participants,
     };
@@ -566,6 +567,68 @@ mod tests {
             ProtocolContractState::Resharing(_)
         );
         (contract, participants, domain_id, proposal)
+    }
+
+    /// The `state()` tally for `voters` all voting `proposal`.
+    fn expected_tally(
+        proposal: &ProposedGovernanceThresholdParameters,
+        voters: &[&AccountId],
+    ) -> dtos::GovernanceThresholdParametersVotes {
+        dtos::GovernanceThresholdParametersVotes(BTreeMap::from([(
+            proposal.to_proposal_hash(),
+            voters
+                .iter()
+                .map(|voter| dtos::AuthenticatedAccountId((*voter).clone()))
+                .collect(),
+        )]))
+    }
+
+    #[test]
+    fn state__should_report_pending_parameter_votes_by_proposal_hash() {
+        // Given
+        let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        vote_params(&mut contract, &signer, &proposal).unwrap();
+
+        // Then
+        let dtos::ProtocolContractState::Running(running) = contract.state() else {
+            panic!("expected Running state");
+        };
+        assert_eq!(
+            running.parameters_votes,
+            expected_tally(&proposal, &[&signer])
+        );
+    }
+
+    #[test]
+    fn state__should_report_re_proposal_votes_while_resharing() {
+        // Given
+        let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
+        let (voter, _, _) = &participants.participants()[0];
+        Environment::new(Some(0), Some(voter.clone()), None);
+
+        // When
+        contract
+            .vote_new_parameters(dtos::EpochId::new(2), (&proposal).into_dto_type())
+            .unwrap();
+
+        // Then
+        let dtos::ProtocolContractState::Resharing(resharing) = contract.state() else {
+            panic!("expected Resharing state");
+        };
+        assert_eq!(
+            resharing.previous_running_state.parameters_votes,
+            expected_tally(&proposal, &[voter])
+        );
     }
 
     #[test]

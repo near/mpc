@@ -7,7 +7,9 @@ use crate::types::PublicKeyExtended;
 use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::ProposalHash;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::primitives::DomainId;
@@ -165,17 +167,64 @@ pub struct ProposedGovernanceThresholdParameters {
 // Voting Types
 // =============================================================================
 
-/// Votes for threshold parameter changes. Always empty: the contract stores only proposal
-/// hashes and no longer reports pending votes. Kept for wire compatibility.
-// TODO(#2825): report the hash-keyed tally instead, like `MeasurementVotes`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+/// Voters grouped by the [`ProposalHash`] of the [`ProposedGovernanceThresholdParameters`]
+/// they voted for.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct GovernanceThresholdParametersVotes {
-    pub proposal_by_account:
-        BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
+pub struct GovernanceThresholdParametersVotes(
+    pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>,
+);
+
+/// Also accepts the pre-tally report (`{"proposal_by_account": {...}}`) of contracts that
+/// still store full proposals, so a newer reader can follow an older contract across an upgrade.
+impl<'de> Deserialize<'de> for GovernanceThresholdParametersVotes {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Tally(BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>),
+            // TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded; a plain
+            // derive(Deserialize) then suffices.
+            Legacy {
+                proposal_by_account:
+                    BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
+            },
+        }
+        Ok(Self(match Repr::deserialize(deserializer)? {
+            Repr::Tally(tally) => tally,
+            Repr::Legacy {
+                proposal_by_account,
+            } => tally_by_proposal_hash(proposal_by_account),
+        }))
+    }
+}
+
+/// Groups per-voter proposals by the hash the contract stores for them: SHA-256 of the
+/// Borsh encoding, which the DTOs share with the contract types.
+pub(crate) fn tally_by_proposal_hash<V: Ord, P: BorshSerialize>(
+    proposal_by_voter: BTreeMap<V, P>,
+) -> BTreeMap<ProposalHash, BTreeSet<V>> {
+    let mut tally: BTreeMap<ProposalHash, BTreeSet<V>> = BTreeMap::new();
+    for (voter, proposal) in proposal_by_voter {
+        let bytes = borsh::to_vec(&proposal).expect("borsh serialization must succeed");
+        let hash = ProposalHash::new(sha2::Sha256::digest(bytes).into());
+        tally.entry(hash).or_default().insert(voter);
+    }
+    tally
 }
 
 /// Votes for adding new domains.
@@ -260,6 +309,8 @@ pub struct RunningContractState {
     derive(schemars::JsonSchema)
 )]
 pub struct ResharingContractState {
+    /// The state being reshared from; while resharing, its `parameters_votes` hold the
+    /// re-proposal votes for the prospective epoch.
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
@@ -500,5 +551,47 @@ mod tests {
 
         // Then
         assert_eq!(parsed.per_domain_thresholds.len(), 0);
+    }
+
+    #[test]
+    fn parameters_votes_serialize_as_a_transparent_map_keyed_by_proposal_hash() {
+        // Given
+        let proposal = ProposalHash::new([0xCD; 32]);
+        let votes = GovernanceThresholdParametersVotes(BTreeMap::from([(
+            proposal,
+            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
+        )]));
+
+        // When
+        let json = serde_json::to_value(&votes).unwrap();
+
+        // Then
+        assert_eq!(json[proposal.as_hex()][0], "alice.near");
+    }
+
+    #[test]
+    fn parameters_votes_deserialize_the_legacy_empty_report() {
+        let votes: super::GovernanceThresholdParametersVotes =
+            serde_json::from_str(r#"{"proposal_by_account":{}}"#).unwrap();
+
+        assert_eq!(votes, super::GovernanceThresholdParametersVotes::default());
+    }
+
+    #[test]
+    fn parameters_votes_roundtrip_the_tally() {
+        let votes =
+            super::GovernanceThresholdParametersVotes(std::collections::BTreeMap::from([(
+                mpc_primitives::hash::ProposalHash::new([7u8; 32]),
+                std::collections::BTreeSet::from([super::AuthenticatedAccountId(
+                    "alice.near".parse().unwrap(),
+                )]),
+            )]));
+
+        let json = serde_json::to_string(&votes).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<super::GovernanceThresholdParametersVotes>(&json).unwrap(),
+            votes
+        );
     }
 }

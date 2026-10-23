@@ -188,7 +188,8 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
-        (&self.protocol_state).into_dto_type()
+        let parameters_votes = (&self.parameters_votes).into_dto_type();
+        (&self.protocol_state, parameters_votes).into_dto_type()
     }
 
     pub fn config(&self) -> dtos::Config {
