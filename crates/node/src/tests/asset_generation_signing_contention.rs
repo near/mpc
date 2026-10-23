@@ -89,8 +89,9 @@ const STEADY_TRIPLES_TO_BUFFER: usize = 128;
 /// post-resharing scenario the large triple buffer keeps triples flowing, so
 /// presignature generation runs flat out.
 const REFILL_TRIPLE_CONCURRENCY: usize = 2;
-/// Steady state only tops off as signing consumes presignatures; one triple batch
-/// at a time keeps the small buffer full without itself loading the runtime.
+/// Steady state only tops off as signing consumes triples (online presign) or
+/// presignatures; one triple batch at a time keeps the small buffer full without
+/// itself loading the runtime.
 const STEADY_TRIPLE_CONCURRENCY: usize = 1;
 const TRIPLE_STAGGER_SEC: u64 = 0;
 /// Mainnet presignature concurrency, which exceeds `CORES_PER_NODE`: leader-side

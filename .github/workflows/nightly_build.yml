@@ -1,5 +1,8 @@
 name: Build MPC with nearcore branch
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.nearcore-branch || 'master' }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -12,15 +15,18 @@ on:
   schedule:
     - cron: '0 1 * * *' # Nightly at 1:00 UTC (every day)
 
+permissions: {}
+
 jobs:
   build-mpc:
+    name: "Build mpc-node"
     runs-on: warp-ubuntu-2604-x64-8x
     environment: production
     permissions:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
             persist-credentials: false
 

@@ -1,0 +1,48 @@
+# TODO(#4562): remove this action together with repro-env
+name: Cache repro-env packages
+description: |
+  Restore repro-env's content-addressed package store, so `repro-env build`
+  finds every pinned `.deb` on disk and never contacts snapshot.debian.org,
+  which throttles and times out under the connect/read timeouts hardcoded in
+  repro-env.
+inputs:
+  save:
+    description: Whether this job should save the cache after running.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Compute repro-env cache key
+      id: compute-key
+      shell: bash
+      env:
+        LOCK_HASH: ${{ hashFiles('repro-env.lock') }}
+      run: echo "key=repro-env-pkgs-$RUNNER_OS-$LOCK_HASH" >> "$GITHUB_OUTPUT"
+
+    - name: Restore and save repro-env packages
+      if: inputs.save == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/repro-env/pkgs
+        key: ${{ steps.compute-key.outputs.key }}
+
+    - name: Restore repro-env packages
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/repro-env/pkgs
+        key: ${{ steps.compute-key.outputs.key }}
+
+    # repro-env checks a package's hash only when downloading it, stores it under that hash and
+    # installs a cached copy as is. Anyone able to write the cache could swap a package, so every
+    # restored package is checked against the hash in its path, as a fresh download would be
+    - name: Verify the restored packages
+      shell: bash
+      run: |
+        cd ~/.cache/repro-env/pkgs 2> /dev/null || exit 0
+        shopt -s nullglob
+        for package in */*; do
+          hash="${package/\//}"
+          sha256sum --check --quiet <<< "$hash  $package"
+        done

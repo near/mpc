@@ -16,11 +16,11 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use dcap_qvl::{quote as dq_quote, tcb_info as dq_tcb, verify as dq_verify};
+use alloc::{string::ToString as _, vec::Vec};
+use dcap_qvl::{QuoteClaims, quote as dq_quote, tcb_info as dq_tcb, verify as dq_verify};
 use tee_verifier_interface::{
-    Collateral, EnclaveReport, QuoteBytes, Report, TDReport10, TDReport15, TcbStatus,
-    TcbStatusWithAdvisory, VerifiedReport,
+    Collateral, CollateralDates, EnclaveReport, QuoteBytes, Report, TDReport10, TDReport15,
+    TDReport15Ex, TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
 };
 
 /// Converts an interface type into its `dcap_qvl` counterpart `T`.
@@ -94,12 +94,59 @@ impl IntoInterfaceType<VerifiedReport> for dq_verify::VerifiedReport {
     }
 }
 
+/// Builds the report the way `dcap_qvl`'s private `into_report_unchecked` does,
+/// so it matches what [`dq_verify::verify`] returns for the same quote.
+impl IntoInterfaceType<(VerifiedReport, CollateralDates)> for QuoteClaims {
+    fn into_interface_type(self) -> (VerifiedReport, CollateralDates) {
+        let QuoteClaims {
+            claims_version: _,
+            header: _,
+            tee_type: _,
+            tcb,
+            platform,
+            qe,
+            earliest_issue_date,
+            latest_issue_date,
+            earliest_expiration_date,
+            qe_iden_earliest_issue_date,
+            qe_iden_latest_issue_date,
+            qe_iden_earliest_expiration_date,
+            report,
+        } = self;
+        (
+            VerifiedReport {
+                status: tcb.status.to_string(),
+                advisory_ids: tcb.advisory_ids,
+                report: report.into_interface_type(),
+                ppid: platform.pck.ppid,
+                qe_status: TcbStatusWithAdvisory {
+                    status: qe.tcb_level.tcb_status.into_interface_type(),
+                    advisory_ids: qe.tcb_level.advisory_ids,
+                },
+                platform_status: TcbStatusWithAdvisory {
+                    status: platform.tcb_level.tcb_status.into_interface_type(),
+                    advisory_ids: platform.tcb_level.advisory_ids,
+                },
+            },
+            CollateralDates {
+                earliest_issue_date,
+                latest_issue_date,
+                earliest_expiration_date,
+                qe_iden_earliest_issue_date,
+                qe_iden_latest_issue_date,
+                qe_iden_earliest_expiration_date,
+            },
+        )
+    }
+}
+
 impl IntoInterfaceType<Report> for dq_quote::Report {
     fn into_interface_type(self) -> Report {
         match self {
             dq_quote::Report::SgxEnclave(r) => Report::SgxEnclave(r.into_interface_type()),
             dq_quote::Report::TD10(r) => Report::TD10(r.into_interface_type()),
             dq_quote::Report::TD15(r) => Report::TD15(r.into_interface_type()),
+            dq_quote::Report::TD15Ex(r) => Report::TD15Ex(r.into_interface_type()),
         }
     }
 }
@@ -132,6 +179,24 @@ impl IntoInterfaceType<TDReport15> for dq_quote::TDReport15 {
             base: self.base.into_interface_type(),
             tee_tcb_svn2: self.tee_tcb_svn2,
             mr_service_td: self.mr_service_td,
+        }
+    }
+}
+
+impl IntoInterfaceType<TDReport15Ex> for dq_quote::TDReport15Ex {
+    fn into_interface_type(self) -> TDReport15Ex {
+        TDReport15Ex {
+            base: self.base.into_interface_type(),
+            vmid: self.vmid,
+            td_id: self.td_id,
+            dev_info: self.dev_info,
+            init_service_td_hash: self.init_service_td_hash,
+            init_service_td_attributes: self.init_service_td_attributes,
+            init_cpu_svn: self.init_cpu_svn,
+            init_tee_tcb_svn: self.init_tee_tcb_svn,
+            init_tee_fmspc: self.init_tee_fmspc,
+            cur_service_td_hash: self.cur_service_td_hash,
+            cur_service_td_attributes: self.cur_service_td_attributes,
         }
     }
 }
@@ -169,6 +234,10 @@ impl IntoInterfaceType<TcbStatus> for dq_tcb::TcbStatus {
             dq_tcb::TcbStatus::ConfigurationNeeded => TcbStatus::ConfigurationNeeded,
             dq_tcb::TcbStatus::SWHardeningNeeded => TcbStatus::SWHardeningNeeded,
             dq_tcb::TcbStatus::Revoked => TcbStatus::Revoked,
+            dq_tcb::TcbStatus::TDRelaunchAdvised => TcbStatus::TDRelaunchAdvised,
+            dq_tcb::TcbStatus::TDRelaunchAdvisedConfigurationNeeded => {
+                TcbStatus::TDRelaunchAdvisedConfigurationNeeded
+            }
         }
     }
 }
@@ -252,6 +321,22 @@ mod tests {
         }
     }
 
+    fn dcap_td15ex() -> dq_quote::TDReport15Ex {
+        dq_quote::TDReport15Ex {
+            base: dcap_td15(),
+            vmid: 18,
+            td_id: [19; 32],
+            dev_info: [20; 48],
+            init_service_td_hash: [21; 48],
+            init_service_td_attributes: [22; 8],
+            init_cpu_svn: [23; 16],
+            init_tee_tcb_svn: [24; 16],
+            init_tee_fmspc: [25; 12],
+            cur_service_td_hash: [26; 48],
+            cur_service_td_attributes: [27; 8],
+        }
+    }
+
     fn dcap_sgx() -> dq_quote::EnclaveReport {
         dq_quote::EnclaveReport {
             cpu_svn: [1; 16],
@@ -302,6 +387,10 @@ mod tests {
             TcbStatus::ConfigurationNeeded => dq_tcb::TcbStatus::ConfigurationNeeded,
             TcbStatus::SWHardeningNeeded => dq_tcb::TcbStatus::SWHardeningNeeded,
             TcbStatus::Revoked => dq_tcb::TcbStatus::Revoked,
+            TcbStatus::TDRelaunchAdvised => dq_tcb::TcbStatus::TDRelaunchAdvised,
+            TcbStatus::TDRelaunchAdvisedConfigurationNeeded => {
+                dq_tcb::TcbStatus::TDRelaunchAdvisedConfigurationNeeded
+            }
         }
     }
 
@@ -327,6 +416,13 @@ mod tests {
     }
 
     #[test]
+    fn td_report_15_ex__should_match_dcap_borsh_layout() {
+        let dcap = dcap_td15ex();
+        let interface: TDReport15Ex = dcap.into_interface_type();
+        assert_same_borsh_bytes(&interface, &dcap);
+    }
+
+    #[test]
     fn enclave_report__should_match_dcap_borsh_layout() {
         let dcap = dcap_sgx();
         let interface: EnclaveReport = dcap.into_interface_type();
@@ -337,6 +433,7 @@ mod tests {
     #[case::sgx(dq_quote::Report::SgxEnclave(dcap_sgx()))]
     #[case::td10(dq_quote::Report::TD10(dcap_td10()))]
     #[case::td15(dq_quote::Report::TD15(dcap_td15()))]
+    #[case::td15ex(dq_quote::Report::TD15Ex(dcap_td15ex()))]
     fn report__should_match_dcap_borsh_layout(#[case] dcap: dq_quote::Report) {
         let interface: Report = dcap.clone().into_interface_type();
         assert_same_borsh_bytes(&interface, &dcap);
@@ -350,6 +447,8 @@ mod tests {
     #[case(TcbStatus::ConfigurationNeeded)]
     #[case(TcbStatus::SWHardeningNeeded)]
     #[case(TcbStatus::Revoked)]
+    #[case(TcbStatus::TDRelaunchAdvised)]
+    #[case(TcbStatus::TDRelaunchAdvisedConfigurationNeeded)]
     fn tcb_status__should_match_dcap_borsh_layout(#[case] status: TcbStatus) {
         let dcap = dcap_tcb_status(&status);
         assert_same_borsh_bytes(&status, &dcap);
@@ -365,10 +464,121 @@ mod tests {
         assert_same_borsh_bytes(&interface, &dcap);
     }
 
+    fn dcap_tcb_level(status: dq_tcb::TcbStatus, advisory_id: &str) -> dq_tcb::TcbLevel {
+        dq_tcb::TcbLevel {
+            tcb: dq_tcb::Tcb {
+                sgx_components: vec![],
+                tdx_components: vec![],
+                pce_svn: 0,
+            },
+            tcb_date: "2026-01-01T00:00:00Z".to_string(),
+            tcb_status: status,
+            advisory_ids: vec![advisory_id.to_string()],
+        }
+    }
+
+    /// Every field the conversion reads holds a distinct value, so a swap of
+    /// two same-typed fields changes the output.
+    fn dcap_quote_claims() -> QuoteClaims {
+        QuoteClaims {
+            claims_version: 1,
+            header: dq_quote::Header {
+                version: 4,
+                attestation_key_type: 2,
+                tee_type: 0x81,
+                qe_svn: 0,
+                pce_svn: 0,
+                qe_vendor_id: [0; 16],
+                user_data: [0; 20],
+            },
+            tee_type: 0x81,
+            tcb: dcap_qvl::TcbVerdict {
+                status: dq_tcb::TcbStatus::OutOfDate,
+                advisory_ids: vec!["INTEL-SA-00001".to_string()],
+                eval_data_number: 0,
+            },
+            platform: dcap_qvl::PlatformInfo {
+                tcb_level: dcap_tcb_level(dq_tcb::TcbStatus::ConfigurationNeeded, "INTEL-SA-00002"),
+                tcb_date_tag: 0,
+                current_tcb_level: None,
+                pck: dcap_qvl::PckIdentity {
+                    ppid: vec![0xAB; 16],
+                    cpu_svn: [0; 16],
+                    pce_svn: 0,
+                    pce_id: vec![],
+                    fmspc: [0; 6],
+                    sgx_type: 0,
+                    platform_instance_id: None,
+                    dynamic_platform: dcap_qvl::PckCertFlag::Undefined,
+                    cached_keys: dcap_qvl::PckCertFlag::Undefined,
+                    smt_enabled: dcap_qvl::PckCertFlag::Undefined,
+                    platform_provider_id: None,
+                },
+                root_key_id: vec![],
+                pck_crl_num: 0,
+                root_ca_crl_num: 0,
+            },
+            qe: dcap_qvl::QeInfo {
+                tcb_level: dcap_qvl::QeTcbLevel {
+                    tcb: dcap_qvl::QeTcb { isvsvn: 0 },
+                    tcb_date: "2026-01-01T00:00:00Z".to_string(),
+                    tcb_status: dq_tcb::TcbStatus::SWHardeningNeeded,
+                    advisory_ids: vec!["INTEL-SA-00003".to_string()],
+                },
+                report: dcap_sgx(),
+                tcb_eval_data_number: 0,
+            },
+            earliest_issue_date: 1,
+            latest_issue_date: 2,
+            earliest_expiration_date: 3,
+            qe_iden_earliest_issue_date: 4,
+            qe_iden_latest_issue_date: 5,
+            qe_iden_earliest_expiration_date: 6,
+            report: dq_quote::Report::TD10(dcap_td10()),
+        }
+    }
+
+    #[test]
+    fn quote_claims__should_convert_to_verified_report_and_collateral_dates() {
+        // Given
+        let claims = dcap_quote_claims();
+
+        // When
+        let result = claims.into_interface_type();
+
+        // Then
+        let expected = (
+            VerifiedReport {
+                status: "OutOfDate".to_string(),
+                advisory_ids: vec!["INTEL-SA-00001".to_string()],
+                report: Report::TD10(dcap_td10().into_interface_type()),
+                ppid: vec![0xAB; 16],
+                qe_status: TcbStatusWithAdvisory {
+                    status: TcbStatus::SWHardeningNeeded,
+                    advisory_ids: vec!["INTEL-SA-00003".to_string()],
+                },
+                platform_status: TcbStatusWithAdvisory {
+                    status: TcbStatus::ConfigurationNeeded,
+                    advisory_ids: vec!["INTEL-SA-00002".to_string()],
+                },
+            },
+            CollateralDates {
+                earliest_issue_date: 1,
+                latest_issue_date: 2,
+                earliest_expiration_date: 3,
+                qe_iden_earliest_issue_date: 4,
+                qe_iden_latest_issue_date: 5,
+                qe_iden_earliest_expiration_date: 6,
+            },
+        );
+        assert_eq!(result, expected);
+    }
+
     #[rstest]
     #[case::sgx(dq_quote::Report::SgxEnclave(dcap_sgx()))]
     #[case::td10(dq_quote::Report::TD10(dcap_td10()))]
     #[case::td15(dq_quote::Report::TD15(dcap_td15()))]
+    #[case::td15ex(dq_quote::Report::TD15Ex(dcap_td15ex()))]
     fn verified_report__should_match_dcap_borsh_layout(#[case] report: dq_quote::Report) {
         let dcap = dcap_verified_report(report);
         let interface: VerifiedReport = dcap.clone().into_interface_type();

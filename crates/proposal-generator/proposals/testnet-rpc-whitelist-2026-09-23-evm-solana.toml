@@ -1,0 +1,74 @@
+# Testnet RPC provider whitelist: Arbitrum, BNB, Base, Solana (vote of 2026-09-23).
+# Delta only; chains apply independently. Full state lives in testnet-rpc-whitelist.toml.
+
+[chains.Arbitrum]
+quorum = 3
+
+[chains.Arbitrum.providers.alchemy]
+base_url = "https://arb-sepolia.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Arbitrum.providers.quicknode]
+base_url = "https://{}.arbitrum-sepolia.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Arbitrum.providers.tatum]
+base_url = "https://arb-testnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Bnb]
+quorum = 3
+
+[chains.Bnb.providers.alchemy]
+base_url = "https://bnb-testnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Bnb.providers.quicknode]
+base_url = "https://{}.bsc-testnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Bnb.providers.tatum]
+base_url = "https://bsc-testnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Base]
+quorum = 3
+
+[chains.Base.providers.alchemy]
+base_url = "https://base-sepolia.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Base.providers.quicknode]
+base_url = "https://{}.base-sepolia.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Base.providers.tatum]
+base_url = "https://base-sepolia.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"
+
+[chains.Solana]
+quorum = 3
+
+[chains.Solana.providers.alchemy]
+base_url = "https://solana-devnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Solana.providers.quicknode]
+base_url = "https://{}.solana-devnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Solana.providers.tatum]
+base_url = "https://solana-devnet.gateway.tatum.io"
+auth_scheme = { Header = { name = "x-api-key" } }
+chain_routing = "Embedded"

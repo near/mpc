@@ -1,14 +1,17 @@
-use std::marker::PhantomData;
-
 use ed25519_dalek::SigningKey;
-use near_kit::{ExecutedOptimistic, Final, FinalExecutionOutcome, WaitLevel};
-use near_mpc_contract_interface::types::ProtocolContractState;
-use serde::de::DeserializeOwned;
+use std::time::Duration;
 
-use crate::NearKitCaller;
+use near_contract_transport::{
+    CallContract, FunctionCallArgs, NearGas, NearKitCaller, PollInterval,
+};
+use near_kit::rpc::FinalExecutionOutcome;
+use near_kit::transaction::{ExecutedOptimistic, Final};
+
 use crate::conversions::ToNearKey;
 
-const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
+const MAX_GAS: NearGas = NearGas::from_tgas(1000);
+const VIEW_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const VIEW_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -25,10 +28,11 @@ impl NearBlockchain {
         rpc_url: &str,
         chain_id: &str,
         root_account: &str,
-        root_secret_key: near_kit::SecretKey,
+        root_secret_key: near_kit::signer::SecretKey,
     ) -> anyhow::Result<Self> {
-        let signer = near_kit::InMemorySigner::from_secret_key(root_account, root_secret_key)
-            .map_err(|e| anyhow::anyhow!("failed to create root signer: {e}"))?;
+        let signer =
+            near_kit::signer::InMemorySigner::from_secret_key(root_account, root_secret_key)
+                .map_err(|e| anyhow::anyhow!("failed to create root signer: {e}"))?;
         let client = near_kit::Near::custom(rpc_url, chain_id)
             .signer(signer)
             .build();
@@ -89,10 +93,12 @@ impl NearBlockchain {
         account_id: &str,
         key: &SigningKey,
     ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
-        Ok(NearKitCaller {
-            inner: self.make_client(account_id, key)?,
-            _wait_level: PhantomData,
-        })
+        let poll_interval = PollInterval::new(VIEW_POLL_INTERVAL).expect("non-zero");
+        Ok(NearKitCaller::new(
+            self.make_client(account_id, key)?,
+            poll_interval,
+            VIEW_READ_TIMEOUT,
+        ))
     }
 
     pub fn rpc_url(&self) -> &str {
@@ -101,7 +107,7 @@ impl NearBlockchain {
 
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
         let sk = key.to_near_secret_key();
-        let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
+        let signer = near_kit::signer::InMemorySigner::from_secret_key(account_id, sk)
             .map_err(|e| anyhow::anyhow!("failed to create signer for {account_id}: {e}"))?;
         Ok(self.root_client.with_signer(signer))
     }
@@ -119,10 +125,8 @@ impl DeployedContract {
     }
 
     pub fn client(&self) -> NearKitCaller<ExecutedOptimistic> {
-        NearKitCaller {
-            inner: self.client.clone(),
-            _wait_level: PhantomData,
-        }
+        let poll_interval = PollInterval::new(VIEW_POLL_INTERVAL).expect("non-zero");
+        NearKitCaller::new(self.client.clone(), poll_interval, VIEW_READ_TIMEOUT)
     }
 
     pub async fn call(
@@ -130,74 +134,11 @@ impl DeployedContract {
         method: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<FinalExecutionOutcome> {
-        self.client
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .send()
+        let call_args = FunctionCallArgs::no_deposit(method, serde_json::to_vec(&args)?, MAX_GAS);
+        self.client()
+            .call_contract(&self.contract_id, call_args)
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
-    /// Like [`Self::call`], but waits for the block to be final, so a `view` issued
-    /// afterwards sees the state this call wrote.
-    pub async fn call_final(
-        &self,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        self.client
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .wait_until::<Final>()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
-    pub async fn call_from_with_deposit<T: WaitLevel>(
-        &self,
-        client: &NearKitCaller<T>,
-        method: &str,
-        args: serde_json::Value,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<T::Response> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .wait_until::<T>()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
-    }
-
-    pub async fn view<T: DeserializeOwned + Send + 'static>(
-        &self,
-        method: &str,
-    ) -> anyhow::Result<T> {
-        self.client
-            .view::<T>(&self.contract_id, method)
-            .await
-            .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
-    }
-
-    pub async fn view_borsh<T: borsh::BorshDeserialize + Send + 'static>(
-        &self,
-        method: &str,
-    ) -> anyhow::Result<T> {
-        self.client
-            .view::<T>(&self.contract_id, method)
-            .borsh()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
-    }
-
-    pub async fn state(&self) -> anyhow::Result<ProtocolContractState> {
-        self.view("state").await
     }
 
     /// SHA-256 hash of the contract code currently deployed at this account.

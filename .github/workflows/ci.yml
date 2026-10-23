@@ -4,6 +4,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# A job can use the GitHub Actions cache only if it declares so, which keeps a job that runs
+# third-party build scripts from poisoning what the image checks restore from it
+cache-mode: none
+
 on:
   workflow_dispatch:
   pull_request:
@@ -18,6 +22,8 @@ on:
   schedule:
     - cron: "5 0 * * 0"
 
+permissions: {}
+
 jobs:
   # Downstream gates use `if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}`.
   # `!cancelled()` overrides GitHub's implicit `success()` on `needs`, so a
@@ -30,8 +36,8 @@ jobs:
     name: "Detect non-docs changes"
     permissions:
       contents: read
-      pull-requests: read
-    uses: ./.github/workflows/changes.yml
+      pull-requests: read # the called workflow lists the files the pull request changes
+    uses: $/.github/workflows/changes.yml
 
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
@@ -41,10 +47,11 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    cache-mode: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -56,6 +63,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y repro-env
 
+      - name: Cache repro-env packages
+        uses: $/.github/actions/cache-repro-env-pkgs
+        with:
+          save: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Build MPC Node binary and image
         run: |
           export NODE_IMAGE_NAME=test_image_tag_ci
@@ -66,6 +78,11 @@ jobs:
           export NODE_IMAGE_NAME=test_image_tag_ci
           ./scripts/check-mpc-node-docker-starts.sh
 
+      - name: Check mpc-node docker image rejects the compromised eMudhra intermediates
+        run: |
+          export NODE_IMAGE_NAME=test_image_tag_ci
+          ./scripts/check-mpc-node-docker-ca-store.sh
+
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
     needs: changes
@@ -74,10 +91,11 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    cache-mode: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -88,6 +106,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y liblzma-dev repro-env
+
+      - name: Cache repro-env packages
+        uses: $/.github/actions/cache-repro-env-pkgs
 
       - name: Build Rust launcher docker image
         shell: bash
@@ -128,32 +149,31 @@ jobs:
     steps:
       - name: Checkout repository
         if: needs.changes.outputs.code_changed != 'false'
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
         if: needs.changes.outputs.code_changed != 'false'
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      - name: Restore /nix from cache
-        id: nix-cache
-        if: needs.changes.outputs.code_changed != 'false'
-        uses: ./.github/actions/restore-nix-cache
+        uses: $/.github/actions/install-nix
+        with:
+          project-cache: true
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
         if: needs.changes.outputs.code_changed != 'false'
       - name: Cache Rust dependencies
         if: needs.changes.outputs.code_changed != 'false'
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
+          prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}-nix-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}
 
       - name: Run cargo-nextest
         if: needs.changes.outputs.code_changed != 'false'
-        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
+        env:
+          NEXTEST_ARGS: ${{ matrix.nextest-args }}
+        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked $NEXTEST_ARGS
 
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
@@ -166,30 +186,62 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      # only save nix cache in this single job to avoid duplicate cache saves from other jobs
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
+        uses: $/.github/actions/install-nix
         with:
-          save: ${{ github.ref == 'refs/heads/main' }}
+          project-cache: true
 
       # Reproducible build that carries NEP-330 metadata; this is what the
       # release artifact uses and what sourcescan.io / nearblocks replay.
       - name: Build mpc-contract (reproducible, cargo-near)
-        run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+        run: nix develop --no-update-lock-file .#contract --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
       - name: Check contract WASM size
-        run: nix develop --command bash scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
+        run: bash scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
+
+  # The only job that signs and pushes to the project cache. Its environment must be limited to
+  # main and release branches in the repository settings, so no other branch can read the signing
+  # key, and no dependency's build code runs outside Nix's sandbox before it signs
+  push-project-cache:
+    name: "Push the dev shells to the project cache"
+    if: github.ref == 'refs/heads/main'
+    runs-on: warp-ubuntu-2604-x64-16x
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: $/.github/actions/install-nix
+        with:
+          project-cache: true
+
+      # Every check that uses this cache, except the Nix contract build, runs in one of these two
+      # shells, so the cache holds them and everything they need
+      - name: Build the dev shells
+        run: |
+          nix develop --no-update-lock-file --profile "$RUNNER_TEMP/dev-shell" --command true
+          nix develop --no-update-lock-file --profile "$RUNNER_TEMP/contract-shell" .#contract --command true
+
+      - name: Push the dev shells
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          CACHIX_SIGNING_KEY: ${{ secrets.CACHIX_SIGNING_KEY }}
+        run: nix run --inputs-from . nixpkgs#cachix -- push near-mpc "$RUNNER_TEMP/dev-shell" "$RUNNER_TEMP/contract-shell"
 
   # Independent reproducible path: the Nix derivation produces the contract WASM
   # without a third-party Docker image. Kept exercised alongside the cargo-near
-  # build; see docs/reproducible-builds.md.
+  # build; see docs/guide/reproducible-builds.md.
   nix-build-mpc-contract:
     name: "Nix build mpc-contract"
     needs: changes
@@ -201,15 +253,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
+        uses: $/.github/actions/install-nix
+        with:
+          project-cache: true
 
       - name: Build mpc-contract (Nix)
         run: nix build -L .#mpc-contract
@@ -220,7 +271,7 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     permissions:
       contents: read
-    uses: ./.github/workflows/nix-build-mpc-node.yml
+    uses: $/.github/workflows/nix-build-mpc-node.yml
 
   fast-ci-checks:
     name: "Fast CI checks"
@@ -229,24 +280,22 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      - name: Restore /nix from cache
-        id: nix-cache
-        uses: ./.github/actions/restore-nix-cache
+        uses: $/.github/actions/install-nix
+        with:
+          project-cache: true
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
+          prefix-key: v1-rust-week-${{ env.WEEK }}-nix-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}
 
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
@@ -262,24 +311,22 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      - name: Restore /nix from cache
-        id: nix-cache
-        uses: ./.github/actions/restore-nix-cache
+        uses: $/.github/actions/install-nix
+        with:
+          project-cache: true
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
+          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}-nix-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}
 
       - name: Build mpc-node
         run: nix develop --command cargo make build-mpc-node-network-hardship-simulation
@@ -295,11 +342,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
+      - name: Build tee-verifier
+        run: nix develop --command cargo make build-tee-verifier-optimized
+
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
-        run: nix develop --command cargo build -p backup-cli --release --locked
+        run: nix develop --command cargo make build-backup-cli
 
       - name: Run E2E tests
         run: nix develop --command cargo make e2e-tests-skip-build
@@ -315,15 +365,14 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      - name: Restore /nix from cache
-        uses: ./.github/actions/restore-nix-cache
+        uses: $/.github/actions/install-nix
+        with:
+          project-cache: true
 
       - name: Run cargo-make extra checks
         run: nix develop --command cargo make check-extra
@@ -334,10 +383,10 @@ jobs:
     runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # lists the issues the pull request closes
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

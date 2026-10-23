@@ -110,22 +110,25 @@ pub async fn random_ot_extension_sender(
         });
     }
 
+    // Branching once after the loop keeps the abort point independent of `delta`.
+    let mut is_consistent = Choice::from(1);
     for (j, small_t_j) in small_t.iter().enumerate() {
         let delta_j = Choice::from(delta.bit(j));
 
         let mut small_q_j = DoubleBitVector::zero();
         for (q_i, chi_i) in q.column_chunks(j).zip(chi.iter()) {
-            small_q_j ^= q_i.gf_mul(chi_i);
+            small_q_j.xor_mut(&q_i.gf_mul(chi_i));
         }
 
         let delta_j_x =
             DoubleBitVector::conditional_select(&DoubleBitVector::zero(), &small_x, delta_j);
-        if !bool::from(small_q_j.ct_eq(&(small_t_j ^ delta_j_x))) {
-            return Err(ProtocolError::QMatrixConsistencyCheckFailed {
-                sid: hex::encode(params.sid),
-                participant: chan.to,
-            });
-        }
+        is_consistent &= small_q_j.ct_eq(&small_t_j.xor(&delta_j_x));
+    }
+    if !bool::from(is_consistent) {
+        return Err(ProtocolError::QMatrixConsistencyCheckFailed {
+            sid: hex::encode(params.sid),
+            participant: chan.to,
+        });
     }
 
     // Step 14
@@ -133,11 +136,11 @@ pub async fn random_ot_extension_sender(
 
     for (i, q_i) in q.rows().take(params.batch_size).enumerate() {
         let v0_i = hash_to_scalar(i, q_i);
-        let v1_i = hash_to_scalar(i, &(q_i ^ delta));
+        let v1_i = hash_to_scalar(i, &q_i.xor(&delta));
         out.push((v0_i, v1_i));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
-        if (i + 1) % YIELD_EVERY == 0 {
+        if (i + 1).is_multiple_of(YIELD_EVERY) {
             chan.yield_point().await;
         }
     }
@@ -167,7 +170,7 @@ pub async fn random_ot_extension_receiver(
     // Step 1
     let x: BitMatrix = b
         .bits()
-        .map(|b_i| BitVector::conditional_select(&BitVector::zero(), &!BitVector::zero(), b_i))
+        .map(|b_i| BitVector::conditional_select(&BitVector::zero(), &BitVector::zero().not(), b_i))
         .collect();
 
     // Step 2
@@ -202,7 +205,7 @@ pub async fn random_ot_extension_receiver(
         .map(|j| {
             let mut small_t_j = DoubleBitVector::zero();
             for (t_i, chi_i) in t.column_chunks(j).zip(chi.iter()) {
-                small_t_j ^= t_i.gf_mul(chi_i);
+                small_t_j.xor_mut(&t_i.gf_mul(chi_i));
             }
             small_t_j
         })
@@ -218,7 +221,7 @@ pub async fn random_ot_extension_receiver(
         out.push((b_i, hash_to_scalar(i, t_i)));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
-        if (i + 1) % YIELD_EVERY == 0 {
+        if (i + 1).is_multiple_of(YIELD_EVERY) {
             chan.yield_point().await;
         }
     }
@@ -240,6 +243,7 @@ mod test {
 
     use k256::Scalar;
     use rand::SeedableRng;
+    use std::assert_matches;
 
     /// Run the random OT protocol between two parties
     fn run_random_ot<R: CryptoRngCore + SeedableRng + Send + 'static>(
@@ -306,5 +310,23 @@ mod test {
         for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {
             assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, *b_i));
         }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn random_ot_extension_sender__should_reject_inconsistent_receiver() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
+
+        // When
+        // Swapped base OT keys break `q = t ^ (x & delta)` in every column.
+        let result = run_random_ot((delta, k), (k1, k0), b"test sid".to_vec(), 16, &mut rng);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ProtocolError::QMatrixConsistencyCheckFailed { .. })
+        );
     }
 }

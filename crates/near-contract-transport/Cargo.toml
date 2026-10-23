@@ -7,15 +7,35 @@ repository.workspace = true
 description = "NEAR function-call payload and the CallContract/ViewContract transport traits shared across the MPC stack"
 
 [features]
-traits = ["dep:near-account-id"]
+traits = [
+    "dep:near-account-id",
+    "dep:borsh",
+    "dep:thiserror",
+    "dep:serde_json",
+    "dep:tokio",
+    "dep:tokio-util",
+    "dep:tracing",
+]
+test-utils = ["traits"]
+near-kit = ["dep:near-kit", "traits"]
 
 [dependencies]
+borsh = { workspace = true, optional = true }
 derive_more = { workspace = true }
 near-account-id = { workspace = true, optional = true }
 near-gas = { workspace = true }
+near-kit = { workspace = true, optional = true }
 near-token = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

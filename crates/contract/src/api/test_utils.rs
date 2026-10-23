@@ -6,10 +6,12 @@ use crate::errors::Error;
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
 use crate::primitives::participants::Participants;
-use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_participants, infer_purpose_from_protocol};
+use crate::primitives::test_utils::{
+    NUM_PROTOCOLS, bogus_tee_verifier_account_id, gen_participants, infer_purpose_from_protocol,
+};
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
-use crate::state::test_utils::gen_running_state;
+use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
@@ -117,9 +119,9 @@ pub(crate) fn basic_setup_with_protocol(
         .build();
     testing_env!(context.clone());
     let domain_id = DomainId::default();
-    // DamgardEtAl requires 2t - 1 <= n; with n=4, the max valid t is 2.
+    // RobustEcdsa requires 2t - 1 <= n; with n=4, the max valid t is 2.
     let reconstruction_threshold = match protocol {
-        Protocol::DamgardEtAl => ReconstructionThreshold::new(2),
+        Protocol::RobustEcdsa => ReconstructionThreshold::new(2),
         _ => ReconstructionThreshold::new(3),
     };
     let domains = vec![DomainConfig {
@@ -139,8 +141,15 @@ pub(crate) fn basic_setup_with_protocol(
     let parameters =
         GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
             .unwrap();
-    let contract =
-        MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None).unwrap();
+    let contract = MpcContract::init_running(
+        domains,
+        1,
+        (&keyset).into_dto_type(),
+        (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
+        None,
+    )
+    .unwrap();
     (context, contract, sk)
 }
 
@@ -197,7 +206,12 @@ pub(crate) fn setup_tee_test_contract(
 
     let threshold = GovernanceThreshold::new(threshold_value);
     let parameters = GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-    let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
+    let contract = MpcContract::init(
+        (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
+        None,
+    )
+    .unwrap();
 
     (contract, participants, first_participant_id)
 }
@@ -271,8 +285,7 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             accept_requests: true,
-            proposed_updates: Default::default(),
-            node_foreign_chain_support: Default::default(),
+            contract_update_votes: Default::default(),
             config: Default::default(),
             tee_state: Default::default(),
             node_migrations: Default::default(),
@@ -280,7 +293,7 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
-            tee_verifier_account_id: None,
+            tee_verifier_account_id: bogus_tee_verifier_account_id(),
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         }
@@ -300,4 +313,26 @@ pub(crate) fn participant_account_ids(contract: &MpcContract) -> Vec<AccountId> 
         .iter()
         .map(|(account_id, _, _)| account_id.clone())
         .collect()
+}
+
+pub(crate) fn running_state() -> ProtocolContractState {
+    ProtocolContractState::Running(gen_running_state(NUM_DOMAINS))
+}
+
+pub(crate) fn resharing_state() -> ProtocolContractState {
+    ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1)
+}
+
+pub(crate) fn initializing_state() -> ProtocolContractState {
+    ProtocolContractState::Initializing(
+        gen_initializing_state(NUM_DOMAINS, NUM_GENERATED_DOMAINS).1,
+    )
+}
+
+pub(crate) fn contract_with_participants(
+    protocol_state: ProtocolContractState,
+) -> (MpcContract, Vec<AccountId>) {
+    let contract = MpcContract::new_from_protocol_state(protocol_state);
+    let participants = participant_account_ids(&contract);
+    (contract, participants)
 }

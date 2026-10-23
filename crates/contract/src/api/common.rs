@@ -2,11 +2,13 @@
 
 use crate::errors::{InvalidParameters, RequestError, TeeError};
 use crate::{MpcContract, MpcContractExt};
-use dtos::{DomainConfig, DomainId, DomainPurpose};
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::{AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, env, log, near};
+use near_sdk::{
+    AccountId, CryptoHash, FunctionError, Gas, GasWeight, NearToken, Promise, env, log, near,
+    require,
+};
 
-/// Register used to receive data id from `promise_await_data`.
+/// Register used to receive data id from [`env::promise_yield_create`].
 /// Note: This is an implementation constant, not a configurable policy value.
 const DATA_ID_REGISTER: u64 = 0;
 
@@ -22,15 +24,15 @@ impl MpcContract {
     /// Returns the validated domain config and the caller's account id.
     pub(crate) fn check_request_preconditions(
         &self,
-        domain_id: DomainId,
-        expected_purpose: DomainPurpose,
+        domain_id: dtos::DomainId,
+        expected_purpose: dtos::DomainPurpose,
         minimum_gas: Gas,
         minimum_deposit: NearToken,
-    ) -> (DomainConfig, AccountId) {
+    ) -> (dtos::DomainConfig, AccountId) {
         // 1. Look up the domain and check its purpose.
         let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
+            Err(err) => err.panic(),
         };
         let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
             env::panic_str(
@@ -40,29 +42,27 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        if domain_config.purpose != expected_purpose {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: expected_purpose,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
+        require!(
+            domain_config.purpose == expected_purpose,
+            InvalidParameters::WrongDomainPurpose {
+                domain_id: domain_config.id,
+                expected: expected_purpose,
+                actual: domain_config.purpose,
+            }
+            .to_string()
+        );
         let domain_config = domain_config.clone();
 
         // 2. Make sure the call will not run out of gas doing yield/resume logic.
         let prepaid_gas = env::prepaid_gas();
-        if prepaid_gas < minimum_gas {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: prepaid_gas.as_gas(),
-                    required: minimum_gas.as_gas(),
-                }
-                .to_string(),
-            );
-        }
+        require!(
+            prepaid_gas >= minimum_gas,
+            InvalidParameters::InsufficientGas {
+                provided: prepaid_gas.as_gas(),
+                required: minimum_gas.as_gas(),
+            }
+            .to_string()
+        );
 
         // 3. Require the minimum deposit and refund any excess.
         let predecessor = env::predecessor_account_id();
@@ -70,9 +70,10 @@ impl MpcContract {
 
         // 4. Refuse the request if the contract is not currently accepting requests
         //    (e.g. because TEE validation has failed).
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
+        require!(
+            self.accept_requests,
+            TeeError::TeeValidationFailed.to_string()
+        );
 
         (domain_config, predecessor)
     }
@@ -145,7 +146,7 @@ pub(crate) fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountI
 
 /// Transfers `amount` to `account_id` via a detached promise; no-op when zero.
 pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
-    if amount > NearToken::from_near(0) {
+    if !amount.is_zero() {
         log!("refund {amount} to {account_id}");
         Promise::new(account_id.clone()).transfer(amount).detach();
     }
@@ -179,14 +180,14 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         let (config, predecessor) = contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
-        assert_eq!(config.id, DomainId::default());
+        assert_eq!(config.id, dtos::DomainId::default());
         assert_eq!(Curve::from(config.protocol), Curve::Secp256k1);
-        assert_eq!(config.purpose, DomainPurpose::Sign);
+        assert_eq!(config.purpose, dtos::DomainPurpose::Sign);
         assert_eq!(predecessor.as_str(), "contract_account.near");
     }
 
@@ -196,8 +197,8 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         contract.check_request_preconditions(
-            DomainId(999),
-            DomainPurpose::Sign,
+            dtos::DomainId(999),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
@@ -209,8 +210,8 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::CKD,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::CKD,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
@@ -222,8 +223,8 @@ mod tests {
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         override_context_for_preconditions(NearToken::from_yoctonear(1), Gas::from_tgas(1));
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(100),
             NearToken::from_yoctonear(1),
         );
@@ -233,10 +234,10 @@ mod tests {
     #[should_panic(expected = "Attached deposit is lower than required")]
     fn check_request_preconditions__panics_when_attached_deposit_is_insufficient() {
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        override_context_for_preconditions(NearToken::from_near(0), Gas::from_tgas(300));
+        override_context_for_preconditions(NearToken::ZERO, Gas::from_tgas(300));
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
@@ -249,8 +250,8 @@ mod tests {
         let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         contract.accept_requests = false;
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );

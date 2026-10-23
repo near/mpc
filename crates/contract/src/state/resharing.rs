@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
@@ -24,14 +24,14 @@ use near_sdk::near;
 ///    tracking structure in the running state.
 ///  - The previous running state's keys are needed to copy the public keys.
 ///  - We use the previous running state's DomainRegistry.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug)]
 #[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
-    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    pub cancellation_requests: BTreeSet<AuthenticatedAccountId>,
     /// Per-domain [`ReconstructionThreshold`] updates carried from the accepted
     /// proposal. Applied to the [`DomainRegistry`](crate::primitives::domain::DomainRegistry)
     /// when resharing completes; empty means "keep current per-domain thresholds".
@@ -87,7 +87,7 @@ impl ResharingContractState {
                         .clone(),
                     proposal.parameters().clone(),
                 ),
-                cancellation_requests: HashSet::new(),
+                cancellation_requests: BTreeSet::new(),
                 per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             }));
         }
@@ -196,13 +196,12 @@ impl ResharingContractState {
     }
 
     pub fn is_participant_or_prospective_participant(&self, account_id: &AccountId) -> bool {
-        self.previous_running_state
-            .is_participant_given_account_id(account_id)
+        self.previous_running_state.is_participant(account_id)
             || self
                 .resharing_key
                 .proposed_parameters()
                 .participants()
-                .is_participant_given_account_id(account_id)
+                .is_participant(account_id)
     }
 }
 #[cfg(test)]

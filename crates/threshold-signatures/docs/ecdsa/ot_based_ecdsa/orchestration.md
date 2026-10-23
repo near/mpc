@@ -23,6 +23,13 @@ Signing is split into three phases:
 2. Presigning.
 3. Signing.
 
+Presigning and signing can also run as one protocol once the message is known
+(`presign_and_sign`, see [signing](./signing.md#presigning-and-signing-in-one-protocol)),
+in which case the presignature is never stored and phases 2 and 3 share one party set.
+Each protocol owns its whole message channel: running the presigning protocol followed by
+the signing protocol over the same channel is not supported, because both start at the same
+waitpoint and their messages would be confused.
+
 Each of these phases can potentially use a different set of parties,
 and these sets can have different sizes.
 Furthermore, each phase can have a different threshold describing

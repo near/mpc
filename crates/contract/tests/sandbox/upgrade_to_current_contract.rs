@@ -1,26 +1,30 @@
+#![allow(non_snake_case)]
+
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary, submit_attestations,
+        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_account,
+        gen_accounts, init, submit_attestations, vote_and_submit_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
-            get_allowed_launcher_image_hashes, get_participants, get_state, get_tee_accounts,
-            vote_add_launcher_hash,
+            get_participant_attestation, get_participants, get_state, get_tee_accounts,
+            prepay_and_submit_participant_info, vote_add_launcher_hash, vote_add_os_measurement,
         },
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
+        transactions::CallMpcContract,
     },
 };
 use mpc_contract::primitives::{
-    key_state::{EpochId, Keyset},
+    key_state::EpochId,
     participants::Participants,
+    test_utils::bogus_tee_verifier_account_id,
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -28,11 +32,10 @@ use near_mpc_contract_interface::types::{
     CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{Account, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
-use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -49,30 +52,28 @@ fn contract_code(network: Network) -> &'static [u8] {
 
 async fn init_old_contract(
     worker: &Worker<Sandbox>,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     number_of_participants: usize,
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
     let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
     let threshold = GovernanceThreshold::new(threshold);
-    let threshold_parameters =
-        GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-
+    let threshold_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
+        GovernanceThresholdParameters::new(participants.clone(), threshold)
+            .unwrap()
+            .into();
     contract
-        .call(method_names::INIT)
-        .args_json(serde_json::json!({
-            "parameters": &threshold_parameters,
-        }))
-        .transact()
+        .init(threshold_parameters, bogus_tee_verifier_account_id(), None)
         .await?
         .into_result()?;
     Ok((accounts, participants))
 }
 
-async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
+async fn healthcheck(contract: &SandboxMpcContract) -> anyhow::Result<bool> {
     let status = contract
-        .call(method_names::STATE)
+        .as_account()
+        .call(contract.id(), method_names::STATE)
         .transact()
         .await?
         .into_result()
@@ -80,30 +81,29 @@ async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
     Ok(status)
 }
 
-async fn deploy_old(worker: &Worker<Sandbox>, network: Network) -> anyhow::Result<Contract> {
+async fn deploy_old(
+    worker: &Worker<Sandbox>,
+    network: Network,
+) -> anyhow::Result<SandboxMpcContract> {
     let old_wasm = contract_code(network);
     let old_contract = worker.dev_deploy(old_wasm).await?;
-    Ok(old_contract)
+    Ok(SandboxMpcContract::from_deployed(worker, old_contract))
 }
 
-async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
+async fn upgrade_to_new(contract: &SandboxMpcContract) -> anyhow::Result<()> {
     let new_wasm = current_contract();
-    let new_contract = old_contract
+    contract
         .as_account()
         .deploy(new_wasm)
         .await?
         .into_result()?;
-    Ok(new_contract)
+    Ok(())
 }
 
 /// Migrates the contract to a current contract build
 /// and sanity checks that the upgraded code matches compiled contract bytes.
-async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result<()> {
-    contract
-        .call(method_names::MIGRATE)
-        .transact()
-        .await?
-        .into_result()?;
+async fn migrate_and_assert_contract_code(contract: &SandboxMpcContract) -> anyhow::Result<()> {
+    contract.migrate().await?.into_result()?;
     let code_hash_post_upgrade = contract.view_code().await.unwrap();
     let current_code_hash = current_contract();
 
@@ -123,7 +123,7 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
 async fn back_compatibility_without_state(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) -> anyhow::Result<()> {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
+    let worker = test_utils::sandbox::start_sandbox().await?;
 
     let contract = deploy_old(&worker, network).await?;
 
@@ -131,7 +131,7 @@ async fn back_compatibility_without_state(
 
     assert!(healthcheck(&contract).await?);
 
-    let contract = upgrade_to_new(contract).await?;
+    upgrade_to_new(&contract).await?;
 
     if healthcheck(&contract).await? {
         println!("✅ Back compatibility check succeeded: no breaking changes found 🫧.");
@@ -155,22 +155,63 @@ async fn back_compatibility_without_state(
     )
 }
 
+/// `stored_attestations` keeps entries for non-participants too, so the upgrade under test
+/// carries more entries than [`PARTICIPANT_LEN`].
+const STORED_ATTESTATION_ENTRIES: usize = 25;
+
+/// Tops the stored attestations up to `total` with entries owned by non-participants, the way a
+/// prospective node's submission would.
+async fn fill_stored_attestations(
+    worker: &Worker<Sandbox>,
+    contract: &SandboxMpcContract,
+    total: usize,
+) -> Vec<dtos::Ed25519PublicKey> {
+    let mut accounts = Vec::with_capacity(total - PARTICIPANT_LEN);
+    for _ in PARTICIPANT_LEN..total {
+        accounts.push(gen_account(worker).await.0);
+    }
+    let tls_keys: Vec<_> = (0..accounts.len())
+        .map(|index| dtos::Ed25519PublicKey([u8::try_from(index).unwrap(); 32]))
+        .collect();
+
+    let submissions = accounts
+        .iter()
+        .zip(&tls_keys)
+        .map(|(account, tls_key)| async move {
+            let result = prepay_and_submit_participant_info(
+                account,
+                contract,
+                &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+                tls_key,
+            )
+            .await
+            .expect("prepay_and_submit_participant_info should not error");
+            assert!(result.is_success(), "filler submission failed: {result:?}");
+        });
+    futures::future::join_all(submissions).await;
+
+    let stored = get_tee_accounts(contract).await.unwrap();
+    assert_eq!(stored.len(), total, "stored attestation count");
+
+    tls_keys
+}
+
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
-/// can be upgraded to the [`current_contract`] binary using the proposal-and-vote flow.
+/// can be upgraded to the [`current_contract`] binary using the vote-then-submit flow.
 #[rstest]
 #[tokio::test]
 async fn propose_upgrade_from_production_to_current_binary(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
 
     submit_attestations(&contract, &accounts, &participants).await;
+    let filler_keys =
+        fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(
@@ -191,16 +232,37 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap();
     }
     assert!(
-        get_allowed_launcher_image_hashes(&contract)
+        contract
+            .allowed_launcher_image_hashes()
             .await
             .unwrap()
+            .value
             .contains(&launcher_hash),
         "launcher hash should be voted in before the upgrade"
     );
 
+    // Leave a launcher vote pending so migration decodes a non-empty vote map off the
+    // production layout.
+    let pending_launcher_hash = mpc_primitives::hash::LauncherImageHash::from([0xBB; 32]);
+    vote_add_launcher_hash(&accounts[0], &contract, &pending_launcher_hash)
+        .await
+        .unwrap();
+
+    // Same for the OS measurement vote map.
+    let pending_measurement = dtos::ExpectedMeasurements {
+        mrtd: mpc_primitives::hash::MrtdHash::from([0xCD; 48]),
+        rtmr0: mpc_primitives::hash::Rtmr0Hash::from([0xCD; 48]),
+        rtmr1: mpc_primitives::hash::Rtmr1Hash::from([0xCD; 48]),
+        rtmr2: mpc_primitives::hash::Rtmr2Hash::from([0xCD; 48]),
+        key_provider_event_digest: mpc_primitives::hash::KeyProviderEventDigest::from([0xCD; 48]),
+    };
+    vote_add_os_measurement(&accounts[0], &contract, &pending_measurement)
+        .await
+        .unwrap();
+
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
+    vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
@@ -210,11 +272,72 @@ async fn propose_upgrade_from_production_to_current_binary(
     );
 
     assert!(
-        get_allowed_launcher_image_hashes(&contract)
+        contract
+            .allowed_launcher_image_hashes()
             .await
             .unwrap()
+            .value
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
+    );
+
+    assert_eq!(
+        get_tee_accounts(&contract).await.unwrap().len(),
+        STORED_ATTESTATION_ENTRIES,
+        "every stored attestation should survive migration"
+    );
+    get_participant_attestation(&contract, &filler_keys[0])
+        .await
+        .unwrap()
+        .expect("a migrated attestation should still be readable");
+
+    assert!(
+        contract
+            .launcher_hash_votes()
+            .await
+            .unwrap()
+            .value
+            .is_empty(),
+        "pending launcher votes should be dropped by the migration"
+    );
+    assert!(
+        contract
+            .os_measurement_votes()
+            .await
+            .unwrap()
+            .value
+            .is_empty(),
+        "pending OS measurement votes should be dropped by the migration"
+    );
+
+    let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
+    for account in &accounts[..threshold] {
+        vote_add_launcher_hash(account, &contract, &pending_launcher_hash)
+            .await
+            .unwrap();
+    }
+    assert!(
+        contract
+            .allowed_launcher_image_hashes()
+            .await
+            .unwrap()
+            .value
+            .contains(&pending_launcher_hash),
+        "a fresh launcher threshold vote should succeed after the upgrade"
+    );
+    for account in &accounts[..threshold] {
+        vote_add_os_measurement(account, &contract, &pending_measurement)
+            .await
+            .unwrap();
+    }
+    assert!(
+        contract
+            .allowed_os_measurements()
+            .await
+            .unwrap()
+            .value
+            .contains(&pending_measurement),
+        "a fresh OS measurement threshold vote should succeed after the upgrade"
     );
 }
 
@@ -236,9 +359,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 async fn upgrade_preserves_state_and_requests(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
@@ -260,7 +381,7 @@ async fn upgrade_preserves_state_and_requests(
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
-    let contract = upgrade_to_new(contract).await.unwrap();
+    upgrade_to_new(&contract).await.unwrap();
     migrate_and_assert_contract_code(&contract)
         .await
         .expect("❌ migration() failed");
@@ -297,7 +418,7 @@ async fn upgrade_preserves_state_and_requests(
 #[tokio::test]
 async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -> anyhow::Result<()>
 {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
+    let worker = test_utils::sandbox::start_sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
@@ -311,7 +432,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
 
     submit_attestations(&contract, &accounts, &participants).await;
 
-    let contract = upgrade_to_new(contract).await?;
+    upgrade_to_new(&contract).await?;
 
     migrate_and_assert_contract_code(&contract)
         .await
@@ -361,9 +482,7 @@ async fn upgrade_allows_new_request_types(
 ) {
     let rng = &mut OsRng;
 
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
@@ -384,7 +503,7 @@ async fn upgrade_allows_new_request_types(
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
-    let contract = upgrade_to_new(contract).await.unwrap();
+    upgrade_to_new(&contract).await.unwrap();
     migrate_and_assert_contract_code(&contract)
         .await
         .expect("❌ migration() failed");
@@ -468,24 +587,24 @@ async fn init_running_rejects_external_callers_pre_initialization() {
     let number_of_participants = 2;
     let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
 
-    let threshold_parameters = GovernanceThresholdParameters::new(
-        participants.clone(),
-        GovernanceThreshold::new(number_of_participants as u64),
-    )
-    .unwrap();
-
-    let init_running_args = serde_json::json!({
-            "domains": [],
-            "next_domain_id": 0,
-            "keyset": Keyset::new(EpochId::new(2), vec![]),
-            "parameters": threshold_parameters,
-    });
+    let threshold_parameters: dtos::GovernanceThresholdParameters =
+        GovernanceThresholdParameters::new(
+            participants.clone(),
+            GovernanceThreshold::new(number_of_participants as u64),
+        )
+        .unwrap()
+        .into();
 
     let execution_error = accounts[0]
-        .call(contract.id(), method_names::INIT_RUNNING)
-        .max_gas()
-        .args_json(init_running_args)
-        .transact()
+        .call_mpc(contract.id())
+        .init_running(
+            vec![],
+            0,
+            dtos::Keyset::new(EpochId::new(2), vec![]),
+            threshold_parameters,
+            bogus_tee_verifier_account_id(),
+            None,
+        )
         .await
         .unwrap()
         .into_result()
@@ -500,86 +619,4 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         "init_running call was accepted by external caller. expected method to be private. {:?}",
         error_message
     )
-}
-
-/// Verifies that per-node foreign chain configurations registered on the old
-/// contract via the deprecated `register_foreign_chain_config` are migrated to
-/// the new `node_foreign_chain_support` layout: each node's full
-/// [`ForeignChainConfiguration`] (chain → RPC providers) collapses to the set of
-/// supported chains, and per-node entries are preserved (not merged).
-#[rstest]
-#[tokio::test]
-async fn upgrade_preserves_per_node_foreign_chain_support(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
-) -> anyhow::Result<()> {
-    // Three participants, each registering a distinct chain configuration. The
-    // chosen sets are deliberately overlapping but not equal so the test can
-    // detect any per-node merging or loss.
-    let per_node_chains: [&[dtos::ForeignChain]; 3] = [
-        &[dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum],
-        &[dtos::ForeignChain::Bitcoin],
-        &[dtos::ForeignChain::Solana],
-    ];
-
-    // Given: an old contract with participants and per-node foreign chain
-    // configurations registered through the deprecated method.
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
-    let contract = deploy_old(&worker, network).await?;
-    let (accounts, _participants) =
-        init_old_contract(&worker, &contract, per_node_chains.len()).await?;
-
-    for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
-        #[expect(deprecated)]
-        let configuration: dtos::ForeignChainConfiguration = chains
-            .iter()
-            .map(|chain| {
-                (
-                    *chain,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: format!("https://{:?}.{}.example.near", chain, account.id()),
-                    }),
-                )
-            })
-            .collect::<BTreeMap<_, _>>()
-            .into();
-
-        #[expect(deprecated)]
-        account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_CONFIG)
-            .args_json(serde_json::json!({
-                "foreign_chain_configuration": configuration,
-            }))
-            .transact()
-            .await?
-            .into_result()?;
-    }
-
-    // When: we upgrade the contract and run migrate.
-    let contract = upgrade_to_new(contract).await?;
-    migrate_and_assert_contract_code(&contract)
-        .await
-        .expect("❌ migration() failed");
-
-    // Then: each node's supported-chain set matches the chains it originally
-    // registered (RPC providers are dropped by the new layout).
-    let support: dtos::ForeignChainSupportByNode = contract
-        .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-        .await?
-        .json()?;
-
-    for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
-        let actual = support
-            .foreign_chain_support_by_node
-            .get(account.id())
-            .unwrap_or_else(|| panic!("entry for {} preserved post-upgrade", account.id()));
-        let expected: dtos::SupportedForeignChains =
-            chains.iter().copied().collect::<BTreeSet<_>>().into();
-        assert_eq!(
-            *actual,
-            expected,
-            "supported chains for {} should match what was registered pre-upgrade",
-            account.id(),
-        );
-    }
-    Ok(())
 }

@@ -3,13 +3,14 @@ use std::num::NonZeroU64;
 
 use crate::common;
 
-use backon::Retryable;
-use e2e_tests::cluster::cluster_poll_retry;
-use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
+use mpc_node_config::foreign_chains::{ProviderCredentials, RpcPreset, resolve_with_embedded};
+use mpc_node_config::{
+    ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
+};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, ForeignChain, ForeignChainsConfigs, Protocol,
-    ReconstructionThreshold, SupportedForeignChains,
+    ReconstructionThreshold,
 };
 
 const SOLANA_PROVIDER_NAME: &str = "public";
@@ -31,96 +32,6 @@ fn solana_foreign_chains_config() -> ForeignChainsConfig {
         }),
         ..Default::default()
     }
-}
-
-fn solana_foreign_chain_support_dto() -> SupportedForeignChains {
-    BTreeSet::from([(ForeignChain::Solana)]).into()
-}
-
-/// Verify that a chain is only reported as supported once every active
-/// participant has registered a configuration that includes it.
-///
-/// 3-node cluster: nodes 0 and 1 are configured with Solana foreign chain,
-/// node 2 has no foreign chain config.
-///
-/// 1. All three nodes auto-register on startup — nodes 0 and 1 with Solana,
-///    node 2 with an empty configuration. Solana should NOT yet be in the
-///    supported-chains set (node 2 does not include it).
-/// 2. After node 2 manually registers Solana, the chain is reported as supported.
-#[tokio::test]
-#[expect(non_snake_case)]
-async fn supported_foreign_chains__should_require_all_participants_to_register() {
-    // given — 3-node cluster with foreign chains on nodes 0 and 1 only
-    let (cluster, _running) =
-        common::must_setup_cluster(common::FOREIGN_CHAIN_POLICY_PORT_SEED, |c| {
-            c.foreign_chains.node_configs = vec![
-                solana_foreign_chains_config(), // node 0
-                solana_foreign_chains_config(), // node 1
-                ForeignChainsConfig::default(), // node 2 — no foreign chains
-            ];
-        })
-        .await;
-
-    // when — wait for all three nodes to register (one with an empty configuration)
-    // without Solana becoming supported
-    (|| async {
-        let registrations = cluster
-            .view_foreign_chain_configurations()
-            .await
-            .expect("failed to view configurations");
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
-            .await
-            .expect("failed to view supported chains");
-
-        let configurations = &registrations.foreign_chain_support_by_node;
-        anyhow::ensure!(
-            configurations.len() == 3,
-            "expected exactly 3 registrations, got {}",
-            configurations.len()
-        );
-        let empty_registrations = configurations.values().filter(|c| c.is_empty()).count();
-        anyhow::ensure!(
-            empty_registrations == 1,
-            "expected exactly 1 empty registration (node 2), got {empty_registrations}"
-        );
-        anyhow::ensure!(
-            !supported.contains(&ForeignChain::Solana),
-            "Solana should not be supported before all participants register it"
-        );
-        Ok(())
-    })
-    .retry(cluster_poll_retry())
-    .await
-    .expect("timed out waiting for all three registrations with one empty");
-
-    // when — node 2 registers Solana directly on the contract.
-    let outcome = cluster
-        .register_foreign_chain_config(2, &solana_foreign_chain_support_dto())
-        .await
-        .expect("failed to register foreign chain config from node 2");
-    assert!(
-        outcome.is_success(),
-        "register_foreign_chain_config failed: {:?}",
-        outcome.failure_message()
-    );
-
-    // then — Solana becomes supported once every participant has registered it
-    (|| async {
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
-            .await
-            .expect("failed to view supported chains");
-
-        anyhow::ensure!(
-            supported.contains(&ForeignChain::Solana),
-            "Solana should be supported after all participants register it"
-        );
-        Ok(())
-    })
-    .retry(cluster_poll_retry())
-    .await
-    .expect("timed out waiting for Solana to be reported as supported");
 }
 
 /// Verify that a chain becomes available only once it is whitelisted and a
@@ -195,4 +106,84 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
         .wait_for_available_foreign_chains(&BTreeSet::from([ForeignChain::Solana]))
         .await
         .expect("timed out waiting for Solana to become available");
+}
+
+/// Verify that a node resolves its `rpc_preset` at startup and registers the resolved chains.
+///
+/// 3-node cluster (ForeignTx domain threshold 2): node 0 selects the testnet preset with dummy
+/// alchemy, quicknode and tatum credentials, so it registers the keyless chains plus those the
+/// credentials enable; nodes 1 and 2 have no foreign chain config. Node 0's startup probe calls
+/// the preset's real endpoints; its failures are only logged.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn node_startup__should_register_chains_resolved_from_rpc_preset() {
+    // given
+    let keyless_config = ForeignChainsConfig {
+        rpc_preset: Some(RpcPreset::Testnet),
+        ..Default::default()
+    };
+    let preset_config = ForeignChainsConfig {
+        credentials: BTreeMap::from([
+            ("alchemy".to_string().into(), dummy_credentials(None)),
+            (
+                "quicknode".to_string().into(),
+                dummy_credentials(Some("dummy-slug")),
+            ),
+            ("tatum".to_string().into(), dummy_credentials(None)),
+        ]),
+        ..keyless_config.clone()
+    };
+    let keyless_chains = resolved_chains(&keyless_config);
+    let preset_chains = resolved_chains(&preset_config);
+    assert!(
+        keyless_chains.is_subset(&preset_chains) && keyless_chains != preset_chains,
+        "credentials should enable chains beyond the keyless ones"
+    );
+
+    // when
+    let (cluster, _running) =
+        common::must_setup_cluster(common::RPC_PRESET_REGISTRATION_PORT_SEED, |c| {
+            c.domains = vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::ForeignTx,
+            }];
+            c.foreign_chains.node_configs = vec![
+                preset_config.clone(),          // node 0
+                ForeignChainsConfig::default(), // node 1 — no foreign chains
+                ForeignChainsConfig::default(), // node 2 — no foreign chains
+            ];
+        })
+        .await;
+
+    // then
+    let expected_registrations: ForeignChainsConfigs = BTreeMap::from([
+        (cluster.nodes[0].p2p_public_key(), preset_chains.into()),
+        (cluster.nodes[1].p2p_public_key(), BTreeSet::new().into()),
+        (cluster.nodes[2].p2p_public_key(), BTreeSet::new().into()),
+    ])
+    .into();
+    cluster
+        .wait_for_foreign_chains_registrations(&expected_registrations)
+        .await
+        .expect("node 0 should register the chains resolved from its preset");
+}
+
+fn dummy_credentials(slug: Option<&str>) -> ProviderCredentials {
+    ProviderCredentials {
+        api_key: TokenConfig::Val {
+            val: "dummy-key".to_string(),
+        },
+        slug: slug.map(str::to_string),
+    }
+}
+
+fn resolved_chains(config: &ForeignChainsConfig) -> BTreeSet<ForeignChain> {
+    resolve_with_embedded(config)
+        .expect("the testnet preset should resolve")
+        .config
+        .iter_chains()
+        .map(|(chain, _)| chain)
+        .collect()
 }

@@ -5,21 +5,27 @@
 # Requirements: jq envsubst near neard mpc-node
 #
 # Usage:
-#   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]
+#   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>] [--rpc-preset <mainnet|testnet>]
 
 set -euo pipefail
 
 MPC_CONTRACT_PATH="./target/near/mpc_contract/mpc_contract.wasm"
 
-# TEE verifier contract, deployed to tee-verifier.test.near and voted in as the
-# trusted verifier. Build it with `cargo make build-tee-verifier-optimized`.
+# TEE verifier contract, deployed to its own account and named as the trusted
+# verifier at init. Build it with `cargo make build-tee-verifier-optimized`.
 TEE_VERIFIER_PATH="./target/near/tee_verifier/tee_verifier.wasm"
+TEE_VERIFIER_ACCOUNT="tee-verifier.test.near"
 
 # number of mpc-nodes in the network
 N=2
 
 # threshold, currently must be > 1 and at least 60% of N
 THRESHOLD=2
+
+# Embedded foreign chain preset (e.g. testnet|mainnet). When enabled, one should
+# also pass provider credentials (<PROVIDER>_API_KEY + slug (when present)) in env vars.
+# For full list see use_embedded_foreign_chains().
+RPC_PRESET=""
 
 # Base ports used by the mpc-nodes
 # Currently mpc-node i uses port
@@ -67,16 +73,20 @@ while [[ $# -gt 0 ]]; do
     THRESHOLD="$2"
     shift 2
     ;;
+  --rpc-preset)
+    RPC_PRESET="$2"
+    shift 2
+    ;;
   *)
     echo "Unknown parameter: $1"
-    echo "Usage: $0 [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]"
+    echo "Usage: $0 [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>] [--rpc-preset <mainnet|testnet>]"
     exit 1
     ;;
   esac
 done
 
 main() {
-  require_cmds jq envsubst near neard mpc-node sha256sum
+  require_cmds jq envsubst near neard mpc-node
 
   if [[ ! -f "$MPC_CONTRACT_PATH" ]]; then
     echo "$MPC_CONTRACT_PATH does not exist." >&2
@@ -162,7 +172,11 @@ EOF
     RPC_PORT=$((BASE_RPC_PORT + i)) INDEXER_PORT=$((BASE_INDEXER_PORT + i)) jq '.network.addr = "127.0.0.1:" + env.INDEXER_PORT | .rpc.addr = "127.0.0.1:" + env.RPC_PORT' ~/.near/$node_name/config.json >~/.near/$node_name/tmp.json
     mv ~/.near/$node_name/tmp.json ~/.near/$node_name/config.json
 
-    WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
+    WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/development/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
+
+    if [[ -n "$RPC_PRESET" ]]; then
+      use_embedded_foreign_chains ~/.near/$node_name/config.yaml
+    fi
 
   done
 
@@ -199,8 +213,9 @@ EOF
     wait "$pid"
   done
 
-  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" '
+  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" '
   {
+    tee_verifier_account_id: $tee_verifier_account,
     parameters: {
       threshold: ($threshold | tonumber),
       participants: {
@@ -236,7 +251,7 @@ EOF
   pids_adding_domains=()
   for ((i = 1; i <= N; i++)); do
     node_name="mpc-node-$i.test.near"
-    run_quiet_on_success "$(mpc_tx vote_add_domains 'file-args docs/localnet/args/add_domain.json' '0 NEAR' "${node_name}")" &
+    run_quiet_on_success "$(mpc_tx vote_add_domains 'file-args docs/development/localnet/args/add_domain.json' '0 NEAR' "${node_name}")" &
     pids_adding_domains+=($!)
   done
 
@@ -251,45 +266,49 @@ EOF
   wait_for_success "$(mpc_view state) 2>&1 | grep Running"
 
   echo "Creating tee-verifier account"
-  run_quiet_on_success "near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+  run_quiet_on_success "near account create-account fund-myself $TEE_VERIFIER_ACCOUNT '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
 
   echo "Deploying tee-verifier"
   # The verifier is stateless, so it has no initializer to call on deploy.
-  run_quiet_on_success "near contract deploy tee-verifier.test.near use-file '$TEE_VERIFIER_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
-
-  # expected_code_hash commits every voter to the same audited WASM; the contract
-  # only compares voters' hashes against each other, not against the deployed bytes.
-  TEE_VERIFIER_HASH=$(sha256sum "$TEE_VERIFIER_PATH" | cut -d' ' -f1)
-
-  echo "Voting in tee-verifier"
-  pids_verifier_votes=()
-  for ((i = 1; i <= N; i++)); do
-    node_name="mpc-node-$i.test.near"
-    vote_args="json-args '{\"candidate_account_id\":\"tee-verifier.test.near\",\"expected_code_hash\":\"$TEE_VERIFIER_HASH\"}'"
-    run_quiet_on_success "$(mpc_tx vote_tee_verifier_change "${vote_args}" '0 NEAR' "${node_name}")" &
-    pids_verifier_votes+=($!)
-  done
-
-  for pid in "${pids_verifier_votes[@]}"; do
-    wait "$pid"
-  done
-
-  # Confirm the vote crossed threshold: once the change is applied, the resolved
-  # verifier account is readable via tee_verifier_account_id.
-  wait_for_success "$(mpc_view tee_verifier_account_id) 2>&1 | grep -q 'tee-verifier.test.near'"
+  run_quiet_on_success "near contract deploy $TEE_VERIFIER_ACCOUNT use-file '$TEE_VERIFIER_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
 
   signer_account="mpc-node-1.test.near"
 
   echo "Executing signature requests"
   for args_file in sign_ecdsa sign_eddsa; do
-    run_quiet_on_success "$(mpc_tx sign "file-args docs/localnet/args/${args_file}.json" '100 yoctoNEAR' "${signer_account}")"
+    run_quiet_on_success "$(mpc_tx sign "file-args docs/development/localnet/args/${args_file}.json" '100 yoctoNEAR' "${signer_account}")"
   done
-  run_quiet_on_success "$(mpc_tx request_app_private_key 'file-args docs/localnet/args/ckd.json' '100 yoctoNEAR' "${signer_account}")"
-  for chain in bitcoin abstract aptos sui; do
-    run_quiet_on_success "$(mpc_tx verify_foreign_transaction "file-args docs/localnet/args/verify_foreign_tx_${chain}.json" '100 yoctoNEAR' "${signer_account}")"
-  done
+  run_quiet_on_success "$(mpc_tx request_app_private_key 'file-args docs/development/localnet/args/ckd.json' '100 yoctoNEAR' "${signer_account}")"
 
   read -rp "Press Enter to finish the script and run clean-up steps..."
+}
+
+# Replace the config's `foreign_chains` with the embedded preset and the credentials found in env.
+use_embedded_foreign_chains() {
+  local config="$1"
+  local stripped
+  stripped=$(awk '/^foreign_chains:/ { skip = 1; next } skip && /^[^ #]/ { skip = 0 } !skip' "$config")
+
+  {
+    echo "$stripped"
+    echo "foreign_chains:"
+    echo "  rpc_preset: ${RPC_PRESET}"
+    local credentials=""
+    local provider var
+    for provider in alchemy chainstack fluxrpc geomi quicknode tatum; do
+      var="$(echo "$provider" | tr '[:lower:]' '[:upper:]')_API_KEY"
+      [[ -n "${!var:-}" ]] || continue
+      credentials+="    ${provider}:\n      env: ${var}\n"
+      if [[ "$provider" == quicknode ]]; then
+        [[ -n "${QUICKNODE_SLUG:-}" ]] || die "QUICKNODE_API_KEY is set but QUICKNODE_SLUG is not"
+        credentials+="      slug: ${QUICKNODE_SLUG}\n"
+      fi
+    done
+    if [[ -n "$credentials" ]]; then
+      echo "  credentials:"
+      printf '%b' "$credentials"
+    fi
+  } >"$config"
 }
 
 die() {

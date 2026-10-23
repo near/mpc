@@ -5,8 +5,8 @@ pub use foreign_chains::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
 };
 pub use start::{
-    ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
-    SecretsStartConfig, StartConfig, default_pccs_endpoints,
+    ChainId, DownloadConfigType, LogConfig, LogFormat, NearInitConfig, SecretsStartConfig,
+    StartConfig, default_pccs_endpoints,
 };
 
 use anyhow::Context;
@@ -46,6 +46,8 @@ pub struct PresignatureConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
+    #[serde(default = "default_true")]
+    pub online_presign: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -113,7 +115,7 @@ pub struct BlockArgs {
     pub height: u64,
 }
 
-/// The contents of the on-disk config.yaml file. Contains no secrets.
+/// The contents of the on-disk config.yaml file. [`Self::foreign_chains`] may hold provider API keys.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
     /// The near account ID that this node owns.

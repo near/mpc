@@ -3,17 +3,21 @@ pub mod conn;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
+pub mod wire_format;
 
 use crate::metrics::networking_metrics;
+use crate::network::constants::CONNECTED_PEERS_BROADCAST_INTERVAL;
+use crate::network::indexer_heights::IndexerHeightTracker;
+use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
-    ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
-    MpcTaskId, ParticipantId, PeerMessage, UniqueId,
+    ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
+    MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
 };
+use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
-use conn::{ConnectionVersion, NodeConnectivityInterface};
-use indexer_heights::IndexerHeightTracker;
+use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
@@ -38,22 +42,24 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// `participant_id` must be one of [`Self::all_participant_ids`] and not our own; the
     /// implementation only tracks connectivity for those, and may panic for any other id.
     fn connectivity(&self, participant_id: ParticipantId) -> Arc<dyn NodeConnectivityInterface>;
-    /// Sends a message to the specified recipient.
+    /// Sends a packet to the specified recipient.
     ///
-    /// For messages M = [m_0, m_1, m_2, ..., m_n] sent via this method to the same recipient
+    /// For packets P = [p_0, p_1, p_2, ..., p_n] sent via this method to the same recipient
     /// for which this method returned Ok, it is guaranteed that the recipient will receive
-    /// M[0..i] for some 0 <= i <= n.
+    /// P[0..i] for some 0 <= i <= n.
     ///
     /// The connection_version is used to detect if the connection is broken, in which case
-    /// such a guarantee is no longer possible.
+    /// such a guarantee is no longer possible. Without one, the packet is sent on whichever
+    /// outgoing connection is current.
+    ///
+    /// Fails with [`SendError`] when there is no usable outgoing connection to `recipient_id`, or
+    /// the peer negotiated a version below the packet's [`Packet::min_protocol_version`].
     fn send(
         &self,
         recipient_id: ParticipantId,
-        message: MpcMessage,
-        connection_version: ConnectionVersion,
-    ) -> anyhow::Result<()>;
-    /// Sends a message to everyone on a best-effort basis about the current height of our indexer.
-    fn send_indexer_height(&self, height: IndexerHeightMessage);
+        packet: Packet,
+        connection_version: Option<ConnectionVersion>,
+    ) -> Result<(), SendError>;
 
     /// Waits for `required_ready_count` number of connections (a freebie is included for the node itself)
     /// to the given `peers` to be bidirectionally established at the same time.
@@ -62,6 +68,23 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
         required_ready_count: usize,
         peers_to_consider: &[ParticipantId],
     ) -> anyhow::Result<()>;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SendError {
+    #[error("no outgoing connection to {0}")]
+    PeerNotConnected(ParticipantId),
+    #[error("the connection to {peer} the packet was pinned to is gone")]
+    ConnectionLost {
+        peer: ParticipantId,
+        #[source]
+        source: ConnectionError,
+    },
+    #[error("{peer} negotiated {version}, which cannot parse the message")]
+    PeerNotSupportingMessage {
+        peer: ParticipantId,
+        version: NetworkProtocolVersion,
+    },
 }
 
 /// The receiving side of the networking layer. It is expected that the node will run
@@ -184,6 +207,32 @@ impl MeshNetworkClient {
         self.transport_sender.all_participant_ids()
     }
 
+    pub fn peer_network_protocol_version(
+        &self,
+        participant: ParticipantId,
+    ) -> Option<NetworkProtocolVersion> {
+        if participant == self.my_participant_id() {
+            Some(CURRENT_PROTOCOL_VERSION)
+        } else {
+            self.transport_sender
+                .connectivity(participant)
+                .peer_network_protocol_version()
+        }
+    }
+
+    /// Requires a bidirectional connection, but ignores indexer height, so it is still not a full
+    /// liveness check: intersect with [`Self::all_alive_participant_ids`] when picking a
+    /// participant set.
+    pub fn participants_supporting(&self, required: NetworkProtocolVersion) -> Vec<ParticipantId> {
+        self.all_participant_ids()
+            .into_iter()
+            .filter(|participant| {
+                self.peer_network_protocol_version(*participant)
+                    .is_some_and(|version| version.supports(required))
+            })
+            .collect()
+    }
+
     /// Returns the participant IDs of all nodes in the network that are currently alive.
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
@@ -195,7 +244,7 @@ impl MeshNetworkClient {
                 continue;
             }
             let peer_height = *indexer_heights.get(&participant).unwrap_or(&0);
-            if my_height <= peer_height + mpc_node_config::MAX_INDEXER_HEIGHT_DIFF
+            if my_height <= peer_height.saturating_add(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF)
                 && self
                     .transport_sender
                     .connectivity(participant)
@@ -259,15 +308,19 @@ impl MeshNetworkClient {
     /// a message for a task before its Start message, we'll still return a Sender that will
     /// buffer the messages and deliver them to the channel, once a Start message is received.
     ///
-    /// Fails with [`InvalidStartMessage`] if the Start message describes a participant set we
-    /// cannot take part in; no channel state is created in that case.
+    /// Fails with [`InvalidChannelId`] for a channel id `originator` may not open, or
+    /// [`InvalidStartMessage`] for a participant set we cannot join; no channel state is created.
     fn sender_for(
         &self,
         channel_id: ChannelId,
         start: Option<&MpcStartMessage>,
         originator: ParticipantId,
     ) -> anyhow::Result<SenderOrNewChannel> {
+        let owner = channel_id.0.participant_id();
         if let Some(start) = start {
+            if owner != originator {
+                return Err(InvalidChannelId::NotOwnedByOriginator { owner, originator }.into());
+            }
             self.validate_start_participants(&start.participants, originator)?;
         }
         // INVARIANT: For each key in the `senders` map, exactly one of the following is true:
@@ -281,19 +334,21 @@ impl MeshNetworkClient {
         let sender = match channels.senders.entry(channel_id) {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
+                if owner == self.my_participant_id() && originator != self.my_participant_id() {
+                    return Err(InvalidChannelId::NoOpenChannel(channel_id).into());
+                }
                 let (sender, receiver) = mpsc::unbounded_channel();
                 entry.insert(sender.clone());
                 let incomplete_channel = IncompleteNetworkTaskChannel { receiver };
                 if let Some((k, _)) = channels
                     .channels_waiting_for_start
                     .push(channel_id, incomplete_channel)
+                    && k != channel_id
                 {
-                    // If k != task_id, that means the LruCache evicted some other entry.
+                    // A different key means the LruCache evicted some other entry.
                     // That means that other channel never received Start and is old enough,
                     // so we also remove it from the senders map. See the above invariant.
-                    if k != channel_id {
-                        channels.senders.remove(&k);
-                    }
+                    channels.senders.remove(&k);
                 }
                 sender
             }
@@ -393,8 +448,6 @@ impl MeshNetworkClient {
     pub fn update_indexer_height(&self, height: u64) {
         self.indexer_heights
             .set_height(self.my_participant_id(), height);
-        self.transport_sender
-            .send_indexer_height(IndexerHeightMessage { height });
     }
 
     pub fn get_indexer_heights(&self) -> HashMap<ParticipantId, u64> {
@@ -409,6 +462,18 @@ struct IncompleteNetworkTaskChannel {
 enum SenderOrNewChannel {
     Sender(mpsc::UnboundedSender<MpcPeerMessage>),
     NewChannel(NetworkTaskChannel),
+}
+
+/// Reason why a message may not open channel state under its [`ChannelId`].
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum InvalidChannelId {
+    #[error("channel id is owned by {owner}, not by the originator {originator}")]
+    NotOwnedByOriginator {
+        owner: ParticipantId,
+        originator: ParticipantId,
+    },
+    #[error("no open channel {0:?} under our participant id")]
+    NoOpenChannel(ChannelId),
 }
 
 /// Reason why the participant set of an [`MpcStartMessage`] was rejected.
@@ -454,8 +519,54 @@ async fn run_receive_message(
         PeerMessage::IndexerHeight(message) => {
             indexer_heights.set_height(message.from, message.message.height);
         }
+        PeerMessage::ConnectedPeersInfo(message) => {
+            if let Some(&height) = message.info.peers.get(&message.from) {
+                indexer_heights.set_height(message.from, height);
+            }
+            // TODO(#398): store the sender's connected-peers list, so participant selection can
+            // avoid pairs that cannot reach each other.
+        }
     }
     Ok(())
+}
+
+fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
+    let me = client.my_participant_id();
+    let indexer_heights = client.get_indexer_heights();
+    let peers = client
+        .all_participant_ids()
+        .into_iter()
+        .filter(|participant| {
+            *participant == me
+                || client
+                    .transport_sender
+                    .connectivity(*participant)
+                    .is_bidirectionally_connected()
+        })
+        .map(|participant| {
+            let height = indexer_heights.get(&participant).copied().unwrap_or(0);
+            (participant, height)
+        })
+        .collect();
+    let info = Packet::ConnectedPeersInfo(ConnectedPeersInfo { peers });
+    let my_height = Packet::IndexerHeight(IndexerHeightMessage {
+        height: indexer_heights.get(&me).copied().unwrap_or(0),
+    });
+    for peer in client.all_participant_ids() {
+        if peer == me {
+            continue;
+        }
+        // An older peer cannot parse the packet and would tear the connection down.
+        let packet = match client.peer_network_protocol_version(peer) {
+            Some(version) if version.supports(info.min_protocol_version()) => info.clone(),
+            _ => my_height.clone(),
+        };
+        if let Err(err @ SendError::PeerNotSupportingMessage { .. }) =
+            client.transport_sender.send(peer, packet, None)
+        {
+            tracing::warn!(%err, "connected peers info not sent");
+        }
+    }
 }
 
 /// Runs the loop of receiving messages from the transport and dispatching them to the
@@ -481,36 +592,62 @@ async fn run_receive_messages_loop(
     }
 }
 
-/// The main entry point for the networking layer. Spawns a tokio task that runs the message
-/// receiving loop, and returns a client that can be used to create new MPC tasks, as well as a
-/// receiver for triggering new MPC tasks that the node should passively participate in.
+/// The main entry point for the networking layer. Spawns the message receiving loop and the
+/// network's periodic tasks, and returns a client that can be used to create new MPC tasks, a
+/// receiver for triggering new MPC tasks that the node should passively participate in, and the
+/// spawned tasks' handles, which abort them on drop.
 pub fn run_network_client(
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     transport_receiver: Box<dyn MeshNetworkTransportReceiver>,
 ) -> (
     Arc<MeshNetworkClient>,
     mpsc::UnboundedReceiver<NetworkTaskChannel>,
-    AutoAbortTask<()>,
+    Vec<AutoAbortTask<()>>,
 ) {
     let indexer_heights = Arc::new(IndexerHeightTracker::new(
         &transport_sender.all_participant_ids(),
     ));
-    let client = Arc::new(MeshNetworkClient::new(
+    let network_client = Arc::new(MeshNetworkClient::new(
         transport_sender,
         Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
         indexer_heights.clone(),
     ));
     let (new_channel_sender, new_channel_receiver) = mpsc::unbounded_channel();
-    let handle = tracking::spawn(
+    let receive_loop = tracking::spawn(
         "Network receive message loop",
         run_receive_messages_loop(
-            client.clone(),
+            network_client.clone(),
             transport_receiver,
             new_channel_sender,
             indexer_heights,
         ),
     );
-    (client, new_channel_receiver, handle)
+    let metrics_emitter = tracking::spawn("periodically emits metrics", {
+        let network_client = network_client.clone();
+        async move {
+            loop {
+                network_client.emit_metrics();
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+        }
+    });
+    let connected_peers_broadcaster = tracking::spawn(
+        "periodically broadcasts connected peers and indexer heights",
+        {
+            let network_client = network_client.clone();
+            async move {
+                loop {
+                    broadcast_connected_peers_info(&network_client);
+                    tokio::time::sleep(CONNECTED_PEERS_BROADCAST_INTERVAL).await;
+                }
+            }
+        },
+    );
+    (
+        network_client,
+        new_channel_receiver,
+        vec![receive_loop, metrics_emitter, connected_peers_broadcaster],
+    )
 }
 
 /// Channel for a specific MPC task that allows sending and receiving messages in order to compute
@@ -554,13 +691,6 @@ pub struct TaskChannelComputationData {
     pub data: Vec<Vec<u8>>,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("received {kind} from participant {from}, who is not in the channel participant set")]
-pub struct ParticipantNotInChannelError {
-    pub from: ParticipantId,
-    pub kind: &'static str,
-}
-
 impl Drop for NetworkTaskChannel {
     fn drop(&mut self) {
         if let Some(drop) = self.drop.take() {
@@ -574,13 +704,15 @@ impl NetworkTaskChannelSender {
     /// It fails if the connection is not established to the participant, or if the connection is
     /// a different one from the original when the channel was created.
     fn send_raw(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()> {
+        let connection_version = self
+            .connection_versions
+            .get(&recipient_id)
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("No connection version for recipient"))?;
         self.transport_sender.send(
             recipient_id,
-            message,
-            self.connection_versions
-                .get(&recipient_id)
-                .copied()
-                .ok_or_else(|| anyhow::anyhow!("No connection version for recipient"))?,
+            Packet::MpcMessage(message),
+            Some(connection_version),
         )?;
         Ok(())
     }
@@ -733,6 +865,10 @@ impl NetworkTaskChannel {
         self.sender.my_participant_id
     }
 
+    pub fn leader(&self) -> ParticipantId {
+        self.sender.leader
+    }
+
     /// Receives a single MPC message from any participant from the network, without processing it.
     /// This will return error early if any connection is broken.
     async fn receive_raw(&mut self) -> anyhow::Result<MpcPeerMessage> {
@@ -766,24 +902,23 @@ impl NetworkTaskChannel {
 
     /// Receives one message from the network and process it; that message may or may not be a
     /// computation message.
+    ///
+    /// A message from outside the channel's participant set is dropped rather than turned into an
+    /// error: letting it fail the computation would hand any excluded node the power to abort a
+    /// computation (and burn its presignature) with a single message.
     async fn receive_one(&mut self) -> anyhow::Result<Option<TaskChannelComputationData>> {
         let message = self.receive_raw().await?;
         if !self.sender.participants.contains(&message.from) {
-            let kind = message.message.kind.variant_name();
             tracing::warn!(
                 target: "network",
-                "[{}] [Task {:?}] Rejecting {} from participant {} (channel {:?}): not in participant set",
+                "[{}] [Task {:?}] Dropping {} from participant {} (channel {:?}): not in participant set",
                 self.sender.my_participant_id,
                 self.sender.task_id,
-                kind,
+                message.message.kind.variant_name(),
                 message.from,
                 message.message.channel_id,
             );
-            return Err(ParticipantNotInChannelError {
-                from: message.from,
-                kind,
-            }
-            .into());
+            return Ok(None);
         }
         match message.message.kind {
             MpcMessageKind::Computation(data) => {
@@ -866,18 +1001,65 @@ impl NetworkTaskChannel {
 #[cfg(test)]
 pub mod testing {
     use super::conn::{ConnectionVersion, NodeConnectivityInterface};
+    use super::indexer_heights::IndexerHeightTracker;
     use super::{
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
+        SendError,
     };
-    use crate::primitives::{MpcPeerMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId};
+    use crate::network::wire_format::{MpcTaskId, Packet};
+    use crate::primitives::{
+        MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo, PeerIndexerHeightMessage,
+        PeerMessage, UniqueId,
+    };
+    use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
     use crate::tracking;
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
     pub struct TestMeshTransport {
-        participant_ids: Vec<ParticipantId>,
-        senders: HashMap<ParticipantId, tokio::sync::mpsc::UnboundedSender<PeerMessage>>,
+        pub(super) participant_ids: Vec<ParticipantId>,
+        pub(super) senders: HashMap<ParticipantId, tokio::sync::mpsc::UnboundedSender<PeerMessage>>,
+        /// Keeps the channels behind `senders` open when nobody receives from them.
+        _receivers: Vec<tokio::sync::mpsc::UnboundedReceiver<PeerMessage>>,
+        /// Protocol version each peer is reported to run; a peer missing here reports `None`.
+        pub(super) protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
+        /// Peers reported as not bidirectionally connected; every other peer is.
+        pub(super) disconnected: HashSet<ParticipantId>,
+        pub(super) packets_sent: std::sync::Mutex<Vec<(ParticipantId, Packet)>>,
+    }
+
+    impl TestMeshTransport {
+        pub fn all_connected(
+            participant_ids: Vec<ParticipantId>,
+            protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
+        ) -> Self {
+            let (senders, receivers) = participant_ids
+                .iter()
+                .map(|participant| {
+                    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+                    ((*participant, sender), receiver)
+                })
+                .unzip();
+            Self {
+                participant_ids,
+                senders,
+                _receivers: receivers,
+                protocol_versions,
+                disconnected: HashSet::new(),
+                packets_sent: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    /// Every participant reported to run the current protocol version.
+    pub fn current_protocol_versions(
+        participants: &[ParticipantId],
+    ) -> HashMap<ParticipantId, NetworkProtocolVersion> {
+        participants
+            .iter()
+            .map(|participant| (*participant, CURRENT_PROTOCOL_VERSION))
+            .collect()
     }
 
     pub struct TestMeshTransportSender {
@@ -889,12 +1071,20 @@ pub mod testing {
         receiver: tokio::sync::mpsc::UnboundedReceiver<PeerMessage>,
     }
 
-    pub struct TestConnectivityInterface;
+    pub struct TestConnectivityInterface {
+        connected: bool,
+        protocol_version: Option<NetworkProtocolVersion>,
+    }
 
     #[async_trait::async_trait]
     impl NodeConnectivityInterface for TestConnectivityInterface {
         fn is_bidirectionally_connected(&self) -> bool {
-            true
+            self.connected
+        }
+
+        /// Known only while connected, as in production.
+        fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
+            self.connected.then_some(self.protocol_version).flatten()
         }
 
         async fn wait_for_connection(
@@ -925,30 +1115,50 @@ pub mod testing {
 
         fn connectivity(
             &self,
-            _participant_id: ParticipantId,
+            participant_id: ParticipantId,
         ) -> Arc<dyn NodeConnectivityInterface> {
-            Arc::new(TestConnectivityInterface)
+            Arc::new(TestConnectivityInterface {
+                connected: !self.transport.disconnected.contains(&participant_id),
+                protocol_version: self
+                    .transport
+                    .protocol_versions
+                    .get(&participant_id)
+                    .copied(),
+            })
         }
 
         fn send(
             &self,
             recipient_id: ParticipantId,
-            message: crate::primitives::MpcMessage,
-            _connection_version: ConnectionVersion,
-        ) -> anyhow::Result<()> {
-            self.transport
+            packet: Packet,
+            _connection_version: Option<ConnectionVersion>,
+        ) -> Result<(), SendError> {
+            let sender = self
+                .transport
                 .senders
                 .get(&recipient_id)
-                .ok_or_else(|| anyhow::anyhow!("Unknown recipient"))?
-                .send(PeerMessage::Mpc(MpcPeerMessage {
-                    from: self.my_participant_id,
-                    message,
-                }))?;
+                .ok_or(SendError::PeerNotConnected(recipient_id))?;
+            let from = self.my_participant_id;
+            let message = match packet.clone() {
+                Packet::Ping => return Ok(()),
+                Packet::MpcMessage(message) => PeerMessage::Mpc(MpcPeerMessage { from, message }),
+                Packet::IndexerHeight(message) => {
+                    PeerMessage::IndexerHeight(PeerIndexerHeightMessage { from, message })
+                }
+                Packet::ConnectedPeersInfo(info) => {
+                    PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo { from, info })
+                }
+            };
+            sender
+                .send(message)
+                .map_err(|_| SendError::PeerNotConnected(recipient_id))?;
+            self.transport
+                .packets_sent
+                .lock()
+                .expect("packet recorder must not be poisoned")
+                .push((recipient_id, packet));
             Ok(())
         }
-
-        // TODO(#2753): add test coverage
-        fn send_indexer_height(&self, _height: crate::primitives::IndexerHeightMessage) {}
 
         async fn wait_for_ready(
             &self,
@@ -956,6 +1166,17 @@ pub mod testing {
             _peers_to_consider: &[ParticipantId],
         ) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+
+    impl TestMeshTransportSender {
+        pub fn take_packets_sent(&self) -> Vec<(ParticipantId, Packet)> {
+            let mut sent = self
+                .transport
+                .packets_sent
+                .lock()
+                .expect("packet recorder must not be poisoned");
+            std::mem::take(&mut *sent)
         }
     }
 
@@ -982,10 +1203,12 @@ pub mod testing {
             receivers.push(receiver);
         }
 
-        let transport = Arc::new(TestMeshTransport {
-            participant_ids: participants.clone(),
-            senders: sender_by_participant_id,
-        });
+        let mut transport = TestMeshTransport::all_connected(
+            participants.clone(),
+            current_protocol_versions(&participants),
+        );
+        transport.senders = sender_by_participant_id;
+        let transport = Arc::new(transport);
 
         let mut transports = Vec::new();
         for (i, receiver) in receivers.into_iter().enumerate() {
@@ -1002,6 +1225,47 @@ pub mod testing {
         transports
     }
 
+    /// Synchronous [`MeshNetworkClient`] for unit tests. All participants are reported alive
+    /// and on the current protocol version.
+    pub fn new_test_client(
+        participants: Vec<ParticipantId>,
+        my_participant_id: ParticipantId,
+    ) -> Arc<super::MeshNetworkClient> {
+        let protocol_versions = current_protocol_versions(&participants);
+        new_test_client_with_versions(participants, my_participant_id, protocol_versions).0
+    }
+
+    /// Like [`new_test_client`], with the protocol version each peer is reported to run.
+    pub fn new_test_client_with_versions(
+        participants: Vec<ParticipantId>,
+        my_participant_id: ParticipantId,
+        protocol_versions: HashMap<ParticipantId, NetworkProtocolVersion>,
+    ) -> (Arc<super::MeshNetworkClient>, Arc<TestMeshTransportSender>) {
+        let transport = TestMeshTransport::all_connected(participants, protocol_versions);
+        new_test_client_over(transport, my_participant_id)
+    }
+
+    /// Like [`new_test_client`], over `transport`, whose participants are the client's.
+    pub fn new_test_client_over(
+        transport: TestMeshTransport,
+        my_participant_id: ParticipantId,
+    ) -> (Arc<super::MeshNetworkClient>, Arc<TestMeshTransportSender>) {
+        let indexer_heights = Arc::new(IndexerHeightTracker::new(&transport.participant_ids));
+        let transport = Arc::new(TestMeshTransportSender {
+            transport: Arc::new(transport),
+            my_participant_id,
+        });
+        let channels = Arc::new(std::sync::Mutex::new(
+            super::NetworkTaskChannelManager::new(),
+        ));
+        let client = Arc::new(super::MeshNetworkClient::new(
+            transport.clone(),
+            channels,
+            indexer_heights,
+        ));
+        (client, transport)
+    }
+
     /// Builds a channel over the given participant set, returning the raw inbound sender so
     /// tests can inject arbitrary [`MpcPeerMessage`]s, including ones from outside the set.
     pub fn new_task_channel_for_test(
@@ -1011,10 +1275,10 @@ pub mod testing {
         participants: Vec<ParticipantId>,
     ) -> (NetworkTaskChannel, mpsc::UnboundedSender<MpcPeerMessage>) {
         let (raw_sender, receiver) = mpsc::unbounded_channel();
-        let transport = Arc::new(TestMeshTransport {
-            participant_ids: participants.clone(),
-            senders: HashMap::new(),
-        });
+        let transport = Arc::new(TestMeshTransport::all_connected(
+            participants.clone(),
+            current_protocol_versions(&participants),
+        ));
         let transport_sender = Arc::new(TestMeshTransportSender {
             transport,
             my_participant_id,
@@ -1080,29 +1344,178 @@ mod tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::conn::ConnectionVersion;
     use super::{
-        InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
+        InvalidChannelId, InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
         MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
-        run_receive_message,
+        broadcast_connected_peers_info, run_receive_message,
     };
     use crate::network::indexer_heights::IndexerHeightTracker;
-    use crate::network::testing::{new_test_transports, run_test_clients};
-    use crate::primitives::{
-        ChannelId, MpcMessage, MpcMessageKind, MpcStartMessage, MpcTaskId, ParticipantId, UniqueId,
+    use crate::network::testing::{
+        TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
+        new_test_client_over, new_test_client_with_versions, new_test_transports, run_test_clients,
     };
-    use crate::providers::EcdsaTaskId;
+    use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet};
+    use crate::primitives::{
+        ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, UniqueId,
+    };
+    use crate::protocol_version::NetworkProtocolVersion;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
     use rstest::rstest;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeMap, HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
     use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
 
     /// Just some big prime number
     static MOD: u64 = 1_000_000_007;
+
+    #[tokio::test]
+    async fn participants_supporting__should_include_self_and_peers_at_or_above_version() {
+        // Given
+        let me = ParticipantId::from_raw(1);
+        let peers = [2, 3, 4].map(ParticipantId::from_raw);
+        let participants = vec![me, peers[0], peers[1], peers[2]];
+        let versions = HashMap::from([
+            (peers[0], NetworkProtocolVersion::Jan2026),
+            (peers[1], NetworkProtocolVersion::Dec2025),
+        ]);
+        let (client, _) = new_test_client_with_versions(participants, me, versions);
+
+        // When
+        let supporting = client.participants_supporting(NetworkProtocolVersion::Jan2026);
+
+        // Then
+        assert_eq!(supporting, vec![me, peers[0]]);
+    }
+
+    fn connected_peers_infos_sent(
+        transport: &TestMeshTransportSender,
+    ) -> Vec<(ParticipantId, ConnectedPeersInfo)> {
+        transport
+            .take_packets_sent()
+            .into_iter()
+            .filter_map(|(recipient, packet)| match packet {
+                Packet::ConnectedPeersInfo(info) => Some((recipient, info)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn indexer_heights_sent(transport: &TestMeshTransportSender) -> Vec<(ParticipantId, u64)> {
+        transport
+            .take_packets_sent()
+            .into_iter()
+            .filter_map(|(recipient, packet)| match packet {
+                Packet::IndexerHeight(message) => Some((recipient, message.height)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn broadcast_connected_peers_info__should_send_the_info_only_to_peers_negotiating_oct2026() {
+        // Given
+        let me = ParticipantId::from_raw(1);
+        let [older_peer, current_peer, newer_peer] = [2, 3, 4].map(ParticipantId::from_raw);
+        let participants = vec![me, older_peer, current_peer, newer_peer];
+        let versions = HashMap::from([
+            (older_peer, NetworkProtocolVersion::Sep2026),
+            (current_peer, NetworkProtocolVersion::Oct2026),
+            (newer_peer, NetworkProtocolVersion::Unknown(42)),
+        ]);
+        let (client, transport) = new_test_client_with_versions(participants, me, versions);
+
+        // When
+        broadcast_connected_peers_info(&client);
+
+        // Then
+        let sent = connected_peers_infos_sent(&transport);
+        let recipients: Vec<_> = sent.iter().map(|(recipient, _)| *recipient).collect();
+        assert_eq!(recipients, vec![current_peer, newer_peer]);
+    }
+
+    #[test]
+    fn broadcast_connected_peers_info__should_send_our_indexer_height_to_peers_negotiating_below_oct2026()
+     {
+        // Given
+        let me = ParticipantId::from_raw(1);
+        let [older_peer, current_peer] = [2, 3].map(ParticipantId::from_raw);
+        let participants = vec![me, older_peer, current_peer];
+        let versions = HashMap::from([
+            (older_peer, NetworkProtocolVersion::Sep2026),
+            (current_peer, NetworkProtocolVersion::Oct2026),
+        ]);
+        let (client, transport) = new_test_client_with_versions(participants, me, versions);
+        client.update_indexer_height(100);
+
+        // When
+        broadcast_connected_peers_info(&client);
+
+        // Then
+        assert_eq!(indexer_heights_sent(&transport), vec![(older_peer, 100)]);
+    }
+
+    #[test]
+    fn broadcast_connected_peers_info__should_list_ourselves_and_bidirectionally_connected_peers_only()
+     {
+        // Given
+        let [me, connected, disconnected] = [1, 2, 3].map(ParticipantId::from_raw);
+        let participants = vec![me, connected, disconnected];
+        let mut transport = TestMeshTransport::all_connected(
+            participants.clone(),
+            current_protocol_versions(&participants),
+        );
+        transport.disconnected = HashSet::from([disconnected]);
+        let (client, transport) = new_test_client_over(transport, me);
+
+        // When
+        broadcast_connected_peers_info(&client);
+
+        // Then
+        let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
+        let listed: Vec<_> = message.peers.keys().copied().collect();
+        assert_eq!(listed, vec![me, connected]);
+    }
+
+    #[test]
+    fn broadcast_connected_peers_info__should_report_latest_known_height_of_each_peer() {
+        // Given
+        let [me, peer] = [1, 2].map(ParticipantId::from_raw);
+        let participants = vec![me, peer];
+        let versions = current_protocol_versions(&participants);
+        let (client, transport) = new_test_client_with_versions(participants, me, versions);
+        client.update_indexer_height(100);
+        client.indexer_heights.set_height(peer, 90);
+
+        // When
+        broadcast_connected_peers_info(&client);
+
+        // Then
+        let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
+        assert_eq!(message.peers, BTreeMap::from([(me, 100), (peer, 90)]));
+    }
+
+    #[test]
+    fn all_alive_participant_ids__should_include_peer_reporting_maximum_height() {
+        // Given
+        let participants = into_participant_ids(&generate_participants(2));
+        let (me, peer) = (participants[0], participants[1]);
+        let client = new_test_client(participants.clone(), me);
+        client.update_indexer_height(100);
+        client.indexer_heights.set_height(peer, u64::MAX);
+
+        // When
+        let alive = client.all_alive_participant_ids();
+
+        // Then
+        let mut expected = participants;
+        expected.sort();
+        assert_eq!(alive, expected);
+    }
 
     #[tokio::test]
     async fn test_network_basic() {
@@ -1335,52 +1748,256 @@ mod tests {
         assert_eq!(channel.sender().get_leader(), ORIGINATOR);
     }
 
+    #[tokio::test]
+    async fn run_receive_message__should_record_only_the_senders_own_entry_of_connected_peers_info()
+    {
+        // Given
+        let mut node = ReceivingNode::new();
+        let info = ConnectedPeersInfo {
+            peers: BTreeMap::from([(ORIGINATOR, 42), (ME, 7)]),
+        };
+
+        // When
+        node.receive_connected_peers_info(ORIGINATOR, info)
+            .await
+            .unwrap();
+
+        // Then
+        let heights = node.indexer_heights.get_heights();
+        assert_eq!(heights[&ORIGINATOR], 42);
+        assert_eq!(heights[&ME], 0);
+    }
+
+    #[tokio::test]
+    async fn network_task_channel__should_ignore_buffered_message_from_non_participant() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let channel_id = ChannelId(UniqueId::new(ORIGINATOR, 1, 0));
+        node.receive(THIRD_PARTY, computation_message(channel_id, 1))
+            .await
+            .unwrap();
+        node.receive(ORIGINATOR, start_message_with(vec![ME, ORIGINATOR]))
+            .await
+            .unwrap();
+        let mut channel = node
+            .new_channel()
+            .expect("a channel should have been created");
+        node.receive(ORIGINATOR, computation_message(channel_id, 2))
+            .await
+            .unwrap();
+
+        // When
+        let received = tokio::time::timeout(Duration::from_secs(5), channel.receive())
+            .await
+            .expect("the buffered out-of-set message must not stall the channel")
+            .expect("the buffered out-of-set message must not abort the channel");
+
+        // Then
+        assert_eq!(received.from, ORIGINATOR);
+        assert_eq!(received.data, vec![vec![2u8]]);
+    }
+
+    #[rstest]
+    #[case::owned_by_a_third_party(THIRD_PARTY)]
+    #[case::owned_by_us(ME)]
+    #[tokio::test]
+    async fn run_receive_message__should_reject_start_message_for_a_channel_id_the_originator_does_not_own(
+        #[case] owner: ParticipantId,
+    ) {
+        // Given
+        let start_message = MpcMessage {
+            channel_id: ChannelId(UniqueId::new(owner, 1, 0)),
+            ..start_message_with(vec![ME, ORIGINATOR])
+        };
+        let mut node = ReceivingNode::new();
+
+        // When
+        let result = node.receive(ORIGINATOR, start_message).await;
+
+        // Then
+        let error = result.expect_err("the Start message should be rejected");
+        assert_eq!(
+            error.downcast_ref::<InvalidChannelId>(),
+            Some(&InvalidChannelId::NotOwnedByOriginator {
+                owner,
+                originator: ORIGINATOR,
+            })
+        );
+        assert!(node.new_channel().is_none());
+        assert!(node.channel_ids_in_use().is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_receive_message__should_reject_message_for_a_channel_id_we_own_but_never_opened() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let ours = ChannelId(UniqueId::new(ME, 1, 0));
+
+        // When
+        let result = node.receive(ORIGINATOR, computation_message(ours, 1)).await;
+
+        // Then
+        let error = result.expect_err("the message should be rejected");
+        assert_eq!(
+            error.downcast_ref::<InvalidChannelId>(),
+            Some(&InvalidChannelId::NoOpenChannel(ours))
+        );
+        assert!(node.channel_ids_in_use().is_empty());
+    }
+
+    #[tokio::test]
+    async fn network_task_channel__should_deliver_message_buffered_before_the_start_message() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let channel_id = ChannelId(UniqueId::new(ORIGINATOR, 1, 0));
+        node.receive(THIRD_PARTY, computation_message(channel_id, 1))
+            .await
+            .unwrap();
+        node.receive(
+            ORIGINATOR,
+            start_message_with(vec![ME, ORIGINATOR, THIRD_PARTY]),
+        )
+        .await
+        .unwrap();
+        let mut channel = node
+            .new_channel()
+            .expect("a channel should have been created");
+
+        // When
+        let received = tokio::time::timeout(Duration::from_secs(5), channel.receive())
+            .await
+            .expect("the buffered message must not stall the channel")
+            .expect("the buffered message must not abort the channel");
+
+        // Then
+        assert_eq!(received.from, THIRD_PARTY);
+        assert_eq!(received.data, vec![vec![1u8]]);
+    }
+
     const ME: ParticipantId = ParticipantId::from_raw(0);
     const ORIGINATOR: ParticipantId = ParticipantId::from_raw(1);
     const THIRD_PARTY: ParticipantId = ParticipantId::from_raw(2);
 
-    fn start_message_with(participants: Vec<ParticipantId>) -> MpcMessage {
-        MpcMessage {
-            channel_id: ChannelId(UniqueId::new(ORIGINATOR, 1, 0)),
-            kind: MpcMessageKind::Start(MpcStartMessage {
-                task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
-                    start: UniqueId::new(ORIGINATOR, 1, 0),
-                    count: 1,
-                }),
-                participants,
+    fn start_of(leader: ParticipantId, participants: Vec<ParticipantId>) -> MpcStartMessage {
+        MpcStartMessage {
+            task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
+                start: UniqueId::new(leader, 1, 0),
+                count: 1,
             }),
+            participants,
         }
     }
 
-    /// Drives a single message from `ORIGINATOR` through the inbound message handling of the node
-    /// `ME`, whose participant set is `ME`, `ORIGINATOR` and `THIRD_PARTY`.
+    fn start_message_with(participants: Vec<ParticipantId>) -> MpcMessage {
+        MpcMessage {
+            channel_id: ChannelId(UniqueId::new(ORIGINATOR, 1, 0)),
+            kind: MpcMessageKind::Start(start_of(ORIGINATOR, participants)),
+        }
+    }
+
+    fn computation_message(channel_id: ChannelId, payload: u8) -> MpcMessage {
+        MpcMessage {
+            channel_id,
+            kind: MpcMessageKind::Computation(vec![vec![payload]]),
+        }
+    }
+
     async fn receive_message_from_originator(
         message: MpcMessage,
     ) -> (anyhow::Result<()>, Option<NetworkTaskChannel>) {
-        let mut transports = new_test_transports(vec![ME, ORIGINATOR, THIRD_PARTY]);
-        let (my_transport_sender, my_receiver) = transports.remove(0);
-        let (originator_transport_sender, _) = transports.remove(0);
-        let indexer_heights = Arc::new(IndexerHeightTracker::new(&[ME, ORIGINATOR, THIRD_PARTY]));
-        let client = Arc::new(MeshNetworkClient::new(
-            my_transport_sender,
-            Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
-            indexer_heights.clone(),
-        ));
-        originator_transport_sender
-            .send(ME, message, ConnectionVersion::default())
-            .unwrap();
-        let mut my_receiver: Box<dyn MeshNetworkTransportReceiver> = my_receiver;
-        let (new_channel_sender, mut new_channel_receiver) = mpsc::unbounded_channel();
+        let mut node = ReceivingNode::new();
+        let result = node.receive(ORIGINATOR, message).await;
+        (result, node.new_channel())
+    }
 
-        let result = run_receive_message(
-            client,
-            &mut my_receiver,
-            &new_channel_sender,
-            indexer_heights,
-        )
-        .await;
+    /// The inbound message handling of the node `ME`, whose participant set is `ME`, `ORIGINATOR`
+    /// and `THIRD_PARTY`.
+    struct ReceivingNode {
+        client: Arc<MeshNetworkClient>,
+        my_receiver: Box<dyn MeshNetworkTransportReceiver>,
+        peer_senders: HashMap<ParticipantId, Arc<TestMeshTransportSender>>,
+        indexer_heights: Arc<IndexerHeightTracker>,
+        new_channel_sender: mpsc::UnboundedSender<NetworkTaskChannel>,
+        new_channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
+    }
 
-        (result, new_channel_receiver.try_recv().ok())
+    impl ReceivingNode {
+        fn new() -> Self {
+            let participants = vec![ME, ORIGINATOR, THIRD_PARTY];
+            let mut transports = new_test_transports(participants.clone());
+            let (my_transport_sender, my_receiver) = transports.remove(0);
+            let indexer_heights = Arc::new(IndexerHeightTracker::new(&participants));
+            let client = Arc::new(MeshNetworkClient::new(
+                my_transport_sender,
+                Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
+                indexer_heights.clone(),
+            ));
+            let (new_channel_sender, new_channel_receiver) = mpsc::unbounded_channel();
+            Self {
+                client,
+                my_receiver,
+                peer_senders: [ORIGINATOR, THIRD_PARTY]
+                    .into_iter()
+                    .zip(transports.into_iter().map(|(sender, _)| sender))
+                    .collect(),
+                indexer_heights,
+                new_channel_sender,
+                new_channel_receiver,
+            }
+        }
+
+        async fn receive(
+            &mut self,
+            from: ParticipantId,
+            message: MpcMessage,
+        ) -> anyhow::Result<()> {
+            self.peer_senders[&from]
+                .send(
+                    ME,
+                    Packet::MpcMessage(message),
+                    Some(ConnectionVersion::default()),
+                )
+                .unwrap();
+            run_receive_message(
+                self.client.clone(),
+                &mut self.my_receiver,
+                &self.new_channel_sender,
+                self.indexer_heights.clone(),
+            )
+            .await
+        }
+
+        async fn receive_connected_peers_info(
+            &mut self,
+            from: ParticipantId,
+            info: ConnectedPeersInfo,
+        ) -> anyhow::Result<()> {
+            self.peer_senders[&from]
+                .send(ME, Packet::ConnectedPeersInfo(info), None)
+                .unwrap();
+            run_receive_message(
+                self.client.clone(),
+                &mut self.my_receiver,
+                &self.new_channel_sender,
+                self.indexer_heights.clone(),
+            )
+            .await
+        }
+
+        fn new_channel(&mut self) -> Option<NetworkTaskChannel> {
+            self.new_channel_receiver.try_recv().ok()
+        }
+
+        fn channel_ids_in_use(&self) -> Vec<ChannelId> {
+            self.client
+                .channels
+                .lock()
+                .unwrap()
+                .senders
+                .keys()
+                .copied()
+                .collect()
+        }
     }
 }
 
@@ -1389,8 +2006,8 @@ mod fault_handling_tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::network::testing::run_test_clients;
+    use crate::network::wire_format::EcdsaTaskId;
     use crate::primitives::{ParticipantId, UniqueId};
-    use crate::providers::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use std::sync::Arc;

@@ -24,13 +24,11 @@ We consider this benchmarking technique to be naive for several reasons:
 
 3. A participant sending one message to all implies measuring the same send operation multiple time.
 
-The table below shows running the criterion tests for the Robust ECDSA and OT-Based ECDSA schemes when fixing the maximum number of malicious parties to 6 participants.
-One can see that the Robust ECDSA scheme seems much more performant than the OT-based ECDSA.
+The table below shows running the criterion tests for the OT-Based ECDSA scheme when fixing the maximum number of malicious parties to 6 participants.
 
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 1.4237 s  | 1.4626 ms | 191.82 µs |
-| **Robust ECDSA**   | 13 | N/A       | 66.060 ms | 278.13 µs |
 
 | **Maximum number of malicious parties: 6** | **Network Latency: 0 ms** |
 |--------------------------------------------|---------------------------|
@@ -62,7 +60,6 @@ In this section, we present a couple of results. The two following tables repres
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 198.95 ms  | 206.52 µs | 111.76 µs |
-| **Robust ECDSA**   | 13 | N/A       | 4.90 ms | 114.63 µs |
 | **Ed25519 Frost**   | 7 | N/A       | N/A | 849.67 µs |
 | **Ed25519 Frost with Presign**   | 7 | N/A       | 419.23 µs | 348.94 µs |
 | **Confidential key derivation**   | 7 | N/A       | N/A | 777.41 µs |
@@ -77,7 +74,6 @@ With a larger number of accepted malicious parties, the numbers are as follows:
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 544.94 ms  | 257.05 µs | 119.65 µs |
-| **Robust ECDSA**   | 31 | N/A       | 24.56 ms | 129.45 µs |
 | **Ed25519 Frost**   | 16 | N/A       | N/A | 1.7412 ms |
 | **Ed25519 Frost with Presign**   | 16 | N/A       | 964.76 µs | 590.34 µs |
 | **Confidential key derivation**   | 16 | N/A       | N/A | 1.4715 ms |
@@ -85,11 +81,7 @@ With a larger number of accepted malicious parties, the numbers are as follows:
 | **Maximum number of malicious parties: 15** | **Network Latency: 0 ms** |
 |---------------------------------------------|---------------------------|
 
-We notice two important results:
-
-* For a maximum number of malicious parties 6, the time taken for **Two Triple Gen** and **Presign** in the naive benchmarking is roughly the time taken in the advanced setting multiplied by the number of active participants.
-
-* The offline phase of Robust ECDSA is **40 times** faster than that of OT based ECDSA for a maximum number of malicious parties equals 6 and **22 times** faster for a maximum number of malicious parties equals 15. We estimate this difference to be due to the increasing number of necessary active participants in the Robust ECDSA setting.
+We notice an important result: for a maximum number of malicious parties 6, the time taken for **Two Triple Gen** and **Presign** in the naive benchmarking is roughly the time taken in the advanced setting multiplied by the number of active participants.
 
 #### Latency
 
@@ -98,7 +90,6 @@ Due to the fact that the computation time of both schemes is roughly small, addi
 | Scheme | Two Triples Gen | Presign | Sign |
 |:------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 8*  | 2 | 1 |
-| **Robust ECDSA**   | N/A       | 3 | 1 |
 | **Ed25519 Frost**   | N/A | N/A  | 3 |
 | **Ed25519 Frost with Presign**   | N/A       | 1 | 1 |
 | **Confidential key derivation**   | N/A | N/A  | 1 |
@@ -115,18 +106,12 @@ Thus with network latency, the numbers are computed using the formula: **network
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 1.344 s  | 200.25 ms | 100.11 ms |
-| **Robust ECDSA**   | 31 | N/A       | 324.56 ms | 100.12 ms |
 | **Ed25519 Frost**  | 16 | N/A | N/A  | 301.74 ms |
 | **Ed25519 Frost with Presign**   | 16 | N/A       | 100.96 ms  | 100.59 ms |
 | **Confidential key derivation**  | 16 | N/A | N/A  | 101.47 ms |
 
 | **Maximum number of malicious parties: 15** | **Network Latency: 100 ms** |
 |---------------------------------------------|-----------------------------|
-
-<br>
-
-Notice that the Robust ECDSA offline phase is roughly **4.7 times** faster than the OT based ECDSA offline phase.
-In fact, the higher the network latency is, the closer the performance of the Robust ECDSA offline phase would tend to **3.3 times** faster than the OT Based ECDSA offline phase. This is due to the fact that the OT Based ECDSA requires roughly **3.3 times** more rounds to complete.
 
 #### Bandwidth
 
@@ -137,7 +122,6 @@ In the case where the protocol allows distinguishing between normal participants
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 595260 Bytes  | 1416 Bytes | 557 Bytes |
-| **Robust ECDSA**   | 13 | N/A       | 6387 Bytes | 1096 Bytes |
 | **Ed25519 Frost**   | 7 | N/A       | N/A | 1510 Bytes |
 | **Ed25519 Frost with Presign**   | 7 | N/A       | 918 Bytes | 609 Bytes |
 | **Confidential key derivation**   | 7 | N/A       | N/A | 1154 Bytes |
@@ -152,7 +136,6 @@ In the case where the protocol allows distinguishing between normal participants
 | Scheme | Parties | Two Triples Gen | Presign | Sign |
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 2088966 Bytes  | 3485 Bytes | 1360 Bytes |
-| **Robust ECDSA**   | 31 | N/A       | 15986 Bytes | 2752 Bytes |
 | **Ed25519 Frost**   | 16 | N/A       | N/A | 3818 Bytes |
 | **Ed25519 Frost with Presign**   | 16 | N/A       | 2274 Bytes |  1513 Bytes |
 | **Confidential key derivation**   | 16 | N/A       | N/A | 2894 Bytes |
@@ -163,3 +146,95 @@ In the case where the protocol allows distinguishing between normal participants
 *Note: The computed data size includes the cryptographic elements sent along with the metadata (e.g., receiver, session number etc…).*
 
 <br>
+
+## Distributed Key Generation
+
+The tables below show the DKG results for the crypto layer, measured with the advanced
+technique (a simulated replay against a snapshot, as in the `advanced_dkg` bench) and
+without network latency. As before, the numbers are from the perspective of a single
+participant: the time a participant takes to complete a DKG run and the size of the data
+it receives during that run. Each time is the best of 3 replays; the received data size
+is deterministic for a fixed set of participant ids. These numbers were measured in
+October 2026 on an **Intel Core Ultra 9 288V** with **32 GB RAM**, so they are comparable
+with each other but not with the tables above.
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 8 | 28.96 ms | 135318 Bytes |
+| **ed25519**   | 8 | 67.22 ms | 133702 Bytes |
+| **bls12381**  | 8 | 135.94 ms | 285241 Bytes |
+
+| **Maximum number of malicious parties: 7** | **Network Latency: 0 ms** |
+|--------------------------------------------|---------------------------|
+
+<br>
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 16 | 132.71 ms | 874941 Bytes |
+| **ed25519**   | 16 | 351.50 ms | 863275 Bytes |
+| **bls12381**  | 16 | 717.46 ms | 2065133 Bytes |
+
+| **Maximum number of malicious parties: 15** | **Network Latency: 0 ms** |
+|---------------------------------------------|---------------------------|
+
+<br>
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 41 | 2.0764 s | 12337135 Bytes |
+| **ed25519**   | 41 | 8.8304 s | 12156511 Bytes |
+| **bls12381**  | 41 | 17.077 s | 32117098 Bytes |
+
+| **Maximum number of malicious parties: 40** | **Network Latency: 0 ms** |
+|---------------------------------------------|---------------------------|
+
+Our DKG is PedPop+, which effectively takes eleven and a half rounds of communication to
+complete (see [dkg.md](../dkg.md)). Thus with 100 ms of RTT latency, one needs to add
+roughly **+1.1 s** to each of the numbers above; note that at 41 participants the
+computation time dominates that latency rather than the other way around.
+
+Two observations on scaling. The per-participant time grows roughly cubically in the
+number of participants: the echo broadcast delivers $O(n)$ copies of each of the $n$
+commitment vectors, each holding $t$ group elements that are deserialized (with point
+validation) on receipt. On top of that, BLS12-381 pays a large constant factor per
+element: a G2 deserialization with subgroup check costs ~57 µs against ~3.4 µs for an
+ed25519 decompression, and a G2 scalar multiplication ~112 µs against ~22 µs.
+
+Reproduce with:
+
+```sh
+MAX_MALICIOUS=7 SAMPLE_SIZE=10 cargo bench -p threshold-signatures --features test-utils --bench advanced_dkg
+```
+
+## Signing without presignatures
+
+`presign_and_sign` folds the two presigning rounds into the online phase, consuming a triple pair
+directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol)).
+The numbers below were measured in September 2026 on a different machine than the tables above,
+so they are comparable with each other but not with the other tables.
+
+Latency simulation (`simulate_ecdsa`, virtual clock, network latency 100 ms), data received per
+participant:
+
+| Parties | Threshold | Protocol | Rounds | Virtual time | Bytes/participant |
+|:-------:|:---------:|:--------:|:------:|-------------:|------------------:|
+| 7 | 4 | Presign | 2 | 200.18 ms | 1403 |
+| 7 | 4 | Sign | 1 | 100.09 ms | 79 |
+| 7 | 4 | Presign+sign online | 3 | 300.31 ms | 1480 |
+| 15 | 8 | Presign | 2 | 200.17 ms | 3284 |
+| 15 | 8 | Sign | 1 | 100.09 ms | 86 |
+| 15 | 8 | Presign+sign online | 3 | 300.31 ms | 3369 |
+
+Reading: the online cost of a signature without presignatures is the network latency of three
+rounds instead of one, with the presign computation (about a millisecond) on top; the bytes moved
+online are the presign bytes plus the signature shares. Nothing is precomputed per signature any
+more, so the offline phase reduces to triple generation and no presignature store has to be kept
+consistent across nodes. The trade is two extra round trips on the signing path.
+
+Reproduce with:
+
+```sh
+NUM_PARTICIPANTS=7 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
+NUM_PARTICIPANTS=15 THRESHOLD=8 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
+```

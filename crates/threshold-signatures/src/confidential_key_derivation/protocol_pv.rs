@@ -1,6 +1,6 @@
 use crate::Protocol;
 use crate::confidential_key_derivation::ciphersuite::{
-    BLS12381SHA256, check_valid_point_g1, check_valid_point_g2, multi_miller_loop,
+    BLS12381SHA256, check_valid_point_g1, check_valid_point_g2, multi_miller_loop, pairing_eq,
 };
 use crate::confidential_key_derivation::{
     AppId, CKDOutput, CKDOutputOption, ElementG1, ElementG2, KeygenOutput, PublicVerificationKey,
@@ -240,10 +240,10 @@ fn app_public_key_check(app_pk: &PublicVerificationKey) -> bool {
     if !check_valid_point_g1(app_pk.pk1.into()) || !check_valid_point_g2(app_pk.pk2.into()) {
         return false;
     }
-    multi_miller_loop(&[
-        (app_pk.pk1, -ElementG2::generator()),
-        (ElementG1::generator(), app_pk.pk2),
-    ])
+    pairing_eq(
+        &(app_pk.pk1, ElementG2::generator()),
+        &(ElementG1::generator(), app_pk.pk2),
+    )
 }
 
 #[cfg(test)]

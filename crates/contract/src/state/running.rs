@@ -2,19 +2,19 @@ use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
+use crate::primitives::participants::IdentifiesParticipant;
 use crate::primitives::{
     domain::{
-        AddDomainsVotes, DomainRegistry, max_reconstruction_threshold, validate_domain_purpose,
-        validate_domain_reconstruction_threshold,
+        AddDomainsVotes, DomainRegistry, validate_domain_purpose,
+        validate_domains_against_governance,
     },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
 };
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 /// In this state, the contract is ready to process signature requests.
 ///
@@ -24,7 +24,7 @@ use std::collections::{BTreeSet, HashSet};
 ///  - vote_new_parameters, upon threshold agreement, transitions into the
 ///    Resharing state to reshare keys for new participants and also change the
 ///    threshold if desired.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
@@ -83,7 +83,7 @@ impl RunningContractState {
                     first_domain.clone(),
                     proposal.parameters().clone(),
                 ),
-                cancellation_requests: HashSet::new(),
+                cancellation_requests: BTreeSet::new(),
                 per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             })
         } else {
@@ -176,16 +176,13 @@ impl RunningContractState {
                 }
             })
             .collect();
-        for domain in &effective_domains {
-            validate_domain_reconstruction_threshold(domain, new_num_participants)?;
-        }
 
         // The GovernanceThreshold must dominate every domain's effective ReconstructionThreshold;
         // enforced here so the state transition is self-contained (single source of truth).
-        GovernanceThresholdParameters::validate_governance_against_reconstruction(
+        validate_domains_against_governance(
+            &effective_domains,
             new_num_participants,
             proposal.threshold(),
-            max_reconstruction_threshold(&effective_domains),
         )?;
 
         // ensure the signer is a proposed participant
@@ -222,15 +219,14 @@ impl RunningContractState {
             .expect("participant count fits in u64");
         for domain in &domains {
             validate_domain_purpose(domain)?;
-            validate_domain_reconstruction_threshold(domain, num_participants)?;
         }
         // Keep trust assumptions consistent: a domain must never require more shares to
         // reconstruct than the GovernanceThreshold demands to govern. Route through the
         // canonical helper so the cross-domain invariant has a single source of truth.
-        GovernanceThresholdParameters::validate_governance_against_reconstruction(
+        validate_domains_against_governance(
+            &domains,
             num_participants,
             self.parameters.threshold(),
-            max_reconstruction_threshold(&domains),
         )?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
@@ -252,10 +248,8 @@ impl RunningContractState {
         }
     }
 
-    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
-        self.parameters
-            .participants()
-            .is_participant_given_account_id(account_id)
+    pub fn is_participant<K: IdentifiesParticipant>(&self, id: &K) -> bool {
+        self.parameters.participants().is_participant(id)
     }
 }
 
@@ -265,10 +259,14 @@ pub mod running_tests {
     use rstest::rstest;
 
     use super::RunningContractState;
-    use crate::errors::{Error, InvalidThreshold};
+    use crate::errors::{Error, InvalidState, InvalidThreshold, VoteError};
     use crate::primitives::domain::AddDomainsVotes;
+    use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
+    use crate::primitives::thresholds::{
+        GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    };
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
         gen_running_state, gen_running_state_with_params, gen_valid_params_proposal,
@@ -276,6 +274,8 @@ pub mod running_tests {
     use near_mpc_contract_interface::types::{
         DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     };
+    use near_sdk::AccountId;
+    use std::assert_matches;
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
@@ -317,7 +317,7 @@ pub mod running_tests {
                 if i < participants.participants().len()
                     && !proposal
                         .participants()
-                        .is_participant_given_account_id(&participants.participants()[i].0)
+                        .is_participant(&participants.participants()[i].0)
                 {
                     continue;
                 }
@@ -343,10 +343,7 @@ pub mod running_tests {
         // existing participants vote
         let mut n_votes = 0;
         for (account_id, _, _) in participants.participants().iter() {
-            if !proposal
-                .participants()
-                .is_participant_given_account_id(account_id)
-            {
+            if !proposal.participants().is_participant(account_id) {
                 continue;
             }
             n_votes += 1;
@@ -362,7 +359,7 @@ pub mod running_tests {
         }
         // candidates vote
         for (account_id, _, _) in proposal.participants().participants().iter() {
-            if participants.is_participant_given_account_id(account_id) {
+            if participants.is_participant(account_id) {
                 continue;
             }
             n_votes += 1;
@@ -556,8 +553,8 @@ pub mod running_tests {
     }
 
     #[test]
-    fn vote_add_domains__should_reject_damgard_etal_threshold_violating_honest_majority() {
-        // Given a running state and a DamgardEtAl proposal with `2t - 1 > n`.
+    fn vote_add_domains__should_reject_robust_ecdsa_threshold_violating_honest_majority() {
+        // Given a running state and a RobustEcdsa proposal with `2t - 1 > n`.
         // gen_threshold_params produces n in [3, 30]; pick t = n so that
         // 2t - 1 > n holds (universally true for n >= 2).
         let mut state = gen_running_state(1);
@@ -567,7 +564,7 @@ pub mod running_tests {
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
             id: DomainId(next_id),
-            protocol: Protocol::DamgardEtAl,
+            protocol: Protocol::RobustEcdsa,
             reconstruction_threshold: ReconstructionThreshold::new(n),
             purpose: DomainPurpose::Sign,
         }];
@@ -575,7 +572,7 @@ pub mod running_tests {
         // When voting to add the domain
         let err = state.vote_add_domains(proposal).unwrap_err();
 
-        // Then the DamgardEtAl-specific bound is enforced
+        // Then the RobustEcdsa-specific bound is enforced
         assert!(
             err.to_string().contains("requires at least"),
             "Expected InsufficientParticipantsForProtocol, got: {err}"
@@ -602,12 +599,7 @@ pub mod running_tests {
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
-            .find(|account_id| {
-                state
-                    .parameters
-                    .participants()
-                    .is_participant_given_account_id(account_id)
-            })
+            .find(|account_id| state.parameters.participants().is_participant(account_id))
             .expect("proposal must retain at least one current participant");
         env.set_signer(&signer);
 
@@ -644,18 +636,181 @@ pub mod running_tests {
         );
     }
 
+    struct ParticipantsUpdate {
+        state: RunningContractState,
+        proposal: ProposedGovernanceThresholdParameters,
+        retained: Vec<AccountId>,
+        removed: Vec<AccountId>,
+        added: Vec<AccountId>,
+    }
+
+    fn account_ids(participants: &Participants) -> Vec<AccountId> {
+        participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect()
+    }
+
+    /// Proposal that replaces the last current participants with added ones.
+    fn gen_participants_update() -> ParticipantsUpdate {
+        const NUM_PARTICIPANTS: usize = 5;
+        const GOVERNANCE_THRESHOLD: u64 = 3;
+        const NUM_REPLACED: usize = 2;
+        const NUM_RETAINED: usize = NUM_PARTICIPANTS - NUM_REPLACED;
+
+        let state = gen_running_state_with_params(1, NUM_PARTICIPANTS, GOVERNANCE_THRESHOLD);
+        let mut proposed = state.parameters.participants().subset(0..NUM_RETAINED);
+        proposed.add_random_participants_till_n(NUM_PARTICIPANTS);
+
+        let mut retained = account_ids(state.parameters.participants());
+        let removed = retained.split_off(NUM_RETAINED);
+        let added = account_ids(&proposed).split_off(NUM_RETAINED);
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(proposed, state.parameters.threshold()).unwrap(),
+            BTreeMap::new(),
+        );
+        ParticipantsUpdate {
+            state,
+            proposal,
+            retained,
+            removed,
+            added,
+        }
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_reject_current_participants_left_out_of_the_proposal()
+     {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            removed,
+            ..
+        } = gen_participants_update();
+        let mut env = Environment::new(None, None, None);
+
+        for voter in &removed {
+            env.set_signer(voter);
+
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
+
+            // Then
+            assert_matches!(
+                result.unwrap_err(),
+                Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == *voter
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::no_old_votes(0)]
+    #[case::one_old_vote(1)]
+    #[case::one_below_threshold(2)]
+    fn process_new_parameters_proposal__should_defer_added_participants_until_threshold_old_participants_voted(
+        #[case] n_old_votes: u64,
+    ) {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        assert!(
+            n_old_votes < state.parameters.threshold().value(),
+            "case must stay below the fixture's threshold"
+        );
+        let mut env = Environment::new(None, None, None);
+        for old in retained.iter().take(n_old_votes as usize) {
+            env.set_signer(old);
+            state.process_new_parameters_proposal(&proposal).unwrap();
+        }
+
+        for voter in &added {
+            env.set_signer(voter);
+
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
+
+            // Then
+            assert_matches!(result.unwrap_err(), Error::Vote(VoteError::VoterPending));
+        }
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_admit_added_participants_once_threshold_old_participants_voted()
+     {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        let threshold = state.parameters.threshold().value();
+        let mut env = Environment::new(None, None, None);
+        for old in retained.iter().take(threshold as usize) {
+            env.set_signer(old);
+            state.process_new_parameters_proposal(&proposal).unwrap();
+        }
+
+        for voter in &added {
+            env.set_signer(voter);
+
+            // When
+            let result = state.process_new_parameters_proposal(&proposal);
+
+            // Then
+            assert_matches!(result, Ok(_));
+        }
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_return_true_only_once_every_proposed_participant_voted()
+     {
+        // Given
+        let ParticipantsUpdate {
+            mut state,
+            proposal,
+            retained,
+            added,
+            ..
+        } = gen_participants_update();
+        let mut env = Environment::new(None, None, None);
+
+        // When
+        let accepted: Vec<bool> = retained
+            .iter()
+            .chain(&added)
+            .map(|voter| {
+                env.set_signer(voter);
+                state.process_new_parameters_proposal(&proposal).unwrap()
+            })
+            .collect();
+
+        // Then
+        let mut expected = vec![false; retained.len() + added.len()];
+        *expected.last_mut().unwrap() = true;
+        assert_eq!(accepted, expected);
+    }
+
     /// Builds a [`DomainConfig`] for the next domain id with the given protocol,
     /// purpose, and reconstruction threshold.
     fn single_domain_proposal(
         state: &RunningContractState,
         protocol: Protocol,
         purpose: DomainPurpose,
-        threshold: u64,
+        reconstruction_threshold: ReconstructionThreshold,
     ) -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(state.domains.next_domain_id()),
             protocol,
-            reconstruction_threshold: ReconstructionThreshold::new(threshold),
+            reconstruction_threshold,
             purpose,
         }]
     }
@@ -668,7 +823,13 @@ pub mod running_tests {
         let mut state = gen_running_state_with_params(1, 5, 5);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 3);
+        let reconstruction_threshold = ReconstructionThreshold::new(3);
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::CaitSith,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -683,10 +844,13 @@ pub mod running_tests {
         let mut state = gen_running_state(0);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        // Use the GovernanceThreshold as the ReconstructionThreshold (the maximum allowed).
-        let governance = state.parameters.threshold().value();
-        let proposal =
-            single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, governance);
+        let reconstruction_threshold = ReconstructionThreshold::from(state.parameters.threshold());
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::CaitSith,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -768,12 +932,7 @@ pub mod running_tests {
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
-            .find(|account_id| {
-                state
-                    .parameters
-                    .participants()
-                    .is_participant_given_account_id(account_id)
-            })
+            .find(|account_id| state.parameters.participants().is_participant(account_id))
             .expect("proposal must retain at least one current participant");
         env.set_signer(&signer);
 
@@ -847,12 +1006,7 @@ pub mod running_tests {
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
-            .find(|account_id| {
-                state
-                    .parameters
-                    .participants()
-                    .is_participant_given_account_id(account_id)
-            })
+            .find(|account_id| state.parameters.participants().is_participant(account_id))
             .expect("proposal must retain at least one current participant");
         env.set_signer(&signer);
 
@@ -881,7 +1035,13 @@ pub mod running_tests {
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 2);
+        let reconstruction_threshold = ReconstructionThreshold::new(2);
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::CaitSith,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -897,7 +1057,13 @@ pub mod running_tests {
         let mut state = gen_running_state_with_params(1, 4, 3);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal = single_domain_proposal(&state, Protocol::Frost, DomainPurpose::Sign, 3);
+        let reconstruction_threshold = ReconstructionThreshold::new(3);
+        let proposal = single_domain_proposal(
+            &state,
+            Protocol::Frost,
+            DomainPurpose::Sign,
+            reconstruction_threshold,
+        );
 
         // When
         let res = state.vote_add_domains(proposal);

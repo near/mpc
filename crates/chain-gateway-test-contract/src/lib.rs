@@ -1,15 +1,9 @@
 pub mod args;
 pub mod consts;
 
-use args::{make_private_set_args, make_set_value_in_promise_args};
-use consts::DEFAULT_VALUE;
-use near_contract_transport::FunctionCallArgs;
+use consts::{DEFAULT_VALUE, PRIVATE_SET_ARGS_GAS, SET_VALUE_IN_PROMISE_GAS};
 
-use near_sdk::{
-    Promise,
-    env::{self, log_str},
-    near,
-};
+use near_sdk::{Promise, log, near};
 
 #[derive(Debug)]
 #[near(contract_state)]
@@ -32,7 +26,7 @@ impl Contract {
     }
 
     pub fn set_value(&mut self, value: String) {
-        log_str(&format!("Setting value to: {value}"));
+        log!("Setting value to: {value}");
         self.stored_value = value;
     }
 
@@ -48,18 +42,10 @@ impl Contract {
         if return_error {
             Err("computer says no".to_string())
         } else {
-            let FunctionCallArgs {
-                method_name,
-                args,
-                deposit,
-                gas,
-            } = make_private_set_args(&value, true);
-            Ok(Promise::new(env::current_account_id()).function_call(
-                method_name,
-                args,
-                deposit,
-                gas,
-            ))
+            Ok(Self::ext_self()
+                .with_static_gas(PRIVATE_SET_ARGS_GAS)
+                .with_unused_gas_weight(0)
+                .private_set(value, true))
         }
     }
 
@@ -73,24 +59,16 @@ impl Contract {
         end_marker: String,
     ) -> Promise {
         // spawn first promise
-        let FunctionCallArgs {
-            method_name,
-            args,
-            deposit,
-            gas,
-        } = make_set_value_in_promise_args("doesn't matter", !successfully_spawn_promise);
-        let promise =
-            Promise::new(env::current_account_id()).function_call(method_name, args, deposit, gas);
+        let promise = Self::ext_self()
+            .with_static_gas(SET_VALUE_IN_PROMISE_GAS)
+            .with_unused_gas_weight(0)
+            .set_value_in_promise("doesn't matter".to_string(), !successfully_spawn_promise);
 
         // spawn callback promise to mark conclusion of first promise
-        let FunctionCallArgs {
-            method_name,
-            args,
-            deposit,
-            gas,
-        } = make_private_set_args(&end_marker, true);
-        let callback =
-            Promise::new(env::current_account_id()).function_call(method_name, args, deposit, gas);
+        let callback = Self::ext_self()
+            .with_static_gas(PRIVATE_SET_ARGS_GAS)
+            .with_unused_gas_weight(0)
+            .private_set(end_marker, true);
         promise.then(callback)
     }
 

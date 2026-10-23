@@ -14,12 +14,10 @@
 //! directly, so the queue policy lives in one place.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::{CryptoHash, env, store::LookupMap};
+use near_mpc_contract_interface::types::YieldIndex;
+use near_sdk::{CryptoHash, env, require, store::LookupMap};
 
-use crate::{
-    errors::{Error, InvalidParameters, RequestError},
-    primitives::signature::YieldIndex,
-};
+use crate::errors::{Error, InvalidParameters, RequestError};
 
 /// Maximum number of concurrent yield-resume promises that can be queued for a single
 /// request key (i.e. the number of duplicate submissions whose responses fan out from
@@ -48,14 +46,13 @@ pub(crate) fn push_pending_yield<K>(
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
     let queue = requests.entry(request).or_default();
-    if queue.len() >= usize::from(MAX_PENDING_REQUEST_FAN_OUT) {
-        env::panic_str(
-            &RequestError::PendingRequestQueueFull {
-                limit: MAX_PENDING_REQUEST_FAN_OUT,
-            }
-            .to_string(),
-        );
-    }
+    require!(
+        queue.len() < usize::from(MAX_PENDING_REQUEST_FAN_OUT),
+        RequestError::PendingRequestQueueFull {
+            limit: MAX_PENDING_REQUEST_FAN_OUT,
+        }
+        .to_string()
+    );
     queue.push(YieldIndex { data_id });
 }
 
@@ -76,7 +73,7 @@ where
         .unwrap_or_default()
         .into_iter()
         .map(|YieldIndex { data_id }| {
-            env::promise_yield_resume(&data_id, response_bytes.clone());
+            env::promise_yield_resume(&data_id, &response_bytes);
         })
         .count();
 

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/attestation",
     "crates/attestation-cli",
+    "crates/attestation-types",
     "crates/backup-cli",
     "crates/chain-gateway",
     "crates/chain-gateway-test-contract",
@@ -14,7 +15,7 @@ members = [
     "crates/foreign-chain-config-tester",
     "crates/foreign-chain-health-check",
     "crates/foreign-chain-inspector",
-    "crates/foreign-chain-rpc-auth",
+    "crates/foreign-chain-rpc-factory",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
     "crates/launcher-interface",
@@ -29,6 +30,7 @@ members = [
     "crates/node-config",
     "crates/node-types",
     "crates/primitives",
+    "crates/proposal-generator",
     "crates/tee-authority",
     "crates/tee-context",
     "crates/tee-launcher",
@@ -44,7 +46,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.14.0"
+version = "3.17.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -52,12 +54,13 @@ repository = "https://github.com/near/mpc"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+attestation-types = { path = "crates/attestation-types" }
 chain-gateway = { path = "crates/chain-gateway" }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-health-check = { path = "crates/foreign-chain-health-check" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
-foreign-chain-rpc-auth = { path = "crates/foreign-chain-rpc-auth" }
+foreign-chain-rpc-factory = { path = "crates/foreign-chain-rpc-factory" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 launcher-interface = { path = "crates/launcher-interface" }
@@ -84,9 +87,7 @@ threshold-signatures = { path = "crates/threshold-signatures" }
 
 aes-gcm = "0.11.0"
 anyhow = "1.0.102"
-assert_matches = "1.5.0"
 async-trait = "0.1.89"
-auto_ops = "0.3.0"
 average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
@@ -96,7 +97,6 @@ blstrs = "0.7.1"
 borsh = { version = "1.6.1", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
-byteorder = "1.5.0"
 bytes = { version = "1.11.1" }
 cargo-near-build = "0.11.5"
 clap = { version = "4.6.1", features = ["derive", "env"] }
@@ -105,7 +105,7 @@ curve25519-dalek = { version = "4.1.3", features = [
     "group",
     "serde",
 ], default-features = false }
-dcap-qvl = { version = "0.6.1", default-features = false, features = [
+dcap-qvl = { version = "0.7.0", default-features = false, features = [
     "contract",
     "borsh",
     "std",
@@ -145,56 +145,45 @@ frost-core = { version = "3.0.0", default-features = false, features = [
 frost-ed25519 = { version = "3.0.0", default-features = false }
 frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
-futures-lite = "2.6.1"
-gcloud-sdk = { version = "0.30.0", default-features = false, features = [
-    "google-cloud-secretmanager-v1",
-    "tls-webpki-roots",
-] }
 group = "0.13"
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 http = "1.4.1"
 http-body-util = "0.1.3"
+httpmock = "0.8.2"
 humantime = "2.3.0"
 hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
 inferno = "0.12"
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.15.0"
-# Pinned to the 0.4.x line so it stays compatible with `tikv-jemalloc-ctl 0.5`
-# (and therefore `tikv-jemalloc-sys 0.5`, which is what `librocksdb-sys 0.11`
-# brings into the dep graph via `nearcore`'s `near-store`). Bumping past 0.5.x
-# would require also bumping that transitive rocksdb to >= 0.23 to avoid a
-# `links = "jemalloc"` collision.
-jemalloc_pprof = "0.4.2"
+# Must stay on the `tikv-jemalloc-sys` version that nearcore's rocksdb pulls in
+# (`links = "jemalloc"` permits one per graph); bump alongside the nearcore pin.
+jemalloc_pprof = "0.8.2"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
-k256 = "0.13.4"
+k256 = { version = "0.13.4", default-features = false }
 keccak = "0.1.5"
 libc = "0.2"
 lru = "0.18.0"
 # Re-exported by `jemalloc_pprof` (workspace sibling). Used to embed runtime
 # binary mappings into emitted pprof profiles so `pprof` can symbolicate
 # addresses through ASLR.
-mappings = "0.5"
+mappings = "0.7"
 mockall = "0.15.0"
-named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.6.0"
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
 # the git nearcore crate below, which the node's indexer stack requires.
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
-near-crypto-public = { version = "0.37.1", package = "near-crypto" }
-near-gas = "0.3.4"
+near-crypto-public = { version = "0.37.4", package = "near-crypto" }
+near-gas = "0.3.6"
 near-jsonrpc-client = "0.22.0"
-near-jsonrpc-primitives = "0.37.1"
-near-kit = { version = "0.14.0", default-features = false, features = ["rpc"] }
-near-primitives = "0.37.1"
-near-sandbox = "0.3.11"
-near-sdk = { version = "5.29.0", features = [
-    "legacy",
-    "unstable",
-] }
+near-jsonrpc-primitives = "0.37.4"
+near-kit = { version = "0.18.0", default-features = false, features = ["rpc"] }
+near-primitives = "0.37.4"
+near-sandbox = "0.3.15"
+near-sdk = { version = "5.29.0", features = ["unstable"] }
 near-token = "0.3.4"
 near-workspaces = { version = "0.23.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
@@ -203,27 +192,26 @@ pprof = { version = "0.15.0", features = [
     "cpp",
     "flamegraph",
 ], default-features = false }
-# `pprof_util 0.4.x` shares the `tikv-jemalloc-ctl 0.5` constraint with
-# `jemalloc_pprof 0.4.2`; needed to render heap dumps as flamegraphs in-process
-# since 0.4.x has no built-in `dump_flamegraph`.
-pprof_util = "0.4"
+# Same `tikv-jemalloc-sys` constraint as `jemalloc_pprof`.
+pprof_util = "0.8"
 proc-macro2 = "1.0"
+prometheus = { version = "0.14.0", default-features = false }
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
-reddsa = { version = "0.5.2", default-features = false, features = [
-    "frost",
-] }
+reddsa = { version = "0.5.2", default-features = false, features = ["frost"] }
 regex = "1.12.3"
 reqwest = { version = "0.13.3", features = ["multipart", "json"] }
 rmp-serde = "1.3.1"
-rstest = { version = "0.26.1" }
+# Must resolve to the same `librocksdb-sys` as nearcore's `near-store`
+# (`links = "rocksdb"` permits one per graph); bump alongside the nearcore pin.
+rocksdb = "0.24.0"
+rstest = { version = "0.27.0" }
 rustls = { version = "0.23.39", default-features = false, features = [
     "ring",
     "std",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_bytes = "0.11.19"
 serde_json = "1.0"
 serde_repr = "0.1.20"
 serde_with = { version = "3.20.0", features = ["hex"] }
@@ -233,18 +221,19 @@ sha3 = "0.10.8"
 signature = "2.2.0"
 socket2 = "0.6.3"
 subtle = "2.6.1"
-sui-rpc = "0.3.1"
-sui-sdk-types = "0.3.1"
+sui-rpc = "0.4.0"
+sui-sdk-types = "0.4.0"
 syn = "3.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
 thiserror = "2.0.18"
 thread-priority = "3.0.0"
-tikv-jemallocator = { version = "0.5.4", features = [
+tikv-jemallocator = { version = "0.6.0", features = [
     "profiling",
     "unprefixed_malloc_on_supported_platforms",
 ] }
-tokio = { version = "1.52.2", features = ["full", "test-util"] }
+time = "0.3.45"
+tokio = { version = "1.52.2", features = ["full"] }
 tokio-metrics = { version = "0.5.0" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
@@ -261,35 +250,27 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
-wycheproof = { version = "0.6", default-features = false, features = [
+wycheproof = { version = "0.7", default-features = false, features = [
     "ecdsa",
     "eddsa",
 ] }
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
-zstd = "0.13.3"
+zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
 
 ## Outdated dependencies we cannot upgrade ##
-# Version 0.8.3 requires rustc 1.88
-httpmock = "0.8.2"
-
-prometheus = { version = "0.14.0", default-features = false }
-
-# TODO(#690): This cannot be upgraded until nearcore does
-rocksdb = "0.21.0"
-
 # This version needs to be exactly the same as in `near_sdk::schemars`
 schemars = "0.8.22"
 
@@ -298,12 +279,9 @@ serde_yaml = "0.9.34"
 
 # These dependencies need to be upgraded in tandem
 getrandom = "0.2.12"
-rand = "0.8.6"
+rand = "0.8.8"
 rand_chacha = "0.3"
 rand_core = "0.6.4"
-
-# Cannot be upgraded until we get MSVR 1.88
-time = "0.3.45"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = [
@@ -314,6 +292,7 @@ unexpected_cfgs = { level = "allow", check-cfg = [
 assertions_on_result_states = "warn"
 allow_attributes = "warn"
 mod_module_files = "deny"
+wildcard_imports = "deny"
 
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"

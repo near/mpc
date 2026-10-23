@@ -1,3 +1,4 @@
+use crate::network::wire_format::CKDTaskId;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -18,7 +19,7 @@ use crate::metrics;
 use crate::{
     network::{NetworkTaskChannel, computation::MpcLeaderCentricComputation},
     protocol::NamedProtocol,
-    providers::ckd::{CKDProvider, CKDTaskId},
+    providers::ckd::CKDProvider,
     types::CKDId,
 };
 

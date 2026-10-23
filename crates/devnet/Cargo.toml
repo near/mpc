@@ -27,6 +27,7 @@ near-mpc-contract-interface = { workspace = true, features = [
     "ed25519-dalek",
     "near",
 ] }
+near-mpc-sdk = { workspace = true, features = ["non-contract-usage"] }
 # `test_utils` provides the `SignedTransaction` convenience constructors.
 near-primitives = { workspace = true, features = ["test_utils"] }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }

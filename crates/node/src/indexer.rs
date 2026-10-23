@@ -1,30 +1,19 @@
-use near_mpc_contract_interface::call_args as contract_args;
-
-use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types::MigrationInfo};
+use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
-use anyhow::Context;
+use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
-use near_client::{RpcHandlerActor, Status, ViewClientActor, client_actor::ClientActor};
+use near_client::{RpcHandlerActor, Status, client_actor::ClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
-use near_indexer_primitives::{
-    types::{BlockHeight, BlockReference, Finality},
-    views::{BlockView, QueryRequest, QueryResponseKind},
-};
-use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
-};
-use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
+use near_indexer_primitives::types::BlockHeight;
+use near_mpc_contract_interface::client::MpcContractHandle;
+use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
-use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
@@ -47,17 +36,9 @@ pub mod types;
 #[cfg(test)]
 pub mod fake;
 
-// TODO(#3751): drop this struct after upgrading the contract.
-#[derive(Debug, PartialEq, Deserialize)]
-#[serde(untagged)]
-enum AllowedDockerImageHashesResponse {
-    WithExpiry(Vec<dtos::AllowedMpcDockerImageHash>),
-    Legacy(Vec<NodeImageHash>),
-}
-
 pub(crate) struct IndexerState {
-    /// For querying blockchain state.
-    view_client: IndexerViewClient,
+    contract: MpcContractHandle<ChainGateway>,
+    gateway: ChainGateway,
     /// For querying blockchain sync status.
     client: IndexerClient,
     /// For sending txs to the chain.
@@ -70,376 +51,19 @@ pub(crate) struct IndexerState {
 
 impl IndexerState {
     pub fn new(
-        view_client: MultithreadRuntimeHandle<ViewClientActor>,
+        gateway: ChainGateway,
         client: TokioRuntimeHandle<ClientActor>,
         rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            view_client: IndexerViewClient { view_client },
+            contract: MpcContractHandle::new(gateway.clone(), mpc_contract_id.clone()),
+            gateway,
             client: IndexerClient { client },
             rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct IndexerViewClient {
-    view_client: MultithreadRuntimeHandle<ViewClientActor>,
-}
-
-// TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
-// We should remove this account_id parameter...
-//
-// example:
-// indexer_state.view_client.get_mpc_tee_accounts(indexer_state.mpc_contract_id.clone()).await
-// =>
-// indexer_state.view_client.get_mpc_tee_accounts().await
-// This pattern repeats for all the methods.
-// TODO(#1956): There is a lot of duplicate code here that could be simplified
-impl IndexerViewClient {
-    pub(crate) async fn get_pending_request(
-        &self,
-        mpc_contract_id: &AccountId,
-        chain_signature_request: &dtos::SignatureRequest,
-    ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> = serde_json::to_string(
-            &contract_args::GetPendingSignatureRequestArgs::new(chain_signature_request.clone()),
-        )
-        .unwrap()
-        .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
-            .await
-            .context("failed to query for pending request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
-    }
-
-    pub(crate) async fn get_pending_ckd_request(
-        &self,
-        mpc_contract_id: &AccountId,
-        chain_ckd_request: &dtos::CKDRequest,
-    ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> = serde_json::to_string(
-            &contract_args::GetPendingCKDRequestArgs::new(chain_ckd_request.clone()),
-        )
-        .unwrap()
-        .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_CKD_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
-            .await
-            .context("failed to query for pending CKD request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending CKD request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
-    }
-
-    pub(crate) async fn get_pending_verify_foreign_tx_request(
-        &self,
-        mpc_contract_id: &AccountId,
-        chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
-    ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetPendingVerifyForeignTxRequestArgs::new(
-                chain_verify_foreign_tx_request.clone(),
-            ))
-            .unwrap()
-            .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
-            .await
-            .context("failed to query for pending verify foreign tx request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending verify foreign tx request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
-    }
-
-    pub(crate) async fn get_participant_attestation(
-        &self,
-        mpc_contract_id: &AccountId,
-        participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
-        let get_attestation_args: Vec<u8> = serde_json::to_string(
-            &contract_args::GetAttestationArgs::new(participant_tls_public_key),
-        )
-        .unwrap()
-        .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_ATTESTATION.to_string(),
-            args: get_attestation_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
-            .await
-            .context("failed to query for pending request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
-                Option<near_mpc_contract_interface::types::VerifiedAttestation>,
-            >(&call_result.result)
-            .context("failed to deserialize pending request response"),
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
-    }
-
-    pub(crate) async fn get_foreign_chains_configs(
-        &self,
-        mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
-        self.get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAINS_CONFIGS)
-            .await
-    }
-
-    pub(crate) async fn get_available_chains(
-        &self,
-        mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
-        self.get_mpc_state(mpc_contract_id.clone(), GET_AVAILABLE_FOREIGN_CHAINS)
-            .await
-    }
-
-    /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
-    pub(crate) async fn get_allowed_foreign_chain_providers(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
-            method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
-            args: vec![].into(),
-        };
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
-
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => borsh::from_slice::<
-                std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
-            >(&result.result)
-            .with_context(|| {
-                let preview: String = result
-                    .result
-                    .iter()
-                    .take(32)
-                    .map(|b| format!("{b:02x}"))
-                    .collect();
-                format!(
-                    "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
-                    result.result.len(),
-                    result.result.len().min(32),
-                )
-            }),
-            _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
-        }
-    }
-
-    pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
-        let block_query = near_client::GetBlock(BlockReference::Finality(Finality::Final));
-        self.view_client
-            .send_async(block_query)
-            .await?
-            .context("failed to get query for final block")
-    }
-
-    pub(crate) async fn get_mpc_contract_state_dto(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
-        self.get_mpc_state(mpc_contract_id, STATE).await
-    }
-
-    pub(crate) async fn get_mpc_allowed_image_hashes(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<dtos::AllowedMpcDockerImageHash>)> {
-        let (block_height, response): (u64, AllowedDockerImageHashesResponse) = self
-            .get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
-            .await?;
-
-        // TODO(#3751): drop this logic after upgrading the contract.
-        let entries = match response {
-            AllowedDockerImageHashesResponse::WithExpiry(entries) => entries,
-            AllowedDockerImageHashesResponse::Legacy(hashes) => hashes
-                .into_iter()
-                .map(|image_hash| dtos::AllowedMpcDockerImageHash {
-                    image_hash,
-                    expiry_timestamp_seconds: None,
-                })
-                .collect(),
-        };
-        Ok((block_height, entries))
-    }
-    pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES)
-            .await
-    }
-
-    pub(crate) async fn get_mpc_tee_accounts(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<dtos::NodeId>)> {
-        self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
-    }
-
-    pub(crate) async fn get_mpc_migration_info(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
-        self.get_mpc_state(mpc_contract_id, MIGRATION_INFO).await
-    }
-
-    async fn get_mpc_state<State>(
-        &self,
-        mpc_contract_id: AccountId,
-        endpoint: &str,
-    ) -> anyhow::Result<(u64, State)>
-    where
-        State: for<'de> Deserialize<'de>,
-    {
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
-            method_name: endpoint.to_string(),
-            args: vec![].into(),
-        };
-
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
-
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => Ok((
-                response.block_height,
-                serde_json::from_slice(&result.result)?,
-            )),
-            _ => {
-                anyhow::bail!("got unexpected response querying mpc contract state")
-            }
-        }
-    }
-}
-
-pub(crate) trait ReadAttestationExpiry: Send + Sync {
-    /// The attestation expiry currently stored for `tls_public_key`, or `None` if none is stored or
-    /// the stored attestation carries no expiry (an unstamped mock — e.g. from an older contract or
-    /// a genesis sentinel).
-    fn read_stored_attestation_expiry<'a>(
-        &'a self,
-        tls_public_key: &'a dtos::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>;
-}
-
-pub(crate) struct RealAttestationExpiryReader {
-    indexer_state: Arc<IndexerState>,
-}
-
-impl RealAttestationExpiryReader {
-    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
-        Self { indexer_state }
-    }
-}
-
-impl ReadAttestationExpiry for RealAttestationExpiryReader {
-    fn read_stored_attestation_expiry<'a>(
-        &'a self,
-        tls_public_key: &'a dtos::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
-    {
-        Box::pin(async move {
-            let stored = self
-                .indexer_state
-                .view_client
-                .get_participant_attestation(&self.indexer_state.mpc_contract_id, tls_public_key)
-                .await?;
-            Ok(stored.and_then(|attestation| attestation.expiry_timestamp_seconds()))
-        })
     }
 }
 
@@ -474,16 +98,6 @@ impl IndexerClient {
             status.sync_info.syncing,
             status.sync_info.latest_block_height,
         ))
-    }
-
-    /// Returns once neard clears its `syncing` flag.
-    async fn wait_for_full_sync(&self) {
-        loop {
-            tokio::time::sleep(INTERVAL).await;
-            if matches!(self.sync_info().await, Some((false, _))) {
-                return;
-            }
-        }
     }
 
     async fn ensure_head_follows_tip(&self) {
@@ -576,58 +190,21 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    /// Watcher that tracks node IDs that have TEE attestations in the contract.
-    pub attested_nodes_receiver: watch::Receiver<Vec<dtos::NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
+
+    pub my_attestation_receiver: watch::Receiver<Option<dtos::GetAttestationResponse>>,
 
     /// Watcher that tracks the contract's available foreign chains and their
     /// registered supporters (by TLS key). Seeded with the first successful read
     /// before the indexer hands it back, so it always holds a real value.
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
-
-    pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{
-        AllowedDockerImageHashesResponse, BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress,
-    };
-    use assert_matches::assert_matches;
-    use mpc_primitives::hash::NodeImageHash;
-
-    #[test]
-    fn allowed_docker_image_hashes_response__should_deserialize_with_expiry_objects() {
-        let json = r#"[
-        { "image_hash": "1111111111111111111111111111111111111111111111111111111111111111", "expiry_timestamp_seconds": 42 },
-        { "image_hash": "2222222222222222222222222222222222222222222222222222222222222222", "expiry_timestamp_seconds": null }
-    ]"#;
-        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
-        assert_matches!(response, AllowedDockerImageHashesResponse::WithExpiry(entries) if entries.len() == 2);
-    }
-
-    #[test]
-    fn allowed_docker_image_hashes_response__should_deserialize_legacy_bare_hashes() {
-        // Given: the shape returned by contracts predating expiry reporting.
-        let json = r#"[
-            "1111111111111111111111111111111111111111111111111111111111111111",
-            "2222222222222222222222222222222222222222222222222222222222222222"
-        ]"#;
-
-        // When
-        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
-
-        // Then
-        assert_eq!(
-            response,
-            AllowedDockerImageHashesResponse::Legacy(vec![
-                NodeImageHash::from([0x11; 32]),
-                NodeImageHash::from([0x22; 32]),
-            ])
-        );
-    }
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();

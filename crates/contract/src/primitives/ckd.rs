@@ -1,34 +1,7 @@
 use blstrs::G1Projective;
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::kdf::derive_app_id;
-use near_mpc_contract_interface::types::{CKDResponse, DomainId};
-use near_sdk::{env, near};
-
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[near(serializers=[borsh, json])]
-pub struct CKDRequest {
-    /// The app ephemeral public key
-    pub app_public_key: dtos::CKDAppPublicKey,
-    pub app_id: dtos::CkdAppId,
-    pub domain_id: DomainId,
-}
-
-impl CKDRequest {
-    pub fn new(
-        app_public_key: dtos::CKDAppPublicKey,
-        domain_id: DomainId,
-        predecessor_id: &AccountId,
-        derivation_path: &str,
-    ) -> Self {
-        let app_id = derive_app_id(predecessor_id, derivation_path);
-        Self {
-            app_public_key,
-            app_id,
-            domain_id,
-        }
-    }
-}
+use near_mpc_contract_interface::types::CKDResponse;
+use near_sdk::env;
 
 /// Uncompressed encoding of the G1 generator.
 const G1_GENERATOR_UNCOMPRESSED: [u8; 96] = [
@@ -130,6 +103,8 @@ mod tests {
     use elliptic_curve::Field as _;
     use elliptic_curve::Group as _;
     use elliptic_curve::group::Curve as _;
+    use near_mpc_contract_interface::types::CKDResponse;
+    use near_mpc_contract_interface::types::kdf::derive_app_id;
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use threshold_signatures::confidential_key_derivation::{self as ckd, ElementG2, VerifyingKey};
@@ -137,7 +112,7 @@ mod tests {
     /// Finds a point on the G1 curve that is not in the prime-order subgroup
     /// by scanning x-coordinates: the subgroup has index ~2^125 in the curve
     /// group, so essentially every curve point qualifies.
-    fn must_g1_point_outside_subgroup() -> G1Affine {
+    fn g1_point_outside_subgroup() -> G1Affine {
         let mut candidate = [0u8; 48];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -152,8 +127,8 @@ mod tests {
         panic!("no G1 point outside the prime-order subgroup found");
     }
 
-    /// G2 counterpart of [`must_g1_point_outside_subgroup`].
-    fn must_g2_point_outside_subgroup() -> G2Affine {
+    /// G2 counterpart of [`g1_point_outside_subgroup`].
+    fn g2_point_outside_subgroup() -> G2Affine {
         let mut candidate = [0u8; 96];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -170,7 +145,7 @@ mod tests {
 
     /// Finds a compressed G1 encoding whose x-coordinate is a valid field
     /// element but lies on no curve point (x^3 + 4 is a non-square).
-    fn must_g1_x_not_on_curve() -> [u8; 48] {
+    fn g1_x_not_on_curve() -> [u8; 48] {
         let mut candidate = [0u8; 48];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -185,8 +160,8 @@ mod tests {
         panic!("no x-coordinate off the G1 curve found");
     }
 
-    /// G2 counterpart of [`must_g1_x_not_on_curve`].
-    fn must_g2_x_not_on_curve() -> [u8; 96] {
+    /// G2 counterpart of [`g1_x_not_on_curve`].
+    fn g2_x_not_on_curve() -> [u8; 96] {
         let mut candidate = [0u8; 96];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -318,7 +293,7 @@ mod tests {
         // subgroup, paired with the G2 identity. A host that skipped the
         // subgroup check would evaluate the pairing to the identity and
         // return true; the subgroup check is the only reason this fails.
-        let rogue = must_g1_point_outside_subgroup();
+        let rogue = g1_point_outside_subgroup();
         let g2_identity = G2Projective::identity().to_uncompressed();
         let pairing_input = [rogue.to_uncompressed().as_slice(), &g2_identity].concat();
 
@@ -336,7 +311,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn bls12381_pairing_check__should_reject_g2_point_outside_prime_order_subgroup() {
         // Given: a non-subgroup G2 point paired with the G1 identity
-        let rogue = must_g2_point_outside_subgroup();
+        let rogue = g2_point_outside_subgroup();
         let g1_identity = G1Projective::identity().to_uncompressed();
         let pairing_input = [g1_identity.as_slice(), &rogue.to_uncompressed()].concat();
 
@@ -380,7 +355,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn bls12381_p1_decompress__should_abort_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
-        let candidate = must_g1_x_not_on_curve();
+        let candidate = g1_x_not_on_curve();
 
         // When / Then: the host rejects it and the SDK wrapper aborts
         env::bls12381_p1_decompress(candidate);
@@ -403,7 +378,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn bls12381_p2_decompress__should_abort_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
-        let candidate = must_g2_x_not_on_curve();
+        let candidate = g2_x_not_on_curve();
 
         // When / Then: the host rejects it and the SDK wrapper aborts
         env::bls12381_p2_decompress(candidate);
@@ -465,7 +440,7 @@ mod tests {
         // alone accepts it and only the pairing-check subgroup validation can
         // reject it
         let app_pk = dtos::CKDAppPublicKeyPV {
-            pk1: dtos::Bls12381G1PublicKey(must_g1_point_outside_subgroup().to_compressed()),
+            pk1: dtos::Bls12381G1PublicKey(g1_point_outside_subgroup().to_compressed()),
             pk2: dtos::Bls12381G2PublicKey(G2Projective::generator().to_compressed()),
         };
 
@@ -558,19 +533,5 @@ mod tests {
 
         // Then
         assert!(!accepted);
-    }
-
-    #[test]
-    fn ckd_request_new_derives_app_id_deterministically() {
-        let account_id: AccountId = "alice.near".parse().unwrap();
-        let pk = dtos::CKDAppPublicKey::AppPublicKey(dtos::Bls12381G1PublicKey([1u8; 48]));
-        let domain_id = DomainId(0);
-
-        let r1 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
-        let r2 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
-        assert_eq!(r1.app_id, r2.app_id);
-
-        let r3 = CKDRequest::new(pk, domain_id, &account_id, "path/b");
-        assert_ne!(r1.app_id, r3.app_id);
     }
 }

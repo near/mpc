@@ -42,11 +42,12 @@ use frost_core::serialization::SerializableScalar;
 use frost_core::{Group, VerifyingKey, keys::SigningShare};
 
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 
 pub type Scalar<C> = frost_core::Scalar<C>;
 pub type Element<C> = frost_core::Element<C>;
 
-#[derive(Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
+#[derive(Clone, Deserialize, Serialize, ZeroizeOnDrop)]
 #[serde(bound = "C: Ciphersuite")]
 /// Generic type of key pairs
 pub struct KeygenOutput<C: Ciphersuite> {
@@ -54,6 +55,22 @@ pub struct KeygenOutput<C: Ciphersuite> {
     #[zeroize(skip)]
     pub public_key: VerifyingKey<C>,
 }
+
+impl<C: Ciphersuite> PartialEq for KeygenOutput<C>
+where
+    Scalar<C>: ConstantTimeEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.public_key == other.public_key
+            && bool::from(
+                self.private_share
+                    .to_scalar()
+                    .ct_eq(&other.private_share.to_scalar()),
+            )
+    }
+}
+
+impl<C: Ciphersuite> Eq for KeygenOutput<C> where Scalar<C>: ConstantTimeEq {}
 
 impl_secret_debug!({C: Ciphersuite} KeygenOutput<C> { show: [public_key], redact: [private_share] });
 
@@ -191,4 +208,69 @@ where
         rng,
     );
     Ok(make_protocol(comms, fut))
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod test {
+    use elliptic_curve::{Field, Group};
+    use frost_core::{VerifyingKey, keys::SigningShare};
+    use rand::SeedableRng;
+
+    use crate::confidential_key_derivation::{ElementG2, KeygenOutput, Scalar};
+    use crate::test_utils::MockCryptoRng;
+
+    fn bls_keygen_output(private_share: Scalar, public_key: Scalar) -> KeygenOutput {
+        KeygenOutput {
+            private_share: SigningShare::new(private_share),
+            public_key: VerifyingKey::new(ElementG2::generator() * public_key),
+        }
+    }
+
+    #[test]
+    fn keygen_output_eq__should_accept_identical_outputs() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::random(&mut rng);
+        let a = bls_keygen_output(x, x);
+        let b = bls_keygen_output(x, x);
+
+        // When
+        let is_equal = a == b;
+
+        // Then
+        assert!(is_equal);
+    }
+
+    #[test]
+    fn keygen_output_eq__should_reject_different_private_shares() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::random(&mut rng);
+        let y = Scalar::random(&mut rng);
+        let a = bls_keygen_output(x, x);
+        let b = bls_keygen_output(y, x);
+
+        // When
+        let is_equal = a == b;
+
+        // Then
+        assert!(!is_equal);
+    }
+
+    #[test]
+    fn keygen_output_eq__should_reject_different_public_keys() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::random(&mut rng);
+        let y = Scalar::random(&mut rng);
+        let a = bls_keygen_output(x, x);
+        let b = bls_keygen_output(x, y);
+
+        // When
+        let is_equal = a == b;
+
+        // Then
+        assert!(!is_equal);
+    }
 }
