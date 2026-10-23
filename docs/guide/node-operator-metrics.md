@@ -25,14 +25,15 @@ counters tell you whether that is working:
 
 ## Backups
 
-After every resharing, the node hands its key shares to the backup service
-registered for it. These gauges say whether that happened:
+The node hands its key shares to the backup service registered for it after
+every resharing, and every hour so the backup service can check its stored copy.
+These gauges say whether that happened:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
 | `mpc_current_epoch_id` | the key epoch the contract currently holds | rises by one on every resharing. It is the reference point for the two gauges below. |
 | `mpc_last_backup_served_epoch` | the last epoch this node backed up | should reach `mpc_current_epoch_id` shortly after each resharing. |
-| `mpc_last_backup_served_timestamp_seconds` | when this node last served key shares to the backup service | should be recent. A large gap means backups are not being taken. This only proves the node handed the shares over, not that the backup service kept them. |
+| `mpc_last_backup_served_timestamp_seconds` | when this node last served key shares to the backup service | should be under an hour old. A large gap means backups are not being taken. This only proves the node handed the shares over, not that the backup service kept them. |
 
 ## Attestation freshness
 
@@ -195,12 +196,13 @@ increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  f
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
 
 # Warn: no backup for over a day. Only meaningful once backups are being taken
-# against this node.
-time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
+# against this node. Both backup gauges read 0 after a node restart until the
+# backup service's next hourly fetch, hence the 2h holds.
+time() - mpc_last_backup_served_timestamp_seconds > 86400  for 2h
 
 # Warn: a resharing happened and the new epoch has not been backed up since.
 # Also fires if this node has never served a backup, because the gauge starts at 0.
-mpc_last_backup_served_epoch < mpc_current_epoch_id  for 1h
+mpc_last_backup_served_epoch < mpc_current_epoch_id  for 2h
 
 # Warn: no attestation has landed in three resubmission intervals. This fires
 # within hours; the expiry alerts below only fire days later.
