@@ -106,7 +106,13 @@
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
 
           # Pinned to CI version
-          cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
+          cargoTools = pkgs.callPackage ./nix/cargo-tools.nix {
+            # nixpkgs' rustc can be older than the minimum Rust version of these tools
+            rustPlatform = pkgs.makeRustPlatform {
+              cargo = rustToolchain;
+              rustc = rustToolchain;
+            };
+          };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;

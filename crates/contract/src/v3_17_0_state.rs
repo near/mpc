@@ -10,6 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation::VerifiedAttestation;
 use near_mpc_contract_interface::types::{
     self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
@@ -19,7 +20,10 @@ use near_sdk::{
 };
 
 use crate::{
-    config::Config,
+    config::{
+        Config, DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
+        DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
+    },
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
@@ -39,7 +43,7 @@ use crate::{
     tee::{
         measurements::AllowedMeasurements,
         proposal::{AllowedLauncherImages, StoredDockerImageHashes},
-        tee_state::{NodeAttestation, TeeState},
+        tee_state::{NodeAttestation, NodeId, TeeState},
         verifier_votes::TeeVerifierVotes,
     },
     update::ContractUpdateVotes,
@@ -63,31 +67,63 @@ struct OldTeeState {
     allowed_launcher_images: AllowedLauncherImages,
     votes: Votes<AuthenticatedAccountId>,
     launcher_votes: OldLauncherHashVotes,
-    stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
     allowed_measurements: AllowedMeasurements,
     measurement_votes: OldMeasurementVotes,
 }
 
-impl From<OldTeeState> for TeeState {
-    fn from(old: OldTeeState) -> Self {
+impl OldTeeState {
+    fn migrate(self) -> TeeState {
+        let stored_attestations = migrate_stored_attestations(self.stored_attestations);
         // Pending votes are dropped rather than migrated; participants re-vote after the
         // upgrade.
         TeeState {
-            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
-            allowed_launcher_images: old.allowed_launcher_images,
-            votes: old.votes,
+            allowed_docker_image_hashes: self.allowed_docker_image_hashes,
+            allowed_launcher_images: self.allowed_launcher_images,
+            votes: self.votes,
             launcher_votes: Votes::new(
                 StorageKey::LauncherHashVotesByVoter,
                 StorageKey::LauncherHashVotesByProposal,
             ),
-            stored_attestations: old.stored_attestations,
-            allowed_measurements: old.allowed_measurements,
+            stored_attestations,
+            allowed_measurements: self.allowed_measurements,
             measurement_votes: Votes::new(
                 StorageKey::MeasurementVotesByVoter,
                 StorageKey::MeasurementVotesByProposal,
             ),
         }
     }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldNodeAttestation {
+    node_id: NodeId,
+    verified_attestation: VerifiedAttestation,
+    accepted_at_seconds: Option<u64>,
+}
+
+fn migrate_stored_attestations(
+    mut old: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
+) -> IterableMap<dtos::Ed25519PublicKey, NodeAttestation> {
+    let entries: Vec<_> = old.drain().collect();
+    // The rebuilt map shares the storage prefix, so its inserts would read the drained entries
+    // back from storage until the removals are written
+    old.flush();
+
+    let mut migrated = IterableMap::new(StorageKey::StoredAttestations);
+    for (tls_public_key, entry) in entries {
+        if let Some(accepted_at_seconds) = entry.accepted_at_seconds {
+            migrated.insert(
+                tls_public_key,
+                NodeAttestation {
+                    node_id: entry.node_id,
+                    verified_attestation: entry.verified_attestation,
+                    accepted_at_seconds,
+                },
+            );
+        }
+    }
+    migrated
 }
 
 /// Shadow of the `3.17.0` `GovernanceThresholdParametersVotes` layout.
@@ -167,14 +203,25 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         };
 
+        // Stored budgets were too low for the mainnet state; raise them to at least the new
+        // defaults but keep an operator-set higher value.
+        let mut config = old.config;
+        config.cleanup_orphaned_node_migrations_tera_gas = config
+            .cleanup_orphaned_node_migrations_tera_gas
+            .max(DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS);
+        config.clean_foreign_chain_data_tera_gas = config
+            .clean_foreign_chain_data_tera_gas
+            .max(DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS);
+
+        let tee_state = old.tee_state.migrate();
         crate::MpcContract {
             protocol_state: ProtocolContractState::Running(running_state.into()),
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             contract_update_votes: old.contract_update_votes,
-            config: old.config,
-            tee_state: old.tee_state.into(),
+            config,
+            tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
@@ -183,5 +230,140 @@ impl From<MpcContract> for crate::MpcContract {
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: GovernanceThresholdParametersVotes::default(),
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::primitives::test_utils::node_id_for;
+    use crate::state::test_utils::gen_running_state;
+    use mpc_attestation::attestation::MockAttestation;
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
+
+    fn old_running_state(state: RunningContractState) -> OldRunningContractState {
+        OldRunningContractState {
+            domains: state.domains,
+            keyset: state.keyset,
+            parameters: state.parameters,
+            parameters_votes: OldGovernanceThresholdParametersVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
+            add_domains_votes: state.add_domains_votes,
+            previously_cancelled_resharing_epoch_id: state.previously_cancelled_resharing_epoch_id,
+        }
+    }
+
+    fn old_contract(config: Config) -> MpcContract {
+        MpcContract {
+            protocol_state: OldProtocolContractState::Running(old_running_state(
+                gen_running_state(1),
+            )),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequestsV3,
+            ),
+            contract_update_votes: ContractUpdateVotes::default(),
+            config,
+            tee_state: OldTeeState {
+                allowed_docker_image_hashes: Default::default(),
+                allowed_launcher_images: Default::default(),
+                votes: Votes::new(
+                    StorageKey::CodeHashVotesByVoter,
+                    StorageKey::CodeHashVotesByProposal,
+                ),
+                launcher_votes: OldLauncherHashVotes {
+                    vote_by_account: BTreeMap::new(),
+                },
+                stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
+                allowed_measurements: Default::default(),
+                measurement_votes: OldMeasurementVotes {
+                    vote_by_account: BTreeMap::new(),
+                },
+            },
+            accept_requests: true,
+            node_migrations: NodeMigrations::default(),
+            foreign_chains: Lazy::new(
+                StorageKey::ForeignChainMetadata,
+                ForeignChainsMetadata::default(),
+            ),
+            tee_verifier_account_id: "verifier.near".parse().unwrap(),
+            tee_verifier_votes: TeeVerifierVotes::default(),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+        }
+    }
+
+    #[test]
+    fn from__should_raise_cleanup_gas_budgets_to_the_defaults() {
+        // Given a stored config with the pre-3.18 budgets
+        testing_env!(VMContextBuilder::new().build());
+        let stored = Config {
+            cleanup_orphaned_node_migrations_tera_gas: 3,
+            clean_foreign_chain_data_tera_gas: 5,
+            ..Default::default()
+        };
+
+        // When
+        let migrated: crate::MpcContract = old_contract(stored.clone()).into();
+
+        // Then only the two budgets change
+        let expected = Config {
+            cleanup_orphaned_node_migrations_tera_gas:
+                DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
+            clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
+            ..stored
+        };
+        assert_eq!(migrated.config, expected);
+    }
+
+    #[test]
+    fn from__should_keep_cleanup_gas_budgets_above_the_defaults() {
+        // Given a stored config an operator already raised
+        testing_env!(VMContextBuilder::new().build());
+        let stored = Config {
+            cleanup_orphaned_node_migrations_tera_gas:
+                DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS + 1,
+            clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS + 1,
+            ..Default::default()
+        };
+
+        // When
+        let migrated: crate::MpcContract = old_contract(stored.clone()).into();
+
+        // Then
+        assert_eq!(migrated.config, stored);
+    }
+
+    #[test]
+    fn migrate_stored_attestations__should_evict_entries_without_an_acceptance_time() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let accepted_at = 1_800_000_000;
+        let stamped = node_id_for(&"alice.near".parse().unwrap());
+        let unstamped = node_id_for(&"bob.near".parse().unwrap());
+        let mut old = IterableMap::new(StorageKey::StoredAttestations);
+        for (node_id, accepted_at_seconds) in [(&stamped, Some(accepted_at)), (&unstamped, None)] {
+            old.insert(
+                node_id.tls_public_key.clone(),
+                OldNodeAttestation {
+                    node_id: node_id.clone(),
+                    verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+                    accepted_at_seconds,
+                },
+            );
+        }
+        old.flush();
+
+        // When
+        let migrated = migrate_stored_attestations(old);
+
+        // Then
+        let migrated: Vec<_> = migrated
+            .values()
+            .map(|entry| (entry.node_id.clone(), entry.accepted_at_seconds))
+            .collect();
+        assert_eq!(migrated, vec![(stamped, accepted_at)]);
     }
 }

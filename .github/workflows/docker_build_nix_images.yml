@@ -12,6 +12,8 @@ on:
       - 'release/v*'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build-images:
     name: "Build Nix Docker images"
@@ -26,7 +28,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
 
       - name: Build mpc-node image
         run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-node .#mpc-node-image

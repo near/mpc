@@ -794,7 +794,7 @@ impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
 mod tests {
     use super::*;
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
-    use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
+    use crate::indexer::tx_sender::TransactionProcessorError;
     use crate::keyshare::KeyStorageConfig;
     use crate::network::testing::new_task_channel_for_test;
     use mpc_primitives::domain::DomainId;
@@ -1049,13 +1049,6 @@ mod tests {
         ) -> Result<(), TransactionProcessorError> {
             self.count.fetch_add(1, Ordering::SeqCst);
             Ok(())
-        }
-
-        async fn send_and_wait(
-            &self,
-            _transaction: ChainSendTransactionRequest,
-        ) -> Result<TransactionStatus, TransactionProcessorError> {
-            unimplemented!()
         }
     }
 

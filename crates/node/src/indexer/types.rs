@@ -1,4 +1,3 @@
-use crate::indexer::SubmissionBaseline;
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
@@ -56,14 +55,7 @@ pub enum ChainSendTransactionRequest {
     //
     // For more info see clippy lint:
     // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-    SubmitParticipantInfo {
-        #[serde(flatten)]
-        args: Box<contract_args::SubmitParticipantInfoArgs>,
-        /// What was stored before submitting, for the landing check. Skipped from serialization
-        /// so it never reaches the on-chain call args.
-        #[serde(skip)]
-        baseline: SubmissionBaseline,
-    },
+    SubmitParticipantInfo(Box<contract_args::SubmitParticipantInfoArgs>),
 
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
     VerifyForeignTransactionRespond(contract_args::VerifyForeignTransactionRespondArgs),
@@ -85,7 +77,7 @@ impl ChainSendTransactionRequest {
                 VOTE_ABORT_KEY_EVENT_INSTANCE
             }
             ChainSendTransactionRequest::VerifyTee() => VERIFY_TEE,
-            ChainSendTransactionRequest::SubmitParticipantInfo { .. } => SUBMIT_PARTICIPANT_INFO,
+            ChainSendTransactionRequest::SubmitParticipantInfo(_) => SUBMIT_PARTICIPANT_INFO,
             ChainSendTransactionRequest::ConcludeNodeMigration(_) => CONCLUDE_NODE_MIGRATION,
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
                 RESPOND_VERIFY_FOREIGN_TX
@@ -105,7 +97,7 @@ impl ChainSendTransactionRequest {
             | Self::VoteAbortKeyEventInstance(_)
             // TODO(#166): This is too high in most settings
             | Self::VerifyTee()
-            | Self::SubmitParticipantInfo { .. }
+            | Self::SubmitParticipantInfo(_)
             | Self::ConcludeNodeMigration(_)
             | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
         }
@@ -208,38 +200,5 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },
         ))
-    }
-}
-
-#[cfg(test)]
-mod request_serialization_tests {
-    use super::{ChainSendTransactionRequest, SubmissionBaseline, contract_args, dtos};
-
-    fn mock_submit_args() -> contract_args::SubmitParticipantInfoArgs {
-        contract_args::SubmitParticipantInfoArgs::new(
-            dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-            dtos::Ed25519PublicKey([7u8; 32]),
-        )
-    }
-
-    /// The request serializes as the on-chain call args, so the node-internal baseline must not
-    /// leak into the payload — it has to serialize exactly like the bare args. Guards the
-    /// `#[serde(flatten)]` + `#[serde(skip)]` on the [`SubmitParticipantInfo`] variant.
-    #[test]
-    #[expect(non_snake_case)]
-    fn submit_participant_info__should_serialize_as_bare_args() {
-        let request = ChainSendTransactionRequest::SubmitParticipantInfo {
-            args: Box::new(mock_submit_args()),
-            baseline: SubmissionBaseline {
-                accepted_at_seconds: Some(123),
-                expiry_timestamp_seconds: Some(456),
-            },
-        };
-
-        let request_json = serde_json::to_string(&request).unwrap();
-        let args_json = serde_json::to_string(&mock_submit_args()).unwrap();
-
-        assert_eq!(request_json, args_json);
-        assert!(!request_json.contains("baseline"));
     }
 }
