@@ -87,7 +87,9 @@ where
         loop {
             let fetch_covered = Instant::now() >= next_fetch;
             if fetch_covered {
-                next_fetch = Instant::now() + VERIFICATION_INTERVAL;
+                next_fetch = Instant::now()
+                    .checked_add(VERIFICATION_INTERVAL)
+                    .expect("an hour from now is a representable Instant");
             }
             match self.contract_state.latest() {
                 Ok(observed) => match self
@@ -122,7 +124,9 @@ where
                         );
                         // Sooner than the next verification, since the contract state may not
                         // change again for a long time.
-                        next_fetch = Instant::now() + self.retry_delay;
+                        next_fetch = Instant::now()
+                            .checked_add(self.retry_delay)
+                            .expect("retry_delay is probably huge enough to overflow an Instant");
                     }
                 },
                 Err(err) => {
@@ -131,7 +135,9 @@ where
                         "could not read the contract state, waiting for change"
                     );
                     if fetch_covered {
-                        next_fetch = Instant::now() + self.retry_delay;
+                        next_fetch = Instant::now()
+                            .checked_add(self.retry_delay)
+                            .expect("retry_delay is probably huge enough to overflow an Instant");
                     }
                 }
             }
