@@ -70,7 +70,8 @@ fn render_metrics(status: &BackupStatus) -> String {
             register_gauge(
                 &registry,
                 "backup_cli_last_backup_timestamp_seconds",
-                "Unix time at which keyshares were most recently backed up",
+                "Unix time at which keyshares were most recently backed up, or confirmed to match \
+                 the node",
                 saturating_i64(timestamp_seconds),
             );
         }

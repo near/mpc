@@ -127,5 +127,5 @@ Presets and networks are many-to-many: more presets per network can be added lat
 
 ## Related
 
-- [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md)
+- [Calculating the whitelisted and available foreign-chain sets](../archive/design/calculating-supported-foreign-chains.md)
 - [Allowing per-node foreign chain RPC configuration](../archive/design/allowing-per-node-foreign-chain-rpc-configuration.md) (archived)
