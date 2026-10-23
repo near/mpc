@@ -10,8 +10,7 @@ configured provider is asked which network it serves, and the answer is compared
 with the chain's `expected_network_fingerprint` from the same config. Every
 provider is checked independently, so one bad provider does not stop the others
 from being reported, and the verdicts are exactly the ones the node logs for
-that config. The node additionally judges each chain against the provider
-whitelist on the contract, and the tester does not read that whitelist.
+that config.
 
 ## Usage
 

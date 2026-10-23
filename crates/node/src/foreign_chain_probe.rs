@@ -314,7 +314,7 @@ mod tests {
 
     /// Gives provider `p` the base URL `https://p.example.com`, so [`ALCHEMY_URL`] and
     /// [`QUICKNODE_URL`] match and [`OWN_NODE_URL`] does not.
-    fn must_whitelist_of(
+    fn whitelist_of(
         chain: dtos::ForeignChain,
         providers: &[&str],
         quorum: u64,
@@ -361,7 +361,7 @@ mod tests {
 
     /// A Polygon config with a provider without auth per `(local name, rpc_url, status)`, and the
     /// probe report of that config.
-    fn must_polygon(
+    fn polygon_with_report(
         providers: &[(&str, &str, ProviderStatus)],
     ) -> (ForeignChainsConfig, ProbeReport) {
         let mut local_providers = BTreeMap::new();
@@ -652,8 +652,8 @@ mod tests {
         #[case] expected: ChainHealth,
     ) {
         // Given
-        let (local, report) = must_polygon(local_providers);
-        let whitelist = must_whitelist_of(dtos::ForeignChain::Polygon, whitelist_providers, quorum);
+        let (local, report) = polygon_with_report(local_providers);
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, whitelist_providers, quorum);
 
         // When
         let health = judge(&report, &local, &whitelist);
@@ -668,8 +668,9 @@ mod tests {
     #[test]
     fn judge__should_not_judge_a_chain_missing_from_the_whitelist() {
         // Given
-        let (local, report) = must_polygon(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
-        let whitelist = must_whitelist_of(dtos::ForeignChain::Ethereum, &["alchemy"], 1);
+        let (local, report) =
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Ethereum, &["alchemy"], 1);
 
         // When
         let health = judge(&report, &local, &whitelist);
@@ -685,8 +686,8 @@ mod tests {
     fn judge__should_leave_out_a_chain_no_probe_covers() {
         // Given
         let (local, report) =
-            must_polygon(&[("alchemy", ALCHEMY_URL, ProviderStatus::ProbeNotImplemented)]);
-        let whitelist = must_whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::ProbeNotImplemented)]);
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
 
         // When
         let health = judge(&report, &local, &whitelist);
@@ -699,9 +700,10 @@ mod tests {
     #[traced_test]
     fn probe_periodically__should_warn_for_a_chain_below_quorum() {
         // Given
-        let (local, report) = must_polygon(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let (local, report) =
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
         let probe = || std::future::ready(report.clone());
-        let (_whitelist_tx, whitelist_rx) = watch::channel(Some(must_whitelist_of(
+        let (_whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist_of(
             dtos::ForeignChain::Polygon,
             &["alchemy", "quicknode"],
             2,
@@ -763,7 +765,8 @@ mod tests {
     #[traced_test]
     fn probe_periodically__should_log_chain_health_unknown_before_the_whitelist_is_read() {
         // Given
-        let (local, report) = must_polygon(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let (local, report) =
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
         let probe = || std::future::ready(report.clone());
         let (_whitelist_tx, whitelist_rx) = watch::channel(None);
 
@@ -795,7 +798,7 @@ mod tests {
         };
 
         // When
-        whitelist_tx.send_replace(Some(must_whitelist_of(
+        whitelist_tx.send_replace(Some(whitelist_of(
             dtos::ForeignChain::Polygon,
             &["alchemy"],
             1,
@@ -814,7 +817,7 @@ mod tests {
             // Given
             let probe_count = Cell::new(0);
             let (whitelist_tx, whitelist_rx) = watch::channel(None);
-            whitelist_tx.send_replace(Some(must_whitelist_of(
+            whitelist_tx.send_replace(Some(whitelist_of(
                 dtos::ForeignChain::Polygon,
                 &["alchemy"],
                 1,
