@@ -11,4 +11,5 @@ include_fragments = "full"
 
 # The trailing slash matters: `.git` is matched as a prefix and would also
 # exclude `.github`, silently skipping every Markdown file in there.
-exclude_path = ["target", ".git/"]
+# Archived docs are never edited, so their links are allowed to go stale.
+exclude_path = ["target", ".git/", "docs/archive/"]
