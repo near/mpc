@@ -6,6 +6,7 @@ use crate::errors::{Error, InvalidParameters};
 use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
+use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
@@ -20,8 +21,8 @@ use near_sdk::near;
 /// This state keeps the previous running state because:
 ///  - The previous running state's GovernanceThresholdParameters are needed in order to facilitate the
 ///    possible re-proposal of a new GovernanceThresholdParameters, in case the currently proposed set of
-///    participants are no longer all online. For tracking the votes we also use the same
-///    tracking structure in the running state.
+///    participants are no longer all online. Re-proposal votes are tallied in
+///    [`MpcContract`](crate::MpcContract)'s `parameters_votes`, not here.
 ///  - The previous running state's keys are needed to copy the public keys.
 ///  - We use the previous running state's DomainRegistry.
 #[near(serializers=[borsh])]
@@ -54,9 +55,10 @@ impl ResharingContractState {
     /// Note that transitioning to a new state implicitly requires `threshold` number of votes from participants of the
     /// previous running state.
     pub fn vote_new_parameters(
-        &mut self,
+        &self,
         prospective_epoch_id: EpochId,
         proposal: &ProposedGovernanceThresholdParameters,
+        votes: &mut GovernanceThresholdParametersVotes,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id().next();
         if prospective_epoch_id != expected_prospective_epoch_id {
@@ -68,7 +70,7 @@ impl ResharingContractState {
         }
         if self
             .previous_running_state
-            .process_new_parameters_proposal(proposal)?
+            .process_new_parameters_proposal(proposal, votes)?
         {
             return Ok(Some(ResharingContractState {
                 previous_running_state: RunningContractState::new(
@@ -355,10 +357,6 @@ pub mod tests {
         assert_eq!(running_state.keyset.domains, state.reshared_keys);
         assert_eq!(running_state.keyset.domains.len(), num_domains);
         assert_eq!(running_state.domains, state.previous_running_state.domains);
-        assert_eq!(
-            running_state.parameters_votes,
-            GovernanceThresholdParametersVotes::default()
-        );
         assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
     }
 
@@ -374,6 +372,7 @@ pub mod tests {
 
     #[test]
     fn test_resharing_reproposal() {
+        let mut votes = GovernanceThresholdParametersVotes::default();
         let (mut env, mut state) = gen_resharing_state(NUM_PROTOCOLS);
 
         // Vote for first domain's key.
@@ -451,10 +450,14 @@ pub mod tests {
         {
             env.set_signer(&old_participants.participants()[0].0);
             let _ = state
-                .vote_new_parameters(state.prospective_epoch_id(), &proposed_1)
+                .vote_new_parameters(state.prospective_epoch_id(), &proposed_1, &mut votes)
                 .unwrap_err();
             let _ = state
-                .vote_new_parameters(state.prospective_epoch_id().next().next(), &proposed_1)
+                .vote_new_parameters(
+                    state.prospective_epoch_id().next().next(),
+                    &proposed_1,
+                    &mut votes,
+                )
                 .unwrap_err();
         }
 
@@ -464,12 +467,12 @@ pub mod tests {
             env.set_signer(account);
             assert!(new_state.is_none());
             new_state = state
-                .vote_new_parameters(state.prospective_epoch_id().next(), &proposed_1)
+                .vote_new_parameters(state.prospective_epoch_id().next(), &proposed_1, &mut votes)
                 .unwrap();
         }
         // We should've gotten a new resharing state.
         assert!(new_state.is_some());
-        let mut new_state = new_state.unwrap();
+        let new_state = new_state.unwrap();
         // New state should start from the beginning, with the epoch ID bumped.
         assert_eq!(new_state.reshared_keys.len(), 0);
         assert_eq!(
@@ -490,7 +493,11 @@ pub mod tests {
         // Repropose with new_params_2. That should fail.
         env.set_signer(&old_participants.participants()[0].0);
         let _ = new_state
-            .vote_new_parameters(new_state.prospective_epoch_id().next(), &proposed_2)
+            .vote_new_parameters(
+                new_state.prospective_epoch_id().next(),
+                &proposed_2,
+                &mut votes,
+            )
             .unwrap_err();
     }
 
@@ -506,6 +513,7 @@ pub mod tests {
     #[expect(non_snake_case)]
     #[test]
     fn vote_reshared__final_transition__should_apply_threshold_updates_to_registry() {
+        let mut votes = GovernanceThresholdParametersVotes::default();
         // Given a CaitSith domain at the default threshold 2 and a key-refresh proposal
         // moving it to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
@@ -528,7 +536,7 @@ pub mod tests {
         for (account, _, _) in proposal.participants().participants() {
             env.set_signer(account);
             state = running
-                .vote_new_parameters(prospective_epoch_id, &proposal)
+                .vote_new_parameters(prospective_epoch_id, &proposal, &mut votes)
                 .unwrap();
         }
         let mut state = state.expect("Should've transitioned into resharing");
@@ -572,6 +580,7 @@ pub mod tests {
     #[expect(non_snake_case)]
     #[test]
     fn vote_reshared__final_transition__should_apply_distinct_thresholds_per_domain() {
+        let mut votes = GovernanceThresholdParametersVotes::default();
         // Given CaitSith (index 0) and Frost (index 1) at default threshold 2, and a
         // proposal moving only Frost to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
@@ -593,7 +602,7 @@ pub mod tests {
         for (account, _, _) in proposal.participants().participants() {
             env.set_signer(account);
             state = running
-                .vote_new_parameters(prospective_epoch_id, &proposal)
+                .vote_new_parameters(prospective_epoch_id, &proposal, &mut votes)
                 .unwrap();
         }
         let mut state = state.expect("Should've transitioned into resharing");
