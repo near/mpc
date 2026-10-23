@@ -1,3 +1,4 @@
+pub mod durable_fs;
 pub mod foreign_chains;
 pub mod start;
 
@@ -171,9 +172,8 @@ impl ConfigFile {
             let update_config_with_new_schema = re_serialized != original_config_string;
 
             if update_config_with_new_schema {
-                let tmp = path.with_extension("yaml.tmp");
-                fs::write(&tmp, re_serialized.as_bytes())?;
-                fs::rename(&tmp, path)?;
+                durable_fs::write_file_durably(path, re_serialized.as_bytes())
+                    .context("failed to rewrite config file")?;
             }
         }
 
