@@ -49,6 +49,24 @@ pub struct ProviderWhitelistMatches<'w> {
     match_by_local_name: BTreeMap<RpcProviderName, ProviderWhitelistMatch<'w>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderWhitelistMatch<'w> {
+    Unlisted,
+    Conforming {
+        id: &'w ProviderId,
+    },
+    Misconfigured {
+        id: &'w ProviderId,
+        whitelisted: &'w ProviderConfig,
+        mismatches: NonEmptyVec<Mismatch>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhitelistConformingProviders {
+    whitelist_id_by_local_name: BTreeMap<RpcProviderName, ProviderId>,
+}
+
 impl<'w> ProviderWhitelistMatches<'w> {
     pub fn for_chain(local_chain: &ForeignChainConfig, whitelist_entry: &'w ChainEntry) -> Self {
         Self {
@@ -91,11 +109,6 @@ impl<'w> ProviderWhitelistMatches<'w> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WhitelistConformingProviders {
-    whitelist_id_by_local_name: BTreeMap<RpcProviderName, ProviderId>,
-}
-
 impl WhitelistConformingProviders {
     pub fn iter(&self) -> impl Iterator<Item = (&RpcProviderName, &ProviderId)> {
         self.whitelist_id_by_local_name.iter()
@@ -115,19 +128,6 @@ impl WhitelistConformingProviders {
     pub fn meets_quorum(&self, quorum: NonZeroUsize) -> bool {
         self.whitelist_provider_count() >= quorum.get()
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProviderWhitelistMatch<'w> {
-    Unlisted,
-    Conforming {
-        id: &'w ProviderId,
-    },
-    Misconfigured {
-        id: &'w ProviderId,
-        whitelisted: &'w ProviderConfig,
-        mismatches: NonEmptyVec<Mismatch>,
-    },
 }
 
 /// A part of a local provider config differs from the whitelist provider it matches.
@@ -484,7 +484,7 @@ mod tests {
         whitelisted_with(GEOMI_URL, auth_scheme, ChainRouting::Embedded)
     }
 
-    fn must_chain_entry(providers: &[(&str, ProviderConfig)]) -> ChainEntry {
+    fn chain_entry(providers: &[(&str, ProviderConfig)]) -> ChainEntry {
         let providers: BTreeMap<ProviderId, ProviderConfig> = providers
             .iter()
             .map(|(id, config)| (ProviderId(id.to_string()), config.clone()))
@@ -511,8 +511,8 @@ mod tests {
         }
     }
 
-    fn must_host_patterns() -> ChainEntry {
-        must_chain_entry(&[
+    fn host_patterns() -> ChainEntry {
+        chain_entry(&[
             ("alchemy", whitelisted("https://ETH.Alchemy.com/v2/")),
             (
                 "quicknode",
@@ -561,7 +561,7 @@ mod tests {
     #[case::wildcard_in_the_second_label("https://api.slug.example.net/key", "middle-wildcard")]
     fn match_provider__should_match_by_host(#[case] rpc_url: &str, #[case] expected: &str) {
         // Given
-        let entry = must_host_patterns();
+        let entry = host_patterns();
 
         // When
         let provider_match = match_provider_with_str(&entry, rpc_url, ConfiguredAuth::None);
@@ -585,7 +585,7 @@ mod tests {
     #[case::unparseable_base_url("https://eth.example.net/v2/key")]
     fn match_provider__should_not_match_a_url_whose_host_matches_no_entry(#[case] rpc_url: &str) {
         // Given
-        let entry = must_host_patterns();
+        let entry = host_patterns();
 
         // When
         let provider_match = match_provider_with_str(&entry, rpc_url, ConfiguredAuth::None);
@@ -605,7 +605,7 @@ mod tests {
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
         // Given
-        let entry = must_chain_entry(&[
+        let entry = chain_entry(&[
             ("wild", whitelisted("https://{}.quiknode.pro")),
             ("exact", whitelisted("https://api.quiknode.pro/v1")),
             ("beta", whitelisted("https://api.example.com/v1/beta")),
@@ -633,7 +633,7 @@ mod tests {
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
         // Given
-        let entry = must_chain_entry(&[("alchemy", whitelisted("https://eth.alchemy.com/v2/"))]);
+        let entry = chain_entry(&[("alchemy", whitelisted("https://eth.alchemy.com/v2/"))]);
 
         // When
         let provider_match = match_provider_with_str(&entry, rpc_url, ConfiguredAuth::None);
@@ -655,7 +655,7 @@ mod tests {
         let routing = ChainRouting::PathSegment {
             segment: "eth".to_string(),
         };
-        let entry = must_chain_entry(&[(
+        let entry = chain_entry(&[(
             "ankr",
             whitelisted_with("https://rpc.ankr.com", AuthScheme::None, routing),
         )]);
@@ -683,7 +683,7 @@ mod tests {
             name: "network".to_string(),
             value: "ethereum".to_string(),
         };
-        let entry = must_chain_entry(&[(
+        let entry = chain_entry(&[(
             "drpc",
             whitelisted_with("https://lb.drpc.org/ogrpc", AuthScheme::None, routing),
         )]);
@@ -713,7 +713,7 @@ mod tests {
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
         // Given
-        let entry = must_chain_entry(&[(
+        let entry = chain_entry(&[(
             "alchemy",
             path_auth("https://eth.alchemy.com/v2/", ChainRouting::Embedded),
         )]);
@@ -738,7 +738,7 @@ mod tests {
         let routing = ChainRouting::PathSegment {
             segment: "eth".to_string(),
         };
-        let entry = must_chain_entry(&[("ankr", path_auth("https://rpc.ankr.com", routing))]);
+        let entry = chain_entry(&[("ankr", path_auth("https://rpc.ankr.com", routing))]);
 
         // When
         let provider_match = match_provider_with_str(&entry, rpc_url, API_KEY);
@@ -753,7 +753,7 @@ mod tests {
         let routing = ChainRouting::PathSegment {
             segment: "eth".to_string(),
         };
-        let entry = must_chain_entry(&[("ankr", path_auth("https://rpc.ankr.com/v1", routing))]);
+        let entry = chain_entry(&[("ankr", path_auth("https://rpc.ankr.com/v1", routing))]);
 
         // When
         let provider_match =
@@ -801,7 +801,7 @@ mod tests {
         #[case] expected_mismatches: Vec<Mismatch>,
     ) {
         // Given
-        let entry = must_chain_entry(&[("geomi", header_auth(whitelisted_scheme))]);
+        let entry = chain_entry(&[("geomi", header_auth(whitelisted_scheme))]);
 
         // When
         let provider_match = match_provider_with_str(&entry, GEOMI_URL, configured);
@@ -822,7 +822,7 @@ mod tests {
         let auth_scheme = AuthScheme::Query {
             name: "apikey".to_string(),
         };
-        let entry = must_chain_entry(&[(
+        let entry = chain_entry(&[(
             "drpc",
             whitelisted_with(
                 "https://lb.drpc.org/ogrpc",
@@ -846,7 +846,7 @@ mod tests {
         RpcProviderName::from(name.to_string())
     }
 
-    fn must_local_chain(providers: &[(&str, &str)]) -> ForeignChainConfig {
+    fn local_chain(providers: &[(&str, &str)]) -> ForeignChainConfig {
         let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> = providers
             .iter()
             .map(|(name, rpc_url)| {
@@ -870,8 +870,8 @@ mod tests {
         }
     }
 
-    fn must_alchemy_and_quicknode() -> ChainEntry {
-        must_chain_entry(&[
+    fn alchemy_and_quicknode_whitelist() -> ChainEntry {
+        chain_entry(&[
             (
                 "alchemy",
                 path_auth(
@@ -886,8 +886,8 @@ mod tests {
         ])
     }
 
-    fn must_one_local_provider_per_kind_of_match() -> ForeignChainConfig {
-        must_local_chain(&[
+    fn one_local_provider_per_kind_of_match() -> ForeignChainConfig {
+        local_chain(&[
             ("alchemy", "https://eth-mainnet.g.alchemy.com/v3/{api_key}"),
             ("own-node", "https://eth.example.com/{api_key}"),
             ("not-a-url", "not a url"),
@@ -895,15 +895,15 @@ mod tests {
         ])
     }
 
-    fn must_quorum(quorum: usize) -> NonZeroUsize {
-        NonZeroUsize::new(quorum).unwrap()
+    fn quorum(n: usize) -> NonZeroUsize {
+        NonZeroUsize::new(n).unwrap()
     }
 
     #[test]
     fn provider_whitelist_matches__should_keep_the_match_of_every_local_provider() {
         // Given
-        let local = must_one_local_provider_per_kind_of_match();
-        let entry = must_alchemy_and_quicknode();
+        let local = one_local_provider_per_kind_of_match();
+        let entry = alchemy_and_quicknode_whitelist();
 
         // When
         let matches = ProviderWhitelistMatches::for_chain(&local, &entry);
@@ -935,8 +935,8 @@ mod tests {
     #[test]
     fn whitelist_conforming_providers__should_keep_only_the_conforming_providers() {
         // Given
-        let local = must_one_local_provider_per_kind_of_match();
-        let entry = must_alchemy_and_quicknode();
+        let local = one_local_provider_per_kind_of_match();
+        let entry = alchemy_and_quicknode_whitelist();
 
         // When
         let conforming =
@@ -964,7 +964,7 @@ mod tests {
             ("quicknode-a", "https://slug-a.quiknode.pro/{api_key}"),
             ("quicknode-b", "https://slug-b.quiknode.pro/{api_key}"),
         ],
-        must_quorum(2),
+        quorum(2),
         1,
         false
     )]
@@ -973,13 +973,13 @@ mod tests {
             ("my-alchemy", "https://eth-mainnet.g.alchemy.com/v2/{api_key}"),
             ("my-quicknode", "https://my-slug.quiknode.pro/{api_key}"),
         ],
-        must_quorum(2),
+        quorum(2),
         2,
         true
     )]
     #[case::count_equal_to_the_quorum_meets_it(
         &[("quicknode", "https://my-slug.quiknode.pro/{api_key}")],
-        must_quorum(1),
+        quorum(1),
         1,
         true
     )]
@@ -990,8 +990,8 @@ mod tests {
         #[case] expected_meets_quorum: bool,
     ) {
         // Given
-        let local = must_local_chain(local_providers);
-        let entry = must_alchemy_and_quicknode();
+        let local = local_chain(local_providers);
+        let entry = alchemy_and_quicknode_whitelist();
 
         // When
         let conforming =
