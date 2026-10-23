@@ -107,28 +107,29 @@ fn judge(
     local: &ForeignChainsConfig,
     whitelist: &ForeignChainProviderWhitelist,
 ) -> BTreeMap<dtos::ForeignChain, ChainHealth> {
-    let mut health_per_chain = BTreeMap::new();
-    for (chain, local_chain) in local.iter_chains() {
-        let probed_rows: Vec<&ProviderHealth> = report
-            .rows()
-            .iter()
-            .filter(|row| row.chain == chain && row.status.was_probed())
-            .collect();
-        if probed_rows.is_empty() {
-            continue;
-        }
-        let health = match whitelist.get(&chain) {
-            None => ChainHealth::NotWhitelisted,
-            Some(whitelist_entry) => judge_chain(
-                &probed_rows,
-                &ProviderWhitelistMatches::for_chain(local_chain, whitelist_entry)
-                    .whitelist_conforming_providers(),
-                whitelist_entry.quorum,
-            ),
-        };
-        health_per_chain.insert(chain, health);
-    }
-    health_per_chain
+    local
+        .iter_chains()
+        .filter_map(|(chain, local_chain)| {
+            let probed_rows: Vec<&ProviderHealth> = report
+                .rows()
+                .iter()
+                .filter(|row| row.chain == chain && row.status.was_probed())
+                .collect();
+            if probed_rows.is_empty() {
+                return None;
+            }
+            let health = match whitelist.get(&chain) {
+                None => ChainHealth::NotWhitelisted,
+                Some(whitelist_entry) => judge_chain(
+                    &probed_rows,
+                    &ProviderWhitelistMatches::for_chain(local_chain, whitelist_entry)
+                        .whitelist_conforming_providers(),
+                    whitelist_entry.quorum,
+                ),
+            };
+            Some((chain, health))
+        })
+        .collect()
 }
 
 /// A whitelist provider counts once, however many local providers match it. It is healthy only
@@ -702,31 +703,6 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn probe_periodically__should_warn_for_a_chain_below_quorum() {
-        // Given
-        let (local, report) =
-            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
-        let probe = || std::future::ready(report.clone());
-        let (_whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist_of(
-            dtos::ForeignChain::Polygon,
-            &["alchemy", "quicknode"],
-            2,
-        )));
-
-        // When
-        run_future_once(probe_periodically(
-            probe,
-            &local,
-            whitelist_rx,
-            MockTicker::new(1),
-        ));
-
-        // Then
-        logs_assert(|lines: &[&str]| line_at_level(lines, "WARN", "foreign chain is below quorum"));
-    }
-
-    #[test]
-    #[traced_test]
     fn log_chain_health__should_warn_only_for_a_chain_below_quorum_or_unhealthy() {
         // Given
         let health_per_chain = BTreeMap::from([
@@ -767,37 +743,15 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn probe_periodically__should_log_chain_health_unknown_before_the_whitelist_is_read() {
-        // Given
-        let (local, report) =
-            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
-        let probe = || std::future::ready(report.clone());
-        let (_whitelist_tx, whitelist_rx) = watch::channel(None);
-
-        // When
-        run_future_once(probe_periodically(
-            probe,
-            &local,
-            whitelist_rx,
-            MockTicker::new(1),
-        ));
-
-        // Then
-        assert!(logs_contain("foreign chain health is unknown"));
-        assert!(!logs_contain("foreign chain whitelist"));
-    }
-
-    #[test]
-    #[traced_test]
-    fn probe_periodically__should_log_whitelist_diagnostics_every_round() {
+    fn probe_periodically__should_log_whitelist_diagnostics_and_chain_health_every_round() {
         // Given
         let (local, report) =
             polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
         let probe = || std::future::ready(report.clone());
         let (_whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist_of(
             dtos::ForeignChain::Polygon,
-            &["alchemy"],
-            1,
+            &["alchemy", "quicknode"],
+            2,
         )));
 
         // When
@@ -810,18 +764,27 @@ mod tests {
 
         // Then
         logs_assert(|lines: &[&str]| {
-            let rounds = lines
-                .iter()
-                .filter(|line| line.contains("local config matches the contract whitelist"))
-                .count();
-            (rounds == 2)
-                .then_some(())
-                .ok_or_else(|| format!("diagnostics logged in {rounds} of 2 rounds"))
+            [
+                ("INFO", "local config matches the contract whitelist"),
+                ("WARN", "foreign chain is below quorum"),
+            ]
+            .iter()
+            .try_for_each(|(level, message)| {
+                let rounds = lines
+                    .iter()
+                    .filter(|line| line.contains(level) && line.contains(message))
+                    .count();
+                (rounds == 2)
+                    .then_some(())
+                    .ok_or_else(|| format!("{message:?} logged in {rounds} of 2 rounds"))
+            })
         });
     }
 
     #[test]
-    fn probe_periodically__should_probe_again_once_the_whitelist_is_read() {
+    #[traced_test]
+    fn probe_periodically__should_log_unknown_health_until_the_whitelist_is_read_then_probe_again()
+    {
         // Given
         let probe_count = Cell::new(0);
         let (whitelist_tx, whitelist_rx) = watch::channel(None);
@@ -834,6 +797,10 @@ mod tests {
         )) else {
             panic!("the loop should park once its ticker runs out");
         };
+        let logged_before_the_read = (
+            logs_contain("foreign chain health is unknown"),
+            logs_contain("foreign chain whitelist"),
+        );
 
         // When
         whitelist_tx.send_replace(Some(whitelist_of(
@@ -844,6 +811,7 @@ mod tests {
         run_future_once(parked_probe_loop);
 
         // Then
+        assert_eq!(logged_before_the_read, (true, false));
         assert_eq!(probe_count.get(), 2);
     }
 
