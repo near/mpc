@@ -73,8 +73,8 @@ where
     }
 
     /// Backs up the observed keyset, then waits for the next one, until `shutdown` is cancelled.
-    /// On startup and every [`VERIFICATION_INTERVAL`] it also fetches a keyset that storage
-    /// already covers, and compares it with what is stored.
+    /// On startup and then hourly, it also fetches a keyset that storage already covers, and
+    /// compares it with what is stored.
     /// Returns an error if the contract state stops being observed, since that is a failure
     /// rather than a stop that was asked for.
     pub async fn run(mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
@@ -130,6 +130,9 @@ where
                         ?err,
                         "could not read the contract state, waiting for change"
                     );
+                    if fetch_covered {
+                        next_fetch = Instant::now() + self.retry_delay;
+                    }
                 }
             }
 
@@ -775,6 +778,10 @@ mod tests {
         );
         assert_eq!(service.storage.load_keyshares().await.unwrap(), stored);
         assert_eq!(service.backed_up, backed_up(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![(EpochId::new(EPOCH_ID), None)]
+        );
     }
 
     #[tokio::test]
@@ -1059,10 +1066,12 @@ mod tests {
         };
         let await_two_fetches = async {
             fetched.notified().await;
+            let first_fetch = tokio::time::Instant::now();
             fetched.notified().await;
             shutdown.cancel();
+            first_fetch.elapsed()
         };
-        let (result, (), ()) = timeout(VERIFICATION_INTERVAL * 2, async {
+        let (result, gap, ()) = timeout(VERIFICATION_INTERVAL * 2, async {
             tokio::join!(
                 service.run(shutdown.clone()),
                 await_two_fetches,
@@ -1074,6 +1083,7 @@ mod tests {
 
         // Then
         result.expect("the service should return Ok on shutdown");
+        assert!(gap >= VERIFICATION_INTERVAL, "fetched again after {gap:?}");
     }
 
     #[tokio::test]
