@@ -91,6 +91,7 @@ impl From<OldTeeState> for TeeState {
 }
 
 /// Shadow of the `3.17.0` `GovernanceThresholdParametersVotes` layout.
+// TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldGovernanceThresholdParametersVotes {
     proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
