@@ -2471,24 +2471,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AddDomainsVotes": {
-          "description": "Votes for adding new domains.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/DomainConfig"
-                }
-              }
-            }
-          }
-        },
         "AllowedMpcDockerImageHash": {
           "type": "object",
           "required": [
@@ -4766,7 +4748,14 @@ expression: abi
           ],
           "properties": {
             "add_domains_votes": {
-              "$ref": "#/definitions/AddDomainsVotes"
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/AuthenticatedParticipantId"
+                },
+                "uniqueItems": true
+              }
             },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"

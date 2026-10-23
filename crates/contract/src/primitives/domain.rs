@@ -1,6 +1,7 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
+use crate::primitives::proposal_hash::{Borsh, Sha256, ToProposalHash};
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -238,6 +239,11 @@ impl DomainRegistry {
             next_domain_id: self.next_domain_id,
         })
     }
+}
+
+impl ToProposalHash for Vec<DomainConfig> {
+    type Serializer = Borsh;
+    type Hasher = Sha256;
 }
 
 /// Tracks votes to add domains. Each participant can at any given time vote for a list of domains

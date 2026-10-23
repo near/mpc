@@ -155,7 +155,9 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     let dtos::ProtocolContractState::Running(running) = &state else {
         panic!("Expected running state");
     };
-    assert_eq!(running.add_domains_votes.proposal_by_account.len(), 2);
+    let tally = &running.add_domains_votes;
+    assert_eq!(tally.len(), 1);
+    assert_eq!(tally.values().next().unwrap().len(), 2);
 
     // When
     let mut new_participants = Participants::new();
@@ -198,17 +200,10 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         panic!("Expected running state after resharing");
     };
 
-    assert_eq!(final_running.add_domains_votes.proposal_by_account.len(), 1);
-
+    let remaining_voters: Vec<_> = final_running.add_domains_votes.values().flatten().collect();
     let expected_remaining_voter_id = &initial_participants.participants[1].1;
-    let remaining_voter_id = &final_running
-        .add_domains_votes
-        .proposal_by_account
-        .keys()
-        .next()
-        .expect("Expected one remaining vote")
-        .0;
-    assert_eq!(remaining_voter_id, expected_remaining_voter_id);
+    assert_eq!(remaining_voters.len(), 1);
+    assert_eq!(&remaining_voters[0].0, expected_remaining_voter_id);
 
     Ok(())
 }
