@@ -74,6 +74,12 @@ ignore = [
   "RUSTSEC-2026-0346", # rustls client session values expose TLS secrets through `Debug`
   "RUSTSEC-2026-0348", # rustls Brotli certificate decompression can allocate up to 1 GiB
   "RUSTSEC-2026-0349", # rustls ServerHello can downgrade later handshakes to classical kx
+  # TODO(#4423): remove once cargo can resolve rustls-webpki >= 0.103.16, blocked by the same pin.
+  # No root we trust chains to the distrusted keys: webpki-roots and webpki-root-certs >= 1.0.10
+  # drop emSign ECC Root CA - G3, and so do the Debian trust stores the images ship:
+  # ca-certificates 20250419~deb12u2 (bookworm) and 20250419+deb13u1 (trixie) also drop
+  # Comodo AAA Services root, the only other root that cross-signed those intermediates.
+  "RUSTSEC-2026-0382", # rustls-webpki accepts paths through distrusted emSign intermediates
   # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
   # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
   "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry

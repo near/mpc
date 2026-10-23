@@ -14,14 +14,13 @@ use crate::call_args::{
     AvailableAttestationGrantsArgs, CKDRespondArgs, CleanInvalidAttestationsArgs,
     DerivedPublicKeyArgs, GetAttestationArgs, GetPendingCKDRequestArgs,
     GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs, InitArgs,
-    InitRunningArgs, LatestKeyVersionArgs, PrepayAttestationStorageArgs, PublicKeyArgs,
-    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs,
-    SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
-    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
-    VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs, VoteAddLauncherHashArgs,
-    VoteAddOsMeasurementArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
-    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs, VoteResharedArgs,
-    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
+    InitRunningArgs, PrepayAttestationStorageArgs, PublicKeyArgs, RegisterBackupServiceArgs,
+    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs,
+    StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
+    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
+    VoteAddDomainsArgs, VoteAddLauncherHashArgs, VoteAddOsMeasurementArgs, VoteCancelKeygenArgs,
+    VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs,
+    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -34,9 +33,9 @@ use crate::method_names::{
     CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS,
     GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
     GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
-    LATEST_KEY_VERSION, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO,
-    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
-    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
+    LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
+    OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
+    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
     START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
@@ -49,14 +48,14 @@ use crate::method_names::{
 use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
-    CKDResponse, ChainEntry, CodeHashesVotes, Config, Curve, DestinationNodeInfo, DomainConfig,
-    DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GetAttestationResponse, GovernanceThresholdParameters, InitConfig,
-    KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash,
-    MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
+    CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
+    Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
+    ForeignChainsConfigs, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
+    LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash, MeasurementVotes,
+    MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
     ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey, SignRequestArgs,
-    SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash, Update,
+    UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -709,12 +708,6 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::new(DERIVED_PUBLIC_KEY, args))
     }
 
-    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> ViewCall<C, u32> {
-        let args = serde_json::to_vec(&LatestKeyVersionArgs::new(signature_scheme))
-            .expect("plain-data args; JSON serialization cannot fail");
-        self.view(ViewArgs::new(LATEST_KEY_VERSION, args))
-    }
-
     pub fn available_attestation_grants(&self, account_id: AccountId) -> ViewCall<C, u32> {
         let args = serde_json::to_vec(&AvailableAttestationGrantsArgs::new(account_id))
             .expect("plain-data args; JSON serialization cannot fail");
@@ -724,7 +717,7 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     pub fn get_attestation(
         &self,
         tls_public_key: &Ed25519PublicKey,
-    ) -> ViewCall<C, Option<GetAttestationResponse>> {
+    ) -> ViewCall<C, Option<StoredAttestation>> {
         let args = serde_json::to_vec(&GetAttestationArgs::new(tls_public_key))
             .expect("plain-data args; JSON serialization cannot fail");
         self.view(ViewArgs::new(GET_ATTESTATION, args))
@@ -776,11 +769,11 @@ mod tests {
     use crate::types::{
         AccountId, AttemptId, Attestation, AuthScheme, BackupServiceInfo, BitcoinExtractor,
         BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV,
-        CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, Curve,
-        DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ExpectedMeasurements, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
-        K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
+        CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, DestinationNodeInfo,
+        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ExpectedMeasurements,
+        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GovernanceThreshold,
+        GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint, K256Scalar,
+        K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
         MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
         ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
@@ -1166,7 +1159,6 @@ mod tests {
                 Some(DomainId(0)),
             )
             .await;
-        let _ = handle.latest_key_version(Some(Curve::Secp256k1)).await;
         let _ = handle
             .available_attestation_grants("alice.near".parse().unwrap())
             .await;
