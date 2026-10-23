@@ -167,13 +167,12 @@ pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContrac
 
     let node_id = contract
         .tee_state
-        .stored_attestations
+        .nodes
         .iter()
         .find(|(public_key, _)| active_participant_pks.contains(public_key))
         .expect("No attested participants in tee_state")
         .1
-        .node_id
-        .clone();
+        .id();
 
     // Build a new simulated environment with this node as caller.
     // Set signer_account_pk to match the mock attestation (account_public_key == tls_public_key).

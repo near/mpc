@@ -32,7 +32,7 @@ use crate::{
     tee::{
         measurements::AllowedMeasurements,
         proposal::{AllowedLauncherImages, StoredDockerImageHashes},
-        tee_state::{NodeAttestation, NodeId, TeeState},
+        tee_state::{Node, NodeId, TeeState},
         verifier_votes::TeeVerifierVotes,
     },
     update::ContractUpdateVotes,
@@ -63,7 +63,7 @@ struct OldTeeState {
 
 impl OldTeeState {
     fn migrate(self) -> TeeState {
-        let stored_attestations = migrate_stored_attestations(self.stored_attestations);
+        let nodes = migrate_stored_attestations(self.stored_attestations);
         // Pending votes are dropped rather than migrated; participants re-vote after the
         // upgrade.
         TeeState {
@@ -74,7 +74,7 @@ impl OldTeeState {
                 StorageKey::LauncherHashVotesByVoter,
                 StorageKey::LauncherHashVotesByProposal,
             ),
-            stored_attestations,
+            nodes,
             allowed_measurements: self.allowed_measurements,
             measurement_votes: Votes::new(
                 StorageKey::MeasurementVotesByVoter,
@@ -93,7 +93,7 @@ struct OldNodeAttestation {
 
 fn migrate_stored_attestations(
     mut old: IterableMap<dtos::Ed25519PublicKey, OldNodeAttestation>,
-) -> IterableMap<dtos::Ed25519PublicKey, NodeAttestation> {
+) -> IterableMap<dtos::Ed25519PublicKey, Node> {
     let entries: Vec<_> = old.drain().collect();
     // The rebuilt map shares the storage prefix, so its inserts would read the drained entries
     // back from storage until the removals are written
@@ -104,9 +104,11 @@ fn migrate_stored_attestations(
         if let Some(accepted_at_seconds) = entry.accepted_at_seconds {
             migrated.insert(
                 tls_public_key,
-                NodeAttestation {
-                    node_id: entry.node_id,
-                    verified_attestation: entry.verified_attestation,
+                Node {
+                    account_id: entry.node_id.account_id,
+                    tls_public_key: entry.node_id.tls_public_key,
+                    account_public_key: entry.node_id.account_public_key,
+                    attestation: entry.verified_attestation,
                     accepted_at_seconds,
                 },
             );
@@ -195,7 +197,7 @@ mod tests {
         // Then
         let migrated: Vec<_> = migrated
             .values()
-            .map(|entry| (entry.node_id.clone(), entry.accepted_at_seconds))
+            .map(|node| (node.id(), node.accepted_at_seconds))
             .collect();
         assert_eq!(migrated, vec![(stamped, accepted_at)]);
     }

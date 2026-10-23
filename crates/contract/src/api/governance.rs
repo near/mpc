@@ -156,10 +156,8 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
     }
 
-    /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants have
-    /// default TEE status ([`TeeQuoteStatus::None`]). This tests the basic scenario where no
-    /// participants have submitted attestation information, and all have the default TEE status
-    /// of [`TeeQuoteStatus::None`], which is considered acceptable.
+    /// Test that [`MpcContract::vote_new_parameters`] succeeds when no participant has submitted
+    /// attestation information, so all keep the mocked attestations stored at initialization.
     #[test]
     fn test_vote_new_parameters_succeeds_with_default_tee_status() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
@@ -181,7 +179,7 @@ mod tests {
     /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants
     /// submit valid TEE attestations. This tests the scenario where all participants successfully
     /// submit valid attestations through [`MpcContract::submit_participant_info`],
-    /// resulting in [`TeeQuoteStatus::Valid`] TEE status for all participants.
+    /// resulting in a valid TEE status for all participants.
     #[test]
     fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
@@ -207,7 +205,7 @@ mod tests {
     /// [`MpcContract::submit_participant_info`]. This test demonstrates that
     /// participants cannot have Invalid TEE status because the contract proactively rejects
     /// invalid attestations at submission time. The 4th participant tries to submit an invalid
-    /// attestation but is rejected, leaving them with [`TeeQuoteStatus::Invalid`] status, which
+    /// attestation but is rejected, keeping the mocked attestation stored at initialization, which
     /// combined with valid participants still allows successful voting.
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
