@@ -257,7 +257,9 @@ mod tests {
             parameters_votes: OldGovernanceThresholdParametersVotes {
                 proposal_by_account: BTreeMap::new(),
             },
-            add_domains_votes: state.add_domains_votes,
+            add_domains_votes: OldAddDomainsVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
             previously_cancelled_resharing_epoch_id: state.previously_cancelled_resharing_epoch_id,
         }
     }
