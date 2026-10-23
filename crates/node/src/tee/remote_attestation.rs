@@ -18,7 +18,7 @@ use mpc_attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use near_mpc_contract_interface::types::{
-    AllowedMpcDockerImageHash, Ed25519PublicKey, GetAttestationResponse, VerifiedAttestation,
+    AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation, VerifiedAttestation,
 };
 use near_time::Clock;
 use tee_authority::tee_authority::{AttestationError, TeeAuthority};
@@ -62,7 +62,7 @@ pub struct AttestationSubmitter<T, A> {
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub stored_attestation: watch::Receiver<Option<GetAttestationResponse>>,
+    pub stored_attestation: watch::Receiver<Option<StoredAttestation>>,
 }
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
@@ -73,7 +73,7 @@ pub struct AttestationSubmitter<T, A> {
 /// [`periodic_attestation_submission`] does when a round times out.
 async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
-    stored_attestation: watch::Receiver<Option<GetAttestationResponse>>,
+    stored_attestation: watch::Receiver<Option<StoredAttestation>>,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
 ) {
@@ -99,7 +99,7 @@ async fn submit_remote_attestation(
             let landed = stored_attestation
                 .wait_for(|stored| {
                     can_be_own_attestation(
-                        stored.as_ref().map(GetAttestationResponse::attestation),
+                        stored.as_ref().map(|stored| &stored.attestation),
                         dstack_submitted,
                     )
                 })
@@ -264,8 +264,8 @@ async fn periodic_attestation_submission<T: TransactionSender + Clone, A: Genera
     }
 }
 
-fn warn_if_no_recent_acceptance(stored: Option<&GetAttestationResponse>) {
-    if let Some(landed_at) = stored.and_then(GetAttestationResponse::accepted_at_seconds) {
+fn warn_if_no_recent_acceptance(stored: Option<&StoredAttestation>) {
+    if let Some(landed_at) = stored.map(|stored| stored.accepted_at_seconds) {
         let landed_at = i64::try_from(landed_at).unwrap_or(i64::MAX);
         let landing_age = Clock::real()
             .now_utc()
@@ -399,7 +399,7 @@ mod tests {
 
     struct TestSetup<A> {
         submitter: AttestationSubmitter<MockSender, A>,
-        stored_attestation: watch::Sender<Option<GetAttestationResponse>>,
+        stored_attestation: watch::Sender<Option<StoredAttestation>>,
     }
 
     /// Builds an [`AttestationSubmitter`] around a [`MockSender`].
@@ -412,7 +412,10 @@ mod tests {
         let (_, allowed_image_hashes) = watch::channel(vec![]);
         let (_, allowed_launcher_compose_hashes) = watch::channel(vec![]);
         let (stored_attestation, stored_attestation_receiver) =
-            watch::channel(Some(GetAttestationResponse::Legacy(STORED_MOCK)));
+            watch::channel(Some(StoredAttestation {
+                attestation: STORED_MOCK,
+                accepted_at_seconds: Clock::real().now_utc().unix_timestamp().try_into().unwrap(),
+            }));
         let submitter = AttestationSubmitter {
             tee_authority,
             tx_sender: MockSender::default(),

@@ -210,8 +210,9 @@ async fn run_backup_service_through_embedded_node(
 }
 
 /// Backs up keyshares whenever the observed contract state stops being covered by what is
-/// stored, until `shutdown` is cancelled. A failed backup is re-attempted after `retry_delay`,
-/// since the contract state it failed on may not change again for a long time.
+/// stored, until `shutdown` is cancelled. On startup and then hourly, a covered keyset is
+/// fetched again and compared with what is stored. A failed fetch is re-attempted after
+/// `retry_delay`, since the contract state it failed on may not change again for a long time.
 pub async fn run_backup_service(
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,

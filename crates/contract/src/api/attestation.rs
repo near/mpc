@@ -1071,7 +1071,7 @@ mod tests {
     /// a 64-byte account id (NEAR's cap) plus fixed-width keys and the largest
     /// [`VerifiedAttestation`] variant, including the
     /// [`IterableMap`](near_sdk::store::IterableMap) record overhead.
-    const WORST_CASE_ENTRY_BYTES: u64 = 613;
+    const WORST_CASE_ENTRY_BYTES: u64 = 612;
 
     /// Ceiling on one entry's storage cost at today's price, with headroom over
     /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
@@ -1112,7 +1112,7 @@ mod tests {
             NodeAttestation {
                 node_id,
                 verified_attestation,
-                accepted_at_seconds: Some(u64::MAX),
+                accepted_at_seconds: u64::MAX,
             },
         );
         tee_state.stored_attestations.flush();
@@ -1141,8 +1141,8 @@ mod tests {
     ///
     /// The prepaid-storage fee is sized from these numbers.
     #[rstest]
-    #[case::dstack(608, worst_case_dstack_attestation())]
-    #[case::mock(613, worst_case_mock_attestation())]
+    #[case::dstack(607, worst_case_dstack_attestation())]
+    #[case::mock(612, worst_case_mock_attestation())]
     fn stored_attestation_entry__should_have_the_pinned_size(
         #[case] expected_bytes: u64,
         #[case] verified_attestation: VerifiedAttestation,
