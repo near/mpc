@@ -239,6 +239,17 @@ pub static MPC_CLUSTER_FAILED_SIGNATURES_COUNT: LazyLock<prometheus::IntCounterV
         .unwrap()
     });
 
+pub static MPC_FAILOVER_LEADER_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_failover_leader_attempts_total",
+            "Number of attempts started as a failover leader, i.e. with no response indexed \
+             by the end of this rank's leader failover slot. A healthy cluster sits at zero",
+            &["request_type", "rank"]
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(

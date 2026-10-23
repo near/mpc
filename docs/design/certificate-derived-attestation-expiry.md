@@ -136,8 +136,8 @@ weeks.
 Fix: store `accepted_at_seconds` on
 [`Node`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
 variants, so one field covers both. The node then reads the acceptance time directly, and operators
-get a better health signal than expiry. Costs 9 bytes per entry (599 → 608, so `WORST_CASE_ENTRY_BYTES`
-moves 604 → 613 and the fee floor needs re-checking) and a state migration.
+get a better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
+moves 604 → 612 and the fee floor needs re-checking) and a state migration.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
