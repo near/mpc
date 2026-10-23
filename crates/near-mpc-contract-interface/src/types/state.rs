@@ -308,6 +308,8 @@ pub struct RunningContractState {
     derive(schemars::JsonSchema)
 )]
 pub struct ResharingContractState {
+    /// The state being reshared from; while resharing, its `parameters_votes` hold the
+    /// re-proposal votes for the prospective epoch.
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
@@ -548,6 +550,22 @@ mod tests {
 
         // Then
         assert_eq!(parsed.per_domain_thresholds.len(), 0);
+    }
+
+    #[test]
+    fn parameters_votes_serialize_as_a_transparent_map_keyed_by_proposal_hash() {
+        // Given
+        let proposal = ProposalHash::new([0xCD; 32]);
+        let votes = GovernanceThresholdParametersVotes(BTreeMap::from([(
+            proposal,
+            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
+        )]));
+
+        // When
+        let json = serde_json::to_value(&votes).unwrap();
+
+        // Then
+        assert_eq!(json[proposal.as_hex()][0], "alice.near");
     }
 
     #[test]
