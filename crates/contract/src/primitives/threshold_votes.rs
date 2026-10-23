@@ -63,7 +63,6 @@ impl GovernanceThresholdParametersVotes {
         self.0.clear();
     }
 
-    /// Pending votes keyed by proposal hash.
     pub fn all(&self) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>> {
         self.0.all()
     }
