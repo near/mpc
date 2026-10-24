@@ -35,6 +35,20 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 /// The maximum time we'll wait, after a transaction is submitted to the chain, before we decide
 /// that the transaction is lost and that we should retry.
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
+/// Foreign tx validation requests may take longer to complete due to external RPC latency
+/// and negative signed verdicts. We allow an extended timeout before re-attempting.
+pub const MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE: Duration = Duration::seconds(30);
+
+pub fn max_latency_before_expecting_transaction_to_finalize(request_type: types::RequestType) -> Duration {
+    match request_type {
+        types::RequestType::VerifyForeignTx => {
+            MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE
+        }
+        types::RequestType::Signature | types::RequestType::CKD => {
+            MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
+        }
+    }
+}
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
 /// Maximum attempts we should make for each request when we lead it as a failover
@@ -275,12 +289,13 @@ impl<ChainRespondArgsType: ChainRespondArgs> ComputationProgress<ChainRespondArg
         &mut self,
         now: near_time::Instant,
         max_attempts: u64,
+        max_finalize_latency: Duration,
     ) -> ComputationProgressStatus {
         if self.attempts >= max_attempts {
             ComputationProgressStatus::MaxAttemptsExceeded
         } else if self
             .last_response_submission
-            .is_some_and(|t| now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE)
+            .is_some_and(|t| now < t + max_finalize_latency)
         {
             ComputationProgressStatus::Pending
         } else {
@@ -488,7 +503,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 } else {
                     MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER
                 };
-                match progress.update_computation_progress(now, max_attempts) {
+                let max_finalize_latency =
+                    max_latency_before_expecting_transaction_to_finalize(RequestType::get_type());
+                match progress.update_computation_progress(now, max_attempts, max_finalize_latency) {
                     ComputationProgressStatus::MaxAttemptsExceeded if rank > 0 => {
                         // A failover leader must not drop the request: it stays queued so
                         // this node can still step up should it later become the primary.
@@ -887,7 +904,9 @@ mod tests {
     use crate::requests::queue::{
         CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL,
         MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
+        MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE,
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE, REQUEST_EXPIRATION_BLOCKS,
+        max_latency_before_expecting_transaction_to_finalize,
     };
     use crate::tests::into_participant_ids;
     use crate::types::{RequestsUpdate, SignatureRequest};
@@ -1235,6 +1254,76 @@ mod tests {
         // Then: we still don't re-attempt — the request is resolved.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_foreign_tx_verify_uses_extended_timeout() {
+        assert_eq!(
+            max_latency_before_expecting_transaction_to_finalize(
+                crate::types::RequestType::Signature
+            ),
+            MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
+        );
+        assert_eq!(
+            max_latency_before_expecting_transaction_to_finalize(
+                crate::types::RequestType::CKD
+            ),
+            MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
+        );
+        assert_eq!(
+            max_latency_before_expecting_transaction_to_finalize(
+                crate::types::RequestType::VerifyForeignTx
+            ),
+            MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE
+        );
+        assert!(
+            MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE
+                > MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
+        );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_computation_progress__foreign_tx_verify_waits_longer_before_reattempt() {
+        let mut progress = ComputationProgress::<contract_args::RespondArgs>::default();
+        let clock = FakeClock::default();
+        let now = clock.now();
+        progress.last_response_submission = Some(now);
+
+        let standard_latency = max_latency_before_expecting_transaction_to_finalize(
+            crate::types::RequestType::Signature,
+        );
+        let foreign_tx_latency = max_latency_before_expecting_transaction_to_finalize(
+            crate::types::RequestType::VerifyForeignTx,
+        );
+
+        clock.advance(standard_latency);
+        let t1 = clock.now();
+
+        // Signature request would now be ready for a NewAttempt
+        let mut sig_progress = ComputationProgress::<contract_args::RespondArgs>::default();
+        sig_progress.last_response_submission = Some(now);
+        assert!(matches!(
+            sig_progress.update_computation_progress(t1, 5, standard_latency),
+            ComputationProgressStatus::NewAttempt
+        ));
+
+        // Foreign tx validation request is STILL Pending
+        assert!(matches!(
+            progress.update_computation_progress(t1, 5, foreign_tx_latency),
+            ComputationProgressStatus::Pending
+        ));
+
+        // Advance to full foreign tx timeout (30s)
+        clock.advance(foreign_tx_latency - standard_latency);
+        let t2 = clock.now();
+
+        // Now foreign tx validation request transitions to NewAttempt
+        assert!(matches!(
+            progress.update_computation_progress(t2, 5, foreign_tx_latency),
+            ComputationProgressStatus::NewAttempt
+        ));
     }
 
     #[test_log::test]
