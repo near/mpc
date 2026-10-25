@@ -1,4 +1,6 @@
-use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
+use super::foreign_chain::{
+    ForeignChainWhitelist, monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist,
+};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
@@ -82,6 +84,9 @@ pub fn spawn_real_indexer(
         watch::channel(vec![]);
     let (allowed_os_measurements_sender, allowed_os_measurements_receiver) = watch::channel(vec![]);
     let (my_attestation_sender, my_attestation_receiver) = watch::channel(None);
+    let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
+        watch::channel(ForeignChainWhitelist::new());
+    let verifier_whitelist_receiver = foreign_chain_whitelist_receiver.clone();
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -226,14 +231,12 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-                watch::channel(std::collections::BTreeMap::new());
             tokio::spawn(monitor_foreign_chain_whitelist(
                 foreign_chain_whitelist_sender,
                 indexer_state.contract.clone(),
             ));
             tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver,
+                verifier_whitelist_receiver,
                 foreign_chains.clone(),
             ));
 
@@ -343,6 +346,7 @@ pub fn spawn_real_indexer(
         my_migration_info_receiver,
         my_attestation_receiver,
         foreign_chain_supporters_receiver,
+        foreign_chain_whitelist_receiver,
     }
 }
 
