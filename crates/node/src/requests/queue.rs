@@ -37,9 +37,12 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
 /// Foreign tx validation requests may take longer to complete due to external RPC latency
 /// and negative signed verdicts. We allow an extended timeout before re-attempting.
-pub const MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE: Duration = Duration::seconds(30);
+pub const MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE: Duration =
+    Duration::seconds(30);
 
-pub fn max_latency_before_expecting_transaction_to_finalize(request_type: types::RequestType) -> Duration {
+pub fn max_latency_before_expecting_transaction_to_finalize(
+    request_type: types::RequestType,
+) -> Duration {
     match request_type {
         types::RequestType::VerifyForeignTx => {
             MAX_LATENCY_BEFORE_EXPECTING_FOREIGN_TX_VERIFY_TO_FINALIZE
@@ -505,7 +508,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 };
                 let max_finalize_latency =
                     max_latency_before_expecting_transaction_to_finalize(RequestType::get_type());
-                match progress.update_computation_progress(now, max_attempts, max_finalize_latency) {
+                match progress.update_computation_progress(now, max_attempts, max_finalize_latency)
+                {
                     ComputationProgressStatus::MaxAttemptsExceeded if rank > 0 => {
                         // A failover leader must not drop the request: it stays queued so
                         // this node can still step up should it later become the primary.
@@ -1266,9 +1270,7 @@ mod tests {
             MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
         );
         assert_eq!(
-            max_latency_before_expecting_transaction_to_finalize(
-                crate::types::RequestType::CKD
-            ),
+            max_latency_before_expecting_transaction_to_finalize(crate::types::RequestType::CKD),
             MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
         );
         assert_eq!(
