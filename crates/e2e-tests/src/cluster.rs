@@ -126,51 +126,39 @@ pub struct ForeignChainsClusterConfig {
     pub whitelist: BTreeMap<ForeignChain, ChainEntry>,
 }
 
-/// A [`ChainEntry`] that every provider of `config` conforms to.
+/// One whitelist provider per local provider; providers that share a host match only the first.
 pub fn chain_entry_matching(
     config: &mpc_node_config::ForeignChainConfig,
     quorum: u64,
 ) -> ChainEntry {
-    let providers: BTreeMap<ProviderId, ProviderConfig> = config
-        .providers
-        .iter()
-        .map(|(name, provider)| {
-            let (base_url, auth_scheme) = match &provider.auth {
-                mpc_node_config::AuthConfig::None => (provider.rpc_url.clone(), AuthScheme::None),
-                mpc_node_config::AuthConfig::Path { placeholder, .. } => (
-                    provider.rpc_url.replace(placeholder, ""),
-                    AuthScheme::Path {
-                        placeholder: placeholder.clone(),
-                    },
-                ),
-                mpc_node_config::AuthConfig::Header { name, scheme, .. } => (
-                    provider.rpc_url.clone(),
-                    AuthScheme::Header {
-                        name: name.to_string(),
-                        scheme: scheme.clone(),
-                    },
-                ),
-                mpc_node_config::AuthConfig::Query { name, .. } => (
-                    provider.rpc_url.clone(),
-                    AuthScheme::Query { name: name.clone() },
-                ),
-            };
-            (
-                ProviderId(name.to_string()),
-                ProviderConfig {
-                    base_url,
-                    auth_scheme,
-                    chain_routing: ChainRouting::Embedded,
+    let providers = config.providers.clone().map(|name, provider| {
+        let (base_url, auth_scheme) = match provider.auth {
+            mpc_node_config::AuthConfig::None => (provider.rpc_url, AuthScheme::None),
+            mpc_node_config::AuthConfig::Path { placeholder, .. } => (
+                provider.rpc_url.replace(&placeholder, ""),
+                AuthScheme::Path { placeholder },
+            ),
+            mpc_node_config::AuthConfig::Header { name, scheme, .. } => (
+                provider.rpc_url,
+                AuthScheme::Header {
+                    name: name.to_string(),
+                    scheme,
                 },
-            )
-        })
-        .collect();
-    ChainEntry {
-        providers: providers
-            .try_into()
-            .expect("a chain config always has at least one provider"),
-        quorum,
-    }
+            ),
+            mpc_node_config::AuthConfig::Query { name, .. } => {
+                (provider.rpc_url, AuthScheme::Query { name })
+            }
+        };
+        (
+            ProviderId(name.to_string()),
+            ProviderConfig {
+                base_url,
+                auth_scheme,
+                chain_routing: ChainRouting::Embedded,
+            },
+        )
+    });
+    ChainEntry { providers, quorum }
 }
 
 pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
@@ -1659,4 +1647,65 @@ async fn wait_for_contract_state(
         .wait_for(timeout, predicate)
         .await?;
     Ok(observed.value)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use std::num::NonZeroU64;
+
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use mpc_node_config::foreign_chains::provider_identity::{
+        ProviderWhitelistMatch, ProviderWhitelistMatches,
+    };
+    use mpc_node_config::{
+        AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, TokenConfig,
+    };
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use rstest::rstest;
+
+    use super::chain_entry_matching;
+
+    fn token() -> TokenConfig {
+        TokenConfig::Val {
+            val: "secret".to_string(),
+        }
+    }
+
+    #[rstest]
+    #[case::none("http://127.0.0.1:1/", AuthConfig::None)]
+    #[case::path("http://127.0.0.1:1/{api_key}", AuthConfig::Path { placeholder: "{api_key}".to_string(), token: token() })]
+    #[case::header("http://127.0.0.1:1/", AuthConfig::Header { name: "authorization".parse().unwrap(), scheme: Some("Bearer".to_string()), token: token() })]
+    #[case::query("http://127.0.0.1:1/", AuthConfig::Query { name: "apikey".to_string(), token: token() })]
+    fn chain_entry_matching__should_yield_an_entry_the_provider_conforms_to(
+        #[case] rpc_url: &str,
+        #[case] auth: AuthConfig,
+    ) {
+        // Given
+        let config = ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                RpcProviderName::from("mock".to_string()),
+                ForeignChainProviderConfig {
+                    rpc_url: rpc_url.to_string(),
+                    auth,
+                },
+            ),
+            expected_network_fingerprint: None,
+        };
+
+        // When
+        let entry = chain_entry_matching(&config, 1);
+
+        // Then
+        let matches = ProviderWhitelistMatches::for_chain(&config, &entry);
+        assert!(
+            matches.iter().all(|(_, provider_match)| matches!(
+                provider_match,
+                ProviderWhitelistMatch::Conforming { .. }
+            )),
+            "{matches:?}"
+        );
+    }
 }

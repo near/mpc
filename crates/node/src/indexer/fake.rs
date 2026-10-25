@@ -86,12 +86,6 @@ impl FakeMpcContractState {
         &self.foreign_chains_configs
     }
 
-    pub fn allowed_foreign_chain_providers(
-        &self,
-    ) -> &BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
-        &self.foreign_chain_whitelist
-    }
-
     pub fn whitelist_foreign_chain_providers(
         &mut self,
         entries: BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,

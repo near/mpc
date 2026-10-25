@@ -220,7 +220,7 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    // Every mock provider conforms to its whitelist entry.
+    // Quorum 1: the mocks share one host, so host matching leaves one conforming provider per chain.
     let whitelist: BTreeMap<_, _> = fc_config
         .iter_chains()
         .map(|(chain, config)| (chain, chain_entry_matching(config, 1)))
