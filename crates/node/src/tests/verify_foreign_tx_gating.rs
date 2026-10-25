@@ -401,8 +401,19 @@ async fn verify_foreign_tx__should_sign_from_stored_presignatures_when_online_pr
 #[test_log::test]
 #[expect(non_snake_case)]
 async fn verify_foreign_tx__should_not_be_served_when_local_providers_are_below_the_rpc_quorum() {
-    // Given
+    // Given: the quorum asks for two providers and every node runs one, so no node registers
+    // Ethereum itself. Registering three of them directly reproduces the window between a vote
+    // landing and the nodes dropping the chain from their registration.
     let mut cluster = must_start_foreign_tx_cluster(2, true, ethereum_whitelist_out_of_reach).await;
+    {
+        let mut contract = cluster.indexer.contract_mut().await;
+        for account in ["test0", "test1", "test2"] {
+            contract.register_foreign_chains_config(
+                account.parse().unwrap(),
+                BTreeSet::from([ForeignChain::Ethereum]).into(),
+            );
+        }
+    }
     let rejections_before =
         crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.get();
 
