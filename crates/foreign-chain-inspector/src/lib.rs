@@ -178,6 +178,7 @@ impl<Inspector> FanOut<Inspector> {
 }
 
 impl<Inspector, Recorder> FanOut<Inspector, Recorder> {
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn provider_ids(&self) -> impl Iterator<Item = &ProviderId> {
         self.inspectors.iter().map(|(provider, _)| provider)
     }
