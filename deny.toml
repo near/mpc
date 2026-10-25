@@ -83,6 +83,11 @@ ignore = [
   # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
   # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
   "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry
+  # TODO(#4916): remove once elliptic-curve 0.13 and its crypto-bigint 0.5.5 leave the tree.
+  # No patched 0.5.x exists, and the leaks are in 0.7 code: the `borrowing_sub` branch came
+  # with crypto-bigint#1029, and k256 0.13 scalars use only 0.5.5's mask-based add/sub/neg
+  # mod, with their own multiplication and inversion.
+  "RUSTSEC-2026-0387", # crypto-bigint constant-time leaks
 ]
 
 [bans]
