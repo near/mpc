@@ -13,13 +13,14 @@ use core::fmt;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
-use tee_verifier_interface::{
-    CollateralDates, TDReport10, TcbStatus, VerificationResultWithCollateralDates, VerifiedReport,
-    VerifierError,
-};
+use tee_verifier_interface::{TDReport10, TcbStatus, VerifiedReport};
 
 #[cfg(feature = "local-verify")]
 use crate::dcap_conversions::verify_quote_with_collateral_dates;
+#[cfg(feature = "local-verify")]
+use tee_verifier_interface::{
+    CollateralDates, VerificationResultWithCollateralDates, VerifierError,
+};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
