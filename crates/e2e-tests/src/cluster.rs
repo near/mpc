@@ -126,6 +126,53 @@ pub struct ForeignChainsClusterConfig {
     pub whitelist: BTreeMap<ForeignChain, ChainEntry>,
 }
 
+/// A [`ChainEntry`] that every provider of `config` conforms to.
+pub fn chain_entry_matching(
+    config: &mpc_node_config::ForeignChainConfig,
+    quorum: u64,
+) -> ChainEntry {
+    let providers: BTreeMap<ProviderId, ProviderConfig> = config
+        .providers
+        .iter()
+        .map(|(name, provider)| {
+            let (base_url, auth_scheme) = match &provider.auth {
+                mpc_node_config::AuthConfig::None => (provider.rpc_url.clone(), AuthScheme::None),
+                mpc_node_config::AuthConfig::Path { placeholder, .. } => (
+                    provider.rpc_url.replace(placeholder, ""),
+                    AuthScheme::Path {
+                        placeholder: placeholder.clone(),
+                    },
+                ),
+                mpc_node_config::AuthConfig::Header { name, scheme, .. } => (
+                    provider.rpc_url.clone(),
+                    AuthScheme::Header {
+                        name: name.to_string(),
+                        scheme: scheme.clone(),
+                    },
+                ),
+                mpc_node_config::AuthConfig::Query { name, .. } => (
+                    provider.rpc_url.clone(),
+                    AuthScheme::Query { name: name.clone() },
+                ),
+            };
+            (
+                ProviderId(name.to_string()),
+                ProviderConfig {
+                    base_url,
+                    auth_scheme,
+                    chain_routing: ChainRouting::Embedded,
+                },
+            )
+        })
+        .collect();
+    ChainEntry {
+        providers: providers
+            .try_into()
+            .expect("a chain config always has at least one provider"),
+        quorum,
+    }
+}
+
 pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
     let chain = format!("{chain:?}").to_lowercase();
     let provider = |name: &str| ProviderConfig {
