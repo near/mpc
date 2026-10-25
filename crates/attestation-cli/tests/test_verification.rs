@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use attestation_cli::cli::{Source, VerifyArgs};
 use attestation_cli::verify;
-use mpc_attestation::attestation::{Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS};
+use mpc_attestation::attestation::Attestation;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use test_utils::attestation::{
     TEST_LAUNCHER_IMAGE_COMPOSE_STRING, TEST_MPC_IMAGE_DIGEST_HEX, VALID_ATTESTATION_TIMESTAMP,
-    account_key, mock_dstack_attestation, p2p_tls_key,
+    account_key, collateral_dates, mock_dstack_attestation, p2p_tls_key,
 };
 
 fn make_static_web_data(attestation: Attestation) -> StaticWebData {
@@ -58,7 +58,7 @@ fn full_verification_succeeds_with_valid_attestation() {
     assert_eq!(result.mpc_image_hash.as_hex(), TEST_MPC_IMAGE_DIGEST_HEX);
     assert_eq!(
         result.expiry_timestamp_seconds,
-        VALID_ATTESTATION_TIMESTAMP + DEFAULT_EXPIRATION_DURATION_SECONDS
+        collateral_dates().earliest_expiration_date
     );
 }
 

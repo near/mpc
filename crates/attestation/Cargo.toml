@@ -12,14 +12,14 @@ borsh-schema = [
 ]
 dstack-conversions = ["attestation-types/dstack-conversions"]
 test-utils = []
-# Pulls in `dcap-qvl` for full local DCAP + post-DCAP verification. Off-chain callers only: the node,
-# the attestation CLI and the TEE authority. The contract verifies through the verifier contract.
-local-verify = ["dep:dcap-qvl", "dep:tee-verifier-conversions"]
+# Pulls in `dcap-qvl` (via `tee-verifier-conversions`) for full local DCAP + post-DCAP verification.
+# Off-chain callers only: the node, the attestation CLI and the TEE authority. The contract
+# verifies through the verifier contract.
+local-verify = ["dep:tee-verifier-conversions"]
 
 [dependencies]
 attestation-types = { workspace = true }
 borsh = { workspace = true }
-dcap-qvl = { workspace = true, optional = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }

@@ -3,6 +3,10 @@
 
 #![expect(non_snake_case)]
 
+use mpc_attestation::attestation::{
+    AcceptedAttestation, VerifiedAttestation, default_measurements,
+};
+use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
@@ -11,7 +15,10 @@ use tee_verifier_interface::{
     Collateral, CollateralDates, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory,
     VerificationResult, VerificationResultWithCollateralDates, VerifiedReport, VerifierError,
 };
-use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral, quote};
+use test_utils::attestation::{
+    VALID_ATTESTATION_TIMESTAMP, account_key, collateral, image_digest, launcher_compose_digest,
+    mock_dstack_attestation, p2p_tls_key, quote,
+};
 
 fn make_quote_bytes() -> QuoteBytes {
     QuoteBytes(Vec::from(quote()))
@@ -182,6 +189,46 @@ fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fix
             report: expected_report,
             collateral_dates: fixture_collateral_dates(),
         }
+    );
+}
+
+/// Off-chain callers read the expiry through `verify_locally`, so it must match
+/// the one the contract stores from this method.
+#[test]
+fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_locally() {
+    // Given
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let report_data = ReportData::V1(ReportDataV1::new(p2p_tls_key(), account_key()));
+    let AcceptedAttestation {
+        attestation: VerifiedAttestation::Dstack(locally_verified),
+        ..
+    } = mock_dstack_attestation()
+        .verify_locally(
+            report_data.into(),
+            VALID_ATTESTATION_TIMESTAMP,
+            &[image_digest()],
+            &[launcher_compose_digest()],
+            default_measurements(),
+        )
+        .expect("the fixture verifies locally")
+    else {
+        panic!("expected a Dstack attestation");
+    };
+
+    // When
+    let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral());
+
+    // Then
+    let VerificationResultWithCollateralDates::Verified {
+        collateral_dates, ..
+    } = result
+    else {
+        panic!("expected Verified, got {result:?}");
+    };
+    assert_eq!(
+        locally_verified.expiry_timestamp_seconds,
+        collateral_dates.earliest_expiration_date
     );
 }
 

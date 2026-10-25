@@ -1008,8 +1008,36 @@ expression: abi
           {
             "serialization_type": "borsh",
             "type_schema": {
-              "declaration": "VerificationResult",
+              "declaration": "VerificationResultWithCollateralDates",
               "definitions": {
+                "CollateralDates": {
+                  "Struct": [
+                    [
+                      "earliest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "latest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "earliest_expiration_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_earliest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_latest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_earliest_expiration_date",
+                      "u64"
+                    ]
+                  ]
+                },
                 "EnclaveReport": {
                   "Struct": [
                     [
@@ -1358,31 +1386,38 @@ expression: abi
                     "elements": "u8"
                   }
                 },
-                "VerificationResult": {
+                "VerificationResultWithCollateralDates": {
                   "Enum": {
                     "tag_width": 1,
                     "variants": [
                       [
                         0,
                         "Verified",
-                        "VerificationResult__Verified"
+                        "VerificationResultWithCollateralDates__Verified"
                       ],
                       [
                         1,
                         "Rejected",
-                        "VerificationResult__Rejected"
+                        "VerificationResultWithCollateralDates__Rejected"
                       ]
                     ]
                   }
                 },
-                "VerificationResult__Rejected": {
+                "VerificationResultWithCollateralDates__Rejected": {
                   "Struct": [
                     "VerifierError"
                   ]
                 },
-                "VerificationResult__Verified": {
+                "VerificationResultWithCollateralDates__Verified": {
                   "Struct": [
-                    "VerifiedReport"
+                    [
+                      "report",
+                      "VerifiedReport"
+                    ],
+                    [
+                      "collateral_dates",
+                      "CollateralDates"
+                    ]
                   ]
                 },
                 "VerifiedReport": {
@@ -1525,6 +1560,9 @@ expression: abi
                 },
                 "u32": {
                   "Primitive": 4
+                },
+                "u64": {
+                  "Primitive": 8
                 },
                 "u8": {
                   "Primitive": 1
@@ -1970,7 +2008,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -3193,7 +3231,7 @@ expression: abi
               "minimum": 0.0
             },
             "verifier_tera_gas": {
-              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
+              "description": "Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3922,7 +3960,7 @@ expression: abi
               "minimum": 0.0
             },
             "verifier_tera_gas": {
-              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
+              "description": "Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.",
               "type": [
                 "integer",
                 "null"

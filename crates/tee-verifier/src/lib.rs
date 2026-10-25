@@ -1,7 +1,7 @@
 //! Stateless TEE attestation verifier contract.
 //!
 //! Wraps [`dcap_qvl::verify::verify`] in [`TeeVerifier::verify_quote`], and
-//! [`dcap_qvl::verify::QuoteVerifier::verify_with_policy`] in
+//! [`tee_verifier_conversions::verify_quote_with_collateral_dates`] in
 //! [`TeeVerifier::verify_quote_with_collateral_dates`], which also returns the
 //! collateral's validity window. The contract holds no state and has no admin;
 //! verifier-internal policy (the `dcap-qvl` version, Intel root certs, etc.) is
@@ -10,7 +10,6 @@
 //!
 //! See `docs/design/attestation-verifier-contract.md` for the design.
 
-use dcap_qvl::{QuotePolicy, verify::QuoteVerifier};
 use near_sdk::{env, near};
 use tee_verifier_interface::{
     Collateral, QuoteBytes, VerificationResult, VerificationResultWithCollateralDates,
@@ -74,9 +73,8 @@ impl TeeVerifier {
     /// its [`CollateralDates`], and rejects as a value, like
     /// [`Self::verify_quote`].
     ///
-    /// Applies no policy ([`QuotePolicy::claims_only`]), so an accepted quote
-    /// gets the same report as from [`Self::verify_quote`]. It costs slightly
-    /// more gas.
+    /// Applies no policy, so an accepted quote gets the same report as from
+    /// [`Self::verify_quote`]. It costs slightly more gas.
     ///
     /// [`CollateralDates`]: tee_verifier_interface::CollateralDates
     #[result_serializer(borsh)]
@@ -85,26 +83,11 @@ impl TeeVerifier {
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResultWithCollateralDates {
-        let now_seconds = now_seconds();
-        let quote_bytes = quote.into_dcap_type();
-        let collateral = collateral.into_dcap_type();
-        match QuoteVerifier::new_prod().verify_with_policy(
-            &quote_bytes,
+        tee_verifier_conversions::verify_quote_with_collateral_dates(
+            quote,
             collateral,
-            now_seconds,
-            &QuotePolicy::claims_only(now_seconds),
-        ) {
-            Ok(claims) => {
-                let (report, collateral_dates) = claims.into_interface_type();
-                VerificationResultWithCollateralDates::Verified {
-                    report,
-                    collateral_dates,
-                }
-            }
-            Err(err) => VerificationResultWithCollateralDates::Rejected(
-                VerifierError::DcapVerification(err.to_string()),
-            ),
-        }
+            now_seconds(),
+        )
     }
 }
 

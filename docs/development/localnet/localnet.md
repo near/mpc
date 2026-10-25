@@ -301,8 +301,8 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 
 ## 6. (Optional) Deploy the TEE verifier
 
-The stateless `tee-verifier` contract exposes `verify_quote`, which the MPC
-contract calls to attest node quotes. Build it with `--no-abi` (its types don't
+The stateless `tee-verifier` contract exposes `verify_quote_with_collateral_dates`,
+which the MPC contract calls to attest node quotes, and the older `verify_quote`. Build it with `--no-abi` (its types don't
 derive `BorshSchema`, so the default ABI-embedding build fails; the plain WASM is
 all we need):
 

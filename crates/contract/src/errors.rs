@@ -41,7 +41,7 @@ pub enum TeeError {
     TeeValidationFailed,
     #[error("The TEE verifier rejected the quote: {reason}")]
     QuoteRejected { reason: String },
-    #[error("The TEE verifier did not answer the verify_quote call.")]
+    #[error("The TEE verifier did not answer the verify_quote_with_collateral_dates call.")]
     VerifierUnavailable,
 }
 

@@ -2,7 +2,8 @@
 //! `tee-verifier-interface`.
 //!
 //! Shared by the on-chain `tee-verifier` contract and the off-chain
-//! `attestation` crate's `verify_locally` path.
+//! `attestation` crate's `verify_locally` path, as is
+//! [`verify_quote_with_collateral_dates`], so both derive the same expiry.
 //!
 //! These mappings need only `dcap-qvl` + `tee-verifier-interface` + `borsh`, so
 //! they live in this minimal crate. Putting them in `attestation` instead would
@@ -17,11 +18,41 @@
 extern crate alloc;
 
 use alloc::{string::ToString as _, vec::Vec};
-use dcap_qvl::{QuoteClaims, quote as dq_quote, tcb_info as dq_tcb, verify as dq_verify};
+use dcap_qvl::{
+    QuoteClaims, QuotePolicy, quote as dq_quote, tcb_info as dq_tcb, verify as dq_verify,
+};
 use tee_verifier_interface::{
     Collateral, CollateralDates, EnclaveReport, QuoteBytes, Report, TDReport10, TDReport15,
-    TDReport15Ex, TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
+    TDReport15Ex, TcbStatus, TcbStatusWithAdvisory, VerificationResultWithCollateralDates,
+    VerifiedReport, VerifierError,
 };
+
+/// Verifies `quote` against `collateral` at `now_seconds`, returning the report and the
+/// collateral's [`CollateralDates`]. Applies no policy ([`QuotePolicy::claims_only`]), so an
+/// accepted quote gets the same report as from [`dq_verify::verify`].
+pub fn verify_quote_with_collateral_dates(
+    quote: QuoteBytes,
+    collateral: Collateral,
+    now_seconds: u64,
+) -> VerificationResultWithCollateralDates {
+    match dq_verify::QuoteVerifier::new_prod().verify_with_policy(
+        &quote.into_dcap_type(),
+        collateral.into_dcap_type(),
+        now_seconds,
+        &QuotePolicy::claims_only(now_seconds),
+    ) {
+        Ok(claims) => {
+            let (report, collateral_dates) = claims.into_interface_type();
+            VerificationResultWithCollateralDates::Verified {
+                report,
+                collateral_dates,
+            }
+        }
+        Err(err) => VerificationResultWithCollateralDates::Rejected(
+            VerifierError::DcapVerification(err.to_string()),
+        ),
+    }
+}
 
 /// Converts an interface type into its `dcap_qvl` counterpart `T`.
 pub trait IntoDcapType<T> {

@@ -26,7 +26,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_sdk::{env, log, near, store::IterableMap};
 use std::time::Duration;
-use tee_verifier_interface::VerifiedReport;
+use tee_verifier_interface::{CollateralDates, VerifiedReport};
 
 pub use near_mpc_contract_interface::types::NodeId;
 
@@ -195,6 +195,7 @@ impl TeeState {
         node_id: NodeId,
         tcb_info: &TcbInfo,
         report: &VerifiedReport,
+        collateral_dates: &CollateralDates,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         let expected_report_data = Self::expected_report_data(&node_id);
@@ -204,8 +205,8 @@ impl TeeState {
             advisory_ids,
         } = tcb_info.verify(
             report,
+            collateral_dates,
             expected_report_data,
-            Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
             &accepted_measurements,
@@ -648,8 +649,8 @@ mod tests {
         collections::{BTreeMap, BTreeSet},
     };
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, account_key, collateral_dates, image_digest,
+        launcher_compose_digest, launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
     };
 
     /// Helper to set up the testing environment with a specific signer
@@ -805,7 +806,7 @@ mod tests {
         );
 
         // When: the clock advances past the stamped expiry window and cleanup runs.
-        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the previously uncleanable mock entry is removed.
@@ -832,7 +833,7 @@ mod tests {
         let oversized = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS * 10),
+            expiry_timestamp_seconds: Some(attestation::MOCK_EXPIRATION_DURATION_SECONDS * 10),
             expected_measurements: None,
         };
         tee_state
@@ -841,7 +842,7 @@ mod tests {
 
         // When: the clock advances just past the contract's default window — well
         // before the submitter's requested expiry.
-        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the entry is cleaned — the submitted expiry was capped at the default.
@@ -1778,6 +1779,7 @@ mod tests {
             node_id,
             &mock_tcb_info(),
             &verified_report(),
+            &collateral_dates(),
             Duration::MAX,
         );
 
@@ -1812,6 +1814,7 @@ mod tests {
             node_id.clone(),
             &mock_tcb_info(),
             &verified_report(),
+            &collateral_dates(),
             Duration::MAX,
         );
 
@@ -1824,6 +1827,65 @@ mod tests {
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
         assert_eq!(stored.accepted_at_seconds, VALID_ATTESTATION_TIMESTAMP);
+        assert_matches!(
+            &stored.verified_attestation,
+            VerifiedAttestation::Dstack(attestation)
+                if attestation.expiry_timestamp_seconds == collateral_dates().earliest_expiration_date
+        );
+    }
+
+    /// The stored expiry describes the collateral last presented, even when that is older.
+    #[test]
+    fn verify_and_store_dstack__should_overwrite_the_expiry_with_an_earlier_one() {
+        // Given
+        set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
+        let mut tee_state = TeeState::default();
+        whitelist_dstack_measurements(
+            &mut tee_state,
+            image_digest(),
+            launcher_image_hash(),
+            Some(launcher_compose_digest()),
+        );
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
+            account_public_key: Ed25519PublicKey(account_key()),
+        };
+        tee_state
+            .verify_and_store_dstack(
+                node_id.clone(),
+                &mock_tcb_info(),
+                &verified_report(),
+                &collateral_dates(),
+                Duration::MAX,
+            )
+            .unwrap();
+        let earlier_expiry = collateral_dates().earliest_expiration_date - 1;
+        let older_collateral_dates = CollateralDates {
+            earliest_expiration_date: earlier_expiry,
+            ..collateral_dates()
+        };
+
+        // When
+        let result = tee_state.verify_and_store_dstack(
+            node_id.clone(),
+            &mock_tcb_info(),
+            &verified_report(),
+            &older_collateral_dates,
+            Duration::MAX,
+        );
+
+        // Then
+        assert_matches!(result, Ok(ParticipantInsertion::UpdatedExistingParticipant));
+        let stored = tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("attestation must be stored");
+        assert_matches!(
+            &stored.verified_attestation,
+            VerifiedAttestation::Dstack(attestation)
+                if attestation.expiry_timestamp_seconds == earlier_expiry
+        );
     }
 
     /// Stale code-hash votes from removed participants must not count toward

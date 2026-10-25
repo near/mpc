@@ -13,10 +13,13 @@ use core::fmt;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
-use tee_verifier_interface::{TDReport10, TcbStatus, VerifiedReport};
+use tee_verifier_interface::{
+    CollateralDates, TDReport10, TcbStatus, VerificationResultWithCollateralDates, VerifiedReport,
+    VerifierError,
+};
 
 #[cfg(feature = "local-verify")]
-use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
+use crate::dcap_conversions::verify_quote_with_collateral_dates;
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -154,8 +157,8 @@ impl DstackAttestation {
         })
     }
 
-    /// Full local verification: runs [`dcap_qvl::verify::verify`] and then the
-    /// post-DCAP checks via [`Self::verify_with_report`].
+    /// Full local verification: runs the DCAP step ([`Self::verify_dcap_quote`])
+    /// and then the post-DCAP checks via [`Self::verify_with_report`].
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,
@@ -163,7 +166,7 @@ impl DstackAttestation {
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedDstackAttestation, VerificationError> {
-        let report = self.verify_dcap_quote(timestamp_seconds)?;
+        let (report, _) = self.verify_dcap_quote(timestamp_seconds)?;
         Self::verify_with_report(
             &self.tcb_info,
             &report,
@@ -172,20 +175,28 @@ impl DstackAttestation {
         )
     }
 
-    /// Runs only the DCAP step ([`dcap_qvl::verify::verify`]) and returns the
-    /// resulting report as the `tee-verifier-interface` mirror — the same value
-    /// the `tee-verifier` contract returns on-chain.
+    /// Runs only the DCAP step and returns the report and the collateral's
+    /// validity window as the `tee-verifier-interface` mirrors — the same values
+    /// the `tee-verifier` contract's `verify_quote_with_collateral_dates` returns
+    /// on-chain.
     #[cfg(feature = "local-verify")]
     pub fn verify_dcap_quote(
         &self,
         timestamp_seconds: u64,
-    ) -> Result<VerifiedReport, VerificationError> {
-        let collateral = self.collateral.clone().into_dcap_type();
-        Ok(
-            dcap_qvl::verify::verify(&self.quote.0, &collateral, timestamp_seconds)
-                .map_err(|e| VerificationError::DcapVerification(e.to_string()))?
-                .into_interface_type(),
-        )
+    ) -> Result<(VerifiedReport, CollateralDates), VerificationError> {
+        match verify_quote_with_collateral_dates(
+            self.quote.clone(),
+            self.collateral.clone(),
+            timestamp_seconds,
+        ) {
+            VerificationResultWithCollateralDates::Verified {
+                report,
+                collateral_dates,
+            } => Ok((report, collateral_dates)),
+            VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(
+                reason,
+            )) => Err(VerificationError::DcapVerification(reason)),
+        }
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
