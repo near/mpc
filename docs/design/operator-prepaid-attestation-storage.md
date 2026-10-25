@@ -27,7 +27,7 @@ entries an account holds  ≤  grants it has bought
 
 Because grants are denominated in *entries*, re-pricing after a storage-price change affects only future grants and can never strand a sold one — the failure mode a NEAR-denominated balance would have.
 
-The counter is **available** grants, not lifetime total, so `0` means either "never prepaid" or "prepaid, now backing an entry"; disambiguate with `get_tee_accounts`. Reclamation waits for the entry to expire (7 days), so an operator prepays for the nodes they run **plus a spare** — typically two: the live node and its migration target.
+The counter is **available** grants, not lifetime total, so `0` means either "never prepaid" or "prepaid, now backing an entry"; disambiguate with `get_tee_accounts`. Reclamation waits for the entry to expire (when its collateral does, up to ~30 days), so an operator prepays for the nodes they run **plus a spare** — typically two: the live node and its migration target.
 
 ### API
 
@@ -148,7 +148,7 @@ Ask for as many grants as the operator runs nodes, plus the spare — the exampl
 | Operator submits on the node's behalf | `report_data` binds to the signer, so it fails verification. |
 | Gate `Attestation::Mock` off in production | Would remove the cheap vector, but mock attestations are still needed. |
 | Cap entries per account | Implicit accounts are ~free and deletable, so a cap moves amplification only 7.2× → ~5.8×. |
-| Owner-callable release returning a grant early | Removes the spare-grant need and reclaims storage sooner, but is another entry point that must refuse to evict a live participant. Revisit if the 7-day wait hurts. |
+| Owner-callable release returning a grant early | Removes the spare-grant need and reclaims storage sooner, but is another entry point that must refuse to evict a live participant. Revisit if the wait for expiry hurts. |
 | Restrict submission to current-or-proposed participants | Not possible today — `vote_new_parameters` rejects proposals naming unattested participants, so attestation must come first. Would need a gate at the Running→Resharing transition. Worth its own issue: it removes the attack surface rather than pricing it. |
 
 ## Security
