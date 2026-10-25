@@ -1,6 +1,4 @@
-use super::foreign_chain::{
-    ForeignChainWhitelist, monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist,
-};
+use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
@@ -77,6 +75,8 @@ pub fn spawn_real_indexer(
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
         oneshot::channel();
+    let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
+        oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -84,9 +84,6 @@ pub fn spawn_real_indexer(
         watch::channel(vec![]);
     let (allowed_os_measurements_sender, allowed_os_measurements_receiver) = watch::channel(vec![]);
     let (my_attestation_sender, my_attestation_receiver) = watch::channel(None);
-    let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-        watch::channel(ForeignChainWhitelist::new());
-    let verifier_whitelist_receiver = foreign_chain_whitelist_receiver.clone();
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -231,14 +228,20 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            tokio::spawn(monitor_foreign_chain_whitelist(
-                foreign_chain_whitelist_sender,
-                indexer_state.contract.clone(),
-            ));
+            let foreign_chain_whitelist_receiver =
+                monitor_foreign_chain_whitelist(indexer_state.contract.clone()).await;
             tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                verifier_whitelist_receiver,
+                foreign_chain_whitelist_receiver.clone(),
                 foreign_chains.clone(),
             ));
+            if foreign_chain_whitelist_sender_oneshot
+                .send(foreign_chain_whitelist_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain whitelist receiver back to main driver."
+                )
+            };
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
@@ -335,6 +338,10 @@ pub fn spawn_real_indexer(
     let foreign_chain_supporters_receiver = foreign_chain_supporters_receiver_oneshot
         .blocking_recv()
         .expect("foreign chain supporters receiver must be returned by indexer");
+
+    let foreign_chain_whitelist_receiver = foreign_chain_whitelist_receiver_oneshot
+        .blocking_recv()
+        .expect("foreign chain whitelist receiver must be returned by indexer");
 
     IndexerAPI {
         contract_state_receiver,

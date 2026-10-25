@@ -262,7 +262,7 @@ impl VerifyForeignTxProvider {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
         let quorum = self.rpc_quorum(request.chain()).ok_or_else(|| {
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc();
             NoRpcQuorumError {
                 requested: request.chain(),
             }

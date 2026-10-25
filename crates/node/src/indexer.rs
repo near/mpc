@@ -201,7 +201,7 @@ pub struct IndexerAPI<TransactionSender> {
     /// registered supporters (by TLS key). Seeded with the first successful read
     /// before the indexer hands it back, so it always holds a real value.
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
-    /// The contract's RPC provider whitelist, empty until the indexer's first read.
+    /// The contract's RPC provider whitelist, seeded with the first successful read.
     pub foreign_chain_whitelist_receiver: watch::Receiver<foreign_chain::ForeignChainWhitelist>,
 }
 

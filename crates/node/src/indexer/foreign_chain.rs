@@ -116,23 +116,28 @@ async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send
     }
 }
 
-/// Publishes the contract's whitelist on `sender` whenever it changes.
+/// Returns once the first whitelist is read, then keeps it updated in the background, like
+/// [`monitor_foreign_chain_supporters`].
 pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sync + 'static>(
-    sender: watch::Sender<ForeignChainWhitelist>,
     contract: MpcContractHandle<V>,
-) {
-    loop {
-        let whitelist = fetch_foreign_chain_whitelist_with_retry(&contract).await;
-        sender.send_if_modified(|previous| {
-            if *previous != whitelist {
-                *previous = whitelist;
-                true
-            } else {
-                false
-            }
-        });
-        tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
-    }
+) -> watch::Receiver<ForeignChainWhitelist> {
+    let initial = fetch_foreign_chain_whitelist_with_retry(&contract).await;
+    let (sender, receiver) = watch::channel(initial);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
+            let whitelist = fetch_foreign_chain_whitelist_with_retry(&contract).await;
+            sender.send_if_modified(|previous| {
+                if *previous != whitelist {
+                    *previous = whitelist;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    });
+    receiver
 }
 
 #[cfg(test)]

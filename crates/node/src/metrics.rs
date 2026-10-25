@@ -207,10 +207,20 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
     prometheus::register_int_counter!(
         "mpc_num_verify_foreign_tx_unavailable_chain_rejections",
         "Number of gate rejections of verify foreign tx attempts, at most one per node per \
-         attempt: the requested chain is not available or this node has no RPC quorum for it"
+         attempt: the requested chain is not available"
     )
     .unwrap()
 });
+
+pub static MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_no_rpc_quorum_rejections",
+            "Number of verify foreign tx attempts this node abstained from because its providers \
+             cannot reach the chain's voted RPC quorum, at most one per node per attempt"
+        )
+        .unwrap()
+    });
 
 pub static MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
