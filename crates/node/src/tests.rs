@@ -3,7 +3,7 @@ use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
@@ -482,15 +482,15 @@ async fn do_request_ckd_and_await_response(
     }
 }
 
-/// Request a Bitcoin verify foreign tx from the indexer and wait for the response.
+/// Request an Ethereum verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
-/// `bitcoin_tx_id` distinguishes concurrent requests: responses are matched by
+/// `tx_id` distinguishes concurrent requests: responses are matched by
 /// request payload, so callers must not reuse an id across requests.
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
     domain: &DomainConfig,
-    bitcoin_tx_id: [u8; 32],
+    tx_id: [u8; 32],
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
@@ -502,10 +502,10 @@ pub async fn request_verify_foreign_tx_and_await_response(
         verify_foreign_tx_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
         request: VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
-                tx_id: bitcoin_tx_id.into(),
-                confirmations: 2.into(),
-                extractors: [BitcoinExtractor::BlockHash].into(),
+            request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId(tx_id),
+                extractors: [EvmExtractor::BlockHash].into(),
+                finality: EvmFinality::Finalized,
             }),
             domain_id: domain.id.0.into(),
             payload_version: ForeignTxPayloadVersion::V1,

@@ -52,6 +52,7 @@ pub struct FakeMpcContractState {
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
+    foreign_chain_whitelist: BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
     pub migration_service: NodeMigrations,
 }
 
@@ -72,6 +73,7 @@ impl FakeMpcContractState {
             pending_verify_foreign_txs: BTreeMap::new(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
+            foreign_chain_whitelist: BTreeMap::new(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -82,6 +84,20 @@ impl FakeMpcContractState {
 
     pub fn foreign_chains_configs(&self) -> &dtos::ForeignChainsConfigs {
         &self.foreign_chains_configs
+    }
+
+    pub fn allowed_foreign_chain_providers(
+        &self,
+    ) -> &BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
+        &self.foreign_chain_whitelist
+    }
+
+    pub fn whitelist_foreign_chain_providers(
+        &mut self,
+        entries: BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
+    ) {
+        self.foreign_chain_whitelist.extend(entries);
+        self.recompute_available_foreign_chains();
     }
 
     /// Resolves the signer through the active participant set like the real endpoint,
@@ -113,10 +129,8 @@ impl FakeMpcContractState {
             .map(|info| info.tls_public_key.clone())
     }
 
-    /// Mirrors the real contract's recomputation: a chain is available once the
-    /// max required active signers across ForeignTx domains is reached.
-    /// Deviation: no whitelisting — the fake has no provider-whitelist voting, so every
-    /// registered chain counts.
+    /// Mirrors the real contract's recomputation: a whitelisted chain is available
+    /// once the max required active signers across ForeignTx domains is reached.
     fn recompute_available_foreign_chains(&mut self) {
         let parameters = match &self.state {
             ProtocolContractState::Running(state) => &state.parameters,
@@ -152,6 +166,7 @@ impl FakeMpcContractState {
         }
         self.available_foreign_chains = supporters_count
             .into_iter()
+            .filter(|(chain, _)| self.foreign_chain_whitelist.contains_key(chain))
             .filter(|(_, count)| *count >= required_active_signers)
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
