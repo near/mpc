@@ -237,14 +237,17 @@ impl VerifyForeignTxProvider {
     }
 
     /// `None` when the chain is not whitelisted or this node's providers cannot reach its quorum.
-    fn rpc_quorum(&self, chain: dtos::ForeignChain) -> Option<RpcQuorum> {
+    fn rpc_quorum(&self, chain: dtos::ForeignChain) -> anyhow::Result<Option<RpcQuorum>> {
         let (_, local_chain) = self
             .config
             .foreign_chains
             .iter_chains()
-            .find(|(configured, _)| *configured == chain)?;
+            .find(|(configured, _)| *configured == chain)
+            .with_context(|| format!("{chain:?} is not configured on this node"))?;
         let whitelist = self.foreign_chain_whitelist.borrow();
-        rpc_quorum(local_chain, whitelist.get(&chain)?)
+        Ok(whitelist
+            .get(&chain)
+            .and_then(|entry| rpc_quorum(local_chain, entry)))
     }
 
     // TODO(#2677): Any negative verdict or errors here only makes this node abstain from
@@ -261,7 +264,7 @@ impl VerifyForeignTxProvider {
             .inspect_err(|_| {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
-        let quorum = self.rpc_quorum(request.chain()).ok_or_else(|| {
+        let quorum = self.rpc_quorum(request.chain())?.ok_or_else(|| {
             metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc();
             NoRpcQuorumError {
                 requested: request.chain(),

@@ -9,8 +9,8 @@ use mpc_node_config::foreign_chains::provider_identity::ProviderWhitelistMatches
 use near_mpc_contract_interface::types::{ChainEntry, ProviderId};
 
 /// `None` when the conforming local providers cannot reach the voted quorum. Local providers that
-/// match the same whitelist provider count once: only the first by name is whitelisted, the others
-/// can still veto a verdict but never stand in for it.
+/// match the same whitelist provider count once: only the first conforming one by name is
+/// whitelisted, the others can still veto a verdict but never stand in for it.
 pub(crate) fn rpc_quorum(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,

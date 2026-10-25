@@ -105,8 +105,8 @@ impl MpcContract {
         Ok(applied)
     }
 
-    /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at
-    /// startup to validate their local `foreign_chains.yaml`.
+    /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to
+    /// check their local config against it and to enforce each chain's RPC quorum.
     pub fn allowed_foreign_chain_providers(
         &self,
     ) -> std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {

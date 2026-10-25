@@ -31,7 +31,7 @@ expression: abi
       },
       {
         "name": "allowed_foreign_chain_providers",
-        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at\n startup to validate their local `foreign_chains.yaml`.",
+        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to\n check their local config against it and to enforce each chain's RPC quorum.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
