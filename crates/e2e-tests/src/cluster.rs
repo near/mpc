@@ -31,6 +31,7 @@ use tokio::sync::OnceCell;
 
 use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::CallMpc;
+use crate::conversions::ToNearKey;
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts, localhost_with_port};
 use crate::near_sandbox::NearSandbox;
 use crate::test_dir::TestDir;
@@ -931,6 +932,20 @@ impl MpcCluster {
         let node = &self.nodes[node_index];
         self.blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
+    }
+
+    /// Deletes the node's NEAR signer key from its account, signed with the
+    /// operator key. The node keeps running — indexing, participating in
+    /// computations, leading requests — but every transaction it submits from
+    /// now on is rejected on chain.
+    pub async fn delete_node_signer_key(&self, node_index: usize) -> anyhow::Result<()> {
+        self.blockchain
+            .delete_access_key(
+                self.nodes[node_index].account_id().as_ref(),
+                &self.operator_keys[node_index],
+                self.node_keys[node_index].to_near_public_key(),
+            )
+            .await
     }
 
     /// Register backup service info for a node.

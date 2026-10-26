@@ -88,6 +88,22 @@ impl NearBlockchain {
         })
     }
 
+    /// Deletes `key_to_delete` from `account_id`, signed with `signer_key` — a
+    /// different full-access key on the same account.
+    pub async fn delete_access_key(
+        &self,
+        account_id: &str,
+        signer_key: &SigningKey,
+        key_to_delete: near_kit::signer::PublicKey,
+    ) -> anyhow::Result<()> {
+        self.make_client(account_id, signer_key)?
+            .delete_key(key_to_delete)
+            .wait_until::<Final>()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to delete access key on {account_id}: {e}"))?;
+        Ok(())
+    }
+
     pub fn client_for(
         &self,
         account_id: &str,
