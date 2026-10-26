@@ -49,6 +49,7 @@ updates:
       - dependency-name: "near-jsonrpc-client"
       - dependency-name: "near-jsonrpc-primitives"
       - dependency-name: "near-primitives"
+      # Pin exact near-* versions since near-sdk 5.30 and near-workspaces 0.24.
       - dependency-name: "near-sdk"
       - dependency-name: "near-workspaces"
       # These are pinned by git tag and bumped manually in lockstep;

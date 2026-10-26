@@ -172,6 +172,9 @@ mappings = "0.7"
 mockall = "0.15.0"
 near-abi = "0.4.4"
 near-account-id = "3.0.0"
+# TODO(#4801): the near crates below sit on release candidates until the nearcore 2.14.0
+# crates, and the near-jsonrpc-client, near-workspaces and near-sdk releases built on them,
+# are published. Swap every rc pin for the final in one go.
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
 # the git nearcore crate below, which the node's indexer stack requires.
 # Must be bumped in lockstep with `near-primitives`: its types appear in
@@ -259,6 +262,7 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
+# TODO(#4801): rc.6 until the 2.14.0 tag is published.
 near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
 near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
 near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
