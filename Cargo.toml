@@ -266,16 +266,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
 
 ## Outdated dependencies we cannot upgrade ##
 # This version needs to be exactly the same as in `near_sdk::schemars`
@@ -326,5 +326,6 @@ debug = false
 panic = "abort"
 codegen-units = 1
 overflow-checks = true
+
 
 
