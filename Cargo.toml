@@ -182,12 +182,12 @@ near-account-id = "3.0.0"
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
 near-crypto-public = { version = "0.38.0-rc.6", package = "near-crypto" }
-near-jsonrpc-client = "0.23.0-rc.3"
+near-jsonrpc-client = "0.23.0-rc.4"
 near-jsonrpc-primitives = "0.38.0-rc.6"
 near-primitives = "0.38.0-rc.6"
 near-sandbox = "0.4.0-rc.2"
 near-sdk = { version = "5.30.0-rc.1", features = ["unstable"] }
-near-workspaces = { version = "0.24.0-rc.2" }
+near-workspaces = { version = "0.24.0-rc.3" }
 ## End of the temporary pins
 
 near-gas = "0.3.6"
@@ -326,4 +326,5 @@ debug = false
 panic = "abort"
 codegen-units = 1
 overflow-checks = true
+
 
