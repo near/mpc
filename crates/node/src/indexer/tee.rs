@@ -6,7 +6,7 @@ use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_contract_transport::{ObservedState, ViewContract};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::{
-    AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation,
+    AllowedMpcDockerImageHash, Ed25519PublicKey, ExpectedMeasurements, StoredAttestation,
 };
 use tokio::sync::watch;
 
@@ -83,6 +83,15 @@ pub async fn monitor_allowed_launcher_compose_hashes<
     contract: MpcContractHandle<V>,
 ) {
     let fetcher = { || contract.allowed_launcher_compose_hashes() };
+
+    monitor_tee_state(sender, &fetcher).await
+}
+
+pub async fn monitor_allowed_os_measurements<V: ViewContract + Clone + Send + Sync + 'static>(
+    sender: watch::Sender<Vec<ExpectedMeasurements>>,
+    contract: MpcContractHandle<V>,
+) {
+    let fetcher = { || contract.allowed_os_measurements() };
 
     monitor_tee_state(sender, &fetcher).await
 }

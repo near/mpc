@@ -145,7 +145,7 @@ INTERNAL_MPC_MAIN_PORT=80
 INTERNAL_MPC_MIGRATION_PORT=8079
 
 # OS image
-OS_IMAGE=dstack-dev-0.5.8
+OS_IMAGE=dstack-0.5.8
 
 # Launcher and MPC node manifest digests (filled into the launcher compose
 # template at deploy time). These must match digests voted into the contract.
