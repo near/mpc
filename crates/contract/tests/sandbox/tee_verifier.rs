@@ -19,8 +19,7 @@ use crate::sandbox::{
         sandbox_mpc_contract::SandboxMpcContract,
     },
 };
-use attestation_types::Measurements;
-use mpc_attestation::attestation::default_measurements;
+use mpc_attestation::attestation::dev_measurements;
 use mpc_contract::{
     MpcContract,
     errors::TeeError,
@@ -40,7 +39,6 @@ use tee_verifier_interface::VerificationResult;
 use test_utils::attestation::{
     VALID_ATTESTATION_TIMESTAMP, account_secret_key, collateral, collateral_dates, image_digest,
     launcher_compose_digest, launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, quote,
-    verified_report,
 };
 use tokio_util::time::FutureExt as _;
 
@@ -443,24 +441,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation else {
         panic!("expected a stored Dstack attestation");
     };
-    // The stored measurements are the allowlist entry the fixture matched; select
-    // the expected entry by the fixture report's rtmrs, so the expectation stays
-    // independent of what was stored.
-    let report = verified_report();
-    let td10 = report
-        .report
-        .as_td10()
-        .expect("fixture quote carries a TD report");
-    let fixture_rtmrs = Measurements {
-        mrtd: td10.mr_td,
-        rtmr0: td10.rt_mr0,
-        rtmr1: td10.rt_mr1,
-        rtmr2: td10.rt_mr2,
-    };
-    let matched = default_measurements()
-        .iter()
-        .find(|m| m.rtmrs == fixture_rtmrs)
-        .expect("the fixture's rtmrs must match one of the shipped measurement sets");
+    let matched = dev_measurements();
     let expected = dtos::VerifiedDstackAttestation {
         mpc_image_hash: image_digest(),
         launcher_compose_hash: launcher_compose_digest(),

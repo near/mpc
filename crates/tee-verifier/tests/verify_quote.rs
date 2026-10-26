@@ -3,9 +3,7 @@
 
 #![expect(non_snake_case)]
 
-use mpc_attestation::attestation::{
-    AcceptedAttestation, VerifiedAttestation, default_measurements,
-};
+use mpc_attestation::attestation::{AcceptedAttestation, VerifiedAttestation, dev_measurements};
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
@@ -209,7 +207,7 @@ fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_loc
             VALID_ATTESTATION_TIMESTAMP,
             &[image_digest()],
             &[launcher_compose_digest()],
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("the fixture verifies locally")
     else {
