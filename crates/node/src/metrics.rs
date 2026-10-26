@@ -216,8 +216,8 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS: LazyLock<promethe
     LazyLock::new(|| {
         prometheus::register_int_counter!(
             "mpc_num_verify_foreign_tx_no_rpc_quorum_rejections",
-            "Number of verify foreign tx attempts this node abstained from because its providers \
-             cannot reach the chain's voted RPC quorum, at most one per node per attempt"
+            "Number of verify foreign tx attempts this node abstained from because it has no RPC \
+             quorum for the chain, at most one per node per attempt"
         )
         .unwrap()
     });

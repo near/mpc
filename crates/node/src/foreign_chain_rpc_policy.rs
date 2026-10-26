@@ -8,20 +8,36 @@ use mpc_node_config::ForeignChainConfig;
 use mpc_node_config::foreign_chains::provider_identity::ProviderWhitelistMatches;
 use near_mpc_contract_interface::types::{ChainEntry, ProviderId};
 
-/// `None` when the conforming local providers cannot reach the voted quorum. Local providers that
-/// match the same whitelist provider count once: only the first conforming one by name is
-/// whitelisted, the others can still veto a verdict but never stand in for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum RpcQuorumError {
+    /// Zero, or more than this node can count. The contract rejects such votes,
+    /// so this should never happen.
+    #[error("the voted quorum {0} cannot be enforced")]
+    InvalidQuorum(u64),
+    #[error("{conforming} local providers conform to the whitelist, the quorum is {required}")]
+    BelowQuorum {
+        required: NonZeroUsize,
+        conforming: usize,
+    },
+}
+
+/// Local providers that match the same whitelist provider count once: only the first conforming
+/// one by name is whitelisted, the others can still veto a verdict but never stand in for it.
 pub(crate) fn rpc_quorum(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,
-) -> Option<RpcQuorum> {
+) -> Result<RpcQuorum, RpcQuorumError> {
     let required = usize::try_from(entry.quorum)
         .ok()
-        .and_then(NonZeroUsize::new)?;
+        .and_then(NonZeroUsize::new)
+        .ok_or(RpcQuorumError::InvalidQuorum(entry.quorum))?;
     let conforming =
         ProviderWhitelistMatches::for_chain(local_chain, entry).whitelist_conforming_providers();
     if !conforming.meets_quorum(required) {
-        return None;
+        return Err(RpcQuorumError::BelowQuorum {
+            required,
+            conforming: conforming.whitelist_provider_count(),
+        });
     }
     let mut seen_whitelist_ids = BTreeSet::new();
     let whitelisted = conforming
@@ -29,7 +45,7 @@ pub(crate) fn rpc_quorum(
         .filter(|(_, whitelist_id)| seen_whitelist_ids.insert(*whitelist_id))
         .map(|(local_name, _)| ProviderId(local_name.as_str().to_owned()))
         .collect();
-    Some(RpcQuorum {
+    Ok(RpcQuorum {
         required,
         whitelisted,
     })
@@ -115,7 +131,7 @@ mod tests {
         // Then
         assert_eq!(
             quorum,
-            Some(RpcQuorum {
+            Ok(RpcQuorum {
                 required: NonZeroUsize::new(2).unwrap(),
                 whitelisted: ids(&["my-alchemy", "my-infura"]),
             })
@@ -123,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn rpc_quorum__should_be_none_when_the_conforming_providers_are_below_the_quorum() {
+    fn rpc_quorum__should_fail_when_the_conforming_providers_are_below_the_quorum() {
         // Given
         let local = local(&[("my-alchemy", "https://eth.alchemy.com/")]);
 
@@ -131,7 +147,13 @@ mod tests {
         let quorum = rpc_quorum(&local, &entry(&WHITELIST, 2));
 
         // Then
-        assert_eq!(quorum, None);
+        assert_eq!(
+            quorum,
+            Err(RpcQuorumError::BelowQuorum {
+                required: NonZeroUsize::new(2).unwrap(),
+                conforming: 1,
+            })
+        );
     }
 
     #[test]
@@ -146,7 +168,13 @@ mod tests {
         let quorum = rpc_quorum(&local, &entry(&WHITELIST, 2));
 
         // Then
-        assert_eq!(quorum, None);
+        assert_eq!(
+            quorum,
+            Err(RpcQuorumError::BelowQuorum {
+                required: NonZeroUsize::new(2).unwrap(),
+                conforming: 1,
+            })
+        );
     }
 
     #[test]
@@ -164,7 +192,7 @@ mod tests {
         // Then
         assert_eq!(
             quorum.map(|quorum| quorum.whitelisted),
-            Some(ids(&["alchemy-a"]))
+            Ok(ids(&["alchemy-a"]))
         );
     }
 
@@ -177,11 +205,17 @@ mod tests {
         let quorum = rpc_quorum(&local, &entry(&WHITELIST, 1));
 
         // Then
-        assert_eq!(quorum, None);
+        assert_eq!(
+            quorum,
+            Err(RpcQuorumError::BelowQuorum {
+                required: NonZeroUsize::new(1).unwrap(),
+                conforming: 0,
+            })
+        );
     }
 
     #[test]
-    fn rpc_quorum__should_be_none_for_a_zero_quorum() {
+    fn rpc_quorum__should_fail_for_a_zero_quorum() {
         // Given
         let local = local(&[("my-alchemy", "https://eth.alchemy.com/")]);
 
@@ -189,6 +223,6 @@ mod tests {
         let quorum = rpc_quorum(&local, &entry(&WHITELIST, 0));
 
         // Then
-        assert_eq!(quorum, None);
+        assert_eq!(quorum, Err(RpcQuorumError::InvalidQuorum(0)));
     }
 }

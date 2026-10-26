@@ -23,7 +23,7 @@ use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
-use crate::foreign_chain_rpc_policy::rpc_quorum;
+use crate::foreign_chain_rpc_policy::{self, RpcQuorumError};
 use crate::metrics;
 use crate::primitives::ParticipantId;
 use crate::providers::ecdsa::triple::participants_from_triples;
@@ -236,18 +236,19 @@ impl VerifyForeignTxProvider {
         build_signature_request(&foreign_tx_request, &response_payload)
     }
 
-    /// `None` when the chain is not whitelisted or this node's providers cannot reach its quorum.
-    fn rpc_quorum(&self, chain: dtos::ForeignChain) -> anyhow::Result<Option<RpcQuorum>> {
+    fn rpc_quorum(&self, chain: dtos::ForeignChain) -> Result<RpcQuorum, NoRpcQuorumError> {
         let (_, local_chain) = self
             .config
             .foreign_chains
             .iter_chains()
             .find(|(configured, _)| *configured == chain)
-            .with_context(|| format!("{chain:?} is not configured on this node"))?;
+            .ok_or(NoRpcQuorumError::NotConfigured { chain })?;
         let whitelist = self.foreign_chain_whitelist.borrow();
-        Ok(whitelist
+        let entry = whitelist
             .get(&chain)
-            .and_then(|entry| rpc_quorum(local_chain, entry)))
+            .ok_or(NoRpcQuorumError::NotWhitelisted { chain })?;
+        foreign_chain_rpc_policy::rpc_quorum(local_chain, entry)
+            .map_err(|source| NoRpcQuorumError::Unreachable { chain, source })
     }
 
     // TODO(#2677): Any negative verdict or errors here only makes this node abstain from
@@ -264,12 +265,9 @@ impl VerifyForeignTxProvider {
             .inspect_err(|_| {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
-        let quorum = self.rpc_quorum(request.chain())?.ok_or_else(|| {
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc();
-            NoRpcQuorumError {
-                requested: request.chain(),
-            }
-        })?;
+        let quorum = self
+            .rpc_quorum(request.chain())
+            .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc())?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(request) => {
@@ -665,11 +663,17 @@ struct ChainNotAvailableError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error(
-    "this node has no RPC quorum for the requested chain {requested:?}: it is not whitelisted or too few local providers conform to the whitelist"
-)]
-struct NoRpcQuorumError {
-    requested: dtos::ForeignChain,
+enum NoRpcQuorumError {
+    #[error("{chain:?} is not configured on this node")]
+    NotConfigured { chain: dtos::ForeignChain },
+    #[error("{chain:?} is not whitelisted")]
+    NotWhitelisted { chain: dtos::ForeignChain },
+    #[error("this node cannot reach the RPC quorum for {chain:?}: {source}")]
+    Unreachable {
+        chain: dtos::ForeignChain,
+        #[source]
+        source: RpcQuorumError,
+    },
 }
 
 /// A chain counts as available when the supporters map has an entry for it:
