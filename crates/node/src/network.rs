@@ -1134,10 +1134,6 @@ pub mod testing {
                 std::future::pending().await
             }
         }
-
-        fn is_bidirectionally_connected(&self) -> bool {
-            self.connected
-        }
     }
 
     #[async_trait::async_trait]
@@ -1261,6 +1257,7 @@ pub mod testing {
             current_protocol_versions(&participants),
         );
         transport.senders = sender_by_participant_id;
+        transport.blocked_pairs = blocked_pairs.iter().copied().collect();
         let transport = Arc::new(transport);
 
         let mut transports = Vec::new();
@@ -1406,13 +1403,14 @@ mod tests {
     use super::conn::ConnectionVersion;
     use super::{
         InvalidChannelId, InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
-        MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
+        MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager, SendError,
         broadcast_connected_peers_info, run_receive_message,
     };
     use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::network::testing::{
         TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
-        new_test_client_over, new_test_client_with_versions, new_test_transports, run_test_clients,
+        new_test_client_over, new_test_client_with_versions, new_test_transports,
+        new_test_transports_with_partition, run_test_clients,
     };
     use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet};
     use crate::primitives::{
@@ -1576,6 +1574,30 @@ mod tests {
         let mut expected = participants;
         expected.sort();
         assert_eq!(alive, expected);
+    }
+
+    #[test]
+    fn new_test_transports_with_partition__should_ensure_blocked_pairs_isolation() {
+        // Given
+        let [a, b, c] = [0, 1, 2].map(ParticipantId::from_raw);
+
+        // When
+        let transports = new_test_transports_with_partition(vec![a, b, c], &[(a, b)]);
+
+        // Then
+        let (sender_a, sender_b) = (&transports[0].0, &transports[1].0);
+        assert!(!sender_a.connectivity(b).is_bidirectionally_connected());
+        assert!(!sender_b.connectivity(a).is_bidirectionally_connected());
+        assert!(sender_a.connectivity(c).is_bidirectionally_connected());
+        assert!(matches!(
+            sender_a.send(b, Packet::Ping, None),
+            Err(SendError::PeerNotConnected(peer)) if peer == b
+        ));
+        assert!(matches!(
+            sender_b.send(a, Packet::Ping, None),
+            Err(SendError::PeerNotConnected(peer)) if peer == a
+        ));
+        assert!(sender_a.send(c, Packet::Ping, None).is_ok());
     }
 
     #[tokio::test]
@@ -2064,104 +2086,26 @@ mod tests {
 
 #[cfg(test)]
 mod participant_connection_wait_tests {
-    use super::conn::{ConnectionVersion, NodeConnectivityInterface};
     use super::{ChannelId, MeshNetworkTransportSender, NetworkTaskChannelSender};
+    use crate::network::testing::new_test_transports_with_partition;
     use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
-    use crate::primitives::{MpcMessage, ParticipantId, UniqueId};
-    use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
+    use crate::primitives::{ParticipantId, UniqueId};
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use std::collections::HashMap;
-    use std::sync::Arc;
 
-    /// A connectivity mock, returns immediately if `connected` is true,
-    /// and otherwise never resolves.
-    struct MockConnectivity {
-        connected: bool,
-        protocol_version: Option<NetworkProtocolVersion>,
-    }
-
-    #[async_trait::async_trait]
-    impl NodeConnectivityInterface for MockConnectivity {
-        fn connection_version(&self) -> ConnectionVersion {
-            ConnectionVersion::default()
-        }
-        fn was_connection_interrupted(&self, _version: ConnectionVersion) -> bool {
-            false
-        }
-        async fn wait_for_connection(&self, _version: ConnectionVersion) -> anyhow::Result<()> {
-            if self.connected {
-                Ok(())
-            } else {
-                std::future::pending().await
-            }
-        }
-        fn is_bidirectionally_connected(&self) -> bool {
-            self.connected
-        }
-
-        fn peer_network_protocol_version(&self) -> Option<NetworkProtocolVersion> {
-            self.protocol_version
-        }
-    }
-
-    struct MockTransportSender {
-        my_participant_id: ParticipantId,
-        all_participant_ids: Vec<ParticipantId>,
-        unreachable_participant_id: ParticipantId,
-    }
-
-    #[async_trait::async_trait]
-    impl MeshNetworkTransportSender for MockTransportSender {
-        fn my_participant_id(&self) -> ParticipantId {
-            self.my_participant_id
-        }
-        fn all_participant_ids(&self) -> Vec<ParticipantId> {
-            self.all_participant_ids.clone()
-        }
-        fn connectivity(
-            &self,
-            participant_id: ParticipantId,
-        ) -> Arc<dyn NodeConnectivityInterface> {
-            Arc::new(MockConnectivity {
-                connected: participant_id != self.unreachable_participant_id,
-                protocol_version: Some(CURRENT_PROTOCOL_VERSION),
-            })
-        }
-        fn send(
-            &self,
-            _recipient_id: ParticipantId,
-            _message: MpcMessage,
-            _connection_version: ConnectionVersion,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
-        async fn wait_for_ready(
-            &self,
-            _required_ready_count: usize,
-            _peers_to_consider: &[ParticipantId],
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
-    }
     #[tokio::test(start_paused = true)]
     async fn rejects_quickly_when_a_participant_is_unreachable() {
-        let me = ParticipantId::from_raw(0);
-        let leader = ParticipantId::from_raw(1);
-        let unreachable = ParticipantId::from_raw(2);
+        // Given
+        let [me, leader, unreachable] = [0, 1, 2].map(ParticipantId::from_raw);
         let participants = vec![me, leader, unreachable];
-
-        let transport_sender = Arc::new(MockTransportSender {
-            my_participant_id: me,
-            all_participant_ids: participants.clone(),
-            unreachable_participant_id: unreachable,
-        });
-
-        let connection_versions: HashMap<ParticipantId, ConnectionVersion> = participants
+        let (transport_sender, _receiver) =
+            new_test_transports_with_partition(participants.clone(), &[(me, unreachable)])
+                .remove(0);
+        let connection_versions = participants
             .iter()
             .filter(|&&p| p != me)
             .map(|&p| (p, transport_sender.connectivity(p).connection_version()))
-            .collect();
-
+            .collect::<HashMap<_, _>>();
         let sender = NetworkTaskChannelSender {
             channel_id: ChannelId(UniqueId::new(me, 0, 0)),
             task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
@@ -2175,21 +2119,23 @@ mod participant_connection_wait_tests {
             transport_sender,
         };
 
-        let (start, result) = start_root_task_with_periodic_dump(async move {
+        // When
+        let (elapsed, result) = start_root_task_with_periodic_dump(async move {
             let start = tokio::time::Instant::now();
             let result = sender.initialize_all_participants_connections().await;
-            (start, result)
+            (start.elapsed(), result)
         })
         .await;
+
+        // Then
         let err = result.unwrap_err();
         assert!(
             err.to_string()
-                .contains(&format!("Not connected to participant {}", unreachable)),
-            "Not connected to participant {}",
-            err
+                .contains(&format!("Not connected to participant {unreachable}")),
+            "unexpected error: {err}"
         );
         assert_eq!(
-            start.elapsed(),
+            elapsed,
             mpc_node_config::PARTICIPANT_CONNECTION_WAIT_TIMEOUT,
             "reject at PARTICIPANT_CONNECTION_WAIT_TIMEOUT, instead of computation timeout"
         );
