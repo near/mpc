@@ -20,6 +20,8 @@
 )]
 pub struct ParticipantCount(pub u64);
 
+const _: () = assert!(usize::BITS <= u64::BITS);
+
 impl ParticipantCount {
     pub const fn new(value: u64) -> Self {
         Self(value)
@@ -29,8 +31,8 @@ impl ParticipantCount {
         self.0
     }
 
-    /// The single place a collection length becomes a count. Infallible on every supported
-    /// target, where `usize` is at most 64 bits wide.
+    /// The single place a collection length becomes a count. Infallible: the assertion above
+    /// rejects any target whose `usize` is wider than `u64`.
     pub fn from_len(len: usize) -> Self {
         Self(u64::try_from(len).expect("usize fits in u64"))
     }
@@ -43,7 +45,14 @@ mod tests {
 
     #[test]
     fn from_len__should_preserve_the_length() {
-        assert_eq!(ParticipantCount::from_len(7), ParticipantCount::new(7));
-        assert_eq!(ParticipantCount::from_len(7).value(), 7);
+        // Given
+        let len = 7;
+
+        // When
+        let count = ParticipantCount::from_len(len);
+
+        // Then
+        assert_eq!(count, ParticipantCount::new(7));
+        assert_eq!(count.value(), 7);
     }
 }

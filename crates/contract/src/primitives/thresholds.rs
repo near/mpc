@@ -178,7 +178,12 @@ impl GovernanceThresholdParameters {
             return Err(InvalidCandidateSet::InsufficientOldParticipants.into());
         }
         // ensure the new ids are contiguous and unique
-        let n_new = proposal.participants().count().value() - n_old;
+        let n_new = proposal
+            .participants()
+            .count()
+            .value()
+            .checked_sub(n_old)
+            .expect("n_old counts a subset of the proposal's participants");
         if n_new > 0 {
             if n_new - 1 != (new_max_id - new_min_id) as u64 {
                 return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());

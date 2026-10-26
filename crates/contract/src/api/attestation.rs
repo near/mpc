@@ -4,7 +4,7 @@ use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::primitives::domain::validate_domains_against_governance;
 use crate::primitives::thresholds::{
-    GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{
@@ -328,12 +328,9 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = usize::try_from(current_params.threshold().value())
-                    .expect("threshold value fits in usize");
-
                 let threshold_parameters = GovernanceThresholdParameters::new(
                     participants_with_valid_attestation,
-                    GovernanceThreshold::new(new_threshold as u64),
+                    current_params.threshold(),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
@@ -486,6 +483,7 @@ mod tests {
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
         create_node_id, gen_participants,
     };
+    use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};

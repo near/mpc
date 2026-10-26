@@ -95,12 +95,16 @@ mod tests {
 
     #[test]
     fn is_met_by__should_hold_at_and_above_the_threshold_only() {
+        // Given
         let governance = GovernanceThreshold::new(3);
         let reconstruction = ReconstructionThreshold::new(3);
-        for (count, expected) in [(2, false), (3, true), (4, true)] {
-            let count = ParticipantCount::new(count);
-            assert_eq!(governance.is_met_by(count), expected);
-            assert_eq!(reconstruction.is_met_by(count), expected);
-        }
+        let counts = [2, 3, 4].map(ParticipantCount::new);
+
+        // When
+        let met =
+            counts.map(|count| (governance.is_met_by(count), reconstruction.is_met_by(count)));
+
+        // Then
+        assert_eq!(met, [(false, false), (true, true), (true, true)]);
     }
 }
