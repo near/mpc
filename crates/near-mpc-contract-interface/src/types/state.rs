@@ -9,7 +9,6 @@ use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::ProposalHash;
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::primitives::DomainId;
@@ -176,6 +175,7 @@ pub struct ProposedGovernanceThresholdParameters {
     PartialEq,
     Eq,
     Serialize,
+    Deserialize,
     BorshSerialize,
     BorshDeserialize,
     derive_more::Deref,
@@ -188,44 +188,6 @@ pub struct ProposedGovernanceThresholdParameters {
 pub struct GovernanceThresholdParametersVotes(
     pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>,
 );
-
-/// Also accepts the pre-tally report (`{"proposal_by_account": {...}}`) of contracts that
-/// still store full proposals, so a newer reader can follow an older contract across an upgrade.
-impl<'de> Deserialize<'de> for GovernanceThresholdParametersVotes {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Repr {
-            Tally(BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>),
-            // TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded; a plain
-            // derive(Deserialize) then suffices.
-            Legacy {
-                proposal_by_account:
-                    BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
-            },
-        }
-        Ok(Self(match Repr::deserialize(deserializer)? {
-            Repr::Tally(tally) => tally,
-            Repr::Legacy {
-                proposal_by_account,
-            } => tally_by_proposal_hash(proposal_by_account),
-        }))
-    }
-}
-
-/// Groups per-voter proposals by the hash the contract stores for them: SHA-256 of the
-/// Borsh encoding, which the DTOs share with the contract types.
-pub(crate) fn tally_by_proposal_hash<V: Ord, P: BorshSerialize>(
-    proposal_by_voter: BTreeMap<V, P>,
-) -> BTreeMap<ProposalHash, BTreeSet<V>> {
-    let mut tally: BTreeMap<ProposalHash, BTreeSet<V>> = BTreeMap::new();
-    for (voter, proposal) in proposal_by_voter {
-        let bytes = borsh::to_vec(&proposal).expect("borsh serialization must succeed");
-        let hash = ProposalHash::new(sha2::Sha256::digest(bytes).into());
-        tally.entry(hash).or_default().insert(voter);
-    }
-    tally
-}
 
 /// Votes for adding new domains.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -297,7 +259,6 @@ pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
-    pub parameters_votes: GovernanceThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
@@ -565,46 +526,6 @@ mod tests {
 
         // Then
         assert_eq!(json[proposal.as_hex()][0], "alice.near");
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn parameters_votes__should_group_a_legacy_report_by_proposal() {
-        // Given: alice and bob voted the same proposal, carol a different one
-        let proposal = |threshold| ProposedGovernanceThresholdParameters {
-            parameters: GovernanceThresholdParameters {
-                participants: sample_participants(),
-                threshold: GovernanceThreshold::new(threshold),
-            },
-            per_domain_thresholds: BTreeMap::new(),
-        };
-        let legacy = serde_json::json!({ "proposal_by_account": {
-            "alice.near": proposal(1),
-            "bob.near": proposal(1),
-            "carol.near": proposal(2),
-        }});
-
-        // When
-        let votes: GovernanceThresholdParametersVotes = serde_json::from_value(legacy).unwrap();
-
-        // Then
-        let voter = |account: &str| AuthenticatedAccountId(account.parse().unwrap());
-        let tallies: BTreeSet<BTreeSet<AuthenticatedAccountId>> = votes.0.into_values().collect();
-        assert_eq!(
-            tallies,
-            BTreeSet::from([
-                BTreeSet::from([voter("alice.near"), voter("bob.near")]),
-                BTreeSet::from([voter("carol.near")]),
-            ])
-        );
-    }
-
-    #[test]
-    fn parameters_votes_deserialize_the_legacy_empty_report() {
-        let votes: super::GovernanceThresholdParametersVotes =
-            serde_json::from_str(r#"{"proposal_by_account":{}}"#).unwrap();
-
-        assert_eq!(votes, super::GovernanceThresholdParametersVotes::default());
     }
 
     #[test]
