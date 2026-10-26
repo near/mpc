@@ -1,4 +1,6 @@
 use alloc::vec::Vec;
+#[cfg(feature = "local-verify")]
+pub use attestation::attestation::VerifiedQuote;
 pub use attestation::attestation::{
     AcceptedDstackAttestation, DstackAttestation, VerificationError,
 };
@@ -396,8 +398,10 @@ impl Attestation {
     ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
-                let (report, collateral_dates) =
-                    dstack_attestation.verify_dcap_quote(current_timestamp_seconds)?;
+                let VerifiedQuote {
+                    report,
+                    collateral_dates,
+                } = dstack_attestation.verify_dcap_quote(current_timestamp_seconds)?;
                 dstack_attestation.tcb_info.verify(
                     &report,
                     &collateral_dates,

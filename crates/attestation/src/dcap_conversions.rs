@@ -7,5 +7,4 @@
 
 pub use tee_verifier_conversions::{
     IntoDcapType, IntoInterfaceType, collateral_from_dcap, collateral_into_dcap,
-    verify_quote_with_collateral_dates,
 };

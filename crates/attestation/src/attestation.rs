@@ -16,7 +16,7 @@ use sha2::{Digest as _, Sha256, Sha384};
 use tee_verifier_interface::{TDReport10, TcbStatus, VerifiedReport};
 
 #[cfg(feature = "local-verify")]
-use crate::dcap_conversions::verify_quote_with_collateral_dates;
+use tee_verifier_conversions::verify_quote_with_collateral_dates;
 #[cfg(feature = "local-verify")]
 use tee_verifier_interface::{
     CollateralDates, VerificationResultWithCollateralDates, VerifierError,
@@ -40,6 +40,14 @@ pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
+}
+
+/// Result of the DCAP step.
+#[cfg(feature = "local-verify")]
+#[derive(Clone, Debug)]
+pub struct VerifiedQuote {
+    pub report: VerifiedReport,
+    pub collateral_dates: CollateralDates,
 }
 
 /// Result of successfully verifying an attestation.
@@ -167,7 +175,7 @@ impl DstackAttestation {
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedDstackAttestation, VerificationError> {
-        let (report, _) = self.verify_dcap_quote(timestamp_seconds)?;
+        let VerifiedQuote { report, .. } = self.verify_dcap_quote(timestamp_seconds)?;
         Self::verify_with_report(
             &self.tcb_info,
             &report,
@@ -176,15 +184,11 @@ impl DstackAttestation {
         )
     }
 
-    /// Runs only the DCAP step and returns the report and the collateral's
-    /// validity window as the `tee-verifier-interface` mirrors — the same values
-    /// the `tee-verifier` contract's `verify_quote_with_collateral_dates` returns
-    /// on-chain.
     #[cfg(feature = "local-verify")]
     pub fn verify_dcap_quote(
         &self,
         timestamp_seconds: u64,
-    ) -> Result<(VerifiedReport, CollateralDates), VerificationError> {
+    ) -> Result<VerifiedQuote, VerificationError> {
         match verify_quote_with_collateral_dates(
             self.quote.clone(),
             self.collateral.clone(),
@@ -193,7 +197,10 @@ impl DstackAttestation {
             VerificationResultWithCollateralDates::Verified {
                 report,
                 collateral_dates,
-            } => Ok((report, collateral_dates)),
+            } => Ok(VerifiedQuote {
+                report,
+                collateral_dates,
+            }),
             VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(
                 reason,
             )) => Err(VerificationError::DcapVerification(reason)),

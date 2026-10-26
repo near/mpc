@@ -3,7 +3,9 @@
 
 #![expect(non_snake_case)]
 
-use mpc_attestation::attestation::{AcceptedAttestation, VerifiedAttestation, dev_measurements};
+use mpc_attestation::attestation::{
+    AcceptedAttestation, Attestation, DstackAttestation, VerifiedAttestation, dev_measurements,
+};
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
@@ -15,7 +17,7 @@ use tee_verifier_interface::{
 };
 use test_utils::attestation::{
     VALID_ATTESTATION_TIMESTAMP, account_key, collateral, image_digest, launcher_compose_digest,
-    mock_dstack_attestation, p2p_tls_key, quote,
+    mock_tcb_info, p2p_tls_key, quote,
 };
 
 fn make_quote_bytes() -> QuoteBytes {
@@ -190,32 +192,36 @@ fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fix
     );
 }
 
-/// Off-chain callers read the expiry through `verify_locally`, so it must match
-/// the one the contract stores from this method.
 #[test]
 fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_locally() {
     // Given
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
+    let (quote, collateral) = (quote(), collateral());
     let report_data = ReportData::V1(ReportDataV1::new(p2p_tls_key(), account_key()));
     let AcceptedAttestation {
         attestation: VerifiedAttestation::Dstack(locally_verified),
         ..
-    } = mock_dstack_attestation()
-        .verify_locally(
-            report_data.into(),
-            VALID_ATTESTATION_TIMESTAMP,
-            &[image_digest()],
-            &[launcher_compose_digest()],
-            &[dev_measurements()],
-        )
-        .expect("the fixture verifies locally")
+    } = Attestation::Dstack(DstackAttestation::new(
+        quote.clone(),
+        collateral.clone(),
+        mock_tcb_info(),
+    ))
+    .verify_locally(
+        report_data.into(),
+        VALID_ATTESTATION_TIMESTAMP,
+        &[image_digest()],
+        &[launcher_compose_digest()],
+        &[dev_measurements()],
+    )
+    .expect("the fixture verifies locally")
     else {
         panic!("expected a Dstack attestation");
     };
 
     // When
-    let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral());
+    let result =
+        contract.verify_quote_with_collateral_dates(QuoteBytes(Vec::from(quote)), collateral);
 
     // Then
     let VerificationResultWithCollateralDates::Verified {

@@ -1789,12 +1789,10 @@ mod tests {
         assert!(tee_state.stored_attestations.is_empty());
     }
 
-    #[test]
-    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
-        // Given
+    /// A [`TeeState`] that accepts the fixture attestation, and the [`NodeId`] it attests.
+    fn tee_state_accepting_the_fixture() -> (TeeState, NodeId) {
         set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
         let mut tee_state = TeeState::default();
-        assert_eq!(tee_state.stored_attestations.len(), 0);
         whitelist_dstack_measurements(
             &mut tee_state,
             image_digest(),
@@ -1806,6 +1804,13 @@ mod tests {
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
             account_public_key: Ed25519PublicKey(account_key()),
         };
+        (tee_state, node_id)
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
+        // Given
+        let (mut tee_state, node_id) = tee_state_accepting_the_fixture();
 
         // When
         let result = tee_state.verify_and_store_dstack(
@@ -1832,23 +1837,10 @@ mod tests {
         );
     }
 
-    /// The stored expiry describes the collateral last presented, even when that is older.
     #[test]
     fn verify_and_store_dstack__should_overwrite_the_expiry_with_an_earlier_one() {
         // Given
-        set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
-        let mut tee_state = TeeState::default();
-        whitelist_dstack_measurements(
-            &mut tee_state,
-            image_digest(),
-            launcher_image_hash(),
-            Some(launcher_compose_digest()),
-        );
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
-            account_public_key: Ed25519PublicKey(account_key()),
-        };
+        let (mut tee_state, node_id) = tee_state_accepting_the_fixture();
         tee_state
             .verify_and_store_dstack(
                 node_id.clone(),

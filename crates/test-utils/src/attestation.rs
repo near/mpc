@@ -1,6 +1,6 @@
 use mpc_attestation::{
     TcbInfo,
-    attestation::{Attestation, DstackAttestation},
+    attestation::{Attestation, DstackAttestation, VerifiedQuote},
     quote::QuoteBytes,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
@@ -137,16 +137,16 @@ pub fn mock_dstack_attestation() -> Attestation {
 /// quote, produced by running the DCAP step at [`VALID_ATTESTATION_TIMESTAMP`]
 /// (when the fixture collateral is valid).
 pub fn verified_report() -> VerifiedReport {
-    verified_report_and_collateral_dates().0
+    verified_quote().report
 }
 
 /// The [`CollateralDates`] the real `tee-verifier` would return alongside
 /// [`verified_report`].
 pub fn collateral_dates() -> CollateralDates {
-    verified_report_and_collateral_dates().1
+    verified_quote().collateral_dates
 }
 
-fn verified_report_and_collateral_dates() -> (VerifiedReport, CollateralDates) {
+fn verified_quote() -> VerifiedQuote {
     mock_dstack_attestation_inner()
         .verify_dcap_quote(VALID_ATTESTATION_TIMESTAMP)
         .expect("fixture quote verifies at VALID_ATTESTATION_TIMESTAMP")
