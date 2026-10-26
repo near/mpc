@@ -9,12 +9,14 @@ use crate::{
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
-    trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
+    trait_extensions::convert_to_contract_dto::{
+        IntoContractInterfaceType, to_attestation_measurements,
+    },
 };
 use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use mpc_attestation::{
-    attestation::{Attestation, ExpectedMeasurements, Measurements, VerificationError},
+    attestation::{Attestation, ExpectedMeasurements, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
 use near_mpc_contract_interface::types::{
@@ -164,18 +166,6 @@ fn validate_remote_attestation(
             allowed_measurements,
         )
         .map(|_| ())
-}
-
-fn to_attestation_measurements(measurements: &dtos::ExpectedMeasurements) -> ExpectedMeasurements {
-    ExpectedMeasurements {
-        rtmrs: Measurements {
-            mrtd: measurements.mrtd.into(),
-            rtmr0: measurements.rtmr0.into(),
-            rtmr1: measurements.rtmr1.into(),
-            rtmr2: measurements.rtmr2.into(),
-        },
-        key_provider_event_digest: measurements.key_provider_event_digest.into(),
-    }
 }
 
 impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<T, A> {

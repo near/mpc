@@ -2934,6 +2934,8 @@ WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
   Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
 ```
 
+Right after a restart the node may not have read these lists from the contract yet, so a warning on the first submission can be a false alarm: if `get_attestation` returns your attestation, the contract accepted it and the warning can be ignored.
+
 Common messages:
 
 - ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
