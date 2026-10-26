@@ -18,10 +18,10 @@ use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
 use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_node_config::IndexerConfig;
+use mpc_node_config::{IndexerConfig, StartConfig};
 use near_account_id::AccountId;
 use near_async::ActorSystem;
-use near_indexer::Indexer;
+use near_indexer::{Indexer, NearConfig};
 use near_mpc_contract_interface::types::{Ed25519PublicKey, ProtocolContractState};
 use std::future::Future;
 use std::path::PathBuf;
@@ -58,16 +58,16 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 /// will be used to propagate the error.
 #[expect(clippy::too_many_arguments)]
 pub fn spawn_real_indexer(
-    home_dir: PathBuf,
+    config: StartConfig,
     mpc_indexer_config: IndexerConfig,
-    my_near_account_id: AccountId,
+    near_indexer_config: near_indexer::IndexerConfig,
+    near_config: NearConfig,
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
-    foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
 ) -> IndexerAPI<impl TransactionSender> {
@@ -83,7 +83,7 @@ pub fn spawn_real_indexer(
     let (allowed_os_measurements_sender, allowed_os_measurements_receiver) = watch::channel(vec![]);
     let (my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
-    let my_near_account_id_clone = my_near_account_id.clone();
+    let my_near_account_id_clone = config.node.my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
 
     let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
@@ -99,12 +99,8 @@ pub fn spawn_real_indexer(
         // We have this indirection of using a oneshot for sending the indexer state,
         // as we can't block the main thread for waiting on the `txn_sender`.
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
+        let home_dir = config.home_dir;
         indexer_tokio_runtime.block_on(async {
-            let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
-
-            let near_config = near_indexer_config
-                .load_near_config()
-                .expect("near config is present");
 
             // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
             // and differs from the last applied value, wipe the data dir. Must run
@@ -234,7 +230,7 @@ pub fn spawn_real_indexer(
             ));
             tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
                 foreign_chain_whitelist_receiver,
-                foreign_chains.clone(),
+                config.node.foreign_chains.clone(),
             ));
 
             // Returns once the contract state is available.
@@ -257,7 +253,7 @@ pub fn spawn_real_indexer(
             let my_migration_info_receiver = monitor_migrations(
                 indexer_state.contract.clone(),
                 migration_state_sender,
-                my_near_account_id,
+                config.node.my_near_account_id,
                 tls_public_key,
             )
             .await;

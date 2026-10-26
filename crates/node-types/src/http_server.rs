@@ -10,7 +10,7 @@ pub struct StaticWebData {
 
     pub near_responder_public_keys: Vec<Ed25519PublicKey>,
 
-    pub nearcore_network_public_key: Option<String>,
+    pub near_core_network_public_key: String,
 
     pub tee_participant_info: Option<Attestation>,
 }
@@ -39,14 +39,14 @@ mod tests {
             gen_ed25519_public_key(5),
         ];
 
-        let nearcore_network_public_key =
-            Some("ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ".to_string());
+        let near_core_network_public_key =
+            "ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ".to_string();
 
         let data = StaticWebData {
             near_signer_public_key: near_signer_public_key.clone(),
             near_p2p_public_key: near_p2p_public_key.clone(),
             near_responder_public_keys: near_responder_public_keys.clone(),
-            nearcore_network_public_key: nearcore_network_public_key.clone(),
+            near_core_network_public_key: near_core_network_public_key.clone(),
             tee_participant_info: None,
         };
 
@@ -64,8 +64,8 @@ mod tests {
             near_responder_public_keys
         );
         assert_eq!(
-            decoded.nearcore_network_public_key,
-            nearcore_network_public_key
+            decoded.near_core_network_public_key,
+            near_core_network_public_key
         );
     }
 }

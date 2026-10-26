@@ -1906,6 +1906,18 @@ $ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'
 ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
 ```
 
+### Retrieve the Node PeerID
+
+To retrieve the PeerID, call the HTTP endpoint [http://localhost:8080/public_data](http://localhost:8080/public_data) from your server and search for `near_core_network_public_key`. 
+
+Sample curl command to extract the key:
+
+```bash
+$ curl -s http://<IP>:8080/public_data | jq -r '.near_core_network_public_key'
+ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ
+```
+
+
 ### Verify Node Attestation
 
 > **Important:** Before using the node's keys (P2P key or account key), you must verify the node's attestation to confirm that the keys were generated inside a genuine TEE. Without this step, you are susceptible to a man-in-the-middle attack — an adversary could substitute their own keys for the node's real keys.
