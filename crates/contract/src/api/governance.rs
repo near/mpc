@@ -127,7 +127,7 @@ mod tests {
     use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
-    use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
+    use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
@@ -338,7 +338,7 @@ mod tests {
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
                 reconstruction_threshold: 4,
-                participants: 3,
+                participants: ParticipantCount(3),
             })
         );
     }
@@ -398,7 +398,10 @@ mod tests {
         // Then
         assert_matches!(
             result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
+                max: ParticipantCount(3),
+                found: 4
+            })
         );
     }
 

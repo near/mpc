@@ -3,7 +3,7 @@ use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, ParticipantCount, Protocol, ReconstructionThreshold,
 };
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
@@ -45,7 +45,7 @@ pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
 /// changes.
 pub fn validate_domains_against_governance(
     domains: &[DomainConfig],
-    num_participants: u64,
+    num_participants: ParticipantCount,
     governance: GovernanceThreshold,
 ) -> Result<(), Error> {
     for domain in domains {
@@ -63,13 +63,13 @@ pub fn validate_domains_against_governance(
 /// [`Protocol::required_active_signers`]` <= n`.
 fn validate_domain_reconstruction_threshold(
     domain: &DomainConfig,
-    num_participants: u64,
+    num_participants: ParticipantCount,
 ) -> Result<(), Error> {
     let t = domain.reconstruction_threshold.inner();
     if t < MIN_RECONSTRUCTION_THRESHOLD {
         return Err(DomainError::ReconstructionThresholdTooLow.into());
     }
-    if t > num_participants {
+    if !domain.reconstruction_threshold.is_met_by(num_participants) {
         return Err(DomainError::ReconstructionThresholdExceedsParticipants {
             reconstruction_threshold: t,
             participants: num_participants,
@@ -79,7 +79,7 @@ fn validate_domain_reconstruction_threshold(
     let required = domain
         .protocol
         .required_active_signers(domain.reconstruction_threshold);
-    if required > num_participants {
+    if required > num_participants.value() {
         return Err(DomainError::InsufficientParticipantsForProtocol {
             protocol: domain.protocol,
             required,
@@ -256,7 +256,7 @@ impl AddDomainsVotes {
         &mut self,
         proposal: Vec<DomainConfig>,
         participant: &AuthenticatedParticipantId,
-    ) -> u64 {
+    ) -> ParticipantCount {
         if self
             .proposal_by_account
             .insert(participant.clone(), proposal.clone())
@@ -264,11 +264,12 @@ impl AddDomainsVotes {
         {
             log!("removed old vote for signer");
         }
-        let total = self
-            .proposal_by_account
-            .values()
-            .filter(|&prop| prop == &proposal)
-            .count() as u64;
+        let total = ParticipantCount::from_len(
+            self.proposal_by_account
+                .values()
+                .filter(|&prop| prop == &proposal)
+                .count(),
+        );
         log!("total votes for proposal: {}", total);
         total
     }
@@ -299,7 +300,7 @@ pub mod tests {
     use crate::primitives::test_utils::{
         gen_authenticated_participants, gen_participants, infer_purpose_from_protocol,
     };
-    use near_mpc_contract_interface::types::ReconstructionThreshold;
+    use near_mpc_contract_interface::types::{ParticipantCount, ReconstructionThreshold};
     use rstest::rstest;
     use std::collections::BTreeMap;
 
@@ -760,7 +761,7 @@ pub mod tests {
         let domain = sign_domain(Protocol::RobustEcdsa, 3);
 
         // When
-        let result = validate_domain_reconstruction_threshold(&domain, 5);
+        let result = validate_domain_reconstruction_threshold(&domain, ParticipantCount::new(5));
 
         // Then
         result.unwrap();
@@ -773,7 +774,8 @@ pub mod tests {
         let domain = sign_domain(Protocol::RobustEcdsa, 3);
 
         // When
-        let err = validate_domain_reconstruction_threshold(&domain, 4).unwrap_err();
+        let err = validate_domain_reconstruction_threshold(&domain, ParticipantCount::new(4))
+            .unwrap_err();
 
         // Then
         assert_eq!(
@@ -781,7 +783,7 @@ pub mod tests {
             Error::from(DomainError::InsufficientParticipantsForProtocol {
                 protocol: Protocol::RobustEcdsa,
                 required: 5,
-                participants: 4,
+                participants: ParticipantCount::new(4),
             })
         );
     }
@@ -793,7 +795,7 @@ pub mod tests {
         let domain = sign_domain(Protocol::CaitSith, 4);
 
         // When
-        let result = validate_domain_reconstruction_threshold(&domain, 4);
+        let result = validate_domain_reconstruction_threshold(&domain, ParticipantCount::new(4));
 
         // Then
         result.unwrap();

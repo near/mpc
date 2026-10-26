@@ -1,7 +1,7 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
+use near_mpc_contract_interface::types::{DomainId, ParticipantCount, ReconstructionThreshold};
 use near_sdk::near;
 use std::collections::BTreeMap;
 
@@ -41,7 +41,7 @@ impl GovernanceThresholdParameters {
         participants: Participants,
         governance_threshold: GovernanceThreshold,
     ) -> Result<Self, Error> {
-        match Self::validate_governance_threshold(participants.len() as u64, governance_threshold) {
+        match Self::validate_governance_threshold(participants.count(), governance_threshold) {
             Ok(_) => Ok(GovernanceThresholdParameters {
                 participants,
                 threshold: governance_threshold,
@@ -56,8 +56,11 @@ impl GovernanceThresholdParameters {
     /// - threshold can not exceed the number of shares `n_shares`.
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
     /// - threshold must not exceed the upper bound (now set to 100%)
-    fn validate_governance_threshold(n_shares: u64, k: GovernanceThreshold) -> Result<(), Error> {
-        if k.value() > n_shares {
+    fn validate_governance_threshold(
+        n_shares: ParticipantCount,
+        k: GovernanceThreshold,
+    ) -> Result<(), Error> {
+        if !k.is_met_by(n_shares) {
             return Err(InvalidThreshold::MaxRequirementFailed {
                 max: n_shares,
                 found: k.value(),
@@ -67,7 +70,7 @@ impl GovernanceThresholdParameters {
         if k.value() < MIN_THRESHOLD_ABSOLUTE {
             return Err(InvalidThreshold::MinAbsRequirementFailed.into());
         }
-        let lower_relative_bound = governance_threshold_lower_relative_bound(n_shares);
+        let lower_relative_bound = governance_threshold_lower_relative_bound(n_shares.value());
         if k.value() < lower_relative_bound {
             return Err(InvalidThreshold::MinRelRequirementFailed {
                 required: lower_relative_bound,
@@ -75,7 +78,7 @@ impl GovernanceThresholdParameters {
             }
             .into());
         }
-        let upper_relative_bound = governance_threshold_upper_relative_bound(n_shares);
+        let upper_relative_bound = governance_threshold_upper_relative_bound(n_shares.value());
         if k.value() > upper_relative_bound {
             return Err(InvalidThreshold::MaxRelRequirementFailed {
                 max: upper_relative_bound,
@@ -95,7 +98,7 @@ impl GovernanceThresholdParameters {
     /// at every point where the GovernanceThreshold, a ReconstructionThreshold, or the
     /// participant set changes.
     pub(super) fn validate_governance_against_reconstruction(
-        num_participants: u64,
+        num_participants: ParticipantCount,
         governance: GovernanceThreshold,
         max_reconstruction_threshold: Option<ReconstructionThreshold>,
     ) -> Result<(), Error> {
@@ -113,7 +116,7 @@ impl GovernanceThresholdParameters {
     }
 
     pub fn validate(&self) -> Result<(), Error> {
-        Self::validate_governance_threshold(self.participants.len() as u64, self.threshold())?;
+        Self::validate_governance_threshold(self.participants.count(), self.threshold())?;
         self.participants.validate()
     }
 
@@ -175,7 +178,7 @@ impl GovernanceThresholdParameters {
             return Err(InvalidCandidateSet::InsufficientOldParticipants.into());
         }
         // ensure the new ids are contiguous and unique
-        let n_new = proposal.participants().len() as u64 - n_old;
+        let n_new = proposal.participants().count().value() - n_old;
         if n_new > 0 {
             if n_new - 1 != (new_max_id - new_min_id) as u64 {
                 return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
@@ -297,7 +300,7 @@ mod tests {
         },
         state::test_utils::gen_valid_params_proposal,
     };
-    use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
+    use near_mpc_contract_interface::types::{DomainId, ParticipantCount, ReconstructionThreshold};
     use rand::Rng;
     use std::{assert_matches, collections::BTreeMap};
 
@@ -317,14 +320,14 @@ mod tests {
         let max_threshold = governance_threshold_upper_relative_bound(n);
         for k in 0..min_threshold {
             let _ = GovernanceThresholdParameters::validate_governance_threshold(
-                n,
+                ParticipantCount::new(n),
                 GovernanceThreshold::new(k),
             )
             .unwrap_err();
         }
         for k in min_threshold..=max_threshold {
             GovernanceThresholdParameters::validate_governance_threshold(
-                n,
+                ParticipantCount::new(n),
                 GovernanceThreshold::new(k),
             )
             .unwrap();
@@ -332,7 +335,7 @@ mod tests {
         // Anything above the upper cap (up to and beyond n) must be rejected.
         for k in (max_threshold + 1)..=(n + 1) {
             let _ = GovernanceThresholdParameters::validate_governance_threshold(
-                n,
+                ParticipantCount::new(n),
                 GovernanceThreshold::new(k),
             )
             .unwrap_err();
@@ -390,7 +393,7 @@ mod tests {
             assert!(upper >= lower, "empty window at n={n}: [{lower}, {upper}]");
             // The clamped boundary value must validate.
             GovernanceThresholdParameters::validate_governance_threshold(
-                n,
+                ParticipantCount::new(n),
                 GovernanceThreshold::new(upper),
             )
             .unwrap();
@@ -407,7 +410,7 @@ mod tests {
         // Then the relation is rejected.
         assert_matches!(
             GovernanceThresholdParameters::validate_governance_against_reconstruction(
-                n,
+                ParticipantCount::new(n),
                 governance,
                 Some(ReconstructionThreshold::new(7))
             ),
@@ -420,13 +423,13 @@ mod tests {
         );
         // ...but is accepted when governance meets or exceeds the max reconstruction threshold.
         GovernanceThresholdParameters::validate_governance_against_reconstruction(
-            n,
+            ParticipantCount::new(n),
             governance,
             Some(ReconstructionThreshold::new(6)),
         )
         .unwrap();
         GovernanceThresholdParameters::validate_governance_against_reconstruction(
-            n,
+            ParticipantCount::new(n),
             governance,
             Some(ReconstructionThreshold::new(5)),
         )

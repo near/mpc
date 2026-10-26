@@ -308,7 +308,7 @@ impl MpcContract {
                 // wait for manual intervention.
                 if let Err(err) = validate_domains_against_governance(
                     running_state.domains.domains(),
-                    u64::try_from(remaining).expect("participant count fits in u64"),
+                    dtos::ParticipantCount::from_len(remaining),
                     current_params.threshold(),
                 ) {
                     log!(

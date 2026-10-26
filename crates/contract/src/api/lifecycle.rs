@@ -110,7 +110,7 @@ impl MpcContract {
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
         validate_domains_against_governance(
             domains.domains(),
-            parameters.participants().len() as u64,
+            parameters.participants().count(),
             parameters.threshold(),
         )?;
 

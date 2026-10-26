@@ -150,8 +150,7 @@ impl RunningContractState {
 
         // Validate effective per-domain thresholds (updates override, absent
         // domains keep theirs) against the proposed participant count.
-        let new_num_participants =
-            u64::try_from(proposal.participants().len()).expect("participant count fits in u64");
+        let new_num_participants = proposal.participants().count();
         let threshold_updates = proposal.per_domain_thresholds();
         // Reject unknown domain IDs: the loop below iterates existing domains, so
         // an unknown ID would otherwise be silently ignored here (it's caught at
@@ -194,7 +193,7 @@ impl RunningContractState {
             let n_votes = self
                 .parameters_votes
                 .n_votes(proposal, self.parameters.participants());
-            if n_votes < self.parameters.threshold().value() {
+            if !self.parameters.threshold().is_met_by(n_votes) {
                 return Err(VoteError::VoterPending.into());
             }
         }
@@ -215,8 +214,7 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
-        let num_participants = u64::try_from(self.parameters.participants().len())
-            .expect("participant count fits in u64");
+        let num_participants = self.parameters.participants().count();
         for domain in &domains {
             validate_domain_purpose(domain)?;
         }
@@ -230,7 +228,7 @@ impl RunningContractState {
         )?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
-        if self.parameters.participants().len() as u64 == n_votes {
+        if num_participants == n_votes {
             let new_domains = self.domains.add_domains(domains.clone())?;
             Ok(Some(InitializingContractState {
                 generated_keys: self.keyset.domains.clone(),
