@@ -2008,7 +2008,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account\n holds the TLS key: as a current or proposed participant, as a migration destination, or\n through an attestation stored under it.",
         "kind": "call",
         "params": {
           "serialization_type": "json",

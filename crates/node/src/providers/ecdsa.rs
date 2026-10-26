@@ -53,6 +53,12 @@ pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
 pub const ONLINE_PRESIGN_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
     NetworkProtocolVersion::Sep2026;
 
+/// Handshake protocol version from which a follower honours the batch size in
+/// [`EcdsaTaskId::ManyTriples`] rather than requiring
+/// [`TripleBatchSize::LEGACY`](mpc_node_config::TripleBatchSize::LEGACY).
+pub const CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
+    NetworkProtocolVersion::Oct2026;
+
 impl EcdsaSignatureProvider {
     pub fn new(
         config: Arc<ConfigFile>,
