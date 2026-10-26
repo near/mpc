@@ -4718,12 +4718,7 @@ expression: abi
               }
             },
             "previous_running_state": {
-              "description": "Its `parameters_votes` are the re-proposal votes for the prospective epoch.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/RunningContractState"
-                }
-              ]
+              "$ref": "#/definitions/RunningContractState"
             },
             "reshared_keys": {
               "type": "array",
