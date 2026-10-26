@@ -2,87 +2,63 @@ use crate::participant_count::ParticipantCount;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-/// Network-wide governance threshold (`k`): the minimum number of participants
-/// that must agree to approve a governance action (participant set changes,
-/// resharing, parameter updates). Distinct from a domain's
-/// [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct GovernanceThreshold(pub u64);
+/// Defines a `u64` threshold newtype with the shared derives, `new`, `value` and `is_met_by`.
+macro_rules! define_threshold {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(
+            Clone,
+            Copy,
+            Debug,
+            Eq,
+            PartialEq,
+            Ord,
+            PartialOrd,
+            Hash,
+            Serialize,
+            Deserialize,
+            BorshSerialize,
+            BorshDeserialize,
+            derive_more::From,
+            derive_more::Into,
+            derive_more::AsRef,
+        )]
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            derive(schemars::JsonSchema, borsh::BorshSchema)
+        )]
+        pub struct $name(pub u64);
 
-impl GovernanceThreshold {
-    pub const fn new(value: u64) -> Self {
-        Self(value)
-    }
+        impl $name {
+            pub const fn new(value: u64) -> Self {
+                Self(value)
+            }
 
-    pub const fn value(self) -> u64 {
-        self.0
-    }
+            pub const fn value(self) -> u64 {
+                self.0
+            }
 
-    /// True when `count` participants are at least this many.
-    pub fn is_met_by(self, count: ParticipantCount) -> bool {
-        count.value() >= self.0
-    }
+            /// True when `count` participants are at least this many.
+            pub fn is_met_by(self, count: ParticipantCount) -> bool {
+                count.value() >= self.0
+            }
+        }
+    };
 }
 
-/// Per-domain `t` in a t-of-n threshold scheme: shares needed to reconstruct
-/// the secret. Distinct from the network-wide governance threshold.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ReconstructionThreshold(pub u64);
+define_threshold!(
+    /// Network-wide governance threshold (`k`): the minimum number of participants
+    /// that must agree to approve a governance action (participant set changes,
+    /// resharing, parameter updates). Distinct from a domain's
+    /// [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.
+    GovernanceThreshold
+);
 
-impl ReconstructionThreshold {
-    pub const fn new(value: u64) -> Self {
-        Self(value)
-    }
-
-    pub const fn value(self) -> u64 {
-        self.0
-    }
-
-    /// True when `count` participants are at least this many.
-    pub fn is_met_by(self, count: ParticipantCount) -> bool {
-        count.value() >= self.0
-    }
-}
+define_threshold!(
+    /// Per-domain `t` in a t-of-n threshold scheme: shares needed to reconstruct
+    /// the secret. Distinct from the network-wide governance threshold.
+    ReconstructionThreshold
+);
 
 impl From<GovernanceThreshold> for ReconstructionThreshold {
     fn from(value: GovernanceThreshold) -> Self {
