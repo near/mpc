@@ -266,7 +266,6 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
-## TEMPORARY, TODO(#4801): rc.6 until the 2.14.0 tag is published. ##
 near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
 near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
 near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
@@ -277,7 +276,6 @@ near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
 near-store = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
 nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.6" }
-## End of the temporary pins
 
 ## Outdated dependencies we cannot upgrade ##
 # This version needs to be exactly the same as in `near_sdk::schemars`
