@@ -310,7 +310,7 @@ mod tests {
     use tokio::time::timeout;
     use tokio_util::sync::CancellationToken;
 
-    use crate::ports::{GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
+    use crate::ports::{self, GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
     use crate::test_utils::{
         fixture_epoch_id, initializing_state, resharing_state, running_state_with_epoch,
         running_state_without_domains,
@@ -530,6 +530,8 @@ mod tests {
                 .map_err(|_| TransportError::MonitoringClosed)
         }
     }
+
+    impl ports::WatchContractState for FakeWatchContractState {}
 
     fn keyshares_for(epoch_id: u64, domain_ids: &[u64]) -> Vec<Keyshare> {
         let mut rng = StdRng::seed_from_u64(42);

@@ -68,11 +68,3 @@ pub trait WatchContractState:
     >
 {
 }
-
-impl<T> WatchContractState for T where
-    T: near_contract_transport::WatchContractState<
-            Value = ProtocolContractState,
-            ViewError: std::fmt::Debug,
-        >
-{
-}
