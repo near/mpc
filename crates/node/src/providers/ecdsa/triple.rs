@@ -117,7 +117,7 @@ impl EcdsaSignatureProvider {
                 // There's no point to issue way too many in-flight computations, as they
                 // will just be limited by the concurrency anyway.
                 && in_flight_generations.num_in_flight()
-                    < config.concurrency * 2 * config.batch_size.get()
+                    < config.concurrency * 2 * *config.batch_size
             {
                 let participants = match client.select_random_active_participants_including_me(
                     reconstruction_threshold.value(),
@@ -136,10 +136,11 @@ impl EcdsaSignatureProvider {
                 };
 
                 let batch_size = batch_size_for(&client, &participants, config.batch_size);
-                let id_start = triple_store.generate_and_reserve_id_range(batch_size.get() as u32);
+                let count = u32::from(batch_size);
+                let id_start = triple_store.generate_and_reserve_id_range(count);
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,
-                    count: batch_size.get() as u32,
+                    count,
                 };
                 let channel = match client.new_channel_for_task(task_id, participants) {
                     Ok(channel) => channel,
@@ -152,7 +153,7 @@ impl EcdsaSignatureProvider {
                         continue;
                     }
                 };
-                let in_flight = in_flight_generations.in_flight(batch_size.get());
+                let in_flight = in_flight_generations.in_flight(*batch_size);
                 let parallelism_limiter = parallelism_limiter.clone();
                 let triple_store = triple_store.clone();
                 let config_clone = config.clone();
@@ -244,14 +245,12 @@ fn batch_size_for(
     participants: &[ParticipantId],
     configured: TripleBatchSize,
 ) -> TripleBatchSize {
-    let all_accept_configurable_size = participants.iter().all(|participant| {
-        client
-            .peer_network_protocol_version(*participant)
-            .is_some_and(|version| {
-                version.supports(CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION)
-            })
-    });
-    if all_accept_configurable_size {
+    let supporting =
+        client.participants_supporting(CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION);
+    if participants
+        .iter()
+        .all(|participant| supporting.contains(participant))
+    {
         configured
     } else {
         TripleBatchSize::LEGACY
@@ -283,7 +282,7 @@ impl NamedProtocol for ManyTripleGenerationComputation {
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<Vec<PairedTriple>> for ManyTripleGenerationComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<Vec<PairedTriple>> {
-        let batch_size = self.batch_size.get();
+        let batch_size = *self.batch_size;
         let cs_participants = channel
             .participants()
             .iter()
@@ -300,7 +299,7 @@ impl MpcLeaderCentricComputation<Vec<PairedTriple>> for ManyTripleGenerationComp
         )?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = Self::run(channel, protocol).await?;
-        metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(batch_size as u64);
+        metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(u32::from(self.batch_size).into());
         anyhow::ensure!(
             batch_size == triples.len(),
             "Unexpected triples len: expected {batch_size}, got {}",
@@ -537,7 +536,7 @@ mod tests {
             }
             assert_eq!(
                 id_to_triple_count.len(),
-                NUM_PARTICIPANTS * BATCHES_TO_GENERATE_PER_CLIENT * TRIPLES_PER_BATCH.get() / 2,
+                NUM_PARTICIPANTS * BATCHES_TO_GENERATE_PER_CLIENT * *TRIPLES_PER_BATCH / 2,
             );
             for count in id_to_triple_count.values() {
                 assert_eq!(*count, RECONSTRUCTION_THRESHOLD);
@@ -595,7 +594,7 @@ mod tests {
                     let start_triple_id = UniqueId::new(participant_id, i as u64, 0);
                     let task_id = EcdsaTaskId::ManyTriples {
                         start: start_triple_id,
-                        count: TRIPLES_PER_BATCH.get() as u32,
+                        count: u32::from(TRIPLES_PER_BATCH),
                     };
                     // Pick threshold participants but do it in a uniform way so for the test,
                     // each node knows how many passive computations to expect.

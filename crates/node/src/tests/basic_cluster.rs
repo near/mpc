@@ -275,11 +275,10 @@ async fn cluster__should_generate_triples_with_a_non_legacy_batch_size() {
         .expect("timeout waiting for keygen to complete");
 
     // Then
-    // a leader's batch only succeeds once every follower has accepted the non-legacy size, and
-    // with every node on the current version the leader never falls back to the legacy one
+    // a batch only succeeds once every follower accepts its size
     wait_until(
         || every_node_owns_triples(NUM_PARTICIPANTS),
-        "triple batches of the configured size",
+        "led triple batches to succeed",
     )
     .await;
 }

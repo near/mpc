@@ -37,7 +37,7 @@ use tokio::sync::{mpsc, watch};
 const NUM_PARTICIPANTS: usize = 3;
 const THRESHOLD: usize = 3;
 /// Largest batch a node will run, so the canary sees the worst burst shape.
-const TRIPLES_PER_BATCH: TripleBatchSize = TripleBatchSize::LEGACY;
+const TRIPLES_PER_BATCH: TripleBatchSize = TripleBatchSize::MAX;
 
 /// Upper bound on how long the canary may go unscheduled. Calibrated in
 /// test-release on an unloaded machine: ~130ms max gap with the yield points
@@ -123,7 +123,7 @@ async fn run_triple_gen_client(
     let mut channel = if my_id == ids[0] {
         let task_id = EcdsaTaskId::ManyTriples {
             start: UniqueId::new(my_id, 0, 0),
-            count: TRIPLES_PER_BATCH.get() as u32,
+            count: u32::from(TRIPLES_PER_BATCH),
         };
         client.new_channel_for_task(task_id, ids.clone())?
     } else {
@@ -140,10 +140,10 @@ async fn run_triple_gen_client(
         &cs_participants,
         my_id.into(),
         ReconstructionThreshold::from(THRESHOLD),
-        TRIPLES_PER_BATCH.get(),
+        *TRIPLES_PER_BATCH,
         rng,
     )?;
     let triples = run_protocol("canary triple gen", &mut channel, protocol).await?;
-    assert_eq!(triples.len(), TRIPLES_PER_BATCH.get());
+    assert_eq!(triples.len(), *TRIPLES_PER_BATCH);
     Ok(())
 }

@@ -40,25 +40,25 @@ pub struct TripleConfig {
 }
 
 /// The number of triples a single triple generation computation produces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, derive_more::Into)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, derive_more::Deref, derive_more::Into,
+)]
 #[serde(into = "usize", try_from = "usize")]
 pub struct TripleBatchSize(usize);
 
 impl TripleBatchSize {
-    /// The fixed batch size used before the value became configurable, and the largest batch a
-    /// follower accepts.
+    /// The fixed batch size used before the value became configurable.
     pub const LEGACY: Self = Self(64);
 
-    /// Rejects values that are zero, odd, or above [`TripleBatchSize::LEGACY`].
+    /// The largest batch a follower accepts.
+    pub const MAX: Self = Self(64);
+
+    /// Rejects values that are zero, odd, or above [`TripleBatchSize::MAX`].
     pub const fn new(value: usize) -> Result<Self, InvalidTripleBatchSize> {
-        if value == 0 || !value.is_multiple_of(2) || value > Self::LEGACY.0 {
+        if value == 0 || !value.is_multiple_of(2) || value > Self::MAX.0 {
             return Err(InvalidTripleBatchSize(value));
         }
         Ok(Self(value))
-    }
-
-    pub const fn get(self) -> usize {
-        self.0
     }
 }
 
@@ -76,10 +76,16 @@ impl TryFrom<usize> for TripleBatchSize {
     }
 }
 
+impl From<TripleBatchSize> for u32 {
+    fn from(value: TripleBatchSize) -> Self {
+        u32::try_from(value.0).expect("`new` caps a batch size at `MAX`, which fits in a u32")
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error(
     "triple batch size must be even, non-zero and at most {max}, got {0}",
-    max = TripleBatchSize::LEGACY.0
+    max = TripleBatchSize::MAX.0
 )]
 pub struct InvalidTripleBatchSize(usize);
 
@@ -277,10 +283,10 @@ parallel_triple_generation_stagger_time_sec: 1
     #[rstest]
     #[case::zero(0, false)]
     #[case::odd(63, false)]
-    #[case::above_legacy(66, false)]
+    #[case::above_max(66, false)]
     #[case::smallest(2, true)]
-    #[case::legacy(64, true)]
-    fn triple_batch_size__should_accept_only_even_non_zero_sizes_up_to_the_legacy_one(
+    #[case::max(64, true)]
+    fn triple_batch_size__should_accept_only_even_non_zero_sizes_up_to_the_max(
         #[case] value: usize,
         #[case] accepted: bool,
     ) {
@@ -327,7 +333,7 @@ parallel_triple_generation_stagger_time_sec: 1
             serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
 
         // Then
-        assert_eq!(reparsed.batch_size.get(), 16);
+        assert_eq!(*reparsed.batch_size, 16);
         assert_eq!(reparsed, config);
     }
 }
