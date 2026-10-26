@@ -309,8 +309,7 @@ pub struct RunningContractState {
     derive(schemars::JsonSchema)
 )]
 pub struct ResharingContractState {
-    /// The state being reshared from; while resharing, its `parameters_votes` hold the
-    /// re-proposal votes for the prospective epoch.
+    /// Its `parameters_votes` are the re-proposal votes for the prospective epoch.
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
