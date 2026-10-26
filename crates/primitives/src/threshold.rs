@@ -72,7 +72,7 @@ impl ReconstructionThreshold {
         Self(value)
     }
 
-    pub fn inner(self) -> u64 {
+    pub fn value(self) -> u64 {
         self.0
     }
 

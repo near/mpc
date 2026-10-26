@@ -65,7 +65,7 @@ fn validate_domain_reconstruction_threshold(
     domain: &DomainConfig,
     num_participants: ParticipantCount,
 ) -> Result<(), Error> {
-    let t = domain.reconstruction_threshold.inner();
+    let t = domain.reconstruction_threshold.value();
     if t < MIN_RECONSTRUCTION_THRESHOLD {
         return Err(DomainError::ReconstructionThresholdTooLow.into());
     }

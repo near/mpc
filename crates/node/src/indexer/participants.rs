@@ -733,7 +733,7 @@ mod tests {
         let (_, mut resharing) = gen_resharing_state(1);
         let domain_id = resharing.resharing_key.domain().id;
         let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
-        let new_threshold = ReconstructionThreshold::new(old_threshold.inner() + 1);
+        let new_threshold = ReconstructionThreshold::new(old_threshold.value() + 1);
         resharing.per_domain_thresholds = BTreeMap::from([(domain_id, new_threshold)]);
         let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
 
