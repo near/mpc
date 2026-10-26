@@ -49,9 +49,12 @@ updates:
       - dependency-name: "near-jsonrpc-client"
       - dependency-name: "near-jsonrpc-primitives"
       - dependency-name: "near-primitives"
-      # Pin exact near-* versions since near-sdk 5.30 and near-workspaces 0.24.
+      ## TEMPORARY, TODO(#4801): remove the two entries below once near-sdk 5.30.0 and ##
+      ## near-workspaces 0.24.0 are published. Until then they pin release candidates    ##
+      ## of the near-* crates and must move together with the pins above.               ##
       - dependency-name: "near-sdk"
       - dependency-name: "near-workspaces"
+      ## End of the temporary entries                                                    ##
       # These are pinned by git tag and bumped manually in lockstep;
       # dependabot misreads the `-rc` pre-release ordering and tries to downgrade them.
       - dependency-name: "near-async"
