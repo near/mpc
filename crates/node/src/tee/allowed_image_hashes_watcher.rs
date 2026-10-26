@@ -1,7 +1,7 @@
+use crate::durable_fs::write_file_durably;
 use derive_more::From;
 use itertools::Itertools;
 use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
-use mpc_node_config::durable_fs::write_file_durably;
 use mpc_primitives::hash::NodeImageHash;
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::AllowedMpcDockerImageHash;

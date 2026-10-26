@@ -9,8 +9,8 @@
 //! interrupted by a crash leaves only the trash behind — which is cleaned on the
 //! next startup.
 
+use crate::durable_fs::{sync_parent_dir, write_file_durably};
 use crate::home_paths::{near_data_trash_dir, wipe_token_file};
-use mpc_node_config::durable_fs::{sync_parent_dir, write_file_durably};
 use std::path::{Component, Path};
 
 /// Cleans any leftover wipe trash, then — if `requested_token` is non-zero and

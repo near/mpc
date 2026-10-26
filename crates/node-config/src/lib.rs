@@ -1,4 +1,3 @@
-pub mod durable_fs;
 pub mod foreign_chains;
 pub mod start;
 
@@ -14,11 +13,7 @@ use anyhow::Context;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
-    path::Path,
-};
+use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs};
 
 const DEFAULT_PPROF_PORT: u16 = 34001;
 
@@ -160,34 +155,15 @@ pub struct ConfigFile {
 }
 
 impl ConfigFile {
-    pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let original_config_string =
-            fs::read_to_string(path).context("failed to read config file")?;
-        let config: Self = serde_yaml::from_str(&original_config_string)?;
+    pub fn from_yaml(yaml: &str) -> anyhow::Result<Self> {
+        let config: Self = serde_yaml::from_str(yaml)?;
         config.validate().context("Validate config.yaml")?;
-
-        // re-serialize if needed
-        {
-            let re_serialized = serde_yaml::to_string(&config)?;
-            let update_config_with_new_schema = re_serialized != original_config_string;
-
-            if update_config_with_new_schema {
-                durable_fs::write_file_durably(path, re_serialized.as_bytes())
-                    .context("failed to rewrite config file")?;
-            }
-        }
-
         Ok(config)
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
         self.foreign_chains.validate()
     }
-}
-
-pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
-    let config_path = home_dir.join("config.yaml");
-    ConfigFile::from_file(&config_path).context("Load config.yaml")
 }
 
 fn default_pprof_bind_address() -> SocketAddr {

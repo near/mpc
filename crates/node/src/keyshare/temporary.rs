@@ -1,8 +1,8 @@
 use super::Keyshare;
 use crate::db::{decrypt, encrypt};
+use crate::durable_fs::sync_parent_dir;
 use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
-use mpc_node_config::durable_fs::sync_parent_dir;
 use mpc_primitives::{EpochId, KeyEventId};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;

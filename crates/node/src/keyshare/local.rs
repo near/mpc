@@ -1,9 +1,9 @@
 use super::permanent::PermanentKeyStorageBackend;
 use crate::db;
+use crate::durable_fs::{rename_durably, sync_parent_dir};
 use crate::home_paths::{permanent_key_link, permanent_keys_dir};
 use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
-use mpc_node_config::durable_fs::{rename_durably, sync_parent_dir};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 

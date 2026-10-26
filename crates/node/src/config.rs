@@ -1,3 +1,4 @@
+use crate::durable_fs::write_file_durably;
 use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
 use mpc_node_config::ConfigFile;
@@ -431,6 +432,24 @@ impl RespondConfig {
     }
 }
 
+pub(crate) fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
+    let config_path = home_dir.join("config.yaml");
+    let original_config_string =
+        fs::read_to_string(&config_path).context("failed to read config.yaml")?;
+    let config =
+        ConfigFile::from_yaml(&original_config_string).context("failed to parse config.yaml")?;
+
+    // re-serialize if needed
+    let re_serialized = serde_yaml::to_string(&config)?;
+    let update_config_with_new_schema = re_serialized != original_config_string;
+    if update_config_with_new_schema {
+        write_file_durably(&config_path, re_serialized.as_bytes())
+            .context("failed to rewrite config.yaml")?;
+    }
+
+    Ok(config)
+}
+
 #[cfg(feature = "network-hardship-simulation")]
 pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
     let listen_blocks_file = home_dir.join("listen_blocks.flag");
@@ -449,6 +468,7 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
@@ -774,8 +794,9 @@ cores: 4
     }
 
     #[test]
-    fn from_file_does_not_rewrite_when_already_current_format() {
-        // given: write a config that is already in the canonical serialized format
+    fn load_config_file__should_not_rewrite_when_already_current_format() {
+        // Given
+        // write a config that is already in the canonical serialized format
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -783,17 +804,19 @@ cores: 4
         let canonical = serde_yaml::to_string(&config).unwrap();
         fs::write(&path, &canonical).unwrap();
 
-        // when
-        let _ = ConfigFile::from_file(&path).unwrap();
+        // When
+        let _ = load_config_file(dir.path()).unwrap();
 
-        // then: file content is byte-for-byte identical (no rewrite)
+        // Then
+        // file content is byte-for-byte identical (no rewrite)
         let content_after = fs::read_to_string(&path).unwrap();
         assert_eq!(canonical, content_after);
     }
 
     #[test]
-    fn from_file_rewrites_old_format_atomically() {
-        // given: write a config using the old host+port WebUI format
+    fn load_config_file__should_rewrite_old_format_atomically() {
+        // Given
+        // write a config using the old host+port WebUI format
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -803,10 +826,11 @@ cores: 4
         );
         fs::write(&path, &old_format).unwrap();
 
-        // when
-        let config = ConfigFile::from_file(&path).unwrap();
+        // When
+        let config = load_config_file(dir.path()).unwrap();
 
-        // then: file is rewritten in the new format
+        // Then
+        // file is rewritten in the new format
         let content_after = fs::read_to_string(&path).unwrap();
         assert!(
             content_after.contains("web_ui: 127.0.0.1:8082"),
