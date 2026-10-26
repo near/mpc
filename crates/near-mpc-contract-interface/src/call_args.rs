@@ -2,12 +2,12 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId,
-    ExpectedMeasurements, ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId,
-    Keyset, LauncherImageHash, NodeImageHash, ParticipantUrl,
-    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, TeeVerifierCodeHash, UpdateHash, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
+    DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements,
+    ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
+    NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -207,11 +207,6 @@ pub struct DerivedPublicKeyArgs {
     pub path: String,
     pub predecessor: Option<AccountId>,
     pub domain_id: Option<DomainId>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct LatestKeyVersionArgs {
-    pub signature_scheme: Option<Curve>,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

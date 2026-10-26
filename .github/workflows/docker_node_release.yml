@@ -25,6 +25,8 @@ on:
         required: true
         type: string
 
+permissions: {}
+
 jobs:
   retag-node-image:
     name: "Retag node image for release"

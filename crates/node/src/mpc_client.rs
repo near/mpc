@@ -830,6 +830,14 @@ mod tests {
                 .into(),
                 false,
             ),
+            (
+                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+                    id: CryptoHash::default(),
+                    paired_triple_id: uid(),
+                }
+                .into(),
+                false,
+            ),
         ];
 
         for (task_id, expected) in cases {

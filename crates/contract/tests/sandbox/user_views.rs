@@ -9,22 +9,6 @@ use crate::sandbox::common::SandboxTestSetup;
 use crate::sandbox::utils::transactions::CallMpcContract;
 
 #[tokio::test]
-async fn test_key_version() -> anyhow::Result<()> {
-    let SandboxTestSetup {
-        worker: _worker,
-        contract,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(&[Protocol::CaitSith])
-        .build()
-        .await;
-
-    let version = contract.latest_key_version(None).await?.value;
-    assert_eq!(version, 0);
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_public_key() -> anyhow::Result<()> {
     let SandboxTestSetup {
         worker: _worker,

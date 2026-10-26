@@ -271,9 +271,12 @@ When a signature request arrives:
    and advertise the protocol version that introduced this flow; that
    consumes one triple pair and no presignature. Otherwise it calls
    `presignature_store.take_owned()` for the relevant domain, consuming
-   one presignature. Verify-foreign-tx leaders always call
-   `presignature_store.take_owned_matching(supporters)`, so the
-   borrowers can all inspect the requested chain.
+   one presignature. Verify-foreign-tx leaders make the same choice
+   among the supporters of the requested chain only, so the borrowers
+   can all inspect it: a triple pair qualifies only if its participants
+   also advertise the later protocol version that added the
+   verify-foreign-tx variant of this flow, and the fallback is
+   `presignature_store.take_owned_matching(supporters)`.
 2. Leader opens a network channel with the asset's borrowers and
    broadcasts the asset ID along with the signature request.
 3. **Followers** call `take_unowned(id)` on the matching store to
