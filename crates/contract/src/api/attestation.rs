@@ -99,6 +99,10 @@ impl MpcContract {
     /// A node submits with no deposit via its function-call access key. Storing a *new* entry
     /// consumes one attestation-storage grant, prepaid for the node's account by whoever
     /// onboards it; a re-attestation under a key the account already owns consumes none.
+    ///
+    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account
+    /// holds the TLS key: as a current or proposed participant, as a migration destination, or
+    /// through an attestation stored under it.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
