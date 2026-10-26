@@ -3,13 +3,13 @@
 //! does not change node behavior.
 //!
 //! A local provider matches a whitelist provider by its URL host, as [`provider_identity`]
-//! describes. A chain missing from the whitelist is left to the chain health verdict.
+//! describes.
 //!
 //! Log levels:
 //! - Error: a whitelisted `base_url` is invalid (a bug or a bad vote).
 //! - Error: a whitelist entry uses a variant this node version does not know (upgrade the node).
 //! - Warn: a local provider differs from its whitelist provider, or two local providers match a single whitelist entry.
-//! - Info: a local provider is not in the whitelist. This is normal.
+//! - Info: a local provider or chain is not in the whitelist. Both are normal.
 //! - Info: the local config matches the whitelist.
 //!
 //! Logs show the chain, the local provider name, local auth names and schemes, and public whitelist
@@ -40,6 +40,7 @@ pub(super) struct Diagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DiagnosticKind {
+    ChainNotInWhitelist,
     UnparseableBaseUrl {
         whitelist_id: ProviderId,
         whitelist_base_url: String,
@@ -64,11 +65,14 @@ pub(super) fn compare(
 ) -> Vec<Diagnostic> {
     local
         .iter_chains()
-        .filter_map(|(chain, local_config)| {
-            let whitelist_entry = whitelist.get(&chain)?;
-            Some(compare_chain(chain, local_config, whitelist_entry))
+        .flat_map(|(chain, local_config)| match whitelist.get(&chain) {
+            Some(whitelist_entry) => compare_chain(chain, local_config, whitelist_entry),
+            None => vec![Diagnostic {
+                chain,
+                local_name: None,
+                kind: DiagnosticKind::ChainNotInWhitelist,
+            }],
         })
-        .flatten()
         .collect()
 }
 
@@ -148,6 +152,12 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
     let chain = diagnostic.chain;
     let local_provider = diagnostic.local_name.as_deref();
     match &diagnostic.kind {
+        DiagnosticKind::ChainNotInWhitelist => {
+            tracing::info!(
+                ?chain,
+                "foreign chain whitelist: chain is not whitelisted yet"
+            );
+        }
         DiagnosticKind::UnparseableBaseUrl {
             whitelist_id,
             whitelist_base_url,
@@ -327,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_be_silent_for_a_chain_missing_from_the_whitelist() {
+    fn compare__should_emit_chain_not_in_whitelist_when_the_chain_is_missing_from_the_contract() {
         // Given
         let local = local_ethereum(&[(
             "alchemy",
@@ -338,7 +348,14 @@ mod tests {
         let diagnostics = compare(&local, &BTreeMap::new());
 
         // Then
-        assert_eq!(diagnostics, vec![]);
+        assert_eq!(
+            diagnostics,
+            vec![Diagnostic {
+                chain: dtos::ForeignChain::Ethereum,
+                local_name: None,
+                kind: DiagnosticKind::ChainNotInWhitelist,
+            }]
+        );
     }
 
     #[rstest]

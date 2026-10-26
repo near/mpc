@@ -31,8 +31,7 @@ mod whitelist_diagnostics;
 ///
 /// Once the whitelist is read, each round also logs every difference between the local config and
 /// the whitelist, see [`whitelist_diagnostics`], and judges each probed chain. A local provider
-/// counts for the
-/// whitelist provider it matches by URL only when no part of it differs, as
+/// counts for the whitelist provider it matches by URL only when no part of it differs, as
 /// [`provider_identity`](mpc_node_config::foreign_chains::provider_identity) describes. A chain is
 /// healthy when at least its quorum of whitelist providers count and all of them are healthy. Until
 /// the whitelist is first read from the contract, chain health is logged as unknown.
@@ -99,7 +98,6 @@ enum ChainHealth {
         unhealthy: usize,
         whitelisted: usize,
     },
-    NotWhitelisted,
 }
 
 fn judge(
@@ -118,15 +116,13 @@ fn judge(
             if probed_rows.is_empty() {
                 return None;
             }
-            let health = match whitelist.get(&chain) {
-                None => ChainHealth::NotWhitelisted,
-                Some(whitelist_entry) => judge_chain(
-                    &probed_rows,
-                    &ProviderWhitelistMatches::for_chain(local_chain, whitelist_entry)
-                        .whitelist_conforming_providers(),
-                    whitelist_entry.quorum,
-                ),
-            };
+            let whitelist_entry = whitelist.get(&chain)?;
+            let health = judge_chain(
+                &probed_rows,
+                &ProviderWhitelistMatches::for_chain(local_chain, whitelist_entry)
+                    .whitelist_conforming_providers(),
+                whitelist_entry.quorum,
+            );
             Some((chain, health))
         })
         .collect()
@@ -240,9 +236,6 @@ fn log_chain_health(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>
                 whitelisted,
                 "foreign chain is unhealthy: a whitelisted RPC provider failed the probe",
             ),
-            ChainHealth::NotWhitelisted => {
-                info!(%chain, "foreign chain is not whitelisted: health not judged")
-            }
         }
     }
 }
@@ -671,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn judge__should_not_judge_a_chain_missing_from_the_whitelist() {
+    fn judge__should_leave_out_a_chain_missing_from_the_whitelist() {
         // Given
         let (local, report) =
             polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
@@ -681,10 +674,7 @@ mod tests {
         let health = judge(&report, &local, &whitelist);
 
         // Then
-        assert_eq!(
-            health,
-            BTreeMap::from([(dtos::ForeignChain::Polygon, ChainHealth::NotWhitelisted)])
-        );
+        assert!(health.is_empty());
     }
 
     #[test]
@@ -721,7 +711,6 @@ mod tests {
                     whitelisted: 2,
                 },
             ),
-            (dtos::ForeignChain::Ethereum, ChainHealth::NotWhitelisted),
         ]);
 
         // When
@@ -732,7 +721,6 @@ mod tests {
             ("INFO", "foreign chain is healthy"),
             ("WARN", "foreign chain is below quorum"),
             ("WARN", "foreign chain is unhealthy"),
-            ("INFO", "foreign chain is not whitelisted"),
         ];
         logs_assert(|lines: &[&str]| {
             expected_levels
