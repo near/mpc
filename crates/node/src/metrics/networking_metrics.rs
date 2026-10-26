@@ -1,12 +1,16 @@
 use std::sync::LazyLock;
 
 use prometheus::{
-    HistogramVec, IntCounterVec, IntGaugeVec, register_histogram_vec, register_int_counter_vec,
-    register_int_gauge_vec,
+    HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, register_histogram_vec,
+    register_int_counter_vec, register_int_gauge, register_int_gauge_vec,
 };
 
 pub(crate) const INCOMING_CONNECTION: &str = "incoming";
 pub(crate) const OUTGOING_CONNECTION: &str = "outgoing";
+
+pub(crate) const PAIR_DISCONNECTED: &str = "disconnected";
+// TODO(#398): remove with `ConnectionState::Unknown`.
+pub(crate) const PAIR_UNKNOWN: &str = "unknown";
 
 pub(crate) const PING_MESSAGE: &str = "ping";
 pub(crate) const INDEXER_HEIGHT_MESSAGE: &str = "indexer_height";
@@ -21,6 +25,7 @@ const LABEL_MY_PARTICIPANT_ID: &str = "my_participant_id";
 const LABEL_PEER_PARTICIPANT_ID: &str = "peer_participant_id";
 const LABEL_CONNECTION_DIRECTION: &str = "connection_direction";
 const LABEL_MESSAGE_TYPE: &str = "message_type";
+const LABEL_STATE: &str = "state";
 
 // Conservative estimate of maximum transmission unit
 // https://en.wikipedia.org/wiki/Maximum_transmission_unit
@@ -53,6 +58,23 @@ pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::ne
         "mpc_network_live_connections",
         "Current state of the mesh network connections",
         &[LABEL_MY_PARTICIPANT_ID, LABEL_PEER_PARTICIPANT_ID],
+    )
+    .unwrap()
+});
+
+pub(crate) static NETWORK_VIEW_PAIRS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+    register_int_gauge_vec!(
+        "mpc_network_view_pairs",
+        "Pairs of alive participants whose link is down (disconnected) or has no gossip sample yet (unknown)",
+        &[LABEL_STATE],
+    )
+    .unwrap()
+});
+
+pub(crate) static NETWORK_VIEW_MAX_DELAY_BLOCKS: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "mpc_network_view_max_delay_blocks",
+        "Largest moving-average gossip delay, in blocks, over pairs of alive participants",
     )
     .unwrap()
 });

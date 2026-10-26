@@ -24,6 +24,19 @@ counters tell you whether that is working:
 | --- | --- | --- |
 | `mpc_led_computation_duration_seconds` | how long a computation took, recorded by its leader only. Labelled by `protocol_scheme`, `task` and `outcome` (`succeeded`, `failed`, `deadline_exceeded`, `abandoned` when the caller gave up on it) | increase in the number of `failed`, `abandoned` or `deadline_exceeded` counts, and `succeeded` computations approaching the deadline for that `task`. |
 
+## Mesh connectivity
+
+Every node tells its peers once a second which peers it is connected to and
+the latest indexer height it heard from each. Comparing what a peer reports
+about a third node with what that node reported itself gives the gossip delay
+of the link between them, in blocks:
+
+| Metric | What it tracks | When to worry |
+| --- | --- | --- |
+| `mpc_network_view_pairs{state="disconnected"}` | pairs of alive participants where the latest report from one side does not list the other, or lists it without a height | should be zero. A sustained non-zero value means two operators cannot reach each other, usually a firewall or routing problem between them, and computations that include both will time out. A peer whose indexer has not produced a height yet also counts; `mpc_indexer_height` tells the two apart. |
+| `mpc_network_view_pairs{state="unknown"}` | pairs of alive participants without a gossip sample yet | non-zero while a peer runs a node version that does not send reports, or briefly after it connects; such links are assumed usable. Otherwise it should be zero. |
+| `mpc_network_view_max_delay_blocks` | the largest moving-average gossip delay over pairs of alive participants | a few blocks is normal. A climb means a slow or lossy link or an overloaded peer. A bad link from this node to a peer inflates every pair with that peer, so the climb shows on the node that owns the link. |
+
 ## Backups
 
 The node hands its key shares to the backup service registered for it after
@@ -153,6 +166,14 @@ increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 
 # Warn: requests fail for lack of an answer in time. Cross check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Warn: two alive participants cannot reach each other. Computations that include
+# both time out until the link is fixed or one of them drops out.
+mpc_network_view_pairs{state="disconnected"} > 0  for 10m
+
+# Warn: gossip between two alive participants lags well behind: a slow or lossy
+# link, or an overloaded peer.
+mpc_network_view_max_delay_blocks > 20  for 30m
 
 # Warn: more than one computation in ten ends without a result: failed, past its
 # deadline, or dropped by the caller. The last clause skips tasks with under ten

@@ -3,11 +3,13 @@ pub mod conn;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
+pub mod view;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
+use crate::network::view::{ConnectionState, NetworkView};
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
@@ -21,7 +23,7 @@ use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -102,6 +104,8 @@ pub struct MeshNetworkClient {
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     channels: Arc<Mutex<NetworkTaskChannelManager>>,
     indexer_heights: Arc<IndexerHeightTracker>,
+    network_view: Mutex<NetworkView>,
+    last_logged_disconnected_pairs: Mutex<BTreeSet<(ParticipantId, ParticipantId)>>,
     /// Helper data to ensure [`ChannelId`] uniqueness.
     last_id: Arc<Mutex<UniqueId>>,
 }
@@ -143,10 +147,13 @@ impl MeshNetworkClient {
         let last_id = Arc::new(Mutex::new(UniqueId::generate(
             transport_sender.my_participant_id(),
         )));
+        let network_view = Mutex::new(NetworkView::new(&transport_sender.all_participant_ids()));
         Self {
             transport_sender,
             channels,
             indexer_heights,
+            network_view,
+            last_logged_disconnected_pairs: Mutex::new(BTreeSet::new()),
             last_id,
         }
     }
@@ -443,6 +450,52 @@ impl MeshNetworkClient {
                 metric.set(is_live_participant.into());
             }
         }
+
+        let alive = self.all_alive_participant_ids();
+        let mut disconnected_pairs = BTreeSet::new();
+        let mut unknown_pairs = 0_usize;
+        let mut max_delay = 0_u64;
+        {
+            let view = self.network_view.lock().unwrap();
+            for (i, &a) in alive.iter().enumerate() {
+                for &b in &alive[i + 1..] {
+                    match view.max_delay(a, b) {
+                        ConnectionState::Disconnected => {
+                            disconnected_pairs.insert((a, b));
+                        }
+                        ConnectionState::Unknown => unknown_pairs += 1,
+                        ConnectionState::Delay(delay) => max_delay = max_delay.max(delay),
+                    }
+                }
+            }
+        }
+        networking_metrics::NETWORK_VIEW_PAIRS
+            .with_label_values(&[networking_metrics::PAIR_DISCONNECTED])
+            .set(gauge_value(disconnected_pairs.len()));
+        networking_metrics::NETWORK_VIEW_PAIRS
+            .with_label_values(&[networking_metrics::PAIR_UNKNOWN])
+            .set(gauge_value(unknown_pairs));
+        networking_metrics::NETWORK_VIEW_MAX_DELAY_BLOCKS.set(gauge_value(max_delay));
+        self.log_disconnected_pairs_if_changed(disconnected_pairs);
+    }
+
+    fn log_disconnected_pairs_if_changed(
+        &self,
+        disconnected_pairs: BTreeSet<(ParticipantId, ParticipantId)>,
+    ) {
+        let mut last_logged = self.last_logged_disconnected_pairs.lock().unwrap();
+        if *last_logged == disconnected_pairs {
+            return;
+        }
+        if disconnected_pairs.is_empty() {
+            tracing::info!("all alive participants report connections to each other");
+        } else {
+            tracing::warn!(
+                ?disconnected_pairs,
+                "alive participants that cannot reach each other changed"
+            );
+        }
+        *last_logged = disconnected_pairs;
     }
 
     pub fn update_indexer_height(&self, height: u64) {
@@ -523,8 +576,11 @@ async fn run_receive_message(
             if let Some(&height) = message.info.peers.get(&message.from) {
                 indexer_heights.set_height(message.from, height);
             }
-            // TODO(#398): store the sender's connected-peers list, so participant selection can
-            // avoid pairs that cannot reach each other.
+            client
+                .network_view
+                .lock()
+                .unwrap()
+                .update_with_reported_heights(message.from, &message.info.peers);
         }
     }
     Ok(())
@@ -548,7 +604,13 @@ fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
             (participant, height)
         })
         .collect();
-    let info = Packet::ConnectedPeersInfo(ConnectedPeersInfo { peers });
+    let info = ConnectedPeersInfo { peers };
+    client
+        .network_view
+        .lock()
+        .unwrap()
+        .update_with_reported_heights(me, &info.peers);
+    let info = Packet::ConnectedPeersInfo(info);
     let my_height = Packet::IndexerHeight(IndexerHeightMessage {
         height: indexer_heights.get(&me).copied().unwrap_or(0),
     });
@@ -567,6 +629,10 @@ fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
             tracing::warn!(%err, "connected peers info not sent");
         }
     }
+}
+
+fn gauge_value(value: impl TryInto<i64>) -> i64 {
+    value.try_into().unwrap_or(i64::MAX)
 }
 
 /// Runs the loop of receiving messages from the transport and dispatching them to the
@@ -1365,6 +1431,7 @@ mod tests {
         TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
         new_test_client_over, new_test_client_with_versions, new_test_transports, run_test_clients,
     };
+    use crate::network::view::ConnectionState;
     use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet};
     use crate::primitives::{
         ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, UniqueId,
@@ -1538,6 +1605,31 @@ mod tests {
         // Then
         let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
         assert_eq!(message.peers, BTreeMap::from([(me, 100), (peer, 90)]));
+    }
+
+    #[test]
+    fn broadcast_connected_peers_info__should_record_our_own_row_in_the_network_view() {
+        // Given
+        let [me, connected, disconnected] = [1, 2, 3].map(ParticipantId::from_raw);
+        let participants = vec![me, connected, disconnected];
+        let mut transport = TestMeshTransport::all_connected(
+            participants.clone(),
+            current_protocol_versions(&participants),
+        );
+        transport.disconnected = HashSet::from([disconnected]);
+        let (client, _) = new_test_client_over(transport, me);
+        client.indexer_heights.set_height(connected, 1);
+
+        // When
+        broadcast_connected_peers_info(&client);
+
+        // Then
+        let view = client.network_view.lock().unwrap();
+        assert_eq!(
+            view.max_delay(me, disconnected),
+            ConnectionState::Disconnected
+        );
+        assert_eq!(view.max_delay(me, connected), ConnectionState::Unknown);
     }
 
     #[test]
@@ -1807,6 +1899,27 @@ mod tests {
         let heights = node.indexer_heights.get_heights();
         assert_eq!(heights[&ORIGINATOR], 42);
         assert_eq!(heights[&ME], 0);
+    }
+
+    #[tokio::test]
+    async fn run_receive_message__should_feed_connected_peers_info_into_the_network_view() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let info = ConnectedPeersInfo {
+            peers: BTreeMap::from([(ORIGINATOR, 42), (ME, 7)]),
+        };
+
+        // When
+        node.receive_connected_peers_info(ORIGINATOR, info)
+            .await
+            .unwrap();
+
+        // Then
+        let view = node.client.network_view.lock().unwrap();
+        assert_eq!(
+            view.max_delay(ORIGINATOR, THIRD_PARTY),
+            ConnectionState::Disconnected
+        );
     }
 
     #[tokio::test]
