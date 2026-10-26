@@ -239,7 +239,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     // `RocksDB::block_until_all_instances_are_dropped()` to return.
     let indexer_shutdown_token = CancellationToken::new();
     let indexer_api = spawn_real_indexer(
-        config,
+        config.clone(),
         mpc_indexer_config,
         near_indexer_config,
         near_config,

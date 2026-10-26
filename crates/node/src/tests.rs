@@ -35,6 +35,7 @@ use mpc_node_config::{
     SignatureConfig, SyncMode, TripleBatchSize, TripleConfig,
 };
 
+use crate::indexer::configs::IndexerConfigExt;
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, AutoAbortTask, start_root_task};
@@ -109,6 +110,12 @@ impl OneNodeTestConfig {
     pub async fn run(self) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.home_dir)?;
         let my_account_id = self.config.my_near_account_id.clone();
+        let near_config = self
+            .config
+            .indexer
+            .to_near_indexer_config(self.home_dir.clone())
+            .load_near_config()
+            .expect("near config is present");
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
@@ -125,7 +132,7 @@ impl OneNodeTestConfig {
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui,
-                    static_web_data(&self.home_dir, &self.secrets, None),
+                    static_web_data(&self.secrets, &near_config, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
