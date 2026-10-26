@@ -91,7 +91,10 @@ impl MpcContract {
 
     /// Submit a TEE attestation for a current or prospective participant.
     ///
-    /// - [`Attestation::Mock`] is verified synchronously.
+    /// - [`Attestation::Mock`] is verified synchronously. Note that mock attestations
+    ///   (such as `MockAttestation::Valid`) are deliberately permitted by design
+    ///   for local testing, CI integration, and network bootstrapping/transition
+    ///   phases (KD-F015).
     /// - [`Attestation::Dstack`] is verified asynchronously via a cross-contract
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
     ///   callback to run the post-DCAP checks and store the attestation.

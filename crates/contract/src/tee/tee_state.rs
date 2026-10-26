@@ -165,6 +165,8 @@ impl TeeState {
         Timestamp::now().as_secs()
     }
 
+    /// Verifies and stores a mock attestation. Deliberately allowed for local testing
+    /// and transitional deployment phases (KD-F015).
     pub(crate) fn verify_and_store_mock(
         &mut self,
         node_id: NodeId,
