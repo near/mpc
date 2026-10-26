@@ -30,11 +30,11 @@ use serde::{Deserialize, Serialize};
 pub struct GovernanceThreshold(pub u64);
 
 impl GovernanceThreshold {
-    pub fn new(value: u64) -> Self {
+    pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
-    pub fn value(self) -> u64 {
+    pub const fn value(self) -> u64 {
         self.0
     }
 
@@ -59,20 +59,22 @@ impl GovernanceThreshold {
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::AsRef,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-#[serde(transparent)]
-pub struct ReconstructionThreshold(u64);
+pub struct ReconstructionThreshold(pub u64);
 
 impl ReconstructionThreshold {
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
-    pub fn value(self) -> u64 {
+    pub const fn value(self) -> u64 {
         self.0
     }
 
