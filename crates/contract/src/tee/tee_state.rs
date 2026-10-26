@@ -179,31 +179,18 @@ impl TeeState {
         report_data.into()
     }
 
-    /// Stores `verified_attestation` under `node_id`'s TLS key, returning whether the node is
-    /// new. Rejects a submission whose TLS key is already registered to a different account
-    /// with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`].
+    /// Stores the node under its TLS key unless another account owns that key (see
+    /// [`Self::assert_tls_key_claimable`]), returning whether the node is new.
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,
         verified_attestation: VerifiedAttestation,
     ) -> Result<bool, AttestationSubmissionError> {
-        let tls_pk = node_id.tls_public_key.clone();
-
-        // Authorization: a TLS key registered to one account must not be
-        // overwritten by a submission from a different account. Without this,
-        // any caller could replace any participant's stored attestation, since
-        // the entry is keyed only by `tls_public_key`.
-        if let Some(existing) = self.nodes.get(&tls_pk)
-            && existing.owner != node_id.account_id
-        {
-            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
-        }
-
+        self.assert_tls_key_claimable(&node_id.account_id, &node_id.tls_public_key)?;
         let previous = self.nodes.insert(
-            tls_pk,
+            node_id.tls_public_key.clone(),
             Node::new(node_id, verified_attestation, Self::current_time_seconds()),
         );
-
         Ok(previous.is_none())
     }
 
@@ -435,13 +422,25 @@ impl TeeState {
         removed_entry_owners
     }
 
-    /// Account that owns the entry stored under `tls_public_key`, if any. Read-only,
-    /// so [`crate::MpcContract::submit_participant_info`] can classify a submission before doing any
-    /// verification work.
-    pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
-        self.nodes
-            .get(tls_public_key)
-            .map(|node| node.owner.clone())
+    /// The account that owns the node stored under the TLS key, if any.
+    pub(crate) fn owner_of(&self, tls_public_key: &Ed25519PublicKey) -> Option<&AccountId> {
+        self.nodes.get(tls_public_key).map(|node| &node.owner)
+    }
+
+    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if the node stored
+    /// under the TLS key belongs to another account.
+    pub(crate) fn assert_tls_key_claimable(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Result<(), AttestationSubmissionError> {
+        if self
+            .owner_of(tls_public_key)
+            .is_some_and(|owner| owner != account_id)
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+        }
+        Ok(())
     }
 
     /// Returns the id of every stored node, including nodes of accounts that are not participants.
