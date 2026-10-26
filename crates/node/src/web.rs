@@ -11,11 +11,10 @@ use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, StartConfig, TripleConfig, foreign_chains::RpcPreset,
+    SignatureConfig, TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
 use near_indexer::NearConfig;
-use near_indexer::near_primitives::network::PeerId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
@@ -313,8 +312,8 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
 }
 
 pub fn static_web_data(
-    near_config: &NearConfig,
     value: &SecretsConfig,
+    near_config: &NearConfig,
     tee_participant_info: Option<Attestation>,
 ) -> StaticWebData {
     let public_keys = get_public_keys(value);

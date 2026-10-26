@@ -9,7 +9,6 @@ use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
-use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes,
     monitor_allowed_os_measurements, monitor_my_attestation,
@@ -19,7 +18,6 @@ use crate::types::LogTransaction;
 use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::{IndexerConfig, StartConfig};
-use near_account_id::AccountId;
 use near_async::ActorSystem;
 use near_indexer::{Indexer, NearConfig};
 use near_mpc_contract_interface::types::{Ed25519PublicKey, ProtocolContractState};
