@@ -60,3 +60,19 @@ pub trait ReadContractState {
         &self,
     ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
 }
+
+pub trait WatchContractState:
+    near_contract_transport::WatchContractState<
+        Value = ProtocolContractState,
+        ViewError: std::fmt::Debug,
+    >
+{
+}
+
+impl<T> WatchContractState for T where
+    T: near_contract_transport::WatchContractState<
+            Value = ProtocolContractState,
+            ViewError: std::fmt::Debug,
+        >
+{
+}
