@@ -58,13 +58,10 @@ fn tee_verifier_account() -> String {
     format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}")
 }
 
-// The contract's default `key_event_timeout_blocks = 30` is ~18 s on
-// mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
-// same 30 collapses to ~3.7 s — too tight for the resharing
-// round-trip (start_reshare → indexer × N → MPC compute →
-// vote_reshared) once concurrent e2e tests put the runner under
-// load. Override to 240 blocks (~30 s in sandbox) as a comfortable
-// budget over mainnet's effective headroom.
+// The default `key_event_timeout_blocks` is sized for mainnet (~600 ms
+// blocks). The e2e sandbox runs ~8 blocks/s, so override it to 240 blocks
+// (~30 s) to leave room for resharing when concurrent e2e tests load the
+// runner.
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
@@ -124,6 +121,44 @@ pub struct ForeignChainsClusterConfig {
     /// if non-empty, must have exactly `num_nodes` entries.
     pub node_configs: Vec<mpc_node_config::ForeignChainsConfig>,
     pub whitelist: BTreeMap<ForeignChain, ChainEntry>,
+}
+
+/// One whitelist provider per local provider; providers that share a host match only the first.
+pub fn chain_entry_matching(
+    config: &mpc_node_config::ForeignChainConfig,
+    quorum: u64,
+) -> ChainEntry {
+    let providers = config.providers.clone().map(|name, provider| {
+        let (base_url, auth_scheme) = match provider.auth {
+            mpc_node_config::AuthConfig::None => (provider.rpc_url, AuthScheme::None),
+            mpc_node_config::AuthConfig::Path { placeholder, .. } => {
+                let (base_url, _) = provider
+                    .rpc_url
+                    .split_once(placeholder.as_str())
+                    .unwrap_or((&provider.rpc_url, ""));
+                (base_url.to_string(), AuthScheme::Path { placeholder })
+            }
+            mpc_node_config::AuthConfig::Header { name, scheme, .. } => (
+                provider.rpc_url,
+                AuthScheme::Header {
+                    name: name.to_string(),
+                    scheme,
+                },
+            ),
+            mpc_node_config::AuthConfig::Query { name, .. } => {
+                (provider.rpc_url, AuthScheme::Query { name })
+            }
+        };
+        (
+            ProviderId(name.to_string()),
+            ProviderConfig {
+                base_url,
+                auth_scheme,
+                chain_routing: ChainRouting::Embedded,
+            },
+        )
+    });
+    ChainEntry { providers, quorum }
 }
 
 pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
@@ -1612,4 +1647,100 @@ async fn wait_for_contract_state(
         .wait_for(timeout, predicate)
         .await?;
     Ok(observed.value)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use std::num::NonZeroU64;
+
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use mpc_node_config::foreign_chains::provider_identity::{
+        ProviderWhitelistMatch, ProviderWhitelistMatches,
+    };
+    use mpc_node_config::{
+        AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, TokenConfig,
+    };
+    use rstest::rstest;
+
+    use super::chain_entry_matching;
+
+    fn token() -> TokenConfig {
+        TokenConfig::Val {
+            val: "secret".to_string(),
+        }
+    }
+
+    fn config(providers: Vec<(&str, &str, AuthConfig)>) -> ForeignChainConfig {
+        let providers: std::collections::BTreeMap<_, _> = providers
+            .into_iter()
+            .map(|(name, rpc_url, auth)| {
+                (
+                    RpcProviderName::from(name.to_string()),
+                    ForeignChainProviderConfig {
+                        rpc_url: rpc_url.to_string(),
+                        auth,
+                    },
+                )
+            })
+            .collect();
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: providers.try_into().unwrap(),
+            expected_network_fingerprint: None,
+        }
+    }
+
+    #[rstest]
+    #[case::none("http://127.0.0.1:1/", AuthConfig::None)]
+    #[case::path("http://127.0.0.1:1/{api_key}", AuthConfig::Path { placeholder: "{api_key}".to_string(), token: token() })]
+    #[case::path_followed_by_a_segment("http://127.0.0.1:1/v2/{api_key}/v1", AuthConfig::Path { placeholder: "{api_key}".to_string(), token: token() })]
+    #[case::header("http://127.0.0.1:1/", AuthConfig::Header { name: "authorization".parse().unwrap(), scheme: Some("Bearer".to_string()), token: token() })]
+    #[case::query("http://127.0.0.1:1/", AuthConfig::Query { name: "apikey".to_string(), token: token() })]
+    fn chain_entry_matching__should_yield_an_entry_the_provider_conforms_to(
+        #[case] rpc_url: &str,
+        #[case] auth: AuthConfig,
+    ) {
+        // Given
+        let config = config(vec![("mock", rpc_url, auth)]);
+
+        // When
+        let entry = chain_entry_matching(&config, 1);
+
+        // Then
+        let matches = ProviderWhitelistMatches::for_chain(&config, &entry);
+        assert!(
+            matches.iter().all(|(_, provider_match)| matches!(
+                provider_match,
+                ProviderWhitelistMatch::Conforming { .. }
+            )),
+            "{matches:?}"
+        );
+    }
+
+    #[test]
+    fn chain_entry_matching__should_match_only_the_first_of_two_providers_on_one_host() {
+        // Given
+        let config = config(vec![
+            ("mock-0", "http://127.0.0.1:1/", AuthConfig::None),
+            ("mock-1", "http://127.0.0.1:2/", AuthConfig::None),
+        ]);
+
+        // When
+        let entry = chain_entry_matching(&config, 1);
+
+        // Then
+        let matches = ProviderWhitelistMatches::for_chain(&config, &entry);
+        let kinds: Vec<(&str, bool)> = matches
+            .iter()
+            .map(|(name, provider_match)| {
+                (
+                    name.as_str(),
+                    matches!(provider_match, ProviderWhitelistMatch::Conforming { .. }),
+                )
+            })
+            .collect();
+        assert_eq!(kinds, [("mock-0", true), ("mock-1", false)], "{matches:?}");
+    }
 }
