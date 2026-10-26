@@ -190,6 +190,8 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
+    /// Watcher that keeps track of the allowed OS [`dtos::ExpectedMeasurements`] on the contract.
+    pub allowed_os_measurements_receiver: watch::Receiver<Vec<dtos::ExpectedMeasurements>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 

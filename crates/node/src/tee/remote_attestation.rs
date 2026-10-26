@@ -9,16 +9,19 @@ use crate::{
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
-    trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
+    trait_extensions::convert_to_contract_dto::{
+        IntoContractInterfaceType, to_attestation_measurements,
+    },
 };
 use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use mpc_attestation::{
-    attestation::{Attestation, VerificationError},
+    attestation::{Attestation, ExpectedMeasurements, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
 use near_mpc_contract_interface::types::{
-    AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation, VerifiedAttestation,
+    self as dtos, AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation,
+    VerifiedAttestation,
 };
 use near_time::Clock;
 use tee_authority::tee_authority::{AttestationError, TeeAuthority};
@@ -62,6 +65,7 @@ pub struct AttestationSubmitter<T, A> {
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
+    pub allowed_os_measurements: watch::Receiver<Vec<dtos::ExpectedMeasurements>>,
     pub stored_attestation: watch::Receiver<Option<StoredAttestation>>,
 }
 
@@ -145,6 +149,7 @@ fn validate_remote_attestation(
     account_public_key: Ed25519PublicKey,
     allowed_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
+    allowed_measurements: &[ExpectedMeasurements],
 ) -> Result<(), VerificationError> {
     let expected_report_data: ReportData =
         ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
@@ -158,7 +163,7 @@ fn validate_remote_attestation(
             now,
             allowed_docker_image_hashes,
             allowed_launcher_compose_hashes,
-            mpc_attestation::attestation::default_measurements(),
+            allowed_measurements,
         )
         .map(|_| ())
 }
@@ -195,15 +200,22 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             .map(|entry| entry.image_hash)
             .collect();
         let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
+        let allowed_measurements: Vec<_> = self
+            .allowed_os_measurements
+            .borrow()
+            .iter()
+            .map(to_attestation_measurements)
+            .collect();
         if let Err(error) = validate_remote_attestation(
             &attestation,
             self.tls_public_key.clone(),
             self.account_public_key.clone(),
             &allowed_image_hashes,
             &allowed_launcher_compose_hashes,
+            &allowed_measurements,
         ) {
             // Submit anyway: the contract runs the authoritative check, and this local one can
-            // fail on a stale view of the allowed hashes
+            // fail on a stale view of the allowlists
             tracing::warn!("Attestation is not valid: {error}");
         }
         submit_remote_attestation(
@@ -411,6 +423,7 @@ mod tests {
         let (tls_public_key, account_public_key) = test_keys();
         let (_, allowed_image_hashes) = watch::channel(vec![]);
         let (_, allowed_launcher_compose_hashes) = watch::channel(vec![]);
+        let (_, allowed_os_measurements) = watch::channel(vec![]);
         let (stored_attestation, stored_attestation_receiver) =
             watch::channel(Some(StoredAttestation {
                 attestation: STORED_MOCK,
@@ -423,6 +436,7 @@ mod tests {
             account_public_key,
             allowed_image_hashes,
             allowed_launcher_compose_hashes,
+            allowed_os_measurements,
             stored_attestation: stored_attestation_receiver,
         };
         TestSetup {
@@ -624,6 +638,7 @@ mod tests {
             account_public_key,
             &[NodeImageHash::from([42u8; 32])],
             &[LauncherDockerComposeHash::from([42u8; 32])],
+            &[],
         )
     }
 
