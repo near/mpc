@@ -620,6 +620,24 @@ expression: abi
         }
       },
       {
+        "name": "new_parameters_votes",
+        "doc": " Returns the pending `vote_new_parameters` votes, keyed by proposal hash.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "os_measurement_votes",
         "doc": " Returns pending OS measurement votes, may include former participants' votes",
         "kind": "view",
@@ -4756,8 +4774,7 @@ expression: abi
             "add_domains_votes",
             "domains",
             "keyset",
-            "parameters",
-            "parameters_votes"
+            "parameters"
           ],
           "properties": {
             "add_domains_votes": {
@@ -4771,16 +4788,6 @@ expression: abi
             },
             "parameters": {
               "$ref": "#/definitions/GovernanceThresholdParameters"
-            },
-            "parameters_votes": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/AuthenticatedAccountId"
-                },
-                "uniqueItems": true
-              }
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [
