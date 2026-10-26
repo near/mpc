@@ -1078,6 +1078,8 @@ impl FakeIndexerManager {
             watch::channel(vec![]);
         let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
             watch::channel(vec![]);
+        let (_allowed_os_measurements_sender, allowed_os_measurements_receiver) =
+            watch::channel(vec![]);
         let (_my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
         let (my_migration_info_sender, my_migration_info_receiver) =
@@ -1097,6 +1099,7 @@ impl FakeIndexerManager {
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
             allowed_launcher_compose_receiver,
+            allowed_os_measurements_receiver,
             my_migration_info_receiver,
             my_attestation_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),

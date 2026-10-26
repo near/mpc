@@ -2927,7 +2927,7 @@ This line **doesn't tell you why**: `cause` is `attestation submission was not e
 
 #### 1. Client-side pre-flight WARN — in the node logs
 
-Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
+Before submitting, the node runs a pre-flight check against the contract's allowed-image, allowed-launcher-compose and allowed-OS-measurement lists. Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
 
 ```
 WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
@@ -2939,6 +2939,7 @@ Common messages:
 - ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
 - ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
+- **`wrong expected_measurements hash (found none matched expected one of the allowed measurement sets)`**: your boot measurements (MRTD, RTMR0-2, key-provider event digest) are not in the contract's allowed set, for example because the CVM runs a dev OS image. Deploy the production OS image and check that its measurements are voted in (see [OS measurement voting](#os-measurement-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
 - **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](../tdx-tcb-status.md), which also explains how to see it coming.
 
@@ -2966,7 +2967,7 @@ If the transaction reaches execution and the contract panics, the node logs only
 Smart contract panicked: the submitted attestation failed verification, reason: custom error: `...`
 ```
 
-The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list or the contract's caller assertion):
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they come from the contract re-verifying stored attestations, or from its caller assertion):
 
 - **`the attestation's measurements are not in the allowed set`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
 - **`the allowed measurements list is empty`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.
