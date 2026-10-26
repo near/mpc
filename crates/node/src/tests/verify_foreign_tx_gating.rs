@@ -5,7 +5,7 @@ use crate::p2p::testing::{NodeTestPorts, port_seed};
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, every_node_owns_triples, request_verify_foreign_tx_and_await_response,
-    signatures_led, wait_until,
+    signatures_led, wait_for_registrations, wait_until,
 };
 use crate::tracking::AutoAbortTask;
 use httpmock::prelude::*;
@@ -275,12 +275,14 @@ struct ForeignTxCluster {
 
 /// Starts the cluster with `signature.online_presign` set as given and `whitelist` voted for the
 /// mock's URL, and waits until every node owns triples.
+const FOREIGN_TX_CLUSTER_SIZE: usize = 4;
+
 async fn must_start_foreign_tx_cluster(
     case: u16,
     online_presign: bool,
     whitelist: fn(&str) -> BTreeMap<ForeignChain, ChainEntry>,
 ) -> ForeignTxCluster {
-    const NUM_PARTICIPANTS: usize = 4;
+    const NUM_PARTICIPANTS: usize = FOREIGN_TX_CLUSTER_SIZE;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
 
@@ -405,6 +407,9 @@ async fn verify_foreign_tx__should_not_be_served_when_local_providers_are_below_
     // Ethereum itself. Registering three of them directly reproduces the window between a vote
     // landing and the nodes dropping the chain from their registration.
     let mut cluster = must_start_foreign_tx_cluster(2, true, ethereum_whitelist_out_of_reach).await;
+    // The nodes' own empty registrations must land first, or they would overwrite the injected
+    // ones.
+    wait_for_registrations(&cluster.indexer, FOREIGN_TX_CLUSTER_SIZE, &BTreeSet::new()).await;
     {
         let mut contract = cluster.indexer.contract_mut().await;
         for account in ["test0", "test1", "test2"] {

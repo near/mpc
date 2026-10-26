@@ -28,12 +28,11 @@ pub(crate) fn spawn_foreign_chains_registrar(
             let statuses = rpc_quorum_statuses(&local, &whitelist.borrow_and_update());
             publish_rpc_quorum_metrics(&statuses);
             let eligible = eligible_chains(&statuses);
-            if registered.as_ref() != Some(&eligible)
-                && register_foreign_chains(&txn_sender, &eligible)
-                    .await
-                    .is_ok()
-            {
-                registered = Some(eligible);
+            if registered.as_ref() != Some(&eligible) {
+                match register_foreign_chains(&txn_sender, &eligible).await {
+                    Ok(()) => registered = Some(eligible),
+                    Err(TransactionProcessorError::ProcessorIsClosed) => break,
+                }
             }
             if whitelist.changed().await.is_err() {
                 break;
@@ -266,8 +265,8 @@ mod tests {
 
     #[test]
     fn publish_rpc_quorum_metrics__should_set_both_gauges_for_every_configured_chain() {
-        // Given: Polygon whitelisted with quorum 1, Base configured but not whitelisted. Neither
-        // chain is touched by the other tests of this module, which share the process-global gauges.
+        // Given: Polygon whitelisted with quorum 1, Base configured but not whitelisted. The gauges
+        // are global to the test binary, so no other test in this crate may register either chain.
         let local = ForeignChainsConfig {
             polygon: Some(local_chain()),
             base: Some(local_chain()),

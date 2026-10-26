@@ -1,6 +1,5 @@
-use crate::indexer::fake::FakeIndexerManager;
 use crate::p2p::testing::port_seed;
-use crate::tests::{DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup};
+use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup, wait_for_registrations};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
@@ -14,7 +13,6 @@ use near_mpc_contract_interface::types::{
 use near_time::Clock;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
-use std::time::Duration;
 
 #[tokio::test]
 #[test_log::test]
@@ -111,33 +109,6 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
     assert_eq!(
         **contract.available_foreign_chains(),
         expected_foreign_chains
-    );
-}
-
-/// Waits until `node_count` nodes have registered exactly `chains`.
-async fn wait_for_registrations(
-    indexer: &FakeIndexerManager,
-    node_count: usize,
-    chains: &BTreeSet<ForeignChain>,
-) {
-    let registered = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
-        loop {
-            {
-                let contract = indexer.contract_mut().await;
-                let configs = contract.foreign_chains_configs();
-                if configs.len() == node_count
-                    && configs.values().all(|node_config| **node_config == *chains)
-                {
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    })
-    .await;
-    assert!(
-        registered.is_ok(),
-        "timed out waiting for every node to register {chains:?}"
     );
 }
 

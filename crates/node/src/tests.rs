@@ -654,3 +654,30 @@ fn test_build_info_metric_values() {
     // The value should be 1
     assert_eq!(value, 1);
 }
+
+/// Waits until `node_count` nodes have registered exactly `chains`.
+pub async fn wait_for_registrations(
+    indexer: &FakeIndexerManager,
+    node_count: usize,
+    chains: &std::collections::BTreeSet<near_mpc_contract_interface::types::ForeignChain>,
+) {
+    let registered = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
+        loop {
+            {
+                let contract = indexer.contract_mut().await;
+                let configs = contract.foreign_chains_configs();
+                if configs.len() == node_count
+                    && configs.values().all(|node_config| **node_config == *chains)
+                {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+    assert!(
+        registered.is_ok(),
+        "timed out waiting for every node to register {chains:?}"
+    );
+}
