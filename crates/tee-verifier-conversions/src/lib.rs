@@ -2,7 +2,7 @@
 //! `tee-verifier-interface`.
 //!
 //! Shared by the on-chain `tee-verifier` contract and the off-chain
-//! `attestation` crate's `verify_locally` path, as is
+//! `attestation` crate's DCAP step, as is
 //! [`verify_quote_with_collateral_dates`], so both derive the same expiry.
 //!
 //! These mappings need only `dcap-qvl` + `tee-verifier-interface` + `borsh`, so

@@ -166,24 +166,6 @@ impl DstackAttestation {
         })
     }
 
-    /// Full local verification: runs the DCAP step ([`Self::verify_dcap_quote`])
-    /// and then the post-DCAP checks via [`Self::verify_with_report`].
-    #[cfg(feature = "local-verify")]
-    pub fn verify_locally(
-        &self,
-        expected_report_data: ReportData,
-        timestamp_seconds: u64,
-        accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<AcceptedDstackAttestation, VerificationError> {
-        let VerifiedQuote { report, .. } = self.verify_dcap_quote(timestamp_seconds)?;
-        Self::verify_with_report(
-            &self.tcb_info,
-            &report,
-            expected_report_data,
-            accepted_measurements,
-        )
-    }
-
     #[cfg(feature = "local-verify")]
     pub fn verify_dcap_quote(
         &self,
