@@ -14,6 +14,8 @@ on:
   schedule:
     - cron: "5 0 * * 0"
 
+permissions: {}
+
 jobs:
   external-services-tests:
     name: "Run tests that depend on external services"
@@ -30,6 +32,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
+        # zizmor: ignore[cache-poisoning]
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -37,7 +40,7 @@ jobs:
           prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: nextest@0.9.126
 

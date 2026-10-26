@@ -20,7 +20,7 @@ use alloc::{string::ToString as _, vec::Vec};
 use dcap_qvl::{QuoteClaims, quote as dq_quote, tcb_info as dq_tcb, verify as dq_verify};
 use tee_verifier_interface::{
     Collateral, CollateralDates, EnclaveReport, QuoteBytes, Report, TDReport10, TDReport15,
-    TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
+    TDReport15Ex, TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
 };
 
 /// Converts an interface type into its `dcap_qvl` counterpart `T`.
@@ -146,6 +146,7 @@ impl IntoInterfaceType<Report> for dq_quote::Report {
             dq_quote::Report::SgxEnclave(r) => Report::SgxEnclave(r.into_interface_type()),
             dq_quote::Report::TD10(r) => Report::TD10(r.into_interface_type()),
             dq_quote::Report::TD15(r) => Report::TD15(r.into_interface_type()),
+            dq_quote::Report::TD15Ex(r) => Report::TD15Ex(r.into_interface_type()),
         }
     }
 }
@@ -178,6 +179,24 @@ impl IntoInterfaceType<TDReport15> for dq_quote::TDReport15 {
             base: self.base.into_interface_type(),
             tee_tcb_svn2: self.tee_tcb_svn2,
             mr_service_td: self.mr_service_td,
+        }
+    }
+}
+
+impl IntoInterfaceType<TDReport15Ex> for dq_quote::TDReport15Ex {
+    fn into_interface_type(self) -> TDReport15Ex {
+        TDReport15Ex {
+            base: self.base.into_interface_type(),
+            vmid: self.vmid,
+            td_id: self.td_id,
+            dev_info: self.dev_info,
+            init_service_td_hash: self.init_service_td_hash,
+            init_service_td_attributes: self.init_service_td_attributes,
+            init_cpu_svn: self.init_cpu_svn,
+            init_tee_tcb_svn: self.init_tee_tcb_svn,
+            init_tee_fmspc: self.init_tee_fmspc,
+            cur_service_td_hash: self.cur_service_td_hash,
+            cur_service_td_attributes: self.cur_service_td_attributes,
         }
     }
 }
@@ -215,6 +234,10 @@ impl IntoInterfaceType<TcbStatus> for dq_tcb::TcbStatus {
             dq_tcb::TcbStatus::ConfigurationNeeded => TcbStatus::ConfigurationNeeded,
             dq_tcb::TcbStatus::SWHardeningNeeded => TcbStatus::SWHardeningNeeded,
             dq_tcb::TcbStatus::Revoked => TcbStatus::Revoked,
+            dq_tcb::TcbStatus::TDRelaunchAdvised => TcbStatus::TDRelaunchAdvised,
+            dq_tcb::TcbStatus::TDRelaunchAdvisedConfigurationNeeded => {
+                TcbStatus::TDRelaunchAdvisedConfigurationNeeded
+            }
         }
     }
 }
@@ -298,6 +321,22 @@ mod tests {
         }
     }
 
+    fn dcap_td15ex() -> dq_quote::TDReport15Ex {
+        dq_quote::TDReport15Ex {
+            base: dcap_td15(),
+            vmid: 18,
+            td_id: [19; 32],
+            dev_info: [20; 48],
+            init_service_td_hash: [21; 48],
+            init_service_td_attributes: [22; 8],
+            init_cpu_svn: [23; 16],
+            init_tee_tcb_svn: [24; 16],
+            init_tee_fmspc: [25; 12],
+            cur_service_td_hash: [26; 48],
+            cur_service_td_attributes: [27; 8],
+        }
+    }
+
     fn dcap_sgx() -> dq_quote::EnclaveReport {
         dq_quote::EnclaveReport {
             cpu_svn: [1; 16],
@@ -348,6 +387,10 @@ mod tests {
             TcbStatus::ConfigurationNeeded => dq_tcb::TcbStatus::ConfigurationNeeded,
             TcbStatus::SWHardeningNeeded => dq_tcb::TcbStatus::SWHardeningNeeded,
             TcbStatus::Revoked => dq_tcb::TcbStatus::Revoked,
+            TcbStatus::TDRelaunchAdvised => dq_tcb::TcbStatus::TDRelaunchAdvised,
+            TcbStatus::TDRelaunchAdvisedConfigurationNeeded => {
+                dq_tcb::TcbStatus::TDRelaunchAdvisedConfigurationNeeded
+            }
         }
     }
 
@@ -373,6 +416,13 @@ mod tests {
     }
 
     #[test]
+    fn td_report_15_ex__should_match_dcap_borsh_layout() {
+        let dcap = dcap_td15ex();
+        let interface: TDReport15Ex = dcap.into_interface_type();
+        assert_same_borsh_bytes(&interface, &dcap);
+    }
+
+    #[test]
     fn enclave_report__should_match_dcap_borsh_layout() {
         let dcap = dcap_sgx();
         let interface: EnclaveReport = dcap.into_interface_type();
@@ -383,6 +433,7 @@ mod tests {
     #[case::sgx(dq_quote::Report::SgxEnclave(dcap_sgx()))]
     #[case::td10(dq_quote::Report::TD10(dcap_td10()))]
     #[case::td15(dq_quote::Report::TD15(dcap_td15()))]
+    #[case::td15ex(dq_quote::Report::TD15Ex(dcap_td15ex()))]
     fn report__should_match_dcap_borsh_layout(#[case] dcap: dq_quote::Report) {
         let interface: Report = dcap.clone().into_interface_type();
         assert_same_borsh_bytes(&interface, &dcap);
@@ -396,6 +447,8 @@ mod tests {
     #[case(TcbStatus::ConfigurationNeeded)]
     #[case(TcbStatus::SWHardeningNeeded)]
     #[case(TcbStatus::Revoked)]
+    #[case(TcbStatus::TDRelaunchAdvised)]
+    #[case(TcbStatus::TDRelaunchAdvisedConfigurationNeeded)]
     fn tcb_status__should_match_dcap_borsh_layout(#[case] status: TcbStatus) {
         let dcap = dcap_tcb_status(&status);
         assert_same_borsh_bytes(&status, &dcap);
@@ -447,6 +500,7 @@ mod tests {
             platform: dcap_qvl::PlatformInfo {
                 tcb_level: dcap_tcb_level(dq_tcb::TcbStatus::ConfigurationNeeded, "INTEL-SA-00002"),
                 tcb_date_tag: 0,
+                current_tcb_level: None,
                 pck: dcap_qvl::PckIdentity {
                     ppid: vec![0xAB; 16],
                     cpu_svn: [0; 16],
@@ -524,6 +578,7 @@ mod tests {
     #[case::sgx(dq_quote::Report::SgxEnclave(dcap_sgx()))]
     #[case::td10(dq_quote::Report::TD10(dcap_td10()))]
     #[case::td15(dq_quote::Report::TD15(dcap_td15()))]
+    #[case::td15ex(dq_quote::Report::TD15Ex(dcap_td15ex()))]
     fn verified_report__should_match_dcap_borsh_layout(#[case] report: dq_quote::Report) {
         let dcap = dcap_verified_report(report);
         let interface: VerifiedReport = dcap.clone().into_interface_type();

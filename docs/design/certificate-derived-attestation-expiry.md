@@ -51,7 +51,7 @@ to keep in sync, it does not help the fleet convergence described in item 4, and
 
 ## The expiry value
 
-`dcap-qvl` (0.6.6, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
+`dcap-qvl` (0.7.0, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
 the dates below, taking certificate dates only from the chains it verified. The claims are built by
 `QuoteVerificationResult::claims()`, reached through `verify_with_policy`. The rest of this document
 calls that `claims()`.
@@ -129,15 +129,15 @@ verifier change needed, but it puts DER/X.509 parsing back into the contract was
 Six things depend on the expiry being `now + constant`. Five have to change with it; item 3 is
 future work this design only has to keep possible. Each is listed as the problem, then the fix.
 
-**1. Confirming a submission landed.** The node checks whether the stored expiry went up
-([`tx_sender.rs`](../../crates/node/src/indexer/tx_sender.rs)). That stops working when the value is
-a calendar date that repeats for weeks.
+**1. Knowing when a submission was accepted.** While the expiry is `now + 7 days`, it also says when
+the submission was accepted. That stops working when the value is a calendar date that repeats for
+weeks.
 
 Fix: store `accepted_at_seconds` on
 [`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
-variants, so one field covers both. This restores today's semantics exactly, and gives operators a
-better health signal than expiry. Costs 9 bytes per entry (599 → 608, so `WORST_CASE_ENTRY_BYTES`
-moves 604 → 613 and the fee floor needs re-checking) and a state migration.
+variants, so one field covers both. The node then reads the acceptance time directly, and operators
+get a better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
+moves 604 → 612 and the fee floor needs re-checking) and a state migration.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
@@ -212,12 +212,14 @@ time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against 
 173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
 ([#4596](https://github.com/near/mpc/pull/4596)) keeps the parsed JSON documents, leaving only the
 CRLs and certificates parsed again, and drops two duplicated signature checks, bringing them to
-124.3 and 122.1. 0.6.6 parses only the verified certificates: 123.7 and 122.2. Both fit the
-current 200 TGas budget with room to spare, so `verifier_tera_gas` stays as it is.
+124.3 and 122.1. 0.6.6 parses only the verified certificates, and on 0.7.0 they measure 123.5
+and 121.8. Both fit the current 200 TGas budget with room to spare, so `verifier_tera_gas` stays
+as it is.
 
 ## Rollout
 
-1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
+1. **Land item 1**, the stored submission timestamp, so the node keeps knowing when its attestation
+   was accepted.
 2. **Deploy the new verifier and vote it in**, per
    [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
    so nothing changes on chain yet. Reversible by voting back.

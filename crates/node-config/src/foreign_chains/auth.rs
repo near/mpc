@@ -2,6 +2,8 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
+use super::provider_identity::ConfiguredAuth;
+
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -23,6 +25,20 @@ pub enum AuthConfig {
         name: String,
         token: TokenConfig,
     },
+}
+
+impl<'a> From<&'a AuthConfig> for ConfiguredAuth<'a> {
+    fn from(auth: &'a AuthConfig) -> Self {
+        match auth {
+            AuthConfig::None => Self::None,
+            AuthConfig::Header { name, scheme, .. } => Self::Header {
+                name: name.as_str(),
+                scheme: scheme.as_deref(),
+            },
+            AuthConfig::Path { placeholder, .. } => Self::Path { placeholder },
+            AuthConfig::Query { name, .. } => Self::Query { name },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -9,8 +9,8 @@ use crate::sandbox::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
-            get_participant_attestation, get_participants, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, vote_add_launcher_hash,
+            get_config, get_participant_attestation, get_participants, get_state, get_tee_accounts,
+            prepay_and_submit_participant_info, vote_add_launcher_hash, vote_add_os_measurement,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
@@ -32,7 +32,7 @@ use near_mpc_contract_interface::types::{
     CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{Account, Worker, network::Sandbox};
+use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
@@ -156,7 +156,8 @@ async fn back_compatibility_without_state(
 }
 
 /// `stored_attestations` keeps entries for non-participants too, so the upgrade under test
-/// carries more entries than [`PARTICIPANT_LEN`].
+/// carries more entries than [`PARTICIPANT_LEN`], and more than the 17 that mainnet and testnet
+/// each stored on 2026-10-23.
 const STORED_ATTESTATION_ENTRIES: usize = 25;
 
 /// Tops the stored attestations up to `total` with entries owned by non-participants, the way a
@@ -248,6 +249,18 @@ async fn propose_upgrade_from_production_to_current_binary(
         .await
         .unwrap();
 
+    // Same for the OS measurement vote map.
+    let pending_measurement = dtos::ExpectedMeasurements {
+        mrtd: mpc_primitives::hash::MrtdHash::from([0xCD; 48]),
+        rtmr0: mpc_primitives::hash::Rtmr0Hash::from([0xCD; 48]),
+        rtmr1: mpc_primitives::hash::Rtmr1Hash::from([0xCD; 48]),
+        rtmr2: mpc_primitives::hash::Rtmr2Hash::from([0xCD; 48]),
+        key_provider_event_digest: mpc_primitives::hash::KeyProviderEventDigest::from([0xCD; 48]),
+    };
+    vote_add_os_measurement(&accounts[0], &contract, &pending_measurement)
+        .await
+        .unwrap();
+
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
@@ -288,6 +301,15 @@ async fn propose_upgrade_from_production_to_current_binary(
             .is_empty(),
         "pending launcher votes should be dropped by the migration"
     );
+    assert!(
+        contract
+            .os_measurement_votes()
+            .await
+            .unwrap()
+            .value
+            .is_empty(),
+        "pending OS measurement votes should be dropped by the migration"
+    );
 
     let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
     for account in &accounts[..threshold] {
@@ -303,6 +325,56 @@ async fn propose_upgrade_from_production_to_current_binary(
             .value
             .contains(&pending_launcher_hash),
         "a fresh launcher threshold vote should succeed after the upgrade"
+    );
+    for account in &accounts[..threshold] {
+        vote_add_os_measurement(account, &contract, &pending_measurement)
+            .await
+            .unwrap();
+    }
+    assert!(
+        contract
+            .allowed_os_measurements()
+            .await
+            .unwrap()
+            .value
+            .contains(&pending_measurement),
+        "a fresh OS measurement threshold vote should succeed after the upgrade"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn migrate__should_run_within_contract_update_gas_budget(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) {
+    // Given
+    const HEADROOM_PERCENT: u64 = 30;
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
+    let contract = deploy_old(&worker, network).await.unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
+        .await
+        .unwrap();
+    submit_attestations(&contract, &accounts, &participants).await;
+    fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
+    upgrade_to_new(&contract).await.unwrap();
+
+    // When
+    let execution = contract.migrate().await.unwrap();
+
+    // Then
+    let gas_burnt = execution.receipt_outcomes()[0].gas_burnt;
+    execution.into_result().expect("migration should succeed");
+    let budget = Gas::from_tgas(
+        get_config(&contract)
+            .await
+            .unwrap()
+            .apply_contract_update_tera_gas,
+    );
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    assert!(
+        gas_burnt <= max_allowed,
+        "migration burnt {gas_burnt} of the {budget} budget, leaving less than \
+         {HEADROOM_PERCENT}% headroom",
     );
 }
 

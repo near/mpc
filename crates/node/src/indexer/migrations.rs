@@ -1,11 +1,11 @@
-use std::sync::Arc;
-
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
+use near_contract_transport::ViewContract;
+use near_mpc_contract_interface::client::MpcContractHandle;
 pub use near_mpc_contract_interface::types::MigrationInfo as ContractMigrationInfo;
 use tokio::sync::watch;
 
-use crate::{indexer::IndexerState, migration_service::types::MigrationInfo};
+use crate::migration_service::types::MigrationInfo;
 
 const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -14,14 +14,13 @@ const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration
 /// Returns a tokio watch channel on which the latest migration state can be watched.
 ///
 /// The interval checking for new values is defined by [`MIGRATION_INFO_REFRESH_INTERVAL`]
-pub async fn monitor_migrations(
-    indexer_state: Arc<IndexerState>,
-
+pub async fn monitor_migrations<V: ViewContract + Clone + Send + Sync + 'static>(
+    contract: MpcContractHandle<V>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     my_near_account_id: AccountId,
     my_p2p_public_key: VerifyingKey,
 ) -> watch::Receiver<MigrationInfo> {
-    let init_response = fetch_migrations_once(indexer_state.clone()).await;
+    let init_response = fetch_migrations_once(&contract).await;
     let init_migration_state = MigrationInfo::from_contract_state(
         &my_near_account_id,
         &my_p2p_public_key,
@@ -35,7 +34,7 @@ pub async fn monitor_migrations(
         async move {
             loop {
                 interval.tick().await;
-                let response = fetch_migrations_once(indexer_state.clone()).await;
+                let response = fetch_migrations_once(&contract).await;
                 tracing::debug!(target: "indexer", "fetched mpc migration state at block {}: {:?}", response.0, response.1);
 
                 let mut migration_info_changed = false;
@@ -78,19 +77,18 @@ pub async fn monitor_migrations(
     receiver
 }
 
-async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, ContractMigrationInfo) {
+async fn fetch_migrations_once<C: ViewContract + Clone + Send + 'static>(
+    contract: &MpcContractHandle<C>,
+) -> (u64, ContractMigrationInfo) {
     loop {
-        tracing::debug!(target: "indexer", "awaiting indexer full sync to read mpc contract state");
-        indexer_state.client.wait_for_full_sync().await;
-
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match indexer_state.view_client.get_mpc_migration_info().await {
-            Ok(res) => {
-                return res;
+        match contract.migration_info().await {
+            Ok(observed) => {
+                return (observed.observed_at.into(), observed.value);
             }
             Err(e) => {
-                tracing::error!(target: "mpc", "error reading config from chain during get_mpc_migration_info: {:?}", e);
+                tracing::error!(target: "mpc", "error reading config from chain during migration_info: {:?}", e);
                 tokio::time::sleep(MIGRATION_INFO_REFRESH_INTERVAL).await;
             }
         }

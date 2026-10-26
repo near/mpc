@@ -95,7 +95,7 @@ impl<RequestType: Request, ChainRespondArgsType> Debug
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (leader, attempts) = {
             let progress = self.progress.lock().unwrap();
-            (progress.selected_leader, progress.attempts)
+            (progress.presumed_leader, progress.attempts)
         };
         write!(
             f,
@@ -132,10 +132,11 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     ) -> String {
         let mut output = String::new();
         let current_leader = self.current_leader(eligible_leaders);
+        let presumed_leader = self.computation_progress.lock().unwrap().presumed_leader;
         write!(
             &mut output,
             "  {:>11} blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2}",
-            if current_leader == Some(me) {
+            if current_leader == Some(me) || presumed_leader == Some(me) {
                 "[leader]"
             } else {
                 ""
@@ -187,7 +188,7 @@ where
         let mut request_lines = Vec::new();
         let EligibleLeadersAndHeights {
             eligible_leaders,
-            maximum_height,
+            reference_height,
             ..
         } = self.eligible_leaders_and_heights();
         let online_participants = self.network_api.alive_participants();
@@ -241,7 +242,7 @@ where
             )?;
         }
 
-        writeln!(f, "Maximum block height known: {}", maximum_height)?;
+        writeln!(f, "Reference block height: {}", reference_height)?;
 
         writeln!(f, "Recent {}s:", RequestType::get_type())?;
         for (_, _, debug_line) in request_lines {

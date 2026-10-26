@@ -2,10 +2,10 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
-    NodeImageHash, ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs,
-    SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
+    DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements,
+    ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
+    NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
     VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
@@ -71,6 +71,11 @@ pub struct VoteAddLauncherHashArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddOsMeasurementArgs {
+    pub measurement: ExpectedMeasurements,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteTeeVerifierChangeArgs {
     pub candidate_account_id: AccountId,
     pub expected_code_hash: TeeVerifierCodeHash,
@@ -78,7 +83,7 @@ pub struct VoteTeeVerifierChangeArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct UpdateParticipantUrlArgs {
-    pub url: String,
+    pub url: ParticipantUrl,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -202,11 +207,6 @@ pub struct DerivedPublicKeyArgs {
     pub path: String,
     pub predecessor: Option<AccountId>,
     pub domain_id: Option<DomainId>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct LatestKeyVersionArgs {
-    pub signature_scheme: Option<Curve>,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
