@@ -439,7 +439,6 @@ pub(crate) fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
     let config =
         ConfigFile::from_yaml(&original_config_string).context("failed to parse config.yaml")?;
 
-    // re-serialize if needed
     let re_serialized = serde_yaml::to_string(&config)?;
     let update_config_with_new_schema = re_serialized != original_config_string;
     if update_config_with_new_schema {
@@ -796,7 +795,6 @@ cores: 4
     #[test]
     fn load_config_file__should_not_rewrite_when_already_current_format() {
         // Given
-        // write a config that is already in the canonical serialized format
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -808,7 +806,6 @@ cores: 4
         let _ = load_config_file(dir.path()).unwrap();
 
         // Then
-        // file content is byte-for-byte identical (no rewrite)
         let content_after = fs::read_to_string(&path).unwrap();
         assert_eq!(canonical, content_after);
     }
@@ -816,7 +813,6 @@ cores: 4
     #[test]
     fn load_config_file__should_rewrite_old_format_atomically() {
         // Given
-        // write a config using the old host+port WebUI format
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -830,15 +826,12 @@ cores: 4
         let config = load_config_file(dir.path()).unwrap();
 
         // Then
-        // file is rewritten in the new format
         let content_after = fs::read_to_string(&path).unwrap();
         assert!(
             content_after.contains("web_ui: 127.0.0.1:8082"),
             "Expected new SocketAddr format, got:\n{content_after}"
         );
-        // no temp file left behind
         assert!(!dir.path().join("config.yaml.tmp").exists());
-        // rewritten content round-trips correctly
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
     }
