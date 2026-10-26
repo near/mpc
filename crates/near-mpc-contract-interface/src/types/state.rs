@@ -568,6 +568,38 @@ mod tests {
     }
 
     #[test]
+    #[expect(non_snake_case)]
+    fn parameters_votes__should_group_a_legacy_report_by_proposal() {
+        // Given: alice and bob voted the same proposal, carol a different one
+        let proposal = |threshold| ProposedGovernanceThresholdParameters {
+            parameters: GovernanceThresholdParameters {
+                participants: sample_participants(),
+                threshold: GovernanceThreshold::new(threshold),
+            },
+            per_domain_thresholds: BTreeMap::new(),
+        };
+        let legacy = serde_json::json!({ "proposal_by_account": {
+            "alice.near": proposal(1),
+            "bob.near": proposal(1),
+            "carol.near": proposal(2),
+        }});
+
+        // When
+        let votes: GovernanceThresholdParametersVotes = serde_json::from_value(legacy).unwrap();
+
+        // Then
+        let voter = |account: &str| AuthenticatedAccountId(account.parse().unwrap());
+        let tallies: BTreeSet<BTreeSet<AuthenticatedAccountId>> = votes.0.into_values().collect();
+        assert_eq!(
+            tallies,
+            BTreeSet::from([
+                BTreeSet::from([voter("alice.near"), voter("bob.near")]),
+                BTreeSet::from([voter("carol.near")]),
+            ])
+        );
+    }
+
+    #[test]
     fn parameters_votes_deserialize_the_legacy_empty_report() {
         let votes: super::GovernanceThresholdParametersVotes =
             serde_json::from_str(r#"{"proposal_by_account":{}}"#).unwrap();
