@@ -609,7 +609,7 @@ impl MpcCluster {
     pub async fn vote_cancel_keygen_from(
         &self,
         node_index: usize,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
