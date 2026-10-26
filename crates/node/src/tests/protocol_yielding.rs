@@ -136,10 +136,11 @@ async fn run_triple_gen_client(
     let my_index = ids.iter().position(|&p| p == my_id).unwrap();
     let rng = MockCryptoRng::seed_from_u64(42 + my_index as u64);
     let cs_participants: Vec<Participant> = ids.into_iter().map(Into::into).collect();
-    let protocol = generate_triple_many::<TRIPLES_PER_BATCH, _, _>(
+    let protocol = generate_triple_many(
         &cs_participants,
         my_id.into(),
         ReconstructionThreshold::from(THRESHOLD),
+        TRIPLES_PER_BATCH,
         rng,
     )?;
     let triples = run_protocol("canary triple gen", &mut channel, protocol).await?;

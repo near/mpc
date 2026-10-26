@@ -2,22 +2,38 @@
 //!
 //! A discriminant, once assigned, is never reused or given to another variant. Retiring one is
 //! only safe once no deployed node can still send it, which the handshake's
-//! [`NetworkProtocolVersion`](crate::protocol_version::NetworkProtocolVersion) check decides.
+//! [`NetworkProtocolVersion`] check decides.
 
-use crate::primitives::{IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId};
+use crate::primitives::{
+    ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
+};
+use crate::protocol_version::NetworkProtocolVersion;
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::fmt::Debug;
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum Packet {
     Ping = 0,
     MpcMessage(MpcMessage) = 1,
     IndexerHeight(IndexerHeightMessage) = 2,
+    ConnectedPeersInfo(ConnectedPeersInfo) = 3,
+}
+
+impl Packet {
+    /// Lowest handshake version that can parse this packet.
+    pub fn min_protocol_version(&self) -> NetworkProtocolVersion {
+        match self {
+            Packet::Ping | Packet::MpcMessage(_) | Packet::IndexerHeight(_) => {
+                NetworkProtocolVersion::Dec2025
+            }
+            Packet::ConnectedPeersInfo(_) => NetworkProtocolVersion::Oct2026,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -176,6 +192,11 @@ pub enum VerifyForeignTxTaskId {
         id: VerifyForeignTxId,
         presignature_id: UniqueId,
     } = 0,
+    // TODO(#4793): rename back to `VerifyForeignTx` once the stored-presignature variant is gone.
+    VerifyForeignTxOnlinePresign {
+        id: VerifyForeignTxId,
+        paired_triple_id: UniqueId,
+    } = 1,
 }
 
 impl From<VerifyForeignTxTaskId> for MpcTaskId {
@@ -187,10 +208,21 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use crate::primitives::{ChannelId, ParticipantId};
+    use super::{
+        CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcMessageKind, MpcTaskId, Packet, RobustEcdsaTaskId,
+        VerifyForeignTxTaskId,
+    };
+    use crate::primitives::{
+        ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage,
+        ParticipantId, UniqueId,
+    };
+    use borsh::BorshSerialize;
+    use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types::KeyEventId;
+    use std::collections::BTreeMap;
+    use std::fmt::Debug;
 
     fn uid(counter: u32) -> UniqueId {
         UniqueId::new(ParticipantId::from_raw(0), 1, counter)
@@ -233,6 +265,12 @@ mod tests {
                     kind: MpcMessageKind::Success,
                 }),
                 Packet::IndexerHeight(IndexerHeightMessage { height: 4 }),
+                Packet::ConnectedPeersInfo(ConnectedPeersInfo {
+                    peers: BTreeMap::from([
+                        (ParticipantId::from_raw(5), 10),
+                        (ParticipantId::from_raw(7), 20),
+                    ]),
+                }),
             ]),
             rows(&[
                 MpcMessageKind::Start(MpcStartMessage {
@@ -316,6 +354,10 @@ mod tests {
                 MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTx {
                     id: hash(1),
                     presignature_id: uid(2),
+                }),
+                MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+                    id: hash(1),
+                    paired_triple_id: uid(2),
                 }),
             ]),
         ]

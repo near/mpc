@@ -565,37 +565,6 @@ expression: abi
         }
       },
       {
-        "name": "latest_key_version",
-        "doc": " Key versions refer new versions of the root key that we may choose to generate on cohort\n changes. Older key versions will always work but newer key versions were never held by\n older signers. Newer key versions may also add new security features, like only existing\n within a secure enclave. The signature_scheme parameter specifies which protocol\n we're querying the latest version for. The default is Secp256k1. The default is **NOT**\n to query across all protocols.",
-        "kind": "view",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "signature_scheme",
-              "type_schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/Curve"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0.0
-          }
-        }
-      },
-      {
         "name": "launcher_hash_votes",
         "doc": " Returns pending launcher hash votes, may include former participants' votes",
         "kind": "view",
@@ -1753,7 +1722,7 @@ expression: abi
       },
       {
         "name": "sign",
-        "doc": " `key_version` must be less than or equal to the value at `latest_key_version`\n To avoid overloading the network with too many requests,\n we ask for a small deposit for each signature request.",
+        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each signature request.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -3230,15 +3199,6 @@ expression: abi
               "minimum": 0.0
             }
           }
-        },
-        "Curve": {
-          "description": "Elliptic curve used by a domain.",
-          "type": "string",
-          "enum": [
-            "Secp256k1",
-            "Edwards25519",
-            "Bls12381"
-          ]
         },
         "DestinationNodeInfo": {
           "type": "object",
@@ -5010,15 +4970,13 @@ expression: abi
           "description": "An attestation as the contract stores it.",
           "type": "object",
           "required": [
+            "accepted_at_seconds",
             "attestation"
           ],
           "properties": {
             "accepted_at_seconds": {
-              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it, so a submitter can tell whether its own submission landed. `None` for an entry stored before the contract recorded it.",
-              "type": [
-                "integer",
-                "null"
-              ],
+              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it.",
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
