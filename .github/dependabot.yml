@@ -49,6 +49,8 @@ updates:
       - dependency-name: "near-jsonrpc-client"
       - dependency-name: "near-jsonrpc-primitives"
       - dependency-name: "near-primitives"
+      - dependency-name: "near-sdk"
+      - dependency-name: "near-workspaces"
       # These are pinned by git tag and bumped manually in lockstep;
       # dependabot misreads the `-rc` pre-release ordering and tries to downgrade them.
       - dependency-name: "near-async"

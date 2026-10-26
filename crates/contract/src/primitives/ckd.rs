@@ -33,8 +33,8 @@ const MINUS_G2_GENERATOR_UNCOMPRESSED: [u8; 192] = [
 /// `bls12381_pairing_check` returns `false` when a point is outside its
 /// prime-order subgroup.
 pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> bool {
-    let pk1 = env::bls12381_p1_decompress(&app_public_key.pk1);
-    let pk2 = env::bls12381_p2_decompress(&app_public_key.pk2);
+    let pk1 = decompress_g1(&app_public_key.pk1);
+    let pk2 = decompress_g2(&app_public_key.pk2);
 
     let pairing_input = [
         pk1.as_slice(),
@@ -43,7 +43,7 @@ pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> 
         pk2.as_slice(),
     ]
     .concat();
-    env::bls12381_pairing_check(&pairing_input)
+    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
 }
 
 /// Check that `e(big_c, g2) = e(big_y, app_pk2) . e(hash_point, public_key)`.
@@ -56,10 +56,10 @@ pub(crate) fn ckd_output_check(
     app_public_key: &dtos::CKDAppPublicKeyPV,
     public_key: &dtos::Bls12381G2PublicKey,
 ) -> bool {
-    let big_c = env::bls12381_p1_decompress(&output.big_c);
-    let big_y = env::bls12381_p1_decompress(&output.big_y);
-    let pk2 = env::bls12381_p2_decompress(&app_public_key.pk2);
-    let pk = env::bls12381_p2_decompress(public_key);
+    let big_c = decompress_g1(&output.big_c);
+    let big_y = decompress_g1(&output.big_y);
+    let pk2 = decompress_g2(&app_public_key.pk2);
+    let pk = decompress_g2(public_key);
     let hash_point = hash_app_id_with_pk(public_key.as_slice(), app_id.as_ref());
 
     let pairing_input = [
@@ -71,7 +71,19 @@ pub(crate) fn ckd_output_check(
         pk.as_slice(),
     ]
     .concat();
-    env::bls12381_pairing_check(&pairing_input)
+    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
+}
+
+/// A point the host rejects is a malformed input, not a failed check, so the
+/// call aborts instead of returning `false`.
+fn decompress_g1(point: impl AsRef<[u8]>) -> Vec<u8> {
+    env::bls12381_p1_decompress(point)
+        .unwrap_or_else(|| env::panic_str("malformed BLS12-381 G1 point"))
+}
+
+fn decompress_g2(point: impl AsRef<[u8]>) -> Vec<u8> {
+    env::bls12381_p2_decompress(point)
+        .unwrap_or_else(|| env::panic_str("malformed BLS12-381 G2 point"))
 }
 
 /// Hashes the app id and the public key as `H(pk || app_id)` where `H` is a
@@ -301,8 +313,9 @@ mod tests {
         let accepted = env::bls12381_pairing_check(&pairing_input);
 
         // Then
-        assert!(
-            !accepted,
+        assert_ne!(
+            accepted,
+            Some(true),
             "the host must reject G1 points outside the prime-order subgroup"
         );
     }
@@ -319,8 +332,9 @@ mod tests {
         let accepted = env::bls12381_pairing_check(&pairing_input);
 
         // Then
-        assert!(
-            !accepted,
+        assert_ne!(
+            accepted,
+            Some(true),
             "the host must reject G2 points outside the prime-order subgroup"
         );
     }
@@ -347,53 +361,53 @@ mod tests {
         let accepted = env::bls12381_pairing_check(&pairing_input);
 
         // Then
-        assert!(accepted);
+        assert_eq!(accepted, Some(true));
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
+    #[should_panic(expected = "malformed BLS12-381 G1 point")]
     #[expect(non_snake_case)]
     fn bls12381_p1_decompress__should_abort_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
         let candidate = g1_x_not_on_curve();
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p1_decompress(candidate);
+        // When / Then: the host rejects it and the wrapper aborts
+        decompress_g1(candidate);
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
+    #[should_panic(expected = "malformed BLS12-381 G1 point")]
     #[expect(non_snake_case)]
     fn bls12381_p1_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 48];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p1_decompress(candidate);
+        // When / Then: the host rejects it and the wrapper aborts
+        decompress_g1(candidate);
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
+    #[should_panic(expected = "malformed BLS12-381 G2 point")]
     #[expect(non_snake_case)]
     fn bls12381_p2_decompress__should_abort_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
         let candidate = g2_x_not_on_curve();
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p2_decompress(candidate);
+        // When / Then: the host rejects it and the wrapper aborts
+        decompress_g2(candidate);
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
+    #[should_panic(expected = "malformed BLS12-381 G2 point")]
     #[expect(non_snake_case)]
     fn bls12381_p2_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 96];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p2_decompress(candidate);
+        // When / Then: the host rejects it and the wrapper aborts
+        decompress_g2(candidate);
     }
 
     #[test]
