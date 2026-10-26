@@ -110,7 +110,8 @@ impl AcceptedAttestation {
 )]
 pub enum MockAttestation {
     #[default]
-    /// Always pass validation
+    /// Always pass validation. Deliberately permitted for local testing, integration suites,
+    /// and transitional network phases (KD-F015).
     Valid,
     /// Always fails validation
     Invalid,
