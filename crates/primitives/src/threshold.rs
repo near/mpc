@@ -2,7 +2,7 @@ use crate::participant_count::ParticipantCount;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-/// Defines a `u64` threshold newtype with the shared derives, `new`, `value` and `is_met_by`.
+/// One definition for both thresholds so their API and encodings cannot drift apart.
 macro_rules! define_threshold {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
