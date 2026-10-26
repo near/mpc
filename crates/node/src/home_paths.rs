@@ -13,7 +13,6 @@ pub fn near_config_file(home_dir: &Path) -> PathBuf {
     home_dir.join("config.json")
 }
 
-/// node network identity (`node_key.json`). Its `public_key` is the PeerId
 pub fn near_node_key_file(home_dir: &Path) -> PathBuf {
     home_dir.join("node_key.json")
 }

@@ -310,8 +310,6 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
     }
 }
 
-/// Reads the node's network public key (PeerId) out of
-/// `node_key.json` under `home_dir`
 fn read_nearcore_network_public_key(home_dir: &std::path::Path) -> Option<String> {
     let path = crate::home_paths::near_node_key_file(home_dir);
     match near_crypto::KeyFile::from_file(&path) {

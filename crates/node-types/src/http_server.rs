@@ -10,7 +10,6 @@ pub struct StaticWebData {
 
     pub near_responder_public_keys: Vec<Ed25519PublicKey>,
 
-    /// The node's network public key (PeerId), read from `node_key.json`.
     pub nearcore_network_public_key: Option<String>,
 
     pub tee_participant_info: Option<Attestation>,
