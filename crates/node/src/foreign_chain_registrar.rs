@@ -65,7 +65,9 @@ fn publish_rpc_quorum_metrics(statuses: &BTreeMap<dtos::ForeignChain, RpcQuorumS
         let labels = [chain.label()];
         metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED
             .with_label_values(&labels)
-            .set(i64::try_from(status.required).unwrap_or(i64::MAX));
+            .set(status.required.map_or(0, |required| {
+                i64::try_from(required.get()).unwrap_or(i64::MAX)
+            }));
         metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED
             .with_label_values(&labels)
             .set(i64::try_from(status.conforming).unwrap_or(i64::MAX));

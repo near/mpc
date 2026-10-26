@@ -273,10 +273,10 @@ struct ForeignTxCluster {
     _temp_dir: tempfile::TempDir,
 }
 
-/// Starts the cluster with `signature.online_presign` set as given and `whitelist` voted for the
-/// mock's URL, and waits until every node owns triples.
 const FOREIGN_TX_CLUSTER_SIZE: usize = 4;
 
+/// Starts the cluster with `signature.online_presign` set as given and `whitelist` voted for the
+/// mock's URL, and waits until every node owns triples.
 async fn must_start_foreign_tx_cluster(
     case: u16,
     online_presign: bool,

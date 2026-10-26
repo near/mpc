@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
 use foreign_chain_inspector::RpcQuorum;
-use mpc_node_config::foreign_chains::provider_identity::ProviderWhitelistMatches;
+use mpc_node_config::foreign_chains::provider_identity::{
+    ProviderWhitelistMatches, WhitelistConformingProviders,
+};
 use mpc_node_config::{ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types::{ChainEntry, ForeignChain, ProviderId};
 
@@ -34,16 +36,33 @@ pub(crate) fn eligible_chains(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RpcQuorumStatus {
-    /// The voted quorum, zero while the chain is not whitelisted.
-    pub required: u64,
+    /// The voted quorum, `None` while the chain is not whitelisted or the vote is zero.
+    pub required: Option<NonZeroUsize>,
     /// Distinct whitelist providers the local config conforms to.
     pub conforming: usize,
 }
 
 impl RpcQuorumStatus {
-    pub fn reaches_quorum(&self) -> bool {
-        self.required > 0 && u64::try_from(self.conforming).is_ok_and(|c| c >= self.required)
+    fn new(entry: &ChainEntry, conforming: &WhitelistConformingProviders) -> Self {
+        Self {
+            required: usize::try_from(entry.quorum)
+                .ok()
+                .and_then(NonZeroUsize::new),
+            conforming: conforming.whitelist_provider_count(),
+        }
     }
+
+    pub fn reaches_quorum(&self) -> bool {
+        self.required
+            .is_some_and(|required| self.conforming >= required.get())
+    }
+}
+
+fn conforming_providers(
+    local_chain: &ForeignChainConfig,
+    entry: &ChainEntry,
+) -> WhitelistConformingProviders {
+    ProviderWhitelistMatches::for_chain(local_chain, entry).whitelist_conforming_providers()
 }
 
 pub(crate) fn rpc_quorum_status(
@@ -52,15 +71,10 @@ pub(crate) fn rpc_quorum_status(
 ) -> RpcQuorumStatus {
     match entry {
         None => RpcQuorumStatus {
-            required: 0,
+            required: None,
             conforming: 0,
         },
-        Some(entry) => RpcQuorumStatus {
-            required: entry.quorum,
-            conforming: ProviderWhitelistMatches::for_chain(local_chain, entry)
-                .whitelist_conforming_providers()
-                .whitelist_provider_count(),
-        },
+        Some(entry) => RpcQuorumStatus::new(entry, &conforming_providers(local_chain, entry)),
     }
 }
 
@@ -83,16 +97,15 @@ pub(crate) fn rpc_quorum(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,
 ) -> Result<RpcQuorum, RpcQuorumError> {
-    let required = usize::try_from(entry.quorum)
-        .ok()
-        .and_then(NonZeroUsize::new)
+    let conforming = conforming_providers(local_chain, entry);
+    let status = RpcQuorumStatus::new(entry, &conforming);
+    let required = status
+        .required
         .ok_or(RpcQuorumError::InvalidQuorum(entry.quorum))?;
-    let conforming =
-        ProviderWhitelistMatches::for_chain(local_chain, entry).whitelist_conforming_providers();
-    if !conforming.meets_quorum(required) {
+    if !status.reaches_quorum() {
         return Err(RpcQuorumError::BelowQuorum {
             required,
-            conforming: conforming.whitelist_provider_count(),
+            conforming: status.conforming,
         });
     }
     let mut seen_whitelist_ids = BTreeSet::new();
@@ -319,7 +332,7 @@ mod tests {
         assert_eq!(
             status,
             RpcQuorumStatus {
-                required: 0,
+                required: None,
                 conforming: 0,
             }
         );
@@ -337,7 +350,7 @@ mod tests {
         assert_eq!(
             status,
             RpcQuorumStatus {
-                required: 2,
+                required: NonZeroUsize::new(2),
                 conforming: 1,
             }
         );
