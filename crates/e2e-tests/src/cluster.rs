@@ -58,13 +58,10 @@ fn tee_verifier_account() -> String {
     format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}")
 }
 
-// The contract's default `key_event_timeout_blocks = 30` is ~18 s on
-// mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
-// same 30 collapses to ~3.7 s — too tight for the resharing
-// round-trip (start_reshare → indexer × N → MPC compute →
-// vote_reshared) once concurrent e2e tests put the runner under
-// load. Override to 240 blocks (~30 s in sandbox) as a comfortable
-// budget over mainnet's effective headroom.
+// The default `key_event_timeout_blocks` is sized for mainnet (~600 ms
+// blocks). The e2e sandbox runs ~8 blocks/s, so override it to 240 blocks
+// (~30 s) to leave room for resharing when concurrent e2e tests load the
+// runner.
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
