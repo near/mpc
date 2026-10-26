@@ -124,7 +124,7 @@ impl MpcContract {
                 .with_unused_gas_weight(0)
                 .clean_tee_status()
                 .detach();
-            // Spawn a bounded sweep over stored attestations to prune invalid / expired entries.
+            // Spawn a bounded sweep removing invalid nodes that are not in use
             Self::ext_self()
                 .with_static_gas(Gas::from_tgas(
                     self.config.clean_invalid_attestations_tera_gas,

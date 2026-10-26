@@ -155,6 +155,25 @@ pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
     }
 }
 
+/// TLS keys of the nodes the account uses as a participant: its current node, then the node it
+/// migrates to. An account outside the participant set uses no node, even if its migration
+/// record is left over.
+pub(crate) fn tls_keys_in_use<'a>(
+    participants: &'a Participants,
+    node_migrations: &'a NodeMigrations,
+    account_id: &'a AccountId,
+) -> impl Iterator<Item = &'a dtos::Ed25519PublicKey> {
+    let current_node = participants
+        .info(account_id)
+        .map(|info| &info.tls_public_key);
+    let migration_destination = current_node.into_iter().filter_map(move |_| {
+        node_migrations
+            .ongoing_migration(account_id)
+            .map(|migration| &migration.destination_node_info.tls_public_key)
+    });
+    current_node.into_iter().chain(migration_destination)
+}
+
 pub(crate) fn tls_key_claimant_other_than(
     account_id: &AccountId,
     participant_sets: &[&Participants],

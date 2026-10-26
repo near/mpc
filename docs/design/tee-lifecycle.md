@@ -200,7 +200,7 @@ After boot, every service must continuously prove to the governance contract tha
 
 1. **Initial attestation** — the service generates a TDX quote that binds its identity (TLS public key) to the enclave measurements and submits it to the governance contract.
 2. **Periodic renewal** — every hour a fresh quote is generated and resubmitted, so the contract always holds a recent proof.
-3. **Collective verification** — every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate all stored attestations and evict nodes whose image hashes are no longer on the approved list.
+3. **Collective verification** — every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate the participants' attestations and evict participants whose image hashes are no longer on the approved list.
 
 The [TEE Context][tee-context-design] crate provides the contract interface for the above — each service is responsible for its own attestation scheduling. See the [TEE Context design doc][tee-context-design] for the interface and usage examples.
 
@@ -223,10 +223,10 @@ The following attestation methods must be uniform across all governance contract
 | Method | Type | Description |
 |--------|------|-------------|
 | `submit_participant_info(attestation, tls_public_key)` | Call | Submit TEE attestation |
-| `verify_tee()` | Call | Re-validate all stored attestations |
+| `verify_tee()` | Call | Re-validate the participants' attestations |
 | `allowed_docker_image_hashes()` | View | Query approved image hashes |
 | `allowed_launcher_compose_hashes()` | View | Query approved launcher hashes |
-| `get_tee_accounts()` | View | Query participants with valid attestations |
+| `get_tee_accounts()` | View | Query all stored nodes, including those of non-participants |
 | `get_available_foreign_chains()` | View | Query foreign chains accepted by `verify_foreign_transaction` |
 
 > **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
