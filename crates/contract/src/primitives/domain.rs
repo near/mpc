@@ -130,7 +130,12 @@ impl DomainRegistry {
             id: self.next_domain_id,
             ..domain
         };
-        self.next_domain_id = DomainId(self.next_domain_id.0 + 1);
+        self.next_domain_id = DomainId(
+            self.next_domain_id
+                .0
+                .checked_add(1)
+                .expect("domain id counter overflow"),
+        );
         let id = assigned.id;
         self.domains.push(assigned);
         id
