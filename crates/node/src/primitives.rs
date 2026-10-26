@@ -2,6 +2,7 @@ use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use threshold_signatures::participants::Participant;
 
@@ -224,9 +225,22 @@ pub struct PeerIndexerHeightMessage {
     pub message: IndexerHeightMessage,
 }
 
+pub struct PeerConnectedPeersInfo {
+    pub from: ParticipantId,
+    pub info: ConnectedPeersInfo,
+}
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct ConnectedPeersInfo {
+    /// Ourselves and every peer we are bidirectionally connected to, each with the latest indexer
+    /// height we know for it.
+    pub peers: BTreeMap<ParticipantId, u64>,
+}
+
 pub enum PeerMessage {
     Mpc(MpcPeerMessage),
     IndexerHeight(PeerIndexerHeightMessage),
+    ConnectedPeersInfo(PeerConnectedPeersInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

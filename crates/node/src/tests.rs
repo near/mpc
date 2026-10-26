@@ -24,6 +24,10 @@ use crate::indexer::handler::{
     VerifyForeignTxRequestFromChain,
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
+use crate::metrics::{
+    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS,
+    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, SUCCEEDED_OUTCOME_LABEL, TRIPLE_GENERATION_TASK_LABEL,
+};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
@@ -554,6 +558,33 @@ pub async fn request_verify_foreign_tx_and_await_response(
             }
         }
     }
+}
+
+pub fn signatures_led(mode: &str) -> u64 {
+    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
+        .with_label_values(&[mode])
+        .get()
+}
+
+pub fn every_node_owns_triples(num_participants: usize) -> bool {
+    let triple_batches_led = MPC_LED_COMPUTATION_DURATION_SECONDS
+        .with_label_values(&[
+            ECDSA_PROTOCOL_SCHEME_LABEL,
+            TRIPLE_GENERATION_TASK_LABEL,
+            SUCCEEDED_OUTCOME_LABEL,
+        ])
+        .get_sample_count();
+    triple_batches_led >= num_participants as u64
+}
+
+pub async fn wait_until(condition: impl Fn() -> bool, what: &str) {
+    tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
+        while !condition() {
+            tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timeout waiting for {what}"));
 }
 
 pub fn into_participant_ids(

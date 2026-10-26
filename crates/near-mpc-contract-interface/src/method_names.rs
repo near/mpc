@@ -69,7 +69,6 @@ pub const CONFIG: &str = "config";
 pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
 pub const VERSION: &str = "version";
-pub const LATEST_KEY_VERSION: &str = "latest_key_version";
 pub const CONTRACT_UPDATE_VOTES: &str = "contract_update_votes";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
