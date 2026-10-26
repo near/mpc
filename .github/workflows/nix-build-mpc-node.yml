@@ -11,6 +11,8 @@ on:
   workflow_dispatch:
   workflow_call:
 
+permissions: {}
+
 jobs:
   nix-build-mpc-node:
     name: "Nix build mpc-node"
@@ -26,7 +28,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: ./.github/actions/install-nix
+        uses: $/.github/actions/install-nix
 
       - name: Build mpc-node image
         run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-node .#mpc-node-image
