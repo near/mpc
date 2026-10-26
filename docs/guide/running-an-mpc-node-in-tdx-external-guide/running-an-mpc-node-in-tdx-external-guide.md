@@ -2220,7 +2220,7 @@ Example `Dstack` response from `v1.signer-prod.testnet` for an existing particip
         "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
         "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
         "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
-        "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
+        "rtmr2": "9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf"
       },
       "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
     }
