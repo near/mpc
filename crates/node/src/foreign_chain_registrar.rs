@@ -16,7 +16,7 @@ use crate::metrics;
 use crate::tracking::{self, AutoAbortTask};
 
 /// Registers the eligible chains now and again after every whitelist change that alters them.
-/// Must be called from a tracked task; dropping the returned task stops the registrar.
+/// Must be called from a tracked task. Dropping the returned task stops the registrar.
 pub(crate) fn spawn_foreign_chains_registrar(
     txn_sender: impl TransactionSender + 'static,
     mut whitelist: watch::Receiver<ForeignChainWhitelist>,
@@ -146,10 +146,11 @@ mod tests {
         registered_chains(request)
     }
 
+    /// Ethereum is configured and whitelisted with a reachable quorum.
     #[tokio::test]
     async fn spawn_foreign_chains_registrar__should_register_the_eligible_chains_on_start() {
         let (root, _root_handle) = start_root_task("test-root", async move {
-            // Given: Ethereum configured and whitelisted with a reachable quorum.
+            // Given
             let local = ForeignChainsConfig {
                 ethereum: Some(local_chain()),
                 ..Default::default()
@@ -178,10 +179,11 @@ mod tests {
         root.await;
     }
 
+    /// Ethereum is configured but not whitelisted at start. The whitelist then makes it eligible.
     #[tokio::test]
     async fn spawn_foreign_chains_registrar__should_reregister_when_the_eligible_chains_change() {
         let (root, _root_handle) = start_root_task("test-root", async move {
-            // Given: Ethereum configured but not whitelisted yet.
+            // Given
             let local = ForeignChainsConfig {
                 ethereum: Some(local_chain()),
                 ..Default::default()
@@ -197,7 +199,7 @@ mod tests {
             );
             assert_eq!(next_registration(&mut receiver).await, chains(&[]));
 
-            // When: the whitelist makes Ethereum eligible.
+            // When
             whitelist_sender
                 .send(ForeignChainWhitelist::from([(
                     ForeignChain::Ethereum,
@@ -214,11 +216,13 @@ mod tests {
         root.await;
     }
 
+    /// Ethereum is registered. Whitelisting a chain this node does not run changes nothing, so no
+    /// registration follows. Raising Ethereum's quorum out of reach then registers an empty set.
     #[tokio::test]
     async fn spawn_foreign_chains_registrar__should_skip_a_whitelist_change_that_keeps_the_eligible_chains()
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
-            // Given: Ethereum registered.
+            // Given
             let local = ForeignChainsConfig {
                 ethereum: Some(local_chain()),
                 ..Default::default()
@@ -240,8 +244,7 @@ mod tests {
                 chains(&[ForeignChain::Ethereum])
             );
 
-            // When: a chain this node does not run is whitelisted, then Ethereum's quorum
-            // becomes unreachable.
+            // When
             whitelist_sender
                 .send(ForeignChainWhitelist::from([
                     (ForeignChain::Ethereum, entry(1)),
@@ -257,16 +260,17 @@ mod tests {
                 )]))
                 .unwrap();
 
-            // Then: the first change registered nothing, the second dropped Ethereum.
+            // Then
             assert_eq!(next_registration(&mut receiver).await, chains(&[]));
         });
         root.await;
     }
 
+    /// Polygon is whitelisted with quorum 1, Base is configured but not whitelisted. The gauges are
+    /// global to the test binary, so no other test in this crate may register either chain.
     #[test]
     fn publish_rpc_quorum_metrics__should_set_both_gauges_for_every_configured_chain() {
-        // Given: Polygon whitelisted with quorum 1, Base configured but not whitelisted. The gauges
-        // are global to the test binary, so no other test in this crate may register either chain.
+        // Given
         let local = ForeignChainsConfig {
             polygon: Some(local_chain()),
             base: Some(local_chain()),

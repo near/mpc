@@ -94,7 +94,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    // When: every node registers, with nothing whitelisted yet.
+    // When
     let node_count = setup.participants.participants.len();
     wait_for_registrations(&setup.indexer, node_count, &BTreeSet::new()).await;
 

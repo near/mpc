@@ -60,16 +60,15 @@ fn solana_whitelist(quorum: u64) -> BTreeMap<ForeignChain, ChainEntry> {
 ///
 /// 1. All three nodes auto-register an empty configuration on startup, since
 ///    nothing is whitelisted.
-/// 2. A whitelist whose quorum the nodes cannot reach leaves the registrations
-///    empty and Solana unavailable.
-/// 3. A reachable quorum makes nodes 0 and 1 register Solana, and two
-///    registrations reach the threshold.
+/// 2. The participants vote a quorum the nodes cannot reach. The nodes report it on the
+///    quorum gauge, keep their registrations empty, and Solana stays unavailable.
+/// 3. The participants lower the quorum to what the nodes have. Nodes 0 and 1 register
+///    Solana, and two registrations reach the threshold.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn available_foreign_chains__should_require_a_reachable_quorum_and_threshold_of_registrations()
  {
-    // given — 3-node cluster with a ForeignTx domain; Solana configured on
-    // nodes 0 and 1 only, and no chain whitelisted yet.
+    // Given
     let (cluster, _running) =
         common::must_setup_cluster(common::AVAILABLE_FOREIGN_CHAINS_PORT_SEED, |c| {
             c.domains = vec![DomainConfig {
@@ -86,7 +85,7 @@ async fn available_foreign_chains__should_require_a_reachable_quorum_and_thresho
         })
         .await;
 
-    // when — every node registers an empty configuration.
+    // When
     let empty_registrations: ForeignChainsConfigs = cluster
         .nodes
         .iter()
@@ -98,8 +97,7 @@ async fn available_foreign_chains__should_require_a_reachable_quorum_and_thresho
         .await
         .expect("timed out waiting for the three empty registrations");
 
-    // when — the participants vote a quorum the nodes cannot reach; the nodes report it and
-    // keep their registrations empty.
+    // When
     cluster
         .whitelist_foreign_chains(&[0, 1], &solana_whitelist(2))
         .await
@@ -126,14 +124,13 @@ async fn available_foreign_chains__should_require_a_reachable_quorum_and_thresho
         .await
         .expect("no chain must be available with an unreachable quorum");
 
-    // when — the participants lower the quorum to what the nodes have.
+    // When
     cluster
         .whitelist_foreign_chains(&[0, 1], &solana_whitelist(1))
         .await
         .expect("failed to whitelist Solana");
 
-    // then — nodes 0 and 1 register Solana and it becomes available with two of three
-    // registrations.
+    // Then
     let expected_registrations: ForeignChainsConfigs = BTreeMap::from([
         (
             cluster.nodes[0].p2p_public_key(),
@@ -160,13 +157,13 @@ async fn available_foreign_chains__should_require_a_reachable_quorum_and_thresho
 ///
 /// 3-node cluster (ForeignTx domain threshold 2): node 0 selects the testnet preset with dummy
 /// alchemy, quicknode and tatum credentials, so it registers the keyless chains plus those the
-/// credentials enable; nodes 1 and 2 have no foreign chain config. The whitelist votes an entry
+/// credentials enable. Nodes 1 and 2 have no foreign chain config. The whitelist votes an entry
 /// every resolved provider conforms to. Node 0's startup probe calls the preset's real
-/// endpoints; its failures are only logged.
+/// endpoints. Its failures are only logged.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn node_startup__should_register_chains_resolved_from_rpc_preset() {
-    // given
+    // Given
     let keyless_config = ForeignChainsConfig {
         rpc_preset: Some(RpcPreset::Testnet),
         ..Default::default()
@@ -195,7 +192,7 @@ async fn node_startup__should_register_chains_resolved_from_rpc_preset() {
         "credentials should enable chains beyond the keyless ones"
     );
 
-    // when
+    // When
     let (cluster, _running) =
         common::must_setup_cluster(common::RPC_PRESET_REGISTRATION_PORT_SEED, |c| {
             c.domains = vec![DomainConfig {
@@ -213,7 +210,7 @@ async fn node_startup__should_register_chains_resolved_from_rpc_preset() {
         })
         .await;
 
-    // then
+    // Then
     let expected_registrations: ForeignChainsConfigs = BTreeMap::from([
         (cluster.nodes[0].p2p_public_key(), preset_chains.into()),
         (cluster.nodes[1].p2p_public_key(), BTreeSet::new().into()),

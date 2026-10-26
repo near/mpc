@@ -172,9 +172,10 @@ mod tests {
             .collect()
     }
 
+    /// Two conforming providers and one whose host is not whitelisted.
     #[test]
     fn rpc_quorum__should_whitelist_the_local_names_of_the_conforming_providers() {
-        // Given: two conforming providers and one whose host is not whitelisted.
+        // Given
         let local = local(&[
             ("my-alchemy", "https://eth.alchemy.com/"),
             ("my-infura", "https://eth.infura.io/"),
@@ -212,9 +213,10 @@ mod tests {
         );
     }
 
+    /// Two local providers behind one whitelisted host, quorum two.
     #[test]
     fn rpc_quorum__should_count_providers_matching_the_same_whitelist_provider_once() {
-        // Given: two local providers behind one whitelisted host, quorum two.
+        // Given
         let local = local(&[
             ("alchemy-a", "https://eth.alchemy.com/"),
             ("alchemy-b", "https://eth.alchemy.com/"),
@@ -252,9 +254,10 @@ mod tests {
         );
     }
 
+    /// The whitelisted host on a port the whitelist does not name.
     #[test]
     fn rpc_quorum__should_not_count_a_misconfigured_provider() {
-        // Given: the whitelisted host on a port the whitelist does not name.
+        // Given
         let local = local(&[("my-alchemy", "https://eth.alchemy.com:8545/")]);
 
         // When
@@ -282,9 +285,10 @@ mod tests {
         assert_eq!(quorum, Err(RpcQuorumError::InvalidQuorum(0)));
     }
 
+    /// Ethereum reaches its quorum, Base does not, Polygon is not whitelisted.
     #[test]
     fn eligible_chains__should_keep_only_the_chains_with_a_reachable_quorum() {
-        // Given: Ethereum reaches its quorum, Base does not, Polygon is not whitelisted.
+        // Given
         let local = ForeignChainsConfig {
             ethereum: Some(local(&[("my-alchemy", "https://eth.alchemy.com/")])),
             base: Some(local(&[("my-alchemy", "https://eth.alchemy.com/")])),

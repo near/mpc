@@ -399,16 +399,15 @@ async fn verify_foreign_tx__should_sign_from_stored_presignatures_when_online_pr
     );
 }
 
+/// The quorum asks for two providers and every node runs one, so no node registers Ethereum
+/// itself. Registering three nodes directly, after their own empty registrations have landed,
+/// reproduces the window between a vote landing and the nodes dropping the chain.
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
 async fn verify_foreign_tx__should_not_be_served_when_local_providers_are_below_the_rpc_quorum() {
-    // Given: the quorum asks for two providers and every node runs one, so no node registers
-    // Ethereum itself. Registering three of them directly reproduces the window between a vote
-    // landing and the nodes dropping the chain from their registration.
+    // Given
     let mut cluster = must_start_foreign_tx_cluster(2, true, ethereum_whitelist_out_of_reach).await;
-    // The nodes' own empty registrations must land first, or they would overwrite the injected
-    // ones.
     wait_for_registrations(&cluster.indexer, FOREIGN_TX_CLUSTER_SIZE, &BTreeSet::new()).await;
     {
         let mut contract = cluster.indexer.contract_mut().await;
