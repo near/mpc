@@ -1,4 +1,7 @@
-use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
+use super::foreign_chain::{
+    ForeignChainProviderWhitelist, monitor_foreign_chain_supporters,
+    monitor_foreign_chain_whitelist,
+};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
@@ -66,8 +69,8 @@ pub fn spawn_real_indexer(
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
+    foreign_chain_whitelist_sender: watch::Sender<Option<ForeignChainProviderWhitelist>>,
     tls_public_key: VerifyingKey,
-    foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
 ) -> IndexerAPI<impl TransactionSender> {
@@ -226,15 +229,9 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-                watch::channel(std::collections::BTreeMap::new());
             tokio::spawn(monitor_foreign_chain_whitelist(
                 foreign_chain_whitelist_sender,
                 indexer_state.contract.clone(),
-            ));
-            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver,
-                foreign_chains.clone(),
             ));
 
             // Returns once the contract state is available.

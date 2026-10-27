@@ -90,10 +90,13 @@ pub(crate) fn supporters_by_available_chain(
     supporters
 }
 
+/// The contract's RPC provider whitelist, keyed by chain.
+pub type ForeignChainProviderWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
+
 /// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
 async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send + 'static>(
     contract: &MpcContractHandle<C>,
-) -> BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
+) -> ForeignChainProviderWhitelist {
     let mut backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
         .with_max_delay(MAX_BACKOFF_DURATION)
@@ -113,18 +116,17 @@ async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send
     }
 }
 
-/// Monitor the allowed foreign-chain providers whitelist stored in the contract and update the
-/// watch channel when changes are detected. Consumed by
-/// [`crate::foreign_chain_whitelist_verifier::run`].
+/// Publishes the foreign chain whitelist stored in the contract on `sender` once it is first read,
+/// then on every change. Consumed by [`crate::foreign_chain_probe::run_periodic_probe`].
 pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sync + 'static>(
-    sender: watch::Sender<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>>,
+    sender: watch::Sender<Option<ForeignChainProviderWhitelist>>,
     contract: MpcContractHandle<V>,
 ) {
     loop {
         let whitelist = fetch_foreign_chain_whitelist_with_retry(&contract).await;
         sender.send_if_modified(|previous| {
-            if *previous != whitelist {
-                *previous = whitelist;
+            if previous.as_ref() != Some(&whitelist) {
+                *previous = Some(whitelist);
                 true
             } else {
                 false
