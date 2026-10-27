@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::primitives::test_utils::bogus_ed25519_public_key;
 use crate::{
     primitives::{
         key_state::AuthenticatedAccountId,
@@ -88,7 +90,9 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
+    /// Creates a [`TeeState`] in which every participant has a valid mock attestation, stored
+    /// under a random account public key.
+    #[cfg(test)]
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
         let mut tee_state = Self::default();
 
@@ -97,9 +101,7 @@ impl TeeState {
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
-                // TODO(#1087): the participant set carries no signer key, so the TLS key stands
-                // in for it and the participant fails every signer-key check until its node attests
-                account_public_key: tls_public_key.clone(),
+                account_public_key: bogus_ed25519_public_key(),
             };
 
             tee_state.nodes.insert(

@@ -72,6 +72,15 @@ async fn migration_endpoint__should_track_migration_state() {
             .await
             .expect("endpoint state mismatch after backup registration");
 
+        let outcome = cluster
+            .prepay_attestation_grant(i)
+            .await
+            .expect("failed to prepay the destination node's attestation storage");
+        assert!(
+            outcome.is_success(),
+            "prepay_attestation_storage failed: {:?}",
+            outcome.failure_message()
+        );
         let destination_tls_public_key =
             Ed25519PublicKey::from(&SigningKey::generate(&mut rng).verifying_key());
         let outcome = cluster

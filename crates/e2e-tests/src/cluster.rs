@@ -352,6 +352,7 @@ impl MpcCluster {
                 p2p_keys: node_p2p_keys.clone(),
                 threshold: config.threshold,
                 participant_indices: participant_indices.clone(),
+                migration_targets: config.migration_targets.clone(),
                 init_format: config.init_format,
                 tee_verifier_account_id: tee_verifier_account().parse()?,
             },
@@ -1032,6 +1033,20 @@ impl MpcCluster {
         Ok(())
     }
 
+    /// Prepay one attestation-storage grant for a specific node's account, paid by its operator.
+    pub async fn prepay_attestation_grant(
+        &self,
+        node_index: usize,
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
+        let fee = attestation_storage_fee(&self.mpc_contract_handle).await?;
+        let account_id = self.nodes[node_index].account_id().to_string().parse()?;
+        self.operator_client_for(node_index)?
+            .call_mpc(self.contract_id())
+            .prepay_attestation_storage(account_id, 1, fee)
+            .await
+            .context("failed to prepay attestation storage")
+    }
+
     /// Submit an attestation for a TLS key from a specific node's account, signed with its
     /// operator key.
     pub async fn submit_participant_info(
@@ -1295,11 +1310,14 @@ struct InitContractArgs {
     p2p_keys: Vec<SigningKey>,
     threshold: usize,
     participant_indices: Vec<usize>,
+    migration_targets: Vec<usize>,
     init_format: ContractInitFormat,
     tee_verifier_account_id: ContractAccountId,
 }
 
-/// Prepays one attestation-storage grant for every node in the cluster.
+/// Prepays one attestation-storage grant for every node in the cluster, plus one on the
+/// source's account for each of `migration_targets`, which attests under that account with a
+/// new TLS key.
 ///
 /// For every node, not only the initial participants: a node joining in a later resharing
 /// attests from its own process with a function-call key, which cannot attach a deposit, so
@@ -1309,15 +1327,20 @@ async fn prepay_attestation_grants(
     contract: &DeployedContract,
     fee: NearToken,
     near_keys: &[SigningKey],
+    migration_targets: &[usize],
 ) -> anyhow::Result<()> {
-    // Granting the initial participants too is harmless: their attestations update the
-    // sentinel entry written at init, so they consume nothing and the grant stays unspent.
     for (i, near_key) in near_keys.iter().enumerate() {
         let account = node_account(i);
+        let num_targets = migration_targets
+            .iter()
+            .filter(|&&source_idx| source_idx == i)
+            .count();
+        let grants = 1 + u32::try_from(num_targets)?;
+        let deposit = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
         let outcome = blockchain
             .client_for(&account, near_key)?
             .call_mpc(contract.account_id())
-            .prepay_attestation_storage(account.parse()?, 1, fee)
+            .prepay_attestation_storage(account.parse()?, grants, deposit)
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
         anyhow::ensure!(
@@ -1352,6 +1375,7 @@ async fn init_contract(
         p2p_keys,
         threshold,
         participant_indices,
+        migration_targets,
         init_format,
         tee_verifier_account_id,
     } = args;
@@ -1386,7 +1410,7 @@ async fn init_contract(
     );
 
     let fee = attestation_storage_fee(mpc_contract_handle).await?;
-    prepay_attestation_grants(blockchain, contract, fee, &near_keys).await?;
+    prepay_attestation_grants(blockchain, contract, fee, &near_keys, &migration_targets).await?;
 
     for &i in &participant_indices {
         let account = node_account(i);

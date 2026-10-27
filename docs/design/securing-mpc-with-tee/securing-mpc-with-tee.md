@@ -382,6 +382,8 @@ pub struct Contract {
     /// TEE state.
     /// Returns `false` and stops the contract from accepting new signature requests or responses,
     /// in case less than `threshold` participants run in an accepted Tee State.
+    /// While the contract is not accepting requests, as after `init` and `init_running`, it
+    /// kicks out no one and returns `false` until every participant has an accepted TEE state.
     pub fn verify_tee(&mut self) -> Result<bool, Error>
 }
 ```
