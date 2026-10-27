@@ -7,7 +7,7 @@ use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
 use crate::primitives::participants::IdentifiesParticipant;
-use near_mpc_contract_interface::types::DomainId;
+use near_mpc_contract_interface::types::{DomainId, ParticipantCount};
 use near_sdk::near;
 use std::collections::BTreeSet;
 
@@ -125,12 +125,10 @@ impl InitializingContractState {
         let participant = AuthenticatedParticipantId::new(
             self.generating_key.proposed_parameters().participants(),
         )?;
-        let required_threshold = self
-            .generating_key
-            .proposed_parameters()
-            .threshold()
-            .value() as usize;
-        if self.cancel_votes.insert(participant) && self.cancel_votes.len() >= required_threshold {
+        let threshold = self.generating_key.proposed_parameters().threshold();
+        if self.cancel_votes.insert(participant)
+            && threshold.is_met_by(ParticipantCount::from_len(self.cancel_votes.len()))
+        {
             let mut domains = self.domains.clone();
             domains.retain_domains(self.generated_keys.len());
             return Ok(Some(RunningContractState::new(

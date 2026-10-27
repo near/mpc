@@ -37,7 +37,7 @@ impl MpcContract {
         log!(
             "init: signer={}, num_participants={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
             env::signer_account_id(),
-            parameters.participants().len(),
+            parameters.participants().count(),
             params_hash,
             tee_verifier_account_id,
             init_config,
@@ -99,7 +99,7 @@ impl MpcContract {
             env::signer_account_id(),
             domains,
             keyset,
-            parameters.participants().len(),
+            parameters.participants().count(),
             parameters.threshold().value(),
             params_hash,
             tee_verifier_account_id,
@@ -110,7 +110,7 @@ impl MpcContract {
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
         validate_domains_against_governance(
             domains.domains(),
-            parameters.participants().len() as u64,
+            parameters.participants().count(),
             parameters.threshold(),
         )?;
 
