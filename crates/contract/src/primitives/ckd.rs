@@ -29,9 +29,9 @@ const MINUS_G2_GENERATOR_UNCOMPRESSED: [u8; 192] = [
 /// Check that `e(app_pk1, g2) = e(g1, app_pk2)`.
 ///
 /// Point validation is fully delegated to the host: the decompression
-/// functions abort execution on malformed or off-curve encodings, and
-/// `bls12381_pairing_check` returns `false` when a point is outside its
-/// prime-order subgroup.
+/// wrappers return `None` on malformed or off-curve encodings, which this
+/// function turns into an abort, and a pairing check that fails or errors,
+/// as it does for a point outside its prime-order subgroup, counts as `false`.
 pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> bool {
     let pk1 =
         env::bls12381_p1_decompress(&app_public_key.pk1).expect("malformed BLS12-381 G1 point");
@@ -354,49 +354,57 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "malformed BLS12-381 G1 point")]
     #[expect(non_snake_case)]
-    fn bls12381_p1_decompress__should_abort_on_x_coordinate_not_on_curve() {
+    fn bls12381_p1_decompress__should_return_none_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
         let candidate = g1_x_not_on_curve();
 
-        // When / Then: the host rejects it and the call aborts
-        env::bls12381_p1_decompress(candidate).expect("malformed BLS12-381 G1 point");
+        // When
+        let decompressed = env::bls12381_p1_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "malformed BLS12-381 G1 point")]
     #[expect(non_snake_case)]
-    fn bls12381_p1_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
+    fn bls12381_p1_decompress__should_return_none_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 48];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the call aborts
-        env::bls12381_p1_decompress(candidate).expect("malformed BLS12-381 G1 point");
+        // When
+        let decompressed = env::bls12381_p1_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "malformed BLS12-381 G2 point")]
     #[expect(non_snake_case)]
-    fn bls12381_p2_decompress__should_abort_on_x_coordinate_not_on_curve() {
+    fn bls12381_p2_decompress__should_return_none_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
         let candidate = g2_x_not_on_curve();
 
-        // When / Then: the host rejects it and the call aborts
-        env::bls12381_p2_decompress(candidate).expect("malformed BLS12-381 G2 point");
+        // When
+        let decompressed = env::bls12381_p2_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "malformed BLS12-381 G2 point")]
     #[expect(non_snake_case)]
-    fn bls12381_p2_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
+    fn bls12381_p2_decompress__should_return_none_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 96];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the call aborts
-        env::bls12381_p2_decompress(candidate).expect("malformed BLS12-381 G2 point");
+        // When
+        let decompressed = env::bls12381_p2_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
@@ -462,6 +470,20 @@ mod tests {
         let app_pk = dtos::CKDAppPublicKeyPV {
             pk1: dtos::Bls12381G1PublicKey(g1_x_not_on_curve()),
             pk2: dtos::Bls12381G2PublicKey(G2Projective::generator().to_compressed()),
+        };
+
+        // When / Then
+        app_public_key_check(&app_pk);
+    }
+
+    #[test]
+    #[should_panic(expected = "malformed BLS12-381 G2 point")]
+    #[expect(non_snake_case)]
+    fn app_public_key_check__should_abort_on_malformed_pk2() {
+        // Given
+        let app_pk = dtos::CKDAppPublicKeyPV {
+            pk1: dtos::Bls12381G1PublicKey(G1Projective::generator().to_compressed()),
+            pk2: dtos::Bls12381G2PublicKey(g2_x_not_on_curve()),
         };
 
         // When / Then
