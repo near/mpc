@@ -31,7 +31,7 @@ expression: abi
       },
       {
         "name": "allowed_foreign_chain_providers",
-        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at\n startup to validate their local `foreign_chains.yaml`.",
+        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to\n check their local config against it and to enforce each chain's RPC quorum.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -524,9 +524,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             },
             {
@@ -1970,7 +1968,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account\n holds the TLS key: as a current or proposed participant, as a migration destination, or\n through an attestation stored under it.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2210,9 +2208,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             }
           ]
@@ -2930,7 +2926,7 @@ expression: abi
               "$ref": "#/definitions/NonEmptyBTreeMap_ProviderId_ProviderConfig"
             },
             "quorum": {
-              "description": "Voted RPC response quorum. Stored for a deferred quorum policy and not yet consumed: nodes currently require every provider that reaches a verdict to agree on it.",
+              "description": "How many whitelisted providers must agree before a node accepts a verdict.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3299,9 +3295,7 @@ expression: abi
               }
             },
             "next_domain_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/DomainId"
             }
           }
         },

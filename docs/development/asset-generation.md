@@ -245,9 +245,10 @@ computations (see
 [`providers/ecdsa/triple.rs`](https://github.com/near/mpc/blob/main/crates/node/src/providers/ecdsa/triple.rs)
 and
 [`providers/ecdsa/presign.rs`](https://github.com/near/mpc/blob/main/crates/node/src/providers/ecdsa/presign.rs)).
-Triples are generated in batches of 64, while presignatures are generated one at
-a time. There is one triple generation loop shared across all OT-based ECDSA
-domains, and one presignature generation loop per domain.
+Triples are generated in batches of `triple.batch_size` (64 by default), while
+presignatures are generated one at a time. There is one triple generation loop
+shared across all OT-based ECDSA domains, and one presignature generation loop
+per domain.
 
 The followers for a presignature computation must match the borrowers of
 the triple pair consumed in that computation. Since `take_owned()` on
@@ -340,7 +341,7 @@ queue, only `maybe_discard_owned()` classifies it as online.
 
 ## Configuration
 
-Defined in `crates/node/src/config.rs` and set in `config.yaml`.
+Defined in `crates/node-config/src/lib.rs` and set in `config.yaml`.
 
 ### `TripleConfig`
 
@@ -350,6 +351,7 @@ Defined in `crates/node/src/config.rs` and set in `config.yaml`.
 | `desired_triples_to_buffer` | `usize` | Target number of owned triples to maintain. Generation pauses when `num_owned + in_flight >= desired`. |
 | `timeout_sec` | `u64` | Timeout for a single triple generation protocol execution. |
 | `parallel_triple_generation_stagger_time_sec` | `u64` | Delay between spawning successive triple generation tasks, to prevent all tasks from starting at the same time. |
+| `batch_size` | `usize` | Triples produced per generation computation. Even, non-zero and at most 64; defaults to 64. Only the leader reads it; followers take the size from the leader's task id. |
 
 ### `PresignatureConfig`
 
@@ -374,11 +376,12 @@ Source: `crates/node/src/providers/ecdsa/triple.rs`
 ```
 loop {
     if num_owned + in_flight < desired_triples_to_buffer
-       AND in_flight < concurrency * 2 * 64:
+       AND in_flight < concurrency * 2 * batch_size:
         pick threshold random online participants
-        reserve batch of 64 IDs
+        (64 instead of batch_size if one of them does not accept it)
+        reserve batch of batch_size IDs
         spawn async task (semaphore-limited to `concurrency`):
-            run MPC triple protocol → 64 triples
+            run MPC triple protocol → batch_size triples
             pair and store each as owned
         sleep(parallel_triple_generation_stagger_time_sec)
         continue
@@ -390,9 +393,11 @@ loop {
 }
 ```
 
-- Triples are generated in **batches of 64** (`SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE`).
-  Each batch produces 64 raw triples which are paired into 32 `PairedTriple` values.
-- The leader selects `threshold` random online participants.
+- Each batch produces `batch_size` raw triples, paired into half as many
+  `PairedTriple` values, which is why the size must be even.
+- The leader selects `threshold` random online participants, and generates at
+  64 instead of `batch_size` unless all of them advertise the protocol version
+  that made the size configurable.
 - `InFlightGenerationTracker` counts how many triples are "in flight"
   (spawned but not yet completed) using an atomic counter with a drop guard.
 - A tokio semaphore limits actual concurrent protocol executions to

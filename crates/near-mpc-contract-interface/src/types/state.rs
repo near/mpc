@@ -16,7 +16,9 @@ use super::primitives::DomainId;
 // Simple Wrapper Types (newtypes)
 // =============================================================================
 
-pub use mpc_primitives::{AttemptId, EpochId, GovernanceThreshold, ReconstructionThreshold};
+pub use mpc_primitives::{
+    AttemptId, EpochId, GovernanceThreshold, ParticipantCount, ReconstructionThreshold,
+};
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(
@@ -116,7 +118,7 @@ pub struct DomainConfig {
 )]
 pub struct DomainRegistry {
     pub domains: Vec<DomainConfig>,
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
 }
 
 // =============================================================================
