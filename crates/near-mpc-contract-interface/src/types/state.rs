@@ -563,7 +563,7 @@ mod tests {
         let state = RunningContractState {
             domains: DomainRegistry {
                 domains: Vec::new(),
-                next_domain_id: 0,
+                next_domain_id: DomainId(0),
             },
             keyset: Keyset::new(EpochId::new(0), Vec::new()),
             parameters: parameters.clone(),
