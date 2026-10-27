@@ -60,7 +60,7 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use average::{Estimate, Max, Mean, Quantile};
-use mpc_node_config::{PresignatureConfig, TripleConfig};
+use mpc_node_config::{PresignatureConfig, TripleBatchSize, TripleConfig};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -229,6 +229,7 @@ async fn measure_signing_latency(
             },
             parallel_triple_generation_stagger_time_sec: TRIPLE_STAGGER_SEC,
             timeout_sec: 120,
+            batch_size: TripleBatchSize::default(),
         };
         node.config.presignature = PresignatureConfig {
             concurrency: PRESIGNATURE_CONCURRENCY,

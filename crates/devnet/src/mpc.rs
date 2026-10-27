@@ -585,7 +585,7 @@ impl MpcVoteAddDomainsCmd {
             }
         };
         let mut proposal = Vec::new();
-        for (next_domain, protocol) in (domains.next_domain_id..).zip(&protocols) {
+        for (next_domain, protocol) in (domains.next_domain_id.0..).zip(&protocols) {
             let purpose = match protocol {
                 Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
                 Protocol::CaitSith | Protocol::RobustEcdsa | Protocol::Frost => DomainPurpose::Sign,

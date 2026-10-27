@@ -165,7 +165,7 @@ impl ProtocolContractState {
 
     pub fn vote_cancel_keygen(
         &mut self,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
             ProtocolContractState::Initializing(state) => state.vote_cancel(next_domain_id),
@@ -328,7 +328,7 @@ impl ProtocolContractState {
         }
     }
 
-    pub fn next_domain_id(&self) -> u64 {
+    pub fn next_domain_id(&self) -> DomainId {
         match self {
             ProtocolContractState::Running(state) => state.domains.next_domain_id(),
             ProtocolContractState::Initializing(state) => state.domains.next_domain_id(),

@@ -70,21 +70,15 @@ All files will be written into the specified output directory.
 
 7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`. Skippable unless the OS
    image changed: these cover `mrtd` and `rtmr0`-`rtmr2`, none of which the compose files affect.
-   - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
-   - `tcb_info.json` — replace with the `tcb_info.json` from a **release** (non-dev) image attestation
+   - `tcb_info_dev.json`: replace with the `tcb_info.json` from a **dev** image attestation. Tests
+     allow these measurements for the fixture quote (see `dev_measurements()` in
+     `mpc-attestation/src/attestation.rs`), so they must match the image the fixture was taken on.
+   - `tcb_info.json`: replace with the `tcb_info.json` from a **release** (non-dev) image attestation.
+     It is the attestation CLI's default and the measurement set operators vote in with
+     `vote_add_os_measurement`.
 
-   These are compiled into the contract and node binary via the `include_measurements!` macro.
    You need attestation data from **both** release and dev images — run the single-node script
    twice with `OS_IMAGE=dstack-<version>` and `OS_IMAGE=dstack-dev-<version>`.
-
-   **Why this matters:** These measurements are seeded as the default allowed OS measurements
-   when the contract is deployed or migrated (see `default_measurements()` in
-   `mpc-attestation/src/attestation.rs`). If they are stale, nodes running a newer OS image
-   will fail attestation until operators vote in the correct measurements.
-
-   > **Note:** This hardcoded seeding is a bootstrap mechanism. After release 3.8, measurements
-   > will be managed entirely through on-chain voting (`vote_add_os_measurement`), and these
-   > files will no longer need to be kept in sync with the deployed OS image.
 
 8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
    contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test

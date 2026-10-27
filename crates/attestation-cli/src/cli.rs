@@ -79,7 +79,8 @@ pub struct VerifyArgs {
     pub launcher_compose_file: PathBuf,
 
     /// Path to expected TCB measurements JSON file. If not provided, uses the compiled-in
-    /// default measurements (same as the MPC contract/node).
+    /// measurements of the production OS image. The contract and node check against the
+    /// measurements voted in on chain instead.
     #[arg(long = "expected-measurements")]
     pub expected_measurements: Option<PathBuf>,
 }
