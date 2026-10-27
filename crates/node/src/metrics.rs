@@ -764,3 +764,12 @@ pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCoun
         )
         .unwrap()
     });
+
+#[cfg(test)]
+pub(crate) fn series_count(collector: &impl prometheus::core::Collector) -> usize {
+    collector
+        .collect()
+        .iter()
+        .map(|family| family.get_metric().len())
+        .sum()
+}
