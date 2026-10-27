@@ -3,7 +3,6 @@ use crate::common;
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
-use e2e_tests::conversions::ToContractAccountId;
 use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::{
     BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
@@ -62,10 +61,7 @@ async fn migration_endpoint__should_track_migration_state() {
             "register_backup_service failed: {:?}",
             outcome.failure_message()
         );
-        expected_migrations.insert(
-            account_id.to_contract_account_id(),
-            (Some(backup_info.clone()), None),
-        );
+        expected_migrations.insert(account_id.clone(), (Some(backup_info.clone()), None));
 
         // Then: contract and endpoint both expose the backup registration.
         ensure_contract_matches(&cluster, &expected_migrations)
@@ -93,10 +89,7 @@ async fn migration_endpoint__should_track_migration_state() {
             "start_node_migration failed: {:?}",
             outcome.failure_message()
         );
-        expected_migrations.insert(
-            account_id.to_contract_account_id(),
-            (Some(backup_info), Some(destination_node_info)),
-        );
+        expected_migrations.insert(account_id, (Some(backup_info), Some(destination_node_info)));
 
         // Then: contract and endpoint both expose the destination entry.
         ensure_contract_matches(&cluster, &expected_migrations)

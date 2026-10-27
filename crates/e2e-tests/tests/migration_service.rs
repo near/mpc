@@ -9,7 +9,6 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
-use e2e_tests::conversions::ToContractAccountId;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::{MpcNodeSetup, ProcessGuard};
 use near_mpc_contract_interface::types::{
@@ -340,7 +339,7 @@ async fn register_backup_service_and_wait(
 
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id.to_contract_account_id())
+            info.get(&source_account_id)
                 .is_some_and(|(backup, _)| backup.as_ref() == Some(&backup_service_info))
         })
         .await
@@ -355,7 +354,7 @@ async fn register_backup_service_and_wait(
         "source node debug endpoint to show backup registration",
         |info| {
             let actual = info
-                .get(&source_account_id.to_contract_account_id())
+                .get(&source_account_id)
                 .and_then(|(backup, _)| backup.as_ref())
                 .map(|b| &b.public_key);
             anyhow::ensure!(
@@ -426,7 +425,7 @@ async fn start_migration_and_wait(
 
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id.to_contract_account_id())
+            info.get(&source_account_id)
                 .is_some_and(|(_, destination)| {
                     destination.as_ref() == Some(&destination_node_info)
                 })
@@ -459,7 +458,7 @@ async fn start_migration_and_wait(
         "target node to index node migration",
         |info| {
             let actual = info
-                .get(&source_account_id.to_contract_account_id())
+                .get(&source_account_id)
                 .and_then(|(_, destination)| destination.as_ref())
                 .map(|d| &d.destination_node_info.tls_public_key);
             anyhow::ensure!(
@@ -523,7 +522,7 @@ async fn wait_for_migration_completion(
 
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id.to_contract_account_id())
+            info.get(&source_account_id)
                 .is_some_and(|(_, destination)| destination.is_none())
         })
         .await
@@ -1011,7 +1010,7 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
     let expected = (None, Some(destination_node_info));
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id.to_contract_account_id()) == Some(&expected)
+            info.get(&source_account_id) == Some(&expected)
         })
         .await
         .expect("timed out waiting for migration info");
@@ -1030,8 +1029,7 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
     // Then: migration_info no longer shows a destination for that account.
     cluster
         .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id.to_contract_account_id())
-                .is_none()
+            info.get(&source_account_id).is_none()
         })
         .await
         .expect("timed out waiting for contract to reflect cancelled migration");

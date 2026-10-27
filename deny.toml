@@ -61,10 +61,10 @@ ignore = [
   "RUSTSEC-2026-0367", # zip extraction preserves SUID/SGID bits
   "RUSTSEC-2026-0368", # zip extraction creates symlinks pointing outside the destination
   "RUSTSEC-2026-0369", # zip extraction applies Unix permissions through symlinks
-  ## TEMPORARY, TODO(#4801): near-sdk 5.30 pulls impl-tools 0.12 (proc-macro-error3 ^3.0.2), while ##
-  ## alloy-sol-macro 1.7.3 caps proc-macro-error3 at 3.0.1, so cargo falls back to alloy-sol 1.6,
-  ## which uses proc-macro-error2. A build time proc macro, no vulnerability; remove once
-  ## alloy-sol-macro lifts its cap.
+  ## TEMPORARY, TODO(#4957): near-global-contracts 0.3 (via near-sdk 5.30 and near-kit 0.20) needs ##
+  ## proc-macro-error3 >= 3.0.2, while alloy-sol-macro 1.7.3 (via dstack-sdk) caps it at 3.0.1, so
+  ## cargo falls back to alloy-sol 1.6, which uses proc-macro-error2. A build time proc macro, no
+  ## vulnerability.
   "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
   ## End of the temporary entries
   # TODO(#4423): remove once the lockfile moves to rustls >= 0.23.45.

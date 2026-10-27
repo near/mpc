@@ -5,7 +5,6 @@ use crate::common::{
 
 use anyhow::Context;
 use blstrs::{G1Projective, G2Projective, Scalar};
-use e2e_tests::conversions::ToContractAccountId;
 use group::Group as _;
 use group::ff::Field as _;
 use near_account_id::AccountId;
@@ -78,15 +77,8 @@ async fn ckd_response__passes_cryptographic_verification() {
         serde_json::from_value(response["big_c"].clone()).expect("failed to parse big_c");
 
     assert!(
-        verify_ckd(
-            &user.to_contract_account_id(),
-            DERIVATION_PATH,
-            &mpc_pk,
-            private_key,
-            &big_y,
-            &big_c
-        )
-        .expect("verify_ckd failed"),
+        verify_ckd(&user, DERIVATION_PATH, &mpc_pk, private_key, &big_y, &big_c)
+            .expect("verify_ckd failed"),
         "CKD response failed cryptographic verification"
     );
 }
@@ -132,15 +124,8 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
         serde_json::from_value(response["big_c"].clone()).expect("failed to parse big_c");
 
     assert!(
-        verify_ckd(
-            &user.to_contract_account_id(),
-            DERIVATION_PATH,
-            &mpc_pk,
-            private_key,
-            &big_y,
-            &big_c
-        )
-        .expect("verify_ckd failed"),
+        verify_ckd(&user, DERIVATION_PATH, &mpc_pk, private_key, &big_y, &big_c)
+            .expect("verify_ckd failed"),
         "CKD PV response failed cryptographic verification"
     );
 }

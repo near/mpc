@@ -57,10 +57,8 @@ impl<T: WaitLevel> CallContract for NearKitCaller<T> {
         contract_id: &AccountId,
         call_args: FunctionCallArgs,
     ) -> Result<Self::Output, Self::Error> {
-        // TEMPORARY, TODO(#4801): near-kit is on near-account-id 2.x and the workspace on 3.x, so
-        // account ids cross into near-kit as strings until near-kit moves to 3.x.
         self.inner
-            .call(contract_id.as_str(), &call_args.method_name)
+            .call(contract_id, &call_args.method_name)
             .args_raw(call_args.args)
             .gas(call_args.gas)
             .deposit(call_args.deposit)
@@ -79,13 +77,8 @@ impl<T: WaitLevel> ViewContract for NearKitCaller<T> {
         contract_id: &AccountId,
         view_args: ViewArgs,
     ) -> Result<SerializedObservation, Self::Error> {
-        // TEMPORARY, TODO(#4801): see `call_contract`.
-        let contract_id: near_kit::AccountId = contract_id
-            .as_str()
-            .parse()
-            .map_err(|err| NearKitViewError::InvalidAccountId(format!("{err}")))?;
         let view = self.inner.rpc().view_function(
-            &contract_id,
+            contract_id,
             &view_args.method_name,
             &view_args.args,
             BlockReference::Finality(view_finality::<T>()),
@@ -134,10 +127,6 @@ pub enum NearKitViewError {
     Rpc(String),
     #[error("view did not finish within {0:?}")]
     Timeout(Duration),
-    /// TEMPORARY, TODO(#4801): near-kit rejected an account id while converting it to its own
-    /// `near-account-id` 2.x type.
-    #[error("account id rejected by near-kit: {0}")]
-    InvalidAccountId(String),
 }
 
 impl From<RpcError> for NearKitViewError {

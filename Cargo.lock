@@ -1302,7 +1302,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "libc",
  "mpc-node",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-contract-transport",
  "near-kit",
  "near-mpc-contract-interface",
@@ -1856,7 +1856,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ed25519-dalek 2.2.0",
  "insta",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-async",
  "near-client",
  "near-contract-transport",
@@ -3239,7 +3239,7 @@ dependencies = [
  "libc",
  "mpc-node-config",
  "mpc-primitives",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-contract-transport",
  "near-indexer-primitives 2.14.0",
  "near-kit",
@@ -6066,7 +6066,7 @@ dependencies = [
  "mpc-contract",
  "mpc-primitives",
  "near-abi",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-contract-transport",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives 0.38.0",
@@ -6107,7 +6107,7 @@ dependencies = [
  "group 0.13.0",
  "hex",
  "mpc-primitives",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-contract-transport",
  "near-crypto 0.38.0",
  "near-jsonrpc-client",
@@ -6176,7 +6176,7 @@ dependencies = [
  "mpc-node-config",
  "mpc-primitives",
  "mpc-tls",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-async",
  "near-client",
  "near-config-utils 2.14.0",
@@ -6238,7 +6238,7 @@ dependencies = [
  "either",
  "http",
  "launcher-interface",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-indexer-primitives 2.14.0",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
@@ -6259,7 +6259,7 @@ dependencies = [
  "derive_more 2.1.1",
  "hex",
  "insta",
- "near-account-id 3.0.0",
+ "near-account-id",
  "rand 0.8.8",
  "schemars 0.8.22",
  "serde",
@@ -6371,16 +6371,6 @@ checksum = "ebaf2aae80086b310bf96e657bbee0c599c3452afd35e72999f8d6764d6b1899"
 dependencies = [
  "near-abi-client-impl",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "near-account-id"
-version = "2.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "702dbca982e748975658812c7be2ca53211f454137486f98f6cf768934e2cb29"
-dependencies = [
- "borsh",
- "serde",
 ]
 
 [[package]]
@@ -6673,7 +6663,7 @@ version = "3.17.0"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-gas",
  "near-kit",
  "near-token",
@@ -6700,7 +6690,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ed25519-dalek 2.2.0",
  "hex",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-config-utils 0.38.0",
  "near-schema-checker-lib 0.38.0",
  "near-stdx 0.38.0",
@@ -6727,7 +6717,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ed25519-dalek 2.2.0",
  "hex",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-config-utils 2.14.0",
  "near-schema-checker-lib 2.14.0",
  "near-stdx 2.14.0",
@@ -6846,24 +6836,6 @@ dependencies = [
 
 [[package]]
 name = "near-global-contracts"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb0de76f41525e25893ab50f6abacffe6e14c54939b49c2ddd7295b16e73d2d0"
-dependencies = [
- "borsh",
- "cfg_eval",
- "digest-io",
- "hex",
- "near-account-id 2.6.0",
- "near-crypto-hash",
- "near-sdk-env",
- "serde",
- "serde_with",
- "sha3 0.11.0",
-]
-
-[[package]]
-name = "near-global-contracts"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d5312a3e836e448bc0f1b9fa758d1e5926e741c78783f7bceb2a909f65b1205"
@@ -6872,7 +6844,7 @@ dependencies = [
  "cfg_eval",
  "digest-io",
  "hex",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-crypto-hash",
  "near-digest",
  "near-primitives-core 0.38.0",
@@ -7030,9 +7002,9 @@ dependencies = [
 
 [[package]]
 name = "near-kit"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ac835efbcc11c23fdee426155995a7316c4f893ec05f6c0c5d355182795ac92"
+checksum = "e1e037efc6b79e69b2985785b329ea0bdd78c1b83bd524af8b07e4144fc7785a"
 dependencies = [
  "base64 0.23.1",
  "borsh",
@@ -7045,9 +7017,9 @@ dependencies = [
  "js-sys",
  "k256 0.14.0",
  "ml-dsa",
- "near-account-id 2.6.0",
+ "near-account-id",
  "near-gas",
- "near-global-contracts 0.2.6",
+ "near-global-contracts",
  "near-token",
  "reqwest 0.13.5",
  "serde",
@@ -7064,7 +7036,7 @@ name = "near-mainnet-res"
 version = "2.14.0"
 source = "git+https://github.com/near/nearcore?tag=2.14.0#bc4e9e8cfb03d9e82f027883055624e18576993e"
 dependencies = [
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-chain-configs 2.14.0",
  "near-primitives 2.14.0",
  "serde_json",
@@ -7122,7 +7094,7 @@ dependencies = [
  "insta",
  "k256 0.13.4",
  "mpc-primitives",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-mpc-bounded-collections",
  "near-sdk",
  "rand 0.8.8",
@@ -7239,7 +7211,7 @@ checksum = "e69ee1681e87a51856ab87b9ddb3612f601da99d07bbb6385d4790331c720f88"
 dependencies = [
  "borsh",
  "enum-map",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-primitives-core 0.38.0",
  "near-schema-checker-lib 0.38.0",
  "num-rational 0.3.2",
@@ -7257,7 +7229,7 @@ source = "git+https://github.com/near/nearcore?tag=2.14.0#bc4e9e8cfb03d9e82f0278
 dependencies = [
  "borsh",
  "enum-map",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-primitives-core 2.14.0",
  "near-schema-checker-lib 2.14.0",
  "num-rational 0.3.2",
@@ -7378,7 +7350,7 @@ dependencies = [
  "bs58 0.4.0",
  "derive_more 2.1.1",
  "enum-map",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-gas",
  "near-schema-checker-lib 0.38.0",
  "near-token",
@@ -7401,7 +7373,7 @@ dependencies = [
  "bs58 0.4.0",
  "derive_more 2.1.1",
  "enum-map",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-gas",
  "near-schema-checker-lib 2.14.0",
  "near-token",
@@ -7423,7 +7395,7 @@ dependencies = [
  "futures",
  "hex",
  "insta",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-async",
  "near-chain-configs 2.14.0",
  "near-client",
@@ -7454,7 +7426,7 @@ dependencies = [
  "fs4",
  "json-patch 4.2.0",
  "libc",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-token",
  "serde",
  "serde_json",
@@ -7519,10 +7491,10 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "hex-literal",
  "near-abi",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-crypto 0.38.0",
  "near-gas",
- "near-global-contracts 0.3.2",
+ "near-global-contracts",
  "near-parameters 0.38.0",
  "near-primitives 0.38.0",
  "near-primitives-core 0.38.0",
@@ -7552,7 +7524,7 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "hex",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-crypto 0.38.0",
  "near-crypto-hash",
  "near-gas",
@@ -7811,7 +7783,7 @@ dependencies = [
  "json-patch 2.0.0",
  "libc",
  "near-abi-client",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-crypto 0.38.0",
  "near-gas",
  "near-jsonrpc-client",
@@ -11284,7 +11256,7 @@ dependencies = [
  "chain-gateway",
  "ed25519-dalek 2.2.0",
  "mpc-primitives",
- "near-account-id 3.0.0",
+ "near-account-id",
  "near-contract-transport",
  "near-mpc-contract-interface",
  "serde_json",
