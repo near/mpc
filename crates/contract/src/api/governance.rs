@@ -573,7 +573,7 @@ mod tests {
         (contract, participants, domain_id, proposal)
     }
 
-    /// The `state()` tally for `voters` all voting `proposal`.
+    /// The tally for `voters` all voting `proposal`.
     fn expected_tally(
         proposal: &ProposedGovernanceThresholdParameters,
         voters: &[&AccountId],
