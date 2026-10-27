@@ -30,7 +30,7 @@ and `how-to-run-deploy-tee-cluster.md` for the full reference.
 2. Deploy the MPC contract.
 3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.
 4. Get account and TLS keys from each node.
-5. Initialize the contract with node parameters (keys, accounts, IPs).
+5. Initialize the contract with node parameters (keys, accounts, IPs), and prepay attestation storage for each node.
 6. Workaround for port override issue.
 7. Vote for MPC code hash on the contract.
 8. Vote for launcher image hash on the contract.
@@ -351,6 +351,20 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT  state \
   json-args '{}' network-config testnet now
 ```
 
+The contract does not accept requests until every participant has an accepted attestation. Storing a node's first attestation consumes an attestation-storage grant, so prepay one for each node (0.02 NEAR each at the default fee):
+
+```bash
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT prepay_attestation_storage \
+  json-args "{\"account_id\": \"$FRODO_ACCOUNT\", \"grants\": 1}" \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.02 NEAR' \
+  sign-as $FRODO_ACCOUNT network-config testnet sign-with-keychain send
+
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT prepay_attestation_storage \
+  json-args "{\"account_id\": \"$SAM_ACCOUNT\", \"grants\": 1}" \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.02 NEAR' \
+  sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
+```
+
 ---
 
 ## Step 6: Workaround for Port Override Issue (optional)
@@ -502,7 +516,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
   sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
 ```
 
-*Note:* If attestation public key is **null**, the contract uses the default mock attestation.
+*Note:* A node is listed only once the contract has accepted its attestation. If one is missing, its logs show why its submissions are rejected.
 
 *Note:* After attestation succeeds, both nodes spam logs aggressively (bug to fix).
 

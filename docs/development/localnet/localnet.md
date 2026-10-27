@@ -280,6 +280,17 @@ If this succeeded, you should now be able to query the contract state.
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
+The contract does not accept requests until every participant has an accepted
+attestation. Storing a node's first attestation consumes an attestation-storage
+grant, so prepay one for each node (0.02 NEAR each at the default fee). The
+nodes keep retrying, and their attestations land within about a minute.
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near prepay_attestation_storage json-args '{"account_id":"frodo.test.near","grants":1}' prepaid-gas '30.0 Tgas' attached-deposit '0.02 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+
+near contract call-function as-transaction mpc-contract.test.near prepay_attestation_storage json-args '{"account_id":"sam.test.near","grants":1}' prepaid-gas '30.0 Tgas' attached-deposit '0.02 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+```
+
 ## 5. Add domains
 
 Now the contract should be initialized and both nodes are running.

@@ -7,22 +7,29 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
-    common::SandboxTestSetup,
+    common::{
+        SandboxTestSetup, build_sandbox_node_ids, gen_accounts, gen_participant_info,
+        init_contract, init_with_wasm, make_threshold_params, prepay_and_submit_tee_attestations,
+    },
     utils::{
         consts::ALL_PROTOCOLS,
-        contract_build::{tee_verifier_contract, tee_verifier_contract_with_pinned_clock},
+        contract_build::{
+            current_contract_with_pinned_clock, tee_verifier_contract,
+            tee_verifier_contract_with_pinned_clock,
+        },
         mpc_contract::{
             available_attestation_grants, get_config, get_participant_attestation,
             get_tee_accounts, prepay_attestation_grants, submit_participant_info,
             tee_verifier_account_id, total_gas_fee, vote_tee_verifier_change,
         },
-        sandbox_mpc_contract::SandboxMpcContract,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
     },
 };
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, dev_measurements};
 use mpc_contract::{
     MpcContract,
     errors::TeeError,
+    primitives::participants::ParticipantInfo,
     tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -546,4 +553,78 @@ async fn submit_participant_info__should_reject_verified_quote_when_submitter_ke
         &["failed verification", "report_data"],
     )
     .await;
+}
+
+/// Resuming re-verifies every participant inside `resolve_verification`, whose gas is a fixed
+/// budget: running out there would store nothing, and the contract could never resume.
+#[tokio::test]
+async fn submit_participant_info__should_resume_requests_within_the_resolve_verification_gas_budget()
+ {
+    // Given
+    const NUM_PARTICIPANTS: usize = 40;
+    const HEADROOM_PERCENT: u64 = 10;
+    let (worker, contract) = init_with_wasm(current_contract_with_pinned_clock()).await;
+    let contract = SandboxMpcContract::from_deployed(&worker, contract);
+    let (mut accounts, attested_participants) = gen_accounts(&worker, NUM_PARTICIPANTS - 1).await;
+    let submitter = create_fixture_account(&worker, "fixture-node-a").await;
+    let mut participants = attested_participants.clone();
+    participants
+        .insert(
+            submitter.id().clone(),
+            ParticipantInfo {
+                tls_public_key: p2p_tls_key().into(),
+                ..gen_participant_info()
+            },
+        )
+        .unwrap();
+    init_contract(&contract, make_threshold_params(&participants), None).await;
+    let node_ids = build_sandbox_node_ids(&attested_participants, &accounts);
+    prepay_and_submit_tee_attestations(&contract, &mut accounts, &node_ids)
+        .await
+        .unwrap();
+    let setup = SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts: accounts,
+        keys: Vec::new(),
+    };
+    deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
+    whitelist_fixture_dstack_hashes(&setup, Some(launcher_compose_digest())).await;
+    prepay_grant_from_separate_payer(&setup, &submitter).await;
+
+    // When
+    let (result, _) = submit_dstack_verified(&submitter, &setup.contract).await;
+
+    // Then
+    let outcomes = result.outcomes();
+    let resolve_outcome = outcomes
+        .iter()
+        .find(|outcome| {
+            outcome
+                .logs
+                .iter()
+                .any(|log| log.starts_with("resolve_verification:"))
+        })
+        .expect("the resolve_verification receipt must have executed");
+    assert!(
+        resolve_outcome
+            .logs
+            .iter()
+            .any(|log| log == "All participants have an accepted Tee status"),
+        "resolve_verification should resume the contract, logs: {:?}",
+        resolve_outcome.logs
+    );
+    let budget = Gas::from_tgas(
+        get_config(&setup.contract)
+            .await
+            .unwrap()
+            .resolve_verification_tera_gas,
+    );
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    assert!(
+        resolve_outcome.gas_burnt <= max_allowed,
+        "resolve_verification burnt {} of the {budget} budget, leaving less than \
+         {HEADROOM_PERCENT}% headroom",
+        resolve_outcome.gas_burnt,
+    );
 }

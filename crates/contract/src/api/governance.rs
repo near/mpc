@@ -116,8 +116,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        forwarded_participant_call_contract, make_public_key_for_curve, setup_tee_test_contract,
-        submit_attestation, submit_valid_attestations,
+        attest_all_participants, forwarded_participant_call_contract, make_public_key_for_curve,
+        setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
@@ -286,7 +286,7 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let contract = MpcContract::init_running(
+        let mut contract = MpcContract::init_running(
             domains,
             DomainId(1),
             (&keyset).into_dto_type(),
@@ -295,6 +295,7 @@ mod tests {
             None,
         )
         .unwrap();
+        attest_all_participants(&mut contract);
         (contract, participants, first_participant_id, domain_id)
     }
 

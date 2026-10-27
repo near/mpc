@@ -100,6 +100,9 @@ impl MpcContract {
     /// consumes one attestation-storage grant, prepaid for the node's account by whoever
     /// onboards it; a re-attestation under a key the account already owns consumes none.
     ///
+    /// A contract that is not accepting requests, as after [`Self::init`], resumes once a stored
+    /// attestation leaves every participant with an accepted TEE state.
+    ///
     /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account
     /// holds the TLS key: as a current or proposed participant, as a migration destination, or
     /// through an attestation stored under it.
@@ -153,6 +156,7 @@ impl MpcContract {
                 if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
                     self.consume_attestation_storage_grant(&node_id.account_id);
                 }
+                self.resume_if_all_participants_attested();
 
                 Ok(PromiseOrValue::Value(()))
             }
@@ -223,6 +227,27 @@ impl MpcContract {
         }
     }
 
+    /// Lets a contract that is not accepting requests resume as soon as the last participant
+    /// attests, instead of at the next [`Self::verify_tee`] call.
+    fn resume_if_all_participants_attested(&mut self) {
+        if self.accept_requests {
+            return;
+        }
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            return;
+        };
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        let validation = self.tee_state.reverify_and_cleanup_participants(
+            running_state.parameters.participants(),
+            tee_upgrade_deadline_duration,
+        );
+        if matches!(validation, TeeValidationResult::Full) {
+            self.accept_requests = true;
+            log!("All participants have an accepted Tee status");
+        }
+    }
+
     fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let available = self.grants_for(account_id);
         // Checked, not saturating: at `u32::MAX` a returned grant would be dropped silently.
@@ -282,6 +307,9 @@ impl MpcContract {
     /// Returns `false` and stops the contract from accepting new signature requests or responses,
     /// in case the participants running in an accepted TEE State are too few for the
     /// GovernanceThreshold or for any domain's signing protocol.
+    /// While the contract is not accepting requests, as after [`Self::init`] and
+    /// [`Self::init_running`], it kicks out no one and returns `false` until every participant has
+    /// an accepted TEE state.
     /// Also retires launcher hashes that no current participant uses (see
     /// [`dtos::Config::launcher_hash_unused_ttl_seconds`]).
     #[handle_result]
@@ -309,6 +337,12 @@ impl MpcContract {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
                 Ok(true)
+            }
+            TeeValidationResult::Partial { .. } if !self.accept_requests => {
+                log!(
+                    "Not accepting requests until all participants have an accepted Tee status; kicking out no one"
+                );
+                Ok(false)
             }
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
@@ -474,6 +508,7 @@ impl MpcContract {
         if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
             self.consume_attestation_storage_grant(&account_id);
         }
+        self.resume_if_all_participants_attested();
 
         Ok(())
     }
@@ -491,15 +526,15 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        NUM_DOMAINS, basic_setup, make_public_key_for_curve, setup_tee_test_contract,
-        submit_valid_attestations,
+        NUM_DOMAINS, attest_all_participants, basic_setup, make_public_key_for_curve,
+        setup_tee_test_contract, submit_valid_attestations,
     };
     use crate::config::Config;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-    use crate::primitives::participants::{ParticipantId, Participants};
+    use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        create_node_id, gen_account_id, gen_participants,
+        create_node_id, gen_account_id, gen_participant_url, gen_participants,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
@@ -689,15 +724,35 @@ mod tests {
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
         let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
-        let contract_account_id = env::current_account_id();
-        let context = VMContextBuilder::new()
-            .current_account_id(contract_account_id.clone())
-            .predecessor_account_id(contract_account_id)
-            .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
-            .build();
-        testing_env!(context);
-
+        let context = dstack_verification_context();
         contract.tee_state = TeeState::default();
+        prepare_dstack_verification(&mut contract, &context);
+        (contract, context)
+    }
+
+    /// Sets a block time at which the dstack fixture is valid, with the contract as caller.
+    fn dstack_verification_context() -> VerificationContext {
+        let contract_account_id = env::current_account_id();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_account_id.clone())
+                .predecessor_account_id(contract_account_id)
+                .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
+                .build()
+        );
+
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
+            account_public_key: Ed25519PublicKey(account_key()),
+        };
+        VerificationContext {
+            node_id,
+            tcb_info: mock_tcb_info(),
+        }
+    }
+
+    fn prepare_dstack_verification(contract: &mut MpcContract, context: &VerificationContext) {
         whitelist_dstack_measurements(
             &mut contract.tee_state,
             image_digest(),
@@ -708,20 +763,7 @@ mod tests {
         // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
         contract
             .available_attestation_grants
-            .insert("alice.near".parse().unwrap(), 1);
-
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
-            account_public_key: Ed25519PublicKey(account_key()),
-        };
-        (
-            contract,
-            VerificationContext {
-                node_id,
-                tcb_info: mock_tcb_info(),
-            },
-        )
+            .insert(context.node_id.account_id.clone(), 1);
     }
 
     /// The deposit must be exactly `fee × grants`, which is what makes a remainder — and so a
@@ -864,6 +906,133 @@ mod tests {
     }
 
     #[test]
+    fn resolve_verification__should_resume_requests_when_the_last_participant_attests() {
+        // Given
+        let context = dstack_verification_context();
+        let attested_participants = gen_participants(2);
+        let mut participants = attested_participants.clone();
+        participants
+            .insert(
+                context.node_id.account_id.clone(),
+                ParticipantInfo {
+                    url: gen_participant_url(2),
+                    tls_public_key: context.node_id.tls_public_key.clone(),
+                },
+            )
+            .unwrap();
+        let mut contract = freshly_initialized_contract(&participants, 2);
+        contract.tee_state = TeeState::with_mocked_participant_attestations(&attested_participants);
+        prepare_dstack_verification(&mut contract, &context);
+
+        // When
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert!(contract.accept_requests);
+    }
+
+    /// A contract fresh from [`MpcContract::init`]: no participant has attested yet.
+    fn freshly_initialized_contract(
+        participants: &Participants,
+        governance_threshold: u64,
+    ) -> MpcContract {
+        let parameters = GovernanceThresholdParameters::new(
+            participants.clone(),
+            GovernanceThreshold::new(governance_threshold),
+        )
+        .unwrap();
+        MpcContract::init(
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case::last_participant_attests(3, true)]
+    #[case::one_participant_unattested(2, false)]
+    fn submit_participant_info__should_resume_requests_only_once_every_participant_attested(
+        #[case] num_attesting: usize,
+        #[case] expected_accept_requests: bool,
+    ) {
+        // Given
+        let participants = gen_participants(3);
+        let mut contract = freshly_initialized_contract(&participants, 2);
+
+        // When
+        for (account_id, _, info) in participants.participants().iter().take(num_attesting) {
+            prepay_and_submit_mock_attestation(
+                &mut contract,
+                account_id,
+                info.tls_public_key.clone(),
+            )
+            .unwrap();
+        }
+
+        // Then
+        assert_eq!(contract.accept_requests, expected_accept_requests);
+    }
+
+    /// Two of three participants attest, enough for the GovernanceThreshold of two, and one
+    /// of them calls `verify_tee` before the third attests.
+    #[test]
+    fn verify_tee__should_kick_out_no_one_while_not_accepting_requests() {
+        // Given
+        let participants = gen_participants(3);
+        let mut contract = freshly_initialized_contract(&participants, 2);
+        for (account_id, _, info) in participants.participants().iter().take(2) {
+            prepay_and_submit_mock_attestation(
+                &mut contract,
+                account_id,
+                info.tls_public_key.clone(),
+            )
+            .unwrap();
+        }
+        let state_before = contract.state();
+        let (first_account_id, _, _) = &participants.participants()[0];
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_account_id.clone())
+                .predecessor_account_id(first_account_id.clone())
+                .build()
+        );
+
+        // When
+        let result = contract.verify_tee();
+
+        // Then
+        assert_matches!(result, Ok(false));
+        assert_eq!(contract.state(), state_before);
+        assert!(!contract.accept_requests);
+    }
+
+    #[test]
+    fn verify_tee__should_resume_requests_once_every_participant_attested() {
+        // Given
+        let participants = gen_participants(3);
+        let mut contract = freshly_initialized_contract(&participants, 2);
+        contract.tee_state = TeeState::with_mocked_participant_attestations(&participants);
+        let (first_account_id, _, _) = &participants.participants()[0];
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_account_id.clone())
+                .predecessor_account_id(first_account_id.clone())
+                .build()
+        );
+
+        // When
+        let result = contract.verify_tee();
+
+        // Then
+        assert_matches!(result, Ok(true));
+        assert!(contract.accept_requests);
+    }
+
+    #[test]
     #[should_panic(expected = "Caller must be an attested participant")]
     fn test_attested_but_not_participant_panics() {
         let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
@@ -941,6 +1110,7 @@ mod tests {
             None,
         )
         .unwrap();
+        attest_all_participants(&mut contract);
 
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
 
@@ -1056,6 +1226,7 @@ mod tests {
             None,
         )
         .unwrap();
+        attest_all_participants(&mut contract);
 
         // Expire the last participant's attestation so a kickout drops the set to
         // `participant_count - 1`.

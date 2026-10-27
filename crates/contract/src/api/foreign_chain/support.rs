@@ -169,11 +169,12 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::foreign_chain::test_utils::{
-        register_foreign_chains_config_for, whitelist_chain,
+        attested_account_public_key, register_foreign_chains_config_for, whitelist_chain,
     };
     use crate::api::node_migration::MINIMUM_NODE_MANAGEMENT_DEPOSIT;
     use crate::api::test_utils::{
-        basic_setup, basic_setup_with_protocol, make_public_key_for_curve, participant_account_ids,
+        attest_all_participants, basic_setup, basic_setup_with_protocol, make_public_key_for_curve,
+        participant_account_ids,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
@@ -797,6 +798,7 @@ mod tests {
             None,
         )
         .unwrap();
+        attest_all_participants(&mut contract);
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -865,6 +867,7 @@ mod tests {
             None,
         )
         .unwrap();
+        attest_all_participants(&mut contract);
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -933,20 +936,13 @@ mod tests {
                 .expect("contract has at least one domain")
         };
         contract.protocol_state = ProtocolContractState::Resharing(resharing);
-        // The mocked attestations record each TLS key as the account public key.
         contract.tee_state = TeeState::with_mocked_participant_attestations(&all_participants);
+        let joining_pk = attested_account_public_key(&contract, &joining_info.tls_public_key);
+        let departing_pk = attested_account_public_key(&contract, &departing_info.tls_public_key);
 
         // When
-        let joining_result = register_bitcoin_as(
-            &mut contract,
-            &joining,
-            near_sdk::PublicKey::from(joining_info.tls_public_key.clone()),
-        );
-        let departing_result = register_bitcoin_as(
-            &mut contract,
-            &departing,
-            near_sdk::PublicKey::from(departing_info.tls_public_key.clone()),
-        );
+        let joining_result = register_bitcoin_as(&mut contract, &joining, joining_pk);
+        let departing_result = register_bitcoin_as(&mut contract, &departing, departing_pk);
 
         // Then
         assert_eq!(joining_result, Ok(()));
