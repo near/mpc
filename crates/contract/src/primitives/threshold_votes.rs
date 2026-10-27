@@ -1,5 +1,6 @@
+use crate::primitives::key_state::AuthenticatedAccountId;
+use crate::primitives::participants::{ParticipantCount, Participants};
 use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
-use crate::primitives::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -20,14 +21,13 @@ impl GovernanceThresholdParametersVotes {
         &self,
         proposal: &ProposedGovernanceThresholdParameters,
         participants: &Participants,
-    ) -> u64 {
-        u64::try_from(
+    ) -> ParticipantCount {
+        ParticipantCount::from_len(
             self.proposal_by_account
                 .iter()
                 .filter(|&(acc, prop)| participants.is_participant(acc) && prop == proposal)
                 .count(),
         )
-        .expect("usize should never fail to convert to u64 on wasm32")
     }
     /// Registers a vote by `participant` for `proposal`.
     /// Removes any existing votes by `participant`.
@@ -37,7 +37,7 @@ impl GovernanceThresholdParametersVotes {
         &mut self,
         proposal: &ProposedGovernanceThresholdParameters,
         participant: AuthenticatedAccountId,
-    ) -> u64 {
+    ) -> ParticipantCount {
         if self
             .proposal_by_account
             .insert(participant, proposal.clone())
@@ -45,13 +45,12 @@ impl GovernanceThresholdParametersVotes {
         {
             log!("removed one vote for signer");
         }
-        u64::try_from(
+        ParticipantCount::from_len(
             self.proposal_by_account
                 .values()
                 .filter(|&prop| prop == proposal)
                 .count(),
         )
-        .expect("usize should never fail to convert on u64 on wasm32")
     }
 }
 
@@ -60,7 +59,7 @@ mod tests {
     use super::GovernanceThresholdParametersVotes;
     use crate::primitives::{
         key_state::AuthenticatedAccountId,
-        participants::Participants,
+        participants::{ParticipantCount, Participants},
         test_utils::{gen_participant, gen_proposed_threshold_params},
     };
     use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
@@ -79,12 +78,24 @@ mod tests {
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
         let params = gen_proposed_threshold_params(30);
         let mut votes = GovernanceThresholdParametersVotes::default();
-        assert_eq!(votes.vote(&params, participant.clone()), 1);
-        assert_eq!(votes.n_votes(&params, &participants), 1);
+        assert_eq!(
+            votes.vote(&params, participant.clone()),
+            ParticipantCount::new(1)
+        );
+        assert_eq!(
+            votes.n_votes(&params, &participants),
+            ParticipantCount::new(1)
+        );
         let params2 = gen_proposed_threshold_params(30);
-        assert_eq!(votes.vote(&params2, participant), 1);
-        assert_eq!(votes.n_votes(&params2, &participants), 1);
-        assert_eq!(votes.n_votes(&params, &participants), 0);
+        assert_eq!(votes.vote(&params2, participant), ParticipantCount::new(1));
+        assert_eq!(
+            votes.n_votes(&params2, &participants),
+            ParticipantCount::new(1)
+        );
+        assert_eq!(
+            votes.n_votes(&params, &participants),
+            ParticipantCount::new(0)
+        );
 
         // new participant
         let p1 = gen_participant(1);
@@ -93,12 +104,27 @@ mod tests {
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
-        assert_eq!(votes.vote(&params, participant.clone()), 1);
-        assert_eq!(votes.n_votes(&params2, &participants), 1);
-        assert_eq!(votes.vote(&params2, participant), 2);
-        assert_eq!(votes.n_votes(&params2, &participants), 2);
-        assert_eq!(votes.n_votes(&params2, params2.participants()), 0);
-        assert_eq!(votes.n_votes(&params, &participants), 0);
+        assert_eq!(
+            votes.vote(&params, participant.clone()),
+            ParticipantCount::new(1)
+        );
+        assert_eq!(
+            votes.n_votes(&params2, &participants),
+            ParticipantCount::new(1)
+        );
+        assert_eq!(votes.vote(&params2, participant), ParticipantCount::new(2));
+        assert_eq!(
+            votes.n_votes(&params2, &participants),
+            ParticipantCount::new(2)
+        );
+        assert_eq!(
+            votes.n_votes(&params2, params2.participants()),
+            ParticipantCount::new(0)
+        );
+        assert_eq!(
+            votes.n_votes(&params, &participants),
+            ParticipantCount::new(0)
+        );
     }
 
     #[test]
@@ -136,8 +162,14 @@ mod tests {
         votes.vote(&proposal_b, auth_p1);
 
         // Then the two proposals are tallied independently
-        assert_eq!(votes.n_votes(&proposal_a, &participants), 1);
-        assert_eq!(votes.n_votes(&proposal_b, &participants), 1);
+        assert_eq!(
+            votes.n_votes(&proposal_a, &participants),
+            ParticipantCount::new(1)
+        );
+        assert_eq!(
+            votes.n_votes(&proposal_b, &participants),
+            ParticipantCount::new(1)
+        );
     }
 
     #[test]
@@ -164,7 +196,10 @@ mod tests {
         let mut votes = GovernanceThresholdParametersVotes::default();
         votes.vote(&params, auth_p0);
         votes.vote(&params, auth_p1);
-        assert_eq!(votes.n_votes(&params, &old_participants), 2);
+        assert_eq!(
+            votes.n_votes(&params, &old_participants),
+            ParticipantCount::new(2)
+        );
 
         // when: checking votes against a different participant set (simulating post-resharing)
         let mut new_participants = Participants::default();
@@ -172,12 +207,18 @@ mod tests {
         new_participants.insert(p2.0.clone(), p2.1).unwrap();
 
         // then: votes from non-participants are not counted
-        assert_eq!(votes.n_votes(&params, &new_participants), 0);
+        assert_eq!(
+            votes.n_votes(&params, &new_participants),
+            ParticipantCount::new(0)
+        );
 
         ctx.signer_account_id(p2.0);
         testing_env!(ctx.build());
         let auth_p2 = AuthenticatedAccountId::new(&new_participants).unwrap();
         votes.vote(&params, auth_p2);
-        assert_eq!(votes.n_votes(&params, &new_participants), 1);
+        assert_eq!(
+            votes.n_votes(&params, &new_participants),
+            ParticipantCount::new(1)
+        );
     }
 }
