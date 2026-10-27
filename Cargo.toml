@@ -172,26 +172,20 @@ mappings = "0.7"
 mockall = "0.15.0"
 near-abi = "0.4.4"
 near-account-id = "3.0.0"
-
-## TEMPORARY, TODO(#4801): near-sdk 5.30.0-rc.2 pins the 0.38.0-rc.6 crates, so the pins below ##
-## stay on release candidates until a stable near-sdk 5.30.0 is published. Then swap every one
-## for its final in one go and move the entries back into alphabetical order.
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
 # the git nearcore crate below, which the node's indexer stack requires.
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
-near-crypto-public = { version = "0.38.0-rc.6", package = "near-crypto" }
-near-jsonrpc-client = "0.23.0-rc.4"
-near-jsonrpc-primitives = "0.38.0-rc.6"
-near-primitives = "0.38.0-rc.6"
-near-sandbox = "0.4.0"
-near-sdk = { version = "5.30.0-rc.2", features = ["unstable"] }
-near-workspaces = { version = "0.24.0-rc.3" }
-## End of the temporary pins
-
+near-crypto-public = { version = "0.38.0", package = "near-crypto" }
 near-gas = "0.3.6"
+near-jsonrpc-client = "0.23.0"
+near-jsonrpc-primitives = "0.38.0"
 near-kit = { version = "0.19.0", default-features = false, features = ["rpc"] }
+near-primitives = "0.38.0"
+near-sandbox = "0.4.0"
+near-sdk = { version = "5.30.0", features = ["unstable"] }
 near-token = "0.3.4"
+near-workspaces = { version = "0.24.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
