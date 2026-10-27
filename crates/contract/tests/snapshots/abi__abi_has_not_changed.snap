@@ -1831,11 +1831,16 @@ expression: abi
               "type_schema": {
                 "declaration": "Update",
                 "definitions": {
+                  "BlockCount": {
+                    "Struct": [
+                      "u64"
+                    ]
+                  },
                   "Config": {
                     "Struct": [
                       [
                         "key_event_timeout_blocks",
-                        "u64"
+                        "BlockCount"
                       ],
                       [
                         "tee_upgrade_deadline_duration_seconds",
@@ -2740,6 +2745,18 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "BlockCount": {
+          "description": "A number of blocks: a distance between heights or a timeout measured in blocks.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "BlockHeight": {
+          "description": "Height of a NEAR block. Later blocks compare greater.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "Bls12381G1PublicKey": {
           "type": "string"
         },
@@ -3136,9 +3153,11 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "allOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "How long a launcher hash that no current participant uses stays allowed after its last vote or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is never removed automatically.",
@@ -3834,12 +3853,14 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "TTL for launcher hashes no current participant uses; see [`Config::launcher_hash_unused_ttl_seconds`].",
@@ -4059,9 +4080,7 @@ expression: abi
               "uniqueItems": true
             },
             "expires_on": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             },
             "public_key": {
               "anyOf": [
@@ -4074,9 +4093,7 @@ expression: abi
               ]
             },
             "started_in": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             }
           }
         },

@@ -17,7 +17,8 @@ use super::primitives::DomainId;
 // =============================================================================
 
 pub use mpc_primitives::{
-    AttemptId, EpochId, GovernanceThreshold, ParticipantCount, ReconstructionThreshold,
+    AttemptId, BlockCount, BlockHeight, EpochId, GovernanceThreshold, ParticipantCount,
+    ReconstructionThreshold,
 };
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
@@ -200,8 +201,8 @@ pub struct AddDomainsVotes {
 )]
 pub struct KeyEventInstance {
     pub attempt_id: AttemptId,
-    pub started_in: u64,
-    pub expires_on: u64,
+    pub started_in: BlockHeight,
+    pub expires_on: BlockHeight,
     pub completed: BTreeSet<AuthenticatedParticipantId>,
     pub public_key: Option<PublicKeyExtended>,
 }
