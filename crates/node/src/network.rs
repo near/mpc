@@ -6,7 +6,7 @@ pub mod indexer_heights;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;
-use crate::network::constants::CONNECTED_PEERS_BROADCAST_INTERVAL;
+use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
@@ -596,7 +596,7 @@ async fn emit_metrics_periodically(network_client: Arc<MeshNetworkClient>) {
     let _clear_on_drop = ClearLiveConnectionsOnDrop;
     loop {
         network_client.emit_metrics();
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(METRICS_EMIT_INTERVAL).await;
     }
 }
 
@@ -1359,7 +1359,7 @@ mod tests {
         MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
         broadcast_connected_peers_info, emit_metrics_periodically, run_receive_message,
     };
-    use crate::metrics::networking_metrics;
+    use crate::metrics::{self, networking_metrics};
     use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::network::testing::{
         TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
@@ -1374,7 +1374,6 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
-    use prometheus::core::Collector;
     use rstest::rstest;
     use serial_test::serial;
     use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1406,14 +1405,6 @@ mod tests {
         assert_eq!(supporting, vec![me, peers[0]]);
     }
 
-    fn live_connections_series_count() -> usize {
-        networking_metrics::NETWORK_LIVE_CONNECTIONS
-            .collect()
-            .iter()
-            .map(|family| family.get_metric().len())
-            .sum()
-    }
-
     #[tokio::test]
     #[serial(network_live_connections)]
     async fn emit_metrics_periodically__should_remove_every_series_when_aborted() {
@@ -1422,7 +1413,9 @@ mod tests {
         let client = new_test_client(participants.clone(), participants[0]);
         let emitter = tokio::spawn(emit_metrics_periodically(client));
         tokio::time::timeout(Duration::from_secs(5), async {
-            while live_connections_series_count() < participants.len() {
+            while metrics::series_count(&*networking_metrics::NETWORK_LIVE_CONNECTIONS)
+                < participants.len()
+            {
                 tokio::task::yield_now().await;
             }
         })
@@ -1434,7 +1427,10 @@ mod tests {
         let _ = emitter.await;
 
         // Then
-        assert_eq!(live_connections_series_count(), 0);
+        assert_eq!(
+            metrics::series_count(&*networking_metrics::NETWORK_LIVE_CONNECTIONS),
+            0
+        );
     }
 
     fn connected_peers_infos_sent(

@@ -56,16 +56,7 @@ impl Drop for IndexerHeightTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prometheus::core::Collector;
     use serial_test::serial;
-
-    fn series_count() -> usize {
-        metrics::PEERS_INDEXER_HEIGHTS
-            .collect()
-            .iter()
-            .map(|family| family.get_metric().len())
-            .sum()
-    }
 
     #[test]
     #[serial(peers_indexer_heights)]
@@ -77,12 +68,15 @@ mod tests {
         for participant in participants {
             tracker.set_height(participant, 100);
         }
-        assert_eq!(series_count(), participants.len());
+        assert_eq!(
+            metrics::series_count(&*metrics::PEERS_INDEXER_HEIGHTS),
+            participants.len()
+        );
 
         // When
         drop(tracker);
 
         // Then
-        assert_eq!(series_count(), 0);
+        assert_eq!(metrics::series_count(&*metrics::PEERS_INDEXER_HEIGHTS), 0);
     }
 }
