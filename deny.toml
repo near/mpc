@@ -67,27 +67,8 @@ ignore = [
   ## vulnerability.
   "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
   ## End of the temporary entries
-  # TODO(#4423): remove once the lockfile moves to rustls >= 0.23.45.
-  # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18. The nearcore 2.14.0 crates allow
-  # it, so only the lockfile update is left. The
-  # handshake transcript stays authenticated: the flaw only lets a peer send handshake
-  # messages that should be encrypted in plaintext without rustls rejecting them.
-  "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
-  # TODO(#4423): remove once the lockfile moves to rustls >= 0.23.46.
-  # No crate enables rustls's `brotli` feature, the workspace has no custom
-  # `ClientSessionStore`, and our own TLS configs use the ring provider, which offers no
-  # post-quantum key exchange to downgrade
-  "RUSTSEC-2026-0346", # rustls client session values expose TLS secrets through `Debug`
-  "RUSTSEC-2026-0348", # rustls Brotli certificate decompression can allocate up to 1 GiB
-  "RUSTSEC-2026-0349", # rustls ServerHello can downgrade later handshakes to classical kx
-  # TODO(#4423): remove once the lockfile moves to rustls-webpki >= 0.103.16.
-  # No root we trust chains to the distrusted keys: webpki-roots and webpki-root-certs >= 1.0.10
-  # drop emSign ECC Root CA - G3, and so do the Debian trust stores the images ship:
-  # ca-certificates 20250419~deb12u2 (bookworm) and 20250419+deb13u1 (trixie) also drop
-  # Comodo AAA Services root, the only other root that cross-signed those intermediates.
-  "RUSTSEC-2026-0382", # rustls-webpki accepts paths through distrusted emSign intermediates
-  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
-  # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
+  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copy comes from
+  # nearcore, through reed-solomon-erasure
   "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry
   # TODO(#4916): remove once elliptic-curve 0.13 and its crypto-bigint 0.5.5 leave the tree.
   # No patched 0.5.x exists, and the leaks are in 0.7 code: the `borrowing_sub` branch came
