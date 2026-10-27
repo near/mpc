@@ -31,7 +31,7 @@ expression: abi
       },
       {
         "name": "allowed_foreign_chain_providers",
-        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at\n startup to validate their local `foreign_chains.yaml`.",
+        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to\n check their local config against it and to enforce each chain's RPC quorum.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -2926,7 +2926,7 @@ expression: abi
               "$ref": "#/definitions/NonEmptyBTreeMap_ProviderId_ProviderConfig"
             },
             "quorum": {
-              "description": "Voted RPC response quorum. Stored for a deferred quorum policy and not yet consumed: nodes currently require every provider that reaches a verdict to agree on it.",
+              "description": "How many whitelisted providers must agree before a node accepts a verdict.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0

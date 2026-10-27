@@ -3863,6 +3863,7 @@ dependencies = [
  "bs58 0.5.1",
  "derive_more 2.1.1",
  "ethereum-types",
+ "foreign-chain-inspector",
  "foreign-chain-rpc-factory",
  "foreign-chain-rpc-interfaces",
  "hex",
