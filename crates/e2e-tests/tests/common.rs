@@ -478,7 +478,7 @@ pub async fn send_ckd_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
-    account_id: &near_account_id::AccountId,
+    account_id: &near_kit::AccountId,
 ) -> anyhow::Result<()> {
     let domain = running
         .domains

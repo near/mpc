@@ -31,6 +31,7 @@ use tokio::sync::OnceCell;
 
 use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::CallMpc;
+use crate::conversions::{ToContractAccountId, ToNearKitAccountId};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts, localhost_with_port};
 use crate::near_sandbox::NearSandbox;
 use crate::test_dir::TestDir;
@@ -319,7 +320,7 @@ impl MpcCluster {
         )
         .await?;
         let mpc_contract_handle =
-            MpcContractHandle::new(contract.client(), contract_account.clone());
+            MpcContractHandle::new(contract.client(), contract_account.to_contract_account_id());
         let state_subscription = mpc_contract_handle.state().subscribe().await;
 
         let participant_indices = config.participant_indices();
@@ -686,9 +687,11 @@ impl MpcCluster {
             .subscribe()
             .await
             .wait_for(PARTICIPANT_ATTESTATIONS_TIMEOUT, |tee_accounts| {
-                let have: HashSet<&AccountId> =
-                    tee_accounts.iter().map(|node| &node.account_id).collect();
-                required.iter().all(|a| have.contains(a))
+                let have: HashSet<AccountId> = tee_accounts
+                    .iter()
+                    .map(|node| node.account_id.to_near_kit_account_id())
+                    .collect();
+                required.iter().all(|a| have.contains(*a))
             })
             .await
             .with_context(|| {
@@ -1551,7 +1554,7 @@ fn build_participants_from_nodes(
     let mut next_id = current.next_id;
     let mut list = Vec::new();
     for &node_idx in indices {
-        let account: ContractAccountId = nodes[node_idx].account_id().clone();
+        let account: ContractAccountId = nodes[node_idx].account_id().to_contract_account_id();
         let id = current
             .participants
             .iter()

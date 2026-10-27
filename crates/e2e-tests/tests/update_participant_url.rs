@@ -1,5 +1,6 @@
 use crate::common;
 
+use e2e_tests::conversions::ToContractAccountId;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{ParticipantUrl, ProtocolContractState};
 use rand::{SeedableRng, rngs::StdRng};
@@ -42,7 +43,7 @@ async fn update_participant_url__should_keep_signing_after_url_update() {
     // Then
     cluster
         .wait_for_state(common::INDEXER_SYNC_TIMEOUT, |state| {
-            participant_url(state, &account_id).as_ref() == Some(&new_url)
+            participant_url(state, &account_id.to_contract_account_id()).as_ref() == Some(&new_url)
         })
         .await
         .expect("contract did not reflect the updated url");
