@@ -7,7 +7,7 @@ use crate::MpcContract;
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
 use crate::tee::tee_state::TeeState;
-use mpc_attestation::attestation::default_measurements;
+use mpc_attestation::attestation::dev_measurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_account_id::AccountId;
 use near_sdk::borsh::{self, BorshDeserialize};
@@ -131,9 +131,7 @@ pub fn whitelist_dstack_measurements(
 ) {
     tee_state.whitelist_tee_proposal(image, Duration::MAX);
     tee_state.add_launcher_image(launcher, Duration::MAX, Duration::MAX);
-    for &measurements in default_measurements() {
-        tee_state.add_measurement(measurements.into_dto_type());
-    }
+    tee_state.add_measurement(dev_measurements().into_dto_type());
     if let Some(compose_hash) = compose_hash {
         tee_state
             .allowed_launcher_images

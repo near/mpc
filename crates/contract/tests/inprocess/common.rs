@@ -61,7 +61,7 @@ pub fn init_contract(
 
     MpcContract::init_running(
         domains,
-        1,
+        DomainId(1),
         keyset,
         parameters.clone().into(),
         bogus_tee_verifier_account_id(),

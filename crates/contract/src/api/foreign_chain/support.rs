@@ -790,7 +790,7 @@ mod tests {
                 .unwrap();
         let mut contract = MpcContract::init_running(
             domains,
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -858,7 +858,7 @@ mod tests {
                 .unwrap();
         let mut contract = MpcContract::init_running(
             domains,
-            2,
+            DomainId(2),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),

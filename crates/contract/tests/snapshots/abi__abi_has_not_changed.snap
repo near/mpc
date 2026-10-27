@@ -524,9 +524,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             },
             {
@@ -2210,9 +2208,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             }
           ]
@@ -3299,9 +3295,7 @@ expression: abi
               }
             },
             "next_domain_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/DomainId"
             }
           }
         },

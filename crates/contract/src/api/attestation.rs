@@ -934,7 +934,7 @@ mod tests {
 
         let mut contract = MpcContract::init_running(
             domains.clone(),
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -1046,7 +1046,7 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let next_domain_id = domain.id.0 + 1;
+        let next_domain_id = DomainId(domain.id.0 + 1);
         let mut contract = MpcContract::init_running(
             vec![domain],
             next_domain_id,
@@ -1230,7 +1230,7 @@ mod tests {
             mpc_image_hash: MAX_HASH.into(),
             launcher_compose_hash: MAX_HASH.into(),
             expiry_timestamp_seconds: u64::MAX,
-            measurements: default_measurements()[0],
+            measurements: default_measurements(),
         })
     }
 
@@ -1239,7 +1239,7 @@ mod tests {
             mpc_docker_image_hash: Some(MAX_HASH.into()),
             launcher_docker_compose_hash: Some(MAX_HASH.into()),
             expiry_timestamp_seconds: Some(u64::MAX),
-            expected_measurements: Some(default_measurements()[0]),
+            expected_measurements: Some(default_measurements()),
         })
     }
 
