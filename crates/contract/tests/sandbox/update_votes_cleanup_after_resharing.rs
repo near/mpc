@@ -16,7 +16,7 @@ use mpc_primitives::hash::ProposalHash;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold, Update, UpdateHash,
+    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold, Update, UpdateHash,
 };
 use near_mpc_sdk::update::hash;
 use near_workspaces::Account;
@@ -140,7 +140,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         running.domains.next_domain_id
     };
     let domains_to_add = vec![DomainConfig {
-        id: DomainId(next_domain_id),
+        id: next_domain_id,
         protocol: Protocol::Frost,
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,
@@ -151,11 +151,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     })
     .await?;
 
-    let state: dtos::ProtocolContractState = get_state(&contract).await;
-    let dtos::ProtocolContractState::Running(running) = &state else {
-        panic!("Expected running state");
-    };
-    let tally = &running.add_domains_votes;
+    let tally = contract.add_domains_votes().await?.value;
     assert_eq!(tally.len(), 1);
     assert_eq!(tally.values().next().unwrap().len(), 2);
 
@@ -195,12 +191,8 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     .await?;
 
     // Then
-    let final_state: dtos::ProtocolContractState = get_state(&contract).await;
-    let dtos::ProtocolContractState::Running(final_running) = &final_state else {
-        panic!("Expected running state after resharing");
-    };
-
-    let remaining_voters: Vec<_> = final_running.add_domains_votes.values().flatten().collect();
+    let final_tally = contract.add_domains_votes().await?.value;
+    let remaining_voters: Vec<_> = final_tally.values().flatten().collect();
     let expected_remaining_voter_id = &initial_participants.participants[1].1;
     assert_eq!(remaining_voters.len(), 1);
     assert_eq!(&remaining_voters[0].0, expected_remaining_voter_id);

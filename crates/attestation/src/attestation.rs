@@ -308,7 +308,7 @@ impl DstackAttestation {
 
         Err(VerificationError::WrongHash {
             name: "expected_measurements",
-            expected: "one of the embedded TCB info sets (prod or dev)".into(),
+            expected: "one of the allowed measurement sets".into(),
             found: "none matched".into(),
         })
     }

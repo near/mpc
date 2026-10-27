@@ -1,6 +1,6 @@
 //! Governance votes over the participant set and the domain registry.
 
-use crate::dto_mapping::TryIntoContractType;
+use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters};
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
@@ -113,6 +113,16 @@ impl MpcContract {
         }
         Ok(())
     }
+
+    /// Returns the pending `vote_new_parameters` votes, keyed by proposal hash.
+    pub fn new_parameters_votes(&self) -> dtos::GovernanceThresholdParametersVotes {
+        (&self.parameters_votes).into_dto_type()
+    }
+
+    /// Returns the pending `vote_add_domains` votes, keyed by proposal hash.
+    pub fn add_domains_votes(&self) -> dtos::AddDomainsVotes {
+        (&self.add_domains_votes).into_dto_type()
+    }
 }
 
 impl MpcContract {
@@ -130,7 +140,6 @@ mod tests {
         forwarded_participant_call_contract, make_public_key_for_curve, setup_tee_test_contract,
         submit_attestation, submit_valid_attestations,
     };
-    use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
     use crate::primitives::participants::Participants;
@@ -141,7 +150,7 @@ mod tests {
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::key_event::tests::find_leader;
     use crate::tee::test_utils::Environment;
-    use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
+    use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
@@ -305,7 +314,7 @@ mod tests {
         );
         let contract = MpcContract::init_running(
             domains,
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -351,11 +360,11 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then: 4 > 3 participants, so the guard rejects it.
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
                 reconstruction_threshold: 4,
-                participants: 3,
+                participants: ParticipantCount::new(3),
             })
         );
     }
@@ -413,9 +422,12 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
+                max: ParticipantCount::new(3),
+                found: 4
+            })
         );
     }
 
@@ -632,7 +644,7 @@ mod tests {
         (contract, participants, domain_id, proposal)
     }
 
-    /// The `state()` tally for `voters` all voting `proposal`.
+    /// The tally for `voters` all voting `proposal`.
     fn expected_tally(
         proposal: &ProposedGovernanceThresholdParameters,
         voters: &[&AccountId],
@@ -647,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn state__should_report_pending_parameter_votes_by_proposal_hash() {
+    fn new_parameters_votes__should_report_pending_votes_by_proposal_hash() {
         // Given
         let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
             3,
@@ -663,17 +675,14 @@ mod tests {
         vote_params(&mut contract, &signer, &proposal).unwrap();
 
         // Then
-        let dtos::ProtocolContractState::Running(running) = contract.state() else {
-            panic!("expected Running state");
-        };
         assert_eq!(
-            running.parameters_votes,
+            contract.new_parameters_votes(),
             expected_tally(&proposal, &[&signer])
         );
     }
 
     #[test]
-    fn state__should_report_re_proposal_votes_while_resharing() {
+    fn new_parameters_votes__should_report_re_proposal_votes_while_resharing() {
         // Given
         let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
         let (voter, _, _) = &participants.participants()[0];
@@ -685,17 +694,14 @@ mod tests {
             .unwrap();
 
         // Then
-        let dtos::ProtocolContractState::Resharing(resharing) = contract.state() else {
-            panic!("expected Resharing state");
-        };
         assert_eq!(
-            resharing.previous_running_state.parameters_votes,
+            contract.new_parameters_votes(),
             expected_tally(&proposal, &[voter])
         );
     }
 
     #[test]
-    fn state__should_report_add_domains_votes_by_proposal_hash() {
+    fn add_domains_votes__should_report_pending_votes_by_proposal_hash() {
         // Given: two participants propose the same domain and a third a different one
         let (mut contract, participants, _, domain_id) = setup_running_contract_with_domain(
             3,
@@ -729,9 +735,6 @@ mod tests {
         }
 
         // Then
-        let dtos::ProtocolContractState::Running(running) = contract.state() else {
-            panic!("expected Running state");
-        };
         let expected = dtos::AddDomainsVotes(BTreeMap::from([
             (
                 caitsith.to_proposal_hash(),
@@ -744,7 +747,7 @@ mod tests {
                 [voters[2].1].map(dtos::AuthenticatedParticipantId).into(),
             ),
         ]));
-        assert_eq!(running.add_domains_votes, expected);
+        assert_eq!(contract.add_domains_votes(), expected);
     }
 
     #[test]

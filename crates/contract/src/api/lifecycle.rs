@@ -2,7 +2,7 @@
 //! state and config views.
 
 use crate::config::Config;
-use crate::dto_mapping::{IntoInterfaceType, PendingVotes, TryIntoContractType};
+use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
@@ -38,7 +38,7 @@ impl MpcContract {
         log!(
             "init: signer={}, num_participants={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
             env::signer_account_id(),
-            parameters.participants().len(),
+            parameters.participants().count(),
             params_hash,
             tee_verifier_account_id,
             init_config,
@@ -86,7 +86,7 @@ impl MpcContract {
     #[handle_result]
     pub fn init_running(
         domains: Vec<dtos::DomainConfig>,
-        next_domain_id: u64,
+        next_domain_id: dtos::DomainId,
         keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
@@ -101,7 +101,7 @@ impl MpcContract {
             env::signer_account_id(),
             domains,
             keyset,
-            parameters.participants().len(),
+            parameters.participants().count(),
             parameters.threshold().value(),
             params_hash,
             tee_verifier_account_id,
@@ -112,7 +112,7 @@ impl MpcContract {
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
         validate_domains_against_governance(
             domains.domains(),
-            parameters.participants().len() as u64,
+            parameters.participants().count(),
             parameters.threshold(),
         )?;
 
@@ -186,11 +186,7 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
-        let votes = PendingVotes {
-            parameters: (&self.parameters_votes).into_dto_type(),
-            add_domains: (&self.add_domains_votes).into_dto_type(),
-        };
-        (&self.protocol_state, votes).into_dto_type()
+        (&self.protocol_state).into_dto_type()
     }
 
     pub fn config(&self) -> dtos::Config {

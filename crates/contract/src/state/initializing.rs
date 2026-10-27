@@ -7,6 +7,7 @@ use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
 use crate::primitives::participants::IdentifiesParticipant;
+use near_mpc_contract_interface::types::{DomainId, ParticipantCount};
 use near_sdk::near;
 use std::collections::BTreeSet;
 
@@ -115,7 +116,7 @@ impl InitializingContractState {
     /// particular instance of key generation, not some older instance.
     pub fn vote_cancel(
         &mut self,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> Result<Option<RunningContractState>, Error> {
         if next_domain_id != self.domains.next_domain_id() {
             return Err(InvalidParameters::NextDomainIdMismatch.into());
@@ -123,12 +124,10 @@ impl InitializingContractState {
         let participant = AuthenticatedParticipantId::new(
             self.generating_key.proposed_parameters().participants(),
         )?;
-        let required_threshold = self
-            .generating_key
-            .proposed_parameters()
-            .threshold()
-            .value() as usize;
-        if self.cancel_votes.insert(participant) && self.cancel_votes.len() >= required_threshold {
+        let threshold = self.generating_key.proposed_parameters().threshold();
+        if self.cancel_votes.insert(participant)
+            && threshold.is_met_by(ParticipantCount::from_len(self.cancel_votes.len()))
+        {
             let mut domains = self.domains.clone();
             domains.retain_domains(self.generated_keys.len());
             return Ok(Some(RunningContractState::new(
@@ -361,7 +360,7 @@ pub mod tests {
             assert!(running.is_none());
             // Check that using the wrong next_domain_id fails.
             let _ = state
-                .vote_cancel(state.domains.next_domain_id() - 1)
+                .vote_cancel(DomainId(state.domains.next_domain_id().0 - 1))
                 .unwrap_err();
             running = state.vote_cancel(state.domains.next_domain_id()).unwrap();
         }

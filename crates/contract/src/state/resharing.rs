@@ -9,7 +9,7 @@ use crate::primitives::key_state::{
 use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
+use near_mpc_contract_interface::types::{DomainId, ParticipantCount, ReconstructionThreshold};
 use near_sdk::near;
 
 /// In this state, we reshare the key of every domain onto a new set of participants and threshold.
@@ -175,11 +175,11 @@ impl ResharingContractState {
         let authenticated_candidate = AuthenticatedAccountId::new(previous_running_participants)?;
         self.cancellation_requests.insert(authenticated_candidate);
 
-        let cancellation_votes_count = self.cancellation_requests.len() as u64;
+        let cancellation_votes_count = ParticipantCount::from_len(self.cancellation_requests.len());
         let previous_running_threshold = self.previous_running_state.parameters.threshold();
 
         let threshold_cancellation_votes_reached: bool =
-            cancellation_votes_count >= previous_running_threshold.value();
+            previous_running_threshold.is_met_by(cancellation_votes_count);
 
         let running_state = if threshold_cancellation_votes_reached {
             let mut previous_running_state = self.previous_running_state.clone();
@@ -415,7 +415,7 @@ pub mod tests {
         let mut new_participants_1 = old_participants.clone();
         // GovernanceThreshold valid for the grown set (1.5x): old_len sits within
         // [ceil(0.6 * 1.5n), 1.5n].
-        let new_threshold = GovernanceThreshold::new(old_participants.len() as u64);
+        let new_threshold = GovernanceThreshold::new(old_participants.count().value());
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());

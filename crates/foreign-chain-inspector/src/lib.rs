@@ -177,6 +177,13 @@ impl<Inspector> FanOut<Inspector> {
     }
 }
 
+impl<Inspector, Recorder> FanOut<Inspector, Recorder> {
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn provider_ids(&self) -> impl Iterator<Item = &ProviderId> {
+        self.inspectors.iter().map(|(provider, _)| provider)
+    }
+}
+
 /// Times calls to foreign chain RPC providers.
 ///
 /// [`Self::start_timer`] begins one call and [`Self::observe`] ends it with the outcome once the
@@ -303,42 +310,6 @@ where
     }
 }
 
-impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
-where
-    Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
-    Inspector::TransactionId: Clone + Send + 'static,
-    Inspector::Finality: Clone + Send + 'static,
-    Inspector::Extractor: Clone + Send + 'static,
-    Inspector::ExtractedValue: Send + 'static + Clone + PartialEq + Eq + Hash + std::fmt::Debug,
-    Recorder: TimeProviderCall + Clone + 'static,
-{
-    type TransactionId = Inspector::TransactionId;
-    type Finality = Inspector::Finality;
-    type Extractor = Inspector::Extractor;
-    type ExtractedValue = Inspector::ExtractedValue;
-
-    /// Accepts a unanimous verdict from any single provider.
-    // TODO: callers pass the chain's voted `RpcQuorum` to `extract_with_quorum` instead
-    // (near/mpc-private#558).
-    async fn extract(
-        &self,
-        tx_id: Self::TransactionId,
-        finality: Self::Finality,
-        extractors: Vec<Self::Extractor>,
-    ) -> Result<Verdict<Self::ExtractedValue>, ForeignChainInspectionError> {
-        let any_single_provider = RpcQuorum {
-            required: NonZeroUsize::MIN,
-            whitelisted: self
-                .inspectors
-                .iter()
-                .map(|(provider, _)| provider.clone())
-                .collect(),
-        };
-        self.extract_with_quorum(&any_single_provider, tx_id, finality, extractors)
-            .await
-    }
-}
-
 pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
 
 impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
@@ -362,9 +333,9 @@ where
     Inspector: ChainInspector,
 {
     /// Ask every provider for the network it serves concurrently, one result each.
-    /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
-    /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try plus
-    /// [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
+    /// Unlike [`FanOut::extract_with_quorum`], disagreement is not an error: a diagnostic caller
+    /// needs the individual answers. Each provider gets up to `attempts` tries, `timeout` per try
+    /// plus [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
     pub async fn network_fingerprints(
         &self,
         timeout: Duration,

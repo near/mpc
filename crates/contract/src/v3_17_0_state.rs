@@ -22,7 +22,7 @@ use near_sdk::{
 use crate::{
     config::{
         Config, DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
-        DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
+        DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS, DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
     },
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
@@ -218,6 +218,9 @@ impl From<MpcContract> for crate::MpcContract {
         config.clean_foreign_chain_data_tera_gas = config
             .clean_foreign_chain_data_tera_gas
             .max(DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS);
+        config.key_event_timeout_blocks = config
+            .key_event_timeout_blocks
+            .max(DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS);
 
         let tee_state = old.tee_state.migrate();
         crate::MpcContract {
@@ -335,6 +338,42 @@ mod tests {
             cleanup_orphaned_node_migrations_tera_gas:
                 DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS + 1,
             clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS + 1,
+            ..Default::default()
+        };
+
+        // When
+        let migrated: crate::MpcContract = old_contract(stored.clone()).into();
+
+        // Then
+        assert_eq!(migrated.config, stored);
+    }
+
+    #[test]
+    fn from__should_raise_key_event_timeout_to_the_default() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let stored = Config {
+            key_event_timeout_blocks: 30,
+            ..Default::default()
+        };
+
+        // When
+        let migrated: crate::MpcContract = old_contract(stored.clone()).into();
+
+        // Then
+        let expected = Config {
+            key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
+            ..stored
+        };
+        assert_eq!(migrated.config, expected);
+    }
+
+    #[test]
+    fn from__should_keep_key_event_timeout_above_the_default() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let stored = Config {
+            key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS + 1,
             ..Default::default()
         };
 

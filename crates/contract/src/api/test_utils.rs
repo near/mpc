@@ -143,7 +143,7 @@ pub(crate) fn basic_setup_with_protocol(
             .unwrap();
     let contract = MpcContract::init_running(
         domains,
-        1,
+        DomainId(1),
         (&keyset).into_dto_type(),
         (&parameters).into_dto_type(),
         bogus_tee_verifier_account_id(),

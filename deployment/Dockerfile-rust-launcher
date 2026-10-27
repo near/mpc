@@ -10,10 +10,10 @@ RUN \
     apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates docker-cli docker-compose && \
     : "Clean up for improving reproducibility" && \
-    rm -rf /var/log/* /var/cache/ldconfig/aux-cache
+    rm -rf /var/log/* /var/cache/ldconfig/aux-cache /root/.cache
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app
 COPY --chmod=0755 target/reproducible/tee-launcher tee-launcher
-RUN mkdir -p /app-data && mkdir -p /mnt/shared
+RUN mkdir -p /app-data && mkdir -p /mnt/shared && rm -rf /root/.cache
 CMD ["/app/tee-launcher"]

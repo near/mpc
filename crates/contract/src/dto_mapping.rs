@@ -614,14 +614,12 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 mod test_conversions {
     use super::{
         GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, Keyset,
-        ParticipantInfo, PendingVotes, ProposedGovernanceThresholdParameters,
-        ProtocolContractState, dtos,
+        ParticipantInfo, ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
     };
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
-            // Vote tallies live on `MpcContract`, which this path lacks: they are reported empty.
-            (&state, PendingVotes::default()).into_dto_type()
+            (&state).into_dto_type()
         }
     }
 
@@ -976,61 +974,49 @@ impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContrac
     }
 }
 
-/// Vote tallies that live on [`crate::MpcContract`] rather than on the protocol state.
-#[derive(Default)]
-pub(crate) struct PendingVotes {
-    pub(crate) parameters: dtos::GovernanceThresholdParametersVotes,
-    pub(crate) add_domains: dtos::AddDomainsVotes,
-}
-
-impl IntoInterfaceType<dtos::RunningContractState> for (&RunningContractState, PendingVotes) {
+impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
     fn into_dto_type(self) -> dtos::RunningContractState {
-        let (state, votes) = self;
         dtos::RunningContractState {
-            domains: (&state.domains).into_dto_type(),
-            keyset: (&state.keyset).into_dto_type(),
-            parameters: (&state.parameters).into_dto_type(),
-            parameters_votes: votes.parameters,
-            add_domains_votes: votes.add_domains,
-            previously_cancelled_resharing_epoch_id: state.previously_cancelled_resharing_epoch_id,
+            domains: (&self.domains).into_dto_type(),
+            keyset: (&self.keyset).into_dto_type(),
+            parameters: (&self.parameters).into_dto_type(),
+            previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }
     }
 }
 
-impl IntoInterfaceType<dtos::ResharingContractState> for (&ResharingContractState, PendingVotes) {
+impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState {
     fn into_dto_type(self) -> dtos::ResharingContractState {
-        let (state, votes) = self;
         dtos::ResharingContractState {
-            previous_running_state: (&state.previous_running_state, votes).into_dto_type(),
-            reshared_keys: state
+            previous_running_state: (&self.previous_running_state).into_dto_type(),
+            reshared_keys: self
                 .reshared_keys
                 .iter()
                 .map(|k| k.into_dto_type())
                 .collect(),
-            resharing_key: (&state.resharing_key).into_dto_type(),
-            cancellation_requests: state
+            resharing_key: (&self.resharing_key).into_dto_type(),
+            cancellation_requests: self
                 .cancellation_requests
                 .iter()
                 .map(|a| a.into_dto_type())
                 .collect(),
-            per_domain_thresholds: state.per_domain_thresholds.clone(),
+            per_domain_thresholds: self.per_domain_thresholds.clone(),
         }
     }
 }
 
-impl IntoInterfaceType<dtos::ProtocolContractState> for (&ProtocolContractState, PendingVotes) {
+impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
     fn into_dto_type(self) -> dtos::ProtocolContractState {
-        let (state, votes) = self;
-        match state {
+        match self {
             ProtocolContractState::NotInitialized => dtos::ProtocolContractState::NotInitialized,
             ProtocolContractState::Initializing(state) => {
                 dtos::ProtocolContractState::Initializing(state.into_dto_type())
             }
             ProtocolContractState::Running(state) => {
-                dtos::ProtocolContractState::Running((state, votes).into_dto_type())
+                dtos::ProtocolContractState::Running(state.into_dto_type())
             }
             ProtocolContractState::Resharing(state) => {
-                dtos::ProtocolContractState::Resharing((state, votes).into_dto_type())
+                dtos::ProtocolContractState::Resharing(state.into_dto_type())
             }
         }
     }
@@ -1160,55 +1146,6 @@ mod tests {
                     found: 2
                 }
             ))
-        );
-    }
-
-    #[test]
-    fn parameters_votes_dto__should_turn_a_legacy_report_into_the_contract_hashes() {
-        use crate::primitives::proposal_hash::ToProposalHash;
-        use crate::primitives::test_utils::gen_proposed_threshold_params;
-        use std::collections::{BTreeMap, BTreeSet};
-
-        // Given: the per-voter report of a contract that still stores full proposals
-        let proposal = gen_proposed_threshold_params(5);
-        let legacy = serde_json::json!({
-            "proposal_by_account": { "alice.near": (&proposal).into_dto_type() }
-        });
-
-        // When
-        let votes: dtos::GovernanceThresholdParametersVotes =
-            serde_json::from_value(legacy).unwrap();
-
-        // Then: keyed by the hash the contract computes for the same proposal
-        let voter = dtos::AuthenticatedAccountId("alice.near".parse().unwrap());
-        assert_eq!(
-            votes.0,
-            BTreeMap::from([(proposal.to_proposal_hash(), BTreeSet::from([voter]))])
-        );
-    }
-
-    #[test]
-    fn add_domains_votes_dto__should_turn_a_legacy_report_into_the_contract_hashes() {
-        use crate::primitives::proposal_hash::ToProposalHash;
-        use std::collections::{BTreeMap, BTreeSet};
-
-        // Given: the per-voter report of a contract that still stores full domain lists
-        let domains = vec![dtos::DomainConfig {
-            id: dtos::DomainId(1),
-            protocol: dtos::Protocol::CaitSith,
-            reconstruction_threshold: dtos::ReconstructionThreshold::new(2),
-            purpose: dtos::DomainPurpose::Sign,
-        }];
-        let legacy = serde_json::json!({ "proposal_by_account": { "3": domains } });
-
-        // When
-        let votes: dtos::AddDomainsVotes = serde_json::from_value(legacy).unwrap();
-
-        // Then: keyed by the hash the contract computes for the same domain list
-        let voter = dtos::AuthenticatedParticipantId(dtos::ParticipantId(3));
-        assert_eq!(
-            votes.0,
-            BTreeMap::from([(domains.to_proposal_hash(), BTreeSet::from([voter]))])
         );
     }
 }

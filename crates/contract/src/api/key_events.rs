@@ -196,7 +196,7 @@ impl MpcContract {
     /// A next_domain_id that matches that in the state's domains struct must be passed in. This is
     /// to prevent stale requests from accidentally cancelling a future key generation state.
     #[handle_result]
-    pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
+    pub fn vote_cancel_keygen(&mut self, next_domain_id: dtos::DomainId) -> Result<(), Error> {
         Self::assert_caller_is_signer();
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
 
@@ -238,6 +238,7 @@ const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 30;
 #[expect(non_snake_case)]
 mod tests {
     use crate::api::test_utils::forwarded_participant_call_contract;
+    use near_mpc_contract_interface::types::DomainId;
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
@@ -253,7 +254,7 @@ mod tests {
     fn vote_cancel_keygen__should_panic_when_predecessor_differs_from_signer() {
         let mut contract = forwarded_participant_call_contract();
         contract
-            .vote_cancel_keygen(0)
+            .vote_cancel_keygen(DomainId(0))
             .expect("expected panic when predecessor != signer");
     }
 }

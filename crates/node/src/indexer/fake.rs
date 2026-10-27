@@ -1,5 +1,7 @@
 use super::IndexerAPI;
-use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
+use super::foreign_chain::{
+    ForeignChainSupporters, ForeignChainWhitelist, supporters_by_available_chain,
+};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
@@ -51,6 +53,7 @@ pub struct FakeMpcContractState {
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
+    foreign_chain_whitelist: BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
     pub migration_service: NodeMigrations,
 }
 
@@ -71,6 +74,7 @@ impl FakeMpcContractState {
             pending_verify_foreign_txs: BTreeMap::new(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
+            foreign_chain_whitelist: BTreeMap::new(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -81,6 +85,14 @@ impl FakeMpcContractState {
 
     pub fn foreign_chains_configs(&self) -> &dtos::ForeignChainsConfigs {
         &self.foreign_chains_configs
+    }
+
+    pub fn whitelist_foreign_chain_providers(
+        &mut self,
+        entries: BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
+    ) {
+        self.foreign_chain_whitelist.extend(entries);
+        self.recompute_available_foreign_chains();
     }
 
     /// Resolves the signer through the active participant set like the real endpoint,
@@ -112,10 +124,8 @@ impl FakeMpcContractState {
             .map(|info| info.tls_public_key.clone())
     }
 
-    /// Mirrors the real contract's recomputation: a chain is available once the
-    /// max required active signers across ForeignTx domains is reached.
-    /// Deviation: no whitelisting — the fake has no provider-whitelist voting, so every
-    /// registered chain counts.
+    /// Mirrors the real contract's recomputation: a whitelisted chain is available
+    /// once the max required active signers across ForeignTx domains is reached.
     fn recompute_available_foreign_chains(&mut self) {
         let parameters = match &self.state {
             ProtocolContractState::Running(state) => &state.parameters,
@@ -151,6 +161,7 @@ impl FakeMpcContractState {
         }
         self.available_foreign_chains = supporters_count
             .into_iter()
+            .filter(|(chain, _)| self.foreign_chain_whitelist.contains_key(chain))
             .filter(|(_, count)| *count >= required_active_signers)
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
@@ -452,6 +463,8 @@ struct FakeIndexerCore {
     migration_change_sender: broadcast::Sender<ContractMigrationInfo>,
     /// Mirrors the real indexer's foreign-chain supporters watch channel.
     foreign_chain_supporters_sender: watch::Sender<ForeignChainSupporters>,
+    /// Mirrors the real indexer's foreign-chain whitelist watch channel.
+    foreign_chain_whitelist_sender: watch::Sender<ForeignChainWhitelist>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -485,6 +498,7 @@ impl FakeIndexerCore {
             let state_change_sender = self.state_change_sender.clone();
             let migration_state_sender = self.migration_change_sender.clone();
             let foreign_chain_supporters_sender = self.foreign_chain_supporters_sender.clone();
+            let foreign_chain_whitelist_sender = self.foreign_chain_whitelist_sender.clone();
             async move {
                 loop {
                     {
@@ -507,6 +521,14 @@ impl FakeIndexerCore {
                         foreign_chain_supporters_sender.send_if_modified(|previous| {
                             if *previous != supporters {
                                 *previous = supporters;
+                                true
+                            } else {
+                                false
+                            }
+                        });
+                        foreign_chain_whitelist_sender.send_if_modified(|previous| {
+                            if *previous != state.foreign_chain_whitelist {
+                                *previous = state.foreign_chain_whitelist.clone();
                                 true
                             } else {
                                 false
@@ -778,6 +800,8 @@ pub struct FakeIndexerManager {
     /// Cloned into each node's [`IndexerAPI`]; tracks the fake contract's
     /// foreign-chain supporters.
     foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+    /// Cloned into each node's [`IndexerAPI`]; tracks the fake contract's whitelist.
+    foreign_chain_whitelist_receiver: watch::Receiver<ForeignChainWhitelist>,
 
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
@@ -972,6 +996,8 @@ impl FakeIndexerManager {
                 contract_state.available_foreign_chains(),
                 contract_state.foreign_chains_configs(),
             ));
+        let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
+            watch::channel(contract_state.foreign_chain_whitelist.clone());
         let contract = Arc::new(tokio::sync::Mutex::new(contract_state));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
@@ -985,6 +1011,7 @@ impl FakeIndexerManager {
             block_update_sender: block_update_sender.clone(),
             migration_change_sender: migration_change_sender.clone(),
             foreign_chain_supporters_sender,
+            foreign_chain_whitelist_sender,
             signature_response_sender,
             ckd_response_sender,
             block_time,
@@ -1007,6 +1034,7 @@ impl FakeIndexerManager {
             indexer_pauser: HashMap::new(),
             contract,
             foreign_chain_supporters_receiver,
+            foreign_chain_whitelist_receiver,
             account_id_by_uid,
             verify_foreign_tx_response_receiver,
             verify_foreign_tx_request_sender,
@@ -1073,6 +1101,8 @@ impl FakeIndexerManager {
             watch::channel(vec![]);
         let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
             watch::channel(vec![]);
+        let (_allowed_os_measurements_sender, allowed_os_measurements_receiver) =
+            watch::channel(vec![]);
         let (_my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
         let (my_migration_info_sender, my_migration_info_receiver) =
@@ -1092,9 +1122,11 @@ impl FakeIndexerManager {
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
             allowed_launcher_compose_receiver,
+            allowed_os_measurements_receiver,
             my_migration_info_receiver,
             my_attestation_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
+            foreign_chain_whitelist_receiver: self.foreign_chain_whitelist_receiver.clone(),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

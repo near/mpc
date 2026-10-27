@@ -26,6 +26,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
+foreign-chain-inspector = { path = ".", features = ["test-utils"] }
 foreign-chain-rpc-factory = { workspace = true }
 http = { workspace = true }
 httpmock = { workspace = true }
