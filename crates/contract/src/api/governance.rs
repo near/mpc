@@ -334,11 +334,11 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then: 4 > 3 participants, so the guard rejects it.
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
                 reconstruction_threshold: 4,
-                participants: ParticipantCount(3),
+                participants: ParticipantCount::new(3),
             })
         );
     }
@@ -396,10 +396,10 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
             Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
-                max: ParticipantCount(3),
+                max: ParticipantCount::new(3),
                 found: 4
             })
         );

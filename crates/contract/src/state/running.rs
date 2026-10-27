@@ -279,7 +279,7 @@ pub mod running_tests {
         let mut state = gen_running_state(num_domains);
         println!(
             "Participants: {}, threshold: {}",
-            state.parameters.participants().len(),
+            state.parameters.participants().count(),
             state.parameters.threshold().value()
         );
         let mut env = Environment::new(None, None, None);
@@ -479,7 +479,7 @@ pub mod running_tests {
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let n = state.parameters.participants().len() as u64;
+        let n = state.parameters.participants().count().value();
         let proposal = proposal_with_threshold(&state, n + 1);
 
         // When voting to add the domain
@@ -558,7 +558,7 @@ pub mod running_tests {
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let n = state.parameters.participants().len() as u64;
+        let n = state.parameters.participants().count().value();
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
             id: next_id,
@@ -960,7 +960,7 @@ pub mod running_tests {
 
         // When the update sets t above the proposed participant count
         let domain_id = state.domains.domains()[0].id;
-        let new_num_participants = proposal.participants().len() as u64;
+        let new_num_participants = proposal.participants().count().value();
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(
             domain_id,

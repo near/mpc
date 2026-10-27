@@ -18,7 +18,7 @@
     derive_more::From,
     derive_more::Into,
 )]
-pub struct ParticipantCount(pub u64);
+pub struct ParticipantCount(u64);
 
 const _: () = assert!(usize::BITS <= u64::BITS);
 
