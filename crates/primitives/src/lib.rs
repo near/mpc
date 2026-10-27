@@ -14,7 +14,7 @@ pub mod threshold;
 pub mod yield_index;
 
 pub use account_id::AccountId;
-pub use block_height::BlockHeight;
+pub use block_height::{BlockCount, BlockHeight};
 pub use key_state::{AttemptId, EpochId, KeyEventId};
 pub use participant_count::ParticipantCount;
 pub use participant_id::ParticipantId;

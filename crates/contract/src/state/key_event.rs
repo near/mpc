@@ -6,8 +6,7 @@ use crate::primitives::key_state::KeyEventId;
 use crate::primitives::key_state::{AttemptId, EpochId};
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::AuthenticatedParticipantId;
-use near_mpc_contract_interface::types::{DomainConfig, DomainId};
-use near_sdk::BlockHeight;
+use near_mpc_contract_interface::types::{BlockCount, BlockHeight, DomainConfig, DomainId};
 use near_sdk::{env, log, near};
 use std::collections::BTreeSet;
 
@@ -62,7 +61,11 @@ impl KeyEvent {
 
     /// Start a new key event instance as the leader, if one isn't already active.
     /// The leader is always the participant with the lowest participant ID.
-    pub fn start(&mut self, key_event_id: KeyEventId, timeout_blocks: u64) -> Result<(), Error> {
+    pub fn start(
+        &mut self,
+        key_event_id: KeyEventId,
+        timeout_blocks: BlockCount,
+    ) -> Result<(), Error> {
         self.cleanup_if_timed_out();
         if self.instance.is_some() {
             return Err(KeyEventError::ActiveKeyEvent.into());
@@ -192,7 +195,7 @@ impl KeyEvent {
     /// It returns None if there is no active attempt (including if the attempt has timed out).
     pub fn current_key_event_id(&self) -> Option<KeyEventId> {
         let instance = self.instance.as_ref()?;
-        if instance.expires_on <= env::block_height() {
+        if instance.expires_on <= current_block_height() {
             return None;
         }
         Some(KeyEventId::new(
@@ -236,6 +239,10 @@ enum VoteSuccessResult {
     PublicKeyDisagreement,
 }
 
+fn current_block_height() -> BlockHeight {
+    env::block_height().into()
+}
+
 /// State for a single attempt at generating or resharing a key.
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -253,11 +260,12 @@ pub struct KeyEventInstance {
 }
 
 impl KeyEventInstance {
-    pub fn new(attempt_id: AttemptId, timeout_blocks: u64) -> Self {
+    pub fn new(attempt_id: AttemptId, timeout_blocks: BlockCount) -> Self {
+        let started_in = current_block_height();
         KeyEventInstance {
             attempt_id,
-            started_in: env::block_height(),
-            expires_on: env::block_height() + 1 + timeout_blocks,
+            started_in,
+            expires_on: started_in + BlockCount::new(1) + timeout_blocks,
             completed: BTreeSet::new(),
             public_key: None,
         }
@@ -267,16 +275,16 @@ impl KeyEventInstance {
     }
 
     pub fn active(&self) -> bool {
-        env::block_height() < self.expires_on
+        current_block_height() < self.expires_on
     }
 
     pub fn attempt_id(&self) -> AttemptId {
         self.attempt_id
     }
-    pub fn started_in(&self) -> u64 {
+    pub fn started_in(&self) -> BlockHeight {
         self.started_in
     }
-    pub fn expires_on(&self) -> u64 {
+    pub fn expires_on(&self) -> BlockHeight {
         self.expires_on
     }
     pub fn public_key(&self) -> Option<&PublicKeyExtended> {

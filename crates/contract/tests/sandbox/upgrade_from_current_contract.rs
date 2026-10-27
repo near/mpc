@@ -14,7 +14,7 @@ use crate::sandbox::{
     },
 };
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{ProtocolContractState, Update};
+use near_mpc_contract_interface::types::{BlockCount, ProtocolContractState, Update};
 use near_mpc_sdk::update::hash;
 use rand_core::OsRng;
 
@@ -95,7 +95,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
         .build()
         .await;
     let new_config = near_mpc_contract_interface::types::Config {
-        key_event_timeout_blocks: 11,
+        key_event_timeout_blocks: BlockCount::new(11),
         tee_upgrade_deadline_duration_seconds: 22,
         apply_contract_update_tera_gas: 33,
         sign_call_gas_attachment_requirement_tera_gas: 44,

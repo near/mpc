@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use core::ops::Add;
 use serde::{Deserialize, Serialize};
 
 /// Height of a NEAR block. Later blocks compare greater.
@@ -49,10 +50,53 @@ impl BlockHeight {
     }
 }
 
+/// A number of blocks: a distance between heights or a timeout measured in blocks.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Display,
+    derive_more::From,
+    derive_more::Into,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct BlockCount(u64);
+
+impl BlockCount {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl Add<BlockCount> for BlockHeight {
+    type Output = BlockHeight;
+
+    fn add(self, count: BlockCount) -> BlockHeight {
+        BlockHeight(self.0 + count.0)
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::BlockHeight;
+    use super::{BlockCount, BlockHeight};
 
     #[test]
     fn block_height__should_encode_as_the_bare_integer() {
@@ -82,5 +126,18 @@ mod tests {
 
         // Then
         assert_eq!((forward, backward), (3, 0));
+    }
+
+    #[test]
+    fn add__should_advance_the_height_by_the_count() {
+        // Given
+        let height = BlockHeight::new(10);
+        let count = BlockCount::new(5);
+
+        // When
+        let later = height + count;
+
+        // Then
+        assert_eq!(later, BlockHeight::new(15));
     }
 }

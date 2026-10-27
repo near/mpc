@@ -62,7 +62,7 @@ impl FakeMpcContractState {
     pub fn new() -> Self {
         let state = ProtocolContractState::NotInitialized;
         let config = dtos::InitConfig {
-            key_event_timeout_blocks: Some(10),
+            key_event_timeout_blocks: Some(dtos::BlockCount::new(10)),
             ..Default::default()
         };
         let env = Environment::new(None, None, None);
