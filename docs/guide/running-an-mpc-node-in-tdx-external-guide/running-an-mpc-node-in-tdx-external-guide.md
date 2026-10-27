@@ -1917,7 +1917,6 @@ $ curl -s http://<IP>:8080/public_data | jq -r '.near_core_network_public_key'
 ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ
 ```
 
-
 ### Verify Node Attestation
 
 > **Important:** Before using the node's keys (P2P key or account key), you must verify the node's attestation to confirm that the keys were generated inside a genuine TEE. Without this step, you are susceptible to a man-in-the-middle attack — an adversary could substitute their own keys for the node's real keys.

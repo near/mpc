@@ -125,11 +125,12 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         &config.home_dir,
         config.node.number_of_responder_keys,
     )?;
-    let mpc_indexer_config = config.node.indexer.clone();
+    let node_config = config.node.clone();
+    let mpc_indexer_config = node_config.indexer.clone();
     let near_indexer_config = mpc_indexer_config.to_near_indexer_config(config.home_dir.clone());
     let near_config = near_indexer_config
         .load_near_config()
-        .expect("near config is present");
+        .context("failed to load nearcore config")?;
 
     profiler::web_server::start_web_server(config.node.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
@@ -212,11 +213,11 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         .block_on(start_web_server(
             root_task_handle.clone(),
             debug_request_sender.clone(),
-            config.node.web_ui,
-            static_web_data(&secrets, &near_config, attestation),
+            node_config.web_ui,
+            static_web_data(&secrets, &near_config.network_config.node_id(), attestation),
             protocol_state_receiver,
             migration_state_receiver,
-            config.node.clone(),
+            node_config.clone(),
             read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
         ))
@@ -226,7 +227,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Detached: the report is diagnostic, nothing downstream waits on it.
     root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
-        config.node.foreign_chains.clone(),
+        node_config.foreign_chains.clone(),
         tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
     ));
 
@@ -239,7 +240,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     // `RocksDB::block_until_all_instances_are_dropped()` to return.
     let indexer_shutdown_token = CancellationToken::new();
     let indexer_api = spawn_real_indexer(
-        config.clone(),
+        config.home_dir.clone(),
+        node_config.my_near_account_id.clone(),
         mpc_indexer_config,
         near_indexer_config,
         near_config,
@@ -249,6 +251,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         protocol_state_sender,
         migration_state_sender,
         *tls_public_key,
+        node_config.foreign_chains.clone(),
         RecentTransactionsLogger::new(recent_tx_sender),
         indexer_shutdown_token.clone(),
     );
@@ -275,7 +278,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let root_future = create_root_future(
         config.home_dir,
-        config.node.clone(),
+        node_config.clone(),
         secrets.clone(),
         indexer_api,
         debug_request_sender,

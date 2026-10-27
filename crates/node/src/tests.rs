@@ -35,7 +35,6 @@ use mpc_node_config::{
     SignatureConfig, SyncMode, TripleBatchSize, TripleConfig,
 };
 
-use crate::indexer::configs::IndexerConfigExt;
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, AutoAbortTask, start_root_task};
@@ -44,6 +43,7 @@ use crate::web::{start_web_server, static_web_data};
 use aes_gcm::aead::Generate;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
+use near_indexer::near_primitives::network::PeerId;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Finality;
 use near_mpc_bounded_collections::UpperBoundedVec;
@@ -110,12 +110,6 @@ impl OneNodeTestConfig {
     pub async fn run(self) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.home_dir)?;
         let my_account_id = self.config.my_near_account_id.clone();
-        let near_config = self
-            .config
-            .indexer
-            .to_near_indexer_config(self.home_dir.clone())
-            .load_near_config()
-            .expect("near config is present");
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
@@ -126,13 +120,14 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
+                let dummy_peer_id = PeerId::random();
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui,
-                    static_web_data(&self.secrets, &near_config, None),
+                    static_web_data(&self.secrets, &dummy_peer_id, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
