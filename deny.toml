@@ -61,6 +61,12 @@ ignore = [
   "RUSTSEC-2026-0367", # zip extraction preserves SUID/SGID bits
   "RUSTSEC-2026-0368", # zip extraction creates symlinks pointing outside the destination
   "RUSTSEC-2026-0369", # zip extraction applies Unix permissions through symlinks
+  ## TEMPORARY, TODO(#4801): near-sdk 5.30 pulls impl-tools 0.12 (proc-macro-error3 ^3.0.2), while ##
+  ## alloy-sol-macro 1.7.3 caps proc-macro-error3 at 3.0.1, so cargo falls back to alloy-sol 1.6,
+  ## which uses proc-macro-error2. A build time proc macro, no vulnerability; remove once
+  ## alloy-sol-macro lifts its cap.
+  "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
+  ## End of the temporary entries
   # TODO(#4423): remove once cargo can resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore 2.14.0-rc.2 and
   # near-crypto 0.37.4 pin it to =1.16.2, so the fix cannot be resolved until they move. The
