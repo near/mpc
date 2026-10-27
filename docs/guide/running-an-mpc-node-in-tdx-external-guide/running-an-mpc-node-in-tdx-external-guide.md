@@ -1661,6 +1661,8 @@ near contract call-function as-read-only \
   v1.signer allowed_foreign_chain_providers json-args '{}' network-config mainnet now
 ```
 
+On testnet use `v1.signer-prod.testnet` and `network-config testnet`.
+
 The node checks its providers against the whitelist at startup and on every change, and it registers
 and serves a chain only while enough of them conform to reach the quorum:
 
@@ -1676,7 +1678,8 @@ and serves a chain only while enough of them conform to reach the quorum:
   toward the quorum.
 
 The presets use the voted URLs. With a full `foreign_chains` block, keep every `rpc_url` as given
-in the examples and add providers only when the vote lists them.
+in the examples and add providers only when the vote lists them: an extra provider can only fail a
+verdict, never help reach the quorum.
 
 The gauges `mpc_foreign_chain_rpc_quorum_required` and `mpc_foreign_chain_rpc_providers_whitelisted`
 show, per chain, the quorum and how many of your providers count, see

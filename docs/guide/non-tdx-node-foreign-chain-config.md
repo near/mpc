@@ -1,7 +1,7 @@
 # Foreign chain config for non-TDX nodes
 
 The participants vote which providers a node may use per chain and how many must agree. Keep the
-URLs as given below, see [Whitelist and quorum](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#whitelist-and-quorum).
+URLs as given below, apart from `YOUR-SLUG`, see [Whitelist and quorum](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#whitelist-and-quorum).
 
 ## Credentials only (Recommended)
 
