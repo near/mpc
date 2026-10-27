@@ -8,10 +8,9 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
+use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::{MpcNodeSetup, ProcessGuard};
-use e2e_tests::{MpcNodeState, PARTICIPANT_ATTESTATIONS_TIMEOUT};
-use near_contract_transport::WatchContractState;
 use near_mpc_contract_interface::types::{
     BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
     ProtocolContractState,
@@ -414,18 +413,6 @@ async fn start_migration_and_wait(
             tls_public_key: target_p2p_key.clone(),
         },
     };
-    cluster
-        .mpc_contract_handle
-        .get_tee_accounts()
-        .subscribe()
-        .await
-        .wait_for(PARTICIPANT_ATTESTATIONS_TIMEOUT, |nodes| {
-            nodes.iter().any(|node| {
-                node.account_id == source_account_id && node.tls_public_key == target_p2p_key
-            })
-        })
-        .await
-        .context("timed out waiting for the target node's attestation")?;
     let outcome = cluster
         .start_node_migration(source_idx, destination_node_info.clone())
         .await

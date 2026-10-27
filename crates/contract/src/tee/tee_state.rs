@@ -183,11 +183,23 @@ impl TeeState {
         node_id: NodeId,
         verified_attestation: VerifiedAttestation,
     ) -> Result<bool, AttestationSubmissionError> {
-        self.assert_tls_key_claimable(&node_id.account_id, &node_id.tls_public_key)?;
+        let tls_pk = node_id.tls_public_key.clone();
+
+        // Authorization: a TLS key registered to one account must not be
+        // overwritten by a submission from a different account. Without this,
+        // any caller could replace any participant's stored attestation, since
+        // the entry is keyed only by `tls_public_key`.
+        if let Some(existing) = self.nodes.get(&tls_pk)
+            && existing.owner != node_id.account_id
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+        }
+
         let previous = self.nodes.insert(
-            node_id.tls_public_key.clone(),
+            tls_pk,
             Node::new(node_id, verified_attestation, Self::current_time_seconds()),
         );
+
         Ok(previous.is_none())
     }
 
@@ -212,7 +224,7 @@ impl TeeState {
     /// certificate expired).
     ///
     /// The attestations themselves are not pruned here; reclaiming them is
-    /// [`crate::MpcContract::clean_invalid_attestations`]'s job.
+    /// [`Self::clean_invalid_attestations`]'s job.
     pub fn reverify_and_cleanup_participants(
         &mut self,
         participants: &Participants,
@@ -379,7 +391,7 @@ impl TeeState {
 
     /// Drops votes cast by nodes that are no longer participants. Used after a resharing
     /// concludes. Attestation cleanup is handled separately by
-    /// [`crate::MpcContract::clean_invalid_attestations`].
+    /// [`TeeState::clean_invalid_attestations`].
     pub fn clean_non_participant_votes(&mut self, participants: &Participants) {
         self.votes
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
@@ -389,48 +401,41 @@ impl TeeState {
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
     }
 
-    /// Returns the owner of each removed node, so the caller can give back the attestation-storage
-    /// grant it consumed.
-    pub(crate) fn clean_invalid_attestations(
+    /// Scans up to `max_scan` stored nodes and removes any whose
+    /// attestation no longer passes `re_verify` under the current docker-hash /
+    /// launcher-hash / measurement whitelists, or whose attestation has expired.
+    /// Returns the account that owned each removed entry, so the caller can return the
+    /// attestation-storage grant it consumed.
+    pub fn clean_invalid_attestations(
         &mut self,
         tee_upgrade_deadline_duration: Duration,
         max_scan: usize,
-        is_in_use: impl Fn(&Node) -> bool,
     ) -> Vec<AccountId> {
         // Materialize candidates before any mutation to avoid iterator invalidation.
-        let removable_tls_keys: Vec<Ed25519PublicKey> = self
+        let invalid_tls_keys: Vec<Ed25519PublicKey> = self
             .nodes
             .iter()
             .take(max_scan)
-            .filter(|(_, node)| {
-                !self.has_valid_attestation(node, tee_upgrade_deadline_duration) && !is_in_use(node)
-            })
+            .filter(|(_, node)| !self.has_valid_attestation(node, tee_upgrade_deadline_duration))
             .map(|(tls_pk, _)| tls_pk.clone())
             .collect();
 
-        removable_tls_keys
-            .into_iter()
-            .filter_map(|tls_pk| self.nodes.remove(&tls_pk))
-            .map(|node| node.owner)
-            .collect()
-    }
-
-    pub(crate) fn owner_of(&self, tls_public_key: &Ed25519PublicKey) -> Option<&AccountId> {
-        self.nodes.get(tls_public_key).map(|node| &node.owner)
-    }
-
-    pub(crate) fn assert_tls_key_claimable(
-        &self,
-        account_id: &AccountId,
-        tls_public_key: &Ed25519PublicKey,
-    ) -> Result<(), AttestationSubmissionError> {
-        if self
-            .owner_of(tls_public_key)
-            .is_some_and(|owner| owner != account_id)
-        {
-            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+        let mut removed_entry_owners = Vec::with_capacity(invalid_tls_keys.len());
+        for tls_pk in invalid_tls_keys {
+            if let Some(removed) = self.nodes.remove(&tls_pk) {
+                removed_entry_owners.push(removed.owner);
+            }
         }
-        Ok(())
+        removed_entry_owners
+    }
+
+    /// Account that owns the entry stored under `tls_public_key`, if any. Read-only,
+    /// so [`crate::MpcContract::submit_participant_info`] can classify a submission before doing any
+    /// verification work.
+    pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
+        self.nodes
+            .get(tls_public_key)
+            .map(|node| node.owner.clone())
     }
 
     /// Returns the id of every stored node, including nodes of accounts that are not participants.
@@ -438,11 +443,7 @@ impl TeeState {
         self.nodes.values().map(Node::id).collect()
     }
 
-    pub(crate) fn node_of(
-        &self,
-        account_id: &AccountId,
-        tls_public_key: &Ed25519PublicKey,
-    ) -> Option<&Node> {
+    fn node_of(&self, account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> Option<&Node> {
         self.nodes
             .get(tls_public_key)
             .filter(|node| node.owner == *account_id)
@@ -649,7 +650,7 @@ mod tests {
 
         // When: the clock advances past the stale entry's expiry and cleanup runs.
         set_block_timestamp(NOW_SECONDS * 1_000_000_000);
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: only the expired entry is removed.
         assert_eq!(removed.len(), 1);
@@ -680,13 +681,13 @@ mod tests {
         // Before expiry: cleanup keeps the entry.
         assert!(
             tee_state
-                .clean_invalid_attestations(Duration::from_secs(0), 100, |_| false)
+                .clean_invalid_attestations(Duration::from_secs(0), 100)
                 .is_empty()
         );
 
         // When: the clock advances past the stamped expiry window and cleanup runs.
         set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the previously uncleanable mock entry is removed.
         assert_eq!(removed.len(), 1);
@@ -718,7 +719,7 @@ mod tests {
         // When: the clock advances just past the contract's default window — well
         // before the submitter's requested expiry.
         set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the entry is cleaned — the submitted expiry was capped at the default.
         assert_eq!(removed.len(), 1);
@@ -755,8 +756,7 @@ mod tests {
         // When: cleanup is called repeatedly with a scan limit of 3 until no progress is made.
         let mut total_removed = 0u32;
         loop {
-            let removed =
-                tee_state.clean_invalid_attestations(Duration::from_secs(0), 3, |_| false);
+            let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 3);
             total_removed += removed.len() as u32;
             if removed.is_empty() {
                 break;
@@ -789,33 +789,11 @@ mod tests {
             .unwrap();
 
         // When: cleanup runs while the attestation is still valid.
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: nothing is removed.
         assert!(removed.is_empty());
         assert!(tee_state.nodes.contains_key(&node_id.tls_public_key));
-    }
-
-    #[test]
-    fn clean_invalid_attestations__should_keep_an_invalid_node_in_use() {
-        // Given
-        set_block_secs(0);
-        let mut tee_state = TeeState::default();
-        let in_use = node_id_for(&"alice.near".parse().unwrap());
-        let unused = node_id_for(&"bob.near".parse().unwrap());
-        for node_id in [&in_use, &unused] {
-            submit_mock(&mut tee_state, node_id, MockAttestation::Valid).unwrap();
-        }
-        set_block_secs(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1);
-
-        // When
-        let removed = tee_state.clean_invalid_attestations(Duration::ZERO, 100, |node| {
-            node.tls_public_key == in_use.tls_public_key
-        });
-
-        // Then
-        assert_eq!(removed, vec![unused.account_id]);
-        assert_eq!(tee_state.get_tee_accounts(), vec![in_use]);
     }
 
     #[test]

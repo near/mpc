@@ -36,10 +36,6 @@ impl MpcContract {
     /// Ensures that the caller is an attested participant
     /// in the currently active protocol phase.
     ///
-    /// The caller's attestation is not re-verified here: [`Self::verify_tee`] reshares out
-    /// participants whose attestation no longer passes, or stops accepting requests if too few
-    /// valid participants would remain.
-    ///
     /// Active phases:
     /// - [`Initializing`](crate::state::ProtocolContractState::Initializing) → uses proposed participants from generating_key
     /// - [`Running`](crate::state::ProtocolContractState::Running) → uses current active participants

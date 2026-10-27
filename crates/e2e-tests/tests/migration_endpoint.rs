@@ -5,8 +5,7 @@ use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::{
-    Attestation, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
-    MockAttestation, ParticipantInfo,
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -15,8 +14,8 @@ use rand::{SeedableRng, rngs::StdRng};
 ///
 /// 1. Given a fresh cluster → Then migration state is empty on both sides.
 /// 2. When a backup service is registered → Then contract + endpoint reflect it.
-/// 3. When a destination node is attested and node migration to it is started → Then
-///    contract + endpoint reflect the destination entry.
+/// 3. When node migration is started → Then contract + endpoint reflect the
+///    destination entry.
 ///
 /// The chain is replayed for every node so each registration builds on the
 /// prior node's final state.
@@ -74,19 +73,6 @@ async fn migration_endpoint__should_track_migration_state() {
 
         let destination_tls_public_key =
             Ed25519PublicKey::from(&SigningKey::generate(&mut rng).verifying_key());
-        let outcome = cluster
-            .submit_participant_info(
-                i,
-                Attestation::Mock(MockAttestation::Valid),
-                destination_tls_public_key.clone(),
-            )
-            .await
-            .expect("failed to attest the destination node");
-        assert!(
-            outcome.is_success(),
-            "submit_participant_info failed: {:?}",
-            outcome.failure_message()
-        );
         let destination_node_info = DestinationNodeInfo {
             signer_account_pk: node_state.p2p_public_key(),
             destination_node_info: ParticipantInfo {
