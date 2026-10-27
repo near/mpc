@@ -6653,7 +6653,7 @@ name = "near-contract-transport"
 version = "3.17.0"
 dependencies = [
  "borsh",
- "derive_more 2.1.1",
+ "mpc-primitives",
  "near-account-id 2.6.0",
  "near-gas",
  "near-kit",
