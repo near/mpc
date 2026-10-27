@@ -456,6 +456,8 @@ near contract call-function as-transaction \
   send
 ```
 
+Until the new node's attestation from [the check above](#check-that-the-new-nodes-attestation-is-registered-on-the-contract) is registered for your account, the contract rejects this call with `Invalid TEE Remote Attestation: destination node has no valid attestation`.
+
 ### Verify Migration Was Registered on the Contract
 
 After calling `start_node_migration`, verify that the destination node was registered correctly on-chain:

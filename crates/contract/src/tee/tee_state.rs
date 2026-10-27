@@ -443,7 +443,11 @@ impl TeeState {
         self.nodes.values().map(Node::id).collect()
     }
 
-    fn node_of(&self, account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> Option<&Node> {
+    pub(crate) fn node_of(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Option<&Node> {
         self.nodes
             .get(tls_public_key)
             .filter(|node| node.owner == *account_id)
