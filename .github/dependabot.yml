@@ -50,9 +50,9 @@ updates:
       - dependency-name: "near-jsonrpc-primitives"
       - dependency-name: "near-primitives"
 
-      ## TEMPORARY, TODO(#4801): remove the two entries below once near-sdk 5.30.0 and ##
-      ## near-workspaces 0.24.0 are published. Until then they pin release candidates
-      ## of the near-* crates and must move together with the pins above.
+      ## TEMPORARY, TODO(#4801): remove the two entries below once a stable near-sdk 5.30.0 ##
+      ## is published. Until then they pin release candidates of the near-* crates and
+      ## must move together with the pins above.
       - dependency-name: "near-sdk"
       - dependency-name: "near-workspaces"
       ## End of the temporary entries

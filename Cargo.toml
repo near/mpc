@@ -173,10 +173,9 @@ mockall = "0.15.0"
 near-abi = "0.4.4"
 near-account-id = "3.0.0"
 
-## TEMPORARY, TODO(#4801): the pins below are release candidates until the nearcore 2.14.0 ##
-## crates, and the near-jsonrpc-client, near-workspaces and near-sdk releases built on them,
-## are published. Swap every one for its final in one go and move the entries back into
-## alphabetical order.
+## TEMPORARY, TODO(#4801): near-sdk 5.30.0-rc.2 pins the 0.38.0-rc.6 crates, so the pins below ##
+## stay on release candidates until a stable near-sdk 5.30.0 is published. Then swap every one
+## for its final in one go and move the entries back into alphabetical order.
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
 # the git nearcore crate below, which the node's indexer stack requires.
 # Must be bumped in lockstep with `near-primitives`: its types appear in
