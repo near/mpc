@@ -3,12 +3,10 @@ use crate::common;
 use e2e_tests::metrics;
 use rand::{SeedableRng, rngs::StdRng};
 
-/// Sign requests must keep succeeding when a node is online but cannot land
-/// its `respond` transactions: a failover leader takes over after the failover
-/// interval. This test stands up a 2-of-2 cluster and deletes node 0's NEAR
-/// signer key, leaving it a fully participating node whose transactions the
-/// chain rejects. The leader is pseudorandom per request, so requests are sent
-/// until one picks node 0 as its leader and node 1's failover answers it.
+/// Deleting node 0's NEAR signer key leaves it a fully participating node whose
+/// transactions the chain rejects — a leader that computes but cannot respond.
+/// The leader is pseudorandom per request, so requests are sent until one picks
+/// node 0 and is answered by node 1's failover.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn leader_failover__should_answer_requests_whose_leader_cannot_submit_responses() {

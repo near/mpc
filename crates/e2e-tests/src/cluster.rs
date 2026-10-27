@@ -934,10 +934,9 @@ impl MpcCluster {
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
     }
 
-    /// Deletes the node's NEAR signer key from its account, signed with the
-    /// operator key. The node keeps running — indexing, participating in
-    /// computations, leading requests — but every transaction it submits from
-    /// now on is rejected on chain.
+    /// The node keeps running — indexing, participating in computations,
+    /// leading requests — but every transaction it submits from now on is
+    /// rejected on chain.
     pub async fn delete_node_signer_key(&self, node_index: usize) -> anyhow::Result<()> {
         self.blockchain
             .delete_access_key(

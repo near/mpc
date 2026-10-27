@@ -88,8 +88,6 @@ impl NearBlockchain {
         })
     }
 
-    /// Deletes `key_to_delete` from `account_id`, signed with `signer_key` — a
-    /// different full-access key on the same account.
     pub async fn delete_access_key(
         &self,
         account_id: &str,
