@@ -64,7 +64,7 @@ pub fn gen_valid_params_proposal(
         next_id = next_id.next();
     }
 
-    let threshold = governance_threshold_lower_relative_bound(new_participants.len() as u64);
+    let threshold = governance_threshold_lower_relative_bound(new_participants.count().value());
     let parameters =
         GovernanceThresholdParameters::new(new_participants, GovernanceThreshold::new(threshold))
             .unwrap();

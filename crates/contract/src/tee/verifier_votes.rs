@@ -66,7 +66,7 @@ impl TeeVerifierVotes {
         participant: AuthenticatedParticipantId,
         threshold_parameters: &GovernanceThresholdParameters,
     ) -> Option<AccountId> {
-        let governance_threshold = threshold_parameters.threshold().value();
+        let governance_threshold = threshold_parameters.threshold();
         let participants = threshold_parameters.participants();
         let proposal_hash = proposal.to_proposal_hash();
 
@@ -75,7 +75,7 @@ impl TeeVerifierVotes {
             .vote(participant, proposal_hash)
             .count_participants(participants);
 
-        if count >= governance_threshold {
+        if governance_threshold.is_met_by(count) {
             self.pending.clear();
             Some(proposal.candidate_account_id)
         } else {

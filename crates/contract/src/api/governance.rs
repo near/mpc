@@ -137,7 +137,7 @@ mod tests {
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::find_leader;
     use crate::tee::test_utils::Environment;
-    use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
+    use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
@@ -298,7 +298,7 @@ mod tests {
         );
         let contract = MpcContract::init_running(
             domains,
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -344,11 +344,11 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then: 4 > 3 participants, so the guard rejects it.
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
                 reconstruction_threshold: 4,
-                participants: 3,
+                participants: ParticipantCount::new(3),
             })
         );
     }
@@ -406,9 +406,12 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
+                max: ParticipantCount::new(3),
+                found: 4
+            })
         );
     }
 

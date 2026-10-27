@@ -138,7 +138,7 @@ impl<C: CallContract> MpcContractHandle<C> {
     pub async fn init_running(
         &self,
         domains: Vec<DomainConfig>,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
         keyset: Keyset,
         parameters: GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
@@ -370,7 +370,7 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn vote_cancel_keygen(
         &self,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteCancelKeygenArgs::new(next_domain_id))?;
         self.call(FunctionCallArgs::no_deposit(
@@ -890,7 +890,7 @@ mod tests {
         handle
             .init_running(
                 Vec::new(),
-                0,
+                DomainId(0),
                 Keyset::new(EpochId::new(7), Vec::new()),
                 governance_threshold_parameters.clone(),
                 "tee-verifier.near".parse().unwrap(),
@@ -1033,7 +1033,7 @@ mod tests {
             .unwrap();
         handle.start_reshare_instance(key_event_id).await.unwrap();
         handle.vote_reshared(key_event_id).await.unwrap();
-        handle.vote_cancel_keygen(7).await.unwrap();
+        handle.vote_cancel_keygen(DomainId(7)).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
         handle
             .vote_add_launcher_hash(LauncherImageHash::from([7u8; 32]))
