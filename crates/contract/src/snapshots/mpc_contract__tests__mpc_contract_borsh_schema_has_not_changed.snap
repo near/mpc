@@ -298,7 +298,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "next_domain_id",
-                        "u64",
+                        "DomainId",
                     ),
                 ],
             ),

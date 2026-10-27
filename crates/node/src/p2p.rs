@@ -1132,6 +1132,7 @@ pub mod testing {
         pub const PEER_PROTOCOL_VERSION_TEST: TestPorts = TestPorts::mpc_node_tests(30);
         pub const ONLINE_PRESIGN_DISABLED_TEST: TestPorts = TestPorts::mpc_node_tests(31);
         pub const VERIFY_FOREIGN_TX_ONLINE_PRESIGN_TEST: TestPorts = TestPorts::mpc_node_tests(32);
+        pub const TRIPLE_BATCH_SIZE_TEST: TestPorts = TestPorts::mpc_node_tests(33);
     }
 
     pub fn generate_test_p2p_configs(

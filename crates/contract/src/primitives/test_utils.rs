@@ -50,7 +50,7 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
             purpose: infer_purpose_from_protocol(protocol),
         });
     }
-    DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
+    DomainRegistry::from_raw_validated(domains, DomainId(num_domains as u64 * 2)).unwrap()
 }
 
 /// Generates a valid list of domains to add to the given registry.
@@ -59,7 +59,7 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
     for i in 0..num_domains {
         let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
         new_domains.push(DomainConfig {
-            id: DomainId(registry.next_domain_id() + i as u64),
+            id: DomainId(registry.next_domain_id().0 + i as u64),
             protocol,
             reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
             purpose: infer_purpose_from_protocol(protocol),
