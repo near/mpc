@@ -1667,9 +1667,10 @@ and serves a chain only while enough of them conform to reach the quorum:
 * A local provider matches a voted provider by the host of its URL. The name you give it in the
   config has no effect. A `{}` label in a voted host, such as `{}.quiknode.pro`, stands for your
   slug.
-* A matched provider conforms when its URL, chain routing and auth kind, with the header or query
-  name, are the ones voted. The token itself is not compared. A matched provider that differs is
-  reported in the log and does not count.
+* A matched provider conforms when its URL, chain routing, auth kind, header name and scheme or
+  query name, and the position of the token placeholder in the URL are the ones voted. The token
+  itself is not compared. A matched provider that differs is reported in the log and does not
+  count.
 * Two local providers behind one voted host count once.
 * A provider whose host is not voted is still queried and can veto a verdict, but never counts
   toward the quorum.
