@@ -319,7 +319,12 @@ impl SandboxTestSetupBuilder {
             init_contract(&contract, threshold_parameters, self.init_config).await;
         }
 
-        submit_attestations(&contract, &accounts, &participants).await;
+        // Attest from a copy: the helper sorts the accounts it gets, and the returned accounts
+        // must stay in participant order.
+        let node_ids = build_sandbox_node_ids(&participants, &accounts);
+        prepay_and_submit_tee_attestations(&contract, &mut accounts.clone(), &node_ids)
+            .await
+            .expect("every participant should attest");
 
         SandboxTestSetup {
             worker,

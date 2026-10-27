@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::primitives::test_utils::bogus_ed25519_public_key;
 use crate::{
     primitives::{
         key_state::AuthenticatedAccountId,
@@ -118,32 +120,18 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
+    /// Creates a [`TeeState`] in which every participant has a valid mock attestation, stored
+    /// under a random account public key.
+    #[cfg(test)]
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
         let mut tee_state = Self::default();
 
         for (account_id, _, participant_info) in participants.participants() {
             let tls_public_key = participant_info.tls_public_key.clone();
-            // TODO(#1087): replace account_public_key with a real account public
-            // key passed in by the caller. `Participants` does not currently
-            // carry the operator's account public key, so a mocked entry
-            // cannot record the real one and we use the TLS key as a unique
-            // per-participant placeholder. The mock keeps the
-            // participant from being kicked out of an empty `TeeState` until
-            // a real `submit_participant_info` call replaces it (keyed by
-            // TLS), but any caller-facing check that compares
-            // `signer_account_pk` against the stored key will fail until
-            // then. #1087 tracks threading real attestations through
-            // initialization so this sentinel can go away.
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
-                // Use tls_public_key as account_public_key instead of hardcoded
-                // Ed25519PublicKey::from([0u8; 32]) so that same account public
-                // key isn't associated with different tls keys.
-                // This is not a fix for above issue: #1087, which should be
-                // addressed outside this PR.
-                account_public_key: tls_public_key.clone(),
+                account_public_key: bogus_ed25519_public_key(),
             };
 
             tee_state.stored_attestations.insert(
@@ -531,8 +519,8 @@ impl TeeState {
             .collect()
     }
 
-    /// Compared by account alone: `with_mocked_participant_attestations` stores a placeholder
-    /// `account_public_key`, so full [`NodeId`] equality would reject legitimate mocked entries.
+    /// Checks the stored entry's account, not its account public key: [`Participants`] does not
+    /// record one.
     fn attestation_stored_by(
         &self,
         account_id: &AccountId,

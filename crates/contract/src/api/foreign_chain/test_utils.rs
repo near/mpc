@@ -38,7 +38,6 @@ pub(super) fn register_foreign_chains_config_for(
 ) {
     let foreign_chains_config: dtos::ForeignChainsConfig =
         chains.into_iter().collect::<BTreeSet<_>>().into();
-    // In mock setup, account_public_key == tls_public_key.
     let tls_key = contract
         .protocol_state
         .threshold_parameters()
@@ -48,9 +47,23 @@ pub(super) fn register_foreign_chains_config_for(
         .expect("account must be a participant")
         .tls_public_key
         .clone();
+    let signer_pk = attested_account_public_key(contract, &tls_key);
     let mut env = Environment::new(None, Some(account_id.clone()), None);
-    env.set_pk(near_sdk::PublicKey::from(tls_key));
+    env.set_pk(signer_pk);
     contract
         .register_foreign_chains_config(foreign_chains_config)
         .expect("register should succeed");
+}
+
+/// The account public key of the attestation stored under `tls_public_key`.
+pub(super) fn attested_account_public_key(
+    contract: &MpcContract,
+    tls_public_key: &dtos::Ed25519PublicKey,
+) -> near_sdk::PublicKey {
+    let stored = contract
+        .tee_state
+        .stored_attestations
+        .get(tls_public_key)
+        .expect("an attestation must be stored under the TLS key");
+    near_sdk::PublicKey::from(stored.node_id.account_public_key.clone())
 }

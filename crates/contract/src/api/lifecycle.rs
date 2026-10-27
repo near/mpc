@@ -44,11 +44,6 @@ impl MpcContract {
         );
         parameters.validate()?;
 
-        // TODO(#1087): Every participant must have a valid attestation, otherwise we risk
-        // participants being immediately kicked out once contract transitions into running.
-        let initial_participants = parameters.participants();
-        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
-
         let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(Self {
@@ -65,8 +60,9 @@ impl MpcContract {
             ),
             contract_update_votes: ContractUpdateVotes::default(),
             config,
-            tee_state,
-            accept_requests: true,
+            tee_state: TeeState::default(),
+            // Frozen until every initial participant has an accepted attestation.
+            accept_requests: false,
             node_migrations: NodeMigrations::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -125,9 +121,6 @@ impl MpcContract {
             return Err(DomainError::DomainsMismatch.into());
         }
 
-        let initial_participants = parameters.participants();
-        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
-
         let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(MpcContract {
@@ -144,8 +137,9 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             contract_update_votes: Default::default(),
-            tee_state,
-            accept_requests: true,
+            tee_state: TeeState::default(),
+            // Frozen until every initial participant has an accepted attestation.
+            accept_requests: false,
             node_migrations: NodeMigrations::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -202,4 +196,86 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
     env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::api::test_utils::make_public_key_for_curve;
+    use crate::primitives::key_state::{AttemptId, KeyForDomain};
+    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::thresholds::GovernanceThreshold;
+    use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold};
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+    use rand::rngs::OsRng;
+
+    fn parameters() -> GovernanceThresholdParameters {
+        GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
+            .unwrap()
+    }
+
+    #[test]
+    fn init__should_store_no_attestations_and_not_accept_requests() {
+        // Given
+        let parameters = parameters();
+
+        // When
+        let contract = MpcContract::init(
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
+        .unwrap();
+
+        // Then
+        assert!(contract.tee_state.stored_attestations.is_empty());
+        assert!(!contract.accept_requests);
+    }
+
+    #[test]
+    fn init_running__should_store_no_attestations_and_not_accept_requests() {
+        // Given
+        let parameters = parameters();
+        let domain_id = DomainId::default();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        }];
+        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
+        let keyset = Keyset::new(
+            EpochId::new(0),
+            vec![KeyForDomain {
+                domain_id,
+                key: pk.try_into().unwrap(),
+                attempt: AttemptId::new(),
+            }],
+        );
+        let contract_account_id: AccountId = "contract_account.near".parse().unwrap();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_account_id.clone())
+                .predecessor_account_id(contract_account_id)
+                .build()
+        );
+
+        // When
+        let contract = MpcContract::init_running(
+            domains,
+            DomainId(1),
+            (&keyset).into_dto_type(),
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
+        .unwrap();
+
+        // Then
+        assert!(contract.tee_state.stored_attestations.is_empty());
+        assert!(!contract.accept_requests);
+    }
 }

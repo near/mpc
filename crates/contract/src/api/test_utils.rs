@@ -13,6 +13,7 @@ use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdPara
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
+use crate::tee::tee_state::TeeState;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
     ReconstructionThreshold,
@@ -141,7 +142,7 @@ pub(crate) fn basic_setup_with_protocol(
     let parameters =
         GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
             .unwrap();
-    let contract = MpcContract::init_running(
+    let mut contract = MpcContract::init_running(
         domains,
         DomainId(1),
         (&keyset).into_dto_type(),
@@ -150,7 +151,20 @@ pub(crate) fn basic_setup_with_protocol(
         None,
     )
     .unwrap();
+    attest_all_participants(&mut contract);
     (context, contract, sk)
+}
+
+/// Gives every participant a valid mock attestation and lets the contract accept requests, as
+/// if each participant had attested after initialization.
+pub(crate) fn attest_all_participants(contract: &mut MpcContract) {
+    let participants = contract
+        .protocol_state
+        .threshold_parameters()
+        .unwrap()
+        .participants();
+    contract.tee_state = TeeState::with_mocked_participant_attestations(participants);
+    contract.accept_requests = true;
 }
 
 /// Temporarily sets the testing environment so that calls appear
@@ -176,7 +190,7 @@ pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContrac
         .clone();
 
     // Build a new simulated environment with this node as caller.
-    // Set signer_account_pk to match the mock attestation (account_public_key == tls_public_key).
+    // Sign with the account public key the attestation was stored under.
     let mut ctx_builder = VMContextBuilder::new();
     ctx_builder
         .signer_account_id(node_id.account_id.clone())
@@ -206,12 +220,13 @@ pub(crate) fn setup_tee_test_contract(
 
     let threshold = GovernanceThreshold::new(threshold_value);
     let parameters = GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-    let contract = MpcContract::init(
+    let mut contract = MpcContract::init(
         (&parameters).into_dto_type(),
         bogus_tee_verifier_account_id(),
         None,
     )
     .unwrap();
+    attest_all_participants(&mut contract);
 
     (contract, participants, first_participant_id)
 }
