@@ -22,7 +22,7 @@ pub struct InitArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct InitRunningArgs {
     pub domains: Vec<DomainConfig>,
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
     pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
     pub tee_verifier_account_id: AccountId,
@@ -57,7 +57,7 @@ pub struct VoteNewParametersArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteCancelKeygenArgs {
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
