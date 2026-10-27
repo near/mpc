@@ -84,7 +84,7 @@ impl MpcContract {
     #[handle_result]
     pub fn init_running(
         domains: Vec<dtos::DomainConfig>,
-        next_domain_id: u64,
+        next_domain_id: dtos::DomainId,
         keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
