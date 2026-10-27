@@ -1,8 +1,6 @@
 //! Plumbing shared by more than one feature
 
 use crate::errors::{InvalidParameters, RequestError, TeeError};
-use crate::node_migrations::NodeMigrations;
-use crate::primitives::participants::Participants;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{
@@ -152,25 +150,6 @@ pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
         log!("refund {amount} to {account_id}");
         Promise::new(account_id.clone()).transfer(amount).detach();
     }
-}
-
-/// TLS keys of the nodes the account uses as a participant: its current node, then the node it
-/// migrates to. An account outside the participant set uses no node, even if its migration
-/// record is left over.
-pub(crate) fn tls_keys_in_use<'a>(
-    participants: &'a Participants,
-    node_migrations: &'a NodeMigrations,
-    account_id: &'a AccountId,
-) -> impl Iterator<Item = &'a dtos::Ed25519PublicKey> {
-    let current_node = participants
-        .info(account_id)
-        .map(|info| &info.tls_public_key);
-    let migration_destination = current_node.into_iter().filter_map(move |_| {
-        node_migrations
-            .ongoing_migration(account_id)
-            .map(|migration| &migration.destination_node_info.tls_public_key)
-    });
-    current_node.into_iter().chain(migration_destination)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

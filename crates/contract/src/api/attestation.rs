@@ -1,6 +1,5 @@
 //! TEE attestation lifecycle
 
-use crate::api::common::tls_keys_in_use;
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::primitives::domain::validate_domains_against_governance;
@@ -8,7 +7,7 @@ use crate::primitives::thresholds::{
     GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{NodeId, TeeValidationResult};
+use crate::tee::tee_state::{Node, NodeId, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
@@ -357,15 +356,25 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
         let participants = running_state.parameters.participants();
+        let is_in_use = |node: &Node| {
+            let Some(participant) = participants.info(&node.owner) else {
+                return false;
+            };
+            let is_current_node = node.tls_public_key == participant.tls_public_key;
+            let is_migration_destination = self
+                .node_migrations
+                .ongoing_migration(&node.owner)
+                .is_some_and(|migration| {
+                    migration.destination_node_info.tls_public_key == node.tls_public_key
+                });
+            is_current_node || is_migration_destination
+        };
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let removed_entry_owners = self.tee_state.clean_invalid_attestations(
             tee_upgrade_deadline_duration,
             max_scan as usize,
-            |node| {
-                tls_keys_in_use(participants, &self.node_migrations, &node.owner)
-                    .any(|tls_key| *tls_key == node.tls_public_key)
-            },
+            is_in_use,
         );
         for account_id in &removed_entry_owners {
             self.return_attestation_storage_grant(account_id);

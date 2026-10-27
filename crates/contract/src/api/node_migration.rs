@@ -104,22 +104,11 @@ impl MpcContract {
         }
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
-        let destination_tls_key = &destination_node_info.destination_node_info.tls_public_key;
-        assert_destination_tls_key_changed(
-            running_state.parameters.participants(),
-            &account_id,
-            destination_tls_key,
-        )?;
-        assert_tls_key_unclaimed(
+        assert_migration_destination_allowed(
             running_state.parameters.participants(),
             &self.tee_state,
             &account_id,
-            destination_tls_key,
-        )?;
-        assert_destination_node_attested(
-            &self.tee_state,
-            &account_id,
-            destination_tls_key,
+            &destination_node_info.destination_node_info.tls_public_key,
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
         )?;
         self.node_migrations
@@ -241,26 +230,15 @@ impl MpcContract {
             }
             .into());
         }
-        let destination_tls_key = &expected_destination_node
-            .destination_node_info
-            .tls_public_key;
         // Re-checked here, not just in `start_node_migration`: the participant set and the
         // destination node may have changed since the migration was started
-        assert_destination_tls_key_changed(
-            running_state.parameters.participants(),
-            &account_id,
-            destination_tls_key,
-        )?;
-        assert_tls_key_unclaimed(
+        assert_migration_destination_allowed(
             running_state.parameters.participants(),
             &self.tee_state,
             &account_id,
-            destination_tls_key,
-        )?;
-        assert_destination_node_attested(
-            &self.tee_state,
-            &account_id,
-            destination_tls_key,
+            &expected_destination_node
+                .destination_node_info
+                .tls_public_key,
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
         )?;
 
@@ -322,6 +300,23 @@ impl MpcContract {
     }
 }
 
+fn assert_migration_destination_allowed(
+    participants: &Participants,
+    tee_state: &TeeState,
+    account_id: &AccountId,
+    destination_tls_key: &dtos::Ed25519PublicKey,
+    tee_upgrade_deadline_duration: Duration,
+) -> Result<(), Error> {
+    assert_destination_tls_key_changed(participants, account_id, destination_tls_key)?;
+    assert_tls_key_unclaimed(participants, tee_state, account_id, destination_tls_key)?;
+    assert_destination_node_attested(
+        tee_state,
+        account_id,
+        destination_tls_key,
+        tee_upgrade_deadline_duration,
+    )
+}
+
 /// Rejects a destination that carries `account_id`'s current TLS key.
 ///
 /// A migration moves a participant onto a different node: the node software only concludes one
@@ -342,8 +337,6 @@ fn assert_destination_tls_key_changed(
     Ok(())
 }
 
-/// Rejects a TLS key that an account other than the given one already holds, either as a
-/// participant or as the owner of the node stored under it.
 fn assert_tls_key_unclaimed(
     participants: &Participants,
     tee_state: &TeeState,

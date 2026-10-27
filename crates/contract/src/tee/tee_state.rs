@@ -88,8 +88,7 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// Creates a [`TeeState`] in which every participant owns a node under its TLS key, holding
-    /// a valid mocked attestation.
+    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
         let mut tee_state = Self::default();
 
@@ -179,8 +178,6 @@ impl TeeState {
         report_data.into()
     }
 
-    /// Stores the node under its TLS key unless another account owns that key (see
-    /// [`Self::assert_tls_key_claimable`]), returning whether the node is new.
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,
@@ -392,10 +389,8 @@ impl TeeState {
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
     }
 
-    /// Scans up to the given number of stored nodes and removes each one that is not in use and
-    /// whose attestation has expired or no longer passes re-verification under the current
-    /// docker-hash / launcher-hash / measurement whitelists. Returns the owner of each removed
-    /// node, so the caller can give back the attestation-storage grant it consumed.
+    /// Returns the owner of each removed node, so the caller can give back the attestation-storage
+    /// grant it consumed.
     pub(crate) fn clean_invalid_attestations(
         &mut self,
         tee_upgrade_deadline_duration: Duration,
@@ -413,21 +408,17 @@ impl TeeState {
             .map(|(tls_pk, _)| tls_pk.clone())
             .collect();
 
-        let mut removed_entry_owners = Vec::with_capacity(removable_tls_keys.len());
-        for tls_pk in removable_tls_keys {
-            if let Some(removed) = self.nodes.remove(&tls_pk) {
-                removed_entry_owners.push(removed.owner);
-            }
-        }
-        removed_entry_owners
+        removable_tls_keys
+            .into_iter()
+            .filter_map(|tls_pk| self.nodes.remove(&tls_pk))
+            .map(|node| node.owner)
+            .collect()
     }
 
     pub(crate) fn owner_of(&self, tls_public_key: &Ed25519PublicKey) -> Option<&AccountId> {
         self.nodes.get(tls_public_key).map(|node| &node.owner)
     }
 
-    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if the node stored
-    /// under the TLS key belongs to another account.
     pub(crate) fn assert_tls_key_claimable(
         &self,
         account_id: &AccountId,
@@ -447,7 +438,6 @@ impl TeeState {
         self.nodes.values().map(Node::id).collect()
     }
 
-    /// The node stored under the TLS key, if the account owns it.
     pub(crate) fn node_of(
         &self,
         account_id: &AccountId,
@@ -458,7 +448,6 @@ impl TeeState {
             .filter(|node| node.owner == *account_id)
     }
 
-    /// The account's node under the TLS key, if it signs its transactions with the given key.
     pub(crate) fn node_signed_by(
         &self,
         account_id: &AccountId,
@@ -472,8 +461,7 @@ impl TeeState {
 }
 
 /// An MPC node, stored under its TLS key. An account can own many nodes; as a participant it
-/// uses its current node and, while migrating, the node it migrates to (see
-/// [`tls_keys_in_use`](crate::api::common::tls_keys_in_use)).
+/// uses its current node and, while migrating, the node it migrates to.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

@@ -1,7 +1,6 @@
 //! Signer and voter authentication shared by the governance entrypoints.
 
 use crate::MpcContract;
-use crate::api::common::tls_keys_in_use;
 use crate::errors::{Error, InvalidParameters};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{AccountId, env};
@@ -37,9 +36,9 @@ impl MpcContract {
     /// Ensures that the caller is an attested participant
     /// in the currently active protocol phase.
     ///
-    /// The participant's current node must have signed the transaction. Its attestation is not
-    /// re-verified here: [`Self::verify_tee`] reshares out participants whose attestation no
-    /// longer passes, or stops accepting requests if too few valid participants would remain.
+    /// The caller's attestation is not re-verified here: [`Self::verify_tee`] reshares out
+    /// participants whose attestation no longer passes, or stops accepting requests if too few
+    /// valid participants would remain.
     ///
     /// Active phases:
     /// - [`Initializing`](crate::state::ProtocolContractState::Initializing) → uses proposed participants from generating_key
@@ -83,8 +82,10 @@ impl MpcContract {
         signer_id
     }
 
-    /// TLS key of the node that signed the current transaction, among the nodes the account uses
-    /// (see [`tls_keys_in_use`]).
+    /// TLS key of the node that signed the current transaction, which must be one of the
+    /// account's
+    /// 1. active participant node, or
+    /// 2. new node, while the account migrates to it.
     ///
     /// A node counts as the signer when its attestation was submitted under the transaction's
     /// signer key.
@@ -92,17 +93,24 @@ impl MpcContract {
         &self,
         signer_account_id: &AccountId,
     ) -> Option<Ed25519PublicKey> {
+        // Checked before the migration record: an account voted out between
+        // `start_node_migration` and `conclude_node_migration` keeps its record.
+        let participant_info = self
+            .protocol_state
+            .active_participants()
+            .info(signer_account_id)?;
         let signer_pk = env::signer_account_pk();
-        tls_keys_in_use(
-            self.protocol_state.active_participants(),
-            &self.node_migrations,
-            signer_account_id,
-        )
-        .find(|tls_key| {
+        let is_signers_node = |tls_key: &Ed25519PublicKey| {
             self.tee_state
                 .node_signed_by(signer_account_id, tls_key, &signer_pk)
                 .is_some()
-        })
-        .cloned()
+        };
+
+        if is_signers_node(&participant_info.tls_public_key) {
+            return Some(participant_info.tls_public_key.clone());
+        }
+        let migration = self.node_migrations.ongoing_migration(signer_account_id)?;
+        let destination_tls_key = &migration.destination_node_info.tls_public_key;
+        is_signers_node(destination_tls_key).then(|| destination_tls_key.clone())
     }
 }
