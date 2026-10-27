@@ -39,7 +39,7 @@ impl MpcContract {
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             self.tee_state
                 .whitelist_tee_proposal(mpc_node_manifest_digest, tee_upgrade_deadline_duration);
         }
@@ -76,7 +76,7 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             let outcome = self.tee_state.add_launcher_image(
                 launcher_hash,
                 tee_upgrade_deadline_duration,
@@ -113,7 +113,7 @@ impl MpcContract {
         log!("total launcher votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
+        let total_participants = threshold_parameters.participants().count();
         if votes >= total_participants {
             let removed = self.tee_state.remove_launcher_image(&launcher_hash);
             log!("launcher hash remove result: {}", removed);
@@ -145,7 +145,7 @@ impl MpcContract {
             .count_participants(threshold_parameters.participants());
         log!("total measurement votes for action: {}", votes);
 
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             let added = self.tee_state.add_measurement(measurement);
             log!("OS measurement add result: {}", added);
         }
@@ -178,7 +178,7 @@ impl MpcContract {
         log!("total measurement votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
+        let total_participants = threshold_parameters.participants().count();
         if votes >= total_participants {
             let removed = self.tee_state.remove_measurement(&measurement);
             log!("OS measurement remove result: {}", removed);

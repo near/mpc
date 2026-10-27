@@ -399,7 +399,9 @@ mod tests {
     use mpc_node_config::foreign_chains::{
         ForeignChainConfig, ForeignChainProviderConfig, ProviderCredentials, RpcProviderName,
     };
-    use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
+    use mpc_node_config::{
+        AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig, TripleBatchSize,
+    };
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::collections::BTreeMap;
@@ -477,6 +479,7 @@ mod tests {
                 desired_triples_to_buffer: 10,
                 parallel_triple_generation_stagger_time_sec: 1,
                 timeout_sec: 120,
+                batch_size: TripleBatchSize::default(),
             },
             presignature: PresignatureConfig {
                 concurrency: 1,

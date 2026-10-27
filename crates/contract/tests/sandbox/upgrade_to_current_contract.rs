@@ -636,7 +636,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         .call_mpc(contract.id())
         .init_running(
             vec![],
-            0,
+            dtos::DomainId(0),
             dtos::Keyset::new(EpochId::new(2), vec![]),
             threshold_parameters,
             bogus_tee_verifier_account_id(),

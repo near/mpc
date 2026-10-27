@@ -486,6 +486,7 @@ impl MpcNodeSetup {
                     desired_triples_to_buffer: self.triples_to_buffer,
                     timeout_sec: 120,
                     parallel_triple_generation_stagger_time_sec: 1,
+                    batch_size: mpc_node_config::TripleBatchSize::default(),
                 },
                 presignature: PresignatureConfig {
                     concurrency: 2,

@@ -27,15 +27,15 @@ use crate::deposits::{
     SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
 };
 use crate::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS, AVAILABLE_ATTESTATION_GRANTS,
-    CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS, CLEAN_TEE_STATUS, CONFIG,
-    CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS,
-    GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
-    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
-    LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
+    ADD_DOMAINS_VOTES, ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS,
+    AVAILABLE_ATTESTATION_GRANTS, CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS,
+    CLEAN_TEE_STATUS, CONFIG, CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION,
+    GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
+    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
+    INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
+    NEW_PARAMETERS_VOTES, OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
+    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
     START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
@@ -46,16 +46,16 @@ use crate::method_names::{
     VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
+    AccountId, AddDomainsVotes, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
     CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
-    LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash, MeasurementVotes,
-    MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
-    ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey, SignRequestArgs,
-    SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash, Update,
-    UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    ForeignChainsConfigs, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
+    InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes,
+    LauncherImageHash, MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl,
+    ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
+    Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -138,7 +138,7 @@ impl<C: CallContract> MpcContractHandle<C> {
     pub async fn init_running(
         &self,
         domains: Vec<DomainConfig>,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
         keyset: Keyset,
         parameters: GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
@@ -370,7 +370,7 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn vote_cancel_keygen(
         &self,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteCancelKeygenArgs::new(next_domain_id))?;
         self.call(FunctionCallArgs::no_deposit(
@@ -633,6 +633,14 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(LAUNCHER_HASH_VOTES))
     }
 
+    pub fn new_parameters_votes(&self) -> ViewCall<C, GovernanceThresholdParametersVotes> {
+        self.view(ViewArgs::no_args(NEW_PARAMETERS_VOTES))
+    }
+
+    pub fn add_domains_votes(&self) -> ViewCall<C, AddDomainsVotes> {
+        self.view(ViewArgs::no_args(ADD_DOMAINS_VOTES))
+    }
+
     pub fn os_measurement_votes(&self) -> ViewCall<C, MeasurementVotes> {
         self.view(ViewArgs::no_args(OS_MEASUREMENT_VOTES))
     }
@@ -886,7 +894,7 @@ mod tests {
         handle
             .init_running(
                 Vec::new(),
-                0,
+                DomainId(0),
                 Keyset::new(EpochId::new(7), Vec::new()),
                 governance_threshold_parameters.clone(),
                 "tee-verifier.near".parse().unwrap(),
@@ -1029,7 +1037,7 @@ mod tests {
             .unwrap();
         handle.start_reshare_instance(key_event_id).await.unwrap();
         handle.vote_reshared(key_event_id).await.unwrap();
-        handle.vote_cancel_keygen(7).await.unwrap();
+        handle.vote_cancel_keygen(DomainId(7)).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
         handle
             .vote_add_launcher_hash(LauncherImageHash::from([7u8; 32]))
