@@ -99,7 +99,6 @@ mod tests {
     use crate::db::DBCol;
     use crate::primitives::ParticipantId;
     use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
-    use prometheus::core::Collector;
     use serial_test::serial;
     use std::sync::{Arc, Mutex};
 
@@ -113,9 +112,8 @@ mod tests {
 
     fn series_count(gauges: &OwnedAssetGauges) -> usize {
         [gauges.available, gauges.online, gauges.offline]
-            .iter()
-            .flat_map(|gauge| gauge.collect())
-            .map(|family| family.get_metric().len())
+            .into_iter()
+            .map(|gauge| metrics::series_count(&**gauge))
             .sum()
     }
 

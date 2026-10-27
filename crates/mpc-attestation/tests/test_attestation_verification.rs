@@ -6,7 +6,7 @@ use attestation::attestation::VerificationError;
 use attestation::{ExpectedMeasurements, Measurements};
 use mpc_attestation::attestation::{
     AcceptedAttestation, Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation,
-    VerifiedAttestation, default_measurements,
+    VerifiedAttestation, dev_measurements,
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use std::assert_matches;
@@ -72,7 +72,7 @@ fn validated_dstack_attestation_can_be_reverified() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification failed")
         .attestation;
@@ -82,7 +82,7 @@ fn validated_dstack_attestation_can_be_reverified() {
         timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
-        default_measurements(),
+        &[dev_measurements()],
     );
 
     // then
@@ -106,7 +106,7 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification failed")
         .attestation;
@@ -116,7 +116,7 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
         timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS + 1,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
-        default_measurements(),
+        &[dev_measurements()],
     );
 
     // then
@@ -160,7 +160,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -172,7 +172,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
         creation_time,
         &new_allowed_mpc_docker_image_hashes,
         &allowed_launcher_hashes,
-        default_measurements(),
+        &[dev_measurements()],
     );
 
     assert_matches!(
@@ -199,7 +199,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -243,7 +243,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -277,7 +277,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -291,7 +291,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
         },
         key_provider_event_digest: [0xEE; 48],
     };
-    let mut superset: Vec<ExpectedMeasurements> = default_measurements().to_vec();
+    let mut superset: Vec<ExpectedMeasurements> = vec![dev_measurements()];
     superset.push(extra_measurement);
 
     // when

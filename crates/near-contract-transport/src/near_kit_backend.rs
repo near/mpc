@@ -155,6 +155,7 @@ mod tests {
     use std::time::Duration;
 
     use near_kit::Near;
+    use near_kit::rpc::RetryConfig;
     use near_kit::signer::{InMemorySigner, SecretKey};
     use near_kit::transaction::Final;
     use rstest::rstest;
@@ -172,6 +173,8 @@ mod tests {
         Call,
     }
 
+    /// near-kit retries a dropped connection with a backoff longer than [`READ_TIMEOUT`],
+    /// so retries are off to surface the transport error itself.
     async fn must_make_caller_into_hung_up_keyed_endpoint() -> NearKitCaller<Final> {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -188,6 +191,7 @@ mod tests {
             "mainnet",
         )
         .signer(signer)
+        .retry_config(RetryConfig::none())
         .build();
         NearKitCaller::new(
             near,
