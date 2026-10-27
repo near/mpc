@@ -87,10 +87,8 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
-    /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
-    /// Attestations are stored for any valid participant that has submitted one, not
-    /// just for the currently active participants. Callers must not assume this map is
-    /// small; use the key-indexed accessors rather than scanning the whole collection.
+    /// Callers must not assume this map is small; use the key-indexed accessors rather than
+    /// scanning the whole collection.
     pub(crate) stored_attestations: IterableMap<Ed25519PublicKey, NodeAttestation>,
     pub(crate) allowed_measurements: AllowedMeasurements,
     pub(crate) measurement_votes: Votes<AuthenticatedAccountId>,

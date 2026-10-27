@@ -1,10 +1,11 @@
 //! TEE attestation lifecycle
 
+use crate::api::common::tls_key_claimant_other_than;
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::primitives::domain::validate_domains_against_governance;
 use crate::primitives::thresholds::{
-    GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{
@@ -98,6 +99,10 @@ impl MpcContract {
     /// A node submits with no deposit via its function-call access key. Storing a *new* entry
     /// consumes one attestation-storage grant, prepaid for the node's account by whoever
     /// onboards it; a re-attestation under a key the account already owns consumes none.
+    ///
+    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account
+    /// holds the TLS key: as a current or proposed participant, as a migration destination, or
+    /// through an attestation stored under it.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -134,10 +139,7 @@ impl MpcContract {
         };
 
         // Before any verification: an ungranted or unauthorised submission stops here.
-        self.assert_attestation_storage_grant_available(
-            &node_id.account_id,
-            &node_id.tls_public_key,
-        )?;
+        self.assert_attestation_submission_allowed(&node_id.account_id, &node_id.tls_public_key)?;
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
@@ -165,30 +167,44 @@ impl MpcContract {
         NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
     }
 
-    fn attestation_submission_needs_grant(
-        &self,
-        account_id: &AccountId,
-        tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> Result<bool, Error> {
-        match self.tee_state.attestation_owner(tls_public_key) {
-            Some(owner) if &owner == account_id => Ok(false),
-            Some(_) => Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into()),
-            None => Ok(true),
-        }
-    }
-
-    fn assert_attestation_storage_grant_available(
+    fn assert_attestation_submission_allowed(
         &self,
         account_id: &AccountId,
         tls_public_key: &dtos::Ed25519PublicKey,
     ) -> Result<(), Error> {
-        if self.attestation_submission_needs_grant(account_id, tls_public_key)?
-            && self.grants_for(account_id) == 0
-        {
+        self.assert_tls_key_claimable(account_id, tls_public_key)?;
+        let is_reattestation =
+            self.tee_state.attestation_owner(tls_public_key).as_ref() == Some(account_id);
+        if !is_reattestation && self.grants_for(account_id) == 0 {
             return Err(InvalidParameters::NoAttestationStorageGrant {
                 account_id: account_id.to_string(),
             }
             .into());
+        }
+        Ok(())
+    }
+
+    fn assert_tls_key_claimable(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> Result<(), Error> {
+        let existing_and_prospective_participants = [
+            self.protocol_state
+                .threshold_parameters_or_panic()
+                .participants(),
+            self.protocol_state.active_participants(),
+        ];
+        if tls_key_claimant_other_than(
+            account_id,
+            &existing_and_prospective_participants,
+            &self.node_migrations,
+            &self.tee_state,
+            tls_public_key,
+        )
+        .is_some()
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
         }
         Ok(())
     }
@@ -308,7 +324,7 @@ impl MpcContract {
                 // wait for manual intervention.
                 if let Err(err) = validate_domains_against_governance(
                     running_state.domains.domains(),
-                    u64::try_from(remaining).expect("participant count fits in u64"),
+                    dtos::ParticipantCount::from_len(remaining),
                     current_params.threshold(),
                 ) {
                     log!(
@@ -328,12 +344,9 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = usize::try_from(current_params.threshold().value())
-                    .expect("threshold value fits in usize");
-
                 let threshold_parameters = GovernanceThresholdParameters::new(
                     participants_with_valid_attestation,
-                    GovernanceThreshold::new(new_threshold as u64),
+                    current_params.threshold(),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
@@ -429,8 +442,9 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. Re-checks that a grant is available before
-    /// storing, since this runs a receipt later than the submission that reserved it.
+    /// [`VerificationResult::Verified`] response. Re-checks the submission before storing, since
+    /// this runs a receipt later than the submission: meanwhile another account may have claimed
+    /// the TLS key, or the grant may have been spent.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
@@ -440,10 +454,7 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        self.assert_attestation_storage_grant_available(
-            &account_id,
-            &context.node_id.tls_public_key,
-        )?;
+        self.assert_attestation_submission_allowed(&account_id, &context.node_id.tls_public_key)?;
 
         let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
@@ -477,17 +488,20 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, make_public_key_for_curve, setup_tee_test_contract, submit_valid_attestations,
+        NUM_DOMAINS, basic_setup, make_public_key_for_curve, setup_tee_test_contract,
+        submit_valid_attestations,
     };
     use crate::config::Config;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        create_node_id, gen_participants,
+        create_node_id, gen_account_id, gen_participants,
     };
+    use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
+    use crate::state::test_utils::gen_running_state;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{NodeAttestation, TeeState};
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
@@ -537,6 +551,138 @@ mod tests {
         let _ = contract
             .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
             .expect("Expected panic if predecessor != signer");
+    }
+
+    /// How the contract ties a TLS key to an account without a stored attestation
+    enum TlsKeyAssignment {
+        /// A current participant's key
+        Participant,
+        /// The key of a participant the ongoing resharing drops
+        DroppedParticipant,
+        /// The key of a newcomer the ongoing resharing adds
+        ProposedParticipant,
+        /// The key a participant is migrating to
+        MigrationDestination,
+    }
+
+    fn contract_assigning_tls_key(
+        assignment: TlsKeyAssignment,
+    ) -> (MpcContract, AccountId, Ed25519PublicKey) {
+        let mut running = gen_running_state(NUM_DOMAINS);
+        let current = running.parameters.participants();
+        let (member, _, member_node) = current.participants()[0].clone();
+        let proposed = {
+            let mut proposed = current.clone();
+            proposed.remove(&member);
+            proposed.add_random_participants_till_n(current.len());
+            proposed
+        };
+        let (newcomer, _, new_node) = proposed.participants().last().unwrap().clone();
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(proposed, running.parameters.threshold()).unwrap(),
+            BTreeMap::new(),
+        );
+        let resharing_in_progress = ProtocolContractState::Resharing(
+            running
+                .transition_to_resharing_no_checks(&proposal)
+                .unwrap(),
+        );
+        let running = ProtocolContractState::Running(running);
+
+        let (state, owner, node) = match assignment {
+            TlsKeyAssignment::Participant => (running, member, member_node),
+            TlsKeyAssignment::DroppedParticipant => (resharing_in_progress, member, member_node),
+            TlsKeyAssignment::ProposedParticipant => (resharing_in_progress, newcomer, new_node),
+            TlsKeyAssignment::MigrationDestination => {
+                let mut contract = MpcContract::new_from_protocol_state(running);
+                let destination = dtos::DestinationNodeInfo {
+                    signer_account_pk: bogus_ed25519_public_key(),
+                    destination_node_info: new_node.clone().into(),
+                };
+                contract
+                    .node_migrations
+                    .set_destination_node_info(member.clone(), destination);
+                return (contract, member, new_node.tls_public_key);
+            }
+        };
+        let contract = MpcContract::new_from_protocol_state(state);
+        (contract, owner, node.tls_public_key)
+    }
+
+    fn prepay_and_submit_mock_attestation(
+        contract: &mut MpcContract,
+        account_id: &AccountId,
+        tls_public_key: Ed25519PublicKey,
+    ) -> Result<(), Error> {
+        contract
+            .available_attestation_grants
+            .insert(account_id.clone(), 1);
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
+        contract
+            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), tls_public_key)
+            .map(|_| ())
+    }
+
+    #[rstest]
+    fn submit_participant_info__should_accept_an_unattested_assigned_tls_key_only_from_its_owner(
+        #[values(
+            TlsKeyAssignment::Participant,
+            TlsKeyAssignment::DroppedParticipant,
+            TlsKeyAssignment::ProposedParticipant,
+            TlsKeyAssignment::MigrationDestination
+        )]
+        assignment: TlsKeyAssignment,
+    ) {
+        // Given
+        let (mut contract, owner, tls_public_key) = contract_assigning_tls_key(assignment);
+        let outsider = gen_account_id();
+
+        // When
+        let outsider_result =
+            prepay_and_submit_mock_attestation(&mut contract, &outsider, tls_public_key.clone());
+        let owner_result =
+            prepay_and_submit_mock_attestation(&mut contract, &owner, tls_public_key);
+
+        // Then
+        assert_matches!(
+            outsider_result,
+            Err(Error::AttestationSubmission(
+                AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+            ))
+        );
+        assert_matches!(owner_result, Ok(()));
+    }
+
+    #[test]
+    fn submit_participant_info__should_reject_a_squatter_refreshing_a_participants_tls_key() {
+        // Given
+        let (mut contract, _, tls_public_key) =
+            contract_assigning_tls_key(TlsKeyAssignment::Participant);
+        let squatter = gen_account_id();
+        contract
+            .tee_state
+            .verify_and_store_mock(
+                create_node_id(&squatter, &tls_public_key),
+                MpcMockAttestation::Valid,
+                Duration::MAX,
+            )
+            .unwrap();
+
+        // When
+        let result = prepay_and_submit_mock_attestation(&mut contract, &squatter, tls_public_key);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::AttestationSubmission(
+                AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+            ))
+        );
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
@@ -786,7 +932,7 @@ mod tests {
 
         let mut contract = MpcContract::init_running(
             domains.clone(),
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -898,7 +1044,7 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let next_domain_id = domain.id.0 + 1;
+        let next_domain_id = DomainId(domain.id.0 + 1);
         let mut contract = MpcContract::init_running(
             vec![domain],
             next_domain_id,
@@ -1082,7 +1228,7 @@ mod tests {
             mpc_image_hash: MAX_HASH.into(),
             launcher_compose_hash: MAX_HASH.into(),
             expiry_timestamp_seconds: u64::MAX,
-            measurements: default_measurements()[0],
+            measurements: default_measurements(),
         })
     }
 
@@ -1091,7 +1237,7 @@ mod tests {
             mpc_docker_image_hash: Some(MAX_HASH.into()),
             launcher_docker_compose_hash: Some(MAX_HASH.into()),
             expiry_timestamp_seconds: Some(u64::MAX),
-            expected_measurements: Some(default_measurements()[0]),
+            expected_measurements: Some(default_measurements()),
         })
     }
 

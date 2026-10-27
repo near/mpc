@@ -1,6 +1,7 @@
-use foreign_chain_inspector::FanOut;
+use foreign_chain_inspector::{FanOut, RpcQuorum};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -140,4 +141,14 @@ pub fn fan_out_of<Inspector>(inspectors: Vec<Inspector>) -> FanOut<Inspector> {
         .try_into()
         .expect("test must provide at least one inspector");
     FanOut::new(inspectors)
+}
+
+/// Quorum 1 over every provider of `fan_out`, so any single verdict is accepted.
+pub fn any_single_provider<Inspector, Recorder>(
+    fan_out: &FanOut<Inspector, Recorder>,
+) -> RpcQuorum {
+    RpcQuorum {
+        required: NonZeroUsize::MIN,
+        whitelisted: fan_out.provider_ids().cloned().collect(),
+    }
 }
