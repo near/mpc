@@ -6967,9 +6967,9 @@ dependencies = [
 
 [[package]]
 name = "near-kit"
-version = "0.18.3"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa30d0f54e284e51cbdb58b4c59dc4e478c46ff8475773f0eb372ab74614ab36"
+checksum = "6ac835efbcc11c23fdee426155995a7316c4f893ec05f6c0c5d355182795ac92"
 dependencies = [
  "base64 0.23.1",
  "borsh",
@@ -6978,6 +6978,7 @@ dependencies = [
  "getrandom 0.4.3",
  "gloo-timers 0.4.0",
  "hex",
+ "hyper",
  "js-sys",
  "k256 0.14.0",
  "ml-dsa",
