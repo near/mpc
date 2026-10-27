@@ -592,6 +592,22 @@ async fn run_receive_messages_loop(
     }
 }
 
+async fn emit_metrics_periodically(network_client: Arc<MeshNetworkClient>) {
+    let _clear_on_drop = ClearLiveConnectionsOnDrop;
+    loop {
+        network_client.emit_metrics();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
+struct ClearLiveConnectionsOnDrop;
+
+impl Drop for ClearLiveConnectionsOnDrop {
+    fn drop(&mut self) {
+        networking_metrics::NETWORK_LIVE_CONNECTIONS.reset();
+    }
+}
+
 /// The main entry point for the networking layer. Spawns the message receiving loop and the
 /// network's periodic tasks, and returns a client that can be used to create new MPC tasks, a
 /// receiver for triggering new MPC tasks that the node should passively participate in, and the
@@ -622,15 +638,10 @@ pub fn run_network_client(
             indexer_heights,
         ),
     );
-    let metrics_emitter = tracking::spawn("periodically emits metrics", {
-        let network_client = network_client.clone();
-        async move {
-            loop {
-                network_client.emit_metrics();
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        }
-    });
+    let metrics_emitter = tracking::spawn(
+        "periodically emits metrics",
+        emit_metrics_periodically(network_client.clone()),
+    );
     let connected_peers_broadcaster = tracking::spawn(
         "periodically broadcasts connected peers and indexer heights",
         {
@@ -1346,8 +1357,9 @@ mod tests {
     use super::{
         InvalidChannelId, InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
         MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
-        broadcast_connected_peers_info, run_receive_message,
+        broadcast_connected_peers_info, emit_metrics_periodically, run_receive_message,
     };
+    use crate::metrics::networking_metrics;
     use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::network::testing::{
         TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
@@ -1362,7 +1374,9 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
+    use prometheus::core::Collector;
     use rstest::rstest;
+    use serial_test::serial;
     use std::collections::{BTreeMap, HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
@@ -1390,6 +1404,37 @@ mod tests {
 
         // Then
         assert_eq!(supporting, vec![me, peers[0]]);
+    }
+
+    fn live_connections_series_count() -> usize {
+        networking_metrics::NETWORK_LIVE_CONNECTIONS
+            .collect()
+            .iter()
+            .map(|family| family.get_metric().len())
+            .sum()
+    }
+
+    #[tokio::test]
+    #[serial(network_live_connections)]
+    async fn emit_metrics_periodically__should_remove_every_series_when_aborted() {
+        // Given
+        let participants = [0, 1, 2].map(ParticipantId::from_raw).to_vec();
+        let client = new_test_client(participants.clone(), participants[0]);
+        let emitter = tokio::spawn(emit_metrics_periodically(client));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while live_connections_series_count() < participants.len() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        // When
+        emitter.abort();
+        let _ = emitter.await;
+
+        // Then
+        assert_eq!(live_connections_series_count(), 0);
     }
 
     fn connected_peers_infos_sent(
