@@ -368,8 +368,6 @@ fn assert_tls_key_unclaimed(
     .into())
 }
 
-/// Rejects a destination TLS key unless the account's node stored under it holds a valid
-/// attestation.
 fn assert_destination_node_attested(
     tee_state: &TeeState,
     account_id: &AccountId,

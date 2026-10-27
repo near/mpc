@@ -260,7 +260,6 @@ pub(crate) fn submit_valid_attestations(
     }
 }
 
-/// Stores a valid attestation for a new node of the account under fresh keys.
 pub(crate) fn must_attest_new_node(contract: &mut MpcContract, account_id: &AccountId) -> NodeId {
     let node_id = node_id_for(account_id);
     contract

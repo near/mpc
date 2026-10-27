@@ -422,7 +422,6 @@ impl TeeState {
         removed_entry_owners
     }
 
-    /// The account that owns the node stored under the TLS key, if any.
     pub(crate) fn owner_of(&self, tls_public_key: &Ed25519PublicKey) -> Option<&AccountId> {
         self.nodes.get(tls_public_key).map(|node| &node.owner)
     }
@@ -817,9 +816,7 @@ mod tests {
         let in_use = node_id_for(&"alice.near".parse().unwrap());
         let unused = node_id_for(&"bob.near".parse().unwrap());
         for node_id in [&in_use, &unused] {
-            tee_state
-                .verify_and_store_mock(node_id.clone(), MockAttestation::Valid, Duration::ZERO)
-                .unwrap();
+            submit_mock(&mut tee_state, node_id, MockAttestation::Valid).unwrap();
         }
         set_block_secs(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1);
 
@@ -834,7 +831,7 @@ mod tests {
     }
 
     #[test]
-    fn updating_existing_participant_returns_existing_participant() {
+    fn verify_and_store_mock__should_report_only_the_first_submission_as_a_new_node() {
         // given
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10000);
         let mut tee_state = TeeState::default();
@@ -954,11 +951,9 @@ mod tests {
         assert!(tee_state.nodes.contains_key(&node_2.tls_public_key));
     }
 
-    const EXPIRY_SECONDS: u64 = 1_000;
-
     #[rstest]
-    #[case::before_expiry(EXPIRY_SECONDS - 1, true)]
-    #[case::after_expiry(EXPIRY_SECONDS + 1, false)]
+    #[case::before_expiry(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS - 1, true)]
+    #[case::after_expiry(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1, false)]
     fn has_valid_attestation__should_hold_until_the_attestation_expires(
         #[case] now_seconds: u64,
         #[case] expected: bool,
@@ -967,15 +962,7 @@ mod tests {
         set_block_secs(0);
         let mut tee_state = TeeState::default();
         let node_id = node_id_for(&"alice.near".parse().unwrap());
-        let attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
-        tee_state
-            .verify_and_store_mock(node_id.clone(), attestation, Duration::ZERO)
-            .unwrap();
+        submit_mock(&mut tee_state, &node_id, MockAttestation::Valid).unwrap();
         let node = tee_state.nodes.get(&node_id.tls_public_key).unwrap();
 
         // When

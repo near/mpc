@@ -559,13 +559,17 @@ mod tests {
         set_block_secs(DEFAULT_EXPIRATION_DURATION_SECONDS + 1);
     }
 
+    fn participant_setup() -> (MpcContract, AccountId, Ed25519PublicKey) {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let (participant, _, participant_info) =
+            contract.protocol_state.active_participants().participants()[0].clone();
+        (contract, participant, participant_info.tls_public_key)
+    }
+
     #[test]
     fn submit_participant_info__should_accept_an_expired_participant_node_only_from_its_owner() {
         // Given
-        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let (participant, _, participant_info) =
-            contract.protocol_state.active_participants().participants()[0].clone();
-        let tls_public_key = participant_info.tls_public_key;
+        let (mut contract, participant, tls_public_key) = participant_setup();
         must_store_expired_node(&mut contract, create_node_id(&participant, &tls_public_key));
         contract.clean_invalid_attestations(u32::MAX).unwrap();
 
@@ -588,7 +592,6 @@ mod tests {
         assert_matches!(owner_result, Ok(()));
     }
 
-    /// How the node whose attestation expires relates to a participant
     enum ExpiringNode {
         CurrentNode,
         MigrationDestination,
@@ -611,10 +614,7 @@ mod tests {
         #[case] is_kept: bool,
     ) {
         // Given
-        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let (participant, _, participant_info) =
-            contract.protocol_state.active_participants().participants()[0].clone();
-        let tls_public_key = participant_info.tls_public_key;
+        let (mut contract, participant, tls_public_key) = participant_setup();
         let (node_id, migrating_account) = match expiring_node {
             ExpiringNode::CurrentNode => (create_node_id(&participant, &tls_public_key), None),
             ExpiringNode::MigrationDestination => (node_id_for(&participant), Some(participant)),
@@ -639,13 +639,7 @@ mod tests {
         contract.clean_invalid_attestations(u32::MAX).unwrap();
 
         // Then
-        assert_eq!(
-            contract
-                .tee_state
-                .nodes
-                .contains_key(&node_id.tls_public_key),
-            is_kept
-        );
+        assert_eq!(contract.get_tee_accounts().contains(&node_id), is_kept);
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
@@ -800,13 +794,7 @@ mod tests {
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
-        assert_eq!(contract.tee_state.nodes.len(), 1);
-        let stored = contract
-            .tee_state
-            .nodes
-            .get(&node_id.tls_public_key)
-            .expect("attestation must be stored");
-        assert_eq!(stored.id(), node_id);
+        assert_eq!(contract.get_tee_accounts(), vec![node_id]);
     }
 
     #[test]
@@ -860,7 +848,7 @@ mod tests {
     #[rstest]
     #[case::node_under_another_tls_key(|node| NodeId { tls_public_key: bogus_ed25519_public_key(), ..node })]
     #[case::node_of_another_account(|node| NodeId { account_id: gen_account_id(), ..node })]
-    #[case::node_attested_under_another_key(|node| NodeId { account_public_key: bogus_ed25519_public_key(), ..node })]
+    #[case::node_with_another_signer_key(|node| NodeId { account_public_key: bogus_ed25519_public_key(), ..node })]
     #[should_panic(expected = "Caller must be an attested participant")]
     fn assert_caller_is_attested_participant_and_protocol_active__should_reject_a_participant_not_signing_as_its_node(
         #[case] stored_node: fn(NodeId) -> NodeId,
