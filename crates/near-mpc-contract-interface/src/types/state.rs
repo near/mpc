@@ -118,7 +118,7 @@ pub struct DomainConfig {
 )]
 pub struct DomainRegistry {
     pub domains: Vec<DomainConfig>,
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
 }
 
 // =============================================================================

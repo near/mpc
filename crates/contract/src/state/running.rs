@@ -427,7 +427,7 @@ pub mod running_tests {
         let next_id = state.domains.next_domain_id();
 
         let invalid_domain = vec![DomainConfig {
-            id: DomainId(next_id),
+            id: next_id,
             protocol,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose,
@@ -447,7 +447,7 @@ pub mod running_tests {
     fn proposal_with_threshold(state: &RunningContractState, threshold: u64) -> Vec<DomainConfig> {
         let next_id = state.domains.next_domain_id();
         vec![DomainConfig {
-            id: DomainId(next_id),
+            id: next_id,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(threshold),
             purpose: DomainPurpose::Sign,
@@ -502,7 +502,7 @@ pub mod running_tests {
         let governance = state.parameters.threshold().value();
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
-            id: DomainId(next_id),
+            id: next_id,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(governance),
             purpose: DomainPurpose::Sign,
@@ -530,7 +530,7 @@ pub mod running_tests {
         let governance = state.parameters.threshold().value();
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
-            id: DomainId(next_id),
+            id: next_id,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(governance + 1),
             purpose: DomainPurpose::Sign,
@@ -561,7 +561,7 @@ pub mod running_tests {
         let n = state.parameters.participants().len() as u64;
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
-            id: DomainId(next_id),
+            id: next_id,
             protocol: Protocol::RobustEcdsa,
             reconstruction_threshold: ReconstructionThreshold::new(n),
             purpose: DomainPurpose::Sign,
@@ -806,7 +806,7 @@ pub mod running_tests {
         reconstruction_threshold: ReconstructionThreshold,
     ) -> Vec<DomainConfig> {
         vec![DomainConfig {
-            id: DomainId(state.domains.next_domain_id()),
+            id: state.domains.next_domain_id(),
             protocol,
             reconstruction_threshold,
             purpose,
@@ -868,13 +868,13 @@ pub mod running_tests {
         let next_id = state.domains.next_domain_id();
         let proposal = vec![
             DomainConfig {
-                id: DomainId(next_id),
+                id: next_id,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
-                id: DomainId(next_id + 1),
+                id: DomainId(next_id.0 + 1),
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(3),
                 purpose: DomainPurpose::Sign,

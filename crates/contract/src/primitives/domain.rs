@@ -107,7 +107,7 @@ fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<Reconstructi
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainRegistry {
     domains: Vec<DomainConfig>,
-    next_domain_id: u64,
+    next_domain_id: DomainId,
 }
 
 impl DomainRegistry {
@@ -127,10 +127,15 @@ impl DomainRegistry {
     /// helper does no checks.
     fn add_domain(&mut self, domain: DomainConfig) -> DomainId {
         let assigned = DomainConfig {
-            id: DomainId(self.next_domain_id),
+            id: self.next_domain_id,
             ..domain
         };
-        self.next_domain_id += 1;
+        self.next_domain_id = DomainId(
+            self.next_domain_id
+                .0
+                .checked_add(1)
+                .expect("domain id counter overflow"),
+        );
         let id = assigned.id;
         self.domains.push(assigned);
         id
@@ -177,7 +182,7 @@ impl DomainRegistry {
     /// init_running and testing only.
     pub fn from_raw_validated(
         domains: Vec<DomainConfig>,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> Result<Self, Error> {
         let registry = Self {
             domains,
@@ -191,7 +196,7 @@ impl DomainRegistry {
                 return Err(DomainError::InvalidDomains.into());
             }
         }
-        if let Some(largest_domain_id) = registry.domains.last().map(|domain| domain.id.0)
+        if let Some(largest_domain_id) = registry.domains.last().map(|domain| domain.id)
             && largest_domain_id >= registry.next_domain_id
         {
             return Err(DomainError::InvalidDomains.into());
@@ -199,7 +204,7 @@ impl DomainRegistry {
         Ok(registry)
     }
 
-    pub fn next_domain_id(&self) -> u64 {
+    pub fn next_domain_id(&self) -> DomainId {
         self.next_domain_id
     }
 
@@ -397,18 +402,19 @@ pub mod tests {
                 purpose: DomainPurpose::Sign,
             },
         ];
-        let mut registry = DomainRegistry::from_raw_validated(expected.clone(), 6).unwrap();
+        let mut registry =
+            DomainRegistry::from_raw_validated(expected.clone(), DomainId(6)).unwrap();
         assert_eq!(registry.domains, expected);
-        assert_eq!(registry.next_domain_id, 6);
+        assert_eq!(registry.next_domain_id, DomainId(6));
         registry.retain_domains(3);
         assert_eq!(registry.domains, expected[0..3]);
-        assert_eq!(registry.next_domain_id, 6);
+        assert_eq!(registry.next_domain_id, DomainId(6));
         registry.retain_domains(2);
         assert_eq!(registry.domains, expected[0..2]);
-        assert_eq!(registry.next_domain_id, 6);
+        assert_eq!(registry.next_domain_id, DomainId(6));
         registry.retain_domains(0);
         assert_eq!(registry.domains, Vec::new());
-        assert_eq!(registry.next_domain_id, 6);
+        assert_eq!(registry.next_domain_id, DomainId(6));
     }
 
     #[rstest]
@@ -576,7 +582,7 @@ pub mod tests {
     }
 
     fn registry_of(domains: Vec<DomainConfig>) -> DomainRegistry {
-        let next_domain_id = domains.iter().map(|d| d.id.0).max().map_or(0, |m| m + 1);
+        let next_domain_id = DomainId(domains.iter().map(|d| d.id.0).max().map_or(0, |m| m + 1));
         DomainRegistry::from_raw_validated(domains, next_domain_id).unwrap()
     }
 
