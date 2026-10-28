@@ -1,6 +1,8 @@
 use super::Keyshare;
 use crate::db::{decrypt, encrypt};
+use crate::durable_fs::sync_parent_dir;
 use aes_gcm::{Aes128Gcm, KeyInit};
+use anyhow::Context;
 use mpc_primitives::{EpochId, KeyEventId};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
@@ -19,6 +21,7 @@ impl TemporaryKeyStorage {
     pub fn new(home_dir: PathBuf, local_encryption_key: [u8; 16]) -> anyhow::Result<Self> {
         let storage_dir = home_dir.join("temporary_keys");
         std::fs::create_dir_all(&storage_dir)?;
+        sync_parent_dir(&storage_dir)?;
         Ok(Self {
             storage_dir,
             local_encryption_key,
@@ -52,8 +55,10 @@ impl TemporaryKeyStorage {
         &self,
         key_id: KeyEventId,
     ) -> anyhow::Result<PendingKeyshareStorageHandle> {
-        let file = tokio::fs::File::create_new(self.keyshare_started_path(key_id)).await?;
+        let started_path = self.keyshare_started_path(key_id);
+        let file = tokio::fs::File::create_new(&started_path).await?;
         file.sync_all().await?;
+        sync_parent_dir_async(started_path).await?;
         let path = self.keyshare_path(key_id);
         Ok(PendingKeyshareStorageHandle {
             path,
@@ -141,8 +146,16 @@ impl PendingKeyshareStorageHandle {
         let mut file = tokio::fs::File::create_new(&self.path).await?;
         file.write_all(&encrypted).await?;
         file.sync_all().await?;
+        sync_parent_dir_async(self.path).await?;
         Ok(())
     }
+}
+
+async fn sync_parent_dir_async(path: PathBuf) -> anyhow::Result<()> {
+    tokio::task::spawn_blocking(move || sync_parent_dir(&path))
+        .await
+        .context("directory sync task failed")??;
+    Ok(())
 }
 
 #[cfg(test)]
