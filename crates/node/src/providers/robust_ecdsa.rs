@@ -218,7 +218,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 pub(super) fn compute_thresholds(
     reconstruction_threshold: ReconstructionThreshold,
 ) -> anyhow::Result<(usize, MaxMalicious)> {
-    let t: usize = reconstruction_threshold.inner().try_into()?;
+    let t: usize = reconstruction_threshold.value().try_into()?;
     anyhow::ensure!(
         t >= 2,
         "robust-ECDSA requires a reconstruction threshold of at least 2, got {t}"
