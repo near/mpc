@@ -90,7 +90,7 @@ backup_encryption_key_hex = "REPLACE_ME_WITH_32_BYTE_HEX_KEY_REPLACE_ME_WITH_32_
 
 [mpc_node_config.node]
 my_near_account_id = "your-mpc-account.testnet"
-# TODO(#4911): ignored by the node; still required by 3.17.x and older.
+# Ignored by this version; still required by 3.17.x and older.
 near_responder_account_id = "your-mpc-account.testnet"
 number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
