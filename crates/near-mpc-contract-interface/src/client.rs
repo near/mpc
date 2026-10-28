@@ -34,7 +34,7 @@ use crate::method_names::{
     GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
     GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
     INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    NEW_PARAMETERS_VOTES, OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
+    OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
     REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
@@ -633,8 +633,8 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(LAUNCHER_HASH_VOTES))
     }
 
-    pub fn new_parameters_votes(&self) -> ViewCall<C, GovernanceThresholdParametersVotes> {
-        self.view(ViewArgs::no_args(NEW_PARAMETERS_VOTES))
+    pub fn parameters_votes(&self) -> ViewCall<C, GovernanceThresholdParametersVotes> {
+        self.view(ViewArgs::no_args(PARAMETERS_VOTES))
     }
 
     pub fn add_domains_votes(&self) -> ViewCall<C, AddDomainsVotes> {
@@ -1147,6 +1147,8 @@ mod tests {
         let _ = handle.allowed_os_measurements().await;
         let _ = handle.mpc_node_manifest_digest_votes().await;
         let _ = handle.launcher_hash_votes().await;
+        let _ = handle.parameters_votes().await;
+        let _ = handle.add_domains_votes().await;
         let _ = handle.os_measurement_votes().await;
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;
