@@ -636,8 +636,8 @@ expression: abi
         }
       },
       {
-        "name": "new_parameters_votes",
-        "doc": " Returns the pending `vote_new_parameters` votes, keyed by proposal hash.",
+        "name": "os_measurement_votes",
+        "doc": " Returns pending OS measurement votes, may include former participants' votes",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -654,8 +654,8 @@ expression: abi
         }
       },
       {
-        "name": "os_measurement_votes",
-        "doc": " Returns pending OS measurement votes, may include former participants' votes",
+        "name": "parameters_votes",
+        "doc": " Returns the pending `vote_new_parameters` votes, keyed by proposal hash.",
         "kind": "view",
         "result": {
           "serialization_type": "json",

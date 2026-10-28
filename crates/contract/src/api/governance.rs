@@ -115,7 +115,7 @@ impl MpcContract {
     }
 
     /// Returns the pending `vote_new_parameters` votes, keyed by proposal hash.
-    pub fn new_parameters_votes(&self) -> dtos::GovernanceThresholdParametersVotes {
+    pub fn parameters_votes(&self) -> dtos::GovernanceThresholdParametersVotes {
         (&self.parameters_votes).into_dto_type()
     }
 
@@ -659,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn new_parameters_votes__should_report_pending_votes_by_proposal_hash() {
+    fn parameters_votes__should_report_pending_votes_by_proposal_hash() {
         // Given
         let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
             3,
@@ -676,13 +676,13 @@ mod tests {
 
         // Then
         assert_eq!(
-            contract.new_parameters_votes(),
+            contract.parameters_votes(),
             expected_tally(&proposal, &[&signer])
         );
     }
 
     #[test]
-    fn new_parameters_votes__should_report_re_proposal_votes_while_resharing() {
+    fn parameters_votes__should_report_re_proposal_votes_while_resharing() {
         // Given
         let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
         let (voter, _, _) = &participants.participants()[0];
@@ -695,7 +695,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            contract.new_parameters_votes(),
+            contract.parameters_votes(),
             expected_tally(&proposal, &[voter])
         );
     }
