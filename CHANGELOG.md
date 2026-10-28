@@ -197,6 +197,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#4973](https://github.com/near/mpc/pull/4973)(@anodar): Relax quorum of rpc providers in contract migration (#4973)
 
+- [#4963](https://github.com/near/mpc/pull/4963)(@barakeinav1): Bump localnet genesis protocol version to 88 (#4963)
+
 
 ## [3.17.0] - 2026-10-12
 
