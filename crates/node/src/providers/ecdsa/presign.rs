@@ -77,11 +77,19 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                 < config.concurrency * 2
             {
-                let id = presignature_store.generate_and_reserve_id().unwrap(); // Since return is !
-                progress_tracker.set_waiting_for_triples(true).unwrap(); // Since return is !
-                let (paired_triple_id, (triple0, triple1)) =
-                    triple_store.take_owned().await.unwrap(); // Since return is !
-                progress_tracker.set_waiting_for_triples(false).unwrap(); // Since return is !
+                let id = presignature_store
+                    .generate_and_reserve_id()
+                    .expect("should generate and reserve id for presignature store");
+                progress_tracker
+                    .set_waiting_for_triples(true)
+                    .expect("should update progress for waiting triples");
+                let (paired_triple_id, (triple0, triple1)) = triple_store
+                    .take_owned()
+                    .await
+                    .expect("should take owned for triple store");
+                progress_tracker
+                    .set_waiting_for_triples(false)
+                    .expect("should update progress tracker for waiting triples");
                 let participants = participants_from_triples(&triple0, &triple1);
                 let task_id = EcdsaTaskId::Presignature {
                     id,
@@ -138,7 +146,10 @@ impl EcdsaSignatureProvider {
 
             // If the store is full, try to discard some presignatures which cannot be used right now
             if my_presignatures_count >= config.desired_presignatures_to_buffer {
-                presignature_store.maybe_discard_owned(1).await.unwrap(); // Since return is !
+                presignature_store
+                    .maybe_discard_owned(1)
+                    .await
+                    .expect("should maybe discard owned for presignature store");
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;

@@ -109,7 +109,9 @@ impl EcdsaSignatureProvider {
             .collect();
 
         loop {
-            let my_triples_count = triple_store.num_owned().unwrap(); // Since return is !
+            let my_triples_count = triple_store
+                .num_owned()
+                .expect("should retrieve triples count");
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
 

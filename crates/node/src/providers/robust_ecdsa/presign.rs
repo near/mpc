@@ -79,7 +79,9 @@ pub(super) async fn run_background_presignature_generation(
             && in_flight_generations.num_in_flight()
             < config.concurrency * 2
         {
-            let id = presignature_store.generate_and_reserve_id().unwrap(); // Since return is !
+            let id = presignature_store
+                .generate_and_reserve_id()
+                .expect("should generate and reserve id for presignature store");
             let participants = match client
                 .select_random_active_participants_including_me(num_signers, &running_participants)
             {
@@ -143,7 +145,10 @@ pub(super) async fn run_background_presignature_generation(
 
         // If the store is full, try to discard some presignatures which cannot be used right now
         if my_presignatures_count >= config.desired_presignatures_to_buffer {
-            presignature_store.maybe_discard_owned(1).await.unwrap(); // Since return is !
+            presignature_store
+                .maybe_discard_owned(1)
+                .await
+                .expect("should maybe discard owned for presignature store");
         }
 
         tokio::time::sleep(Duration::from_millis(100)).await;
