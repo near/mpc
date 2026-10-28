@@ -325,6 +325,19 @@ mod tests {
         publish_rpc_quorum_metrics(&rpc_quorum_statuses(&local, &ForeignChainWhitelist::new()));
 
         // Then
-        assert_eq!(gauges(ForeignChain::Starknet), None);
+        assert_eq!(
+            series(
+                &metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED,
+                ForeignChain::Starknet
+            ),
+            None
+        );
+        assert_eq!(
+            series(
+                &metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED,
+                ForeignChain::Starknet
+            ),
+            None
+        );
     }
 }
