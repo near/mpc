@@ -42,8 +42,7 @@ impl GovernanceThresholdParametersVotes {
     }
 
     /// Registers a vote by `participant` for `proposal`, replacing any existing vote by
-    /// `participant`. Returns `true` once every proposed participant voted for `proposal`;
-    /// all pending votes are then cleared.
+    /// `participant`. Returns `true` once every proposed participant voted for `proposal`.
     pub fn vote(
         &mut self,
         proposal: &ProposedGovernanceThresholdParameters,
@@ -54,11 +53,7 @@ impl GovernanceThresholdParametersVotes {
             .0
             .vote(participant, proposal.to_proposal_hash())
             .count_participants(proposed_participants);
-        let accepted = n_votes == proposed_participants.count();
-        if accepted {
-            self.clear();
-        }
-        accepted
+        n_votes == proposed_participants.count()
     }
 
     pub fn clear(&mut self) {
@@ -242,19 +237,11 @@ mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn vote__should_accept_and_clear_votes_once_all_proposed_participants_voted() {
-        // Given: a fourth participant holds a vote for a different proposal
-        let participants = gen_participants(4);
+    fn vote__should_accept_once_all_proposed_participants_voted() {
+        // Given
+        let participants = gen_participants(3);
         let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(
-                participants.subset(0..3),
-                GovernanceThreshold::new(2),
-            )
-            .unwrap(),
-            BTreeMap::new(),
-        );
-        let other_proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(3))
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
                 .unwrap(),
             BTreeMap::new(),
         );
@@ -264,7 +251,6 @@ mod tests {
             .map(|(account_id, _, _)| authenticate_account_as(account_id, &participants))
             .collect();
         let mut votes = GovernanceThresholdParametersVotes::default();
-        assert!(!votes.vote(&other_proposal, voters[3].clone()));
         assert!(!votes.vote(&proposal, voters[0].clone()));
         assert!(!votes.vote(&proposal, voters[1].clone()));
 
@@ -273,6 +259,9 @@ mod tests {
 
         // Then
         assert!(accepted);
-        assert!(votes.is_empty());
+        assert_eq!(
+            votes.n_votes(&proposal, &participants),
+            ParticipantCount::new(3)
+        );
     }
 }
