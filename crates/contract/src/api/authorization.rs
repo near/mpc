@@ -4,7 +4,6 @@ use crate::MpcContract;
 use crate::errors::{Error, InvalidParameters};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{AccountId, env};
-use std::assert_matches;
 
 impl MpcContract {
     /// Get our own account id as a voter. Returns an error if we are not a participant.
@@ -49,17 +48,15 @@ impl MpcContract {
     pub(crate) fn assert_caller_is_attested_participant_and_protocol_active(&self) {
         let participants = self.protocol_state.active_participants();
 
-        Self::assert_caller_is_signer();
+        let signer_id = Self::assert_caller_is_signer();
 
-        let attestation_check = self
-            .tee_state
-            .is_caller_an_attested_participant(participants);
+        let is_attested = participants.info(&signer_id).is_some_and(|info| {
+            self.tee_state
+                .node_signed_by(&signer_id, &info.tls_public_key, &env::signer_account_pk())
+                .is_some()
+        });
 
-        assert_matches!(
-            attestation_check,
-            Ok(()),
-            "Caller must be an attested participant"
-        );
+        assert!(is_attested, "Caller must be an attested participant");
     }
 
     /// Ensures the current call originates from the signer account itself.
@@ -98,11 +95,11 @@ impl MpcContract {
             .protocol_state
             .active_participants()
             .info(signer_account_id)?;
-        let signer_pk = Ed25519PublicKey::try_from(&env::signer_account_pk()).ok()?;
+        let signer_pk = env::signer_account_pk();
         let is_signers_node = |tls_key: &Ed25519PublicKey| {
             self.tee_state
-                .verify_signer_attestation(tls_key, signer_account_id, &signer_pk)
-                .is_ok()
+                .node_signed_by(signer_account_id, tls_key, &signer_pk)
+                .is_some()
         };
 
         if is_signers_node(&participant_info.tls_public_key) {
