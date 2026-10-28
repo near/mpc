@@ -95,25 +95,35 @@ fn run_near_init(config: &NearInitConfig, home_dir: &Path) -> anyhow::Result<()>
     )
     .context("failed to initialize NEAR node")?;
 
-    // For localnet, overwrite the genesis file with the original (init
-    // modifies it) and remove the unnecessary validator_key.json.
+    // For localnet, replace the genesis init generated with the chain's, and
+    // remove the unnecessary validator_key.json.
     if is_localnet {
-        if let Some(genesis_src) = &config.genesis_path {
-            let genesis_dst = home_dir.join("genesis.json");
-            std::fs::copy(genesis_src, &genesis_dst).with_context(|| {
-                format!(
-                    "failed to copy genesis from {} to {}",
-                    genesis_src.display(),
-                    genesis_dst.display()
-                )
-            })?;
-        }
+        install_localnet_genesis(config, home_dir)?;
         let validator_key = home_dir.join("validator_key.json");
         if validator_key.exists() {
             std::fs::remove_file(&validator_key).ok();
         }
     }
 
+    Ok(())
+}
+
+/// From `download_genesis_url` if set (init honours it only for testnet), else
+/// from `genesis_path`.
+fn install_localnet_genesis(config: &NearInitConfig, home_dir: &Path) -> anyhow::Result<()> {
+    let genesis_dst = home_dir.join("genesis.json");
+    if let Some(url) = &config.download_genesis_url {
+        nearcore::config::download_genesis(url, &genesis_dst)
+            .with_context(|| format!("failed to download genesis from {url}"))?;
+    } else if let Some(genesis_src) = &config.genesis_path {
+        std::fs::copy(genesis_src, &genesis_dst).with_context(|| {
+            format!(
+                "failed to copy genesis from {} to {}",
+                genesis_src.display(),
+                genesis_dst.display()
+            )
+        })?;
+    }
     Ok(())
 }
 
@@ -326,6 +336,7 @@ fn apply_near_config_patches(
 #[expect(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
     use mpc_node_config::ChainId;
     use rstest::rstest;
 
@@ -352,6 +363,69 @@ mod tests {
             "rpc": {},
             "state_sync": { "sync": { "ExternalStorage": {} } }
         })
+    }
+
+    #[test]
+    fn install_localnet_genesis__should_download_from_url_over_genesis_path() {
+        // Given
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/genesis.json");
+            then.status(200).body(r#"{"protocol_version": 86}"#);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let embedded = dir.path().join("embedded-genesis.json");
+        std::fs::write(&embedded, r#"{"protocol_version": 84}"#).unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.genesis_path = Some(embedded);
+        init.download_genesis_url = Some(server.url("/genesis.json"));
+
+        // When
+        install_localnet_genesis(&init, dir.path()).unwrap();
+
+        // Then
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("genesis.json")).unwrap(),
+            r#"{"protocol_version": 86}"#
+        );
+    }
+
+    #[test]
+    fn install_localnet_genesis__should_copy_genesis_path_without_url() {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let embedded = dir.path().join("embedded-genesis.json");
+        std::fs::write(&embedded, r#"{"protocol_version": 84}"#).unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.genesis_path = Some(embedded);
+
+        // When
+        install_localnet_genesis(&init, dir.path()).unwrap();
+
+        // Then
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("genesis.json")).unwrap(),
+            r#"{"protocol_version": 84}"#
+        );
+    }
+
+    #[test]
+    fn install_localnet_genesis__should_fail_when_download_fails() {
+        // Given
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/genesis.json");
+            then.status(404);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.download_genesis_url = Some(server.url("/genesis.json"));
+
+        // When
+        let result = install_localnet_genesis(&init, dir.path());
+
+        // Then
+        assert!(result.is_err());
     }
 
     #[test]
