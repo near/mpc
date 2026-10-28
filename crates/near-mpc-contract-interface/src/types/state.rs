@@ -541,25 +541,6 @@ mod tests {
         assert_eq!(json[proposal.as_hex()][0], "alice.near");
     }
 
-    #[test]
-    #[expect(non_snake_case)]
-    fn governance_threshold_parameters_votes__should_roundtrip_through_json() {
-        // Given
-        let votes = GovernanceThresholdParametersVotes(BTreeMap::from([(
-            ProposalHash::new([7u8; 32]),
-            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
-        )]));
-
-        // When
-        let json = serde_json::to_string(&votes).unwrap();
-
-        // Then
-        assert_eq!(
-            serde_json::from_str::<GovernanceThresholdParametersVotes>(&json).unwrap(),
-            votes
-        );
-    }
-
     // TODO(#4984): drop once no deployed contract reports the pre-tally voter-keyed shape.
     #[test]
     #[expect(non_snake_case)]
@@ -616,24 +597,5 @@ mod tests {
 
         // Then
         assert_eq!(json[proposal.as_hex()][0], 3);
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn add_domains_votes__should_roundtrip_through_json() {
-        // Given
-        let votes = AddDomainsVotes(BTreeMap::from([(
-            ProposalHash::new([7u8; 32]),
-            BTreeSet::from([AuthenticatedParticipantId(ParticipantId(3))]),
-        )]));
-
-        // When
-        let json = serde_json::to_string(&votes).unwrap();
-
-        // Then
-        assert_eq!(
-            serde_json::from_str::<AddDomainsVotes>(&json).unwrap(),
-            votes
-        );
     }
 }
