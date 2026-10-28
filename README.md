@@ -9,17 +9,15 @@ User ───────────────────────▶ �
         signature             └─────────────────┘   respond(signature)   └───────────┘
 ```
 
-## Features
-
-A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain.
+## What it does
 
 - **Signing** — threshold [ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md) (Secp256k1, derived from [Cait-Sith](https://github.com/cronokirby/cait-sith)) and [EdDSA](crates/threshold-signatures/docs/eddsa/signing.md) (Ed25519, based on [FROST](https://eprint.iacr.org/2020/852)) signatures over arbitrary payloads.
 - **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** — derives application-specific keys without revealing the master secret (BLS12-381).
 - **[Read RPC](docs/archive/design/foreign-chain-transactions.md)** — nodes independently verify transactions on foreign chains (Ethereum, Solana, Aptos, …) and threshold-sign the observed values, letting NEAR contracts react to external chain events without a trusted relayer. Formerly known as *foreign chain transaction verification*.
 
-Keys live in *domains*, each pairing a signature scheme with one of these purposes; all schemes share the same curve-independent [distributed key generation](crates/threshold-signatures/docs/dkg.md).
+## How it works
 
-Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
+A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain. Keys live in *domains*, each pairing a signature scheme with one of the purposes above; all schemes share the same curve-independent [distributed key generation](crates/threshold-signatures/docs/dkg.md). Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
 ## Where to go next
 
