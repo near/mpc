@@ -1,6 +1,6 @@
 # NEAR MPC
 
-The threshold signature network behind [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) — signatures produced jointly by *t*-of-*n* nodes running in TEEs, with no single party ever holding the key.
+The threshold signature network behind [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) — signatures produced jointly by *t*-of-*n* nodes running in TEEs, with no single party ever holding the complete key.
 
 ```text
         sign(request)         ┌─────────────────┐    observe request     ┌───────────┐
@@ -17,7 +17,7 @@ User ───────────────────────▶ �
 
 ## How it works
 
-A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain. Keys live in *domains*, each pairing a signature scheme with one of the purposes above; all schemes share the same curve-independent [distributed key generation](crates/threshold-signatures/docs/dkg.md). Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
+A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain. Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
 ## Where to go next
 
