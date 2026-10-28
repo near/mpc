@@ -1,6 +1,6 @@
 # NEAR MPC
 
-This repository contains the MPC node and the on-chain signer contract behind [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures): NEAR accounts and contracts request signatures over arbitrary payloads, and a network of MPC nodes produces them with threshold cryptography — no single party ever holds the complete signing key.
+The threshold signature network behind [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) — signatures produced jointly by *t*-of-*n* nodes running in TEEs, with no single party ever holding the key.
 
 ```text
         sign(request)         ┌─────────────────┐    observe request     ┌───────────┐
@@ -21,7 +21,7 @@ Keys and requests are organized into *domains*, each pairing a signature scheme 
 - **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** (BLS12-381) — derives application-specific keys without revealing the master secret.
 - **Foreign chain transaction verification** — nodes independently verify transactions on foreign chains (Ethereum, Solana, Aptos, …) and threshold-sign the observed values, letting NEAR contracts react to external chain events without a trusted relayer; see the [design doc](docs/archive/design/foreign-chain-transactions.md).
 
-Nodes can run inside a trusted execution environment (TEE) for defense in depth; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
+Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
 ## Where to go next
 
