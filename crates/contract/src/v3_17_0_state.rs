@@ -16,7 +16,7 @@ use near_mpc_contract_interface::types::{
     YieldIndex,
 };
 use near_sdk::{
-    AccountId, require,
+    AccountId, log, require,
     store::{IterableMap, Lazy, LookupMap},
 };
 
@@ -120,7 +120,6 @@ fn migrate_stored_attestations(
     migrated
 }
 
-/// Lowers each chain's RPC quorum by one (floor 1) and drops Bitcoin from the whitelist.
 fn relax_rpc_whitelist(foreign_chains: &mut ForeignChainsMetadata) {
     let whitelist = &mut foreign_chains.rpc_whitelist;
     for (chain, entry) in whitelist.entries.snapshot() {
@@ -132,9 +131,10 @@ fn relax_rpc_whitelist(foreign_chains: &mut ForeignChainsMetadata) {
             quorum: entry.quorum.saturating_sub(1).max(1),
             ..entry
         };
-        let relaxed =
-            ChainEntry::try_from(relaxed).expect("lowering the quorum keeps the entry valid");
-        whitelist.entries.replace(chain, relaxed);
+        match ChainEntry::try_from(relaxed) {
+            Ok(relaxed) => whitelist.entries.replace(chain, relaxed),
+            Err(err) => log!("keeping {chain:?} whitelist entry unchanged: {err}"),
+        }
     }
     whitelist
         .votes
@@ -363,6 +363,35 @@ mod tests {
 
         // Then
         assert_eq!(migrated.config, stored);
+    }
+
+    #[test]
+    fn from__should_relax_rpc_whitelist() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let mut old = old_contract(Config::default());
+        old.foreign_chains = Lazy::new(
+            StorageKey::ForeignChainMetadata,
+            whitelisted(&[
+                (ForeignChain::Bitcoin, chain_entry(1, 1)),
+                (ForeignChain::Base, chain_entry(3, 3)),
+            ]),
+        );
+
+        // When
+        let migrated: crate::MpcContract = old.into();
+
+        // Then
+        let expected = BTreeMap::from([(ForeignChain::Base, chain_entry(3, 2))]);
+        assert_eq!(
+            migrated
+                .foreign_chains
+                .get()
+                .rpc_whitelist
+                .entries
+                .snapshot(),
+            expected
+        );
     }
 
     #[test]
