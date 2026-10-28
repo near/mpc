@@ -107,8 +107,8 @@ pub struct NearInitConfig {
     pub chain_id: ChainId,
     /// Comma-separated NEAR boot nodes.
     pub boot_nodes: Option<String>,
-    /// Path to a local genesis file. When set the genesis is copied from this
-    /// path instead of being downloaded. Typically used for localnet.
+    /// Path to a local genesis file, used when no genesis is downloaded.
+    /// Typically used for localnet.
     pub genesis_path: Option<PathBuf>,
     /// Whether to download the NEAR config file. Defaults to `true` for
     /// non-localnet chains when not specified.
@@ -118,7 +118,8 @@ pub struct NearInitConfig {
     /// Whether to download the NEAR genesis file. Defaults to `true` for
     /// non-localnet chains when not specified.
     pub download_genesis: bool,
-    /// Custom URL to download the genesis file from.
+    /// Custom URL to download the genesis file from. On localnet it overrides
+    /// [`Self::genesis_path`].
     pub download_genesis_url: Option<String>,
     /// Custom URL to download the genesis records from.
     pub download_genesis_records_url: Option<String>,
