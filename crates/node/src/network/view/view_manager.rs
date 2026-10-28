@@ -3,12 +3,12 @@ use std::ops::Bound::{Excluded, Unbounded};
 
 use tokio::sync::{mpsc, watch};
 
-use crate::network::view::NetworkView;
-use crate::primitives::ParticipantId;
+use crate::network::view::network_view::NetworkView;
+use crate::primitives::{ParticipantId, PeerConnectedPeersInfo};
 
 pub struct NetworkViewManager {
     pub graph_receiver: watch::Receiver<NetworkGraph>,
-    pub heights_sender: mpsc::Sender<NetworkViewMessage>, // add a task:
+    pub heights_sender: mpsc::Sender<PeerConnectedPeersInfo>, // add a task:
 }
 
 // task for network view manager:
@@ -31,27 +31,21 @@ impl NetworkViewManager {
     }
 }
 
-struct NetworkViewMessage {
-    reporter: ParticipantId,
-    reported_peer_heights: &BTreeMap<ParticipantId, u64>,
-}
-
 async fn spawn_network_manager(
     graph_sender: watch::Sender<NetworkGraph>,
-    data_receiver: mpsc::Receiver<NetworkViewMessage>,
+    mut data_receiver: mpsc::Receiver<PeerConnectedPeersInfo>,
     participants: &[ParticipantId],
 ) {
-    let network_view = NetworkView::new(participants);
+    let mut network_view = NetworkView::new(participants);
 
-    /// note: task is dropped if all senders are dropped
-    /// mayde we sould add a cancellation token here.
+    // note: task is dropped if all senders are dropped
+    // mayde we sould add a cancellation token here.
     loop {
-        let Some(received) = data_receiver.recv() else {
+        let Some(received) = data_receiver.recv().await else {
             tracing::info!("closed");
             return;
         };
-        network_view
-            .update_with_reported_heights(received.reporter, received.reported_peer_heights);
+        network_view.update_with_info(received);
     }
     // this is not yet spawned, but we will et there
 }
