@@ -139,6 +139,11 @@ fn localnet_genesis_source(
     let path = home_dir.join(DOWNLOADED_GENESIS_FILE);
     nearcore::config::download_genesis(url, &path)
         .with_context(|| format!("failed to download genesis from {url}"))?;
+    // Fail before init on a bad body (e.g. an HTML page).
+    let genesis = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_str::<serde_json::Value>(&genesis)
+        .with_context(|| format!("genesis from {url} is not JSON"))?;
     Ok(Some(path))
 }
 
@@ -424,14 +429,25 @@ mod tests {
     }
 
     #[test]
+    fn localnet_genesis_source__should_fail_on_non_json_body() {
+        // Given
+        let server = genesis_server(200, "<html>not found</html>");
+        let dir = tempfile::tempdir().unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.download_genesis_url = Some(server.url("/genesis.json"));
+
+        // When
+        let result = localnet_genesis_source(&init, dir.path());
+
+        // Then
+        result.expect_err("non-JSON genesis must fail");
+    }
+
+    #[test]
     fn run_near_init__should_install_downloaded_genesis_on_localnet() {
         // Given
-        let genesis = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../deployment/localnet/genesis.json"
-        ))
-        .unwrap();
-        let server = genesis_server(200, &genesis);
+        let genesis = r#"{"protocol_version": 86}"#;
+        let server = genesis_server(200, genesis);
         let dir = tempfile::tempdir().unwrap();
         let mut init = near_init(ChainId::Localnet);
         init.download_genesis_url = Some(server.url("/genesis.json"));
@@ -458,7 +474,7 @@ mod tests {
         let result = run_near_init(&init, dir.path());
 
         // Then
-        assert!(result.is_err());
+        result.expect_err("failed download must fail");
         assert!(!near_config_file(dir.path()).exists());
     }
 
