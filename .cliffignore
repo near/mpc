@@ -513,3 +513,10 @@ e8a2fdb038ce1347ac5e6421c0db5c7d6d430cad
 # so they don't appear in the next auto-generated release block.
 0a5a7988573d5f55af2230747e7f29059dd2014b
 5e2386dd0f6318c8bfc0065543b7aebb80039ae3
+
+# 3.18.0 first cut (#4958), a manual second cut, and their reverts on the second cut branch:
+# the second cut regenerates the whole 3.18.0 section, so none of them may appear in it.
+f88a660b40adbc4bb8753c30be9c46f779aa4984
+06cb093b90769ffb95d95e501266303378fd3487
+f607302d48678ec9d9d87fef0e9685947b061473
+966c6ba1689decc748aac4af927f9efd2c04e093
