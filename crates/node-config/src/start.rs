@@ -118,8 +118,8 @@ pub struct NearInitConfig {
     /// Whether to download the NEAR genesis file. Defaults to `true` for
     /// non-localnet chains when not specified.
     pub download_genesis: bool,
-    /// Custom URL to download the genesis file from. On localnet it overrides
-    /// [`Self::genesis_path`].
+    /// Custom URL to download the genesis file from; ignored on mainnet. On
+    /// localnet it overrides [`Self::genesis_path`].
     pub download_genesis_url: Option<String>,
     /// Custom URL to download the genesis records from.
     pub download_genesis_records_url: Option<String>,
