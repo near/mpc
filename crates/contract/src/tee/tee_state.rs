@@ -1,13 +1,13 @@
 use crate::{
     primitives::{
-        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
+        key_state::AuthenticatedAccountId,
         participants::Participants,
         proposal_hash::ToProposalHash,
         time::Timestamp,
         votes::{VoterSet, Votes},
     },
     storage_keys::StorageKey,
-    tee::measurements::{AllowedMeasurements, MeasurementVotes},
+    tee::measurements::AllowedMeasurements,
     tee::proposal::{
         AllowedLauncherImageInsertion, AllowedLauncherImages, NodeImageHash,
         StoredDockerImageHashes,
@@ -76,11 +76,8 @@ pub enum TeeValidationResult {
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
-    /// Block time at which this entry was accepted. Restamped by every accepted submission, so
-    /// a submitter can recognize its own on chain. `None` for an entry stored before the contract
-    /// recorded this, and the init block time for a mocked entry nobody submitted (see
-    /// [`TeeState::with_mocked_participant_attestations`]).
-    pub(crate) accepted_at_seconds: Option<u64>,
+    /// Block time at which this entry was last stored, restamped by every accepted submission.
+    pub(crate) accepted_at_seconds: u64,
 }
 
 #[near(serializers=[borsh])]
@@ -90,13 +87,11 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
-    /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
-    /// Attestations are stored for any valid participant that has submitted one, not
-    /// just for the currently active participants. Callers must not assume this map is
-    /// small; use the key-indexed accessors rather than scanning the whole collection.
+    /// Callers must not assume this map is small; use the key-indexed accessors rather than
+    /// scanning the whole collection.
     pub(crate) stored_attestations: IterableMap<Ed25519PublicKey, NodeAttestation>,
     pub(crate) allowed_measurements: AllowedMeasurements,
-    pub(crate) measurement_votes: MeasurementVotes,
+    pub(crate) measurement_votes: Votes<AuthenticatedAccountId>,
 }
 
 impl Default for TeeState {
@@ -114,7 +109,10 @@ impl Default for TeeState {
             ),
             stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: Default::default(),
-            measurement_votes: Default::default(),
+            measurement_votes: Votes::new(
+                StorageKey::MeasurementVotesByVoter,
+                StorageKey::MeasurementVotesByProposal,
+            ),
         }
     }
 }
@@ -155,7 +153,7 @@ impl TeeState {
                     verified_attestation: VerifiedAttestation::Mock(
                         attestation::MockAttestation::Valid,
                     ),
-                    accepted_at_seconds: Some(Self::current_time_seconds()),
+                    accepted_at_seconds: Self::current_time_seconds(),
                 },
             );
         }
@@ -250,7 +248,7 @@ impl TeeState {
             NodeAttestation {
                 node_id,
                 verified_attestation,
-                accepted_at_seconds: Some(Self::current_time_seconds()),
+                accepted_at_seconds: Self::current_time_seconds(),
             },
         );
 
@@ -435,24 +433,24 @@ impl TeeState {
     }
 
     /// Casts a vote for adding or removing an OS measurement.
-    /// Returns the total number of votes for the same action.
     pub fn vote_measurement(
         &mut self,
         action: MeasurementVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.measurement_votes.vote(action, participant)
+        voter: AuthenticatedAccountId,
+    ) -> &VoterSet<AuthenticatedAccountId> {
+        self.measurement_votes
+            .vote(voter, action.to_proposal_hash())
     }
 
     /// Adds a new measurement set to the allowed list. Clears measurement votes.
     pub fn add_measurement(&mut self, measurement: ExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.add(measurement)
     }
 
     /// Removes a measurement set from the allowed list. Clears measurement votes.
     pub fn remove_measurement(&mut self, measurement: &ExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.remove(measurement)
     }
 
@@ -476,7 +474,8 @@ impl TeeState {
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
         self.launcher_votes
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
-        self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
+        self.measurement_votes
+            .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
     }
 
     /// Scans up to `max_scan` entries from `stored_attestations` and removes any whose
@@ -633,7 +632,10 @@ mod tests {
         test_utils::{set_block_secs, set_block_timestamp, whitelist_dstack_measurements},
     };
     use mpc_attestation::attestation::MockAttestation;
-    use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
+    use mpc_primitives::hash::{
+        KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, Rtmr0Hash, Rtmr1Hash,
+        Rtmr2Hash,
+    };
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
@@ -1819,10 +1821,7 @@ mod tests {
             .get(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
-        assert_eq!(
-            stored.accepted_at_seconds,
-            Some(VALID_ATTESTATION_TIMESTAMP)
-        );
+        assert_eq!(stored.accepted_at_seconds, VALID_ATTESTATION_TIMESTAMP);
     }
 
     /// Stale code-hash votes from removed participants must not count toward
@@ -1886,18 +1885,28 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        // P0 votes for a launcher hash
+        // P0 votes for a launcher hash and an OS measurement
         let voter = authenticate_account_as(&account_ids[0], &all_participants);
         let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
-        tee_state.vote_launcher(launcher_action, voter);
+        tee_state.vote_launcher(launcher_action, voter.clone());
+        let measurement_action = MeasurementVoteAction::Add(ExpectedMeasurements {
+            mrtd: MrtdHash::from([0xCC; 48]),
+            rtmr0: Rtmr0Hash::from([0xCC; 48]),
+            rtmr1: Rtmr1Hash::from([0xCC; 48]),
+            rtmr2: Rtmr2Hash::from([0xCC; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([0xCC; 48]),
+        });
+        tee_state.vote_measurement(measurement_action, voter);
 
         assert_eq!(tee_state.launcher_votes.all().len(), 1);
+        assert_eq!(tee_state.measurement_votes.all().len(), 1);
 
         // New participant set excludes P0
         let new_participants = all_participants.subset(1..3);
         tee_state.clean_non_participant_votes(&new_participants);
 
         assert!(tee_state.launcher_votes.all().is_empty());
+        assert!(tee_state.measurement_votes.all().is_empty());
     }
 
     #[test]
@@ -1938,7 +1947,7 @@ mod tests {
     const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
     const RESUBMITTED_AT_SECONDS: u64 = ACCEPTED_AT_SECONDS + 3600;
 
-    fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> Option<u64> {
+    fn stamped_accepted_at(tee_state: &TeeState, node_id: &NodeId) -> u64 {
         tee_state
             .stored_attestations
             .get(&node_id.tls_public_key)
@@ -1967,12 +1976,10 @@ mod tests {
         // Then
         assert_eq!(
             stamped_accepted_at(&tee_state, &node_id),
-            Some(ACCEPTED_AT_SECONDS)
+            ACCEPTED_AT_SECONDS
         );
     }
 
-    /// The stamp is what lets a submitter tell a rejection from a landing, so only an accepted
-    /// submission may move it.
     #[rstest]
     #[case::rejected(MockAttestation::Invalid, ACCEPTED_AT_SECONDS)]
     #[case::accepted_again(MockAttestation::Valid, RESUBMITTED_AT_SECONDS)]
@@ -1991,9 +1998,6 @@ mod tests {
         let _ = submit_mock(&mut tee_state, &node_id, resubmitted);
 
         // Then
-        assert_eq!(
-            stamped_accepted_at(&tee_state, &node_id),
-            Some(expected_stamp)
-        );
+        assert_eq!(stamped_accepted_at(&tee_state, &node_id), expected_stamp);
     }
 }

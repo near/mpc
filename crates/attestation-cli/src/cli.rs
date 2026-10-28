@@ -1,13 +1,25 @@
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use mpc_primitives::hash::NodeImageHash;
 
+use crate::built_info;
 use crate::tcb_status::EvaluationDataSet;
+
+static VERSION: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{} (commit {}) ({})",
+        built_info::PKG_VERSION,
+        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
+        built_info::RUSTC_VERSION,
+    )
+});
 
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
 #[command(about = "Standalone verification tool for MPC node TEE attestations")]
+#[command(version = VERSION.as_str())]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -67,7 +79,8 @@ pub struct VerifyArgs {
     pub launcher_compose_file: PathBuf,
 
     /// Path to expected TCB measurements JSON file. If not provided, uses the compiled-in
-    /// default measurements (same as the MPC contract/node).
+    /// measurements of the production OS image. The contract and node check against the
+    /// measurements voted in on chain instead.
     #[arg(long = "expected-measurements")]
     pub expected_measurements: Option<PathBuf>,
 }

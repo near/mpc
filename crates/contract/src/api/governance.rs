@@ -120,13 +120,14 @@ mod tests {
         submit_attestation, submit_valid_attestations,
     };
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::errors::{DomainError, InvalidCandidateSet, InvalidThreshold};
+    use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
-    use crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES;
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
-    use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
+    use crate::state::ProtocolContractState;
+    use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
@@ -287,7 +288,7 @@ mod tests {
         );
         let contract = MpcContract::init_running(
             domains,
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -313,41 +314,6 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
     }
 
-    /// Mutates the wire form directly: the contract-internal type cannot represent an
-    /// oversized url, which is what makes the DTO conversion the enforcement point.
-    #[test]
-    fn vote_new_parameters__should_reject_a_url_over_the_byte_limit() {
-        // Given: a Running contract, and a proposal whose wire form carries an oversized url
-        let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
-            3,
-            GovernanceThreshold::new(2),
-            ReconstructionThreshold::new(2),
-        );
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
-            BTreeMap::new(),
-        );
-        let mut args = (&proposal).into_dto_type();
-        args.parameters.participants.participants[0].2.url =
-            "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1);
-
-        // When
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer.clone())
-                .predecessor_account_id(signer)
-                .attached_deposit(NearToken::ZERO)
-                .build()
-        );
-        let result = contract.vote_new_parameters(dtos::EpochId::new(1), args);
-
-        // Then
-        assert_matches!(
-            result.unwrap_err(),
-            Error::InvalidCandidateSet(InvalidCandidateSet::ParticipantUrlTooLong { .. })
-        );
-    }
-
     #[test]
     fn vote_new_parameters__should_reject_when_per_domain_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
@@ -368,11 +334,11 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then: 4 > 3 participants, so the guard rejects it.
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
                 reconstruction_threshold: 4,
-                participants: 3,
+                participants: ParticipantCount::new(3),
             })
         );
     }
@@ -430,9 +396,12 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
+                max: ParticipantCount::new(3),
+                found: 4
+            })
         );
     }
 
@@ -487,6 +456,43 @@ mod tests {
                 reconstruction_threshold: 4,
                 governance_threshold: 3,
             })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_a_caller_that_is_not_a_participant() {
+        // Given
+        let (mut contract, participants, _, _) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+        assert_matches!(
+            contract.tee_state.reverify_and_cleanup_participants(
+                proposal.participants(),
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            ),
+            TeeValidationResult::Full
+        );
+        let outsider: AccountId = "outsider.near".parse().unwrap();
+
+        // When
+        let result = vote_params(&mut contract, &outsider, &proposal);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == outsider
+        );
+        // Check that vote was not accepted.
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Running(state)
+                if state.parameters_votes == GovernanceThresholdParametersVotes::default()
         );
     }
 

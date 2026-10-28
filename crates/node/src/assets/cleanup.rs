@@ -51,7 +51,7 @@ pub fn delete_stale_triples_and_presignatures(
                     DBCol::TripleV2,
                     &persitent_participants,
                     my_participant_id,
-                    &t.inner().to_be_bytes(),
+                    &t.value().to_be_bytes(),
                 )?;
             }
             // Presignatures (per-domain, unchanged).

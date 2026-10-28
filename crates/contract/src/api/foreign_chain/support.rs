@@ -105,8 +105,8 @@ impl MpcContract {
         Ok(applied)
     }
 
-    /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at
-    /// startup to validate their local `foreign_chains.yaml`.
+    /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to
+    /// check their local config against it and to enforce each chain's RPC quorum.
     pub fn allowed_foreign_chain_providers(
         &self,
     ) -> std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
@@ -181,7 +181,7 @@ mod tests {
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        gen_account_id, gen_participant, gen_participants,
+        gen_account_id, gen_participant, gen_participant_url, gen_participants,
     };
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
@@ -790,7 +790,7 @@ mod tests {
                 .unwrap();
         let mut contract = MpcContract::init_running(
             domains,
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -858,7 +858,7 @@ mod tests {
                 .unwrap();
         let mut contract = MpcContract::init_running(
             domains,
-            2,
+            DomainId(2),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -977,7 +977,7 @@ mod tests {
         DestinationNodeInfo {
             signer_account_pk: node_id.account_public_key.clone(),
             destination_node_info: dtos::ParticipantInfo {
-                url: "https://new-node.example.com".to_string(),
+                url: gen_participant_url(0),
                 tls_public_key: node_id.tls_public_key.clone(),
             },
         }

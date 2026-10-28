@@ -112,7 +112,7 @@ impl Protocol {
     /// [`u64::MAX`] when `2t - 1` overflows, so the result still exceeds every
     /// possible participant count.
     pub fn required_active_signers(self, reconstruction_threshold: ReconstructionThreshold) -> u64 {
-        let t = reconstruction_threshold.inner();
+        let t = reconstruction_threshold.value();
         match self {
             // 2t - 1, evaluated as 2(t - 1) + 1 so saturation lands exactly on u64::MAX.
             Protocol::RobustEcdsa => t.saturating_sub(1).saturating_mul(2).saturating_add(1),

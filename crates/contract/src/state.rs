@@ -6,7 +6,7 @@ pub mod running;
 pub mod test_utils;
 
 use crate::crypto_shared::types::PublicKeyExtended;
-use crate::errors::{DomainError, Error, InvalidState};
+use crate::errors::{Error, InvalidState};
 use crate::primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
@@ -17,7 +17,7 @@ use crate::primitives::{
 };
 use initializing::InitializingContractState;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId};
+use near_mpc_contract_interface::types::{DomainConfig, DomainId};
 use near_sdk::{env, near};
 use resharing::ResharingContractState;
 use running::RunningContractState;
@@ -163,19 +163,13 @@ impl ProtocolContractState {
 
     pub fn vote_cancel_keygen(
         &mut self,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
             ProtocolContractState::Initializing(state) => state.vote_cancel(next_domain_id),
             _ => Err(InvalidState::ProtocolStateNotInitializing.into()),
         }
         .map(|x| x.map(ProtocolContractState::Running))
-    }
-
-    pub fn most_recent_domain_for_curve(&self, curve: Curve) -> Result<DomainId, Error> {
-        self.domain_registry()?
-            .most_recent_domain_for_curve(curve)
-            .ok_or_else(|| DomainError::NoSuchDomain.into())
     }
 
     pub(super) fn threshold_parameters(
@@ -332,7 +326,7 @@ impl ProtocolContractState {
         }
     }
 
-    pub fn next_domain_id(&self) -> u64 {
+    pub fn next_domain_id(&self) -> DomainId {
         match self {
             ProtocolContractState::Running(state) => state.domains.next_domain_id(),
             ProtocolContractState::Initializing(state) => state.domains.next_domain_id(),

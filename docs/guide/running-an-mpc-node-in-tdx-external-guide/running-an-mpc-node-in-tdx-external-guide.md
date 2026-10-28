@@ -2168,7 +2168,7 @@ If the node’s key has not been added to the account, this operation will fail.
 
 #### Verifying the attestation was accepted
 
-The MPC node emits no explicit "submitted" log line. Once the verification poll observes the attestation on-chain it logs `INFO mpc_node::indexer::tx_sender: node found dstack attestation on chain attestation_age=... attestation_is_fresh=true`, but the authoritative check is on-chain.
+The MPC node does not log whether the contract accepted its attestation; the authoritative check is on-chain.
 
 First, list every TEE-attested node by calling `get_tee_accounts` (no args) and confirm your `account_id` and `tls_public_key` are present:
 
@@ -2200,7 +2200,7 @@ near contract call-function as-read-only \
   network-config testnet now
 ```
 
-The response wraps the stored attestation with `accepted_at_seconds`, the block time at which the contract accepted it. During the rollout only (nodes upgrade before the contract, see [#4498](https://github.com/near/mpc/issues/4498)): a contract that is not upgraded yet returns the bare attestation with no such field, and a freshly upgraded one reads `null` until your node's next accepted submission. The `attestation` shape tells you what it accepted:
+The response wraps the stored attestation with `accepted_at_seconds`, the block time at which the contract accepted it. The `attestation` shape tells you what it accepted:
 
 - `{ "Dstack": { ... } }` — a real TEE attestation. This is what a production operator should see.
 - `{ "Mock": "Valid" }` — a mock attestation. Acceptable on testnet during the [transition phase](#transition-phase), but means the node is **not** running in a TEE. Many existing testnet entries are in this state.
@@ -2220,7 +2220,7 @@ Example `Dstack` response from `v1.signer-prod.testnet` for an existing particip
         "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
         "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
         "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
-        "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
+        "rtmr2": "9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf"
       },
       "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
     }
@@ -2710,6 +2710,8 @@ near contract call-function as-read-only \
   now
 ```
 
+Shows the voters grouped by the proposal hash of the action they voted for: the SHA-256 of the borsh-encoded `MeasurementVoteAction`. May include former participants' votes, which don't count toward the threshold.
+
 ### Deploy New CVM and Migrate Key Shares
 
 After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
@@ -2913,7 +2915,7 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
 
 ### `submit_participant_info` failures
 
-When the contract rejects a submission the node retries on a backoff and logs a generic line every attempt:
+When the contract rejects a submission while no TEE attestation is stored for the node's TLS key, the node retries on a backoff and logs a generic line every attempt:
 
 ```
 ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
@@ -2921,22 +2923,25 @@ ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
   cause=attestation submission was not executed backoff_duration=60s
 ```
 
-This line **doesn't tell you why** — `cause` is one of `attestation submission was not executed` (most common), `attestation submission has unknown response`, or `failed to submit transaction` (lower-level RPC send failure). None of these carry the underlying reason. The actual failure shows up in one of three places.
+This line **doesn't tell you why**: `cause` is `attestation submission was not executed` (most common) or `failed to submit transaction` (the node's transaction processor has stopped). Neither carries the underlying reason. Once a TEE attestation is stored for the key, a rejected resubmission logs no such line: an hour later, at the start of the next round, the node logs `WARN ... no attestation from this node accepted recently` and submits again. The actual failure shows up in one of three places.
 
 #### 1. Client-side pre-flight WARN — in the node logs
 
-Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
+Before submitting, the node runs a pre-flight check against the contract's allowed-image, allowed-launcher-compose and allowed-OS-measurement lists. Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
 
 ```
 WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
   Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
 ```
 
+Right after a restart the node may not have read these lists from the contract yet, so a warning on the first submission can be a false alarm: if `get_attestation` returns your attestation, the contract accepted it and the warning can be ignored.
+
 Common messages:
 
 - ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
 - ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
+- **`wrong expected_measurements hash (found none matched expected one of the allowed measurement sets)`**: your boot measurements (MRTD, RTMR0-2, key-provider event digest) are not in the contract's allowed set, for example because the CVM runs a dev OS image. Deploy the production OS image and check that its measurements are voted in (see [OS measurement voting](#os-measurement-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
 - **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](../tdx-tcb-status.md), which also explains how to see it coming.
 
@@ -2958,13 +2963,13 @@ The error after `err=` is the NEAR runtime error. Common ones:
 
 #### 3. Contract-rejection errors — only visible on the explorer / RPC
 
-If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
+If the transaction reaches execution and the contract panics, the node logs only the generic retry line above, or, once a TEE attestation is stored for its key, the transaction hash (`sending tx …`) and, at the start of the next round, the warning above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call. The error appears under the action's status / logs. The contract wraps the attestation-side error like this:
 
 ```
 Smart contract panicked: the submitted attestation failed verification, reason: custom error: `...`
 ```
 
-The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list or the contract's caller assertion):
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they come from the contract re-verifying stored attestations, or from its caller assertion):
 
 - **`the attestation's measurements are not in the allowed set`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
 - **`the allowed measurements list is empty`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.

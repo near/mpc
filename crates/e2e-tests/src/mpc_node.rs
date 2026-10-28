@@ -12,6 +12,7 @@ use mpc_node_config::{
 };
 use near_indexer_primitives::types::Finality;
 use near_kit::AccountId;
+use near_mpc_contract_interface::types::ParticipantUrl;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde_json::json;
 
@@ -260,8 +261,8 @@ impl MpcNodeSetup {
     }
 
     /// The P2P URL for this node.
-    pub fn p2p_url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.ports.p2p)
+    pub fn p2p_url(&self) -> ParticipantUrl {
+        localhost_with_port(self.ports.p2p)
     }
 
     /// The NEAR account ID for this node.
@@ -485,6 +486,7 @@ impl MpcNodeSetup {
                     desired_triples_to_buffer: self.triples_to_buffer,
                     timeout_sec: 120,
                     parallel_triple_generation_stagger_time_sec: 1,
+                    batch_size: mpc_node_config::TripleBatchSize::default(),
                 },
                 presignature: PresignatureConfig {
                     concurrency: 2,
@@ -557,4 +559,8 @@ impl NodePorts {
             near_network: ports.near_network_port(index),
         }
     }
+}
+
+pub(crate) fn localhost_with_port(port: u16) -> ParticipantUrl {
+    format!("http://127.0.0.1:{port}").try_into().unwrap()
 }

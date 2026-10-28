@@ -10,9 +10,9 @@ pub mod client;
 pub mod method_names;
 pub mod types {
     pub use attestation::{
-        Attestation, Collateral, DstackAttestation, EventLog, GetAttestationResponse, HexVec,
-        MockAttestation, StoredAttestation, TcbInfo, VerifiedAttestation,
-        VerifiedDstackAttestation, VerifiedMeasurements,
+        Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation,
+        StoredAttestation, TcbInfo, VerifiedAttestation, VerifiedDstackAttestation,
+        VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;
@@ -33,7 +33,7 @@ pub mod types {
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, GovernanceThreshold,
         GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
         InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
+        ParticipantCount, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
         ReconstructionThreshold, ResharingContractState, RunningContractState,
         protocol_state_to_string,
     };

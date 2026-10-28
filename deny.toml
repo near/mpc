@@ -50,6 +50,10 @@ ignore = [
   "RUSTSEC-2026-0359", # wasmtime stack overflow dropping a long chain of recursive types
   "RUSTSEC-2026-0362", # wasmtime may not enforce the async-entrypoint requirement
   "RUSTSEC-2026-0363", # wasmtime component-model handle tables are charged to no limit
+  # Fixed in wasmtime >= 48.0.7, with no patched 45.x release. Affects only the Cranelift
+  # aarch64 backend; release and CI builds target x86_64, where the miscompiled lowering
+  # is never emitted.
+  "RUSTSEC-2026-0379", # wasmtime aarch64 jumps to incorrect target on large `br_table`
   # TODO(#4839): remove once cargo can resolve zip >= 9.0.0.
   # zip comes only from nearcore's near-rosetta-rpc via utoipa-swagger-ui, whose build script
   # never calls the vulnerable `extract` APIs: it writes entries as plain files from a pinned
@@ -57,22 +61,20 @@ ignore = [
   "RUSTSEC-2026-0367", # zip extraction preserves SUID/SGID bits
   "RUSTSEC-2026-0368", # zip extraction creates symlinks pointing outside the destination
   "RUSTSEC-2026-0369", # zip extraction applies Unix permissions through symlinks
-  # TODO(#4423): remove once cargo can resolve rustls >= 0.23.45.
-  # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore 2.14.0-rc.2 and
-  # near-crypto 0.37.4 pin it to =1.16.2, so the fix cannot be resolved until they move. The
-  # handshake transcript stays authenticated: the flaw only lets a peer send handshake
-  # messages that should be encrypted in plaintext without rustls rejecting them.
-  "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
-  # TODO(#4423): remove once cargo can resolve rustls >= 0.23.46, blocked by the same pin.
-  # No crate enables rustls's `brotli` feature, the workspace has no custom
-  # `ClientSessionStore`, and our own TLS configs use the ring provider, which offers no
-  # post-quantum key exchange to downgrade
-  "RUSTSEC-2026-0346", # rustls client session values expose TLS secrets through `Debug`
-  "RUSTSEC-2026-0348", # rustls Brotli certificate decompression can allocate up to 1 GiB
-  "RUSTSEC-2026-0349", # rustls ServerHello can downgrade later handshakes to classical kx
-  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
-  # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
+  ## TEMPORARY, TODO(#4957): near-global-contracts 0.3 (via near-sdk 5.30 and near-kit 0.20) needs ##
+  ## proc-macro-error3 >= 3.0.2, while alloy-sol-macro 1.7.3 (via dstack-sdk) caps it at 3.0.1, so
+  ## cargo falls back to alloy-sol 1.6, which uses proc-macro-error2. A build time proc macro, no
+  ## vulnerability.
+  "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
+  ## End of the temporary entries
+  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copy comes from
+  # nearcore, through reed-solomon-erasure
   "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry
+  # TODO(#4916): remove once elliptic-curve 0.13 and its crypto-bigint 0.5.5 leave the tree.
+  # No patched 0.5.x exists, and the leaks are in 0.7 code: the `borrowing_sub` branch came
+  # with crypto-bigint#1029, and k256 0.13 scalars use only 0.5.5's mask-based add/sub/neg
+  # mod, with their own multiplication and inversion.
+  "RUSTSEC-2026-0387", # crypto-bigint constant-time leaks
 ]
 
 [bans]

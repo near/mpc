@@ -7,8 +7,8 @@ use super::transactions::{all_receipts_successful, execute_async_handle_calls};
 use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::types::{
-    Attestation, Config, Ed25519PublicKey, GetAttestationResponse, GovernanceThreshold,
-    Participants, ProtocolContractState,
+    Attestation, Config, Ed25519PublicKey, ExpectedMeasurements, GovernanceThreshold, Participants,
+    ProtocolContractState, StoredAttestation,
 };
 use near_workspaces::{Account, AccountId, result::ExecutionFinalResult, types::NearToken};
 
@@ -115,7 +115,7 @@ pub async fn tee_verifier_account_id(contract: &SandboxMpcContract) -> AccountId
 pub async fn get_participant_attestation(
     contract: &SandboxMpcContract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<GetAttestationResponse>> {
+) -> anyhow::Result<Option<StoredAttestation>> {
     Ok(contract.get_attestation(tls_key).await?.value)
 }
 
@@ -165,6 +165,19 @@ pub async fn vote_add_launcher_hash(
     let result = account
         .call_mpc(contract.id())
         .vote_add_launcher_hash(*launcher_hash)
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
+pub async fn vote_add_os_measurement(
+    account: &Account,
+    contract: &SandboxMpcContract,
+    measurement: &ExpectedMeasurements,
+) -> anyhow::Result<()> {
+    let result = account
+        .call_mpc(contract.id())
+        .vote_add_os_measurement(measurement.clone())
         .await?;
     all_receipts_successful(result)?;
     Ok(())

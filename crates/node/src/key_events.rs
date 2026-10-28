@@ -51,7 +51,7 @@ pub async fn keygen_computation_inner(
     // every protocol (including robust-ECDSA, whose reconstruction lower bound
     // equals `t`) the keygen runs with lower bound `t`.
     let reconstruction_threshold =
-        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
+        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.value())?);
     let keyshare_handle = keyshare_storage
         .write()
         .await
@@ -206,7 +206,7 @@ async fn resharing_computation_inner(
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
 
     let new_reconstruction_threshold =
-        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
+        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.value())?);
     let old_reconstruction_threshold = TSReconstructionThreshold::from(usize::try_from(
         args.old_reconstruction_thresholds
             .get(&key_id.domain_id)
@@ -216,7 +216,7 @@ async fn resharing_computation_inner(
                     key_id.domain_id
                 )
             })?
-            .inner(),
+            .value(),
     )?);
 
     let keyshare_handle = keyshare_storage
@@ -794,7 +794,7 @@ impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
 mod tests {
     use super::*;
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
-    use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
+    use crate::indexer::tx_sender::TransactionProcessorError;
     use crate::keyshare::KeyStorageConfig;
     use crate::network::testing::new_task_channel_for_test;
     use mpc_primitives::domain::DomainId;
@@ -1049,13 +1049,6 @@ mod tests {
         ) -> Result<(), TransactionProcessorError> {
             self.count.fetch_add(1, Ordering::SeqCst);
             Ok(())
-        }
-
-        async fn send_and_wait(
-            &self,
-            _transaction: ChainSendTransactionRequest,
-        ) -> Result<TransactionStatus, TransactionProcessorError> {
-            unimplemented!()
         }
     }
 

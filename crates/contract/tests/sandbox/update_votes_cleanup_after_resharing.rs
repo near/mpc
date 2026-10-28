@@ -16,7 +16,7 @@ use mpc_primitives::hash::ProposalHash;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold, Update, UpdateHash,
+    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold, Update, UpdateHash,
 };
 use near_mpc_sdk::update::hash;
 use near_workspaces::Account;
@@ -68,7 +68,7 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone().try_into().unwrap(),
+                    url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
@@ -140,7 +140,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         running.domains.next_domain_id
     };
     let domains_to_add = vec![DomainConfig {
-        id: DomainId(next_domain_id),
+        id: next_domain_id,
         protocol: Protocol::Frost,
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,
@@ -169,7 +169,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
             .insert_with_id(
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone().try_into().unwrap(),
+                    url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),

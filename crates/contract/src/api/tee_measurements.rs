@@ -4,7 +4,7 @@
 
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
-use crate::primitives::key_state::{AuthenticatedAccountId, AuthenticatedParticipantId};
+use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
@@ -39,7 +39,7 @@ impl MpcContract {
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             self.tee_state
                 .whitelist_tee_proposal(mpc_node_manifest_digest, tee_upgrade_deadline_duration);
         }
@@ -76,7 +76,7 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             let outcome = self.tee_state.add_launcher_image(
                 launcher_hash,
                 tee_upgrade_deadline_duration,
@@ -113,7 +113,7 @@ impl MpcContract {
         log!("total launcher votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
+        let total_participants = threshold_parameters.participants().count();
         if votes >= total_participants {
             let removed = self.tee_state.remove_launcher_image(&launcher_hash);
             log!("launcher hash remove result: {}", removed);
@@ -137,11 +137,15 @@ impl MpcContract {
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Add(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_measurement(action, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total measurement votes for action: {}", votes);
 
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             let added = self.tee_state.add_measurement(measurement);
             log!("OS measurement add result: {}", added);
         }
@@ -165,12 +169,16 @@ impl MpcContract {
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Remove(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_measurement(action, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total measurement votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
+        let total_participants = threshold_parameters.participants().count();
         if votes >= total_participants {
             let removed = self.tee_state.remove_measurement(&measurement);
             log!("OS measurement remove result: {}", removed);
@@ -179,7 +187,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Returns the current OS measurement votes, showing each participant's vote.
+    /// Returns pending OS measurement votes, may include former participants' votes
     pub fn os_measurement_votes(&self) -> dtos::MeasurementVotes {
         log!("os_measurement_votes");
         (&self.tee_state.measurement_votes).into_dto_type()
@@ -1015,7 +1023,7 @@ mod tests {
         let measurement = make_measurement(0xCC);
 
         // Initially empty
-        assert!(contract.os_measurement_votes().vote_by_account.is_empty());
+        assert!(contract.os_measurement_votes().is_empty());
 
         // Cast one vote
         let (account_id, _, _) = &participant_list[0];
@@ -1030,9 +1038,12 @@ mod tests {
             .expect("add vote should succeed");
 
         let votes = contract.os_measurement_votes();
-        assert_eq!(votes.vote_by_account.len(), 1);
-        let (_, action) = votes.vote_by_account.iter().next().unwrap();
-        assert_eq!(*action, dtos::MeasurementVoteAction::Add(measurement));
+        let expected_proposal = dtos::MeasurementVoteAction::Add(measurement).to_proposal_hash();
+        assert_eq!(votes.len(), 1);
+        assert_eq!(
+            votes[&expected_proposal],
+            BTreeSet::from([dtos::AuthenticatedAccountId(account_id.clone())])
+        );
     }
 
     /// Tests the allowed_os_measurements view method returns the full structs
