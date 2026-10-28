@@ -41,7 +41,7 @@ All crates live in a [Cargo workspace](Cargo.toml) under `crates/`. The ones you
 
 ## Releases
 
-Releases are created from `main` with semantic versioning and bundle the node binary with the contract: minor versions stay backward compatible with previous node versions, major versions with the previous major version's contract. See [RELEASES.md](RELEASES.md) for the full process and compatibility guarantees. Node and launcher Docker images support [reproducible builds](docs/guide/reproducible-builds.md).
+The node and contract ship together as semantically versioned releases; see [RELEASES.md](RELEASES.md) for the process and compatibility guarantees. Docker images build [reproducibly](docs/guide/reproducible-builds.md).
 
 ## Get in touch
 
