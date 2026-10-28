@@ -42,7 +42,6 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
-/// Result of the DCAP step.
 #[cfg(feature = "local-verify")]
 #[derive(Clone, Debug)]
 pub struct VerifiedQuote {
