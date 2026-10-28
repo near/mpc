@@ -780,7 +780,7 @@ pub static MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED: LazyLock<prometheus::IntGaugeV
         prometheus::register_int_gauge_vec!(
             "mpc_foreign_chain_rpc_quorum_required",
             "Number of whitelisted RPC providers the contract requires to agree on a verdict for a \
-             configured foreign chain; 0 while the chain is not whitelisted",
+             configured foreign chain; the series exists only while the chain is whitelisted",
             &["chain"],
         )
         .unwrap()
