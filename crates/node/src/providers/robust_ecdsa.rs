@@ -88,14 +88,15 @@ impl RobustEcdsaSignatureProvider {
 
     /// Reports the owned-asset gauges for every presignature store of this
     /// provider, labelled by domain. Robust ECDSA uses no triples.
-    pub fn report_asset_metrics(&self) {
+    pub fn report_asset_metrics(&self) -> anyhow::Result<()> {
         for (domain_id, keyshare) in &self.keyshares {
             report_store(
                 &PRESIGNATURE_GAUGES,
                 domain_id,
                 &keyshare.presignature_store,
-            );
+            )?;
         }
+        Ok(())
     }
 }
 

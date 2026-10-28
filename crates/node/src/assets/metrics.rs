@@ -86,10 +86,12 @@ pub fn report_store<T>(
     gauges: &OwnedAssetGauges,
     label: impl ToString,
     store: &DistributedAssetStorage<T>,
-) where
+) -> anyhow::Result<()>
+where
     T: Serialize + DeserializeOwned + Send + 'static,
 {
-    set_owned_asset_gauges(gauges, &label.to_string(), store.owned_asset_counts());
+    set_owned_asset_gauges(gauges, &label.to_string(), store.owned_asset_counts()?);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -168,14 +170,19 @@ mod tests {
         let ctx = TestContext::new(participants[0], Arc::new(Mutex::new(participants.clone())));
         let store = ctx.new_store::<PresignOutputWithParticipants>(DBCol::Presignature, Vec::new());
         for _ in 0..2 {
-            store.add_owned(store.generate_and_reserve_id(), make_presign(&participants));
+            store
+                .add_owned(
+                    store.generate_and_reserve_id().unwrap(),
+                    make_presign(&participants),
+                )
+                .unwrap();
         }
-        report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store);
+        report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store).unwrap();
         assert_eq!(read(&PRESIGNATURE_GAUGES, "test-take-owned").available, 2);
 
         // When
-        store.take_owned().await;
-        report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store);
+        store.take_owned().await.unwrap();
+        report_store(&PRESIGNATURE_GAUGES, "test-take-owned", &store).unwrap();
 
         // Then
         assert_eq!(read(&PRESIGNATURE_GAUGES, "test-take-owned").available, 1);
