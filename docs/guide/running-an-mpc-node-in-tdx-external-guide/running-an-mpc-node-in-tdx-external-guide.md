@@ -2426,7 +2426,7 @@ The contract will retry with a fresh attempt; repeated failures need investigati
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet \
-  new_parameters_votes \
+  parameters_votes \
   json-args '{}' \
   network-config testnet \
   now
