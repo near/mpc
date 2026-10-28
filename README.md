@@ -4,10 +4,15 @@ The threshold signature network behind [Chain Signatures](https://docs.near.org/
 
 ```mermaid
 flowchart LR
-    User -- "sign(request)" ----> Contract["signer contract<br/>(NEAR)"]
-    Contract -- "signature" ----> User
-    Contract -- "observe request" ----> Nodes["MPC nodes<br/>(t-of-n)"]
-    Nodes -- "respond(signature)" ----> Contract
+    User["<b>User</b><br/><i>typically another<br/>smart contract</i>"]
+    Contract["<b>Signer contract</b><br/><i>queues sign requests,<br/>manages the signer set</i>"]
+    Nodes["<b>MPC nodes</b> (t-of-n)<br/><i>hold keyshares,<br/>run the signing protocols</i>"]
+
+    User -- "(1) requests a signature" ---> Contract
+    Contract -- "(4) returns the signature" ---> User
+    Contract ~~~ Nodes
+    Nodes -- "(2) observe pending requests" ---> Contract
+    Nodes -- "(3) respond with the signature" ---> Contract
 ```
 
 ## What it does
