@@ -222,6 +222,7 @@ impl RunningContractState {
         )?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         if votes.vote(&domains, participant, self.parameters.participants()) {
+            votes.clear();
             let new_domains = self.domains.add_domains(domains.clone())?;
             Ok(Some(InitializingContractState {
                 generated_keys: self.keyset.domains.clone(),

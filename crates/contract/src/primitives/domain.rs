@@ -269,8 +269,7 @@ impl Default for AddDomainsVotes {
 
 impl AddDomainsVotes {
     /// Registers `participant`'s vote for `domains`, replacing any existing vote. Returns `true`
-    /// once every member of `participants` voted for `domains`; all pending votes are then
-    /// cleared.
+    /// once every member of `participants` voted for `domains`.
     pub fn vote(
         &mut self,
         domains: &[DomainConfig],
@@ -281,11 +280,7 @@ impl AddDomainsVotes {
             .0
             .vote(participant, domains.to_proposal_hash())
             .count_participants(participants);
-        let accepted = n_votes == participants.count();
-        if accepted {
-            self.clear();
-        }
-        accepted
+        n_votes == participants.count()
     }
 
     /// Drops votes from accounts that are no longer in `participants`.
@@ -499,7 +494,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_vote_accepts_and_clears_once_every_participant_voted() {
+    fn test_vote_accepts_once_every_participant_voted() {
         // Given
         let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
@@ -512,7 +507,7 @@ pub mod tests {
 
         // Then
         assert!(accepted);
-        assert!(votes.is_empty());
+        assert!(!votes.is_empty());
     }
 
     #[test]
