@@ -1210,6 +1210,13 @@ mod tests {
                 .block_timestamp((DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * NANOS_PER_SECOND)
                 .build()
         );
+        assert_eq!(
+            contract
+                .tee_state
+                .node_of(&account_id, &destination.tls_public_key)
+                .is_some(),
+            was_attested
+        );
 
         // When
         let result = contract.start_node_migration(destination_of(&destination));
