@@ -551,7 +551,7 @@ mod tests {
         );
     }
 
-    // TODO(#XXXX): drop once no deployed contract reports the pre-tally voter-keyed shape.
+    // TODO(#4984): drop once no deployed contract reports the pre-tally voter-keyed shape.
     #[test]
     #[expect(non_snake_case)]
     fn running_contract_state__should_ignore_the_legacy_parameters_votes_report() {
