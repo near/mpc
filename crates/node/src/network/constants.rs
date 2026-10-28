@@ -11,3 +11,7 @@ pub const MESSAGE_READ_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 pub const CONNECTED_PEERS_BROADCAST_INTERVAL: Duration = Duration::from_secs(1);
 
 pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);
+
+pub const ECHO_INTERVAL: Duration = Duration::from_secs(5);
+
+pub const ECHO_TIMEOUT: Duration = Duration::from_secs(2);

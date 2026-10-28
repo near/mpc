@@ -1,3 +1,4 @@
+use crate::network::rfc1982::Serial8;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -250,6 +251,11 @@ pub struct Version {
     pub commit: String,
     #[serde(default)]
     pub rustc_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Heartbeat {
+    pub nonce: Serial8,
 }
 
 #[cfg(test)]
