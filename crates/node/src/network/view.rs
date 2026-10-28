@@ -18,11 +18,12 @@ impl NetworkView {
         }
     }
 
+    // todo: returns all connections and participants that have changed due to the update
     pub fn update_with_reported_heights(
         &mut self,
         reporter: ParticipantId,
         reported_peer_heights: &BTreeMap<ParticipantId, u64>,
-    ) {
+    ) -> BTreeSet<Link> {
         if let Some(&own) = reported_peer_heights.get(&reporter)
             && own != 0
         {
@@ -41,6 +42,7 @@ impl NetworkView {
                     ConnectionReport::Delay(first_hand.saturating_sub(heard))
                 }
             };
+            // todo: compare against existing and add to set of reported changes
             self.connections
                 .entry(Connection {
                     from: peer,
