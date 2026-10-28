@@ -75,9 +75,11 @@ ignore = [
   # with crypto-bigint#1029, and k256 0.13 scalars use only 0.5.5's mask-based add/sub/neg
   # mod, with their own multiplication and inversion.
   "RUSTSEC-2026-0387", # crypto-bigint constant-time leaks
-  # TODO(#4967): remove once nearcore and tonic resolve to zstd >= 0.14.3.
-  # Fixed in zstd >= 0.14.3 and zstd-safe >= 8.2.0, which nearcore master already uses. zstd 0.13.3
-  # comes from nearcore 2.14.0 (near-primitives, near-store) and from tonic, via sui-rpc.
+  # TODO(#4967): remove once nearcore, crates.io near-primitives and tonic all use zstd >= 0.14.3.
+  # Fixed in zstd >= 0.14.3 and zstd-safe >= 8.2.0. zstd 0.13.3 comes from nearcore 2.14.0
+  # (near-primitives, near-store), from near-primitives 0.38.0 on crates.io (a direct dependency,
+  # also via near-sdk, near-jsonrpc-client and near-workspaces), and from tonic, whose `zstd`
+  # feature sui-rpc enables.
   # Compiled out: these need zstd-safe's `experimental` or `seekable` feature, neither enabled.
   "RUSTSEC-2026-0395", # zstd-safe use-after-free with `CParameter::StableInBuffer`
   "RUSTSEC-2026-0396", # zstd-safe `Seekable` reads a NULL or out-of-bounds seek table
