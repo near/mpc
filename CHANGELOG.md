@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
-## [3.18.0] - 2026-10-27
+## [3.18.0] - 2026-10-28
 
 ### 🚀 Features
 
@@ -35,6 +35,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#4917](https://github.com/near/mpc/pull/4917)(@anodar): Enforce RPC quorum in the node (#4917)
 
+- [#4933](https://github.com/near/mpc/pull/4933)(@anodar): *(node)* Register only the foreign chains whose RPC quorum the node reaches (#4933)
+
 
 ### 🐛 Bug Fixes
 
@@ -54,6 +56,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 ### 💼 Other
 
 - [#4942](https://github.com/near/mpc/pull/4942)(@haiyuechen-nearone): Drop the Rosetta cache from the reproducible image layers (#4942)
+
+- [#4969](https://github.com/near/mpc/pull/4969)(@gilcu3): Ignore unreachable zstd advisories and   bump yanked crypto-bigint (#4969)
 
 
 ### 🚜 Refactor
@@ -114,6 +118,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#4853](https://github.com/near/mpc/pull/4853)(@netrome): Add helpful docstrings to ckd types (#4853)
 
 - [#4322](https://github.com/near/mpc/pull/4322)(@barakeinav1): *(design)* TDX CI runner design (#4322)
+
+- [#4956](https://github.com/near/mpc/pull/4956)(@anodar): Add whitelist & quorum section in onboarding guide (#4956)
 
 
 ### 🧪 Testing
@@ -188,6 +194,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#4939](https://github.com/near/mpc/pull/4939)(@dependabot[bot]): Bump near-kit from 0.18.3 to 0.19.0 (#4939)
 
 - [#4935](https://github.com/near/mpc/pull/4935)(@haiyuechen-nearone): Bump nearcore to 2.14.0 (#4935)
+
+- [#4973](https://github.com/near/mpc/pull/4973)(@anodar): Relax quorum of rpc providers in contract migration (#4973)
 
 
 ## [3.17.0] - 2026-10-12
