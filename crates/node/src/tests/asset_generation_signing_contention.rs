@@ -60,7 +60,7 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use average::{Estimate, Max, Mean, Quantile};
-use mpc_node_config::{PresignatureConfig, TripleConfig};
+use mpc_node_config::{PresignatureConfig, TripleBatchSize, TripleConfig};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -89,8 +89,9 @@ const STEADY_TRIPLES_TO_BUFFER: usize = 128;
 /// post-resharing scenario the large triple buffer keeps triples flowing, so
 /// presignature generation runs flat out.
 const REFILL_TRIPLE_CONCURRENCY: usize = 2;
-/// Steady state only tops off as signing consumes presignatures; one triple batch
-/// at a time keeps the small buffer full without itself loading the runtime.
+/// Steady state only tops off as signing consumes triples (online presign) or
+/// presignatures; one triple batch at a time keeps the small buffer full without
+/// itself loading the runtime.
 const STEADY_TRIPLE_CONCURRENCY: usize = 1;
 const TRIPLE_STAGGER_SEC: u64 = 0;
 /// Mainnet presignature concurrency, which exceeds `CORES_PER_NODE`: leader-side
@@ -228,6 +229,7 @@ async fn measure_signing_latency(
             },
             parallel_triple_generation_stagger_time_sec: TRIPLE_STAGGER_SEC,
             timeout_sec: 120,
+            batch_size: TripleBatchSize::default(),
         };
         node.config.presignature = PresignatureConfig {
             concurrency: PRESIGNATURE_CONCURRENCY,

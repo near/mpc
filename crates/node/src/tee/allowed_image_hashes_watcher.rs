@@ -198,10 +198,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use mockall::predicate;
     use rstest::rstest;
-    use std::{sync::Arc, time::Duration};
+    use std::{assert_matches, sync::Arc, time::Duration};
     use tokio::sync::{Notify, mpsc::error::TryRecvError};
     use tokio_util::time::FutureExt;
 

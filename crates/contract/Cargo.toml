@@ -6,7 +6,7 @@ edition = { workspace = true }
 repository = "https://github.com/near/mpc"
 
 # Reproducible builds are produced by two coexisting paths
-# (see `docs/reproducible-builds.md`):
+# (see `docs/guide/reproducible-builds.md`):
 #   1. The Nix derivation at `nix/mpc-contract.nix` (exposed as
 #      `packages.<system>.mpc-contract` in `flake.nix`).
 #   2. cargo-near, driven by the NEP-330 metadata below. The pinned
@@ -46,9 +46,14 @@ container_build_command = [
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["block-clock"]
+# Read time from the block. Pinning the clock (sandbox tests only) takes both
+# disabling this default feature and setting `MPC_CONTRACT_PINNED_NOW_SECONDS`.
+block-clock = []
 test-utils = [
     "rand",
     "threshold-signatures",
+    "mpc-attestation/test-utils",
     "near-mpc-contract-interface/blstrs",
     "near-sdk/unit-testing",
 ]
@@ -66,7 +71,6 @@ abi = [
     "mpc-attestation/abi",
     "mpc-primitives/abi",
     "tee-verifier-interface/borsh-schema",
-    "schemars",
 ]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
@@ -74,8 +78,7 @@ abi = [
 __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
-assert_matches = { workspace = true }
-attestation = { workspace = true }
+attestation-types = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -85,7 +88,6 @@ hex = { workspace = true, features = [] }
 k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",
-    "serde",
     "arithmetic",
     "expose-field",
 ] }
@@ -94,16 +96,16 @@ mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
-    "ed25519-dalek",
+    "curve25519-dalek",
     "k256",
     "near",
 ] }
+near-mpc-sdk = { workspace = true }
 near-mpc-signature-verifier = { workspace = true }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 tee-verifier-interface = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
@@ -114,10 +116,6 @@ near-account-id = { workspace = true, features = [
     "schemars-v0_8",
     "abi",
 ] }
-schemars = { workspace = true, optional = true }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
 anyhow = { workspace = true }
@@ -133,15 +131,18 @@ mpc-contract = { workspace = true, features = [
 ] }
 near-abi = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
+near-jsonrpc-client = { workspace = true }
+near-jsonrpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
-near-mpc-sdk = { workspace = true }
+near-mpc-sdk = { workspace = true, features = ["non-contract-usage"] }
+near-primitives = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 rstest = { workspace = true }
 sha2 = { workspace = true }
 signature = { workspace = true }
-test-utils = { workspace = true }
+test-utils = { workspace = true, features = ["sandbox"] }
 threshold-signatures = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

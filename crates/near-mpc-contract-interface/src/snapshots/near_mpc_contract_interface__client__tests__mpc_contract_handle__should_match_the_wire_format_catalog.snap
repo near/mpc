@@ -3,10 +3,34 @@ source: crates/near-mpc-contract-interface/src/client.rs
 expression: catalog
 ---
 contract: mpc.near
+method:   init
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"parameters":{"participants":{"next_id":1,"participants":[["alice.near",0,{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}]]},"threshold":1},"tee_verifier_account_id":"tee-verifier.near","init_config":{"key_event_timeout_blocks":null,"tee_upgrade_deadline_duration_seconds":null,"apply_contract_update_tera_gas":null,"sign_call_gas_attachment_requirement_tera_gas":null,"ckd_call_gas_attachment_requirement_tera_gas":null,"return_signature_and_clean_state_on_success_call_tera_gas":null,"return_ck_and_clean_state_on_success_call_tera_gas":null,"fail_on_timeout_tera_gas":null,"fail_attestation_submission_tera_gas":null,"clean_tee_status_tera_gas":null,"clean_invalid_attestations_tera_gas":null,"cleanup_orphaned_node_migrations_tera_gas":null,"remove_non_participant_update_votes_tera_gas":null,"clean_foreign_chain_data_tera_gas":null,"remove_non_participant_tee_verifier_votes_tera_gas":null,"verifier_tera_gas":null,"resolve_verification_tera_gas":null,"launcher_hash_unused_ttl_seconds":null,"attestation_storage_fee_millinear":null}}
+
+contract: mpc.near
+method:   init_running
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"domains":[],"next_domain_id":0,"keyset":{"epoch_id":7,"domains":[]},"parameters":{"participants":{"next_id":1,"participants":[["alice.near",0,{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}]]},"threshold":1},"tee_verifier_account_id":"tee-verifier.near","init_config":{"key_event_timeout_blocks":null,"tee_upgrade_deadline_duration_seconds":null,"apply_contract_update_tera_gas":null,"sign_call_gas_attachment_requirement_tera_gas":null,"ckd_call_gas_attachment_requirement_tera_gas":null,"return_signature_and_clean_state_on_success_call_tera_gas":null,"return_ck_and_clean_state_on_success_call_tera_gas":null,"fail_on_timeout_tera_gas":null,"fail_attestation_submission_tera_gas":null,"clean_tee_status_tera_gas":null,"clean_invalid_attestations_tera_gas":null,"cleanup_orphaned_node_migrations_tera_gas":null,"remove_non_participant_update_votes_tera_gas":null,"clean_foreign_chain_data_tera_gas":null,"remove_non_participant_tee_verifier_votes_tera_gas":null,"verifier_tera_gas":null,"resolve_verification_tera_gas":null,"launcher_hash_unused_ttl_seconds":null,"attestation_storage_fee_millinear":null}}
+
+contract: mpc.near
+method:   migrate
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {}
+
+contract: mpc.near
 method:   sign
 gas:      15.0 Tgas
 deposit:  1 yoctoNEAR
 args:     {"request":{"path":"test","payload_v2":{"Ecdsa":"0707070707070707070707070707070707070707070707070707070707070707"},"domain_id":0}}
+
+contract: mpc.near
+method:   respond
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"request":{"tweak":[100,10,115,5,122,198,165,83,30,151,116,69,245,215,110,31,115,165,30,162,189,16,229,117,213,171,51,108,9,138,171,241],"payload":{"Ecdsa":"0707070707070707070707070707070707070707070707070707070707070707"},"domain_id":0},"response":{"scheme":"Secp256k1","big_r":{"affine_point":"070707070707070707070707070707070707070707070707070707070707070707"},"s":{"scalar":"0707070707070707070707070707070707070707070707070707070707070707"},"recovery_id":0}}
 
 contract: mpc.near
 method:   request_app_private_key
@@ -21,6 +45,12 @@ deposit:  1 yoctoNEAR
 args:     {"request":{"derivation_path":"test","app_public_key":{"AppPublicKeyPV":{"pk1":"bls12381g1:FxBq18owLGrqcS3FKniTZAU8RRA3qqPBsp3AJNKX2nM52MxAEUuiwXK5AJ9sYXqJE","pk2":"bls12381g2:3RQWGwhrtwbaRTSzb4kKP61FKsJC27zTqsPzKuda9q4xbkt42afkgamdyLqHFQsybmu1vqwXsCXUdAezZpU927qCVcAGK7gGWjHWeSqrVbSEBVyVdsbBPZ9JX2jxRrkHhTt"}},"domain_id":0}}
 
 contract: mpc.near
+method:   respond_ckd
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"request":{"app_public_key":{"AppPublicKey":"bls12381g1:FxBq18owLGrqcS3FKniTZAU8RRA3qqPBsp3AJNKX2nM52MxAEUuiwXK5AJ9sYXqJE"},"app_id":[15,21,17,171,145,120,221,41,74,37,50,20,84,208,201,64,97,55,99,24,110,117,198,140,115,60,31,96,139,54,219,207],"domain_id":0},"response":{"big_y":"bls12381g1:FxBq18owLGrqcS3FKniTZAU8RRA3qqPBsp3AJNKX2nM52MxAEUuiwXK5AJ9sYXqJE","big_c":"bls12381g1:FxBq18owLGrqcS3FKniTZAU8RRA3qqPBsp3AJNKX2nM52MxAEUuiwXK5AJ9sYXqJE"}}
+
+contract: mpc.near
 method:   verify_foreign_transaction
 gas:      15.0 Tgas
 deposit:  1 yoctoNEAR
@@ -33,16 +63,34 @@ deposit:  1 yoctoNEAR
 args:     {"request":{"request":{"Bitcoin":{"tx_id":"0707070707070707070707070707070707070707070707070707070707070707","confirmations":1,"extractors":["BlockHash"]}},"domain_id":0,"payload_version":1}}
 
 contract: mpc.near
-method:   propose_update
+method:   respond_verify_foreign_tx
 gas:      300.0 Tgas
-deposit:  0.32772 NEAR
-args:     0x01040000000707070700
+deposit:  0 NEAR
+args:     {"request":{"request":{"Bitcoin":{"tx_id":"0707070707070707070707070707070707070707070707070707070707070707","confirmations":1,"extractors":["BlockHash"]}},"domain_id":0,"payload_version":1},"response":{"payload_hash":"0707070707070707070707070707070707070707070707070707070707070707","signature":{"scheme":"Secp256k1","big_r":{"affine_point":"070707070707070707070707070707070707070707070707070707070707070707"},"s":{"scalar":"0707070707070707070707070707070707070707070707070707070707070707"},"recovery_id":0}}}
 
 contract: mpc.near
-method:   vote_update
-gas:      260.0 Tgas
+method:   submit_contract_update
+gas:      300.0 Tgas
+deposit:  1 yoctoNEAR
+args:     0x000400000007070707
+
+contract: mpc.near
+method:   vote_contract_update
+gas:      22.0 Tgas
 deposit:  0 NEAR
-args:     {"id":7}
+args:     {"update_hash":{"Code":"0707070707070707070707070707070707070707070707070707070707070707"}}
+
+contract: mpc.near
+method:   remove_contract_update_vote
+gas:      5.0 Tgas
+deposit:  0 NEAR
+args:     {}
+
+contract: mpc.near
+method:   remove_non_participant_contract_update_votes
+gas:      5.0 Tgas
+deposit:  0 NEAR
+args:     {}
 
 contract: mpc.near
 method:   vote_add_domains
@@ -51,10 +99,34 @@ deposit:  0 NEAR
 args:     {"domains":[{"id":0,"protocol":"CaitSith","reconstruction_threshold":2,"purpose":"Sign"}]}
 
 contract: mpc.near
+method:   start_keygen_instance
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"key_event_id":{"epoch_id":7,"domain_id":0,"attempt_id":0}}
+
+contract: mpc.near
+method:   vote_pk
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"key_event_id":{"epoch_id":7,"domain_id":0,"attempt_id":0},"public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}
+
+contract: mpc.near
 method:   vote_new_parameters
 gas:      22.0 Tgas
 deposit:  0 NEAR
 args:     {"prospective_epoch_id":7,"proposal":{"parameters":{"participants":{"next_id":1,"participants":[["alice.near",0,{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}]]},"threshold":1},"per_domain_thresholds":{}}}
+
+contract: mpc.near
+method:   start_reshare_instance
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"key_event_id":{"epoch_id":7,"domain_id":0,"attempt_id":0}}
+
+contract: mpc.near
+method:   vote_reshared
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"key_event_id":{"epoch_id":7,"domain_id":0,"attempt_id":0}}
 
 contract: mpc.near
 method:   vote_cancel_keygen
@@ -67,6 +139,24 @@ method:   vote_cancel_resharing
 gas:      5.0 Tgas
 deposit:  0 NEAR
 args:     {}
+
+contract: mpc.near
+method:   vote_add_launcher_hash
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"launcher_hash":"0707070707070707070707070707070707070707070707070707070707070707"}
+
+contract: mpc.near
+method:   vote_add_os_measurement
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"measurement":{"mrtd":"070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707","rtmr0":"070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707","rtmr1":"070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707","rtmr2":"070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707","key_provider_event_digest":"070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707"}}
+
+contract: mpc.near
+method:   vote_tee_verifier_change
+gas:      22.0 Tgas
+deposit:  0 NEAR
+args:     {"candidate_account_id":"verifier.near","expected_code_hash":"0707070707070707070707070707070707070707070707070707070707070707"}
 
 contract: mpc.near
 method:   update_participant_url
@@ -87,16 +177,22 @@ deposit:  1 yoctoNEAR
 args:     {"destination_node_info":{"signer_account_pk":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx","destination_node_info":{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}}}
 
 contract: mpc.near
-method:   register_foreign_chain_support
+method:   cancel_node_migration
 gas:      300.0 Tgas
-deposit:  0 NEAR
-args:     {"foreign_chain_support":["Bitcoin"]}
+deposit:  1 yoctoNEAR
+args:     {}
 
 contract: mpc.near
 method:   vote_update_foreign_chain_providers
 gas:      30.0 Tgas
 deposit:  0 NEAR
-args:     0x01000000010100000007000000616c6368656d7912000000687474703a2f2f6c6f63616c686f73743a3703000100000000000000
+args:     {"votes":{"Bitcoin":{"providers":{"alchemy":{"base_url":"http://localhost:7","auth_scheme":"None","chain_routing":"Embedded"}},"quorum":1}}}
+
+contract: mpc.near
+method:   prepay_attestation_storage
+gas:      30.0 Tgas
+deposit:  0.014 NEAR
+args:     {"account_id":"node.near","grants":2}
 
 contract: mpc.near
 method:   submit_participant_info
@@ -109,3 +205,15 @@ method:   verify_tee
 gas:      300.0 Tgas
 deposit:  0 NEAR
 args:     {}
+
+contract: mpc.near
+method:   clean_tee_status
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {}
+
+contract: mpc.near
+method:   clean_invalid_attestations
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"max_scan":7}

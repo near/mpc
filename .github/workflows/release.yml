@@ -16,12 +16,12 @@ jobs:
     runs-on: warp-ubuntu-2604-x64-2x
     environment: production
     permissions:
-      contents: write
-      actions: read
+      contents: write # creates the draft release
+      actions: read # downloads the contract from the build run
 
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -87,7 +87,7 @@ jobs:
           fi
 
       - name: Login to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PAT }}
@@ -97,7 +97,7 @@ jobs:
           BRANCH_TAG: ${{ steps.inputs.outputs.branch-tag }}
         run: |
           set -euo pipefail
-          for REPO in mpc-node mpc-node-gcp mpc-launcher; do
+          for REPO in mpc-node mpc-launcher; do
             if ! skopeo inspect docker://nearone/$REPO:$BRANCH_TAG > /dev/null 2>&1; then
               echo "::error::Source image nearone/$REPO:$BRANCH_TAG not found."
               echo "::error::Has the build workflow finished for this commit? If a new commit was pushed after the build started, wait for the new build to complete."
@@ -128,7 +128,7 @@ jobs:
           echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download contract artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: contract
           run-id: ${{ steps.contract-run.outputs.run-id }}
@@ -142,7 +142,7 @@ jobs:
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
           set -euo pipefail
-          for REPO in mpc-node mpc-node-gcp mpc-launcher; do
+          for REPO in mpc-node mpc-launcher; do
             SAFE_NAME="${REPO//-/_}"
             skopeo copy --preserve-digests --all \
               docker://nearone/$REPO:$BRANCH_TAG \
@@ -172,7 +172,6 @@ jobs:
         env:
           VERSION: ${{ steps.inputs.outputs.version }}
           NODE_DIGEST: ${{ steps.digests.outputs.mpc_node_digest }}
-          NODE_GCP_DIGEST: ${{ steps.digests.outputs.mpc_node_gcp_digest }}
           LAUNCHER_DIGEST: ${{ steps.digests.outputs.mpc_launcher_digest }}
           CONTRACT_HASH: ${{ steps.contract.outputs.hash }}
         run: |
@@ -184,9 +183,6 @@ jobs:
 
           - [nearone/mpc-node:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node/${VERSION}/)
             Manifest digest: \`${NODE_DIGEST}\`
-
-          - [nearone/mpc-node-gcp:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node-gcp/${VERSION}/)
-            Manifest digest: \`${NODE_GCP_DIGEST}\`
 
           - [nearone/mpc-launcher:${VERSION}](https://hub.docker.com/layers/nearone/mpc-launcher/${VERSION}/)
             Manifest digest: \`${LAUNCHER_DIGEST}\`

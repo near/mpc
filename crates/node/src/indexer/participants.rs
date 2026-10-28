@@ -1,4 +1,3 @@
-use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
@@ -6,13 +5,14 @@ use ed25519_dalek::VerifyingKey;
 use mpc_primitives::EpochId;
 use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
+use near_contract_transport::ViewContract;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
     GovernanceThresholdParameters, KeyEvent, ProtocolContractState,
 };
 use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use tokio::sync::watch;
 use url::Url;
 
@@ -306,8 +306,8 @@ impl ContractState {
 
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
-pub async fn monitor_contract_state(
-    indexer_state: Arc<IndexerState>,
+pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'static>(
+    contract: MpcContractHandle<V>,
     port_override: Option<u16>,
     protocol_state_sender: watch::Sender<dtos::ProtocolContractState>,
 ) -> watch::Receiver<ContractState> {
@@ -319,20 +319,12 @@ pub async fn monitor_contract_state(
             // first tick returns immediately
             refresh_interval_tick.tick().await;
 
-            //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-            tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-            indexer_state.client.wait_for_full_sync().await;
-
             tracing::debug!(target: "indexer", "querying contract state");
 
-            let (height, protocol_state) = match indexer_state
-                .view_client
-                .get_mpc_contract_state_dto(indexer_state.mpc_contract_id.clone())
-                .await
-            {
-                Ok(contract_state) => contract_state,
+            let (height, protocol_state) = match contract.state().await {
+                Ok(observed) => (observed.observed_at.into(), observed.value),
                 Err(e) => {
-                    tracing::error!(target: "mpc", "error reading config from chain during get_mpc_contract_state: {:?}", e);
+                    tracing::error!(target: "mpc", "error reading config from chain during state: {:?}", e);
                     tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
                     continue;
                 }
@@ -561,7 +553,7 @@ mod tests {
     use mpc_contract::state::{
         ProtocolContractState as InternalContractState, test_utils::gen_resharing_state,
     };
-    use near_indexer_primitives::types::AccountId;
+    use near_account_id::AccountId;
     use near_mpc_contract_interface::types::AccountId as DtoAccountId;
     use near_mpc_contract_interface::types::{
         GovernanceThreshold, GovernanceThresholdParameters, ParticipantId, ParticipantInfo,
@@ -603,7 +595,7 @@ mod tests {
                 account_id.parse().unwrap(),
                 ParticipantId(i as u32),
                 ParticipantInfo {
-                    url,
+                    url: url.try_into().unwrap(),
                     tls_public_key: pk.parse().unwrap(),
                 },
             ));
@@ -682,7 +674,7 @@ mod tests {
         // Given
         let mut entries = create_chain_participant_infos().participants;
         let original_count = entries.len();
-        entries[0].2.url = "http://:3000".to_string();
+        entries[0].2.url = "http://:3000".try_into().unwrap();
         let account = entries[0].0.clone();
         let params = GovernanceThresholdParameters {
             participants: Participants {
@@ -711,7 +703,7 @@ mod tests {
     fn convert_participant_infos__should_apply_port_override_to_unreachable_participant() {
         // Given
         let mut entries = create_chain_participant_infos().participants;
-        entries[0].2.url = "http://:3000".to_string();
+        entries[0].2.url = "http://:3000".try_into().unwrap();
         let account = entries[0].0.clone();
         let params = GovernanceThresholdParameters {
             participants: Participants {
@@ -741,7 +733,7 @@ mod tests {
         let (_, mut resharing) = gen_resharing_state(1);
         let domain_id = resharing.resharing_key.domain().id;
         let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
-        let new_threshold = ReconstructionThreshold::new(old_threshold.inner() + 1);
+        let new_threshold = ReconstructionThreshold::new(old_threshold.value() + 1);
         resharing.per_domain_thresholds = BTreeMap::from([(domain_id, new_threshold)]);
         let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
 

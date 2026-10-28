@@ -1,5 +1,10 @@
+use chain_gateway::{ChainGateway, NodeConfig};
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
+use near_contract_transport::{NearKitCaller, PollInterval};
+use near_kit::Near;
+use near_kit::transaction::Final;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
 use std::{
@@ -61,24 +66,57 @@ pub async fn run_command(args: cli::Args) {
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args).await;
 
-            put_keyshares(&mpc_p2p_client, &key_shares_storage).await;
+            put_keyshares(&mpc_p2p_client, &key_shares_storage)
+                .await
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "failed to put keyshares from {}: {err:?}",
+                        home_dir.display()
+                    )
+                });
         }
         cli::Command::Run(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
+
+            let (status_reporter, status) = adapters::web::status_channel();
+            if let Some(listen_address) = subcommand_args.listen_address {
+                adapters::web::spawn_web_server(listen_address, status)
+                    .await
+                    .expect("failed to start the web server");
+            }
+
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
-            let contract_state =
-                adapters::contract_state_polling::PollingContractStateWatcher::spawn(
-                    adapters::contract_state_rpc::RpcContractStateReader::new(
-                        &subcommand_args.rpc_url,
-                        &subcommand_args.near_chain_id,
-                        subcommand_args.mpc_contract_account_id,
-                    ),
+            let Some(rpc_url) = subcommand_args.rpc_url else {
+                return run_backup_service_through_embedded_node(
+                    home_dir,
+                    subcommand_args.mpc_contract_account_id,
+                    mpc_p2p_client,
+                    key_shares_storage,
+                    status_reporter,
                     Duration::from_secs(subcommand_args.poll_interval_seconds),
-                    Duration::from_secs(subcommand_args.node.request_timeout_seconds),
                 )
                 .await;
+            };
+
+            let request_timeout = Duration::from_secs(subcommand_args.node.request_timeout_seconds);
+            let poll_interval =
+                PollInterval::new(Duration::from_secs(subcommand_args.poll_interval_seconds))
+                    .expect("clap's range(1..) rejects a zero poll_interval_seconds");
+            let rpc = NearKitCaller::<Final>::new(
+                Near::custom(rpc_url.as_str(), subcommand_args.near_chain_id.as_str()).build(),
+                poll_interval,
+                request_timeout,
+            );
+            let mpc_contract = MpcContractHandle::new(rpc, subcommand_args.mpc_contract_account_id);
+
+            mpc_contract.state().await.expect(
+                "could not read the MPC contract state; check that BACKUP_RPC_URL points to a \
+                 reachable NEAR JSON-RPC endpoint of the configured chain and that \
+                 MPC_CONTRACT_ACCOUNT_ID names the MPC contract",
+            );
+            let contract_state = mpc_contract.state().subscribe().await;
 
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
@@ -87,7 +125,9 @@ pub async fn run_command(args: cli::Args) {
                 mpc_p2p_client,
                 key_shares_storage,
                 contract_state,
-                Duration::from_secs(subcommand_args.poll_interval_seconds),
+                status_reporter,
+                adapters::clock::SystemClock,
+                poll_interval.into(),
                 shutdown,
             )
             .await
@@ -133,13 +173,51 @@ async fn open_node_client_and_storage(
     (mpc_p2p_client, keyshares_storage)
 }
 
+async fn run_backup_service_through_embedded_node(
+    home_dir: PathBuf,
+    mpc_contract_account_id: AccountId,
+    mpc_p2p_client: impl ports::P2PClient,
+    keyshares_storage: impl ports::KeyShareRepository,
+    status: impl ports::ReportBackupStatus,
+    retry_delay: Duration,
+) {
+    let shutdown = CancellationToken::new();
+    spawn_shutdown_on_signal(shutdown.clone());
+
+    let (chain_gateway, _near_node, _) =
+        ChainGateway::start(NodeConfig::new(home_dir), None, shutdown.clone())
+            .await
+            .expect("failed to start the NEAR node");
+    let mpc_contract = MpcContractHandle::new(chain_gateway, mpc_contract_account_id);
+    let Some(contract_state) = shutdown
+        .run_until_cancelled(mpc_contract.state().subscribe())
+        .await
+    else {
+        return;
+    };
+    run_backup_service(
+        mpc_p2p_client,
+        keyshares_storage,
+        contract_state,
+        status,
+        adapters::clock::SystemClock,
+        retry_delay,
+        shutdown,
+    )
+    .await
+    .expect("automatic backup service failed");
+}
+
 /// Backs up keyshares whenever the observed contract state stops being covered by what is
-/// stored, until `shutdown` is cancelled. A failed backup is re-attempted after `retry_delay`,
-/// since the contract state it failed on may not change again for a long time.
+/// stored, until `shutdown` is cancelled. On startup and then hourly, a covered keyset is
+/// fetched again and compared with what is stored. A failed fetch is re-attempted after
+/// `retry_delay`, since the contract state it failed on may not change again for a long time.
 pub async fn run_backup_service(
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,
     contract_state: impl ports::WatchContractState,
+    status: impl ports::ReportBackupStatus,
+    clock: impl ports::GetCurrentTime,
     retry_delay: Duration,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
@@ -147,6 +225,8 @@ pub async fn run_backup_service(
         mpc_p2p_client,
         keyshares_storage,
         contract_state,
+        status,
+        clock,
         retry_delay,
     )
     .await?
@@ -238,22 +318,102 @@ pub async fn get_keyshares(
         .map_err(|err| anyhow::anyhow!("failed to store keyshares: {err:?}"))
 }
 
+/// Sends the locally stored keyshares to an MPC node. Fails on an empty local store rather than
+/// issuing a request the node would accept and then ignore.
 pub async fn put_keyshares(
     mpc_p2p_client: &impl ports::P2PClient,
     keyshares_storage: &impl ports::KeyShareRepository,
-) {
+) -> anyhow::Result<()> {
     let key_shares = keyshares_storage
         .load_keyshares()
         .await
-        .expect("fail to load key shares");
+        .map_err(|err| anyhow::anyhow!("failed to load keyshares: {err:?}"))?;
+    if key_shares.is_empty() {
+        anyhow::bail!(
+            "no keyshares in local storage: run `get-keyshares` against a node that holds them \
+             before putting them back"
+        );
+    }
     mpc_p2p_client
         .put_keyshares(&key_shares)
         .await
-        .expect("fail to put key shares");
+        .map_err(|err| anyhow::anyhow!("failed to put keyshares: {err:?}"))
 }
 
 fn verifying_key_from_str(mpc_node_p2p_key: &str) -> VerifyingKey {
     let mpc_node_p2p_key = contract_types::Ed25519PublicKey::from_str(mpc_node_p2p_key)
         .expect("invalid mpc_node_p2p_key value");
     VerifyingKey::from_bytes(mpc_node_p2p_key.as_bytes()).expect("Invalid mpc_node_p2p_key value")
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use mpc_node::keyshare::{Keyshare, test_utils::generate_dummy_keyshare};
+    use near_mpc_contract_interface::types::Keyset;
+    use rand::SeedableRng as _;
+    use rand::rngs::StdRng;
+
+    use super::put_keyshares;
+    use crate::ports::{KeyShareRepository, P2PClient};
+
+    struct FakeP2PClient {
+        put_keyshares_calls: AtomicUsize,
+    }
+
+    impl FakeP2PClient {
+        fn new() -> Self {
+            Self {
+                put_keyshares_calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl P2PClient for FakeP2PClient {
+        type Error = anyhow::Error;
+
+        async fn get_keyshares(&self, _keyset: &Keyset) -> Result<Vec<Keyshare>, Self::Error> {
+            unreachable!("put-keyshares never fetches")
+        }
+
+        async fn put_keyshares(&self, _key_shares: &[Keyshare]) -> Result<(), Self::Error> {
+            self.put_keyshares_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    struct FakeKeyshareStorage {
+        keyshares: Vec<Keyshare>,
+    }
+
+    impl KeyShareRepository for FakeKeyshareStorage {
+        type Error = anyhow::Error;
+
+        async fn store_keyshares(&self, _key_shares: &[Keyshare]) -> Result<(), Self::Error> {
+            unreachable!("put-keyshares never stores")
+        }
+
+        async fn load_keyshares(&self) -> Result<Vec<Keyshare>, Self::Error> {
+            Ok(self.keyshares.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn put_keyshares__should_send_the_stored_keyshares() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let mpc_p2p_client = FakeP2PClient::new();
+        let storage = FakeKeyshareStorage {
+            keyshares: vec![generate_dummy_keyshare(1, 0, 1, &mut rng)],
+        };
+
+        // When
+        let result = put_keyshares(&mpc_p2p_client, &storage).await;
+
+        // Then
+        result.expect("stored keyshares should be pushed to the node");
+        assert_eq!(mpc_p2p_client.put_keyshares_calls.load(Ordering::SeqCst), 1);
+    }
 }

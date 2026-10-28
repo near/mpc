@@ -1,4 +1,5 @@
-FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+# linux/amd64 manifest of debian:bookworm-slim, built 2026-10-20T21:32:55Z
+FROM debian:bookworm-slim@sha256:ec31d744f83f4a73447ba045aaab9409997efe5cc706eca4890c1be36cc1606a
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN \
@@ -9,7 +10,7 @@ RUN \
     apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
     : "Clean up for improving reproducibility" && \
-    rm -rf /var/log/* /var/cache/ldconfig/aux-cache
+    rm -rf /var/log/* /var/cache/ldconfig/aux-cache /root/.cache
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app

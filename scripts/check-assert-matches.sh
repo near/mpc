@@ -36,12 +36,12 @@ fi
 cat <<'MSG'
 ❌ Found assert!(matches!(...)) — use assert_matches!() instead
 
-The assert_matches! macro (from the assert_matches crate) provides
-better error messages by showing the actual value on failure.
+The std::assert_matches! macro provides better error messages by
+showing the actual value on failure.
 
 Replace:
   assert!(matches!(expr, pattern));
-With:
+With (after `use std::assert_matches;`):
   assert_matches!(expr, pattern);
 
 If the matched type doesn't implement Debug, add this comment on the line above:

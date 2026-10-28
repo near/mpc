@@ -11,7 +11,7 @@ use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, TripleConfig,
+    SignatureConfig, TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -49,6 +49,7 @@ impl IntoResponse for AnyhowErrorWrapper {
 pub(crate) async fn metrics() -> String {
     // Ensure build info metric is always set before gathering metrics
     crate::metrics::init_build_info_metric();
+    crate::metrics::init_attestation_freshness_metrics();
 
     let metric_families = default_registry().gather();
     let mut buffer = vec![];
@@ -97,6 +98,8 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    foreign_chains_rpc_preset: Option<RpcPreset>,
     foreign_chains_provider_counts: ForeignChainsProviderCounts,
     cores: Option<usize>,
     separate_asset_generation_runtime: bool,
@@ -117,6 +120,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
+            foreign_chains_rpc_preset: config.foreign_chains.rpc_preset,
             foreign_chains_provider_counts: config.foreign_chains.into(),
             cores: config.cores,
             separate_asset_generation_runtime: config.separate_asset_generation_runtime,
@@ -154,6 +158,12 @@ struct ForeignChainsProviderCounts {
     aptos: usize,
     #[serde(skip_serializing_if = "is_zero")]
     sui: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    avalanche: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    adi: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    fogo: usize,
 }
 
 impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
@@ -171,6 +181,9 @@ impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
             polygon: config.polygon.map_or(0, |c| c.providers.len()),
             aptos: config.aptos.map_or(0, |c| c.providers.len()),
             sui: config.sui.map_or(0, |c| c.providers.len()),
+            avalanche: config.avalanche.map_or(0, |c| c.providers.len()),
+            adi: config.adi.map_or(0, |c| c.providers.len()),
+            fogo: config.fogo.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -384,11 +397,14 @@ pub async fn start_web_server(
 mod tests {
     use super::*;
     use mpc_node_config::foreign_chains::{
-        ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
+        ForeignChainConfig, ForeignChainProviderConfig, ProviderCredentials, RpcProviderName,
     };
-    use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
+    use mpc_node_config::{
+        AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig, TripleBatchSize,
+    };
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use std::collections::BTreeMap;
     use std::net::Ipv4Addr;
     use std::num::NonZeroU64;
     use std::str::FromStr;
@@ -410,11 +426,17 @@ mod tests {
     const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
     const APTOS_RPC_URL: &str = "https://aptos-mainnet.nodereal.io/v1/";
     const SUI_RPC_URL: &str = "https://fullnode.mainnet.sui.io/";
+    const AVALANCHE_RPC_URL: &str = "https://api.avax.network/ext/bc/C/rpc";
+    const ADI_RPC_URL: &str = "https://rpc.adifoundation.ai";
+    const FOGO_RPC_URL: &str = "https://testnet.fogo.io/";
 
     const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
     const STARKNET_QUERY_TOKEN: &str = "blast-secret";
     const ETHEREUM_TOKEN_ENV_VAR: &str = "ALCHEMY_API_KEY";
+    const CREDENTIALS_PROVIDER: &str = "quicknode";
+    const CREDENTIALS_TOKEN: &str = "quicknode-secret";
+    const CREDENTIALS_SLUG: &str = "quicknode-endpoint-slug";
 
     fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
@@ -457,13 +479,17 @@ mod tests {
                 desired_triples_to_buffer: 10,
                 parallel_triple_generation_stagger_time_sec: 1,
                 timeout_sec: 120,
+                batch_size: TripleBatchSize::default(),
             },
             presignature: PresignatureConfig {
                 concurrency: 1,
                 desired_presignatures_to_buffer: 5,
                 timeout_sec: 60,
             },
-            signature: SignatureConfig { timeout_sec: 60 },
+            signature: SignatureConfig {
+                timeout_sec: 60,
+                online_presign: true,
+            },
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig {
@@ -532,6 +558,23 @@ mod tests {
                 )),
                 aptos: Some(test_chain(PROVIDER_PUBLIC, APTOS_RPC_URL, AuthConfig::None)),
                 sui: Some(test_chain(PROVIDER_PUBLIC, SUI_RPC_URL, AuthConfig::None)),
+                avalanche: Some(test_chain(
+                    PROVIDER_PUBLIC,
+                    AVALANCHE_RPC_URL,
+                    AuthConfig::None,
+                )),
+                adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
+                fogo: Some(test_chain(PROVIDER_PUBLIC, FOGO_RPC_URL, AuthConfig::None)),
+                rpc_preset: Some(RpcPreset::Testnet),
+                credentials: BTreeMap::from([(
+                    CREDENTIALS_PROVIDER.to_string().into(),
+                    ProviderCredentials {
+                        api_key: TokenConfig::Val {
+                            val: CREDENTIALS_TOKEN.to_string(),
+                        },
+                        slug: Some(CREDENTIALS_SLUG.to_string()),
+                    },
+                )]),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,
@@ -551,6 +594,10 @@ mod tests {
             .expect("response must serialize as a JSON object");
 
         // Then — provider counts are safe to expose; sensitive details are not.
+        assert_eq!(
+            object.get("foreign_chains_rpc_preset"),
+            Some(&serde_json::json!("testnet"))
+        );
         let counts = object
             .get("foreign_chains_provider_counts")
             .expect("response must contain `foreign_chains_provider_counts`")
@@ -571,6 +618,9 @@ mod tests {
             "polygon",
             "aptos",
             "sui",
+            "avalanche",
+            "adi",
+            "fogo",
         ] {
             assert_eq!(
                 counts.get(chain).and_then(|v| v.as_u64()),
@@ -598,10 +648,16 @@ mod tests {
             POLYGON_RPC_URL,
             APTOS_RPC_URL,
             SUI_RPC_URL,
+            AVALANCHE_RPC_URL,
+            ADI_RPC_URL,
+            FOGO_RPC_URL,
             SOLANA_BEARER_TOKEN,
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,
             ETHEREUM_TOKEN_ENV_VAR,
+            CREDENTIALS_PROVIDER,
+            CREDENTIALS_TOKEN,
+            CREDENTIALS_SLUG,
         ];
         for needle in forbidden {
             assert!(

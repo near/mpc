@@ -8,6 +8,7 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeSet,
     fs,
     io::Write,
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
@@ -152,6 +153,10 @@ impl ParticipantsConfig {
             return Some(participant_info.id);
         };
         None
+    }
+
+    pub fn participant_id_set(&self) -> BTreeSet<ParticipantId> {
+        self.participants.iter().map(|p| p.id).collect()
     }
 }
 
@@ -445,14 +450,16 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 
 #[cfg(test)]
 pub mod tests {
-    use assert_matches::assert_matches;
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
         Rng, RngCore,
         distributions::{Alphanumeric, Uniform},
         rngs::OsRng,
     };
-    use std::net::{Ipv4Addr, SocketAddr};
+    use std::{
+        assert_matches,
+        net::{Ipv4Addr, SocketAddr},
+    };
 
     use crate::providers::PublicKeyConversion;
     use tempfile::TempDir;

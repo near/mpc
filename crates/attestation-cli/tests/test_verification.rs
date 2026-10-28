@@ -1,8 +1,11 @@
+use std::assert_matches;
 use std::path::PathBuf;
 
-use attestation_cli::cli::Cli;
+use attestation_cli::cli::{Source, VerifyArgs};
 use attestation_cli::verify;
-use mpc_attestation::attestation::{Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS};
+use mpc_attestation::attestation::{
+    Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS, VerificationError,
+};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use test_utils::attestation::{
@@ -19,14 +22,20 @@ fn make_static_web_data(attestation: Attestation) -> StaticWebData {
     }
 }
 
-fn make_cli(
+fn dev_measurements_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../mpc-attestation/assets/tcb_info_dev.json")
+}
+
+fn make_args(
     compose_path: &std::path::Path,
     image_hash: &str,
     measurements: Option<PathBuf>,
-) -> Cli {
-    Cli {
-        url: None,
-        file: None,
+) -> VerifyArgs {
+    VerifyArgs {
+        source: Source {
+            url: None,
+            file: None,
+        },
         allowed_image_hashes: vec![image_hash.parse().expect("valid image hash hex")],
         launcher_compose_file: compose_path.to_path_buf(),
         expected_measurements: measurements,
@@ -43,9 +52,13 @@ fn full_verification_succeeds_with_valid_attestation() {
     let compose_path = dir.path().join("launcher-compose.yaml");
     std::fs::write(&compose_path, TEST_LAUNCHER_IMAGE_COMPOSE_STRING).unwrap();
 
-    let cli = make_cli(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
+    let args = make_args(
+        &compose_path,
+        TEST_MPC_IMAGE_DIGEST_HEX,
+        Some(dev_measurements_path()),
+    );
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(
         result.is_ok(),
@@ -70,9 +83,9 @@ fn verification_fails_with_wrong_image_hash() {
     std::fs::write(&compose_path, TEST_LAUNCHER_IMAGE_COMPOSE_STRING).unwrap();
 
     let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let cli = make_cli(&compose_path, wrong_hash, None);
+    let args = make_args(&compose_path, wrong_hash, Some(dev_measurements_path()));
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -91,9 +104,13 @@ fn verification_fails_with_wrong_compose_file() {
     let compose_path = dir.path().join("launcher-compose.yaml");
     std::fs::write(&compose_path, "wrong compose content").unwrap();
 
-    let cli = make_cli(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
+    let args = make_args(
+        &compose_path,
+        TEST_MPC_IMAGE_DIGEST_HEX,
+        Some(dev_measurements_path()),
+    );
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -116,13 +133,13 @@ fn run_verification_rejects_none_attestation() {
     let compose_path = dir.path().join("launcher-compose.yaml");
     std::fs::write(&compose_path, "content").unwrap();
 
-    let cli = make_cli(
+    let args = make_args(
         &compose_path,
         "0000000000000000000000000000000000000000000000000000000000000000",
         None,
     );
 
-    let result = verify::run_verification(&static_data, &cli);
+    let result = verify::run_verification(&static_data, &args);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -146,13 +163,13 @@ fn run_verification_rejects_mock_attestation() {
     let compose_path = dir.path().join("launcher-compose.yaml");
     std::fs::write(&compose_path, "content").unwrap();
 
-    let cli = make_cli(
+    let args = make_args(
         &compose_path,
         "0000000000000000000000000000000000000000000000000000000000000000",
         None,
     );
 
-    let result = verify::run_verification(&static_data, &cli);
+    let result = verify::run_verification(&static_data, &args);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("Mock"), "unexpected error: {err}");
@@ -175,17 +192,40 @@ fn verification_with_custom_measurements_file() {
     )
     .unwrap();
 
-    let cli = make_cli(
+    let args = make_args(
         &compose_path,
         TEST_MPC_IMAGE_DIGEST_HEX,
         Some(measurements_path),
     );
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(
         result.is_ok(),
         "verification failed: {}",
         result.unwrap_err()
+    );
+}
+
+#[test]
+#[expect(non_snake_case)]
+fn verify_at_timestamp__should_reject_dev_image_attestation_with_default_measurements() {
+    // Given
+    let static_data = make_static_web_data(mock_dstack_attestation());
+    let dir = tempfile::tempdir().unwrap();
+    let compose_path = dir.path().join("launcher-compose.yaml");
+    std::fs::write(&compose_path, TEST_LAUNCHER_IMAGE_COMPOSE_STRING).unwrap();
+    let args = make_args(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
+
+    // When
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
+
+    // Then
+    assert_matches!(
+        result,
+        Err(VerificationError::WrongHash {
+            name: "expected_measurements",
+            ..
+        })
     );
 }

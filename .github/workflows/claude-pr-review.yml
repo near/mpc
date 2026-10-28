@@ -1,13 +1,23 @@
 name: Claude Code Review
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  queue: max
+
 on:
   pull_request:
     types: [opened, ready_for_review]  # When PR is ready for review (not draft)
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers]
     types: [created]  # Listen for @claude mentions in PR comments
+
+permissions: {}
+
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
 
 jobs:
   claude-review:
+    name: "Review pull request"
     # Run if: (PR opened/ready AND not draft) OR (@claude review in PR comment AND
     # commenter is an owner/member, so non-trusted commenters can't trigger the
     # privileged job)
@@ -22,13 +32,14 @@ jobs:
     runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
-      id-token: write
+      pull-requests: read # reads the diff, comments and reviews
+      issues: read # reads the issues the pull request refers to
+    outputs:
+      review: ${{ fromJSON(steps.claude-review.outputs.structured_output).review }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -37,7 +48,6 @@ jobs:
         id: fetch-comments
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
         run: .github/scripts/fetch-pr-comments.sh
@@ -49,8 +59,8 @@ jobs:
           {
             echo "REVIEW_PROMPT<<$DELIM"
             echo '<pr_context>'
-            echo "REPO: ${{ github.repository }}"
-            echo "PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}"
+            echo "REPO: $GITHUB_REPOSITORY"
+            echo "PR NUMBER: $PR_NUMBER"
             echo 'LANGUAGE: Rust'
             echo '</pr_context>'
             echo ''
@@ -77,9 +87,10 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
+        uses: anthropics/claude-code-action@db77d4d3c98f3f6380e7cd45ffba2342a3dbde3c # v1.0.254
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
+          github_token: ${{ github.token }}
           prompt: ${{ env.REVIEW_PROMPT }}
           # Deny is evaluated before allow, so these bound the allow-list below.
           # `//` anchors at the filesystem root; a single `/` would anchor at the
@@ -103,6 +114,31 @@ jobs:
               }
             }
           claude_args: >-
-            --model claude-opus-5
+            --model claude-fable-5-1
             --effort xhigh
-            --allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
+            --allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
+            --json-schema '{"type":"object","properties":{"review":{"type":"string","description":"The review body in the required output structure, as GitHub-flavored Markdown"}},"required":["review"],"additionalProperties":false}'
+
+  # Posting runs in its own job so the write-scoped token never reaches the
+  # agent's environment, and so the runner withholds a review that contains a
+  # registered secret instead of passing it on.
+  post-review:
+    name: "Post review comment"
+    needs: claude-review
+    runs-on: warp-ubuntu-2604-x64-2x
+    permissions:
+      pull-requests: write # posts the review as a comment
+
+    steps:
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REVIEW: ${{ needs.claude-review.outputs.review }}
+        run: |
+          if [ -z "$REVIEW" ]; then
+            echo "::error::The review is empty: either the agent returned no text, or the runner withheld it for containing a secret (look for a 'Skip output' warning in the 'Review pull request' job)."
+            exit 1
+          fi
+          printf '%s\n' "$REVIEW" > "$RUNNER_TEMP/review.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"

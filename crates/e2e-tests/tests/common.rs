@@ -1,4 +1,3 @@
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -14,6 +13,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
+pub const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
@@ -27,20 +27,23 @@ pub const CKD_VERIFICATION_PORT_SEED: u16 = 9;
 pub const LOST_ASSETS_PORT_SEED: u16 = 10;
 pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 11;
 pub const CLEANUP_LAGGING_NODE_PORT_SEED: u16 = 12;
-pub const FOREIGN_CHAIN_POLICY_PORT_SEED: u16 = 13;
-pub const MIGRATION_ENDPOINT_PORT_SEED: u16 = 14;
-pub const MIGRATION_SERVICE_PORT_SEED: u16 = 15;
-pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 16;
-pub const MULTI_DOMAIN_PORT_SEED: u16 = 17;
-pub const CONTRACT_UPGRADE_COMPATIBILITY_MAINNET_PORT_SEED: u16 = 18;
-pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 19;
-pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
-pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
-pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
-pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 23;
-pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 24;
-pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 25;
-pub const BACKUP_SERVICE_RUN_PORT_SEED: u16 = 26;
+pub const MIGRATION_ENDPOINT_PORT_SEED: u16 = 13;
+pub const MIGRATION_SERVICE_PORT_SEED: u16 = 14;
+pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 15;
+pub const MULTI_DOMAIN_PORT_SEED: u16 = 16;
+pub const CONTRACT_UPGRADE_COMPATIBILITY_MAINNET_PORT_SEED: u16 = 17;
+pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 18;
+pub const TIMEOUT_METRIC_PORT_SEED: u16 = 19;
+pub const MIGRATION_BACK_PORT_SEED: u16 = 20;
+pub const SIGTERM_HANDLER_PORT_SEED: u16 = 21;
+pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 22;
+pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 23;
+pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 24;
+pub const BACKUP_SERVICE_RUN_PORT_SEED: u16 = 25;
+pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 26;
+pub const FOREIGN_CHAIN_PROBE_PORT_SEED: u16 = 27;
+pub const RPC_PRESET_REGISTRATION_PORT_SEED: u16 = 28;
+pub const BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED: u16 = 29;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -73,7 +76,9 @@ pub async fn must_setup_cluster(
         .ok();
 
     let contract_wasm = must_load_contract_wasm();
-    let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
+    let tee_verifier_wasm = must_load_tee_verifier_wasm();
+    let mut config =
+        MpcClusterConfig::default_for_test(port_seed, contract_wasm, tee_verifier_wasm);
     configure(&mut config);
 
     let initial_participant_indices = config.participant_indices();
@@ -85,10 +90,9 @@ pub async fn must_setup_cluster(
         .expect("failed to start cluster");
 
     let protocol_state = cluster
-        .wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
+        .wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
         .await
         .expect("cluster did not reach Running state");
     let ProtocolContractState::Running(running) = protocol_state else {
@@ -293,59 +297,31 @@ pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> anyhow::Result<i64>
         .sum())
 }
 
-/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
 pub fn must_load_contract_wasm() -> Vec<u8> {
-    if let Ok(path) = std::env::var("MPC_CONTRACT_WASM") {
-        let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read contract WASM at {}: {e}",
-                wasm_path.display()
-            )
-        });
-    }
-
-    let default_path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/near/contract/mpc_contract.wasm");
-
-    if default_path.exists() {
-        return std::fs::read(&default_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read contract WASM at {}: {e}",
-                default_path.display()
-            )
-        });
-    }
-
-    tracing::info!("MPC_CONTRACT_WASM not set and pre-built WASM not found — building contract");
-    test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build()
+    test_utils::contract_build::must_load_wasm(
+        "MPC_CONTRACT_WASM",
+        "target/near/contract/mpc_contract.wasm",
+        test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml"),
+    )
 }
 
-/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
 pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
-    if let Ok(path) = std::env::var("MPC_PARALLEL_CONTRACT_WASM") {
-        let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read parallel contract WASM at {}: {e}",
-                wasm_path.display()
-            )
-        });
-    }
+    test_utils::contract_build::must_load_wasm(
+        "MPC_PARALLEL_CONTRACT_WASM",
+        "target/near/test-parallel-contract/test_parallel_contract.wasm",
+        test_utils::contract_build::ContractBuilder::new(
+            "crates/test-parallel-contract/Cargo.toml",
+        ),
+    )
+}
 
-    let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/near/test-parallel-contract/test_parallel_contract.wasm");
-    if default_path.exists() {
-        return std::fs::read(&default_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read parallel contract WASM at {}: {e}",
-                default_path.display()
-            )
-        });
-    }
-    tracing::info!("pre-built parallel contract WASM not found — building");
-    test_utils::contract_build::ContractBuilder::new("crates/test-parallel-contract/Cargo.toml")
-        .build()
+pub fn must_load_tee_verifier_wasm() -> Vec<u8> {
+    test_utils::contract_build::must_load_wasm(
+        "MPC_TEE_VERIFIER_WASM",
+        "target/near/tee_verifier/tee_verifier.wasm",
+        test_utils::contract_build::ContractBuilder::new("crates/tee-verifier/Cargo.toml")
+            .out_dir("target/near/tee_verifier"),
+    )
 }
 
 /// Payload matching the signature scheme of `domain`. Panics for
@@ -398,11 +374,11 @@ pub fn must_get_bls_public_key(
     }
 }
 
-/// Builds a [`DamgardEtAl`] signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
-pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
+/// Builds a [`RobustEcdsa`] signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
+pub fn robust_ecdsa_domain(id: u64, t: u64) -> DomainConfig {
     DomainConfig {
         id: DomainId(id),
-        protocol: Protocol::DamgardEtAl,
+        protocol: Protocol::RobustEcdsa,
         reconstruction_threshold: ReconstructionThreshold::new(t),
         purpose: DomainPurpose::Sign,
     }

@@ -1,4 +1,4 @@
-use ::attestation::report_data::REPORT_DATA_SIZE;
+use ::attestation::REPORT_DATA_SIZE;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{AsRef, Deref, From};
 use serde::{Deserialize, Serialize};
@@ -62,7 +62,7 @@ impl core::borrow::Borrow<[u8]> for Ed25519PublicKey {
 }
 
 /// report_data_v1: [u8; 64] =
-/// [version(2 bytes big endian) || sha384(TLS pub key || account_pubkey) || zero padding]
+/// [version(2 bytes big endian) || sha3-384(TLS pub key || account_pubkey) || zero padding]
 impl ReportDataV1 {
     /// V1-specific format constants
     const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
@@ -86,9 +86,7 @@ impl ReportDataV1 {
         );
     };
 
-    /// Computes a SHA3-384 hash over two public keys.
-    ///
-    /// Returns and arraySha384 (tls_public_key || account_public_key)
+    /// Returns SHA3-384(tls_public_key || account_public_key).
     fn compute_public_keys_hash(
         tls_public_key: impl AsRef<[u8]>,
         account_public_key: impl AsRef<[u8]>,
@@ -158,9 +156,9 @@ impl From<ReportDataV1> for ReportData {
     }
 }
 
-impl From<ReportData> for ::attestation::report_data::ReportData {
+impl From<ReportData> for ::attestation::ReportData {
     fn from(val: ReportData) -> Self {
-        ::attestation::report_data::ReportData::from(val.to_bytes())
+        ::attestation::ReportData::from(val.to_bytes())
     }
 }
 

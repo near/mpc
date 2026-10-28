@@ -599,7 +599,7 @@ impl<T, const L: usize, const U: usize> OptBoundedVecToVec<T>
 }
 
 mod borsh_impl {
-    use super::*;
+    use super::{BoundedVec, witnesses};
     use borsh::{BorshDeserialize, BorshSerialize};
 
     impl<T: BorshSerialize, const L: usize, const U: usize, W> BorshSerialize
@@ -632,7 +632,7 @@ mod borsh_impl {
 
     #[cfg(feature = "abi")]
     mod schema {
-        use super::*;
+        use super::BoundedVec;
         use borsh::BorshSchema;
         use borsh::schema::{Declaration, Definition, add_definition};
         use std::collections::BTreeMap;
@@ -656,7 +656,7 @@ mod borsh_impl {
 }
 
 mod serde_impl {
-    use super::*;
+    use super::{BoundedVec, UpperBoundedVec};
     use serde::{Deserialize, Serialize};
 
     // direct impl to unify serde in one place instead of doing attribute on declaration and deserialize here
@@ -693,7 +693,7 @@ mod serde_impl {
 
     #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
     mod schema {
-        use super::*;
+        use super::BoundedVec;
         use schemars::JsonSchema;
 
         impl<T: JsonSchema, const L: usize, const U: usize, W> JsonSchema for BoundedVec<T, L, U, W> {
@@ -739,7 +739,7 @@ mod serde_impl {
 /// }
 /// ```
 pub mod hex_serde {
-    use super::*;
+    use super::{BoundedVec, BoundedVecOutOfBounds, TryFrom, TryInto};
     use serde::Deserialize;
 
     #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
@@ -799,8 +799,8 @@ pub mod hex_serde {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use core::convert::TryInto;
+    use std::assert_matches;
 
     use super::*;
 
@@ -1121,7 +1121,7 @@ mod tests {
 
 #[cfg(test)]
 mod serde_tests {
-    use assert_matches::assert_matches;
+    use std::assert_matches;
 
     use super::*;
 
@@ -1159,8 +1159,8 @@ mod serde_tests {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod hex_serde_tests {
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     use super::*;
 

@@ -2,4 +2,4 @@
 source: crates/near-mpc-contract-interface/src/types/foreign_chain.rs
 expression: "hex::encode(hash.0)"
 ---
-"55e8dd3d4428b89cba75072c249481db5e0e037b6fbd0ee99d67159042fee2aa"
+"f53a1a864fa9ce51d50349b2e5fe38ff23e45b25b20038d405c12316f9bf05b1"

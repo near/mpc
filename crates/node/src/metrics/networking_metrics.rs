@@ -1,12 +1,16 @@
 use std::sync::LazyLock;
 
-use prometheus::{HistogramVec, IntGaugeVec, register_histogram_vec, register_int_gauge_vec};
+use prometheus::{
+    HistogramVec, IntCounterVec, IntGaugeVec, register_histogram_vec, register_int_counter_vec,
+    register_int_gauge_vec,
+};
 
 pub(crate) const INCOMING_CONNECTION: &str = "incoming";
 pub(crate) const OUTGOING_CONNECTION: &str = "outgoing";
 
 pub(crate) const PING_MESSAGE: &str = "ping";
 pub(crate) const INDEXER_HEIGHT_MESSAGE: &str = "indexer_height";
+pub(crate) const CONNECTED_PEERS_MESSAGE: &str = "connected_peers";
 pub(crate) const MPC_START_MESSAGE: &str = "mpc_start";
 pub(crate) const MPC_COMPUTATION_MESSAGE: &str = "mpc_computation";
 pub(crate) const MPC_ABORT_MESSAGE: &str = "mpc_abort";
@@ -63,6 +67,15 @@ pub(crate) static MPC_P2P_TCP_WRITE_SIZE_BYTES: LazyLock<HistogramVec> = LazyLoc
             LABEL_MESSAGE_TYPE,
         ],
         NETWORK_MESSAGE_SIZES_BYTES_BUCKETS.to_vec()
+    )
+    .unwrap()
+});
+
+pub(crate) static INCOMING_CONNECTIONS_REJECTED: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_network_incoming_connections_rejected",
+        "Connection dropped due to peer exceeding its' connection limit",
+        &[LABEL_PEER_PARTICIPANT_ID],
     )
     .unwrap()
 });

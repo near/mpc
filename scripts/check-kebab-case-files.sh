@@ -20,7 +20,6 @@ EXT_PATTERN="\.($( IFS='|'; echo "${CHECK_EXTENSIONS[*]}" ))$"
 EXEMPT_FILES=(
     AGENTS.md
     CHANGELOG.md
-    CLAUDE.md
     CONTRIBUTING.md
     GEMINI.md
     LICENSE.md

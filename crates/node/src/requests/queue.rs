@@ -10,6 +10,7 @@ use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
@@ -25,8 +26,8 @@ pub trait NetworkAPIForRequests: Send + Sync + 'static {
 
 /// The minimum time that must elapse before we'll consider each request for another attempt.
 pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
-/// A participant is considered stale if its indexer's highest height is this many blocks behind
-/// the highest height of all participants.
+/// A participant is considered stale if its indexer's highest height is more than this many
+/// blocks behind the reference height of [`PendingRequests::eligible_leaders_and_heights`].
 const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
@@ -36,6 +37,40 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
+/// Maximum attempts we should make for each request when we lead it as a failover
+/// leader. Smaller than the primary's budget to bound the extra assets failover can
+/// burn on a request that keeps failing cluster-wide.
+const MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER: u64 = 5;
+/// How long each backup leader waits after its predecessor before taking over a
+/// still-unresolved request.
+pub const LEADER_FAILOVER_INTERVAL: Duration = Duration::seconds(10);
+/// The max number of participants that act as leaders for one request. Purely a cap on
+/// assets burnt on a cluster-wide-failing request.
+const MAX_LEADER_FAILOVER_DEPTH: usize = 4;
+
+/// Narrows the eligible-leader set for a specific request (e.g. to the participants
+/// supporting the request's foreign chain).
+pub trait RefineEligibleLeaders<RequestType>: Send {
+    /// Returns the subset of `eligible` allowed to lead `request`.
+    fn refine(
+        &self,
+        request: &RequestType,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId>;
+}
+
+/// Refiner for request kinds whose leader refinement is identity function.
+pub struct NoRefinement;
+
+impl<RequestType> RefineEligibleLeaders<RequestType> for NoRefinement {
+    fn refine(
+        &self,
+        _request: &RequestType,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId> {
+        eligible.clone()
+    }
+}
 
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
@@ -48,14 +83,16 @@ const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
 /// that we should attempt to generate a request for. The list will be generated based on the
 /// following goals:
 ///  - Assuming the network state is stable and nodes have consistent views of the connectivity and
-///    indexer heights, each request will be attempted by exactly one node ("leader").
-///  - Each request will be retried (by the current leader) if it has not been
+///    indexer heights, each request will be attempted first by exactly one node ("leader"). If no
+///    response lands on chain, the subsequent eligible participants in the request's leader
+///    selection order join in as backup leaders, staggered by [`LEADER_FAILOVER_INTERVAL`].
+///  - Each request will be retried (by each acting leader) if it has not been
 ///    successfully responded to on chain.
 ///  - If network state fluctuates (nodes going down or back up, or indexers falling behind),
 ///    the queue will adapt to the new state and attempt to find new leaders for the requests.
 ///  - If a request is too old so that it would have timed out on chain, it will be
 ///    discarded.
-pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub struct PendingRequests<RequestType, ChainRespondArgsType, Refiner = NoRefinement> {
     pub(super) clock: near_time::Clock,
 
     /// All participants in the network, regardless of whether they are online.
@@ -71,6 +108,9 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
+
+    /// See [`RefineEligibleLeaders`].
+    pub(super) refine_eligible_leaders: Refiner,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -150,7 +190,7 @@ enum AggregateResponseStatus {
 }
 
 /// The state of a single request in the queue.
-pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub(super) struct QueuedRequest<RequestType, ChainRespondArgsType> {
     pub request: RequestType,
 
     /// Finality status of the block the request was included in.
@@ -162,7 +202,8 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
 
     /// A pre-computed order of participants that we consider for leader selection.
     /// The leader for the request would be the first in this list that is eligible
-    /// (online and indexer not stale).
+    /// (online and indexer not stale); subsequent eligible participants act as backup
+    /// leaders, staggered by [`LEADER_FAILOVER_INTERVAL`].
     pub leader_selection_order: Vec<ParticipantId>,
 
     /// A throttling mechanism to prevent doing too much computation on each request.
@@ -185,7 +226,7 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
 }
 
 /// Struct given to the response generation code.
-pub struct GenerationAttempt<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub struct GenerationAttempt<RequestType, ChainRespondArgsType> {
     /// The request we should attempt to generate for.
     pub request: RequestType,
     /// The progress of the computation. Writable and survives multiple attempts.
@@ -193,15 +234,16 @@ pub struct GenerationAttempt<RequestType: Request, ChainRespondArgsType: ChainRe
 }
 
 /// Progress that persists across attempts.
-pub struct ComputationProgress<ChainRespondArgsType: ChainRespondArgs> {
+pub struct ComputationProgress<ChainRespondArgsType> {
     /// Number of attempts that have been made to generate the request.
     /// This is used to abort after too many attempts.
     pub attempts: u64,
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.
     pub computed_response: Option<ChainRespondArgsType>,
-    /// The leader selected during computation
-    pub selected_leader: Option<ParticipantId>,
+    /// The participant we most recently presumed to be leading the request (ourselves once
+    /// we lead, possibly as a backup). Kept for debugging.
+    pub presumed_leader: Option<ParticipantId>,
     /// The time and when the last response was submitted to chain.
     /// This is used to delay the next retry as well as debugging.
     pub last_response_submission: Option<near_time::Instant>,
@@ -212,7 +254,7 @@ impl<ChainRespondArgsType: ChainRespondArgs> Default for ComputationProgress<Cha
         Self {
             attempts: Default::default(),
             computed_response: Default::default(),
-            selected_leader: Default::default(),
+            presumed_leader: Default::default(),
             last_response_submission: Default::default(),
         }
     }
@@ -225,15 +267,16 @@ enum ComputationProgressStatus {
 }
 
 impl<ChainRespondArgsType: ChainRespondArgs> ComputationProgress<ChainRespondArgsType> {
-    /// If [`Self::attempts`] is less than [`MAX_ATTEMPTS_PER_REQUEST_AS_LEADER`], then increments
+    /// If [`Self::attempts`] is less than `max_attempts`, then increments
     /// [`Self::attempts`] by one and returns [`ComputationProgressStatus::NewAttempt`].
     /// Otherwise returns [`ComputationProgressStatus::MaxAttemptsExceeded`] or
     /// [`ComputationProgressStatus::Pending`].
     fn update_computation_progress(
         &mut self,
         now: near_time::Instant,
+        max_attempts: u64,
     ) -> ComputationProgressStatus {
-        if self.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
+        if self.attempts >= max_attempts {
             ComputationProgressStatus::MaxAttemptsExceeded
         } else if self
             .last_response_submission
@@ -300,17 +343,62 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         u64::from_le_bytes(hash[0..8].try_into().unwrap())
     }
 
-    /// Selects the leader given the current state of the network.
+    /// Decides whether we should lead this request now, and who we currently consider its
+    /// leader (ourselves when we lead), kept in [`ComputationProgress::presumed_leader`]
+    /// for debugging. `None` when no eligible leader exists.
+    fn leader_decision(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+        my_participant_id: ParticipantId,
+        now: near_time::Instant,
+    ) -> Option<(ParticipantId, LeaderDecision)> {
+        let leader = self.current_leader(eligible_leaders)?;
+        let Some(rank) = self.my_leader_rank(eligible_leaders, my_participant_id) else {
+            return Some((
+                leader,
+                LeaderDecision::Wait("we are not an eligible leader"),
+            ));
+        };
+        if rank >= MAX_LEADER_FAILOVER_DEPTH {
+            return Some((
+                leader,
+                LeaderDecision::Wait("past maximum leader failover depth"),
+            ));
+        }
+        let failover_slot_delay =
+            LEADER_FAILOVER_INTERVAL.saturating_mul(i32::try_from(rank).unwrap_or(i32::MAX));
+        if now.signed_duration_since(self.time_indexed) < failover_slot_delay {
+            return Some((
+                leader,
+                LeaderDecision::Wait("waiting for our leader failover slot"),
+            ));
+        }
+        Some((my_participant_id, LeaderDecision::Lead { rank }))
+    }
+
+    /// The first eligible participant in the leader selection order, or `None` when no
+    /// participant is eligible.
     pub fn current_leader(
         &self,
         eligible_leaders: &HashSet<ParticipantId>,
     ) -> Option<ParticipantId> {
-        for candidate_leader in &self.leader_selection_order {
-            if eligible_leaders.contains(candidate_leader) {
-                return Some(*candidate_leader);
-            }
-        }
-        None
+        self.leader_selection_order
+            .iter()
+            .find(|p| eligible_leaders.contains(p))
+            .copied()
+    }
+
+    /// Our position among the eligible participants in the leader selection order, or `None`
+    /// if we are not eligible. Rank 0 is the current leader; rank k acts as the k-th backup.
+    fn my_leader_rank(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+        my_participant_id: ParticipantId,
+    ) -> Option<usize> {
+        self.leader_selection_order
+            .iter()
+            .filter(|p| eligible_leaders.contains(p))
+            .position(|p| *p == my_participant_id)
     }
 
     /// Returns true if this request is due for another check (i.e. [`Self::next_check_due`] is
@@ -385,33 +473,62 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         if !is_canonical {
             return RequestStatus::Wait("request is not on canonical chain");
         }
-        let Some(leader) = self.current_leader(eligible_leaders) else {
+        let Some((presumed_leader, decision)) =
+            self.leader_decision(eligible_leaders, my_participant_id, now)
+        else {
             return RequestStatus::Wait("no eligible leaders for this request");
         };
         let mut progress = self.computation_progress.lock().unwrap();
-        progress.selected_leader = Some(leader);
-        if leader == my_participant_id {
-            match progress.update_computation_progress(now) {
-                ComputationProgressStatus::MaxAttemptsExceeded => {
-                    RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
-                }
-                ComputationProgressStatus::Pending => RequestStatus::Wait("pending computation"),
-                ComputationProgressStatus::NewAttempt => {
-                    let attempt = Arc::new(GenerationAttempt {
-                        request: self.request.clone(),
-                        computation_progress: self.computation_progress.clone(),
-                    });
-                    self.active_attempt = Arc::downgrade(&attempt);
-                    RequestStatus::Attempt(attempt)
+        progress.presumed_leader = Some(presumed_leader);
+        match decision {
+            LeaderDecision::Wait(reason) => RequestStatus::Wait(reason),
+            LeaderDecision::Lead { rank } => {
+                let max_attempts = if rank == 0 {
+                    MAX_ATTEMPTS_PER_REQUEST_AS_LEADER
+                } else {
+                    MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER
+                };
+                match progress.update_computation_progress(now, max_attempts) {
+                    ComputationProgressStatus::MaxAttemptsExceeded if rank > 0 => {
+                        // A failover leader must not drop the request: it stays queued so
+                        // this node can still step up should it later become the primary.
+                        RequestStatus::Wait("failover attempt budget exhausted")
+                    }
+                    ComputationProgressStatus::MaxAttemptsExceeded => {
+                        RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
+                    }
+                    ComputationProgressStatus::Pending => {
+                        RequestStatus::Wait("pending computation")
+                    }
+                    ComputationProgressStatus::NewAttempt => {
+                        if rank > 0 {
+                            tracing::info!(target: "request", rank, "attempting request as failover leader");
+                            metrics::MPC_FAILOVER_LEADER_ATTEMPTS_TOTAL
+                                .with_label_values(&[
+                                    &RequestType::get_type().to_string(),
+                                    &rank.to_string(),
+                                ])
+                                .inc();
+                        }
+                        let attempt = Arc::new(GenerationAttempt {
+                            request: self.request.clone(),
+                            computation_progress: self.computation_progress.clone(),
+                        });
+                        self.active_attempt = Arc::downgrade(&attempt);
+                        RequestStatus::Attempt(attempt)
+                    }
                 }
             }
-        } else {
-            RequestStatus::Wait("we are not leader")
         }
     }
 }
 
-enum RequestStatus<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+enum LeaderDecision {
+    Lead { rank: usize },
+    Wait(&'static str),
+}
+
+enum RequestStatus<RequestType, ChainRespondArgsType> {
     Drop(DropReason),
     Wait(&'static str),
     Attempt(Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>),
@@ -444,11 +561,19 @@ impl DropReason {
 
 pub(super) struct EligibleLeadersAndHeights {
     pub eligible_leaders: HashSet<ParticipantId>,
-    pub maximum_height: u64,
+    pub reference_height: u64,
     pub my_indexer_height: u64,
 }
 
-impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
+/// Returns the highest height reached by more than half of `heights` (their lower median), or
+/// `None` if `heights` is empty.
+fn majority_height(heights: impl IntoIterator<Item = u64>) -> Option<u64> {
+    let mut heights: Vec<u64> = heights.into_iter().collect();
+    heights.sort_unstable_by_key(|height| Reverse(*height));
+    heights.get(heights.len() / 2).copied()
+}
+
+impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     PendingRequests<RequestType, ChainRespondArgsType>
 {
     pub fn new(
@@ -464,6 +589,34 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
+            refine_eligible_leaders: NoRefinement,
+        }
+    }
+}
+
+impl<RequestType, ChainRespondArgsType, Refiner>
+    PendingRequests<RequestType, ChainRespondArgsType, Refiner>
+where
+    RequestType: Request + Clone,
+    ChainRespondArgsType: ChainRespondArgs,
+    Refiner: RefineEligibleLeaders<RequestType>,
+{
+    /// Replaces the per-request [`RefineEligibleLeaders`] hook.
+    pub fn with_eligible_leaders_refiner<NewRefiner>(
+        self,
+        refiner: NewRefiner,
+    ) -> PendingRequests<RequestType, ChainRespondArgsType, NewRefiner>
+    where
+        NewRefiner: RefineEligibleLeaders<RequestType>,
+    {
+        PendingRequests {
+            clock: self.clock,
+            all_participants: self.all_participants,
+            my_participant_id: self.my_participant_id,
+            requests: self.requests,
+            network_api: self.network_api,
+            recently_completed_requests: self.recently_completed_requests,
+            refine_eligible_leaders: refiner,
         }
     }
 
@@ -530,35 +683,33 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     }
 
     /// Returns the set of participants that are eligible to be leaders for the requests,
-    /// the maximum height available across alive participants, and our own indexer height.
+    /// the reference height their staleness is measured against, and our own indexer height.
+    ///
+    /// The reference height is the height that a majority of alive participants has reached. Peers
+    /// self-report their heights, and the majority keeps a minority of them from raising the
+    /// reference height so far that every honest participant looks stale. Our own height is only
+    /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
+    /// eligible leaders.
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
-        // Collect the indexer heights and alive participants. Calculate maximum available height
-        // from the alive nodes. Then, filter out the participants that are not alive or are too
-        // stale.
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
-        let maximum_height = alive_participants
-            .iter()
-            .map(|p| indexer_heights.get(p).copied().unwrap_or(0))
-            .max()
-            .unwrap_or(0);
-        let my_indexer_height = indexer_heights
-            .get(&self.my_participant_id)
-            .copied()
-            .unwrap_or(0);
+        let height_of =
+            |participant: &ParticipantId| indexer_heights.get(participant).copied().unwrap_or(0);
+        let my_indexer_height = height_of(&self.my_participant_id);
+        let reference_height =
+            majority_height(alive_participants.iter().map(height_of)).unwrap_or(0);
         let eligible_leaders = self
             .all_participants
             .iter()
             .filter(|p| {
                 alive_participants.contains(p)
-                    && indexer_heights.get(p).copied().unwrap_or(0) + STALE_PARTICIPANT_THRESHOLD
-                        >= maximum_height
+                    && height_of(p).saturating_add(STALE_PARTICIPANT_THRESHOLD) >= reference_height
             })
             .copied()
             .collect::<HashSet<_>>();
         EligibleLeadersAndHeights {
             eligible_leaders,
-            maximum_height,
+            reference_height,
             my_indexer_height,
         }
     }
@@ -633,7 +784,24 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            match request.process(self.my_participant_id, &eligible_leaders, cutoff_block, now) {
+            let request_eligible_leaders = self
+                .refine_eligible_leaders
+                .refine(&request.request, &eligible_leaders);
+            if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
+                let chain = request
+                    .request
+                    .get_foreign_chain()
+                    .map_or("", |chain| chain.label());
+                metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
+                    .with_label_values(&[RequestType::get_type().to_string().as_str(), chain])
+                    .inc();
+            }
+            match request.process(
+                self.my_participant_id,
+                &request_eligible_leaders,
+                cutoff_block,
+                now,
+            ) {
                 RequestStatus::Drop(reason) => {
                     tracing::debug!(target: "request", reason = %reason, "removing request");
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
@@ -712,11 +880,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest};
+    use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height};
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
-        CHECK_EACH_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
+        CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL,
+        MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE, REQUEST_EXPIRATION_BLOCKS,
     };
     use crate::tests::into_participant_ids;
@@ -730,6 +900,7 @@ mod tests {
     use near_mpc_contract_interface::call_args as contract_args;
     use near_mpc_contract_interface::types::{Payload, Tweak};
     use near_time::{Duration, FakeClock};
+    use rstest::rstest;
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
     use threshold_signatures::test_utils::generate_participants;
@@ -828,12 +999,18 @@ mod tests {
     impl TestSetup {
         const MY_INDEX: usize = 1;
         fn new() -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
+            Self::with_participant_count(4)
+        }
+
+        fn with_participant_count(
+            count: usize,
+        ) -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
             let clock = FakeClock::default();
-            let participants = into_participant_ids(&generate_participants(4));
+            let participants = into_participant_ids(&generate_participants(count));
             let my_participant_id = participants[Self::MY_INDEX];
             let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
-            let pending_requests = PendingRequests::<SignatureRequest, TestRequestRespondArgs>::new(
+            let pending_requests = PendingRequests::<TestRequest, TestRequestRespondArgs>::new(
                 clock.clock(),
                 participants.clone(),
                 my_participant_id,
@@ -907,9 +1084,9 @@ mod tests {
 
         /// Builds the next canonical block, adds it to the shared tracker, and delivers
         /// the resulting update to `pending`. Returns the new block height.
-        fn update(
+        fn update<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
         ) -> u64 {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
@@ -931,9 +1108,9 @@ mod tests {
         }
 
         /// Like [`update`] but forks the current head, making a new canonical chain.
-        fn update_canonical_fork(
+        fn update_canonical_fork<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
         ) -> u64 {
             let new_height = self.max_known_height() + 1;
             if self.fork.is_none() {
@@ -1179,14 +1356,12 @@ mod tests {
     #[test_log::test]
     #[expect(non_snake_case)]
     fn test_pending_requests__should_fallback_leader() {
-        // Given: a request queue
+        // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
 
-        // Indexer 0 is offline; indexer 2 is stale. We let indexer 0 have a higher height than
-        // normal. This is to test a pathological case, in case some node reports an incorrectly high
-        // height and we want to allow shutting down that node to be a mitigation.
+        // Indexer 0 is offline; indexer 2 is stale.
         setup.network_api.bring_down(setup.participant_ids[0]);
-        setup.network_api.set_height(setup.participant_ids[0], 120); // ignored because offline
+        setup.network_api.set_height(setup.participant_ids[0], 100);
         setup.network_api.set_height(setup.participant_ids[1], 100);
         setup.network_api.set_height(setup.participant_ids[2], 80); // stale
         setup.network_api.set_height(setup.participant_ids[3], 100);
@@ -1196,7 +1371,8 @@ mod tests {
         let _req3 = setup.add_request_leader_order(&[3, 1]);
         setup.update(&mut pending_requests);
 
-        // Then: Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
+        // Then
+        // Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
         // we should attempt these.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 2);
@@ -1208,26 +1384,30 @@ mod tests {
         drop(to_attempt1);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
-        // Bring up node 0. This causes node 1 to itself realize it is stale, so it should refuse to
-        // attempt any signatures, even if it were the preferred leader.
+        // Bring up node 0. It is again the first available leader for req1 and req2, so node 1
+        // should only attempt req4, for which it is the preferred leader.
         setup.network_api.bring_up(setup.participant_ids[0]);
         let req4 = setup.add_request_leader_order(&[1]);
         setup.update(&mut pending_requests);
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as trying req4.
-        setup.network_api.bring_down(setup.participant_ids[0]);
-        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         let to_attempt2 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt2.len(), 3);
+        assert_eq!(to_attempt2.len(), 1);
+        assert_eq!(to_attempt2[0].request.id, req4.id);
+
+        drop(to_attempt2);
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+
+        // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as req4.
+        setup.network_api.bring_down(setup.participant_ids[0]);
+        let to_attempt3 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt3.len(), 3);
         assert!(set_equals(
-            &to_attempt2.iter().map(|a| a.request.id).collect::<Vec<_>>(),
+            &to_attempt3.iter().map(|a| a.request.id).collect::<Vec<_>>(),
             &[req1.id, req2.id, req4.id]
         ));
 
         // Node 0 actually manages to complete req1 and req4 somehow. Node 1 should not retry
         // these anymore.
-        drop(to_attempt2);
+        drop(to_attempt3);
         setup.add_indexed_respond_tx(req1.id);
         setup.add_indexed_respond_tx(req4.id);
         setup.update(&mut pending_requests);
@@ -1235,9 +1415,200 @@ mod tests {
         setup.update(&mut pending_requests);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
-        let to_attempt3 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt3.len(), 1);
-        assert_eq!(to_attempt3[0].request.id, req2.id);
+        let to_attempt4 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt4.len(), 1);
+        assert_eq!(to_attempt4[0].request.id, req2.id);
+    }
+
+    /// A single peer reporting a far higher height than everyone else must neither overflow the
+    /// staleness check nor make the other participants stale.
+    #[rstest]
+    #[case::slightly_ahead(120)]
+    #[case::at_maximum_height(u64::MAX)]
+    fn eligible_leaders_and_heights__should_ignore_a_single_peer_far_ahead(
+        #[case] peer_height: u64,
+    ) {
+        // Given
+        let (pending_requests, setup) = TestSetup::new();
+        setup
+            .network_api
+            .set_height(setup.participant_ids[0], peer_height);
+
+        // When
+        let eligible = pending_requests.eligible_leaders_and_heights();
+
+        // Then
+        assert_eq!(eligible.reference_height, 100);
+        assert_eq!(
+            eligible.eligible_leaders,
+            setup.participant_ids.iter().copied().collect()
+        );
+    }
+
+    #[test]
+    fn get_requests_to_attempt__should_not_attempt_as_preferred_leader_when_a_majority_is_ahead() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let me = setup.participant_ids[TestSetup::MY_INDEX];
+        let _req = setup.add_request_leader();
+        setup.update(&mut pending_requests);
+        let peers = setup.participant_ids.iter().filter(|p| **p != me);
+        for peer in peers.clone() {
+            setup.network_api.set_height(*peer, 120);
+        }
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert!(to_attempt.is_empty());
+        let eligible = pending_requests.eligible_leaders_and_heights();
+        assert_eq!(eligible.reference_height, 120);
+        assert_eq!(eligible.eligible_leaders, peers.copied().collect());
+    }
+
+    #[rstest]
+    #[case::no_heights(vec![], None)]
+    #[case::single_height(vec![100], Some(100))]
+    #[case::one_of_two_ahead(vec![100, 120], Some(100))]
+    #[case::one_of_three_ahead(vec![100, 120, 100], Some(100))]
+    #[case::two_of_three_ahead(vec![120, 100, 130], Some(120))]
+    #[case::half_ahead(vec![120, 100, 120, 100], Some(100))]
+    #[case::three_of_four_ahead(vec![120, 100, 130, 120], Some(120))]
+    fn majority_height__should_return_highest_height_reached_by_more_than_half(
+        #[case] heights: Vec<u64>,
+        #[case] expected: Option<u64>,
+    ) {
+        // When
+        let majority = majority_height(heights);
+
+        // Then
+        assert_eq!(majority, expected);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_attempt_as_secondary_after_failover_interval() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        let attempts_initially = pending_requests.get_requests_to_attempt();
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL - CHECK_EACH_REQUEST_INTERVAL);
+        let attempts_before_slot = pending_requests.get_requests_to_attempt();
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let attempts_at_slot = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(attempts_initially.len(), 0);
+        assert_eq!(attempts_before_slot.len(), 0);
+        assert_eq!(attempts_at_slot.len(), 1);
+        assert_eq!(attempts_at_slot[0].request.id, req.id);
+        assert_eq!(
+            attempts_at_slot[0]
+                .computation_progress
+                .lock()
+                .unwrap()
+                .presumed_leader,
+            Some(setup.participant_ids[TestSetup::MY_INDEX])
+        );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_attempt_as_tertiary_after_two_failover_intervals() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, 2, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+        let attempts_after_one_interval = pending_requests.get_requests_to_attempt();
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+        let attempts_after_two_intervals = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(attempts_after_one_interval.len(), 0);
+        assert_eq!(attempts_after_two_intervals.len(), 1);
+        assert_eq!(attempts_after_two_intervals[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_shift_failover_slot_when_prior_leader_offline() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        setup.network_api.bring_down(setup.participant_ids[2]);
+        let req = setup.add_request_leader_order(&[0, 2, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+        let attempts_at_secondary_slot = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(attempts_at_secondary_slot.len(), 1);
+        assert_eq!(attempts_at_secondary_slot[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_not_attempt_beyond_failover_depth() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::with_participant_count(5);
+        let _req = setup.add_request_leader_order(&[0, 2, 3, 4, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        setup.advance_clock(10 * LEADER_FAILOVER_INTERVAL);
+        let attempts = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(attempts.len(), 0);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__failover_leader_should_stop_after_attempt_budget_without_dropping() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+
+        // When
+        let mut attempts_made = 0;
+        for _ in 0..2 * MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER {
+            attempts_made += pending_requests.get_requests_to_attempt().len() as u64;
+            setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        }
+        let still_queued = pending_requests.requests.contains_key(&req.id);
+
+        // Then
+        assert_eq!(attempts_made, MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER);
+        assert!(still_queued);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_not_attempt_as_secondary_after_response_indexed() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL / 2);
+        setup.add_indexed_respond_tx(req.id);
+        setup.update(&mut pending_requests);
+        setup.advance_clock(LEADER_FAILOVER_INTERVAL);
+        let attempts_past_slot = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(attempts_past_slot.len(), 0);
     }
 
     #[test_log::test]
@@ -1372,5 +1743,76 @@ mod tests {
         // Then
         assert!(pending_requests.get_requests_to_attempt().is_empty());
         assert!(!pending_requests.requests.contains_key(&req.id));
+    }
+
+    struct TestRefiner {
+        allowed: Arc<Mutex<HashSet<ParticipantId>>>,
+    }
+
+    impl super::RefineEligibleLeaders<TestRequest> for TestRefiner {
+        fn refine(
+            &self,
+            _request: &TestRequest,
+            eligible: &HashSet<ParticipantId>,
+        ) -> HashSet<ParticipantId> {
+            eligible & &self.allowed.lock().unwrap()
+        }
+    }
+
+    impl TestRefiner {
+        fn new(allowed: HashSet<ParticipantId>) -> Self {
+            Self {
+                allowed: Arc::new(Mutex::new(allowed)),
+            }
+        }
+    }
+
+    /// A request's leader order starts with participant 0 and then us; the refiner
+    /// excludes participant 0, so leadership falls to us and we attempt the request.
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_reroute_leadership_when_refiner_excludes_first_leader() {
+        // Given
+        let (pending_requests, mut setup) = TestSetup::new();
+        let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
+        let refiner = TestRefiner::new(allowed);
+        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_park_request_until_refiner_allows_a_leader() {
+        // Given
+        let (pending_requests, mut setup) = TestSetup::new();
+        let refiner = TestRefiner::new(HashSet::new());
+        let allowed = refiner.allowed.clone();
+        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
+        let req = setup.add_request_leader();
+        setup.update(&mut pending_requests);
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 0);
+        assert!(pending_requests.requests.contains_key(&req.id));
+
+        // When
+        *allowed.lock().unwrap() = setup.participant_ids.iter().copied().collect();
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
     }
 }

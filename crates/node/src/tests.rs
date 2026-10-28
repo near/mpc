@@ -3,12 +3,14 @@ use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
-use std::collections::BTreeMap;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    assert_matches,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 use tokio::sync::{RwLock, watch};
 
@@ -16,17 +18,21 @@ use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::IndexerAPI;
-use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
+use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
+use crate::metrics::{
+    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS,
+    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, SUCCEEDED_OUTCOME_LABEL, TRIPLE_GENERATION_TASK_LABEL,
+};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, SyncMode, TripleConfig,
+    SignatureConfig, SyncMode, TripleBatchSize, TripleConfig,
 };
 
 use crate::primitives::ParticipantId;
@@ -35,7 +41,6 @@ use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
 use aes_gcm::aead::Generate;
-use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
@@ -51,7 +56,6 @@ use std::sync::{Arc, OnceLock};
 use tokio::time::timeout;
 
 pub mod common;
-pub(crate) mod dto_conversions;
 
 mod asset_generation_signing_contention;
 mod basic_cluster;
@@ -64,10 +68,11 @@ mod protocol_yielding;
 mod reconstruction_thresholds;
 mod resharing;
 mod update_participant_url;
+mod verify_foreign_tx_gating;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
-const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
-const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
+const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_mins(1);
+const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_mins(1);
 
 /// Data needed to start running a test node.
 pub struct OneNodeTestConfig {
@@ -75,7 +80,7 @@ pub struct OneNodeTestConfig {
     home_dir: PathBuf,
     pub config: ConfigFile,
     secrets: SecretsConfig,
-    indexer: IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
+    indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
@@ -87,7 +92,6 @@ pub fn make_key_storage_config(
     KeyStorageConfig {
         home_dir,
         local_encryption_key,
-        gcp: None,
     }
 }
 
@@ -114,7 +118,7 @@ impl OneNodeTestConfig {
 
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
-                let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+                let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
@@ -225,7 +229,10 @@ impl IntegrationTestSetup {
                     desired_presignatures_to_buffer: 5,
                     timeout_sec: 60,
                 },
-                signature: SignatureConfig { timeout_sec: 60 },
+                signature: SignatureConfig {
+                    timeout_sec: 60,
+                    online_presign: true,
+                },
                 ckd: CKDConfig { timeout_sec: 60 },
                 foreign_chains: ForeignChainsConfig::default(),
                 triple: TripleConfig {
@@ -233,6 +240,7 @@ impl IntegrationTestSetup {
                     desired_triples_to_buffer: 10,
                     parallel_triple_generation_stagger_time_sec: 1,
                     timeout_sec: 120,
+                    batch_size: TripleBatchSize::default(),
                 },
                 number_of_responder_keys: 0,
                 web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), ports.web_ui_port(i)),
@@ -289,7 +297,7 @@ pub async fn request_signature_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     let payload = match domain.protocol {
-        Protocol::CaitSith | Protocol::DamgardEtAl => {
+        Protocol::CaitSith | Protocol::RobustEcdsa => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
 
@@ -475,14 +483,15 @@ async fn do_request_ckd_and_await_response(
     }
 }
 
-/// Request a verify foreign tx from the indexer and wait for the response.
+/// Request an Ethereum verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
-// TODO: remove this when tests are added for this functionality
-#[expect(unused)]
+/// `tx_id` distinguishes concurrent requests: responses are matched by
+/// request payload, so callers must not reuse an id across requests.
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
     domain: &DomainConfig,
+    tx_id: [u8; 32],
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
@@ -494,10 +503,10 @@ pub async fn request_verify_foreign_tx_and_await_response(
         verify_foreign_tx_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
         request: VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
-                tx_id: [42u8; 32].into(),
-                confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+            request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId(tx_id),
+                extractors: [EvmExtractor::BlockHash].into(),
+                finality: EvmFinality::Finalized,
             }),
             domain_id: domain.id.0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
@@ -550,6 +559,33 @@ pub async fn request_verify_foreign_tx_and_await_response(
             }
         }
     }
+}
+
+pub fn signatures_led(mode: &str) -> u64 {
+    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
+        .with_label_values(&[mode])
+        .get()
+}
+
+pub fn every_node_owns_triples(num_participants: usize) -> bool {
+    let triple_batches_led = MPC_LED_COMPUTATION_DURATION_SECONDS
+        .with_label_values(&[
+            ECDSA_PROTOCOL_SCHEME_LABEL,
+            TRIPLE_GENERATION_TASK_LABEL,
+            SUCCEEDED_OUTCOME_LABEL,
+        ])
+        .get_sample_count();
+    triple_batches_led >= num_participants as u64
+}
+
+pub async fn wait_until(condition: impl Fn() -> bool, what: &str) {
+    tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
+        while !condition() {
+            tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timeout waiting for {what}"));
 }
 
 pub fn into_participant_ids(

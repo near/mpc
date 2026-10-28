@@ -6,7 +6,7 @@
 # Extra requirements if using --push: skopeo, docker must be logged in to registry
 #
 # Usage:
-#   ./deployment/build-images.sh [--node] [--node-gcp] [--rust-launcher] [--push]
+#   ./deployment/build-images.sh [--node] [--rust-launcher] [--push]
 # If no image flags are used, all images are built
 # Manifest digests are always computed and printed (via a pinned skopeo image)
 
@@ -15,7 +15,6 @@ set -euo pipefail
 
 USE_RUST_LAUNCHER=false
 USE_NODE=false
-USE_NODE_GCP=false
 USE_PUSH=false
 
 for arg in "$@"
@@ -23,9 +22,6 @@ do
   case "$arg" in
     --node)
       USE_NODE=true
-      ;;
-    --node-gcp)
-      USE_NODE_GCP=true
       ;;
     --rust-launcher)
       USE_RUST_LAUNCHER=true
@@ -41,10 +37,9 @@ do
   esac
 done
 
-if ! $USE_RUST_LAUNCHER && ! $USE_NODE && ! $USE_NODE_GCP; then
+if ! $USE_RUST_LAUNCHER && ! $USE_NODE; then
     USE_RUST_LAUNCHER=true
     USE_NODE=true
-    USE_NODE_GCP=true
 fi
 
 die() {
@@ -62,7 +57,7 @@ require_cmds() {
 
 require_cmds docker git find touch podman
 
-if $USE_NODE || $USE_NODE_GCP || $USE_RUST_LAUNCHER; then
+if $USE_NODE || $USE_RUST_LAUNCHER; then
     require_cmds repro-env
 fi
 
@@ -81,9 +76,6 @@ fi
 
 DOCKERFILE_NODE=deployment/Dockerfile-node
 : "${NODE_IMAGE_NAME:=mpc-node}"
-
-DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
-: "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
 
 DOCKERFILE_RUST_LAUNCHER=deployment/Dockerfile-rust-launcher
 : "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher}"
@@ -138,8 +130,9 @@ build_reproducible_image() {
 # skopeo re-gzips every layer here, so the manifest digest depends on the
 # deflate library its binary was linked against rather than on its version
 # string: Ubuntu 26.04's package (klauspost/compress 1.18.1) emits different
-# bytes than 24.04's (1.17.7) for identical input. Pin the build by digest.
-skopeo_image="quay.io/skopeo/stable:v1.22.2@sha256:c7d3c512612f52805023cd38351081dad7e2729fc13d14b701e47c7c8bdd6615"
+# bytes than 24.04's (1.17.7) for identical input. Pin the build by digest, taken
+# from an upstream `-immutable` tag.
+skopeo_image="quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810"
 
 # Compress a built image tar via skopeo to a temp directory.
 # Prints the temp dir path to stdout. The manifest digest can be
@@ -171,7 +164,7 @@ if $USE_RUST_LAUNCHER; then
     rust_launcher_manifest_digest="$(manifest_digest_from_dir "$rust_launcher_skopeo_dir")"
 fi
 
-if $USE_NODE || $USE_NODE_GCP; then
+if $USE_NODE; then
     # Pin jemalloc's `./configure` auto-detected values so tikv-jemalloc-sys
     # produces identical bytes across builders. See nix/mpc-node.nix for the
     # full rationale; values match the standard x86_64 Linux ABI.
@@ -199,8 +192,6 @@ if $USE_NODE || $USE_NODE_GCP; then
     JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
     GIT_CEILING_DIRECTORIES=/build/target \
     BUILT_OVERRIDE_mpc_node_GIT_VERSION="${GIT_COMMIT_HASH:0:7}" \
-    CFLAGS="-march=x86-64-v3 -mpclmul -maes" \
-    CXXFLAGS="-march=x86-64-v3 -mpclmul -maes" \
     repro-env build \
       --env SOURCE_DATE_EPOCH \
       --env JEMALLOC_SYS_WITH_LG_VADDR \
@@ -208,24 +199,13 @@ if $USE_NODE || $USE_NODE_GCP; then
       --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
       --env GIT_CEILING_DIRECTORIES \
       --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
-      --env CFLAGS \
-      --env CXXFLAGS \
       -- cargo build -p mpc-node --profile reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
-fi
 
-if $USE_NODE; then
     node_tar="$(mktemp --suffix=.tar)"
     build_reproducible_image "$NODE_IMAGE_NAME" "$DOCKERFILE_NODE" "$node_tar"
     node_skopeo_dir="$(skopeo_compress "$node_tar")"
     node_manifest_digest="$(manifest_digest_from_dir "$node_skopeo_dir")"
-fi
-
-if $USE_NODE_GCP; then
-    node_gcp_tar="$(mktemp --suffix=.tar)"
-    build_reproducible_image "$NODE_GCP_IMAGE_NAME" "$DOCKERFILE_NODE_GCP" "$node_gcp_tar"
-    node_gcp_skopeo_dir="$(skopeo_compress "$node_gcp_tar")"
-    node_gcp_manifest_digest="$(manifest_digest_from_dir "$node_gcp_skopeo_dir")"
 fi
 
 if $USE_PUSH; then
@@ -249,10 +229,6 @@ if $USE_PUSH; then
         skopeo copy --preserve-digests "dir:$node_skopeo_dir" "docker://docker.io/nearone/$NODE_IMAGE_NAME:$image_tag"
     fi
 
-    if $USE_NODE_GCP; then
-        skopeo copy --preserve-digests "dir:$node_gcp_skopeo_dir" "docker://docker.io/nearone/$NODE_GCP_IMAGE_NAME:$image_tag"
-    fi
-
     if $USE_RUST_LAUNCHER; then
         skopeo copy --preserve-digests "dir:$rust_launcher_skopeo_dir" "docker://docker.io/nearone/$RUST_LAUNCHER_IMAGE_NAME:$image_tag"
     fi
@@ -260,14 +236,9 @@ fi
 
 echo "commit hash: $GIT_COMMIT_HASH"
 echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE_EPOCH"
-if $USE_NODE || $USE_NODE_GCP; then
-    echo "node binary hash: $node_binary_hash"
-fi
 if $USE_NODE; then
+    echo "node binary hash: $node_binary_hash"
     echo "node manifest digest: $node_manifest_digest"
-fi
-if $USE_NODE_GCP; then
-    echo "node gcp manifest digest: $node_gcp_manifest_digest"
 fi
 if $USE_RUST_LAUNCHER; then
     echo "rust launcher binary hash: $rust_launcher_binary_hash"

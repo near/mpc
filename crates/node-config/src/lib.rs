@@ -5,8 +5,8 @@ pub use foreign_chains::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
 };
 pub use start::{
-    ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
-    SecretsStartConfig, StartConfig, default_pccs_endpoints,
+    ChainId, DownloadConfigType, LogConfig, LogFormat, NearInitConfig, SecretsStartConfig,
+    StartConfig, default_pccs_endpoints,
 };
 
 use anyhow::Context;
@@ -34,7 +34,60 @@ pub struct TripleConfig {
     /// If we issued a triple generation, wait at least this number of seconds
     /// before issuing another one. This is to avoid thundering herd situations.
     pub parallel_triple_generation_stagger_time_sec: u64,
+    /// How many triples one generation computation led by this node produces.
+    #[serde(default)]
+    pub batch_size: TripleBatchSize,
 }
+
+/// The number of triples a single triple generation computation produces.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, derive_more::Deref, derive_more::Into,
+)]
+#[serde(into = "usize", try_from = "usize")]
+pub struct TripleBatchSize(usize);
+
+impl TripleBatchSize {
+    /// The fixed batch size used before the value became configurable.
+    pub const LEGACY: Self = Self(64);
+
+    /// The largest batch a follower accepts.
+    pub const MAX: Self = Self(64);
+
+    /// Rejects values that are zero, odd, or above [`TripleBatchSize::MAX`].
+    pub const fn new(value: usize) -> Result<Self, InvalidTripleBatchSize> {
+        if value == 0 || !value.is_multiple_of(2) || value > Self::MAX.0 {
+            return Err(InvalidTripleBatchSize(value));
+        }
+        Ok(Self(value))
+    }
+}
+
+impl Default for TripleBatchSize {
+    fn default() -> Self {
+        Self::LEGACY
+    }
+}
+
+impl TryFrom<usize> for TripleBatchSize {
+    type Error = InvalidTripleBatchSize;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<TripleBatchSize> for u32 {
+    fn from(value: TripleBatchSize) -> Self {
+        u32::try_from(value.0).expect("`new` caps a batch size at `MAX`, which fits in a u32")
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "triple batch size must be even, non-zero and at most {max}, got {0}",
+    max = TripleBatchSize::MAX.0
+)]
+pub struct InvalidTripleBatchSize(usize);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresignatureConfig {
@@ -46,6 +99,8 @@ pub struct PresignatureConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
+    #[serde(default = "default_true")]
+    pub online_presign: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -113,7 +168,7 @@ pub struct BlockArgs {
     pub height: u64,
 }
 
-/// The contents of the on-disk config.yaml file. Contains no secrets.
+/// The contents of the on-disk config.yaml file. [`Self::foreign_chains`] may hold provider API keys.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
     /// The near account ID that this node owns.
@@ -209,5 +264,76 @@ where
             .map_err(serde::de::Error::custom)?
             .next()
             .ok_or_else(|| serde::de::Error::custom("could not resolve host")),
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{TripleBatchSize, TripleConfig};
+    use rstest::rstest;
+
+    const TRIPLE_CONFIG_YAML: &str = "\
+concurrency: 2
+desired_triples_to_buffer: 128
+timeout_sec: 120
+parallel_triple_generation_stagger_time_sec: 1
+";
+
+    #[rstest]
+    #[case::zero(0, false)]
+    #[case::odd(63, false)]
+    #[case::above_max(66, false)]
+    #[case::smallest(2, true)]
+    #[case::max(64, true)]
+    fn triple_batch_size__should_accept_only_even_non_zero_sizes_up_to_the_max(
+        #[case] value: usize,
+        #[case] accepted: bool,
+    ) {
+        // When
+        let result = TripleBatchSize::new(value);
+
+        // Then
+        assert_eq!(result.is_ok(), accepted, "{result:?}");
+    }
+
+    #[test]
+    fn triple_config__should_default_the_batch_size_to_the_legacy_one() {
+        // Given
+        // a config written before the batch size became configurable
+
+        // When
+        let config: TripleConfig = serde_yaml::from_str(TRIPLE_CONFIG_YAML).unwrap();
+
+        // Then
+        assert_eq!(config.batch_size, TripleBatchSize::LEGACY);
+    }
+
+    #[test]
+    fn triple_config__should_reject_a_batch_size_the_protocol_cannot_run() {
+        // Given
+        let yaml = format!("{TRIPLE_CONFIG_YAML}batch_size: 63\n");
+
+        // When
+        let result: Result<TripleConfig, _> = serde_yaml::from_str(&yaml);
+
+        // Then
+        // the node refuses to start rather than generating unpairable batches
+        result.unwrap_err();
+    }
+
+    #[test]
+    fn triple_config__should_round_trip_a_configured_batch_size() {
+        // Given
+        let yaml = format!("{TRIPLE_CONFIG_YAML}batch_size: 16\n");
+        let config: TripleConfig = serde_yaml::from_str(&yaml).unwrap();
+
+        // When
+        let reparsed: TripleConfig =
+            serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
+
+        // Then
+        assert_eq!(*reparsed.batch_size, 16);
+        assert_eq!(reparsed, config);
     }
 }

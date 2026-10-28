@@ -1,34 +1,7 @@
 use blstrs::G1Projective;
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::kdf::derive_app_id;
-use near_mpc_contract_interface::types::{CKDResponse, DomainId};
-use near_sdk::{env, near};
-
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[near(serializers=[borsh, json])]
-pub struct CKDRequest {
-    /// The app ephemeral public key
-    pub app_public_key: dtos::CKDAppPublicKey,
-    pub app_id: dtos::CkdAppId,
-    pub domain_id: DomainId,
-}
-
-impl CKDRequest {
-    pub fn new(
-        app_public_key: dtos::CKDAppPublicKey,
-        domain_id: DomainId,
-        predecessor_id: &AccountId,
-        derivation_path: &str,
-    ) -> Self {
-        let app_id = derive_app_id(predecessor_id, derivation_path);
-        Self {
-            app_public_key,
-            app_id,
-            domain_id,
-        }
-    }
-}
+use near_mpc_contract_interface::types::CKDResponse;
+use near_sdk::env;
 
 /// Uncompressed encoding of the G1 generator.
 const G1_GENERATOR_UNCOMPRESSED: [u8; 96] = [
@@ -56,12 +29,14 @@ const MINUS_G2_GENERATOR_UNCOMPRESSED: [u8; 192] = [
 /// Check that `e(app_pk1, g2) = e(g1, app_pk2)`.
 ///
 /// Point validation is fully delegated to the host: the decompression
-/// functions abort execution on malformed or off-curve encodings, and
-/// `bls12381_pairing_check` returns `false` when a point is outside its
-/// prime-order subgroup.
+/// wrappers return `None` on malformed or off-curve encodings, which this
+/// function turns into an abort, and a pairing check that fails or errors,
+/// as it does for a point outside its prime-order subgroup, counts as `false`.
 pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> bool {
-    let pk1 = env::bls12381_p1_decompress(&app_public_key.pk1);
-    let pk2 = env::bls12381_p2_decompress(&app_public_key.pk2);
+    let pk1 =
+        env::bls12381_p1_decompress(&app_public_key.pk1).expect("malformed BLS12-381 G1 point");
+    let pk2 =
+        env::bls12381_p2_decompress(&app_public_key.pk2).expect("malformed BLS12-381 G2 point");
 
     let pairing_input = [
         pk1.as_slice(),
@@ -70,7 +45,7 @@ pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> 
         pk2.as_slice(),
     ]
     .concat();
-    env::bls12381_pairing_check(&pairing_input)
+    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
 }
 
 /// Check that `e(big_c, g2) = e(big_y, app_pk2) . e(hash_point, public_key)`.
@@ -83,10 +58,11 @@ pub(crate) fn ckd_output_check(
     app_public_key: &dtos::CKDAppPublicKeyPV,
     public_key: &dtos::Bls12381G2PublicKey,
 ) -> bool {
-    let big_c = env::bls12381_p1_decompress(&output.big_c);
-    let big_y = env::bls12381_p1_decompress(&output.big_y);
-    let pk2 = env::bls12381_p2_decompress(&app_public_key.pk2);
-    let pk = env::bls12381_p2_decompress(public_key);
+    let big_c = env::bls12381_p1_decompress(&output.big_c).expect("malformed BLS12-381 G1 point");
+    let big_y = env::bls12381_p1_decompress(&output.big_y).expect("malformed BLS12-381 G1 point");
+    let pk2 =
+        env::bls12381_p2_decompress(&app_public_key.pk2).expect("malformed BLS12-381 G2 point");
+    let pk = env::bls12381_p2_decompress(public_key).expect("malformed BLS12-381 G2 point");
     let hash_point = hash_app_id_with_pk(public_key.as_slice(), app_id.as_ref());
 
     let pairing_input = [
@@ -98,7 +74,7 @@ pub(crate) fn ckd_output_check(
         pk.as_slice(),
     ]
     .concat();
-    env::bls12381_pairing_check(&pairing_input)
+    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
 }
 
 /// Hashes the app id and the public key as `H(pk || app_id)` where `H` is a
@@ -130,6 +106,8 @@ mod tests {
     use elliptic_curve::Field as _;
     use elliptic_curve::Group as _;
     use elliptic_curve::group::Curve as _;
+    use near_mpc_contract_interface::types::CKDResponse;
+    use near_mpc_contract_interface::types::kdf::derive_app_id;
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use threshold_signatures::confidential_key_derivation::{self as ckd, ElementG2, VerifyingKey};
@@ -137,7 +115,7 @@ mod tests {
     /// Finds a point on the G1 curve that is not in the prime-order subgroup
     /// by scanning x-coordinates: the subgroup has index ~2^125 in the curve
     /// group, so essentially every curve point qualifies.
-    fn must_g1_point_outside_subgroup() -> G1Affine {
+    fn g1_point_outside_subgroup() -> G1Affine {
         let mut candidate = [0u8; 48];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -152,8 +130,8 @@ mod tests {
         panic!("no G1 point outside the prime-order subgroup found");
     }
 
-    /// G2 counterpart of [`must_g1_point_outside_subgroup`].
-    fn must_g2_point_outside_subgroup() -> G2Affine {
+    /// G2 counterpart of [`g1_point_outside_subgroup`].
+    fn g2_point_outside_subgroup() -> G2Affine {
         let mut candidate = [0u8; 96];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -170,7 +148,7 @@ mod tests {
 
     /// Finds a compressed G1 encoding whose x-coordinate is a valid field
     /// element but lies on no curve point (x^3 + 4 is a non-square).
-    fn must_g1_x_not_on_curve() -> [u8; 48] {
+    fn g1_x_not_on_curve() -> [u8; 48] {
         let mut candidate = [0u8; 48];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -185,8 +163,8 @@ mod tests {
         panic!("no x-coordinate off the G1 curve found");
     }
 
-    /// G2 counterpart of [`must_g1_x_not_on_curve`].
-    fn must_g2_x_not_on_curve() -> [u8; 96] {
+    /// G2 counterpart of [`g1_x_not_on_curve`].
+    fn g2_x_not_on_curve() -> [u8; 96] {
         let mut candidate = [0u8; 96];
         candidate[0] = 0x80; // compressed-encoding flag
         for x in 0u8..=255 {
@@ -318,12 +296,12 @@ mod tests {
         // subgroup, paired with the G2 identity. A host that skipped the
         // subgroup check would evaluate the pairing to the identity and
         // return true; the subgroup check is the only reason this fails.
-        let rogue = must_g1_point_outside_subgroup();
+        let rogue = g1_point_outside_subgroup();
         let g2_identity = G2Projective::identity().to_uncompressed();
         let pairing_input = [rogue.to_uncompressed().as_slice(), &g2_identity].concat();
 
         // When
-        let accepted = env::bls12381_pairing_check(&pairing_input);
+        let accepted = env::bls12381_pairing_check(&pairing_input).unwrap_or(false);
 
         // Then
         assert!(
@@ -336,12 +314,12 @@ mod tests {
     #[expect(non_snake_case)]
     fn bls12381_pairing_check__should_reject_g2_point_outside_prime_order_subgroup() {
         // Given: a non-subgroup G2 point paired with the G1 identity
-        let rogue = must_g2_point_outside_subgroup();
+        let rogue = g2_point_outside_subgroup();
         let g1_identity = G1Projective::identity().to_uncompressed();
         let pairing_input = [g1_identity.as_slice(), &rogue.to_uncompressed()].concat();
 
         // When
-        let accepted = env::bls12381_pairing_check(&pairing_input);
+        let accepted = env::bls12381_pairing_check(&pairing_input).unwrap_or(false);
 
         // Then
         assert!(
@@ -369,56 +347,64 @@ mod tests {
         .concat();
 
         // When
-        let accepted = env::bls12381_pairing_check(&pairing_input);
+        let accepted = env::bls12381_pairing_check(&pairing_input).unwrap_or(false);
 
         // Then
         assert!(accepted);
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p1_decompress__should_abort_on_x_coordinate_not_on_curve() {
+    fn bls12381_p1_decompress__should_return_none_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
-        let candidate = must_g1_x_not_on_curve();
+        let candidate = g1_x_not_on_curve();
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p1_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p1_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p1_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
+    fn bls12381_p1_decompress__should_return_none_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 48];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p1_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p1_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p2_decompress__should_abort_on_x_coordinate_not_on_curve() {
+    fn bls12381_p2_decompress__should_return_none_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
-        let candidate = must_g2_x_not_on_curve();
+        let candidate = g2_x_not_on_curve();
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p2_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p2_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p2_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
+    fn bls12381_p2_decompress__should_return_none_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 96];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p2_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p2_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
@@ -465,7 +451,7 @@ mod tests {
         // alone accepts it and only the pairing-check subgroup validation can
         // reject it
         let app_pk = dtos::CKDAppPublicKeyPV {
-            pk1: dtos::Bls12381G1PublicKey(must_g1_point_outside_subgroup().to_compressed()),
+            pk1: dtos::Bls12381G1PublicKey(g1_point_outside_subgroup().to_compressed()),
             pk2: dtos::Bls12381G2PublicKey(G2Projective::generator().to_compressed()),
         };
 
@@ -474,6 +460,34 @@ mod tests {
 
         // Then
         assert!(!accepted);
+    }
+
+    #[test]
+    #[should_panic(expected = "malformed BLS12-381 G1 point")]
+    #[expect(non_snake_case)]
+    fn app_public_key_check__should_abort_on_malformed_pk1() {
+        // Given
+        let app_pk = dtos::CKDAppPublicKeyPV {
+            pk1: dtos::Bls12381G1PublicKey(g1_x_not_on_curve()),
+            pk2: dtos::Bls12381G2PublicKey(G2Projective::generator().to_compressed()),
+        };
+
+        // When / Then
+        app_public_key_check(&app_pk);
+    }
+
+    #[test]
+    #[should_panic(expected = "malformed BLS12-381 G2 point")]
+    #[expect(non_snake_case)]
+    fn app_public_key_check__should_abort_on_malformed_pk2() {
+        // Given
+        let app_pk = dtos::CKDAppPublicKeyPV {
+            pk1: dtos::Bls12381G1PublicKey(G1Projective::generator().to_compressed()),
+            pk2: dtos::Bls12381G2PublicKey(g2_x_not_on_curve()),
+        };
+
+        // When / Then
+        app_public_key_check(&app_pk);
     }
 
     /// Documents the pre-existing behavior that identity key pairs satisfy
@@ -544,6 +558,19 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "malformed BLS12-381 G1 point")]
+    #[expect(non_snake_case)]
+    fn ckd_output_check__should_abort_on_malformed_big_c() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let (app_id, mut response, app_pk, network_pk) = make_valid_ckd_output(&mut rng);
+        response.big_c = dtos::Bls12381G1PublicKey(g1_x_not_on_curve());
+
+        // When / Then
+        ckd_output_check(&app_id, &response, &app_pk, &network_pk);
+    }
+
+    #[test]
     #[expect(non_snake_case)]
     fn ckd_output_check__should_reject_tampered_big_c() {
         // Given
@@ -558,19 +585,5 @@ mod tests {
 
         // Then
         assert!(!accepted);
-    }
-
-    #[test]
-    fn ckd_request_new_derives_app_id_deterministically() {
-        let account_id: AccountId = "alice.near".parse().unwrap();
-        let pk = dtos::CKDAppPublicKey::AppPublicKey(dtos::Bls12381G1PublicKey([1u8; 48]));
-        let domain_id = DomainId(0);
-
-        let r1 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
-        let r2 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
-        assert_eq!(r1.app_id, r2.app_id);
-
-        let r3 = CKDRequest::new(pk, domain_id, &account_id, "path/b");
-        assert_ne!(r1.app_id, r3.app_id);
     }
 }

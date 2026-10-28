@@ -2,7 +2,7 @@ name: Release Node Docker Image
 
 # cancel-in-progress is false to avoid orphaning blobs mid-push; see RELEASES.md.
 concurrency:
-  group: retag-node-${{ inputs.repository }}-${{ github.ref }}
+  group: retag-node-${{ github.ref }}
   cancel-in-progress: false
 
 on:
@@ -16,11 +16,6 @@ on:
         description: "Release tag for the image (e.g., '3.0.4')"
         required: true
         type: string
-      repository:
-        description: "Target repository name (default: 'mpc-node-gcp')"
-        required: false
-        type: string
-        default: mpc-node-gcp
   workflow_call:
     inputs:
       source-tag:
@@ -29,9 +24,8 @@ on:
       release-tag:
         required: true
         type: string
-      repository:
-        required: true
-        type: string
+
+permissions: {}
 
 jobs:
   retag-node-image:
@@ -43,7 +37,7 @@ jobs:
 
     steps:
       - name: Login to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PAT }}
@@ -51,19 +45,17 @@ jobs:
       - name: Verify source image exists
         env:
           SOURCE_TAG: ${{ inputs.source-tag }}
-          REPOSITORY: ${{ inputs.repository }}
         run: |
-          if ! skopeo inspect docker://nearone/$REPOSITORY:$SOURCE_TAG > /dev/null 2>&1; then
-            echo "Source image nearone/$REPOSITORY:$SOURCE_TAG does not exist"
+          if ! skopeo inspect docker://nearone/mpc-node:$SOURCE_TAG > /dev/null 2>&1; then
+            echo "Source image nearone/mpc-node:$SOURCE_TAG does not exist"
             exit 1
           fi
 
       - name: Retag image
         env:
           SOURCE_TAG: ${{ inputs.source-tag }}
-          REPOSITORY: ${{ inputs.repository }}
           RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
           skopeo copy \
-            docker://nearone/$REPOSITORY:$SOURCE_TAG \
-            docker://nearone/$REPOSITORY:$RELEASE_TAG
+            docker://nearone/mpc-node:$SOURCE_TAG \
+            docker://nearone/mpc-node:$RELEASE_TAG

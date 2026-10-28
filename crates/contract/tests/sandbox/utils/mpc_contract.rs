@@ -1,48 +1,34 @@
 use std::collections::BTreeSet;
 
+use crate::sandbox::utils::sandbox_mpc_contract::SandboxMpcContract;
 use crate::sandbox::utils::transactions::CallMpcContract;
 
-use super::transactions::all_receipts_successful;
+use super::transactions::{all_receipts_successful, execute_async_handle_calls};
 use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
-use near_mpc_contract_interface::{
-    method_names,
-    types::{
-        Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
-        ProtocolContractState,
-    },
+use near_mpc_contract_interface::types::{
+    Attestation, Config, Ed25519PublicKey, ExpectedMeasurements, GovernanceThreshold, Participants,
+    ProtocolContractState, StoredAttestation,
 };
-use near_workspaces::{
-    Account, AccountId, Contract, result::ExecutionFinalResult, types::NearToken,
-};
+use near_workspaces::{Account, AccountId, result::ExecutionFinalResult, types::NearToken};
 
 pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
     result
         .outcomes()
         .iter()
         .map(|outcome| outcome.tokens_burnt)
-        .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+        .fold(NearToken::ZERO, NearToken::saturating_add)
 }
 
-pub async fn get_state(contract: &Contract) -> ProtocolContractState {
-    contract
-        .view(method_names::STATE)
-        .await
-        .unwrap()
-        .json()
-        .unwrap()
+pub async fn get_config(contract: &SandboxMpcContract) -> anyhow::Result<Config> {
+    Ok(contract.config().await?.value)
 }
 
-pub async fn get_allowed_launcher_image_hashes(
-    contract: &Contract,
-) -> anyhow::Result<Vec<LauncherImageHash>> {
-    Ok(contract
-        .view(method_names::ALLOWED_LAUNCHER_IMAGE_HASHES)
-        .await?
-        .json()?)
+pub async fn get_state(contract: &SandboxMpcContract) -> ProtocolContractState {
+    contract.state().await.unwrap().value
 }
 
-pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
+pub async fn get_participants(contract: &SandboxMpcContract) -> anyhow::Result<Participants> {
     let state = get_state(contract).await;
     let ProtocolContractState::Running(running) = state else {
         panic!("Expected running state")
@@ -51,48 +37,54 @@ pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participant
     Ok(running.parameters.participants)
 }
 
-/// Helper function to get TEE participants from contract.
-pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeId>> {
+pub async fn get_tee_accounts(contract: &SandboxMpcContract) -> anyhow::Result<BTreeSet<NodeId>> {
     Ok(contract
-        .call(method_names::GET_TEE_ACCOUNTS)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .get_tee_accounts()
         .await?
-        .json::<Vec<NodeId>>()?
+        .value
         .into_iter()
         .collect())
 }
 
+pub async fn available_attestation_grants(
+    contract: &SandboxMpcContract,
+    account_id: &AccountId,
+) -> anyhow::Result<u32> {
+    Ok(contract
+        .available_attestation_grants(account_id.clone())
+        .await?
+        .value)
+}
+
 pub async fn prepay_attestation_grants(
     payer: &Account,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     beneficiary: &AccountId,
     grants: u32,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // The fee is read from `config()`, the way an operator reads it.
-    let config: Config = contract
-        .view(method_names::CONFIG)
-        .args_json(serde_json::json!({}))
+    let fee = attestation_storage_fee(contract).await?;
+    let total = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
+    payer
+        .call_mpc(contract.id())
+        .prepay_attestation_storage(beneficiary.clone(), grants, total)
+        .await
+        .map_err(Into::into)
+}
+
+async fn attestation_storage_fee(contract: &SandboxMpcContract) -> anyhow::Result<NearToken> {
+    let fee = contract
+        .config()
         .await?
-        .json()?;
-    let total = NearToken::from_millinear(
-        u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
-    );
-    Ok(payer
-        .call(contract.id(), method_names::PREPAY_ATTESTATION_STORAGE)
-        .args_json(serde_json::json!({ "account_id": beneficiary, "grants": grants }))
-        .deposit(total)
-        .max_gas()
-        .transact()
-        .await?)
+        .value
+        .attestation_storage_fee_millinear;
+    Ok(NearToken::from_millinear(u128::from(fee)))
 }
 
 /// Prepays one grant, then submits. For a first submission; a re-attestation of a key the
 /// account already owns consumes no grant and should use [`submit_participant_info`].
 pub async fn prepay_and_submit_participant_info(
     account: &Account,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
@@ -104,7 +96,7 @@ pub async fn prepay_and_submit_participant_info(
 /// Submits without prepaying anything.
 pub async fn submit_participant_info(
     account: &Account,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
@@ -116,56 +108,22 @@ pub async fn submit_participant_info(
         .map_err(Into::into)
 }
 
-pub async fn vote_tee_verifier_change(
-    account: &Account,
-    contract: &Contract,
-    candidate_account_id: &AccountId,
-    expected_code_hash: [u8; 32],
-) -> anyhow::Result<()> {
-    let expected_code_hash = TeeVerifierCodeHash::new(expected_code_hash);
-    all_receipts_successful(
-        account
-            .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
-            .args_json(serde_json::json!({
-                "candidate_account_id": candidate_account_id,
-                "expected_code_hash": expected_code_hash,
-            }))
-            .transact()
-            .await?,
-    )
-}
-
-pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
-    contract
-        .view(method_names::TEE_VERIFIER_ACCOUNT_ID)
-        .await
-        .unwrap()
-        .json()
-        .unwrap()
+pub async fn tee_verifier_account_id(contract: &SandboxMpcContract) -> AccountId {
+    contract.tee_verifier_account_id().await.unwrap().value
 }
 
 pub async fn get_participant_attestation(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<Attestation>> {
-    let result = contract
-        .as_account()
-        .call(contract.id(), method_names::GET_ATTESTATION)
-        .args_json(serde_json::json!({
-            "tls_public_key": tls_key
-        }))
-        .max_gas()
-        .transact()
-        .await?;
-
-    Ok(result.json()?)
+) -> anyhow::Result<Option<StoredAttestation>> {
+    Ok(contract.get_attestation(tls_key).await?.value)
 }
 
 pub async fn assert_running_return_participants(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
 ) -> anyhow::Result<Participants> {
     // Verify contract is back to running state with new threshold
-    let final_state: ProtocolContractState = contract.view(method_names::STATE).await?.json()?;
+    let final_state: ProtocolContractState = contract.state().await?.value;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
             "Expected contract to be in Running state after resharing, but got: {:?}",
@@ -175,7 +133,7 @@ pub async fn assert_running_return_participants(
     Ok(running_state.parameters.participants)
 }
 
-pub async fn assert_running_return_threshold(contract: &Contract) -> GovernanceThreshold {
+pub async fn assert_running_return_threshold(contract: &SandboxMpcContract) -> GovernanceThreshold {
     let final_state: ProtocolContractState = get_state(contract).await;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
@@ -188,13 +146,12 @@ pub async fn assert_running_return_threshold(contract: &Contract) -> GovernanceT
 
 pub async fn vote_for_hash(
     account: &Account,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     image_hash: &NodeImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
-        .args_json(serde_json::json!({"code_hash": image_hash}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_mpc_node_manifest_digest(*image_hash)
         .await?;
     all_receipts_successful(result)?;
     Ok(())
@@ -202,14 +159,45 @@ pub async fn vote_for_hash(
 
 pub async fn vote_add_launcher_hash(
     account: &Account,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     launcher_hash: &LauncherImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), method_names::VOTE_ADD_LAUNCHER_HASH)
-        .args_json(serde_json::json!({"launcher_hash": launcher_hash}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_add_launcher_hash(*launcher_hash)
         .await?;
     all_receipts_successful(result)?;
     Ok(())
+}
+
+pub async fn vote_add_os_measurement(
+    account: &Account,
+    contract: &SandboxMpcContract,
+    measurement: &ExpectedMeasurements,
+) -> anyhow::Result<()> {
+    let result = account
+        .call_mpc(contract.id())
+        .vote_add_os_measurement(measurement.clone())
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
+pub async fn vote_tee_verifier_change(
+    accounts: &[Account],
+    contract: &SandboxMpcContract,
+    verifier: &AccountId,
+) -> anyhow::Result<()> {
+    // Arbitrary: the hash only buckets votes (voters must commit to the same
+    // value), the contract never compares it to the deployed verifier code.
+    let expected_code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let verifier = verifier.clone();
+        async move {
+            handle
+                .vote_tee_verifier_change(verifier, expected_code_hash)
+                .await
+        }
+    })
+    .await
 }

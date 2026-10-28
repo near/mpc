@@ -1,29 +1,42 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::fmt::Debug;
 use std::time::Duration;
 
 use anyhow::anyhow;
 use mpc_node::keyshare::Keyshare;
 use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolContractState};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::keyset::keyset_to_backup;
-use crate::ports::{KeyShareRepository, P2PClient, WatchContractState};
+use crate::ports::{
+    GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus, WatchContractState,
+};
+
+/// How often a keyset that storage already covers is fetched again. Each fetch shows the node
+/// still serves the stored keyshares, and refreshes the node's backup metrics after it restarts.
+const VERIFICATION_INTERVAL: Duration = Duration::from_hours(1);
 
 /// Keeps local storage holding the keyshares of the contract's current keyset
-pub struct Service<Keyshares, Storage, Contract> {
+pub struct Service<Keyshares, Storage, Contract, Status, Clock> {
     keyshares: Keyshares,
     storage: Storage,
     contract_state: Contract,
+    status: Status,
+    clock: Clock,
     retry_delay: Duration,
     backed_up: Option<BackedUpKeyset>,
 }
 
-impl<Keyshares, Storage, Contract> Service<Keyshares, Storage, Contract>
+impl<Keyshares, Storage, Contract, Status, Clock>
+    Service<Keyshares, Storage, Contract, Status, Clock>
 where
     Keyshares: P2PClient,
     Storage: KeyShareRepository,
     Contract: WatchContractState,
+    Status: ReportBackupStatus,
+    Clock: GetCurrentTime,
 {
     /// Reads back what local storage already holds, so a restart does not re-fetch a keyset
     /// that is already stored.
@@ -31,6 +44,8 @@ where
         keyshares: Keyshares,
         storage: Storage,
         contract_state: Contract,
+        status: Status,
+        clock: Clock,
         retry_delay: Duration,
     ) -> anyhow::Result<Self> {
         let stored = storage
@@ -38,16 +53,28 @@ where
             .await
             .map_err(|err| anyhow!("failed to load stored keyshares: {err:?}"))?;
 
+        let backed_up = BackedUpKeyset::from_keyshares(&stored);
+        // Until the first fetch from the node succeeds, this report keeps /status and /metrics
+        // from claiming no backup. Storage does not record when it was written, hence no
+        // timestamp.
+        if let Some(backed_up) = &backed_up {
+            status.keyset_backed_up(backed_up.epoch_id, None);
+        }
+
         Ok(Self {
             keyshares,
             storage,
             contract_state,
+            status,
+            clock,
             retry_delay,
-            backed_up: BackedUpKeyset::from_keyshares(&stored),
+            backed_up,
         })
     }
 
     /// Backs up the observed keyset, then waits for the next one, until `shutdown` is cancelled.
+    /// On startup and then hourly, it also fetches a keyset that storage already covers, and
+    /// compares it with what is stored.
     /// Returns an error if the contract state stops being observed, since that is a failure
     /// rather than a stop that was asked for.
     pub async fn run(mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
@@ -56,31 +83,61 @@ where
             "starting automatic backup service"
         );
 
-        // Armed only after a failed backup: there is work left to re-attempt, and a contract
-        // whose state never changes again would otherwise never wake us to do it.
-        let mut retry_in = None;
-
+        let mut next_fetch = Instant::now();
         loop {
-            // A read failure is reported by the watcher itself, once per distinct failure
-            // rather than once per read, and leaves nothing to back up until a state arrives.
-            if let Ok(state) = self.contract_state.latest() {
-                match self.back_up_if_needed(&state, &shutdown).await {
+            let fetch_covered = Instant::now() >= next_fetch;
+            if fetch_covered {
+                next_fetch = Instant::now()
+                    .checked_add(VERIFICATION_INTERVAL)
+                    .expect("an hour from now is a representable Instant");
+            }
+            match self.contract_state.latest() {
+                Ok(observed) => match self
+                    .back_up_if_needed(&observed.value, fetch_covered, &shutdown)
+                    .await
+                {
                     Ok(BackupOutcome::BackedUp {
                         epoch_id,
                         num_domains,
                     }) => {
-                        retry_in = None;
                         tracing::info!(%epoch_id, num_domains, "backed up keyshares");
                     }
-                    Ok(BackupOutcome::Skipped(_)) => retry_in = None,
+                    Ok(BackupOutcome::Verified { epoch_id }) => {
+                        tracing::info!(%epoch_id, "stored keyshares match the node's");
+                    }
+                    Ok(BackupOutcome::Mismatch { epoch_id }) => {
+                        tracing::error!(
+                            %epoch_id,
+                            "the node serves keyshares that differ from the stored ones, \
+                             leaving the stored backup untouched"
+                        );
+                    }
+                    Ok(BackupOutcome::Skipped(reason)) => {
+                        tracing::info!(?reason, "no keyshare backup needed");
+                    }
                     Ok(BackupOutcome::Cancelled) => break,
                     Err(err) => {
-                        retry_in = Some(self.retry_delay);
                         tracing::warn!(
                             ?err,
                             retry_in_seconds = self.retry_delay.as_secs(),
                             "keyshare backup failed, retrying"
                         );
+                        // Sooner than the next verification, since the contract state may not
+                        // change again for a long time.
+                        next_fetch = Instant::now()
+                            .checked_add(self.retry_delay)
+                            .expect("retry_delay is probably huge enough to overflow an Instant");
+                    }
+                },
+                Err(err) => {
+                    tracing::error!(
+                        ?err,
+                        "could not read the contract state, waiting for change"
+                    );
+                    if fetch_covered {
+                        next_fetch = Instant::now()
+                            .checked_add(self.retry_delay)
+                            .expect("retry_delay is probably huge enough to overflow an Instant");
                     }
                 }
             }
@@ -93,7 +150,7 @@ where
                         return Err(anyhow!("stopped observing the contract state: {err:?}"));
                     }
                 }
-                () = sleep_or_pending(retry_in) => {}
+                () = tokio::time::sleep_until(next_fetch) => {}
                 _ = shutdown.cancelled() => break,
             }
         }
@@ -102,23 +159,26 @@ where
         Ok(())
     }
 
-    /// Backs up keyshares unless local storage already covers `state`'s keyset.
+    /// Backs up keyshares unless local storage already covers `state`'s keyset. With
+    /// `fetch_covered`, a covered keyset is fetched anyway and compared with what is stored,
+    /// which is never overwritten.
     /// [`Self::backed_up`] is derived from what was stored, not from what was requested, so the
     /// two cannot drift apart.
     async fn back_up_if_needed(
         &mut self,
         state: &ProtocolContractState,
+        fetch_covered: bool,
         shutdown: &CancellationToken,
     ) -> anyhow::Result<BackupOutcome> {
         let Ok(keyset) = keyset_to_backup(state) else {
             return Ok(BackupOutcome::Skipped(SkipReason::NoConcludedKeyset));
         };
 
-        if self
+        let covered = self
             .backed_up
             .as_ref()
-            .is_some_and(|backed_up| backed_up.covers(&keyset))
-        {
+            .is_some_and(|backed_up| backed_up.covers(&keyset));
+        if covered && !fetch_covered {
             return Ok(BackupOutcome::Skipped(SkipReason::AlreadyBackedUp {
                 contract_epoch_id: keyset.epoch_id,
             }));
@@ -130,11 +190,39 @@ where
         };
         let keyshares = keyshares.map_err(|err| anyhow!("keyshare fetch failed: {err:?}"))?;
 
+        if covered {
+            let stored = self
+                .storage
+                .load_keyshares()
+                .await
+                .map_err(|err| anyhow!("failed to load stored keyshares: {err:?}"))?;
+            if keyshares != stored {
+                return Ok(BackupOutcome::Mismatch {
+                    epoch_id: keyset.epoch_id,
+                });
+            }
+            self.status
+                .keyset_backed_up(keyset.epoch_id, self.clock.unix_now_seconds());
+            return Ok(BackupOutcome::Verified {
+                epoch_id: keyset.epoch_id,
+            });
+        }
+
         self.storage
             .store_keyshares(&keyshares)
             .await
             .map_err(|err| anyhow!("failed to store keyshares: {err:?}"))?;
         self.backed_up = BackedUpKeyset::from_keyshares(&keyshares);
+        // We report only a backup that covers the whole keyset, because a partial fetch is
+        // re-attempted next tick and /status must not claim the epoch is done meanwhile.
+        if self
+            .backed_up
+            .as_ref()
+            .is_some_and(|backed_up| backed_up.covers(&keyset))
+        {
+            self.status
+                .keyset_backed_up(keyset.epoch_id, self.clock.unix_now_seconds());
+        }
         Ok(BackupOutcome::BackedUp {
             epoch_id: keyset.epoch_id,
             num_domains: keyshares.len(),
@@ -147,6 +235,14 @@ pub enum BackupOutcome {
     BackedUp {
         epoch_id: EpochId,
         num_domains: usize,
+    },
+    /// The node serves the keyshares already stored.
+    Verified {
+        epoch_id: EpochId,
+    },
+    /// The node serves keyshares that differ from the stored ones, which were left untouched.
+    Mismatch {
+        epoch_id: EpochId,
     },
     Skipped(SkipReason),
     /// Shutdown arrived while waiting on the network.
@@ -194,18 +290,10 @@ impl BackedUpKeyset {
     }
 }
 
-/// Sleeps for `delay`, or never returns when there is nothing to retry.
-async fn sleep_or_pending(delay: Option<Duration>) {
-    match delay {
-        Some(delay) => tokio::time::sleep(delay).await,
-        None => std::future::pending().await,
-    }
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
+    use super::{BackedUpKeyset, BackupOutcome, Service, SkipReason, VERIFICATION_INTERVAL};
 
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
@@ -213,22 +301,57 @@ mod tests {
 
     use mpc_node::keyshare::Keyshare;
     use mpc_node::keyshare::test_utils::generate_dummy_keyshare;
+    use near_contract_transport::{ObservedState, TransportError, WatchContractState};
+    use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolContractState};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
     use tokio::sync::{Mutex, Notify, watch};
     use tokio::time::timeout;
+    use tokio_util::sync::CancellationToken;
 
+    use crate::ports::{self, GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
     use crate::test_utils::{
         fixture_epoch_id, initializing_state, resharing_state, running_state_with_epoch,
         running_state_without_domains,
     };
 
     const FIXTURE_DOMAIN_IDS: [u64; 2] = [0, 1];
+    const EPOCH_ID: u64 = 5;
     /// Only the retry test waits it out, and it does so under a paused clock.
-    const TEST_RETRY_DELAY: Duration = Duration::from_secs(60);
+    const TEST_RETRY_DELAY: Duration = Duration::from_mins(1);
 
-    type TestService = Service<FakeP2PClient, FakeKeyshareStorage, FakeWatchContractState>;
+    type TestService = Service<
+        FakeP2PClient,
+        FakeKeyshareStorage,
+        FakeWatchContractState,
+        FakeStatusReporter,
+        FakeClock,
+    >;
+
+    #[derive(Default)]
+    struct FakeStatusReporter {
+        reported: std::sync::Mutex<Vec<(EpochId, Option<u64>)>>,
+    }
+
+    impl ReportBackupStatus for FakeStatusReporter {
+        fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>) {
+            self.reported
+                .lock()
+                .unwrap()
+                .push((epoch_id, timestamp_seconds));
+        }
+    }
+
+    const TEST_UNIX_NOW_SECONDS: u64 = 1_700_000_000;
+
+    struct FakeClock;
+
+    impl GetCurrentTime for FakeClock {
+        fn unix_now_seconds(&self) -> Option<u64> {
+            Some(TEST_UNIX_NOW_SECONDS)
+        }
+    }
 
     struct FakeP2PClient {
         get_keyshares_calls: AtomicUsize,
@@ -355,6 +478,7 @@ mod tests {
 
     struct FakeWatchContractState {
         states: watch::Receiver<Result<ProtocolContractState, &'static str>>,
+        failed_read: Arc<Notify>,
     }
 
     impl FakeWatchContractState {
@@ -365,7 +489,13 @@ mod tests {
             Self,
         ) {
             let (sender, states) = watch::channel(Ok(state));
-            (sender, Self { states })
+            (
+                sender,
+                Self {
+                    states,
+                    failed_read: Arc::new(Notify::new()),
+                },
+            )
         }
 
         /// For tests that never read the contract state.
@@ -375,19 +505,33 @@ mod tests {
     }
 
     impl WatchContractState for FakeWatchContractState {
-        type Error = &'static str;
+        type Value = ProtocolContractState;
+        type ViewError = &'static str;
 
-        fn latest(&mut self) -> Result<ProtocolContractState, Self::Error> {
-            self.states.borrow_and_update().clone()
+        fn latest(
+            &mut self,
+        ) -> Result<ObservedState<ProtocolContractState>, TransportError<&'static str>> {
+            let observed = self.states.borrow_and_update().clone();
+            if observed.is_err() {
+                self.failed_read.notify_one();
+            }
+            observed
+                .map(|value| ObservedState {
+                    observed_at: 0.into(),
+                    value,
+                })
+                .map_err(TransportError::View)
         }
 
-        async fn changed(&mut self) -> Result<(), Self::Error> {
+        async fn changed(&mut self) -> Result<(), TransportError<&'static str>> {
             self.states
                 .changed()
                 .await
-                .map_err(|_| "the contract state is no longer observed")
+                .map_err(|_| TransportError::MonitoringClosed)
         }
     }
+
+    impl ports::WatchContractState for FakeWatchContractState {}
 
     fn keyshares_for(epoch_id: u64, domain_ids: &[u64]) -> Vec<Keyshare> {
         let mut rng = StdRng::seed_from_u64(42);
@@ -413,19 +557,61 @@ mod tests {
         storage: FakeKeyshareStorage,
         contract_state: FakeWatchContractState,
     ) -> TestService {
-        Service::new(keyshares, storage, contract_state, TEST_RETRY_DELAY)
-            .await
-            .expect("the service should read local storage on startup")
+        Service::new(
+            keyshares,
+            storage,
+            contract_state,
+            FakeStatusReporter::default(),
+            FakeClock,
+            TEST_RETRY_DELAY,
+        )
+        .await
+        .expect("the service should read local storage on startup")
     }
 
-    async fn must_back_up_if_needed(
+    async fn back_up_if_needed(
         service: &mut TestService,
         state: &ProtocolContractState,
     ) -> BackupOutcome {
         service
-            .back_up_if_needed(state, &CancellationToken::new())
+            .back_up_if_needed(state, false, &CancellationToken::new())
             .await
             .expect("the backup should succeed")
+    }
+
+    async fn fetch_covered(
+        service: &mut TestService,
+        state: &ProtocolContractState,
+    ) -> BackupOutcome {
+        service
+            .back_up_if_needed(state, true, &CancellationToken::new())
+            .await
+            .expect("the fetch should succeed")
+    }
+
+    #[tokio::test]
+    async fn new__should_report_a_keyset_that_storage_already_covers() {
+        // Given
+        let storage =
+            FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+
+        // When
+        let service = service(FakeP2PClient::new(), storage).await;
+
+        // Then
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![(EpochId::new(EPOCH_ID), None)]
+        );
+    }
+
+    #[tokio::test]
+    async fn new__should_report_nothing_when_storage_is_empty() {
+        // When
+        let service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
+
+        // Then
+        assert!(service.status.reported.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -434,77 +620,114 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::BackedUp {
-                epoch_id: EpochId::new(5),
+                epoch_id: EpochId::new(EPOCH_ID),
                 num_domains: 2
             }
         );
-        assert_eq!(service.backed_up, backed_up(5, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(service.backed_up, backed_up(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
         let stored = service.storage.load_keyshares().await.unwrap();
-        assert_eq!(stored, keyshares_for(5, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(stored, keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_report_the_backed_up_epoch() {
+        // Given
+        let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
+
+        // When
+        back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
+
+        // Then
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![(EpochId::new(EPOCH_ID), Some(TEST_UNIX_NOW_SECONDS))]
+        );
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_not_report_a_skipped_backup() {
+        // Given
+        let storage =
+            FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+        let mut service = service(FakeP2PClient::new(), storage).await;
+
+        // When
+        back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
+
+        // Then nothing is reported beyond the startup coverage
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![(EpochId::new(EPOCH_ID), None)]
+        );
     }
 
     #[tokio::test]
     async fn back_up_if_needed__should_back_up_when_epoch_advances() {
         // Given
-        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(5, &FIXTURE_DOMAIN_IDS));
+        let storage =
+            FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(6)).await;
+        let outcome =
+            back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID + 1)).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::BackedUp {
-                epoch_id: EpochId::new(6),
+                epoch_id: EpochId::new(EPOCH_ID + 1),
                 num_domains: 2
             }
         );
-        assert_eq!(service.backed_up, backed_up(6, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(
+            service.backed_up,
+            backed_up(EPOCH_ID + 1, &FIXTURE_DOMAIN_IDS)
+        );
         assert_eq!(service.keyshares.get_keyshares_calls(), 1);
     }
 
     #[tokio::test]
     async fn back_up_if_needed__should_back_up_when_keyset_gains_a_domain_in_the_same_epoch() {
         // Given
-        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(5, &[0]));
+        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID, &[0]));
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::BackedUp {
-                epoch_id: EpochId::new(5),
+                epoch_id: EpochId::new(EPOCH_ID),
                 num_domains: 2
             }
         );
-        assert_eq!(service.backed_up, backed_up(5, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(service.backed_up, backed_up(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
     }
 
     #[tokio::test]
     async fn back_up_if_needed__should_skip_when_stored_keyshares_cover_the_keyset() {
         // Given
-        let stored = keyshares_for(5, &FIXTURE_DOMAIN_IDS);
+        let stored = keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS);
         let storage = FakeKeyshareStorage::with_keyshares(stored.clone());
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::Skipped(SkipReason::AlreadyBackedUp {
-                contract_epoch_id: EpochId::new(5)
+                contract_epoch_id: EpochId::new(EPOCH_ID)
             })
         );
         assert_eq!(service.keyshares.get_keyshares_calls(), 0);
@@ -512,23 +735,85 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn back_up_if_needed__should_skip_when_stored_epoch_is_newer() {
+    async fn back_up_if_needed__should_report_a_covered_keyset_the_node_still_serves() {
         // Given
-        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(6, &FIXTURE_DOMAIN_IDS));
+        let stored = keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS);
+        let storage = FakeKeyshareStorage::with_keyshares(stored.clone());
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = fetch_covered(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
+
+        // Then
+        assert_eq!(
+            outcome,
+            BackupOutcome::Verified {
+                epoch_id: EpochId::new(EPOCH_ID)
+            }
+        );
+        assert_eq!(service.keyshares.get_keyshares_calls(), 1);
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![
+                (EpochId::new(EPOCH_ID), None),
+                (EpochId::new(EPOCH_ID), Some(TEST_UNIX_NOW_SECONDS))
+            ]
+        );
+        assert_eq!(service.storage.stored.load(AtomicOrdering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_keep_the_stored_backup_when_the_node_serves_other_keyshares()
+    {
+        // Given
+        let mut rng = StdRng::seed_from_u64(7);
+        let stored: Vec<Keyshare> = FIXTURE_DOMAIN_IDS
+            .iter()
+            .map(|domain_id| generate_dummy_keyshare(EPOCH_ID, *domain_id, 1, &mut rng))
+            .collect();
+        let storage = FakeKeyshareStorage::with_keyshares(stored.clone());
+        let mut service = service(FakeP2PClient::new(), storage).await;
+
+        // When
+        let outcome = fetch_covered(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
+
+        // Then
+        assert_eq!(
+            outcome,
+            BackupOutcome::Mismatch {
+                epoch_id: EpochId::new(EPOCH_ID)
+            }
+        );
+        assert_eq!(service.storage.load_keyshares().await.unwrap(), stored);
+        assert_eq!(service.backed_up, backed_up(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(
+            *service.status.reported.lock().unwrap(),
+            vec![(EpochId::new(EPOCH_ID), None)]
+        );
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_skip_when_stored_epoch_is_newer() {
+        // Given
+        let storage =
+            FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID + 1, &FIXTURE_DOMAIN_IDS));
+        let mut service = service(FakeP2PClient::new(), storage).await;
+
+        // When
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::Skipped(SkipReason::AlreadyBackedUp {
-                contract_epoch_id: EpochId::new(5)
+                contract_epoch_id: EpochId::new(EPOCH_ID)
             })
         );
         assert_eq!(service.keyshares.get_keyshares_calls(), 0);
-        assert_eq!(service.backed_up, backed_up(6, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(
+            service.backed_up,
+            backed_up(EPOCH_ID + 1, &FIXTURE_DOMAIN_IDS)
+        );
     }
 
     #[tokio::test]
@@ -537,7 +822,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &resharing_state()).await;
+        let outcome = back_up_if_needed(&mut service, &resharing_state()).await;
 
         // Then
         assert_eq!(
@@ -565,7 +850,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &contract_state).await;
+        let outcome = back_up_if_needed(&mut service, &contract_state).await;
 
         // Then
         assert_eq!(
@@ -583,7 +868,11 @@ mod tests {
 
         // When
         let result = service
-            .back_up_if_needed(&running_state_with_epoch(5), &CancellationToken::new())
+            .back_up_if_needed(
+                &running_state_with_epoch(EPOCH_ID),
+                false,
+                &CancellationToken::new(),
+            )
             .await;
 
         // Then
@@ -602,17 +891,33 @@ mod tests {
         .await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::BackedUp {
-                epoch_id: EpochId::new(5),
+                epoch_id: EpochId::new(EPOCH_ID),
                 num_domains: 1
             }
         );
-        assert_eq!(service.backed_up, backed_up(5, &[0]));
+        assert_eq!(service.backed_up, backed_up(EPOCH_ID, &[0]));
+    }
+
+    #[tokio::test]
+    async fn back_up_if_needed__should_not_report_a_backup_missing_domains() {
+        // Given
+        let mut service = service(
+            FakeP2PClient::holding_domains(&[0]),
+            FakeKeyshareStorage::empty(),
+        )
+        .await;
+
+        // When
+        back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
+
+        // Then
+        assert!(service.status.reported.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -623,17 +928,17 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(EPOCH_ID)).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::BackedUp {
-                epoch_id: EpochId::new(5),
+                epoch_id: EpochId::new(EPOCH_ID),
                 num_domains: 2
             }
         );
-        assert_eq!(service.backed_up, backed_up(5, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(service.backed_up, backed_up(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
     }
 
     #[tokio::test]
@@ -645,7 +950,7 @@ mod tests {
 
         // When
         let outcome = service
-            .back_up_if_needed(&running_state_with_epoch(5), &shutdown)
+            .back_up_if_needed(&running_state_with_epoch(EPOCH_ID), false, &shutdown)
             .await
             .expect("a cancelled fetch is not a failure");
 
@@ -660,7 +965,7 @@ mod tests {
         // Given a watcher that never reports a change, so only acting before the wait can
         // produce a backup. `_sender` is held precisely so `changed()` stays pending.
         let (_sender, contract_state) =
-            FakeWatchContractState::observing(running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(EPOCH_ID));
         let storage = FakeKeyshareStorage::empty();
         let stored = storage.stored.clone();
         let stored_notify = storage.stored_notify.clone();
@@ -687,7 +992,7 @@ mod tests {
     async fn service_run__should_retry_a_failed_backup_after_the_retry_delay() {
         // Given
         let (_sender, contract_state) =
-            FakeWatchContractState::observing(running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(EPOCH_ID));
         let mpc_p2p_client = FakeP2PClient::failing();
         let fetched = mpc_p2p_client.fetched.clone();
         let service =
@@ -712,12 +1017,89 @@ mod tests {
         result.expect("the service should return Ok on shutdown");
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn service_run__should_fetch_a_covered_keyset_on_startup_and_every_verification_interval()
+    {
+        // Given
+        let (_sender, contract_state) =
+            FakeWatchContractState::observing(running_state_with_epoch(EPOCH_ID));
+        let storage =
+            FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+        let mpc_p2p_client = FakeP2PClient::new();
+        let fetched = mpc_p2p_client.fetched.clone();
+        let service = service_watching(mpc_p2p_client, storage, contract_state).await;
+        let shutdown = CancellationToken::new();
+
+        // When the observed state never changes, only the verification timer can drive a fetch
+        // after the one on startup.
+        let await_two_fetches = async {
+            fetched.notified().await;
+            fetched.notified().await;
+            shutdown.cancel();
+        };
+        let (result, ()) = timeout(VERIFICATION_INTERVAL * 2, async {
+            tokio::join!(service.run(shutdown.clone()), await_two_fetches)
+        })
+        .await
+        .expect("the covered keyset should be fetched on startup and once more an interval later");
+
+        // Then
+        result.expect("the service should return Ok on shutdown");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn service_run__should_fetch_a_covered_keyset_hourly_while_the_contract_state_keeps_changing()
+     {
+        // Given
+        let (sender, contract_state) =
+            FakeWatchContractState::observing(running_state_with_epoch(EPOCH_ID));
+        let storage =
+            FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+        let mpc_p2p_client = FakeP2PClient::new();
+        let fetched = mpc_p2p_client.fetched.clone();
+        let service = service_watching(mpc_p2p_client, storage, contract_state).await;
+        let shutdown = CancellationToken::new();
+
+        // When every poll reports a change, which must not keep postponing the hourly fetch
+        let change_every_poll = async {
+            while shutdown
+                .run_until_cancelled(tokio::time::sleep(TEST_RETRY_DELAY))
+                .await
+                .is_some()
+            {
+                sender
+                    .send(Ok(running_state_with_epoch(EPOCH_ID)))
+                    .expect("the service should still be listening");
+            }
+        };
+        let await_two_fetches = async {
+            fetched.notified().await;
+            let first_fetch = tokio::time::Instant::now();
+            fetched.notified().await;
+            shutdown.cancel();
+            first_fetch.elapsed()
+        };
+        let (result, gap, ()) = timeout(VERIFICATION_INTERVAL * 2, async {
+            tokio::join!(
+                service.run(shutdown.clone()),
+                await_two_fetches,
+                change_every_poll
+            )
+        })
+        .await
+        .expect("contract state changes should not postpone the hourly fetch");
+
+        // Then
+        result.expect("the service should return Ok on shutdown");
+        assert!(gap >= VERIFICATION_INTERVAL, "fetched again after {gap:?}");
+    }
+
     #[tokio::test]
     async fn service_run__should_back_up_a_newly_observed_state() {
         // Given
-        let stored = keyshares_for(5, &FIXTURE_DOMAIN_IDS);
+        let stored = keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS);
         let (sender, contract_state) =
-            FakeWatchContractState::observing(running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(EPOCH_ID));
         let storage = FakeKeyshareStorage::with_keyshares(stored.clone());
         let stored_notify = storage.stored_notify.clone();
         let service = service_watching(FakeP2PClient::new(), storage, contract_state).await;
@@ -726,7 +1108,7 @@ mod tests {
         // When
         let observe_a_resharing = async {
             sender
-                .send(Ok(running_state_with_epoch(6)))
+                .send(Ok(running_state_with_epoch(EPOCH_ID + 1)))
                 .expect("the service should still be listening");
             stored_notify.notified().await;
             shutdown.cancel();
@@ -742,10 +1124,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn service_run__should_keep_watching_while_the_contract_state_cannot_be_read() {
+        // Given
+        let (sender, contract_state) =
+            FakeWatchContractState::observing(running_state_with_epoch(EPOCH_ID));
+        let storage =
+            FakeKeyshareStorage::with_keyshares(keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+        let stored_notify = storage.stored_notify.clone();
+        let failed_read = contract_state.failed_read.clone();
+        let service = service_watching(FakeP2PClient::new(), storage, contract_state).await;
+        let shutdown = CancellationToken::new();
+
+        // When
+        let fail_then_recover = async {
+            sender
+                .send(Err("rpc endpoint unreachable"))
+                .expect("the service should still be listening");
+            failed_read.notified().await;
+            sender
+                .send(Ok(running_state_with_epoch(EPOCH_ID + 1)))
+                .expect("the service should still be listening");
+            stored_notify.notified().await;
+            shutdown.cancel();
+        };
+        let (result, ()) = timeout(Duration::from_secs(5), async {
+            tokio::join!(service.run(shutdown.clone()), fail_then_recover)
+        })
+        .await
+        .expect("the service should survive the failed read and back up the new state");
+
+        // Then
+        result.expect("a failed read is not a stop");
+    }
+
+    #[tokio::test]
     async fn service_run__should_fail_when_the_contract_state_is_no_longer_observed() {
         // Given
         let (sender, contract_state) =
-            FakeWatchContractState::observing(running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(EPOCH_ID));
         let service = service_watching(
             FakeP2PClient::new(),
             FakeKeyshareStorage::empty(),

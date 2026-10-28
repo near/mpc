@@ -5,15 +5,19 @@ use crate::db::{DBCol, SecretDB};
 use crate::metrics;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::wire_format::EcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::NamedProtocol;
 use crate::providers::HasParticipants;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::ecdsa::{
+    CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION, EcdsaSignatureProvider,
+};
+use crate::providers::ecdsa_common::active_participants_query;
 use crate::tracking::AutoAbortTaskCollection;
-use mpc_node_config::TripleConfig;
+use mpc_node_config::{TripleBatchSize, TripleConfig};
 use mpc_primitives::ReconstructionThreshold;
-use mpc_primitives::domain::Protocol;
+use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::DomainConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
@@ -48,25 +52,24 @@ pub fn caitsith_triple_thresholds(domains: &[DomainConfig]) -> BTreeSet<Reconstr
 /// participant count and the Shamir degree `t − 1` are equivalent
 /// identifiers).
 ///
-/// Backed by [`DBCol::TripleV2`] under prefix `t.inner().to_be_bytes()` (8 BE).
+/// Backed by [`DBCol::TripleV2`] under prefix `t.value().to_be_bytes()` (8 BE).
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
 impl TripleStorage {
     pub fn new(
         clock: Clock,
         db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+        client: Arc<MeshNetworkClient>,
         reconstruction_threshold: ReconstructionThreshold,
     ) -> anyhow::Result<Self> {
         Ok(Self(DistributedAssetStorage::<PairedTriple>::new(
             clock,
             db,
             DBCol::TripleV2,
-            reconstruction_threshold.inner().to_be_bytes().to_vec(),
-            my_participant_id,
+            reconstruction_threshold.value().to_be_bytes().to_vec(),
+            client.my_participant_id(),
             |participants, pair| pair.is_subset_of_active_participants(participants),
-            alive_participant_ids_query,
+            active_participants_query(client),
         )?))
     }
 }
@@ -79,35 +82,7 @@ impl Deref for TripleStorage {
     }
 }
 
-pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
-
-const TRIPLE_METRICS_REPORTING_INTERVAL: Duration = Duration::from_secs(5);
-
 impl EcdsaSignatureProvider {
-    /// Reports the triple-buffer gauges summed across every per-`t` store.
-    /// Each generator owns a distinct store keyed by its threshold, so a single
-    /// reporter prevents these unlabeled gauges from being clobbered by
-    /// whichever generator ticked last.
-    pub(super) async fn run_triple_metrics_reporting(triple_stores: Vec<Arc<TripleStorage>>) -> ! {
-        loop {
-            let mut online: i64 = 0;
-            let mut offline: i64 = 0;
-            let mut available: i64 = 0;
-            for store in &triple_stores {
-                online += i64::try_from(store.num_owned_ready().unwrap())
-                    .expect("triple count fits in i64");
-                offline += i64::try_from(store.num_owned_offline().unwrap())
-                    .expect("triple count fits in i64");
-                available +=
-                    i64::try_from(store.num_owned().unwrap()).expect("triple count fits in i64");
-            }
-            metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(online);
-            metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(offline);
-            metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(available);
-            tokio::time::sleep(TRIPLE_METRICS_REPORTING_INTERVAL).await;
-        }
-    }
-
     /// Continuously runs triple generation in the background, using the number of threads
     /// specified in the config, trying to maintain some number of available triples all the
     /// time as specified in the config. Generated triples will be written to `triple_store`
@@ -142,7 +117,7 @@ impl EcdsaSignatureProvider {
                 // There's no point to issue way too many in-flight computations, as they
                 // will just be limited by the concurrency anyway.
                 && in_flight_generations.num_in_flight()
-                < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
+                    < config.concurrency * 2 * *config.batch_size
             {
                 let participants = match client.select_random_active_participants_including_me(
                     reconstruction_threshold.value(),
@@ -160,12 +135,14 @@ impl EcdsaSignatureProvider {
                     }
                 };
 
+                let batch_size = batch_size_for(&client, &participants, config.batch_size);
+                let count = u32::from(batch_size);
                 let id_start = triple_store
-                    .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32)
-                    .unwrap(); // Since return is !
+                    .generate_and_reserve_id_range(count)
+                    .expect("should produce unique id");
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,
-                    count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
+                    count,
                 };
                 let channel = match client.new_channel_for_task(task_id, participants) {
                     Ok(channel) => channel,
@@ -178,8 +155,7 @@ impl EcdsaSignatureProvider {
                         continue;
                     }
                 };
-                let in_flight =
-                    in_flight_generations.in_flight(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE);
+                let in_flight = in_flight_generations.in_flight(*batch_size);
                 let parallelism_limiter = parallelism_limiter.clone();
                 let triple_store = triple_store.clone();
                 let config_clone = config.clone();
@@ -190,10 +166,9 @@ impl EcdsaSignatureProvider {
                         .instrument(async move {
                             let _in_flight = in_flight;
                             let _semaphore_guard = parallelism_limiter.acquire().await?;
-                            let triples = (ManyTripleGenerationComputation::<
-                                SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
-                            > {
+                            let triples = (ManyTripleGenerationComputation {
                                 reconstruction_threshold,
+                                batch_size,
                             })
                             .perform_leader_centric_computation(
                                 channel,
@@ -240,12 +215,7 @@ impl EcdsaSignatureProvider {
         count: u32,
     ) -> anyhow::Result<()> {
         start.validate_owned_by(channel.sender().get_leader())?;
-        let count: usize = count.try_into()?;
-        if count != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
-            return Err(anyhow::anyhow!(
-                "Unsupported batch size for triple generation"
-            ));
-        }
+        let batch_size = TripleBatchSize::new(count.try_into()?)?;
         // Cait-sith triple generation runs with exactly `t` participants, so we
         // can derive the store's `t` from the channel's participant list
         // without a wire-format change to `EcdsaTaskId::ManyTriples`.
@@ -253,10 +223,11 @@ impl EcdsaSignatureProvider {
         let reconstruction_threshold =
             ReconstructionThreshold::new(reconstruction_threshold_usize.try_into()?);
         let triple_store = self.triple_store_for_t(reconstruction_threshold)?;
-        FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
+        FollowerManyTripleGenerationComputation {
             reconstruction_threshold: TSReconstructionThreshold::from(
                 reconstruction_threshold_usize,
             ),
+            batch_size,
             out_triple_id_start: start,
             out_triple_store: triple_store,
         }
@@ -267,6 +238,26 @@ impl EcdsaSignatureProvider {
         .await?;
 
         Ok(())
+    }
+}
+
+/// The batch size to generate with `participants`: `configured`, unless one of them is older than
+/// [`CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION`] and so only accepts
+/// [`TripleBatchSize::LEGACY`].
+fn batch_size_for(
+    client: &MeshNetworkClient,
+    participants: &[ParticipantId],
+    configured: TripleBatchSize,
+) -> TripleBatchSize {
+    let supporting =
+        client.participants_supporting(CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION);
+    if participants
+        .iter()
+        .all(|participant| supporting.contains(participant))
+    {
+        configured
+    } else {
+        TripleBatchSize::LEGACY
     }
 }
 
@@ -283,24 +274,19 @@ impl HasParticipants for PairedTriple {
 
 /// Generates many cait-sith triples at once. This can significantly save the
 /// *number* of network messages.
-pub struct ManyTripleGenerationComputation<const N: usize> {
+pub struct ManyTripleGenerationComputation {
     pub reconstruction_threshold: TSReconstructionThreshold,
+    pub batch_size: TripleBatchSize,
 }
 
-impl<const N: usize> NamedProtocol for ManyTripleGenerationComputation<N> {
+impl NamedProtocol for ManyTripleGenerationComputation {
     const NAME: &'static str = "many triple gen";
 }
 
 #[async_trait::async_trait]
-impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
-    for ManyTripleGenerationComputation<N>
-{
+impl MpcLeaderCentricComputation<Vec<PairedTriple>> for ManyTripleGenerationComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<Vec<PairedTriple>> {
-        assert_eq!(
-            N % 2,
-            0,
-            "Expected to generate even number of triples in a batch"
-        );
+        let batch_size = *self.batch_size;
         let cs_participants = channel
             .participants()
             .iter()
@@ -308,21 +294,19 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol =
-            threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<N, _, _>(
-                &cs_participants,
-                me.into(),
-                self.reconstruction_threshold,
-                OsRng,
-            )?;
+        let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many(
+            &cs_participants,
+            me.into(),
+            self.reconstruction_threshold,
+            batch_size,
+            OsRng,
+        )?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = Self::run(channel, protocol).await?;
-        metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
-        assert_eq!(
-            N,
-            triples.len(),
-            "Unexpected triples len: expected {}, got {}",
-            N,
+        metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(u32::from(self.batch_size).into());
+        anyhow::ensure!(
+            batch_size == triples.len(),
+            "Unexpected triples len: expected {batch_size}, got {}",
             triples.len()
         );
         let iter = triples.into_iter();
@@ -337,19 +321,19 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
 
 /// The follower version of the triple generation. The difference is that the follower will only
 /// complete the computation after successfully persisting the triples to storage.
-pub struct FollowerManyTripleGenerationComputation<const N: usize> {
+pub struct FollowerManyTripleGenerationComputation {
     pub reconstruction_threshold: TSReconstructionThreshold,
+    pub batch_size: TripleBatchSize,
     pub out_triple_store: Arc<TripleStorage>,
     pub out_triple_id_start: UniqueId,
 }
 
 #[async_trait::async_trait]
-impl<const N: usize> MpcLeaderCentricComputation<()>
-    for FollowerManyTripleGenerationComputation<N>
-{
+impl MpcLeaderCentricComputation<()> for FollowerManyTripleGenerationComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
-        let triples = ManyTripleGenerationComputation::<N> {
+        let triples = ManyTripleGenerationComputation {
             reconstruction_threshold: self.reconstruction_threshold,
+            batch_size: self.batch_size,
         }
         .compute(channel)
         .await?;
@@ -381,24 +365,51 @@ pub fn participants_from_triples(
         .collect()
 }
 
+pub fn validate_paired_triple_request(
+    leader: ParticipantId,
+    paired_triple_id: UniqueId,
+    num_participants: usize,
+    reconstruction_threshold: usize,
+    bad_request_counter: &prometheus::IntCounterVec,
+    domain_id: DomainId,
+) -> anyhow::Result<()> {
+    paired_triple_id.validate_owned_by(leader)?;
+    if num_participants != reconstruction_threshold {
+        bad_request_counter
+            .with_label_values(&[&domain_id.to_string()])
+            .inc();
+        anyhow::bail!(
+            "CaitSith participant count ({num_participants}) does not match domain threshold \
+             t={reconstruction_threshold}",
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{
-        ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleStorage,
-        caitsith_triple_thresholds,
+        ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleBatchSize,
+        TripleStorage, batch_size_for, caitsith_triple_thresholds, validate_paired_triple_request,
     };
     use crate::assets::test_utils::{make_triple, triple_v2_key};
     use crate::db::{DBCol, SecretDB};
+    use crate::metrics;
     use crate::network::computation::MpcLeaderCentricComputation;
-    use crate::network::testing::run_test_clients;
+    use crate::network::testing::{
+        current_protocol_versions, new_test_client, new_test_client_with_versions, run_test_clients,
+    };
+    use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
-    use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::primitives::{ParticipantId, UniqueId};
+    use crate::protocol_version::NetworkProtocolVersion;
     use crate::tests::into_participant_ids;
     use crate::tracking;
     use futures::{FutureExt, StreamExt, stream};
     use mpc_primitives::domain::{DomainId, Protocol};
     use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+    use rstest::rstest;
     use std::collections::{BTreeSet, HashMap};
     use std::sync::Arc;
     use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
@@ -408,8 +419,77 @@ mod tests {
     const NUM_PARTICIPANTS: usize = 4;
     const RECONSTRUCTION_THRESHOLD: usize = 3;
     const PARALLELISM_PER_CLIENT: usize = 4;
-    const TRIPLES_PER_BATCH: usize = 10;
+
+    const TRIPLES_PER_BATCH: TripleBatchSize = match TripleBatchSize::new(10) {
+        Ok(size) => size,
+        Err(_) => unreachable!(),
+    };
     const BATCHES_TO_GENERATE_PER_CLIENT: usize = 10;
+
+    #[rstest]
+    #[case::owned_by_leader_with_t_participants(1, 1, 3, 3, true)]
+    #[case::owned_by_someone_else(2, 1, 3, 3, false)]
+    #[case::fewer_participants_than_threshold(1, 1, 2, 3, false)]
+    #[case::more_participants_than_threshold(1, 1, 4, 3, false)]
+    fn validate_paired_triple_request__should_accept_only_leader_owned_pair_with_t_participants(
+        #[case] owner: u32,
+        #[case] leader: u32,
+        #[case] num_participants: usize,
+        #[case] reconstruction_threshold: usize,
+        #[case] accepted: bool,
+    ) {
+        // Given
+        let paired_triple_id = UniqueId::new(ParticipantId::from_raw(owner), 1, 0);
+
+        // When
+        let result = validate_paired_triple_request(
+            ParticipantId::from_raw(leader),
+            paired_triple_id,
+            num_participants,
+            reconstruction_threshold,
+            &metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS,
+            DomainId(0),
+        );
+
+        // Then
+        assert_eq!(result.is_ok(), accepted, "{result:?}");
+    }
+
+    /// Three participants, the last one still on the version that predates configurable batch
+    /// sizes.
+    fn client_with_one_outdated_peer() -> (Vec<ParticipantId>, Arc<MeshNetworkClient>) {
+        let participants: Vec<_> = (0..3).map(ParticipantId::from_raw).collect();
+        let mut versions = current_protocol_versions(&participants);
+        versions.insert(participants[2], NetworkProtocolVersion::Sep2026);
+        let (client, _) =
+            new_test_client_with_versions(participants.clone(), participants[0], versions);
+        (participants, client)
+    }
+
+    #[test]
+    fn batch_size_for__should_use_the_configured_size_when_every_participant_accepts_it() {
+        // Given
+        let (participants, client) = client_with_one_outdated_peer();
+        let configured = TripleBatchSize::new(8).unwrap();
+
+        // When
+        let batch_size = batch_size_for(&client, &participants[..2], configured);
+
+        // Then
+        assert_eq!(batch_size, configured);
+    }
+
+    #[test]
+    fn batch_size_for__should_use_the_legacy_size_when_a_participant_is_outdated() {
+        // Given
+        let (participants, client) = client_with_one_outdated_peer();
+
+        // When
+        let batch_size = batch_size_for(&client, &participants, TripleBatchSize::new(8).unwrap());
+
+        // Then
+        assert_eq!(batch_size, TripleBatchSize::LEGACY);
+    }
 
     fn domain(id: u64, protocol: Protocol, t: u64) -> DomainConfig {
         DomainConfig {
@@ -428,7 +508,7 @@ mod tests {
             domain(0, Protocol::CaitSith, 3),
             domain(1, Protocol::CaitSith, 2),
             domain(2, Protocol::CaitSith, 3),
-            domain(3, Protocol::DamgardEtAl, 5),
+            domain(3, Protocol::RobustEcdsa, 5),
             domain(4, Protocol::Frost, 4),
         ];
 
@@ -460,7 +540,7 @@ mod tests {
             }
             assert_eq!(
                 id_to_triple_count.len(),
-                NUM_PARTICIPANTS * BATCHES_TO_GENERATE_PER_CLIENT * TRIPLES_PER_BATCH / 2,
+                NUM_PARTICIPANTS * BATCHES_TO_GENERATE_PER_CLIENT * *TRIPLES_PER_BATCH / 2,
             );
             for count in id_to_triple_count.values() {
                 assert_eq!(*count, RECONSTRUCTION_THRESHOLD);
@@ -485,14 +565,15 @@ mod tests {
                         else {
                             panic!("Unexpected task id");
                         };
-                        let triples = ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
+                        let triples = ManyTripleGenerationComputation {
                             reconstruction_threshold: TSReconstructionThreshold::from(
                                 RECONSTRUCTION_THRESHOLD,
                             ),
+                            batch_size: TRIPLES_PER_BATCH,
                         }
                         .perform_leader_centric_computation(
                             channel,
-                            std::time::Duration::from_secs(60),
+                            std::time::Duration::from_mins(1),
                         )
                         .await
                         .unwrap();
@@ -517,7 +598,7 @@ mod tests {
                     let start_triple_id = UniqueId::new(participant_id, i as u64, 0);
                     let task_id = EcdsaTaskId::ManyTriples {
                         start: start_triple_id,
-                        count: TRIPLES_PER_BATCH as u32,
+                        count: u32::from(TRIPLES_PER_BATCH),
                     };
                     // Pick threshold participants but do it in a uniform way so for the test,
                     // each node knows how many passive computations to expect.
@@ -535,14 +616,15 @@ mod tests {
                     let channel = client.new_channel_for_task(task_id, participants).unwrap();
                     let result = tracking::spawn(
                         &format!("task {:?}", task_id),
-                        ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
+                        ManyTripleGenerationComputation {
                             reconstruction_threshold: TSReconstructionThreshold::from(
                                 RECONSTRUCTION_THRESHOLD,
                             ),
+                            batch_size: TRIPLES_PER_BATCH,
                         }
                         .perform_leader_centric_computation(
                             channel,
-                            std::time::Duration::from_secs(60),
+                            std::time::Duration::from_mins(1),
                         ),
                     )
                     .await
@@ -571,13 +653,13 @@ mod tests {
         db: Arc<SecretDB>,
         my_participant_id: ParticipantId,
         reconstruction_threshold: ReconstructionThreshold,
-        alive: Vec<ParticipantId>,
+        participants: Vec<ParticipantId>,
     ) -> TripleStorage {
+        let client = new_test_client(participants, my_participant_id);
         TripleStorage::new(
             near_time::FakeClock::default().clock(),
             db,
-            my_participant_id,
-            Arc::new(move || alive.clone()),
+            client,
             reconstruction_threshold,
         )
         .unwrap()

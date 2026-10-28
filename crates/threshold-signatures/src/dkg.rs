@@ -25,6 +25,8 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
     secret: &Scalar<C>,
     old_reshare_package: Option<(VerifyingKey<C>, ParticipantList)>,
 ) -> Result<(Option<VerifyingKey<C>>, Option<ParticipantList>), ProtocolError> {
+    // Branching on a zero secret is intentional: only a new joiner in resharing holds
+    // one, and the public participant sets already reveal who that is.
     let is_zero_secret = *secret == <C::Group as Group>::Field::zero();
 
     if let Some((old_key, old_participants)) = old_reshare_package {
@@ -63,7 +65,9 @@ fn generate_coefficient_commitment<C: Ciphersuite>(
 ) -> Result<PolynomialCommitment<C>, ProtocolError> {
     let mut secret_coefficients = secret_coefficients.get_coefficients();
     // we skip the zero share as neither zero scalar
-    // nor identity group element are serializable
+    // nor identity group element are serializable.
+    // As in `assert_keyshare_inputs`, the secret compare only reveals whether this
+    // is a new joiner in resharing, which is public.
     if secret_coefficients.first() == Some(&<C::Group as Group>::Field::zero()) {
         secret_coefficients.remove(0);
     }
@@ -490,13 +494,12 @@ async fn do_keyshare<C: Ciphersuite>(
 
     // Step 4.5 +++
     // In the case of Resharing, check if the old public key is the same as the new one
-    if let Some(old_vk) = old_verification_key {
-        // check the equality between the old key and the new key without failing the unwrap
-        if old_vk != verifying_key {
-            return Err(ProtocolError::AssertionFailed(
-                "new public key does not match old public key".to_string(),
-            ));
-        }
+    if let Some(old_vk) = old_verification_key
+        && old_vk != verifying_key
+    {
+        return Err(ProtocolError::AssertionFailed(
+            "new public key does not match old public key".to_string(),
+        ));
     }
 
     // Step 4.6

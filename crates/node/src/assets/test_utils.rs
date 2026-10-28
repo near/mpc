@@ -37,7 +37,7 @@ pub fn random_verifying_key() -> VerifyingKey {
 /// Mirrors the internal `make_key` in [`DistributedAssetStorage`] so tests don't
 /// depend on its implementation details.
 pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
-    let mut key = t.inner().to_be_bytes().to_vec();
+    let mut key = t.value().to_be_bytes().to_vec();
     key.extend_from_slice(&borsh::to_vec(&id).unwrap());
     key
 }
@@ -50,7 +50,7 @@ pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThres
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
     let parameters = GovernanceThresholdParameters::new(
         gen_participants(4),
-        GovernanceThreshold::new(reconstruction_threshold.inner()),
+        GovernanceThreshold::new(reconstruction_threshold.value()),
     )
     .unwrap();
     let parameters_dto: near_mpc_contract_interface::types::GovernanceThresholdParameters =
@@ -140,7 +140,7 @@ impl TestContext {
     }
 
     fn triple_prefix(&self) -> Vec<u8> {
-        self.triple_threshold.inner().to_be_bytes().to_vec()
+        self.triple_threshold.value().to_be_bytes().to_vec()
     }
 
     pub fn new_store<T>(&self, db_col: DBCol, prefix: Vec<u8>) -> DistributedAssetStorage<T>
