@@ -9,17 +9,15 @@ User ───────────────────────▶ �
         signature             └─────────────────┘   respond(signature)   └───────────┘
 ```
 
-## How it works
+## Features
 
 A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain.
 
-Keys and requests are organized into *domains*, each pairing a signature scheme with a purpose. All schemes share the same curve-independent [distributed key generation](crates/threshold-signatures/docs/dkg.md) but differ in their signing workflows:
+- **Signing** — threshold [ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md) (Secp256k1, derived from [Cait-Sith](https://github.com/cronokirby/cait-sith)) and [EdDSA](crates/threshold-signatures/docs/eddsa/signing.md) (Ed25519, based on [FROST](https://eprint.iacr.org/2020/852)) signatures over arbitrary payloads.
+- **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** — derives application-specific keys without revealing the master secret (BLS12-381).
+- **[Read RPC](docs/archive/design/foreign-chain-transactions.md)** — nodes independently verify transactions on foreign chains (Ethereum, Solana, Aptos, …) and threshold-sign the observed values, letting NEAR contracts react to external chain events without a trusted relayer. Formerly known as *foreign chain transaction verification*.
 
-- **[OT-based ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md)** (Secp256k1) — derived from [Cait-Sith](https://github.com/cronokirby/cait-sith); Beaver triples and presignatures are generated continuously in the background to keep the signing phase itself short.
-- **[EdDSA](crates/threshold-signatures/docs/eddsa/signing.md)** (Ed25519) — based on [FROST](https://eprint.iacr.org/2020/852); one signing round using a presignature.
-- **[Robust ECDSA](crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md)** (Secp256k1) — currently an insecure stub, never enabled in production; see its documentation.
-- **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** (BLS12-381) — derives application-specific keys without revealing the master secret.
-- **Foreign chain transaction verification** — nodes independently verify transactions on foreign chains (Ethereum, Solana, Aptos, …) and threshold-sign the observed values, letting NEAR contracts react to external chain events without a trusted relayer; see the [design doc](docs/archive/design/foreign-chain-transactions.md).
+Keys live in *domains*, each pairing a signature scheme with one of these purposes; all schemes share the same curve-independent [distributed key generation](crates/threshold-signatures/docs/dkg.md).
 
 Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
