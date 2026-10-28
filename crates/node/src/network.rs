@@ -3,6 +3,7 @@ pub mod conn;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
+pub mod view;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;
@@ -106,6 +107,7 @@ pub struct MeshNetworkClient {
     last_id: Arc<Mutex<UniqueId>>,
 }
 
+// todo: deprecate this struct...
 impl NetworkAPIForRequests for MeshNetworkClient {
     fn alive_participants(&self) -> HashSet<ParticipantId> {
         self.all_alive_participant_ids().into_iter().collect()
@@ -233,6 +235,8 @@ impl MeshNetworkClient {
             .collect()
     }
 
+    // todo: remove this; only the bidirectionally connected info is of interest.
+
     /// Returns the participant IDs of all nodes in the network that are currently alive.
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
@@ -244,6 +248,7 @@ impl MeshNetworkClient {
                 continue;
             }
             let peer_height = *indexer_heights.get(&participant).unwrap_or(&0);
+            // todo: push connection updates from the transport instead of polling here.
             if my_height <= peer_height.saturating_add(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF)
                 && self
                     .transport_sender

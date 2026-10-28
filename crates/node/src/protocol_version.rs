@@ -9,6 +9,8 @@ pub const CURRENT_PROTOCOL_VERSION: NetworkProtocolVersion = NetworkProtocolVers
 #[derive(Debug, Copy, Clone, IntoPrimitive, FromPrimitive, PartialEq, Display)]
 #[repr(u32)]
 pub enum NetworkProtocolVersion {
+    // TODO(#398): when the floor reaches Oct2026, remove `LinkQuality::Unmeasured` in
+    // network/view/primitives/network_view.rs.
     #[num_enum(alternatives = [1..7])]
     Unsupported = 0,
     Dec2025 = 7,
