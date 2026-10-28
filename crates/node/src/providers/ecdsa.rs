@@ -104,7 +104,7 @@ impl EcdsaSignatureProvider {
     /// stores labelled by their `t`, presignature stores by their domain.
     pub fn report_asset_metrics(&self) {
         for (t, store) in &self.triple_stores {
-            report_store(&TRIPLE_GAUGES, t.inner(), store);
+            report_store(&TRIPLE_GAUGES, t.value(), store);
         }
         for (domain_id, keyshare) in &self.keyshares {
             report_store(
@@ -127,11 +127,11 @@ impl EcdsaSignatureProvider {
             .cloned()
             .ok_or_else(|| {
                 let mut configured: Vec<u64> =
-                    self.triple_stores.keys().map(|t| t.inner()).collect();
+                    self.triple_stores.keys().map(|t| t.value()).collect();
                 configured.sort();
                 anyhow::anyhow!(
                     "No triple store configured for t = {} (configured: {:?})",
-                    reconstruction_threshold.inner(),
+                    reconstruction_threshold.value(),
                     configured,
                 )
             })
@@ -265,11 +265,11 @@ impl SignatureProvider for EcdsaSignatureProvider {
         // by a generator running at its own threshold.
         let mut generate_triples = Vec::new();
         for (&t, triple_store) in &self.triple_stores {
-            let reconstruction_threshold_usize: usize = t.inner().try_into()?;
+            let reconstruction_threshold_usize: usize = t.value().try_into()?;
             let reconstruction_threshold_bound =
                 TSReconstructionThreshold::from(reconstruction_threshold_usize);
             generate_triples.push(tracking::spawn(
-                &format!("generate triples for t={}", t.inner()),
+                &format!("generate triples for t={}", t.value()),
                 Self::run_background_triple_generation(
                     self.client.clone(),
                     self.mpc_config.clone(),
