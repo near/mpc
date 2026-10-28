@@ -1,5 +1,5 @@
 use crate::{
-    config::start::NearInitConfigExt,
+    config::{load_config_file, start::NearInitConfigExt},
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -12,7 +12,7 @@ use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{
     ChainId, ConfigFile, DownloadConfigType, LogConfig, LogFormat, NearInitConfig,
-    SecretsStartConfig, StartConfig, load_config_file,
+    SecretsStartConfig, StartConfig,
 };
 use mpc_primitives::hash::NodeImageHash;
 use std::path::PathBuf;
