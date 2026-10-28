@@ -11,7 +11,7 @@ User ───────────────────────▶ �
 
 ## How it works
 
-Each MPC node embeds a NEAR indexer that tracks the signer contract (`v1.signer` on mainnet; see the [chain-gateway design doc](docs/archive/design/chain-gateway-design.md)). Every `sign` request is hashed and mapped to a *leader* node, which drives the threshold signing protocol over P2P with its peers and submits the signature back to the contract. If the leader is offline, or no response has landed on chain within a failover interval, backup leaders take over in turn.
+A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain.
 
 Keys and requests are organized into *domains*, each pairing a signature scheme with a purpose. All schemes share the same curve-independent [distributed key generation](crates/threshold-signatures/docs/dkg.md) but differ in their signing workflows:
 
