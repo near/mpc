@@ -24,10 +24,9 @@ pub(crate) fn spawn_foreign_chains_registrar(
 ) -> AutoAbortTask<()> {
     tracking::spawn("foreign chains registrar", async move {
         let mut registered: Option<BTreeSet<dtos::ForeignChain>> = None;
-        let mut published = BTreeSet::new();
         loop {
             let statuses = rpc_quorum_statuses(&local, &whitelist.borrow_and_update());
-            published = publish_rpc_quorum_metrics(&published, &statuses);
+            publish_rpc_quorum_metrics(&statuses);
             let eligible = eligible_chains(&statuses);
             if registered.as_ref() != Some(&eligible) {
                 match register_foreign_chains(&txn_sender, &eligible).await {
@@ -61,21 +60,10 @@ async fn register_foreign_chains(
         })
 }
 
-fn publish_rpc_quorum_metrics(
-    published: &BTreeSet<dtos::ForeignChain>,
-    statuses: &BTreeMap<dtos::ForeignChain, RpcQuorumStatus>,
-) -> BTreeSet<dtos::ForeignChain> {
-    for chain in published {
-        if !statuses.contains_key(chain) {
-            let labels = [chain.label()];
-            metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED
-                .remove_label_values(&labels)
-                .expect("the series was published");
-            metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED
-                .remove_label_values(&labels)
-                .expect("the series was published");
-        }
-    }
+/// Resets both gauges first, so a chain without a status loses its series.
+fn publish_rpc_quorum_metrics(statuses: &BTreeMap<dtos::ForeignChain, RpcQuorumStatus>) {
+    metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED.reset();
+    metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED.reset();
     for (chain, status) in statuses {
         let labels = [chain.label()];
         metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED
@@ -85,7 +73,6 @@ fn publish_rpc_quorum_metrics(
             .with_label_values(&labels)
             .set(i64::try_from(status.configured_whitelisted_providers).unwrap_or(i64::MAX));
     }
-    statuses.keys().copied().collect()
 }
 
 #[cfg(test)]
@@ -305,7 +292,7 @@ mod tests {
     }
 
     /// Polygon is whitelisted with quorum 1, Base is configured but not whitelisted. The gauges are
-    /// global to the test binary, so no other test in this crate may register either chain.
+    /// global and reset on publish, so this test needs its own process, as nextest gives it.
     #[test]
     fn publish_rpc_quorum_metrics__should_set_both_gauges_for_the_whitelisted_chains_only() {
         // Given
@@ -317,11 +304,9 @@ mod tests {
         let whitelist = ForeignChainWhitelist::from([(ForeignChain::Polygon, entry(1))]);
 
         // When
-        let published =
-            publish_rpc_quorum_metrics(&BTreeSet::new(), &rpc_quorum_statuses(&local, &whitelist));
+        publish_rpc_quorum_metrics(&rpc_quorum_statuses(&local, &whitelist));
 
         // Then
-        assert_eq!(published, BTreeSet::from([ForeignChain::Polygon]));
         assert_eq!(gauges(ForeignChain::Polygon), Some((1, 1)));
         assert_eq!(gauges(ForeignChain::Base), None);
     }
@@ -334,18 +319,12 @@ mod tests {
             ..Default::default()
         };
         let whitelist = ForeignChainWhitelist::from([(ForeignChain::Starknet, entry(1))]);
-        let published =
-            publish_rpc_quorum_metrics(&BTreeSet::new(), &rpc_quorum_statuses(&local, &whitelist));
-        assert_eq!(gauges(ForeignChain::Starknet), Some((1, 1)));
+        publish_rpc_quorum_metrics(&rpc_quorum_statuses(&local, &whitelist));
 
         // When
-        let published = publish_rpc_quorum_metrics(
-            &published,
-            &rpc_quorum_statuses(&local, &ForeignChainWhitelist::new()),
-        );
+        publish_rpc_quorum_metrics(&rpc_quorum_statuses(&local, &ForeignChainWhitelist::new()));
 
         // Then
-        assert!(published.is_empty());
         assert_eq!(gauges(ForeignChain::Starknet), None);
     }
 }
