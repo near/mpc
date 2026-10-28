@@ -259,7 +259,7 @@ impl IntoInterfaceType<dtos::StoredAttestation> for &Node {
     fn into_dto_type(self) -> dtos::StoredAttestation {
         dtos::StoredAttestation {
             attestation: self.attestation.clone().into_dto_type(),
-            accepted_at_seconds: self.accepted_at_seconds,
+            accepted_at_seconds: self.attestation_accepted_at_seconds,
         }
     }
 }

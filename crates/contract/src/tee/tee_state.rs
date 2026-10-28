@@ -478,21 +478,21 @@ pub(crate) struct Node {
     pub(crate) signer_public_key: Ed25519PublicKey,
     pub(crate) attestation: VerifiedAttestation,
     /// Block time at which this entry was last stored, restamped by every accepted submission.
-    pub(crate) accepted_at_seconds: u64,
+    pub(crate) attestation_accepted_at_seconds: u64,
 }
 
 impl Node {
     pub(crate) fn new(
         id: NodeId,
         attestation: VerifiedAttestation,
-        accepted_at_seconds: u64,
+        attestation_accepted_at_seconds: u64,
     ) -> Self {
         Self {
             owner: id.account_id,
             tls_public_key: id.tls_public_key,
             signer_public_key: id.account_public_key,
             attestation,
-            accepted_at_seconds,
+            attestation_accepted_at_seconds,
         }
     }
 
@@ -1460,7 +1460,10 @@ mod tests {
             .get(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.id(), node_id);
-        assert_eq!(stored.accepted_at_seconds, VALID_ATTESTATION_TIMESTAMP);
+        assert_eq!(
+            stored.attestation_accepted_at_seconds,
+            VALID_ATTESTATION_TIMESTAMP
+        );
     }
 
     /// Stale code-hash votes from removed participants must not count toward
@@ -1591,7 +1594,7 @@ mod tests {
             .nodes
             .get(&node_id.tls_public_key)
             .expect("the attestation was stored")
-            .accepted_at_seconds
+            .attestation_accepted_at_seconds
     }
 
     fn submit_mock(
