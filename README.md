@@ -11,7 +11,7 @@ User ───────────────────────▶ �
 
 ## What it does
 
-- **Signing** — threshold [ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md) (Secp256k1, derived from [Cait-Sith](https://github.com/cronokirby/cait-sith)) and [EdDSA](crates/threshold-signatures/docs/eddsa/signing.md) (Ed25519, based on [FROST](https://eprint.iacr.org/2020/852)) signatures over arbitrary payloads.
+- **Signing** — signs arbitrary payloads under keys derived per caller and derivation path, so a single NEAR account can control any number of keys without any of them ever existing in full. Supports [ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md) (Secp256k1) and [EdDSA](crates/threshold-signatures/docs/eddsa/signing.md) (Ed25519).
 - **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** — derives application-specific keys without revealing the master secret (BLS12-381).
 - **[Read RPC](docs/archive/design/foreign-chain-transactions.md)** — nodes independently verify transactions on foreign chains (Ethereum, Solana, Aptos, …) and threshold-sign the observed values, letting NEAR contracts react to external chain events without a trusted relayer. Formerly known as *foreign chain transaction verification*.
 
