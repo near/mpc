@@ -145,7 +145,7 @@ The [migration service `impl` block][migration-service-impl] needs:
   - `allowed_backup_service_launcher_compose_hashes()`
   - `reverify_backup_services()`
 - **Resharing cleanup**: [`clean_non_participants()`][clean-non-participants] should also clean `backup_service_tee_state` when operators leave the participant set.
-- **`start_node_migration()`** and **`conclude_node_migration()`**: No attestation-related changes.
+- **`start_node_migration()`** and **`conclude_node_migration()`**: No changes for backup-service attestation.
 
 ### Attestation Verification
 

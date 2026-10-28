@@ -264,7 +264,7 @@ impl MpcContract {
             .parameters
             .update_info(account_id, contract_participant_info)?;
 
-        // Safe to drop unconditionally: `assert_destination_tls_key_changed` above rejects a
+        // Safe to drop unconditionally: `assert_migration_destination_allowed` above rejects a
         // destination that reuses `old_key`, so the config removed here is never the new node's.
         if let Some(old_key) = old_tls_key {
             self.foreign_chains
