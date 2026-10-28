@@ -4,7 +4,6 @@ pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
 pub mod view;
-pub mod view_manager;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;

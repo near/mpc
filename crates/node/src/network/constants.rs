@@ -15,3 +15,6 @@ pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);
 /// roughly a window in seconds: ten average out the broadcast-phase jitter of up to two
 /// [`CONNECTED_PEERS_BROADCAST_INTERVAL`]s and still react within seconds.
 pub const RECENT_DELAY_SAMPLES: usize = 10;
+/// Largest moving-average gossip delay, in blocks, at which a link still counts as online: the
+/// liveness lag plus a buffer for the extra gossip hop in the measurement.
+pub const MAX_ONLINE_DELAY_BLOCKS: u64 = mpc_node_config::MAX_INDEXER_HEIGHT_DIFF + 10;

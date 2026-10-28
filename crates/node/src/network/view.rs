@@ -1,2 +1,2 @@
-mod network_view;
-mod view_manager;
+pub mod network_view;
+pub mod view_manager;
