@@ -76,7 +76,7 @@ async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &
             .is_some(),
         "domain {:?} (t={}) should be able to sign with the currently-online nodes",
         domain.id,
-        domain.reconstruction_threshold.inner(),
+        domain.reconstruction_threshold.value(),
     );
 }
 
@@ -87,7 +87,7 @@ async fn assert_cannot_sign(indexer: &mut FakeIndexerManager, user: &str, domain
             .is_none(),
         "domain {:?} (t={}) must NOT be able to sign: too few nodes are online for its threshold",
         domain.id,
-        domain.reconstruction_threshold.inner(),
+        domain.reconstruction_threshold.value(),
     );
 }
 
@@ -113,7 +113,7 @@ async fn assert_availability(
                     .await
             }
         };
-        let t = domain.reconstruction_threshold.inner();
+        let t = domain.reconstruction_threshold.value();
         match expected {
             Availability::Works => assert!(
                 response.is_some(),

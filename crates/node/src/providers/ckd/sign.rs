@@ -32,7 +32,7 @@ impl CKDProvider {
 
         let keyshare = self.keyshare(ckd_request.domain_id)?;
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
         let running_participants: Vec<_> = self
             .mpc_config
