@@ -327,7 +327,7 @@ mod tests {
         // Then
         let migrated: Vec<_> = migrated
             .values()
-            .map(|node| (node.id(), node.accepted_at_seconds))
+            .map(|node| (node.id(), node.attestation_accepted_at_seconds))
             .collect();
         assert_eq!(migrated, vec![(stamped, accepted_at)]);
     }
