@@ -45,5 +45,4 @@ Releases are created from `main` with semantic versioning and bundle the node bi
 
 ## Get in touch
 
-- Questions, feedback, or building something on top? Join the [NEAR Dev Telegram](https://t.me/neardev).
-- Interested in operating an MPC node? Write to [mpc@nearone.org](mailto:mpc@nearone.org).
+Questions, feedback, or building something on top? Join the [NEAR Dev Telegram](https://t.me/neardev).
