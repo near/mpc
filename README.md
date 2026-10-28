@@ -3,15 +3,11 @@
 The threshold signature network behind [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) — signatures produced jointly by *t*-of-*n* nodes running in TEEs, with no single party ever holding the complete key.
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant Contract as signer contract (NEAR)
-    participant Nodes as MPC nodes (t-of-n)
-
-    User->>Contract: sign(request)
-    Contract->>Nodes: observe request
-    Nodes->>Contract: respond(signature)
-    Contract->>User: signature
+flowchart LR
+    User -- "sign(request)" --> Contract["signer contract (NEAR)"]
+    Contract -- "observe request" --> Nodes["MPC nodes (t-of-n)"]
+    Nodes -- "respond(signature)" --> Contract
+    Contract -- "signature" --> User
 ```
 
 ## What it does
