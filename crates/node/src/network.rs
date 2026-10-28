@@ -3,6 +3,8 @@ pub mod conn;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
+pub mod liveness_check;
+pub mod rfc1982;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;
@@ -1159,6 +1161,7 @@ pub mod testing {
                 Packet::ConnectedPeersInfo(info) => {
                     PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo { from, info })
                 }
+                Packet::Echo(_) | Packet::EchoAck(_) => return Ok(()),
             };
             sender
                 .send(message)

@@ -194,6 +194,8 @@ impl Packet {
                 MpcMessageKind::Abort(_) => networking_metrics::MPC_ABORT_MESSAGE,
                 MpcMessageKind::Success => networking_metrics::MPC_SUCCESS_MESSAGE,
             },
+            Packet::Echo(_) => networking_metrics::ECHO_MESSAGE,
+            Packet::EchoAck(_) => networking_metrics::ECHO_ACK_MESSAGE,
         }
     }
 }
@@ -443,6 +445,7 @@ impl OutgoingConnection {
 }
 
 async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
+    // todo()
     loop {
         tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
         if sender.send(Packet::Ping).is_err() {
@@ -875,6 +878,12 @@ async fn incoming_connection_handler(
                         from: peer_id,
                         info,
                     }))?;
+                }
+                Packet::Echo(_) => {
+                    // todo()
+                }
+                Packet::EchoAck(_) => {
+                    // todo()
                 }
             }
 
