@@ -109,14 +109,8 @@ you might get errors when creating and funding accounts.
 export MPC_NETWORK_NAME=yourusername-test
 mpc-devnet mpc $MPC_NETWORK_NAME new \
   --num-participants 2 \
-  --num-responding-access-keys 8 \
-  --near-per-responding-account 1
   [--ssd] # use only if you don't plan to run this for a long period, as it is more expensive
 ```
-
-Increasing the number of responding access keys can be very helpful in
-increasing the throughput of the MPC node, as each key has an
-independent nonce.
 
 Then, deploy the contract.
 
@@ -478,7 +472,7 @@ export MPC_NETWORK_NAME=yourusername-test
 1. Register the network. On localnet this does not fund anything yet:
 
    ```shell
-   mpc-devnet mpc $MPC_NETWORK_NAME new --num-participants 2 --num-responding-access-keys 8
+   mpc-devnet mpc $MPC_NETWORK_NAME new --num-participants 2
    ```
 
 2. Provision the cluster (including the validator machine). This prints the validator's RPC URL;

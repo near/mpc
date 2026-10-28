@@ -200,18 +200,10 @@ pub struct NewMpcNetworkCmd {
     /// because initializing new machines is slow.
     #[clap(long)]
     pub num_participants: usize,
-    /// The amount of NEAR to give to each MPC account. This is NOT the account that will be used
-    /// to send signature responses, so you do NOT need to give a lot to these accounts.
+    /// The amount of NEAR to give to each MPC account. This account also pays for signature
+    /// responses, so give more under heavy load.
     #[clap(long, default_value = "1")]
     pub near_per_account: u128,
-    /// Number of additional access keys per participant to add for the responding account.
-    #[clap(long)]
-    pub num_responding_access_keys: usize,
-    /// The amount of NEAR to give to each responding account. This is the account that will be used
-    /// to send signature responses, so depending on the number of access keys, you may want to give
-    /// higher amounts here.
-    #[clap(long, default_value = "1")]
-    pub near_per_responding_account: u128,
     /// Indicates if the machines should be using SSD
     #[clap(long, default_value = "false")]
     pub ssd: bool,
@@ -223,10 +215,6 @@ pub struct UpdateMpcNetworkCmd {
     pub num_participants: Option<usize>,
     #[clap(long)]
     pub near_per_account: Option<u128>,
-    #[clap(long)]
-    pub num_responding_access_keys: Option<usize>,
-    #[clap(long)]
-    pub near_per_responding_account: Option<u128>,
 }
 
 #[derive(clap::Parser)]

@@ -31,8 +31,6 @@ pub enum NearAccountKind {
 /// Locally stored MPC participant keys and other info.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MpcParticipantSetup {
-    /// The account this participant uses to respond to signature requests.
-    pub responding_account_id: AccountId,
     #[serde(with = "near_crypto_compatible_serialization::verifying_key")]
     pub p2p_public_key: VerifyingKey,
 }
@@ -58,8 +56,6 @@ pub struct MpcNetworkSetup {
     pub contract: Option<AccountId>,
     // These desired fields are used when updating the network.
     pub desired_balance_per_account: u128,
-    pub num_responding_access_keys: usize,
-    pub desired_balance_per_responding_account: u128,
     pub nomad_server_url: Option<String>,
     #[serde(default)]
     pub ssd: bool,
@@ -91,16 +87,6 @@ impl fmt::Display for MpcNetworkSetup {
             f,
             "  Desired Balance per Account: {}",
             self.desired_balance_per_account
-        )?;
-        writeln!(
-            f,
-            "  Number of Responding Access Keys: {}",
-            self.num_responding_access_keys
-        )?;
-        writeln!(
-            f,
-            "  Desired Balance per Responding Account: {}",
-            self.desired_balance_per_responding_account
         )?;
 
         match &self.nomad_server_url {

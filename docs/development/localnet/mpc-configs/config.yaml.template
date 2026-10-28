@@ -1,6 +1,4 @@
 my_near_account_id: $NEAR_ACCOUNT_NAME
-near_responder_account_id: $NEAR_ACCOUNT_NAME
-number_of_responder_keys: 1
 web_ui:
   host: localhost
   port: $WEB_UI_PORT

@@ -1,6 +1,5 @@
 use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
-use mpc_node_config::ConfigFile;
 
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -257,11 +256,6 @@ pub struct PersistentSecrets {
         deserialize_with = "deserialize_signing_key"
     )]
     pub near_signer_key: SigningKey,
-    #[serde(
-        serialize_with = "serialize_signing_key_vec",
-        deserialize_with = "deserialize_signing_key_vec"
-    )]
-    pub near_responder_keys: Vec<SigningKey>,
 }
 
 impl PersistentSecrets {
@@ -277,10 +271,7 @@ impl PersistentSecrets {
         Ok(secrets)
     }
 
-    fn gen_secrets_and_write_to_disk(
-        home_dir: &Path,
-        number_of_responder_keys: usize,
-    ) -> anyhow::Result<PersistentSecrets> {
+    fn gen_secrets_and_write_to_disk(home_dir: &Path) -> anyhow::Result<PersistentSecrets> {
         if !home_dir.exists() {
             std::fs::create_dir_all(home_dir)?;
         }
@@ -289,34 +280,25 @@ impl PersistentSecrets {
         let p2p_secret = SigningKey::generate(&mut os_rng);
         let near_signer_key = SigningKey::generate(&mut os_rng);
 
-        let near_responder_keys = (0..number_of_responder_keys)
-            .map(|_| SigningKey::generate(&mut os_rng))
-            .collect::<Vec<_>>();
-
         let secrets = PersistentSecrets {
             p2p_private_key: p2p_secret,
             near_signer_key,
-            near_responder_keys,
         };
+        let mut secrets_json = serde_json::to_value(&secrets)?;
+        // TODO(#4911): stop writing this once rollback to a version that requires the field is no longer supported.
+        secrets_json["near_responder_keys"] = serde_json::json!([]);
 
         let path = secrets_file(home_dir);
         if path.exists() {
             anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
         }
-        write_secret_file(&path, &serde_json::to_vec(&secrets)?)?;
+        write_secret_file(&path, &serde_json::to_vec(&secrets_json)?)?;
         tracing::debug!("p2p and near account key generated in {}", path.display());
 
         Ok(secrets)
     }
 
-    pub fn generate_or_get_existing(
-        home_dir: &Path,
-        number_of_responder_keys: usize, // Number of responder keys to generate
-    ) -> anyhow::Result<PersistentSecrets> {
-        anyhow::ensure!(
-            number_of_responder_keys > 0,
-            "At least one access key must be provided"
-        );
+    pub fn generate_or_get_existing(home_dir: &Path) -> anyhow::Result<PersistentSecrets> {
         let secrets = match Self::maybe_get_existing(home_dir)? {
             Some(secrets) => {
                 tracing::debug!("p2p and near account secret key already exists. Using existing.");
@@ -324,15 +306,9 @@ impl PersistentSecrets {
             }
             _ => {
                 tracing::debug!("p2p and near account secret key not found. Generating...");
-                Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
+                Self::gen_secrets_and_write_to_disk(home_dir)?
             }
         };
-
-        if secrets.near_responder_keys.len() != number_of_responder_keys {
-            tracing::warn!(
-                "Number of responder keys in secrets.json does not match number of responder keys specified."
-            )
-        }
 
         Ok(secrets)
     }
@@ -369,68 +345,6 @@ where
     SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
 }
 
-pub fn serialize_signing_key_vec<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let bs58_strings: Vec<String> = keys
-        .iter()
-        .map(|key| {
-            format!(
-                "{ED25519_PREFIX}:{}",
-                bs58::encode(key.to_keypair_bytes()).into_string()
-            )
-        })
-        .collect();
-    bs58_strings.serialize(serializer)
-}
-
-pub fn deserialize_signing_key_vec<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let bs58_strings: Vec<String> = Vec::deserialize(deserializer)?;
-    bs58_strings
-        .into_iter()
-        .map(|bs58_str| {
-            let Some((ED25519_PREFIX, encoded_key)) = &bs58_str.split_once(":") else {
-                return Err(serde::de::Error::custom(
-                    "Key must start with 'ed25519:' prefix",
-                ));
-            };
-
-            let bytes: [u8; 64] = bs58::decode(encoded_key)
-                .into_vec()
-                .map_err(serde::de::Error::custom)?
-                .try_into()
-                .map_err(|_| serde::de::Error::custom("Key pair bytes must be 64 bytes."))?;
-
-            SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
-        })
-        .collect()
-}
-
-/// Credentials of the near account used to submit signature responses.
-/// It is recommended to use a separate dedicated account for this purpose.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RespondConfig {
-    /// It can be an arbitrary id because respond calls are not authenticated.
-    /// The account should have sufficient NEAR to pay for the function calls.
-    pub account_id: AccountId,
-    /// In production it is recommended to provide 50+ distinct access keys
-    /// to minimize incidence of nonce conflicts under heavy load.
-    pub access_keys: Vec<SigningKey>,
-}
-
-impl RespondConfig {
-    pub fn from_parts(config: &ConfigFile, secrets: &PersistentSecrets) -> Self {
-        Self {
-            account_id: config.my_near_account_id.clone(),
-            access_keys: vec![secrets.near_signer_key.clone()],
-        }
-    }
-}
-
 #[cfg(feature = "network-hardship-simulation")]
 pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
     let listen_blocks_file = home_dir.join("listen_blocks.flag");
@@ -449,6 +363,7 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
@@ -474,13 +389,9 @@ pub mod tests {
 
         assert!(PersistentSecrets::maybe_get_existing(temp_dir_path)?.is_none());
 
-        let expected_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 1)?;
+        let expected_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path)?;
 
-        // check that the key will not be overwritten
-        let _ = PersistentSecrets::generate_or_get_existing(temp_dir_path, 4242)
-            .expect("Existing secrets should be reusable");
-
-        let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 424)?;
+        let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path)?;
 
         assert_eq!(
             actual_secrets.p2p_private_key,
@@ -556,7 +467,6 @@ pub mod tests {
         let secrets = PersistentSecrets {
             p2p_private_key: SigningKey::generate(&mut OsRng),
             near_signer_key: SigningKey::generate(&mut OsRng),
-            near_responder_keys: vec![SigningKey::generate(&mut OsRng); 8],
         };
         let secrets_str = serde_json::to_string(&secrets).unwrap();
 
@@ -565,11 +475,64 @@ pub mod tests {
         assert_eq!(secrets, secrets_copy);
     }
 
+    #[test]
+    fn generate_or_get_existing__should_load_secrets_with_legacy_responder_keys() {
+        // Given
+        let temp_dir = TempDir::new().unwrap();
+        let expected_secrets = PersistentSecrets {
+            p2p_private_key: SigningKey::generate(&mut OsRng),
+            near_signer_key: SigningKey::generate(&mut OsRng),
+        };
+        let mut legacy_secrets = serde_json::to_value(&expected_secrets).unwrap();
+        legacy_secrets["near_responder_keys"] =
+            serde_json::json!([legacy_secrets["near_signer_key"].clone()]);
+        std::fs::write(
+            secrets_file(temp_dir.path()),
+            serde_json::to_vec(&legacy_secrets).unwrap(),
+        )
+        .unwrap();
+
+        // When
+        let secrets = PersistentSecrets::generate_or_get_existing(temp_dir.path()).unwrap();
+
+        // Then
+        assert_eq!(secrets, expected_secrets);
+    }
+
+    #[test]
+    fn generate_or_get_existing__should_write_empty_responder_keys_for_rollback_compatibility() {
+        // Given
+        let temp_dir = TempDir::new().unwrap();
+
+        // When
+        PersistentSecrets::generate_or_get_existing(temp_dir.path()).unwrap();
+
+        // Then
+        let written: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(secrets_file(temp_dir.path())).unwrap()).unwrap();
+        assert_eq!(written["near_responder_keys"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn config_file__should_ignore_legacy_responder_fields() {
+        // Given
+        let legacy_config = format!(
+            "near_responder_account_id: sam.test.near\nnumber_of_responder_keys: 50{CONFIG_EXAMPLE}"
+        );
+
+        // When
+        let config: Result<ConfigFile, _> = serde_yaml::from_str(&legacy_config);
+
+        // Then
+        assert_eq!(
+            config.unwrap(),
+            serde_yaml::from_str::<ConfigFile>(CONFIG_EXAMPLE).unwrap()
+        );
+    }
+
     /// A minimal valid ConfigFile YAML string using the current SocketAddr format.
     const CONFIG_EXAMPLE: &str = r#"
 my_near_account_id: sam.test.near
-near_responder_account_id: sam.test.near
-number_of_responder_keys: 1
 web_ui: 127.0.0.1:8082
 migration_web_ui: 127.0.0.1:8078
 pprof_bind_address: 127.0.0.1:34002
@@ -612,8 +575,6 @@ cores: 4
         // given: config with old WebUIConfig format (host + port as separate fields)
         let old_format_config = r#"
 my_near_account_id: sam.test.near
-near_responder_account_id: sam.test.near
-number_of_responder_keys: 1
 web_ui:
   host: 127.0.0.1
   port: 8082
@@ -733,8 +694,6 @@ cores: 4
         // given: web_ui in new format, migration_web_ui in old format
         let mixed_config = r#"
 my_near_account_id: sam.test.near
-near_responder_account_id: sam.test.near
-number_of_responder_keys: 1
 web_ui: 127.0.0.1:8082
 migration_web_ui:
   host: 0.0.0.0

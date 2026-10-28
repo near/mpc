@@ -191,16 +191,11 @@ Your MPC nodes are now running inside TDX-backed CVMs and ready to participate i
 
 ## Extracting Keys from MPC Nodes
 
-We must delegate the generated account/responder keys from Sam and Frodo as access keys to their NEAR accounts, allowing them to sign transactions requiring authorization on the contract.
-
-> 📝 *Note:* Responder keys are deprecated and can be removed in future revisions.
+We must delegate the generated account keys from Sam and Frodo as access keys to their NEAR accounts, allowing them to sign transactions requiring authorization on the contract.
 
 ```bash
 export FRODO_PUBKEY=$(curl -s localhost:18081/public_data | jq -r ".near_signer_public_key")
 export SAM_PUBKEY=$(curl -s localhost:18082/public_data | jq -r ".near_signer_public_key")
-
-export FRODO_RESPONDER_KEY=$(curl -s localhost:18081/public_data | jq -r ".near_responder_public_keys[0]")
-export SAM_RESPONDER_KEY=$(curl -s localhost:18082/public_data | jq -r ".near_responder_public_keys[0]")
 ```
 
 ```bash
@@ -219,10 +214,8 @@ break when a release adds a method the node must call.
 
 ```bash
 near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
 near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Initialize the MPC Contract
