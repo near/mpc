@@ -9,6 +9,12 @@
 #   - secrets.backup_encryption_key_hex
 # The placeholders below are intentionally non-hex so a forgotten swap
 # fails loudly at node startup.
+#
+# The contract account id is not set here. deploy-launcher.sh renders it from
+# MPC_CONTRACT_ID in the .env file into the launcher compose, which the CVM
+# measures; a launcher built with this variable rejects a user config that
+# carries mpc_contract_id. Launchers released before it ignore the variable
+# and still need mpc_contract_id under [mpc_node_config.node.indexer].
 
 [launcher_config]
 image_reference = "nearone/mpc-node"
@@ -102,7 +108,6 @@ cores = 6
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "v1.signer-prod.testnet" # mainnet: "v1.signer"
 finality = "optimistic"
 # MPC P2P convention is port 80. Forces it on every peer URL (listen +
 # dial) regardless of the URL's scheme/port.

@@ -533,7 +533,7 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 **Details**
 
-The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with two placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash and `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash.
+The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with three placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash, `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash and `{{MPC_CONTRACT_ID}}` for the contract's own account id.
 
 Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_mpc_node_manifest_digest`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
 A valid Docker compose file to start the MPC node might look like the following
@@ -548,6 +548,7 @@ services:
     environment:
       - DOCKER_CONTENT_TRUST=1
       - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+      - MPC_CONTRACT_ID=v1.signer-prod.testnet
 
 volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -566,7 +567,7 @@ Given this Docker compose file, the resulting `app-compose.json` might look like
   "manifest_version": 2,
   "name": "launcher-mpc-node-0",
   "runner": "docker-compose",
-  "docker_compose_file": "version: '3.8'\n\nservices:\n  web:\n    image: barakeinavnear/launcher:latest\n    container_name: launcher\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\nvolumes:\n  shared-volume:\n    name: shared-volume",
+  "docker_compose_file": "version: '3.8'\n\nservices:\n  web:\n    image: barakeinavnear/launcher:latest\n    container_name: launcher\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d\n      - MPC_CONTRACT_ID=v1.signer-prod.testnet\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\nvolumes:\n  shared-volume:\n    name: shared-volume",
   "docker_config": {},
   "kms_enabled": false,
   "gateway_enabled": false,
@@ -588,6 +589,8 @@ See also [TEE Lifecycle: Upgrade](../tee-lifecycle.md#upgrade) for the generaliz
 ## Bootstrapping
 
 On first boot, the launcher uses the environment variable `DEFAULT_IMAGE_DIGEST` (specified in the \`docker-compose.yaml\`) to determine which version of the MPC node to start. A key requirement here is that the default MPC image hash is included in the TDX quote measurement. Since the env variables are part of the `docker-compose.yaml` , which is measured as part of the dstack-specific `app-compose.yaml` file, this meets our requirement. Providing different default image hashes via this measured environment variables allows future MPC participants to start with a current MPC node version. At the same time, it allows us to detect if an MPC operator tries to join the MPC network with an arbitrary MPC image since this will fail remote attestation.
+
+The same measured environment carries `MPC_CONTRACT_ID`. The launcher takes the contract the node serves from it rather than from the unmeasured user config, so a node cannot be pointed at another contract without a new compose, and with it a new disk sealing key.
 
 The contract can compute the expected TDX identity given an image hash. Since image hashes are voted for, the contract can compute the TDX identity for all valid image hashes. The expected TDX identity is compared against the identity of newly joining node.
 

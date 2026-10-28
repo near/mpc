@@ -35,7 +35,6 @@ cores = 4
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "${MPC_CONTRACT_ID}"
 finality = "optimistic"
 # Force the P2P/TLS listener onto port 80 regardless of the port written in
 # the contract participant URL. This matches `deployment/cvm-deployment/`

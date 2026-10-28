@@ -7,7 +7,7 @@ This script automates the deployment of a **Dstack Launcher VM** (`launcher_test
 It:
 
 - Loads deployment parameters from a `.env` file (defaults to `default.env`)
-- Renders the launcher Docker Compose template (`crates/contract/assets/launcher_docker_compose.yaml.template`) using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars
+- Renders the launcher Docker Compose template (`crates/contract/assets/launcher_docker_compose.yaml.template`) using the `LAUNCHER_MANIFEST_DIGEST`, `MPC_MANIFEST_DIGEST` and `MPC_CONTRACT_ID` env vars
 - Loads the rendered compose and `user_config` files
 - Generates an `app-compose.json` configuration
 - Deploys and starts CVM  via `vmm-cli`
@@ -22,7 +22,7 @@ Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-g
 - Python 3.6 or higher installed
 - Required Python packages (cryptography, eth_keys, eth_utils)
 - `vmm-cli.py` should be located under $basePath/vmm/src/vmm-cli.py
-- Launcher and MPC node manifest digests set via `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` (the script renders `crates/contract/assets/launcher_docker_compose.yaml.template` with them)
+- Launcher and MPC node manifest digests set via `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`, and the contract account id via `MPC_CONTRACT_ID` (the script renders `crates/contract/assets/launcher_docker_compose.yaml.template` with them)
 - Deployment configuration in `*.env` file
 - user-config.toml file (TOML format)
 - See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md)
@@ -153,6 +153,10 @@ OS_IMAGE=dstack-0.5.8
 # before running deploy-launcher.sh, which refuses to run otherwise.
 LAUNCHER_MANIFEST_DIGEST=sha256:<your launcher digest>
 MPC_MANIFEST_DIGEST=sha256:<your mpc node digest>
+
+# Account id of the MPC contract the node serves, rendered into the launcher
+# compose and measured by the CVM; it cannot be set in user-config.toml.
+MPC_CONTRACT_ID=v1.signer-prod.testnet
 
 # Path of the user_config file
 USER_CONFIG_FILE_PATH=user-config.toml

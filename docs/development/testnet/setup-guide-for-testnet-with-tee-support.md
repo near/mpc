@@ -184,6 +184,8 @@ envsubst < deployment/testnet/frodo.env > "/tmp/$USER/frodo.env"
 envsubst < deployment/testnet/sam.env > "/tmp/$USER/sam.env"
 ```
 
+The contract account id reaches the CVM through `MPC_CONTRACT_ID` in the rendered `.env` files, which `deploy-launcher.sh` renders into the measured launcher compose, not through the `.toml` files.
+
 ### deploy the CVMs using script
 
 

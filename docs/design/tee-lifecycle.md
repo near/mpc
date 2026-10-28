@@ -248,8 +248,8 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 
 **Launcher compose hash derivation:** The contract derives compose hashes from the cross-product of allowed MPC image hashes and allowed launcher image hashes:
 
-1. A YAML template ([example: `launcher_docker_compose.yaml.template`][launcher-template]) contains `{{LAUNCHER_IMAGE_HASH}}` and `{{DEFAULT_IMAGE_DIGEST_HASH}}` placeholders.
-2. Both placeholders are replaced with the approved launcher and MPC image hashes respectively.
+1. A YAML template ([example: `launcher_docker_compose.yaml.template`][launcher-template]) contains `{{LAUNCHER_IMAGE_HASH}}`, `{{DEFAULT_IMAGE_DIGEST_HASH}}` and `{{MPC_CONTRACT_ID}}` placeholders.
+2. The placeholders are replaced with the approved launcher and MPC image hashes and the contract's own account id respectively. The account id binds the measured compose, and with it the CVM's disk sealing key, to the contract the node serves.
 3. The filled YAML is SHA256-hashed to produce the [`LauncherDockerComposeHash`][launcher-compose-hash].
 
 When `vote_mpc_node_manifest_digest()` reaches threshold, compose hashes are derived for the new MPC hash against all existing allowed launcher hashes. When `vote_add_launcher_hash()` reaches threshold, compose hashes are derived for the new launcher hash against all existing allowed MPC hashes.

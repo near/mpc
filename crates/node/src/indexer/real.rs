@@ -1,3 +1,4 @@
+use super::chain_binding::ensure_chain_matches_contract;
 use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
@@ -16,6 +17,7 @@ use crate::indexer::tee::{
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
+use anyhow::Context;
 use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
@@ -146,6 +148,24 @@ pub fn spawn_real_indexer(
                 near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
+
+            let chain_binding = indexer_state
+                .client
+                .status()
+                .await
+                .context("querying nearcore status")
+                .and_then(|status| {
+                    ensure_chain_matches_contract(
+                        &mpc_indexer_config.mpc_contract_id,
+                        &status.chain_id,
+                        status.genesis_hash,
+                    )
+                });
+            if let Err(err) = chain_binding {
+                tracing::error!(?err, "Indexer refuses to start.");
+                let _ = indexer_exit_sender.send(Err(err));
+                return;
+            }
 
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 

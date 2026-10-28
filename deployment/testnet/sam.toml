@@ -37,7 +37,6 @@ cores = 12
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "$MPC_CONTRACT_ACCOUNT"
 finality = "optimistic"
 port_override = 80
 
