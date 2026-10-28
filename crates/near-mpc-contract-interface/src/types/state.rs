@@ -16,7 +16,9 @@ use super::primitives::DomainId;
 // Simple Wrapper Types (newtypes)
 // =============================================================================
 
-pub use mpc_primitives::{AttemptId, EpochId, GovernanceThreshold, ReconstructionThreshold};
+pub use mpc_primitives::{
+    AttemptId, EpochId, GovernanceThreshold, ParticipantCount, ReconstructionThreshold,
+};
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(

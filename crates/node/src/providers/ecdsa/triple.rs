@@ -52,7 +52,7 @@ pub fn caitsith_triple_thresholds(domains: &[DomainConfig]) -> BTreeSet<Reconstr
 /// participant count and the Shamir degree `t − 1` are equivalent
 /// identifiers).
 ///
-/// Backed by [`DBCol::TripleV2`] under prefix `t.inner().to_be_bytes()` (8 BE).
+/// Backed by [`DBCol::TripleV2`] under prefix `t.value().to_be_bytes()` (8 BE).
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
 impl TripleStorage {
@@ -66,7 +66,7 @@ impl TripleStorage {
             clock,
             db,
             DBCol::TripleV2,
-            reconstruction_threshold.inner().to_be_bytes().to_vec(),
+            reconstruction_threshold.value().to_be_bytes().to_vec(),
             client.my_participant_id(),
             |participants, pair| pair.is_subset_of_active_participants(participants),
             active_participants_query(client),

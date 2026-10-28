@@ -75,6 +75,8 @@ pub fn spawn_real_indexer(
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
         oneshot::channel();
+    let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
+        oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -226,16 +228,20 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-                watch::channel(std::collections::BTreeMap::new());
-            tokio::spawn(monitor_foreign_chain_whitelist(
-                foreign_chain_whitelist_sender,
-                indexer_state.contract.clone(),
-            ));
+            let foreign_chain_whitelist_receiver =
+                monitor_foreign_chain_whitelist(indexer_state.contract.clone()).await;
             tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver,
+                foreign_chain_whitelist_receiver.clone(),
                 foreign_chains.clone(),
             ));
+            if foreign_chain_whitelist_sender_oneshot
+                .send(foreign_chain_whitelist_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain whitelist receiver back to main driver."
+                )
+            };
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
@@ -333,6 +339,10 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain supporters receiver must be returned by indexer");
 
+    let foreign_chain_whitelist_receiver = foreign_chain_whitelist_receiver_oneshot
+        .blocking_recv()
+        .expect("foreign chain whitelist receiver must be returned by indexer");
+
     IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
@@ -343,6 +353,7 @@ pub fn spawn_real_indexer(
         my_migration_info_receiver,
         my_attestation_receiver,
         foreign_chain_supporters_receiver,
+        foreign_chain_whitelist_receiver,
     }
 }
 

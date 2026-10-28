@@ -12,10 +12,11 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+    self as dtos, CKDRequest, ForeignChain, SignatureRequest, VerifyForeignTransactionRequest,
+    YieldIndex,
 };
 use near_sdk::{
-    AccountId, require,
+    AccountId, log, require,
     store::{IterableMap, Lazy, LookupMap},
 };
 
@@ -24,6 +25,7 @@ use crate::{
         Config, DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
         DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS, DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
     },
+    foreign_chain_rpc::ChainEntry,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
@@ -118,6 +120,31 @@ fn migrate_stored_attestations(
     migrated
 }
 
+fn relax_rpc_whitelist(foreign_chains: &mut ForeignChainsMetadata) {
+    let whitelist = &mut foreign_chains.rpc_whitelist;
+    for (chain, entry) in whitelist.entries.snapshot() {
+        if chain == ForeignChain::Bitcoin {
+            whitelist.entries.remove(&chain);
+            continue;
+        }
+        let relaxed = dtos::ChainEntry {
+            quorum: entry.quorum.saturating_sub(1).max(1),
+            ..entry
+        };
+        match ChainEntry::try_from(relaxed) {
+            Ok(relaxed) => whitelist.entries.replace(chain, relaxed),
+            Err(err) => log!("keeping {chain:?} whitelist entry unchanged: {err}"),
+        }
+    }
+    whitelist
+        .votes
+        .pending
+        .retain_votes(|(_, chain)| *chain != ForeignChain::Bitcoin);
+    foreign_chains
+        .available_foreign_chains
+        .remove(&ForeignChain::Bitcoin);
+}
+
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see earlier `v*_state.rs` modules in git history
 /// for examples) so state written by the `3.17.0` contract still deserializes during migration.
@@ -159,6 +186,8 @@ impl From<MpcContract> for crate::MpcContract {
             .max(DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS);
 
         let tee_state = old.tee_state.migrate();
+        let mut foreign_chains = old.foreign_chains;
+        relax_rpc_whitelist(foreign_chains.get_mut());
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
@@ -169,7 +198,7 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
-            foreign_chains: old.foreign_chains,
+            foreign_chains,
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
@@ -181,10 +210,45 @@ impl From<MpcContract> for crate::MpcContract {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::primitives::test_utils::node_id_for;
+    use crate::primitives::proposal_hash::ToProposalHash;
+    use crate::primitives::test_utils::{gen_authenticated_participants, node_id_for};
     use crate::state::test_utils::gen_running_state;
     use mpc_attestation::attestation::MockAttestation;
+    use near_mpc_contract_interface::types::{
+        AuthScheme, ChainRouting, ProviderConfig, ProviderId,
+    };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
+    use std::collections::BTreeSet;
+
+    fn chain_entry(provider_count: usize, quorum: u64) -> dtos::ChainEntry {
+        let providers: BTreeMap<_, _> = (0..provider_count)
+            .map(|i| {
+                (
+                    ProviderId(format!("provider{i}")),
+                    ProviderConfig {
+                        base_url: format!("https://provider{i}.example.com"),
+                        auth_scheme: AuthScheme::None,
+                        chain_routing: ChainRouting::Embedded,
+                    },
+                )
+            })
+            .collect();
+        dtos::ChainEntry {
+            providers: providers.try_into().unwrap(),
+            quorum,
+        }
+    }
+
+    fn whitelisted(entries: &[(ForeignChain, dtos::ChainEntry)]) -> ForeignChainsMetadata {
+        let mut metadata = ForeignChainsMetadata::default();
+        for (chain, entry) in entries {
+            metadata
+                .rpc_whitelist
+                .entries
+                .replace(*chain, entry.clone().try_into().unwrap());
+        }
+        metadata
+    }
 
     fn old_contract(config: Config) -> MpcContract {
         MpcContract {
@@ -299,6 +363,108 @@ mod tests {
 
         // Then
         assert_eq!(migrated.config, stored);
+    }
+
+    #[test]
+    fn from__should_relax_rpc_whitelist() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let mut old = old_contract(Config::default());
+        old.foreign_chains = Lazy::new(
+            StorageKey::ForeignChainMetadata,
+            whitelisted(&[
+                (ForeignChain::Bitcoin, chain_entry(1, 1)),
+                (ForeignChain::Base, chain_entry(3, 3)),
+            ]),
+        );
+
+        // When
+        let migrated: crate::MpcContract = old.into();
+
+        // Then
+        let expected = BTreeMap::from([(ForeignChain::Base, chain_entry(3, 2))]);
+        assert_eq!(
+            migrated
+                .foreign_chains
+                .get()
+                .rpc_whitelist
+                .entries
+                .snapshot(),
+            expected
+        );
+    }
+
+    #[test]
+    fn relax_rpc_whitelist__should_lower_each_quorum_by_one() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let mut metadata = whitelisted(&[
+            (ForeignChain::Solana, chain_entry(4, 3)),
+            (ForeignChain::Base, chain_entry(3, 3)),
+            (ForeignChain::Fogo, chain_entry(2, 2)),
+            (ForeignChain::Ton, chain_entry(1, 1)),
+        ]);
+
+        // When
+        relax_rpc_whitelist(&mut metadata);
+
+        // Then
+        let expected = BTreeMap::from([
+            (ForeignChain::Solana, chain_entry(4, 2)),
+            (ForeignChain::Base, chain_entry(3, 2)),
+            (ForeignChain::Fogo, chain_entry(2, 1)),
+            (ForeignChain::Ton, chain_entry(1, 1)),
+        ]);
+        assert_eq!(metadata.rpc_whitelist.entries.snapshot(), expected);
+    }
+
+    #[test]
+    fn relax_rpc_whitelist__should_drop_bitcoin() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let mut metadata = whitelisted(&[
+            (ForeignChain::Bitcoin, chain_entry(1, 1)),
+            (ForeignChain::Base, chain_entry(3, 3)),
+        ]);
+        let (_, auth_ids) = gen_authenticated_participants(1);
+        let proposal = ChainEntry::try_from(chain_entry(2, 2))
+            .unwrap()
+            .to_proposal_hash();
+        for chain in [ForeignChain::Bitcoin, ForeignChain::Base] {
+            metadata
+                .rpc_whitelist
+                .votes
+                .pending
+                .vote((auth_ids[0].clone(), chain), proposal);
+        }
+        metadata.available_foreign_chains =
+            BTreeSet::from([ForeignChain::Bitcoin, ForeignChain::Base]).into();
+
+        // When
+        relax_rpc_whitelist(&mut metadata);
+
+        // Then
+        let whitelisted_chains: Vec<_> = metadata
+            .rpc_whitelist
+            .entries
+            .snapshot()
+            .into_keys()
+            .collect();
+        assert_eq!(whitelisted_chains, vec![ForeignChain::Base]);
+        let pending_chains: Vec<_> = metadata
+            .rpc_whitelist
+            .votes
+            .pending
+            .all()
+            .into_values()
+            .flatten()
+            .map(|(_, chain)| chain)
+            .collect();
+        assert_eq!(pending_chains, vec![ForeignChain::Base]);
+        assert_eq!(
+            metadata.available_foreign_chains,
+            BTreeSet::from([ForeignChain::Base]).into()
+        );
     }
 
     #[test]

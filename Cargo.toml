@@ -46,7 +46,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.17.0"
+version = "3.18.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -171,21 +171,21 @@ lru = "0.19.0"
 mappings = "0.7"
 mockall = "0.15.0"
 near-abi = "0.4.4"
-near-account-id = "2.6.0"
+near-account-id = "3.0.0"
 # crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
 # the git nearcore crate below, which the node's indexer stack requires.
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
-near-crypto-public = { version = "0.37.4", package = "near-crypto" }
+near-crypto-public = { version = "0.38.0", package = "near-crypto" }
 near-gas = "0.3.6"
-near-jsonrpc-client = "0.22.0"
-near-jsonrpc-primitives = "0.37.4"
-near-kit = { version = "0.18.0", default-features = false, features = ["rpc"] }
-near-primitives = "0.37.4"
-near-sandbox = "0.3.15"
-near-sdk = { version = "5.29.0", features = ["unstable"] }
+near-jsonrpc-client = "0.23.0"
+near-jsonrpc-primitives = "0.38.0"
+near-kit = { version = "0.20.0", default-features = false, features = ["rpc"] }
+near-primitives = "0.38.0"
+near-sandbox = "0.4.0"
+near-sdk = { version = "5.30.0", features = ["unstable"] }
 near-token = "0.3.4"
-near-workspaces = { version = "0.23.0" }
+near-workspaces = { version = "0.24.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
@@ -259,16 +259,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0-rc.2" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.0" }
 
 ## Outdated dependencies we cannot upgrade ##
 # This version needs to be exactly the same as in `near_sdk::schemars`
