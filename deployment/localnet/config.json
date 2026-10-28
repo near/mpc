@@ -251,10 +251,7 @@
       }
     ],
     "load_mem_tries_for_shards": [],
-    "load_mem_tries_for_tracked_shards": false,
-    "state_snapshot_config": {
-      "state_snapshot_type": "Enabled"
-    }
+    "load_mem_tries_for_tracked_shards": false
   },
   "state_sync_enabled": true,
   "epoch_sync": {

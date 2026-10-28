@@ -47,7 +47,7 @@ impl EcdsaSignatureProvider {
         let presignature_store = keyshare.presignature_store;
         let reconstruction_threshold_usize: usize = keyshare
             .reconstruction_threshold
-            .inner()
+            .value()
             .try_into()
             .expect("contract validation guarantees a valid threshold");
         let reconstruction_threshold =
@@ -153,7 +153,7 @@ impl EcdsaSignatureProvider {
         let keyshare = self.keyshare(domain_id)?;
 
         let reconstruction_threshold = keyshare.reconstruction_threshold;
-        let reconstruction_threshold_usize: usize = reconstruction_threshold.inner().try_into()?;
+        let reconstruction_threshold_usize: usize = reconstruction_threshold.value().try_into()?;
         validate_paired_triple_request(
             leader,
             paired_triple_id,
