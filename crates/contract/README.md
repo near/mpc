@@ -370,9 +370,9 @@ full workflow and the difference between the two.
 
 ## TEE Specific information
 
-The MPC nodes will eventually run inside a Trusted Execution Environments (TEE). The network is currently in a transitioning period, where both operation modes (TEE and non-TEE) are supported, however, the TEE support is at least as of June 2025, highly experimental and not stable.
+MPC nodes run inside a Trusted Execution Environment (TEE) and attest what they run to the contract; see the [TEE design doc](../../docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
-Participants that run their node inside a TEE will have to submit the following TEE related data to the contract:
+Participants submit the following TEE-related data to the contract:
 
 ```rust,ignore
 pub struct DstackAttestation {
