@@ -3,21 +3,55 @@
 
 use std::fs;
 use std::io::{self, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 /// Atomically and durably replaces (or creates) `path` via a sibling `<path>.tmp`.
+/// An existing file keeps its permissions; a new one gets the umask default.
 /// The parent directory must exist.
 pub fn write_file_durably(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let permissions = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err),
+    };
+    write_tmp_and_rename(path, contents, permissions)
+}
+
+/// Like [`write_file_durably`], but `path` ends up with `permissions`.
+pub fn write_file_durably_with_permissions(
+    path: &Path,
+    contents: &[u8],
+    permissions: fs::Permissions,
+) -> io::Result<()> {
+    write_tmp_and_rename(path, contents, Some(permissions))
+}
+
+fn write_tmp_and_rename(
+    path: &Path,
+    contents: &[u8],
+    permissions: Option<fs::Permissions>,
+) -> io::Result<()> {
     let tmp_path = path.with_added_extension("tmp");
     {
-        let mut tmp = fs::File::create(&tmp_path)?;
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        if permissions.is_some() {
+            // Owner-only until `permissions` is applied, so secret contents are never exposed.
+            options.mode(0o600);
+        }
+        let mut tmp = options.open(&tmp_path)?;
+        if let Some(permissions) = permissions {
+            tmp.set_permissions(permissions)?;
+        }
         tmp.write_all(contents)?;
         tmp.sync_all()?;
     }
     rename_durably(&tmp_path, path)
 }
 
-/// Renames `from` over `to` and fsyncs both parent directories.
+/// Renames `from` over `to`, then fsyncs the parent directory of `to`, and of
+/// `from` when it differs: the rename changes both directories' entries.
 pub fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     fs::rename(from, to)?;
     sync_parent_dir(to)?;
@@ -44,6 +78,11 @@ fn parent_dir(path: &Path) -> &Path {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn mode(path: &Path) -> u32 {
+        fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
 
     #[test]
     fn write_file_durably__should_create_missing_file() {
@@ -87,6 +126,38 @@ mod tests {
             .map(|entry| entry.unwrap().file_name())
             .collect();
         assert_eq!(names, vec!["file.json"]);
+    }
+
+    #[test]
+    fn write_file_durably__should_keep_existing_permissions() {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file.json");
+        fs::write(&path, b"old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        // When
+        write_file_durably(&path, b"new").unwrap();
+
+        // Then
+        assert_eq!(mode(&path), 0o600);
+    }
+
+    #[test]
+    fn write_file_durably_with_permissions__should_apply_permissions() {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secret");
+        fs::write(&path, b"old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        // When
+        write_file_durably_with_permissions(&path, b"new", fs::Permissions::from_mode(0o600))
+            .unwrap();
+
+        // Then
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert_eq!(mode(&path), 0o600);
     }
 
     #[test]

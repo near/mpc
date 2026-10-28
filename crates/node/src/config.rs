@@ -1,4 +1,4 @@
-use crate::durable_fs::write_file_durably;
+use crate::durable_fs::{write_file_durably, write_file_durably_with_permissions};
 use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
 use mpc_node_config::ConfigFile;
@@ -8,13 +8,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeSet,
-    fs,
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
-};
+use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
 
 pub(crate) mod start;
 
@@ -192,26 +186,11 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
     ))
 }
 
-/// Writes data to a file with owner-only permissions (0o600).
-/// Permissions are set explicitly after writing to ensure correctness
-/// even if the file already exists with different permissions.
+/// Writes data to a file with owner-only permissions (0o600), even if the file
+/// already exists with different permissions.
 fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .with_context(|| format!("failed to create secret file {}", path.display()))?;
-    file.write_all(data)
-        .with_context(|| format!("failed to write secret file {}", path.display()))?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).with_context(|| {
-        format!(
-            "failed to set permissions on secret file {}",
-            path.display()
-        )
-    })?;
-    Ok(())
+    write_file_durably_with_permissions(path, data, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to write secret file {}", path.display()))
 }
 
 pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {

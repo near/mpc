@@ -21,6 +21,7 @@ impl TemporaryKeyStorage {
     pub fn new(home_dir: PathBuf, local_encryption_key: [u8; 16]) -> anyhow::Result<Self> {
         let storage_dir = home_dir.join("temporary_keys");
         std::fs::create_dir_all(&storage_dir)?;
+        sync_parent_dir(&storage_dir)?;
         Ok(Self {
             storage_dir,
             local_encryption_key,
