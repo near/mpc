@@ -134,7 +134,7 @@ struct OldGovernanceThresholdParametersVotes {
 }
 
 /// Shadow of the `3.17.0` `AddDomainsVotes` layout.
-// TODO(#XXXX): drop once the 3.18 contract is deployed and nodes are upgraded.
+// TODO(#4984): drop once the 3.18 contract is deployed and nodes are upgraded.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldAddDomainsVotes {
     proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<dtos::DomainConfig>>,
