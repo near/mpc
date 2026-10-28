@@ -985,7 +985,7 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider, and a node that cannot cover a chain is treated as down for it.
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider: the participants vote which providers count and how many must agree, and a node serves a chain only while it meets that vote (see [Whitelist and quorum](#whitelist-and-quorum)).
 
 You need your own API keys:
 
@@ -1650,6 +1650,40 @@ numeric. A chain configured without it has all of its providers reported unhealt
 | fogo | genesis block hash, base58 | `"CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"` | `"9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"` |
 
 The SVM chains write their genesis hash in base58, so a hex hash from a block explorer is not accepted for them.
+
+#### Whitelist and quorum
+
+The participants vote, per chain, the RPC providers a node may use and a quorum: how many of them
+must agree before the node accepts a verdict. Read the current whitelist with:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer allowed_foreign_chain_providers json-args '{}' network-config mainnet now
+```
+
+On testnet use `v1.signer-prod.testnet` and `network-config testnet`.
+
+The node checks its providers against the whitelist at startup and on every change, and it registers
+and serves a chain only while enough of them conform to reach the quorum:
+
+* A local provider matches a voted provider by the host of its URL. The name you give it in the
+  config has no effect. A `{}` label in a voted host, such as `{}.quiknode.pro`, stands for your
+  slug.
+* A matched provider conforms when its URL, chain routing, auth kind, header name and scheme or
+  query name, and the position of the token placeholder in the URL are the ones voted. The token
+  itself is not compared. A matched provider that differs is reported in the log and does not
+  count.
+* Two local providers behind one voted host count once.
+* A provider whose host is not voted is still queried and can veto a verdict, but never counts
+  toward the quorum.
+
+The presets use the voted URLs. With a full `foreign_chains` block, keep every `rpc_url` as given
+in the examples and add providers only when the vote lists them: an extra provider can only fail a
+verdict, never help reach the quorum.
+
+The gauges `mpc_foreign_chain_rpc_quorum_required` and `mpc_foreign_chain_rpc_providers_whitelisted`
+show, per chain, the quorum and how many of your providers count, see
+[Whitelist and quorum](../node-operator-metrics.md#whitelist-and-quorum) in the metrics guide.
 
 ### Preparing a Docker Compose File
 
