@@ -14,4 +14,4 @@ pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);
 
 pub const ECHO_INTERVAL: Duration = Duration::from_secs(5);
 
-pub const ECHO_TIMEOUT: Duration = Duration::from_secs(2);
+pub const ECHO_TIMEOUT: Duration = Duration::from_secs(10);
