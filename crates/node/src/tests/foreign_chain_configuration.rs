@@ -1,5 +1,5 @@
 use crate::p2p::testing::port_seed;
-use crate::tests::{DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup};
+use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup, wait_for_registrations};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
@@ -13,7 +13,6 @@ use near_mpc_contract_interface::types::{
 use near_time::Clock;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
-use std::time::Duration;
 
 #[tokio::test]
 #[test_log::test]
@@ -97,37 +96,16 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
 
     // When
     let node_count = setup.participants.participants.len();
-    let wait_result = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
-        loop {
-            {
-                let contract = setup.indexer.contract_mut().await;
-                if contract.foreign_chains_configs().len() == node_count {
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    })
-    .await;
+    wait_for_registrations(&setup.indexer, node_count, &BTreeSet::new()).await;
 
     // Then
-    assert!(
-        wait_result.is_ok(),
-        "timed out waiting for the nodes to register"
-    );
-    let mut contract = setup.indexer.contract_mut().await;
-    let expected_node_config = BTreeSet::from([ForeignChain::Solana]);
-    assert!(
-        contract
-            .foreign_chains_configs()
-            .values()
-            .all(|node_config| **node_config == expected_node_config)
-    );
-    assert!(
-        contract.available_foreign_chains().is_empty(),
-        "a registered chain must stay unavailable until it is whitelisted"
-    );
-    contract.whitelist_foreign_chain_providers(solana_whitelist());
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        assert!(contract.available_foreign_chains().is_empty());
+        contract.whitelist_foreign_chain_providers(solana_whitelist());
+    }
+    wait_for_registrations(&setup.indexer, node_count, &expected_foreign_chains).await;
+    let contract = setup.indexer.contract_mut().await;
     assert_eq!(
         **contract.available_foreign_chains(),
         expected_foreign_chains

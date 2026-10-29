@@ -775,6 +775,29 @@ pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCoun
         .unwrap()
     });
 
+pub static MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_quorum_required",
+            "Number of whitelisted RPC providers the contract requires to agree on a verdict for a \
+             configured foreign chain; 0 while the chain is not whitelisted",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_providers_whitelisted",
+            "Number of distinct whitelisted RPC providers this node's config for a foreign chain \
+             conforms to; the chain is registered and served only while this reaches \
+             mpc_foreign_chain_rpc_quorum_required",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
 #[cfg(test)]
 pub(crate) fn series_count(collector: &impl prometheus::core::Collector) -> usize {
     collector

@@ -96,8 +96,12 @@ impl Default for AllowedProviders {
 }
 
 impl AllowedProviders {
-    fn replace(&mut self, chain: ForeignChain, entry: ChainEntry) {
+    pub(crate) fn replace(&mut self, chain: ForeignChain, entry: ChainEntry) {
         self.entries.insert(chain, entry);
+    }
+
+    pub(crate) fn remove(&mut self, chain: &ForeignChain) {
+        self.entries.remove(chain);
     }
 
     /// Owned clone of the whitelist as DTOs; required by `allowed_foreign_chain_providers`,

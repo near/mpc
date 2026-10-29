@@ -50,8 +50,9 @@ participant set. These gauges tell you how much runway is left:
 ## Foreign chain RPC providers
 
 The node verifies user transactions on other chains through RPC providers you
-configure. Two metric families describe them: what happens during real
-verification traffic, and an hourly probe that needs no traffic.
+configure. Three metric families describe them: what happens during real
+verification traffic, an hourly probe that needs no traffic, and the on-chain
+whitelist and quorum the node must meet to serve a chain.
 
 ### During traffic
 
@@ -139,6 +140,24 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check. Solana has no probe and is left out of both
 gauges.
 
+### Whitelist and quorum
+
+The participants vote, per chain, the RPC providers a node may use and how many
+of them must agree on a verdict. The node registers and serves a chain only
+while its own providers can reach that quorum. Both gauges are labeled with the
+`chain` and updated on every whitelist change while the node is a running
+participant:
+
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum; `0` while the chain is not whitelisted |
+| `mpc_foreign_chain_rpc_providers_whitelisted` | distinct whitelisted providers this node's config conforms to |
+
+`whitelisted` must reach a non-zero `required`. Anything less means the chain is
+configured but neither registered nor served: a provider's URL or auth differs
+from the voted entry, or you run fewer of the voted providers than the quorum
+asks. The node logs the differing provider at startup and on every whitelist change.
+
 ## Recommended alerts
 
 ```promql
@@ -195,6 +214,10 @@ increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  f
 # expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
 # 2h hold waits for two rounds to agree.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
+
+# Warn: a configured chain is whitelisted but this node cannot reach the voted
+# quorum, so it neither registers nor serves the chain.
+mpc_foreign_chain_rpc_providers_whitelisted < mpc_foreign_chain_rpc_quorum_required  for 10m
 
 # Warn: no backup for over a day. Only meaningful once backups are being taken
 # against this node. Both backup gauges read 0 after a node restart until the

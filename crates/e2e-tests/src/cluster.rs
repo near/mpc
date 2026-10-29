@@ -161,26 +161,6 @@ pub fn chain_entry_matching(
     ChainEntry { providers, quorum }
 }
 
-pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
-    let chain = format!("{chain:?}").to_lowercase();
-    let provider = |name: &str| ProviderConfig {
-        base_url: format!("{name}.{chain}.example.com"),
-        auth_scheme: AuthScheme::None,
-        chain_routing: ChainRouting::Embedded,
-    };
-    let mut providers =
-        NonEmptyBTreeMap::new(ProviderId(format!("alchemy-{chain}")), provider("alchemy"));
-    providers.insert(
-        ProviderId(format!("quicknode-{chain}")),
-        provider("quicknode"),
-    );
-    providers.insert(ProviderId(format!("public-{chain}")), provider("public"));
-    ChainEntry {
-        providers,
-        quorum: 1,
-    }
-}
-
 /// JSON wire format used for the contract's `init` call.
 ///
 /// Scaffold for cross-version compatibility: when a wire-breaking change to
@@ -814,12 +794,31 @@ impl MpcCluster {
         predicate: impl Fn(i64) -> bool,
         timeout: Duration,
     ) -> anyhow::Result<()> {
+        let all: Vec<usize> = (0..self.nodes.len()).collect();
+        self.wait_for_metric_on_nodes(&all, name, predicate, timeout)
+            .await
+    }
+
+    /// Polls until `predicate` holds for the metric on every node in `node_indices`.
+    pub async fn wait_for_metric_on_nodes(
+        &self,
+        node_indices: &[usize],
+        name: &str,
+        predicate: impl Fn(i64) -> bool,
+        timeout: Duration,
+    ) -> anyhow::Result<()> {
         let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
         (|| async {
             let values = self.get_metric_all_nodes(name).await?;
             anyhow::ensure!(
-                values.iter().all(|v| v.is_some_and(&predicate)),
-                "metric {name} predicate not satisfied on all nodes (values: {values:?})"
+                node_indices.iter().all(|&index| {
+                    values
+                        .get(index)
+                        .copied()
+                        .flatten()
+                        .is_some_and(&predicate)
+                }),
+                "metric {name} predicate not satisfied on nodes {node_indices:?} (values: {values:?})"
             );
             Ok(())
         })
@@ -952,6 +951,14 @@ impl MpcCluster {
         Ok(self
             .mpc_contract_handle
             .allowed_foreign_chain_providers()
+            .await?
+            .value)
+    }
+
+    pub async fn foreign_chains_registrations(&self) -> anyhow::Result<ForeignChainsConfigs> {
+        Ok(self
+            .mpc_contract_handle
+            .get_foreign_chains_configs()
             .await?
             .value)
     }

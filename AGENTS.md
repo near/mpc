@@ -178,7 +178,7 @@ Markdown under `docs/` is sorted by audience: `docs/guide/` for node operators, 
 
 ## Documentation alignment
 
-Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified, even when a change invalidates them: leave them as they are rather than un-archiving them to update them. When a PR archives a file, flag contents at risk of becoming stale (such as file paths). This is non-blocking, as version history preserves the paths valid at archiving time. The archiving procedure is described in [README.md §Documentation](README.md#documentation).
+Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified, even when a change invalidates them: leave them as they are rather than un-archiving them to update them. When a PR archives a file, flag contents at risk of becoming stale (such as file paths). This is non-blocking, as version history preserves the paths valid at archiving time. The archiving procedure is described in [CONTRIBUTING.md §Documentation](CONTRIBUTING.md#documentation).
 
 All other documents are considered live and expected to be updated if invalidated by a change.
 
