@@ -536,7 +536,7 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn running_contract_state__should_ignore_the_legacy_parameters_votes_report() {
-        // Given: the `state()` of a 3.17 contract while a vote is pending
+        // Given: the `state()` of a 3.18 contract while a vote is pending
         let parameters = GovernanceThresholdParameters {
             participants: sample_participants(),
             threshold: GovernanceThreshold::new(1),
