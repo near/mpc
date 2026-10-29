@@ -1,6 +1,7 @@
 use anyhow::Context;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use mpc_node_config::foreign_chains::substitute_path_token;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 pub mod inspectors;
@@ -48,7 +49,7 @@ fn auth_config_to_rpc_auth(
         }
         AuthConfig::Path { placeholder, token } => {
             let token_value = token.resolve()?;
-            *rpc_url = rpc_url.replace(&placeholder, &token_value);
+            *rpc_url = substitute_path_token(rpc_url, &placeholder, &token_value)?;
             Ok(RpcAuthentication::KeyInUrl)
         }
         AuthConfig::Query { name, token } => {
