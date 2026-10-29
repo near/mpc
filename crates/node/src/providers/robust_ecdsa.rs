@@ -42,6 +42,17 @@ pub struct RobustEcdsaSignatureProvider {
 
 pub(super) type EcdsaKeyshare = DomainKeyshare<Secp256K1Sha256>;
 
+#[derive(
+    Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
+)]
+pub struct EcdsaMessageHash([u8; 32]);
+
+impl EcdsaMessageHash {
+    pub fn to_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
 impl RobustEcdsaSignatureProvider {
     pub fn new(
         config: Arc<ConfigFile>,

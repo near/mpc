@@ -4,7 +4,7 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::wire_format::RobustEcdsaTaskId;
 use crate::protocol::NamedProtocol;
 use crate::providers::robust_ecdsa::{
-    KeygenOutput, RobustEcdsaSignatureProvider, compute_thresholds,
+    EcdsaMessageHash, KeygenOutput, RobustEcdsaSignatureProvider, compute_thresholds,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -54,7 +54,7 @@ impl RobustEcdsaSignatureProvider {
         let (signature, public_key) = SignComputation {
             keygen_out: keyshare.keygen_output,
             max_malicious: robust_ecdsa_threshold,
-            msg_hash,
+            msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
         }
         .perform_leader_centric_computation(
@@ -102,7 +102,7 @@ impl RobustEcdsaSignatureProvider {
         SignComputation {
             keygen_out: keyshare.keygen_output,
             max_malicious: robust_ecdsa_threshold,
-            msg_hash,
+            msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
         }
         .perform_leader_centric_computation(
@@ -122,13 +122,13 @@ impl RobustEcdsaSignatureProvider {
     }
 }
 
-/// Performs an MPC signature operation, presigning and signing in one computation. This is the
-/// same for the initiator and for passive participants.
+/// Performs an MPC signature operation. This is the same for the initiator
+/// and for passive participants.
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
     pub max_malicious: MaxMalicious,
-    pub msg_hash: [u8; 32],
+    pub msg_hash: EcdsaMessageHash,
     pub tweak: Tweak,
 }
 
@@ -153,7 +153,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .into_option()
             .context("Couldn't construct k256 point")?;
         let tweak = threshold_signatures::Tweak::new(tweak);
-        let msg_hash = Scalar::from_repr(self.msg_hash.into())
+        let msg_hash = Scalar::from_repr(self.msg_hash.to_bytes().into())
             .into_option()
             .context("Couldn't construct k256 point")?;
 
