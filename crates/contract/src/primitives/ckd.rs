@@ -29,12 +29,14 @@ const MINUS_G2_GENERATOR_UNCOMPRESSED: [u8; 192] = [
 /// Check that `e(app_pk1, g2) = e(g1, app_pk2)`.
 ///
 /// Point validation is fully delegated to the host: the decompression
-/// functions abort execution on malformed or off-curve encodings, and
-/// `bls12381_pairing_check` returns `false` when a point is outside its
-/// prime-order subgroup.
+/// wrappers return `None` on malformed or off-curve encodings, which this
+/// function turns into an abort, and a pairing check that fails or errors,
+/// as it does for a point outside its prime-order subgroup, counts as `false`.
 pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> bool {
-    let pk1 = env::bls12381_p1_decompress(&app_public_key.pk1);
-    let pk2 = env::bls12381_p2_decompress(&app_public_key.pk2);
+    let pk1 =
+        env::bls12381_p1_decompress(&app_public_key.pk1).expect("malformed BLS12-381 G1 point");
+    let pk2 =
+        env::bls12381_p2_decompress(&app_public_key.pk2).expect("malformed BLS12-381 G2 point");
 
     let pairing_input = [
         pk1.as_slice(),
@@ -43,7 +45,7 @@ pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> 
         pk2.as_slice(),
     ]
     .concat();
-    env::bls12381_pairing_check(&pairing_input)
+    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
 }
 
 /// Check that `e(big_c, g2) = e(big_y, app_pk2) . e(hash_point, public_key)`.
@@ -56,10 +58,11 @@ pub(crate) fn ckd_output_check(
     app_public_key: &dtos::CKDAppPublicKeyPV,
     public_key: &dtos::Bls12381G2PublicKey,
 ) -> bool {
-    let big_c = env::bls12381_p1_decompress(&output.big_c);
-    let big_y = env::bls12381_p1_decompress(&output.big_y);
-    let pk2 = env::bls12381_p2_decompress(&app_public_key.pk2);
-    let pk = env::bls12381_p2_decompress(public_key);
+    let big_c = env::bls12381_p1_decompress(&output.big_c).expect("malformed BLS12-381 G1 point");
+    let big_y = env::bls12381_p1_decompress(&output.big_y).expect("malformed BLS12-381 G1 point");
+    let pk2 =
+        env::bls12381_p2_decompress(&app_public_key.pk2).expect("malformed BLS12-381 G2 point");
+    let pk = env::bls12381_p2_decompress(public_key).expect("malformed BLS12-381 G2 point");
     let hash_point = hash_app_id_with_pk(public_key.as_slice(), app_id.as_ref());
 
     let pairing_input = [
@@ -71,7 +74,7 @@ pub(crate) fn ckd_output_check(
         pk.as_slice(),
     ]
     .concat();
-    env::bls12381_pairing_check(&pairing_input)
+    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
 }
 
 /// Hashes the app id and the public key as `H(pk || app_id)` where `H` is a
@@ -298,7 +301,7 @@ mod tests {
         let pairing_input = [rogue.to_uncompressed().as_slice(), &g2_identity].concat();
 
         // When
-        let accepted = env::bls12381_pairing_check(&pairing_input);
+        let accepted = env::bls12381_pairing_check(&pairing_input).unwrap_or(false);
 
         // Then
         assert!(
@@ -316,7 +319,7 @@ mod tests {
         let pairing_input = [g1_identity.as_slice(), &rogue.to_uncompressed()].concat();
 
         // When
-        let accepted = env::bls12381_pairing_check(&pairing_input);
+        let accepted = env::bls12381_pairing_check(&pairing_input).unwrap_or(false);
 
         // Then
         assert!(
@@ -344,56 +347,64 @@ mod tests {
         .concat();
 
         // When
-        let accepted = env::bls12381_pairing_check(&pairing_input);
+        let accepted = env::bls12381_pairing_check(&pairing_input).unwrap_or(false);
 
         // Then
         assert!(accepted);
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p1_decompress__should_abort_on_x_coordinate_not_on_curve() {
+    fn bls12381_p1_decompress__should_return_none_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
         let candidate = g1_x_not_on_curve();
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p1_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p1_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p1_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
+    fn bls12381_p1_decompress__should_return_none_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 48];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p1_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p1_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p2_decompress__should_abort_on_x_coordinate_not_on_curve() {
+    fn bls12381_p2_decompress__should_return_none_on_x_coordinate_not_on_curve() {
         // Given: a compressed encoding whose x-coordinate lies on no curve point
         let candidate = g2_x_not_on_curve();
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p2_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p2_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
-    #[should_panic(expected = "Register was expected to have data")]
     #[expect(non_snake_case)]
-    fn bls12381_p2_decompress__should_abort_on_x_coordinate_overflowing_the_field() {
+    fn bls12381_p2_decompress__should_return_none_on_x_coordinate_overflowing_the_field() {
         // Given: a compressed encoding whose x-coordinate is >= p
         let mut candidate = [0xffu8; 96];
         candidate[0] = 0x9f; // compressed-encoding flag, x starts with 0x1ff...
 
-        // When / Then: the host rejects it and the SDK wrapper aborts
-        env::bls12381_p2_decompress(candidate);
+        // When
+        let decompressed = env::bls12381_p2_decompress(candidate);
+
+        // Then
+        assert!(decompressed.is_none());
     }
 
     #[test]
@@ -449,6 +460,34 @@ mod tests {
 
         // Then
         assert!(!accepted);
+    }
+
+    #[test]
+    #[should_panic(expected = "malformed BLS12-381 G1 point")]
+    #[expect(non_snake_case)]
+    fn app_public_key_check__should_abort_on_malformed_pk1() {
+        // Given
+        let app_pk = dtos::CKDAppPublicKeyPV {
+            pk1: dtos::Bls12381G1PublicKey(g1_x_not_on_curve()),
+            pk2: dtos::Bls12381G2PublicKey(G2Projective::generator().to_compressed()),
+        };
+
+        // When / Then
+        app_public_key_check(&app_pk);
+    }
+
+    #[test]
+    #[should_panic(expected = "malformed BLS12-381 G2 point")]
+    #[expect(non_snake_case)]
+    fn app_public_key_check__should_abort_on_malformed_pk2() {
+        // Given
+        let app_pk = dtos::CKDAppPublicKeyPV {
+            pk1: dtos::Bls12381G1PublicKey(G1Projective::generator().to_compressed()),
+            pk2: dtos::Bls12381G2PublicKey(g2_x_not_on_curve()),
+        };
+
+        // When / Then
+        app_public_key_check(&app_pk);
     }
 
     /// Documents the pre-existing behavior that identity key pairs satisfy
@@ -516,6 +555,19 @@ mod tests {
 
         // Then
         assert!(accepted);
+    }
+
+    #[test]
+    #[should_panic(expected = "malformed BLS12-381 G1 point")]
+    #[expect(non_snake_case)]
+    fn ckd_output_check__should_abort_on_malformed_big_c() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let (app_id, mut response, app_pk, network_pk) = make_valid_ckd_output(&mut rng);
+        response.big_c = dtos::Bls12381G1PublicKey(g1_x_not_on_curve());
+
+        // When / Then
+        ckd_output_check(&app_id, &response, &app_pk, &network_pk);
     }
 
     #[test]

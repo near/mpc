@@ -309,7 +309,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "next_domain_id",
-                        "u64",
+                        "DomainId",
                     ),
                 ],
             ),
@@ -1006,7 +1006,7 @@ BorshSchemaContainer {
                         "Votes<AuthenticatedAccountId>",
                     ),
                     (
-                        "stored_attestations",
+                        "nodes",
                         "IterableMap",
                     ),
                     (

@@ -61,33 +61,43 @@ ignore = [
   "RUSTSEC-2026-0367", # zip extraction preserves SUID/SGID bits
   "RUSTSEC-2026-0368", # zip extraction creates symlinks pointing outside the destination
   "RUSTSEC-2026-0369", # zip extraction applies Unix permissions through symlinks
-  # TODO(#4423): remove once cargo can resolve rustls >= 0.23.45.
-  # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore 2.14.0-rc.2 and
-  # near-crypto 0.37.4 pin it to =1.16.2, so the fix cannot be resolved until they move. The
-  # handshake transcript stays authenticated: the flaw only lets a peer send handshake
-  # messages that should be encrypted in plaintext without rustls rejecting them.
-  "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
-  # TODO(#4423): remove once cargo can resolve rustls >= 0.23.46, blocked by the same pin.
-  # No crate enables rustls's `brotli` feature, the workspace has no custom
-  # `ClientSessionStore`, and our own TLS configs use the ring provider, which offers no
-  # post-quantum key exchange to downgrade
-  "RUSTSEC-2026-0346", # rustls client session values expose TLS secrets through `Debug`
-  "RUSTSEC-2026-0348", # rustls Brotli certificate decompression can allocate up to 1 GiB
-  "RUSTSEC-2026-0349", # rustls ServerHello can downgrade later handshakes to classical kx
-  # TODO(#4423): remove once cargo can resolve rustls-webpki >= 0.103.16, blocked by the same pin.
-  # No root we trust chains to the distrusted keys: webpki-roots and webpki-root-certs >= 1.0.10
-  # drop emSign ECC Root CA - G3, and so do the Debian trust stores the images ship:
-  # ca-certificates 20250419~deb12u2 (bookworm) and 20250419+deb13u1 (trixie) also drop
-  # Comodo AAA Services root, the only other root that cross-signed those intermediates.
-  "RUSTSEC-2026-0382", # rustls-webpki accepts paths through distrusted emSign intermediates
-  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copies come from
-  # nearcore, through reed-solomon-erasure, and from the VM behind near-sdk's unit tests
+  ## TEMPORARY, TODO(#4957): near-global-contracts 0.3 (via near-sdk 5.30 and near-kit 0.20) needs ##
+  ## proc-macro-error3 >= 3.0.2, while alloy-sol-macro 1.7.3 (via dstack-sdk) caps it at 3.0.1, so
+  ## cargo falls back to alloy-sol 1.6, which uses proc-macro-error2. A build time proc macro, no
+  ## vulnerability.
+  "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
+  ## End of the temporary entries
+  # Fixed in lru >= 0.18.2, which our own dependency already uses; the older copy comes from
+  # nearcore, through reed-solomon-erasure
   "RUSTSEC-2026-0253", # lru cache is not panic-safe when removing an entry
   # TODO(#4916): remove once elliptic-curve 0.13 and its crypto-bigint 0.5.5 leave the tree.
   # No patched 0.5.x exists, and the leaks are in 0.7 code: the `borrowing_sub` branch came
   # with crypto-bigint#1029, and k256 0.13 scalars use only 0.5.5's mask-based add/sub/neg
   # mod, with their own multiplication and inversion.
   "RUSTSEC-2026-0387", # crypto-bigint constant-time leaks
+  # TODO(#4967): remove once nearcore, crates.io near-primitives and tonic all use zstd >= 0.14.3.
+  # Fixed in zstd >= 0.14.3 and zstd-safe >= 8.2.0. zstd 0.13.3 comes from nearcore 2.14.0
+  # (near-primitives, near-store), from near-primitives 0.38.0 on crates.io (a direct dependency,
+  # also via near-sdk, near-jsonrpc-client and near-workspaces), and from tonic, whose `zstd`
+  # feature sui-rpc enables.
+  # Compiled out: these need zstd-safe's `experimental` or `seekable` feature, neither enabled.
+  "RUSTSEC-2026-0395", # zstd-safe use-after-free with `CParameter::StableInBuffer`
+  "RUSTSEC-2026-0396", # zstd-safe `Seekable` reads a NULL or out-of-bounds seek table
+  "RUSTSEC-2026-0398", # zstd-safe `Seekable::decompress` sets a `Vec` length beyond its capacity
+  "RUSTSEC-2026-0399", # zstd-safe use-after-free through `init_using_cdict` and `init_using_ddict`
+  "RUSTSEC-2026-0402", # zstd-safe heap buffer overflow in `CCtx::try_clone`
+  "RUSTSEC-2026-0404", # zstd-safe double free in `DCtx::try_clone`
+  "RUSTSEC-2026-0405", # zstd-safe seekable compressor reads past an out-of-range `InBuffer::pos`
+  # Not called: nearcore and tonic open a fresh context per stream through `Encoder::new`,
+  # `Decoder::new`, `encode_all` or `decode_all`, decompress through `read::Decoder`, and never
+  # share a context between streams, train a dictionary, position an `OutBuffer` or reconfigure a
+  # multithreaded encoder after its frame starts.
+  "RUSTSEC-2026-0391", # zstd abandoned stream data leaks into the next stream on a reused context
+  "RUSTSEC-2026-0397", # zstd-safe `OutBuffer::around_pos` exposes uninitialized memory
+  "RUSTSEC-2026-0400", # zstd-safe dictionary use-after-free after a one-shot call on an open stream
+  "RUSTSEC-2026-0401", # zstd-safe out-of-bounds read in `train_from_buffer`
+  "RUSTSEC-2026-0403", # zstd-safe exposes uninitialized memory when a legacy frame fails to stream
+  "RUSTSEC-2026-0406", # zstd-safe use-after-free changing a multithreaded context mid-frame
 ]
 
 [bans]

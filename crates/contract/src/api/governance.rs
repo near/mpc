@@ -127,7 +127,7 @@ mod tests {
     use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
-    use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
+    use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
@@ -156,16 +156,13 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
     }
 
-    /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants have
-    /// default TEE status ([`TeeQuoteStatus::None`]). This tests the basic scenario where no
-    /// participants have submitted attestation information, and all have the default TEE status
-    /// of [`TeeQuoteStatus::None`], which is considered acceptable.
+    /// Test that [`MpcContract::vote_new_parameters`] succeeds when no participant has submitted
+    /// attestation information, so all keep the mocked attestations stored at initialization.
     #[test]
     fn test_vote_new_parameters_succeeds_with_default_tee_status() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
         let governance_threshold = GovernanceThreshold::new(2);
 
-        // No attestations submitted - all participants have default TEE status None
         let result = setup_voting_context_and_vote(
             &mut contract,
             &first_participant_id,
@@ -174,14 +171,14 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed when all participants have default TEE status None"
+            "Should succeed when all participants keep their initial mocked attestations"
         );
     }
 
     /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants
     /// submit valid TEE attestations. This tests the scenario where all participants successfully
     /// submit valid attestations through [`MpcContract::submit_participant_info`],
-    /// resulting in [`TeeQuoteStatus::Valid`] TEE status for all participants.
+    /// resulting in a valid TEE status for all participants.
     #[test]
     fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
@@ -207,7 +204,7 @@ mod tests {
     /// [`MpcContract::submit_participant_info`]. This test demonstrates that
     /// participants cannot have Invalid TEE status because the contract proactively rejects
     /// invalid attestations at submission time. The 4th participant tries to submit an invalid
-    /// attestation but is rejected, leaving them with [`TeeQuoteStatus::Invalid`] status, which
+    /// attestation but is rejected, keeping the mocked attestation stored at initialization, which
     /// combined with valid participants still allows successful voting.
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
@@ -234,10 +231,6 @@ mod tests {
             );
         }
 
-        // This should succeed because:
-        // - 3 participants have Valid TEE status (from successful attestations)
-        // - 1 participant has None TEE status (invalid attestation was rejected)
-        // - Both Valid and None are allowed by the TEE validation
         let result = setup_voting_context_and_vote(
             &mut contract,
             &first_participant_id,
@@ -246,7 +239,7 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
+            "Should succeed when the rejected submission leaves the initial mocked attestation in place"
         );
     }
 
@@ -288,7 +281,7 @@ mod tests {
         );
         let contract = MpcContract::init_running(
             domains,
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -334,11 +327,11 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then: 4 > 3 participants, so the guard rejects it.
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
                 reconstruction_threshold: 4,
-                participants: 3,
+                participants: ParticipantCount::new(3),
             })
         );
     }
@@ -396,9 +389,12 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
+                max: ParticipantCount::new(3),
+                found: 4
+            })
         );
     }
 

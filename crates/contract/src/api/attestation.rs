@@ -5,12 +5,10 @@ use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::primitives::domain::validate_domains_against_governance;
 use crate::primitives::thresholds::{
-    GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{
-    AttestationSubmissionError, NodeId, ParticipantInsertion, TeeValidationResult,
-};
+use crate::tee::tee_state::{AttestationSubmissionError, NodeId, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
@@ -127,7 +125,7 @@ impl MpcContract {
         // The node always signs submissions with an Ed25519 key
         // (`near_signer_key`), so the signer key here is Ed25519 in practice.
         // Reject non-Ed25519 signer keys rather than silently storing a value
-        // we could never match against in `is_caller_an_attested_participant`.
+        // the node's later transactions could never match.
         let account_public_key = dtos::Ed25519PublicKey::try_from(&account_key).map_err(|_| {
             InvalidParameters::InvalidTeeRemoteAttestation {
                 reason: "signer account key must be Ed25519".to_string(),
@@ -147,12 +145,12 @@ impl MpcContract {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-                let insertion = self.tee_state.verify_and_store_mock(
+                let is_new_node = self.tee_state.verify_and_store_mock(
                     node_id.clone(),
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
-                if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
+                if is_new_node {
                     self.consume_attestation_storage_grant(&node_id.account_id);
                 }
 
@@ -265,14 +263,12 @@ impl MpcContract {
     ) -> Result<Option<dtos::StoredAttestation>, Error> {
         Ok(self
             .tee_state
-            .stored_attestations
+            .nodes
             .get(&tls_public_key)
             .map(IntoInterfaceType::into_dto_type))
     }
 
-    /// Returns all accounts that have TEE attestations stored in the contract.
-    /// Note: This includes both current protocol participants and accounts that may have
-    /// submitted TEE information but are not currently part of the active participant set.
+    /// Returns the id of every stored node, including nodes of accounts that are not participants.
     pub fn get_tee_accounts(&self) -> Vec<dtos::NodeId> {
         log!("get_tee_accounts");
         self.tee_state.get_tee_accounts()
@@ -326,7 +322,7 @@ impl MpcContract {
                 // wait for manual intervention.
                 if let Err(err) = validate_domains_against_governance(
                     running_state.domains.domains(),
-                    u64::try_from(remaining).expect("participant count fits in u64"),
+                    dtos::ParticipantCount::from_len(remaining),
                     current_params.threshold(),
                 ) {
                     log!(
@@ -346,12 +342,9 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = usize::try_from(current_params.threshold().value())
-                    .expect("threshold value fits in usize");
-
                 let threshold_parameters = GovernanceThresholdParameters::new(
                     participants_with_valid_attestation,
-                    GovernanceThreshold::new(new_threshold as u64),
+                    current_params.threshold(),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
@@ -463,20 +456,20 @@ impl MpcContract {
 
         self.assert_attestation_submission_allowed(&account_id, &context.node_id.tls_public_key)?;
 
-        let insertion = match self.tee_state.verify_and_store_dstack(
+        let is_new_node = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
             &context.tcb_info,
             report,
             collateral_dates,
             tee_upgrade_deadline_duration,
         ) {
-            Ok(insertion) => insertion,
+            Ok(is_new_node) => is_new_node,
             Err(err) => {
                 log!("post-DCAP check failed for {account_id}: {err}");
                 return Err(err.into());
             }
         };
-        if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
+        if is_new_node {
             self.consume_attestation_storage_grant(&account_id);
         }
 
@@ -506,11 +499,12 @@ mod tests {
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
         create_node_id, gen_account_id, gen_participants,
     };
+    use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
     use crate::state::test_utils::gen_running_state;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
-    use crate::tee::tee_state::{NodeAttestation, TeeState};
+    use crate::tee::tee_state::{Node, TeeState};
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
@@ -833,7 +827,7 @@ mod tests {
         // Then: the submitter's transaction is failed from its own receipt, and nothing is stored.
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Promise(_)));
-        assert!(contract.tee_state.stored_attestations.is_empty());
+        assert!(contract.tee_state.nodes.is_empty());
     }
 
     #[test]
@@ -848,13 +842,7 @@ mod tests {
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
-        assert_eq!(contract.tee_state.stored_attestations.len(), 1);
-        let stored = contract
-            .tee_state
-            .stored_attestations
-            .get(&node_id.tls_public_key)
-            .expect("attestation must be stored");
-        assert_eq!(stored.node_id, node_id);
+        assert_eq!(contract.get_tee_accounts(), vec![node_id]);
     }
 
     #[test]
@@ -869,7 +857,7 @@ mod tests {
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Promise(_)));
-        assert!(contract.tee_state.stored_attestations.is_empty());
+        assert!(contract.tee_state.nodes.is_empty());
     }
 
     #[test]
@@ -902,6 +890,43 @@ mod tests {
             .submit_participant_info(valid_attestation, dto_public_key)
             .expect("Outsider attestation submission should succeed");
 
+        contract.assert_caller_is_attested_participant_and_protocol_active();
+    }
+
+    #[rstest]
+    #[case::node_under_another_tls_key(|node| NodeId { tls_public_key: bogus_ed25519_public_key(), ..node })]
+    #[case::node_of_another_account(|node| NodeId { account_id: gen_account_id(), ..node })]
+    #[case::node_with_another_signer_key(|node| NodeId { account_public_key: bogus_ed25519_public_key(), ..node })]
+    #[should_panic(expected = "Caller must be an attested participant")]
+    fn assert_caller_is_attested_participant_and_protocol_active__should_reject_a_participant_not_signing_as_its_node(
+        #[case] stored_node: fn(NodeId) -> NodeId,
+    ) {
+        // Given
+        let (mut contract, participants, account_id) = setup_tee_test_contract(3, 2);
+        let tls_public_key = participants
+            .info(&account_id)
+            .unwrap()
+            .tls_public_key
+            .clone();
+        let signers_node = create_node_id(&account_id, &tls_public_key);
+        contract.tee_state.nodes.remove(&tls_public_key);
+        contract
+            .tee_state
+            .verify_and_store_mock(
+                stored_node(signers_node.clone()),
+                MpcMockAttestation::Valid,
+                Duration::MAX,
+            )
+            .unwrap();
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id)
+                .signer_account_pk(signers_node.account_public_key.into())
+                .build()
+        );
+
+        // When, Then
         contract.assert_caller_is_attested_participant_and_protocol_active();
     }
 
@@ -943,7 +968,7 @@ mod tests {
 
         let mut contract = MpcContract::init_running(
             domains.clone(),
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -1055,7 +1080,7 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let next_domain_id = domain.id.0 + 1;
+        let next_domain_id = DomainId(domain.id.0 + 1);
         let mut contract = MpcContract::init_running(
             vec![domain],
             next_domain_id,
@@ -1264,15 +1289,11 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let before = env::storage_usage();
-        tee_state.stored_attestations.insert(
+        tee_state.nodes.insert(
             node_id.tls_public_key.clone(),
-            NodeAttestation {
-                node_id,
-                verified_attestation,
-                accepted_at_seconds: u64::MAX,
-            },
+            Node::new(node_id, verified_attestation, u64::MAX),
         );
-        tee_state.stored_attestations.flush();
+        tee_state.nodes.flush();
 
         env::storage_usage() - before
     }

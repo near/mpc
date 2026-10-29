@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.17.0",
+    "version": "3.18.0",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -31,7 +31,7 @@ expression: abi
       },
       {
         "name": "allowed_foreign_chain_providers",
-        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at\n startup to validate their local `foreign_chains.yaml`.",
+        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to\n check their local config against it and to enforce each chain's RPC quorum.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -452,7 +452,7 @@ expression: abi
       },
       {
         "name": "get_tee_accounts",
-        "doc": " Returns all accounts that have TEE attestations stored in the contract.\n Note: This includes both current protocol participants and accounts that may have\n submitted TEE information but are not currently part of the active participant set.",
+        "doc": " Returns the id of every stored node, including nodes of accounts that are not participants.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -524,9 +524,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             },
             {
@@ -2248,9 +2246,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             }
           ]
@@ -2968,7 +2964,7 @@ expression: abi
               "$ref": "#/definitions/NonEmptyBTreeMap_ProviderId_ProviderConfig"
             },
             "quorum": {
-              "description": "Voted RPC response quorum. Stored for a deferred quorum policy and not yet consumed: nodes currently require every provider that reaches a verdict to agree on it.",
+              "description": "How many whitelisted providers must agree before a node accepts a verdict.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3284,9 +3280,7 @@ expression: abi
               "$ref": "#/definitions/DomainPurpose"
             },
             "reconstruction_threshold": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/ReconstructionThreshold"
             }
           }
         },
@@ -3337,9 +3331,7 @@ expression: abi
               }
             },
             "next_domain_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/DomainId"
             }
           }
         },
@@ -4319,7 +4311,7 @@ expression: abi
               "type": "string"
             },
             "account_public_key": {
-              "description": "Full-access Ed25519 public key of the operator account.",
+              "description": "The key the node signs its own transactions with.",
               "allOf": [
                 {
                   "$ref": "#/definitions/Ed25519PublicKey"
@@ -4531,9 +4523,7 @@ expression: abi
               "default": {},
               "type": "object",
               "additionalProperties": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/ReconstructionThreshold"
               }
             }
           }
@@ -4743,6 +4733,12 @@ expression: abi
             }
           ]
         },
+        "ReconstructionThreshold": {
+          "description": "Per-domain `t` in a t-of-n threshold scheme: shares needed to reconstruct the secret. Distinct from the network-wide governance threshold.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "ResharingContractState": {
           "description": "State when the contract is resharing keys to new participants.",
           "type": "object",
@@ -4765,9 +4761,7 @@ expression: abi
               "default": {},
               "type": "object",
               "additionalProperties": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/ReconstructionThreshold"
               }
             },
             "previous_running_state": {

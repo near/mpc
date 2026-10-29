@@ -1,6 +1,7 @@
 //! Compares the local foreign chain RPC config with the on chain whitelist
-//! (`allowed_foreign_chain_providers`) and logs each difference. The result does not change node
-//! behavior.
+//! (`allowed_foreign_chain_providers`) and logs each difference. The verifier only logs;
+//! [`crate::foreign_chain_rpc_policy`] applies the same match to decide which providers count
+//! towards the RPC quorum.
 //!
 //! A local provider matches a whitelist provider by its URL host, as [`provider_identity`]
 //! describes.

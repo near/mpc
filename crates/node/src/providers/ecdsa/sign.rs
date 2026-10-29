@@ -45,7 +45,7 @@ impl EcdsaSignatureProvider {
         let keyshare = self.keyshare(sign_request.domain)?;
         let participants = presignature.participants.clone();
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
 
         let (signature, public_key) = SignComputation {
@@ -152,7 +152,7 @@ impl EcdsaSignatureProvider {
             .with_label_values(&[ONLINE_PRESIGN_MODE_LABEL])
             .inc();
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let participants = channel.participants().to_vec();
 
         let (signature, public_key) = OnlinePresignSignComputation {
@@ -214,7 +214,7 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<()> {
         let keyshare = self.keyshare(sign_request.domain)?;
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         validate_paired_triple_request(
             channel.sender().get_leader(),
             paired_triple_id,
@@ -263,7 +263,7 @@ impl EcdsaSignatureProvider {
         presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let keyshare = self.keyshare(sign_request.domain)?;
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
 
         let participants = channel.participants().to_vec();

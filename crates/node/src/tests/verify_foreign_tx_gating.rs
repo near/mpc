@@ -5,7 +5,7 @@ use crate::p2p::testing::{NodeTestPorts, port_seed};
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, every_node_owns_triples, request_verify_foreign_tx_and_await_response,
-    signatures_led, wait_until,
+    signatures_led, wait_for_registrations, wait_until,
 };
 use crate::tracking::AutoAbortTask;
 use httpmock::prelude::*;
@@ -25,6 +25,8 @@ use std::num::NonZeroU64;
 use std::time::Duration;
 
 const MOCK_BLOCK_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+/// Long enough for a served request to answer, so no answer means the request was not served.
+const NO_RESPONSE_WAIT: Duration = Duration::from_secs(15);
 
 /// Serves the RPC methods the EVM inspector issues for a block-hash extraction at finality
 /// `finalized`, so any tx verification against it succeeds.
@@ -84,6 +86,24 @@ fn ethereum_whitelist(rpc_url: &str) -> BTreeMap<ForeignChain, ChainEntry> {
     )])
 }
 
+/// The mock plus a provider nobody runs, with a quorum of two that one local provider cannot reach.
+fn ethereum_whitelist_out_of_reach(rpc_url: &str) -> BTreeMap<ForeignChain, ChainEntry> {
+    let mut whitelist = ethereum_whitelist(rpc_url);
+    let entry = whitelist
+        .get_mut(&ForeignChain::Ethereum)
+        .expect("ethereum entry");
+    entry.providers.insert(
+        ProviderId("other".to_string()),
+        ProviderConfig {
+            base_url: "https://rpc.other.example.com".to_string(),
+            auth_scheme: AuthScheme::None,
+            chain_routing: ChainRouting::Embedded,
+        },
+    );
+    entry.quorum = 2;
+    whitelist
+}
+
 fn ethereum_only_config(rpc_url: &str) -> ForeignChainsConfig {
     let providers = NonEmptyBTreeMap::new(
         RpcProviderName::from(ETHEREUM_PROVIDER.to_string()),
@@ -133,7 +153,6 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     const SUPPORTERS_PUBLISH_WAIT: Duration = Duration::from_secs(10);
-    const UNAVAILABLE_RESPONSE_WAIT: Duration = Duration::from_secs(15);
 
     // Given
     let rpc_mock = must_start_ethereum_rpc_mock();
@@ -225,7 +244,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
             "user0",
             &foreign_tx_domain,
             [43u8; 32],
-            UNAVAILABLE_RESPONSE_WAIT,
+            NO_RESPONSE_WAIT,
         )
         .await
         .is_none()
@@ -254,10 +273,16 @@ struct ForeignTxCluster {
     _temp_dir: tempfile::TempDir,
 }
 
-/// Starts the cluster with `signature.online_presign` set as given, and waits until every node
-/// owns triples.
-async fn must_start_foreign_tx_cluster(case: u16, online_presign: bool) -> ForeignTxCluster {
-    const NUM_PARTICIPANTS: usize = 4;
+const FOREIGN_TX_CLUSTER_SIZE: usize = 4;
+
+/// Starts the cluster with `signature.online_presign` set as given and `whitelist` voted for the
+/// mock's URL, and waits until every node owns triples.
+async fn must_start_foreign_tx_cluster(
+    case: u16,
+    online_presign: bool,
+    whitelist: fn(&str) -> BTreeMap<ForeignChain, ChainEntry>,
+) -> ForeignTxCluster {
+    const NUM_PARTICIPANTS: usize = FOREIGN_TX_CLUSTER_SIZE;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
 
@@ -288,7 +313,7 @@ async fn must_start_foreign_tx_cluster(case: u16, online_presign: bool) -> Forei
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
         contract.add_domains(vec![domain.clone()]);
-        contract.whitelist_foreign_chain_providers(ethereum_whitelist(&rpc_mock.base_url()));
+        contract.whitelist_foreign_chain_providers(whitelist(&rpc_mock.base_url()));
     }
     let nodes = setup
         .configs
@@ -322,7 +347,7 @@ async fn must_start_foreign_tx_cluster(case: u16, online_presign: bool) -> Forei
 #[expect(non_snake_case)]
 async fn verify_foreign_tx__should_presign_online_when_online_presign_is_enabled() {
     // Given
-    let mut cluster = must_start_foreign_tx_cluster(0, true).await;
+    let mut cluster = must_start_foreign_tx_cluster(0, true, ethereum_whitelist).await;
     let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
     let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
 
@@ -351,7 +376,7 @@ async fn verify_foreign_tx__should_presign_online_when_online_presign_is_enabled
 async fn verify_foreign_tx__should_sign_from_stored_presignatures_when_online_presign_is_disabled()
 {
     // Given
-    let mut cluster = must_start_foreign_tx_cluster(1, false).await;
+    let mut cluster = must_start_foreign_tx_cluster(1, false, ethereum_whitelist).await;
     let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
     let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
 
@@ -371,5 +396,46 @@ async fn verify_foreign_tx__should_sign_from_stored_presignatures_when_online_pr
     assert_eq!(
         signatures_led(ONLINE_PRESIGN_MODE_LABEL),
         online_presign_before
+    );
+}
+
+/// The quorum asks for two providers and every node runs one, so no node registers Ethereum
+/// itself. Registering three nodes directly, after their own empty registrations have landed,
+/// reproduces the window between a vote landing and the nodes dropping the chain.
+#[tokio::test]
+#[test_log::test]
+#[expect(non_snake_case)]
+async fn verify_foreign_tx__should_not_be_served_when_local_providers_are_below_the_rpc_quorum() {
+    // Given
+    let mut cluster = must_start_foreign_tx_cluster(2, true, ethereum_whitelist_out_of_reach).await;
+    wait_for_registrations(&cluster.indexer, FOREIGN_TX_CLUSTER_SIZE, &BTreeSet::new()).await;
+    {
+        let mut contract = cluster.indexer.contract_mut().await;
+        for account in ["test0", "test1", "test2"] {
+            contract.register_foreign_chains_config(
+                account.parse().unwrap(),
+                BTreeSet::from([ForeignChain::Ethereum]).into(),
+            );
+        }
+    }
+    let rejections_before =
+        crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.get();
+
+    // When
+    let response = request_verify_foreign_tx_and_await_response(
+        &mut cluster.indexer,
+        "user0",
+        &cluster.domain,
+        [42u8; 32],
+        NO_RESPONSE_WAIT,
+    )
+    .await;
+
+    // Then
+    assert!(response.is_none());
+    assert!(
+        crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.get()
+            > rejections_before,
+        "expected the leader to abstain for lack of an RPC quorum"
     );
 }

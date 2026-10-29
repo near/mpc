@@ -4,7 +4,9 @@ use crate::primitives::key_state::{EpochId, Keyset};
 use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
+use near_mpc_contract_interface::types::{
+    DomainId, DomainPurpose, ForeignChain, ParticipantCount, Protocol,
+};
 use near_sdk::FunctionError;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -186,7 +188,7 @@ pub enum InvalidThreshold {
     )]
     MinRelRequirementFailed { required: u64, found: u64 },
     #[error("GovernanceThreshold must not exceed number of participants: max {max}, found {found}")]
-    MaxRequirementFailed { max: u64, found: u64 },
+    MaxRequirementFailed { max: ParticipantCount, found: u64 },
     #[error(
         "GovernanceThreshold exceeds the maximum allowed relative to the participant count: max {max}, found {found}"
     )]
@@ -269,7 +271,7 @@ pub enum DomainError {
     )]
     ReconstructionThresholdExceedsParticipants {
         reconstruction_threshold: u64,
-        participants: u64,
+        participants: ParticipantCount,
     },
     #[error(
         "Protocol {protocol:?} requires at least {required} participants, found {participants}."
@@ -277,7 +279,7 @@ pub enum DomainError {
     InsufficientParticipantsForProtocol {
         protocol: Protocol,
         required: u64,
-        participants: u64,
+        participants: ParticipantCount,
     },
     #[error(
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."

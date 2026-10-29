@@ -1,5 +1,8 @@
 # Foreign chain config for non-TDX nodes
 
+The participants vote which providers a node may use per chain and how many must agree. Keep the
+URLs as given below, apart from `YOUR-SLUG`, see [Whitelist and quorum](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#whitelist-and-quorum).
+
 ## Credentials only (Recommended)
 
 Requires node release 3.17 or later. Earlier releases ignore `rpc_preset` and `credentials` and run without foreign chains.

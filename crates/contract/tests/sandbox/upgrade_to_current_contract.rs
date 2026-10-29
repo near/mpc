@@ -15,7 +15,7 @@ use crate::sandbox::{
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
-        transactions::CallMpcContract,
+        transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
 use mpc_contract::primitives::{
@@ -25,17 +25,19 @@ use mpc_contract::primitives::{
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+    AuthScheme, CKDResponse, ChainEntry, ChainRouting, DomainConfig, DomainPurpose, ForeignChain,
+    Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
 use rand_core::OsRng;
 use rstest::rstest;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -155,7 +157,7 @@ async fn back_compatibility_without_state(
     )
 }
 
-/// `stored_attestations` keeps entries for non-participants too, so the upgrade under test
+/// The contract stores attestations of non-participants too, so the upgrade under test
 /// carries more entries than [`PARTICIPANT_LEN`], and more than the 17 that mainnet and testnet
 /// each stored on 2026-10-23.
 const STORED_ATTESTATION_ENTRIES: usize = 25;
@@ -195,6 +197,65 @@ async fn fill_stored_attestations(
     assert_eq!(stored.len(), total, "stored attestation count");
 
     tls_keys
+}
+
+/// Chains whitelisted on mainnet on 2026-10-28 besides Bitcoin.
+const PRODUCTION_WHITELISTED_CHAINS: [ForeignChain; 12] = [
+    ForeignChain::Abstract,
+    ForeignChain::Aptos,
+    ForeignChain::Arbitrum,
+    ForeignChain::Avalanche,
+    ForeignChain::Base,
+    ForeignChain::Bnb,
+    ForeignChain::Fogo,
+    ForeignChain::HyperEvm,
+    ForeignChain::Polygon,
+    ForeignChain::Solana,
+    ForeignChain::Starknet,
+    ForeignChain::Sui,
+];
+
+fn chain_entry(provider_count: usize, quorum: u64) -> ChainEntry {
+    let providers: BTreeMap<_, _> = (0..provider_count)
+        .map(|i| {
+            (
+                ProviderId(format!("provider{i}")),
+                ProviderConfig {
+                    base_url: format!("https://provider{i}.example.com/v2/"),
+                    auth_scheme: AuthScheme::None,
+                    chain_routing: ChainRouting::Embedded,
+                },
+            )
+        })
+        .collect();
+    ChainEntry {
+        providers: providers.try_into().unwrap(),
+        quorum,
+    }
+}
+
+async fn vote_in_whitelist(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+    whitelist: BTreeMap<ForeignChain, ChainEntry>,
+) {
+    let batch: NonEmptyBTreeMap<_, _> = whitelist.clone().try_into().unwrap();
+    let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
+    execute_async_handle_calls(&accounts[..threshold], contract, |handle| {
+        let batch = batch.clone();
+        async move { handle.vote_update_foreign_chain_providers(batch).await }
+    })
+    .await
+    .expect("whitelist vote should succeed");
+    assert_eq!(
+        contract
+            .allowed_foreign_chain_providers()
+            .await
+            .unwrap()
+            .value,
+        whitelist,
+        "whitelist should be voted in before the upgrade"
+    );
 }
 
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
@@ -261,6 +322,16 @@ async fn propose_upgrade_from_production_to_current_binary(
         .await
         .unwrap();
 
+    vote_in_whitelist(
+        &contract,
+        &accounts,
+        BTreeMap::from([
+            (ForeignChain::Bitcoin, chain_entry(1, 1)),
+            (ForeignChain::Base, chain_entry(3, 3)),
+        ]),
+    )
+    .await;
+
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
@@ -280,6 +351,16 @@ async fn propose_upgrade_from_production_to_current_binary(
             .value
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
+    );
+
+    assert_eq!(
+        contract
+            .allowed_foreign_chain_providers()
+            .await
+            .unwrap()
+            .value,
+        BTreeMap::from([(ForeignChain::Base, chain_entry(3, 2))]),
+        "migration should drop Bitcoin and lower the Base quorum by one"
     );
 
     assert_eq!(
@@ -356,6 +437,12 @@ async fn migrate__should_run_within_contract_update_gas_budget(
         .unwrap();
     submit_attestations(&contract, &accounts, &participants).await;
     fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
+    let whitelist = PRODUCTION_WHITELISTED_CHAINS
+        .into_iter()
+        .map(|chain| (chain, chain_entry(4, 3)))
+        .chain([(ForeignChain::Bitcoin, chain_entry(1, 1))])
+        .collect();
+    vote_in_whitelist(&contract, &accounts, whitelist).await;
     upgrade_to_new(&contract).await.unwrap();
 
     // When
@@ -636,7 +723,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         .call_mpc(contract.id())
         .init_running(
             vec![],
-            0,
+            dtos::DomainId(0),
             dtos::Keyset::new(EpochId::new(2), vec![]),
             threshold_parameters,
             bogus_tee_verifier_account_id(),

@@ -319,7 +319,7 @@ These functions require the caller to be a participant or candidate.
 | `start_reshare_instance(key_event_id: KeyEventId)`                                | For Resharing state only. Starts a new attempt to reshare a key (key_event_id must be the expected one)                                                                                                                                 | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_pk(key_event_id: KeyEventId, public_key: PublicKey)`                          | For Initializing state only. Votes for the public key for the given generation attempt; if enough votes are collected, transitions to the next domain to generate a key for, or if all domains are completed, transitions into Running. | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_reshared(key_event_id: KeyEventId)`                                           | For Resharing state only. Votes for the success of the given resharing attempt; if enough votes are collected, transitions to the next domain to reshare for, or if all domains are completed, transitions into Running.                | `Result<(), Error>`       | TBD             | TBD                |
-| `vote_cancel_keygen(next_domain_id: u64)`                                           | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_cancel_keygen(next_domain_id: DomainId)`                                      | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_contract_update(update_hash: UpdateHash)`                                              | Votes for the hash of the next update. Returns whether the hash is now backed by a governance threshold of current participants. | `Result<bool, Error>`     | TBD             | TBD                |
 | `submit_contract_update(update: Update)`                                                     | Applies the update whose hash currently holds threshold votes (deploys the code and runs `migrate`, or calls `update_config`), clearing every update vote. Payable: requires at least 1 yoctoNEAR (full-access-key check); any surplus is refunded. The contract account must already hold the storage stake for the new code. | `Result<(), Error>`       | TBD             | TBD                |
 | `remove_contract_update_vote()`                                                              | Withdraws the caller's update vote. | `Result<(), Error>`       | TBD             | TBD                |
@@ -370,9 +370,9 @@ full workflow and the difference between the two.
 
 ## TEE Specific information
 
-The MPC nodes will eventually run inside a Trusted Execution Environments (TEE). The network is currently in a transitioning period, where both operation modes (TEE and non-TEE) are supported, however, the TEE support is at least as of June 2025, highly experimental and not stable.
+MPC nodes run inside a Trusted Execution Environment (TEE) and attest what they run to the contract; see the [TEE design doc](../../docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
-Participants that run their node inside a TEE will have to submit the following TEE related data to the contract:
+Participants submit the following TEE-related data to the contract:
 
 ```rust,ignore
 pub struct DstackAttestation {
