@@ -1022,6 +1022,21 @@ impl MpcCluster {
         Ok(())
     }
 
+    /// Submit an attestation for a TLS key from a specific node's account, signed with its
+    /// operator key.
+    pub async fn submit_participant_info(
+        &self,
+        node_index: usize,
+        attestation: Attestation,
+        tls_public_key: Ed25519PublicKey,
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
+        self.operator_client_for(node_index)?
+            .call_mpc(self.contract_id())
+            .submit_participant_info(attestation, tls_public_key)
+            .await
+            .context("failed to submit participant info")
+    }
+
     /// Start node migration for a specific node.
     pub async fn start_node_migration(
         &self,
