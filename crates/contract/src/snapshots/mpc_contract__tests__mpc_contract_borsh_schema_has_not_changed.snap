@@ -978,7 +978,7 @@ BorshSchemaContainer {
                         "Votes<AuthenticatedAccountId>",
                     ),
                     (
-                        "stored_attestations",
+                        "nodes",
                         "IterableMap",
                     ),
                     (
