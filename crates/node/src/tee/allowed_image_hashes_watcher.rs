@@ -1,3 +1,4 @@
+use crate::durable_fs::write_file_durably;
 use derive_more::From;
 use itertools::Itertools;
 use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
@@ -46,25 +47,12 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
 
         tracing::debug!(?approved_hashes, "writing approved hashes to disk");
 
-        let tmp_path = self.file_path.with_extension("tmp");
-        // Write to a temporary file first.
-        // This prevents corruption of the final file if the node crashes or power is lost mid-write.
-        // Only once the temp file is fully written do we atomically rename() it into place.
-        {
-            let tmp_path = tmp_path.clone();
-
-            tokio::task::spawn_blocking(move || {
-                let file = std::fs::File::create(&tmp_path)?;
-                serde_json::to_writer_pretty(&file, &approved_hashes).map_err(io::Error::other)?;
-
-                file.sync_all()
-            })
+        // Durable, not just atomic: after a power loss the launcher must not boot from the previous list.
+        let contents = serde_json::to_vec_pretty(&approved_hashes).map_err(io::Error::other)?;
+        let file_path = self.file_path.clone();
+        tokio::task::spawn_blocking(move || write_file_durably(&file_path, &contents))
             .await
             .map_err(|_| io::Error::other("writing to disk task failed"))??;
-        }
-        // Atomic replace: POSIX rename() ensures that either the old file or the new file exists.
-        // The final file is never left in a partially-written state.
-        tokio::fs::rename(&tmp_path, &self.file_path).await?;
 
         Ok(())
     }

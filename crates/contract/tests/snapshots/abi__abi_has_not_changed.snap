@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.17.0",
+    "version": "3.18.0",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -470,7 +470,7 @@ expression: abi
       },
       {
         "name": "get_tee_accounts",
-        "doc": " Returns all accounts that have TEE attestations stored in the contract.\n Note: This includes both current protocol participants and accounts that may have\n submitted TEE information but are not currently part of the active participant set.",
+        "doc": " Returns the id of every stored node, including nodes of accounts that are not participants.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -4276,7 +4276,7 @@ expression: abi
               "type": "string"
             },
             "account_public_key": {
-              "description": "Full-access Ed25519 public key of the operator account.",
+              "description": "The key the node signs its own transactions with.",
               "allOf": [
                 {
                   "$ref": "#/definitions/Ed25519PublicKey"
