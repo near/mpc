@@ -88,7 +88,7 @@ async fn migration_endpoint__should_track_migration_state() {
             outcome.failure_message()
         );
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: node_state.p2p_public_key(),
+            signer_account_pk: Ed25519PublicKey::from(&cluster.operator_keys[i].verifying_key()),
             destination_node_info: ParticipantInfo {
                 url: "http://bogus:1234".try_into().unwrap(),
                 tls_public_key: destination_tls_public_key,

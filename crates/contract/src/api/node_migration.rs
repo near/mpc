@@ -76,6 +76,8 @@ impl MpcContract {
     ///   signer's current TLS public key. Use [`Self::update_participant_url`] to change only the url.
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`] if the signer has no node with a valid
     ///   attestation under the destination TLS public key.
+    /// - [`NodeMigrationError::DestinationSignerKeyMismatch`](crate::errors::NodeMigrationError::DestinationSignerKeyMismatch) if the destination signer key
+    ///   differs from the one the destination node attested with.
     ///
     /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
@@ -110,7 +112,7 @@ impl MpcContract {
             &self.tee_state,
             &self.node_migrations,
             &account_id,
-            &destination_node_info.destination_node_info.tls_public_key,
+            &destination_node_info,
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
         )?;
         self.node_migrations
@@ -187,6 +189,8 @@ impl MpcContract {
     ///   public key belongs to another account
     /// - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged): if the destination node reuses the
     ///   caller's current TLS public key
+    /// - [`NodeMigrationError::DestinationSignerKeyMismatch`](crate::errors::NodeMigrationError::DestinationSignerKeyMismatch): if the destination signer key
+    ///   differs from the one the destination node attested with
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: dtos::Keyset) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
@@ -239,9 +243,7 @@ impl MpcContract {
             &self.tee_state,
             &self.node_migrations,
             &account_id,
-            &expected_destination_node
-                .destination_node_info
-                .tls_public_key,
+            &expected_destination_node,
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
         )?;
 
@@ -308,9 +310,10 @@ fn assert_migration_destination_allowed(
     tee_state: &TeeState,
     node_migrations: &NodeMigrations,
     account_id: &AccountId,
-    destination_tls_key: &dtos::Ed25519PublicKey,
+    destination: &dtos::DestinationNodeInfo,
     tee_upgrade_deadline_duration: Duration,
 ) -> Result<(), Error> {
+    let destination_tls_key = &destination.destination_node_info.tls_public_key;
     assert_destination_tls_key_changed(participants, account_id, destination_tls_key)?;
     assert_tls_key_unclaimed(
         participants,
@@ -319,10 +322,11 @@ fn assert_migration_destination_allowed(
         account_id,
         destination_tls_key,
     )?;
-    assert_destination_node_attested(
+    assert_destination_matches_attested_node(
         tee_state,
         account_id,
         destination_tls_key,
+        &destination.signer_account_pk,
         tee_upgrade_deadline_duration,
     )
 }
@@ -372,22 +376,29 @@ fn assert_tls_key_unclaimed(
     .into())
 }
 
-fn assert_destination_node_attested(
+fn assert_destination_matches_attested_node(
     tee_state: &TeeState,
     account_id: &AccountId,
     destination_tls_key: &dtos::Ed25519PublicKey,
+    destination_signer_key: &dtos::Ed25519PublicKey,
     tee_upgrade_deadline_duration: Duration,
 ) -> Result<(), Error> {
-    let is_attested = tee_state
-        .node_of(account_id, destination_tls_key)
-        .is_some_and(|node| tee_state.has_valid_attestation(node, tee_upgrade_deadline_duration));
-    if !is_attested {
-        return Err(InvalidParameters::InvalidTeeRemoteAttestation {
+    match tee_state.node_of(account_id, destination_tls_key) {
+        Some(node) if node.signer_public_key != *destination_signer_key => {
+            Err(errors::NodeMigrationError::DestinationSignerKeyMismatch {
+                found: destination_signer_key.clone(),
+                expected: node.signer_public_key.clone(),
+            }
+            .into())
+        }
+        Some(node) if tee_state.has_valid_attestation(node, tee_upgrade_deadline_duration) => {
+            Ok(())
+        }
+        _ => Err(InvalidParameters::InvalidTeeRemoteAttestation {
             reason: "destination node has no valid attestation".into(),
         }
-        .into());
+        .into()),
     }
-    Ok(())
 }
 
 /// Minimum deposit required for the operator-authenticated node-management methods
@@ -1225,6 +1236,40 @@ mod tests {
         assert_matches!(
             result.unwrap_err(),
             Error::InvalidParameters(InvalidParameters::InvalidTeeRemoteAttestation { .. })
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id, None, None)
+        );
+    }
+
+    #[test]
+    fn start_node_migration__should_reject_a_signer_key_other_than_the_attested_one() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let (account_id, _, _) = running_state.parameters.participants().participants()[0].clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let node = must_attest_new_node(&mut contract, &account_id);
+        let other_signer_key = bogus_ed25519_public_key();
+        let destination = DestinationNodeInfo {
+            signer_account_pk: other_signer_key.clone(),
+            ..destination_of(&node)
+        };
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(NodeMigrationError::DestinationSignerKeyMismatch {
+                found: other_signer_key,
+                expected: node.account_public_key,
+            }
+            .into())
         );
         assert_eq!(
             migration_info(&contract, &account_id),

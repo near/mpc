@@ -33,6 +33,13 @@ pub enum NodeMigrationError {
         "The destination node carries the caller's current TLS public key. A migration must move the participant to a node with a different TLS key; use `update_participant_url` to change only the url."
     )]
     DestinationTlsKeyUnchanged,
+    #[error(
+        "The destination signer key differs from the one its node attested with. Found: {found:?}, expected: {expected:?}"
+    )]
+    DestinationSignerKeyMismatch {
+        found: dtos::Ed25519PublicKey,
+        expected: dtos::Ed25519PublicKey,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
