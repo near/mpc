@@ -20,11 +20,7 @@ struct OutstandingEcho {
 
 impl Default for EchoTracker {
     fn default() -> Self {
-        Self {
-            next_nonce: Serial8::default(),
-            outstanding: Vec::with_capacity(DEFAULT_MAX_OUTSTANDING_PINGS),
-            max_outstanding: DEFAULT_MAX_OUTSTANDING_PINGS,
-        }
+        Self::with_capacity(DEFAULT_MAX_OUTSTANDING_PINGS)
     }
 }
 
@@ -45,7 +41,7 @@ impl EchoTracker {
         self.next_nonce.next()
     }
 
-    pub fn start_ping(&mut self, nonce: Serial8, sent_at: Instant, timeout: Duration) -> bool {
+    pub fn start_echo(&mut self, nonce: Serial8, sent_at: Instant, timeout: Duration) -> bool {
         if self.outstanding.len() >= self.max_outstanding {
             return false;
         }
@@ -63,7 +59,7 @@ impl EchoTracker {
         true
     }
 
-    pub fn receive_pong(&mut self, incoming_nonce: Serial8, now: Instant) -> Option<Duration> {
+    pub fn receive_ack(&mut self, incoming_nonce: Serial8, now: Instant) -> Option<Duration> {
         if let Some(idx) = self
             .outstanding
             .iter()
@@ -111,12 +107,12 @@ mod tests {
         let nonce = tracker.prepare_next_nonce();
 
         // When / Then
-        assert!(tracker.start_ping(nonce, base_time, timeout));
+        assert!(tracker.start_echo(nonce, base_time, timeout));
         let time_warp_1 = base_time + Duration::from_millis(2500);
         assert!(!tracker.check_timeouts(time_warp_1));
         assert!(tracker.is_awaiting_pong());
         let time_warp_2 = base_time + Duration::from_millis(3500);
-        let rtt = tracker.receive_pong(nonce, time_warp_2);
+        let rtt = tracker.receive_ack(nonce, time_warp_2);
         assert_eq!(rtt, Some(Duration::from_millis(3500)));
         assert!(!tracker.is_awaiting_pong());
     }
@@ -129,7 +125,7 @@ mod tests {
         let timeout = Duration::from_secs(2);
         let nonce = tracker.prepare_next_nonce();
         // When / Then
-        assert!(tracker.start_ping(nonce, base_time, timeout));
+        assert!(tracker.start_echo(nonce, base_time, timeout));
         let expired_warp = base_time + Duration::from_millis(2001);
         assert!(tracker.check_timeouts(expired_warp));
         assert!(!tracker.is_awaiting_pong());
