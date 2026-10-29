@@ -75,6 +75,29 @@ ignore = [
   # with crypto-bigint#1029, and k256 0.13 scalars use only 0.5.5's mask-based add/sub/neg
   # mod, with their own multiplication and inversion.
   "RUSTSEC-2026-0387", # crypto-bigint constant-time leaks
+  # TODO(#4967): remove once nearcore, crates.io near-primitives and tonic all use zstd >= 0.14.3.
+  # Fixed in zstd >= 0.14.3 and zstd-safe >= 8.2.0. zstd 0.13.3 comes from nearcore 2.14.0
+  # (near-primitives, near-store), from near-primitives 0.38.0 on crates.io (a direct dependency,
+  # also via near-sdk, near-jsonrpc-client and near-workspaces), and from tonic, whose `zstd`
+  # feature sui-rpc enables.
+  # Compiled out: these need zstd-safe's `experimental` or `seekable` feature, neither enabled.
+  "RUSTSEC-2026-0395", # zstd-safe use-after-free with `CParameter::StableInBuffer`
+  "RUSTSEC-2026-0396", # zstd-safe `Seekable` reads a NULL or out-of-bounds seek table
+  "RUSTSEC-2026-0398", # zstd-safe `Seekable::decompress` sets a `Vec` length beyond its capacity
+  "RUSTSEC-2026-0399", # zstd-safe use-after-free through `init_using_cdict` and `init_using_ddict`
+  "RUSTSEC-2026-0402", # zstd-safe heap buffer overflow in `CCtx::try_clone`
+  "RUSTSEC-2026-0404", # zstd-safe double free in `DCtx::try_clone`
+  "RUSTSEC-2026-0405", # zstd-safe seekable compressor reads past an out-of-range `InBuffer::pos`
+  # Not called: nearcore and tonic open a fresh context per stream through `Encoder::new`,
+  # `Decoder::new`, `encode_all` or `decode_all`, decompress through `read::Decoder`, and never
+  # share a context between streams, train a dictionary, position an `OutBuffer` or reconfigure a
+  # multithreaded encoder after its frame starts.
+  "RUSTSEC-2026-0391", # zstd abandoned stream data leaks into the next stream on a reused context
+  "RUSTSEC-2026-0397", # zstd-safe `OutBuffer::around_pos` exposes uninitialized memory
+  "RUSTSEC-2026-0400", # zstd-safe dictionary use-after-free after a one-shot call on an open stream
+  "RUSTSEC-2026-0401", # zstd-safe out-of-bounds read in `train_from_buffer`
+  "RUSTSEC-2026-0403", # zstd-safe exposes uninitialized memory when a legacy frame fails to stream
+  "RUSTSEC-2026-0406", # zstd-safe use-after-free changing a multithreaded context mid-frame
 ]
 
 [bans]
