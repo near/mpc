@@ -73,11 +73,11 @@
               pname = "tee-launcher";
             };
             registryImage = pkgs.callPackage ./nix/registry-image.nix { };
-            nodeImage = pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; };
           in
           {
-            mpc-node-image = registryImage nodeImage;
-            mpc-node-gcp-image = registryImage (nodeImage.override { withGcloud = true; });
+            mpc-node-image = registryImage (
+              pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; }
+            );
             mpc-launcher-image = registryImage (
               pkgs.callPackage ./nix/mpc-launcher-image.nix { inherit tee-launcher; }
             );
@@ -106,7 +106,13 @@
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
 
           # Pinned to CI version
-          cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
+          cargoTools = pkgs.callPackage ./nix/cargo-tools.nix {
+            # nixpkgs' rustc can be older than the minimum Rust version of these tools
+            rustPlatform = pkgs.makeRustPlatform {
+              cargo = rustToolchain;
+              rustc = rustToolchain;
+            };
+          };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;

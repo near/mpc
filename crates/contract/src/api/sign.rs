@@ -21,7 +21,6 @@ impl MpcContract {
         );
     }
 
-    /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
     #[handle_result]
@@ -230,7 +229,6 @@ mod tests {
         with_active_participant_and_attested_context,
     };
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
-    use assert_matches::assert_matches;
     use dtos::{Curve, DomainId, Payload, Tweak};
     use k256::ecdsa::SigningKey;
     use k256::{Secp256k1, elliptic_curve};
@@ -239,7 +237,7 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::{RngCore, SeedableRng};
     use rstest::rstest;
-    use std::panic;
+    use std::{assert_matches, panic};
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
         let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();

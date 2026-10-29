@@ -120,20 +120,19 @@ mod tests {
         submit_attestation, submit_valid_attestations,
     };
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::errors::{DomainError, InvalidCandidateSet, InvalidThreshold};
+    use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
-    use crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES;
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
-    use assert_matches::assert_matches;
-    use dtos::{Curve, DomainId, Protocol, ReconstructionThreshold};
+    use crate::state::ProtocolContractState;
+    use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
     use rand::rngs::OsRng;
-    use std::collections::BTreeMap;
-    use std::panic;
+    use std::{assert_matches, collections::BTreeMap};
 
     /// Sets up the voting context and calls [`MpcContract::vote_new_parameters`] with the
     /// given parameters.
@@ -157,16 +156,13 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
     }
 
-    /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants have
-    /// default TEE status ([`TeeQuoteStatus::None`]). This tests the basic scenario where no
-    /// participants have submitted attestation information, and all have the default TEE status
-    /// of [`TeeQuoteStatus::None`], which is considered acceptable.
+    /// Test that [`MpcContract::vote_new_parameters`] succeeds when no participant has submitted
+    /// attestation information, so all keep the mocked attestations stored at initialization.
     #[test]
     fn test_vote_new_parameters_succeeds_with_default_tee_status() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
         let governance_threshold = GovernanceThreshold::new(2);
 
-        // No attestations submitted - all participants have default TEE status None
         let result = setup_voting_context_and_vote(
             &mut contract,
             &first_participant_id,
@@ -175,14 +171,14 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed when all participants have default TEE status None"
+            "Should succeed when all participants keep their initial mocked attestations"
         );
     }
 
     /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants
     /// submit valid TEE attestations. This tests the scenario where all participants successfully
     /// submit valid attestations through [`MpcContract::submit_participant_info`],
-    /// resulting in [`TeeQuoteStatus::Valid`] TEE status for all participants.
+    /// resulting in a valid TEE status for all participants.
     #[test]
     fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
@@ -208,7 +204,7 @@ mod tests {
     /// [`MpcContract::submit_participant_info`]. This test demonstrates that
     /// participants cannot have Invalid TEE status because the contract proactively rejects
     /// invalid attestations at submission time. The 4th participant tries to submit an invalid
-    /// attestation but is rejected, leaving them with [`TeeQuoteStatus::Invalid`] status, which
+    /// attestation but is rejected, keeping the mocked attestation stored at initialization, which
     /// combined with valid participants still allows successful voting.
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
@@ -235,10 +231,6 @@ mod tests {
             );
         }
 
-        // This should succeed because:
-        // - 3 participants have Valid TEE status (from successful attestations)
-        // - 1 participant has None TEE status (invalid attestation was rejected)
-        // - Both Valid and None are allowed by the TEE validation
         let result = setup_voting_context_and_vote(
             &mut contract,
             &first_participant_id,
@@ -247,7 +239,7 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
+            "Should succeed when the rejected submission leaves the initial mocked attestation in place"
         );
     }
 
@@ -289,7 +281,7 @@ mod tests {
         );
         let contract = MpcContract::init_running(
             domains,
-            1,
+            DomainId(1),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
@@ -315,41 +307,6 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
     }
 
-    /// Mutates the wire form directly: the contract-internal type cannot represent an
-    /// oversized url, which is what makes the DTO conversion the enforcement point.
-    #[test]
-    fn vote_new_parameters__should_reject_a_url_over_the_byte_limit() {
-        // Given: a Running contract, and a proposal whose wire form carries an oversized url
-        let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
-            3,
-            GovernanceThreshold::new(2),
-            ReconstructionThreshold::new(2),
-        );
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
-            BTreeMap::new(),
-        );
-        let mut args = (&proposal).into_dto_type();
-        args.parameters.participants.participants[0].2.url =
-            "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1);
-
-        // When
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer.clone())
-                .predecessor_account_id(signer)
-                .attached_deposit(NearToken::ZERO)
-                .build()
-        );
-        let result = contract.vote_new_parameters(dtos::EpochId::new(1), args);
-
-        // Then
-        assert_matches!(
-            result.unwrap_err(),
-            Error::InvalidCandidateSet(InvalidCandidateSet::ParticipantUrlTooLong { .. })
-        );
-    }
-
     #[test]
     fn vote_new_parameters__should_reject_when_per_domain_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
@@ -370,11 +327,11 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then: 4 > 3 participants, so the guard rejects it.
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
                 reconstruction_threshold: 4,
-                participants: 3,
+                participants: ParticipantCount::new(3),
             })
         );
     }
@@ -432,9 +389,12 @@ mod tests {
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then
-        assert_matches!(
+        assert_eq!(
             result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
+                max: ParticipantCount::new(3),
+                found: 4
+            })
         );
     }
 
@@ -489,6 +449,43 @@ mod tests {
                 reconstruction_threshold: 4,
                 governance_threshold: 3,
             })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_a_caller_that_is_not_a_participant() {
+        // Given
+        let (mut contract, participants, _, _) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+        assert_matches!(
+            contract.tee_state.reverify_and_cleanup_participants(
+                proposal.participants(),
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            ),
+            TeeValidationResult::Full
+        );
+        let outsider: AccountId = "outsider.near".parse().unwrap();
+
+        // When
+        let result = vote_params(&mut contract, &outsider, &proposal);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == outsider
+        );
+        // Check that vote was not accepted.
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Running(state)
+                if state.parameters_votes == GovernanceThresholdParametersVotes::default()
         );
     }
 

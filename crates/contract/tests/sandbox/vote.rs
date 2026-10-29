@@ -10,10 +10,10 @@ use crate::sandbox::{
         interface::IntoContractType,
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
+        sandbox_mpc_contract::SandboxMpcContract,
         transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
-use assert_matches::assert_matches;
 use dtos::{
     AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, Protocol, ProtocolContractState,
     RunningContractState,
@@ -24,12 +24,11 @@ use mpc_contract::primitives::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     },
 };
+use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ReconstructionThreshold;
-use near_mpc_contract_interface::{method_names, types as dtos};
-use near_workspaces::{Account, Contract};
+use near_workspaces::Account;
 use rstest::rstest;
-use serde_json::json;
-use std::collections::BTreeMap;
+use std::{assert_matches, collections::BTreeMap};
 use test_utils::sandbox::SandboxWorker;
 
 #[tokio::test]
@@ -56,7 +55,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         &contract,
         &mpc_signer_accounts,
         &[DomainConfig {
-            id: domain_id.into(),
+            id: domain_id,
             protocol,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
@@ -68,9 +67,9 @@ async fn test_keygen() -> anyhow::Result<()> {
     let ProtocolContractState::Initializing(ref init) = state else {
         panic!("expected initializing state");
     };
-    assert_eq!(init.domains.next_domain_id, domain_id + 1);
+    assert_eq!(init.domains.next_domain_id, dtos::DomainId(domain_id.0 + 1));
     let expected_domain = dtos::DomainConfig {
-        id: dtos::DomainId(domain_id),
+        id: domain_id,
         protocol,
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: dtos::DomainPurpose::Sign,
@@ -79,14 +78,14 @@ async fn test_keygen() -> anyhow::Result<()> {
         .domains
         .domains
         .iter()
-        .find(|d| d.id.0 == domain_id)
+        .find(|d| d.id == domain_id)
         .unwrap();
     assert_eq!(&expected_domain, found);
 
     // start the keygen instance and vote for a new public key
     let key_event_id = KeyEventId {
         epoch_id,
-        domain_id: dtos::DomainId(domain_id),
+        domain_id,
         attempt_id: AttemptId(0),
     };
     start_keygen_instance(&contract, &mpc_signer_accounts, key_event_id)
@@ -113,7 +112,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         .keyset
         .domains
         .iter()
-        .find(|k| k.domain_id.0 == domain_id)
+        .find(|k| k.domain_id == domain_id)
         .map(|k| &k.key)
         .unwrap()
         .try_into()
@@ -127,13 +126,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(running.keyset.epoch_id, epoch_id);
 
     // verify that the contract's `public_key` view method returns the key for the new domain
-    let contract_public_key: dtos::PublicKey = contract
-        .view(method_names::PUBLIC_KEY)
-        .args_json(json!({"domain_id": domain_id}))
-        .await
-        .unwrap()
-        .json()
-        .unwrap();
+    let contract_public_key = contract.public_key(Some(domain_id)).await.unwrap().value;
     assert_eq!(contract_public_key, public_key);
 
     Ok(())
@@ -155,7 +148,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         panic!("expected running state");
     };
     let epoch_id: u64 = init_running.keyset.epoch_id.0;
-    for (next_domain_id, protocol) in (init_running.domains.next_domain_id..).zip(ALL_PROTOCOLS) {
+    for (next_domain_id, protocol) in (init_running.domains.next_domain_id.0..).zip(ALL_PROTOCOLS) {
         let curve = Curve::from(*protocol);
         let threshold = init_running.parameters.threshold.0 as usize;
 
@@ -184,7 +177,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let ProtocolContractState::Initializing(ref init) = state else {
             panic!("expected initializing state");
         };
-        assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
+        assert_eq!(
+            init.domains.next_domain_id,
+            dtos::DomainId(next_domain_id + 1)
+        );
         let expected_purpose = match curve {
             Curve::Bls12381 => dtos::DomainPurpose::CKD,
             _ => dtos::DomainPurpose::Sign,
@@ -207,7 +203,11 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         execute_async_handle_calls(
             &mpc_signer_accounts[0..threshold],
             &contract,
-            |handle| async move { handle.vote_cancel_keygen(next_domain_id + 1).await },
+            |handle| async move {
+                handle
+                    .vote_cancel_keygen(dtos::DomainId(next_domain_id + 1))
+                    .await
+            },
         )
         .await
         .unwrap();
@@ -229,8 +229,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
         // verify that the contract's `public_key` view method fails for the cancelled domain
         let public_key_result = contract
-            .view(method_names::PUBLIC_KEY)
-            .args_json(json!({"domain_id": next_domain_id}))
+            .public_key(Some(dtos::DomainId(next_domain_id)))
             .await;
         assert!(
             public_key_result.is_err(),
@@ -239,7 +238,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
         // assert that the epoch id did not change
         assert_eq!(running.keyset.epoch_id.0, epoch_id);
-        assert_eq!(running.domains.next_domain_id, next_domain_id + 1);
+        assert_eq!(
+            running.domains.next_domain_id,
+            dtos::DomainId(next_domain_id + 1)
+        );
     }
     Ok(())
 }
@@ -328,7 +330,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
 
 struct ResharingTestContext {
     _worker: SandboxWorker,
-    contract: Contract,
+    contract: SandboxMpcContract,
     persistent_participants: Vec<Account>,
     new_participant_accounts: Vec<Account>,
     threshold_parameters: GovernanceThresholdParameters,

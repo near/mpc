@@ -16,10 +16,10 @@ use crate::sandbox::{
             get_tee_accounts, prepay_attestation_grants, submit_participant_info,
             tee_verifier_account_id, total_gas_fee, vote_tee_verifier_change,
         },
+        sandbox_mpc_contract::SandboxMpcContract,
     },
 };
-use attestation_types::Measurements;
-use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
+use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, dev_measurements};
 use mpc_contract::{
     MpcContract,
     errors::TeeError,
@@ -39,7 +39,6 @@ use tee_verifier_interface::VerificationResultWithCollateralDates;
 use test_utils::attestation::{
     VALID_ATTESTATION_TIMESTAMP, account_secret_key, collateral, image_digest,
     launcher_compose_digest, launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, quote,
-    verified_report,
 };
 use tokio_util::time::FutureExt as _;
 
@@ -132,7 +131,7 @@ async fn setup_fixture(allowed_compose_hash: Option<LauncherDockerComposeHash>) 
     }
 }
 
-async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
+async fn submit_dstack(submitter: &Account, contract: &SandboxMpcContract) -> ExecutionFinalResult {
     submit_participant_info(
         submitter,
         contract,
@@ -147,8 +146,8 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
 /// a Rejected verdict or a failed promise fails the transaction.
 async fn submit_dstack_verified(
     submitter: &Account,
-    contract: &Contract,
-) -> (ExecutionFinalResult, dtos::VerifiedAttestation) {
+    contract: &SandboxMpcContract,
+) -> (ExecutionFinalResult, dtos::StoredAttestation) {
     let result = submit_dstack(submitter, contract).await;
     assert!(
         result.failures().is_empty(),
@@ -160,7 +159,9 @@ async fn submit_dstack_verified(
     (result, stored)
 }
 
-async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::VerifiedAttestation> {
+async fn stored_fixture_attestation(
+    contract: &SandboxMpcContract,
+) -> Option<dtos::StoredAttestation> {
     get_participant_attestation(contract, &p2p_tls_key().into())
         .await
         .unwrap()
@@ -185,7 +186,7 @@ fn assert_failure_contains(result: &ExecutionFinalResult, expected_errors: &[&st
 
 async fn assert_submission_failed_cleanly(
     result: &ExecutionFinalResult,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     submitter: &Account,
     balance_before: NearToken,
     expected_errors: &[&str],
@@ -436,27 +437,14 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let (result, stored) = submit_dstack_verified(&fx.submitter, &fx.setup.contract).await;
 
     // Then
-    let dtos::VerifiedAttestation::Dstack(stored) = stored else {
-        panic!("expected a stored Dstack attestation, got: {stored:?}");
+    assert_eq!(
+        stored.accepted_at_seconds, VALID_ATTESTATION_TIMESTAMP,
+        "the acceptance time is the pinned block time"
+    );
+    let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation else {
+        panic!("expected a stored Dstack attestation");
     };
-    // The stored measurements are the allowlist entry the fixture matched; select
-    // the expected entry by the fixture report's rtmrs, so the expectation stays
-    // independent of what was stored.
-    let report = verified_report();
-    let td10 = report
-        .report
-        .as_td10()
-        .expect("fixture quote carries a TD report");
-    let fixture_rtmrs = Measurements {
-        mrtd: td10.mr_td,
-        rtmr0: td10.rt_mr0,
-        rtmr1: td10.rt_mr1,
-        rtmr2: td10.rt_mr2,
-    };
-    let matched = default_measurements()
-        .iter()
-        .find(|m| m.rtmrs == fixture_rtmrs)
-        .expect("the fixture's rtmrs must match one of the shipped measurement sets");
+    let matched = dev_measurements();
     let expected = dtos::VerifiedDstackAttestation {
         mpc_image_hash: image_digest(),
         launcher_compose_hash: launcher_compose_digest(),

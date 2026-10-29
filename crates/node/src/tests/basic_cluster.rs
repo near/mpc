@@ -1,17 +1,17 @@
 use crate::indexer::participants::ContractState;
 use crate::metrics::{
-    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS,
-    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE,
-    ONLINE_PRESIGN_MODE_LABEL, STORED_PRESIGNATURE_MODE_LABEL, SUCCEEDED_OUTCOME_LABEL,
-    TRIPLE_GENERATION_TASK_LABEL,
+    MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, ONLINE_PRESIGN_MODE_LABEL,
+    STORED_PRESIGNATURE_MODE_LABEL,
 };
 use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-    IntegrationTestSetup, request_ckd_and_await_response, request_ckd_pv_and_await_response,
-    request_signature_and_await_response,
+    IntegrationTestSetup, every_node_owns_triples, request_ckd_and_await_response,
+    request_ckd_pv_and_await_response, request_signature_and_await_response, signatures_led,
+    wait_until,
 };
 use crate::tracking::AutoAbortTask;
+use mpc_node_config::TripleBatchSize;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -23,12 +23,6 @@ const NUM_PARTICIPANTS: usize = 4;
 const GOVERNANCE_THRESHOLD: usize = 3;
 const TXN_DELAY_BLOCKS: u64 = 1;
 
-fn signatures_led(mode: &str) -> u64 {
-    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
-        .with_label_values(&[mode])
-        .get()
-}
-
 fn gauge_total(gauge: &prometheus::IntGaugeVec) -> i64 {
     gauge
         .collect()
@@ -36,27 +30,6 @@ fn gauge_total(gauge: &prometheus::IntGaugeVec) -> i64 {
         .flat_map(|family| family.get_metric())
         .map(|metric| metric.get_gauge().get_value() as i64)
         .sum()
-}
-
-fn every_node_owns_triples() -> bool {
-    let triple_batches_led = MPC_LED_COMPUTATION_DURATION_SECONDS
-        .with_label_values(&[
-            ECDSA_PROTOCOL_SCHEME_LABEL,
-            TRIPLE_GENERATION_TASK_LABEL,
-            SUCCEEDED_OUTCOME_LABEL,
-        ])
-        .get_sample_count();
-    triple_batches_led >= NUM_PARTICIPANTS as u64
-}
-
-async fn wait_until(condition: impl Fn() -> bool, what: &str) {
-    tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
-        while !condition() {
-            tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timeout waiting for {what}"));
 }
 
 async fn wait_until_positive(gauge: &prometheus::IntGaugeVec, what: &str) {
@@ -128,7 +101,11 @@ async fn cluster__should_serve_every_domain_after_keygen() {
         .await
         .expect("timeout waiting for keygen to complete");
 
-    wait_until(every_node_owns_triples, "every node to own triples").await;
+    wait_until(
+        || every_node_owns_triples(NUM_PARTICIPANTS),
+        "every node to own triples",
+    )
+    .await;
     wait_until_positive(&MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, "presignatures").await;
     let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
     assert!(
@@ -249,4 +226,59 @@ async fn cluster__should_sign_from_stored_presignatures_when_online_presign_is_d
         signatures_led(ONLINE_PRESIGN_MODE_LABEL),
         online_presign_before
     );
+}
+
+#[tokio::test]
+#[test_log::test]
+#[expect(non_snake_case)]
+async fn cluster__should_generate_triples_with_a_non_legacy_batch_size() {
+    // Given
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut setup = IntegrationTestSetup::new(
+        Clock::real(),
+        temp_dir.path(),
+        (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{i}").parse().unwrap())
+            .collect(),
+        GOVERNANCE_THRESHOLD,
+        TXN_DELAY_BLOCKS,
+        port_seed::TRIPLE_BATCH_SIZE_TEST,
+        DEFAULT_BLOCK_TIME,
+    );
+    for node in &mut setup.configs {
+        node.config.triple.batch_size = TripleBatchSize::new(8).unwrap();
+    }
+    let domain = DomainConfig {
+        id: DomainId(0),
+        protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
+        purpose: DomainPurpose::Sign,
+    };
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain]);
+    }
+
+    // When
+    let _runs = std::mem::take(&mut setup.configs)
+        .into_iter()
+        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
+        .collect::<Vec<_>>();
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("timeout waiting for keygen to complete");
+
+    // Then
+    // a batch only succeeds once every follower accepts its size
+    wait_until(
+        || every_node_owns_triples(NUM_PARTICIPANTS),
+        "led triple batches to succeed",
+    )
+    .await;
 }

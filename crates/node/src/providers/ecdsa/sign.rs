@@ -3,8 +3,9 @@ use crate::metrics::{ONLINE_PRESIGN_MODE_LABEL, STORED_PRESIGNATURE_MODE_LABEL};
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::wire_format::EcdsaTaskId;
-use crate::primitives::UniqueId;
+use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::NamedProtocol;
+use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::{
     PairedTriple, participants_from_triples, validate_paired_triple_request,
@@ -38,10 +39,13 @@ impl EcdsaSignatureProvider {
         presignature: PresignOutputWithParticipants,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
+        metrics::MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
+            .with_label_values(&[STORED_PRESIGNATURE_MODE_LABEL])
+            .inc();
         let keyshare = self.keyshare(sign_request.domain)?;
         let participants = presignature.participants.clone();
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
 
         let (signature, public_key) = SignComputation {
@@ -81,25 +85,28 @@ impl EcdsaSignatureProvider {
         let sign_request = self.sign_request_store.get(id).await?;
         let keyshare = self.keyshare(sign_request.domain)?;
         if self.config.signature.online_presign
-            && let Some((paired_triple_id, triples)) =
-                self.try_take_triples_among_supporters(&keyshare)?
+            && let Some((paired_triple_id, triples)) = self.try_take_triples_among_supporters(
+                &keyshare,
+                ONLINE_PRESIGN_MIN_PROTOCOL_VERSION,
+                |_| true,
+            )?
         {
-            metrics::MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
-                .with_label_values(&[ONLINE_PRESIGN_MODE_LABEL])
-                .inc();
-            return self
-                .make_online_presign_signature_leader(
+            let channel = self.new_channel_for_task(
+                EcdsaTaskId::OnlinePresignSignature {
                     id,
+                    paired_triple_id,
+                },
+                participants_from_triples(&triples.0, &triples.1),
+            )?;
+            return self
+                .make_online_presign_signature_leader_given_parameters(
                     sign_request,
                     keyshare,
-                    paired_triple_id,
                     triples,
+                    channel,
                 )
                 .await;
         }
-        metrics::MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
-            .with_label_values(&[STORED_PRESIGNATURE_MODE_LABEL])
-            .inc();
         let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.new_channel_for_task(
@@ -113,38 +120,40 @@ impl EcdsaSignatureProvider {
             .await
     }
 
+    /// Takes, without waiting, an owned triple pair whose participants all advertise `required`
+    /// and satisfy `is_eligible`.
     // TODO(#4529): remove once a single cait-sith signing variant remains.
-    fn try_take_triples_among_supporters(
+    pub(crate) fn try_take_triples_among_supporters(
         &self,
         keyshare: &EcdsaKeyshare,
+        required: NetworkProtocolVersion,
+        is_eligible: impl Fn(&ParticipantId) -> bool,
     ) -> anyhow::Result<Option<(UniqueId, PairedTriple)>> {
         let supporting = self
             .client
-            .participants_supporting(ONLINE_PRESIGN_MIN_PROTOCOL_VERSION);
+            .participants_supporting(required)
+            .into_iter()
+            .filter(is_eligible)
+            .collect();
         Ok(self
             .triple_store_for_t(keyshare.reconstruction_threshold)?
             .take_owned_matching(supporting)
             .now_or_never())
     }
 
-    async fn make_online_presign_signature_leader(
+    pub(crate) async fn make_online_presign_signature_leader_given_parameters(
         &self,
-        id: SignatureId,
         sign_request: SignatureRequest,
         keyshare: EcdsaKeyshare,
-        paired_triple_id: UniqueId,
         triples: PairedTriple,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
+        metrics::MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
+            .with_label_values(&[ONLINE_PRESIGN_MODE_LABEL])
+            .inc();
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
-        let participants = participants_from_triples(&triples.0, &triples.1);
-        let channel = self.new_channel_for_task(
-            EcdsaTaskId::OnlinePresignSignature {
-                id,
-                paired_triple_id,
-            },
-            participants.clone(),
-        )?;
+            keyshare.reconstruction_threshold.value().try_into()?;
+        let participants = channel.participants().to_vec();
 
         let (signature, public_key) = OnlinePresignSignComputation {
             keygen_out: keyshare.keygen_output,
@@ -189,9 +198,23 @@ impl EcdsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
+        self.make_online_presign_signature_follower_given_request(
+            channel,
+            paired_triple_id,
+            sign_request,
+        )
+        .await
+    }
+
+    pub(crate) async fn make_online_presign_signature_follower_given_request(
+        &self,
+        channel: NetworkTaskChannel,
+        paired_triple_id: UniqueId,
+        sign_request: SignatureRequest,
+    ) -> anyhow::Result<()> {
         let keyshare = self.keyshare(sign_request.domain)?;
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         validate_paired_triple_request(
             channel.sender().get_leader(),
             paired_triple_id,
@@ -240,7 +263,7 @@ impl EcdsaSignatureProvider {
         presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let keyshare = self.keyshare(sign_request.domain)?;
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
 
         let participants = channel.participants().to_vec();

@@ -5,23 +5,18 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["getrandom", "borsh", "serde"]
+ignored = ["borsh", "serde"]
 
 [lib]
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-assert_matches = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 elliptic-curve = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["blstrs"] }
 near-sdk = { workspace = true }
 serde = { workspace = true }
-
-# k256 won't compile without settings the custom rand flag for `getrandom`
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { workspace = true, features = ["custom"] }
 
 [lints]
 workspace = true

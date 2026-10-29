@@ -212,6 +212,16 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
     .unwrap()
 });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_no_rpc_quorum_rejections",
+            "Number of verify foreign tx attempts this node abstained from because it has no RPC \
+             quorum for the chain, at most one per node per attempt"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -614,7 +624,10 @@ impl MpcTaskId {
             MpcTaskId::VerifyForeignTxTaskId(task) => (
                 ECDSA_PROTOCOL_SCHEME_LABEL,
                 match task {
-                    VerifyForeignTxTaskId::VerifyForeignTx { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
+                    VerifyForeignTxTaskId::VerifyForeignTx { .. }
+                    | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. } => {
+                        VERIFY_FOREIGN_TX_TASK_LABEL
+                    }
                 },
             ),
         };
@@ -647,6 +660,7 @@ pub static MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL: LazyLock<prometheus::IntCounte
 
 pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
 pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
+pub const MPC_TEE_ATTESTATION_OUTCOME_SENT: &str = "sent";
 
 pub static MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
@@ -659,7 +673,6 @@ pub static MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL: LazyLock<prometheus::IntCou
     });
 
 pub const MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION: &str = "generate_attestation";
-pub const MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE: &str = "read_expiry_baseline";
 pub const MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION: &str = "submit_attestation";
 
 pub static FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: LazyLock<prometheus::IntGaugeVec> =
@@ -698,8 +711,8 @@ pub static MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS: LazyLock<prometheus::I
     LazyLock::new(|| {
         prometheus::register_int_gauge!(
             "mpc_attestation_last_landed_timestamp_seconds",
-            "Unix time, by this node's own clock, at which it last confirmed an attestation \
-             submission landed on chain"
+            "NEAR block time at which the contract last accepted an attestation for this node's \
+             TLS key"
         )
         .unwrap()
     });
@@ -761,3 +774,35 @@ pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCoun
         )
         .unwrap()
     });
+
+pub static MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_quorum_required",
+            "Number of whitelisted RPC providers the contract requires to agree on a verdict for a \
+             configured foreign chain; 0 while the chain is not whitelisted",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_providers_whitelisted",
+            "Number of distinct whitelisted RPC providers this node's config for a foreign chain \
+             conforms to; the chain is registered and served only while this reaches \
+             mpc_foreign_chain_rpc_quorum_required",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+#[cfg(test)]
+pub(crate) fn series_count(collector: &impl prometheus::core::Collector) -> usize {
+    collector
+        .collect()
+        .iter()
+        .map(|family| family.get_metric().len())
+        .sum()
+}

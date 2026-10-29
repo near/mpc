@@ -3,7 +3,7 @@
 pub mod common;
 
 use crate::common::{
-    FixedResponseRpcClient, SequentialResponseMockClientBuilder, fan_out_of,
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, any_single_provider, fan_out_of,
     mock_client_from_fixed_response,
 };
 
@@ -16,13 +16,13 @@ use foreign_chain_inspector::{
 use foreign_chain_rpc_factory::build_http_client;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::evm::{
     GetBlockByNumberResponse, GetTransactionReceiptResponse, H160, H256, Log, U64,
 };
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
+use std::assert_matches;
 
 fn expected_extracted_value<Chain: EvmChain>(
     extractor: &EvmExtractor,
@@ -341,7 +341,12 @@ macro_rules! evm_inspector_tests {
 
                 // when
                 let response = fan_out
-                .extract(tx_id, EthereumFinality::Finalized, vec![EvmExtractor::BlockHash])
+                .extract_with_quorum(
+                    &any_single_provider(&fan_out),
+                    tx_id,
+                    EthereumFinality::Finalized,
+                    vec![EvmExtractor::BlockHash],
+                )
                 .await;
 
                 // then

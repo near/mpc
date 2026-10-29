@@ -2,17 +2,28 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
-    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, TeeVerifierCodeHash, UpdateHash, UpdateId, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
+    DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements,
+    ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
+    NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct InitArgs {
+    pub parameters: GovernanceThresholdParameters,
+    pub tee_verifier_account_id: AccountId,
+    pub init_config: Option<InitConfig>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct InitRunningArgs {
+    pub domains: Vec<DomainConfig>,
+    pub next_domain_id: DomainId,
+    pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
     pub tee_verifier_account_id: AccountId,
     pub init_config: Option<InitConfig>,
@@ -46,12 +57,22 @@ pub struct VoteNewParametersArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteCancelKeygenArgs {
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteMpcNodeManifestDigestArgs {
     pub mpc_node_manifest_digest: NodeImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddLauncherHashArgs {
+    pub launcher_hash: LauncherImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddOsMeasurementArgs {
+    pub measurement: ExpectedMeasurements,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -62,7 +83,7 @@ pub struct VoteTeeVerifierChangeArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct UpdateParticipantUrlArgs {
-    pub url: String,
+    pub url: ParticipantUrl,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -124,21 +145,9 @@ pub struct VoteResharedArgs {
     pub key_event_id: KeyEventId,
 }
 
-// TODO(#4513): drop once production runs the vote-then-submit API.
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteUpdateArgs {
-    pub id: UpdateId,
-}
-
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteContractUpdateArgs {
     pub update_hash: UpdateHash,
-}
-
-// TODO(#4513): drop once production runs the vote-then-submit API.
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct RemoveUpdateProposalArgs {
-    pub id: UpdateId,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -161,6 +170,12 @@ pub struct StartKeygenArgs {
     pub key_event_id: KeyEventId,
 }
 
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct PrepayAttestationStorageArgs {
+    pub account_id: AccountId,
+    pub grants: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::Constructor)]
 pub struct SubmitParticipantInfoArgs {
     pub proposed_participant_attestation: Attestation,
@@ -178,6 +193,11 @@ pub struct ConcludeNodeMigrationArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct CleanInvalidAttestationsArgs {
+    pub max_scan: u32,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct PublicKeyArgs {
     pub domain_id: Option<DomainId>,
 }
@@ -187,11 +207,6 @@ pub struct DerivedPublicKeyArgs {
     pub path: String,
     pub predecessor: Option<AccountId>,
     pub domain_id: Option<DomainId>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct LatestKeyVersionArgs {
-    pub signature_scheme: Option<Curve>,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

@@ -1,8 +1,14 @@
 name: PR Title Lint
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions: {}
 
 jobs:
   lint-pr-title:
@@ -34,8 +40,7 @@ jobs:
     runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: read # lists the files the pull request changes
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     outputs:
       comment: ${{ fromJSON(steps.check-title.outputs.structured_output).comment }}
@@ -68,7 +73,7 @@ jobs:
 
       - name: Validate title type matches changes
         id: check-title
-        uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829 # v1.0.236
+        uses: anthropics/claude-code-action@db77d4d3c98f3f6380e7cd45ffba2342a3dbde3c # v1.0.254
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           github_token: ${{ github.token }}
@@ -107,7 +112,7 @@ jobs:
     if: needs.check-pr-title-type.outputs.comment != ''
     runs-on: warp-ubuntu-2604-x64-2x
     permissions:
-      pull-requests: write
+      pull-requests: write # posts the suggestion as a comment
     steps:
       - name: Post title type suggestion
         env:

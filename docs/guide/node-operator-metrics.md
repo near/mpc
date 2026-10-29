@@ -16,6 +16,7 @@ counters tell you whether that is working:
 | `mpc_finalized_blocks_indexed_total` | processed blocks that reached finality on NEAR | should grow steadily a few seconds behind the two counters above. If it freezes while they keep growing, finality is stalling. |
 | `mpc_block_updates_dropped_total` | block updates the node dropped, including signature requests it will never process | should stay flat. Every increase is user requests the cluster may never answer. |
 | `mpc_num_fail_on_timeout_indexed` | requests the MPC contract marked as failed because no answer arrived in time | should be near zero. A sustained rate means this node, or the whole cluster, is too slow to answer. May overcount when NEAR has many forks. |
+| `mpc_failover_leader_attempts_total` | attempts this node started as a failover leader because no response landed within the leader failover slot. Labelled by `request_type` and `rank` (1-3, how many leaders before it are presumed broken) | should stay at zero. A sustained rate means some node accepts requests as leader but fails to answer them; high ranks mean several such nodes at once. |
 
 ## Computation times
 
@@ -25,14 +26,15 @@ counters tell you whether that is working:
 
 ## Backups
 
-After every resharing, the node hands its key shares to the backup service
-registered for it. These gauges say whether that happened:
+The node hands its key shares to the backup service registered for it after
+every resharing, and every hour so the backup service can check its stored copy.
+These gauges say whether that happened:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
 | `mpc_current_epoch_id` | the key epoch the contract currently holds | rises by one on every resharing. It is the reference point for the two gauges below. |
 | `mpc_last_backup_served_epoch` | the last epoch this node backed up | should reach `mpc_current_epoch_id` shortly after each resharing. |
-| `mpc_last_backup_served_timestamp_seconds` | when this node last served key shares to the backup service | should be recent. A large gap means backups are not being taken. This only proves the node handed the shares over, not that the backup service kept them. |
+| `mpc_last_backup_served_timestamp_seconds` | when this node last served key shares to the backup service | should be under an hour old. A large gap means backups are not being taken. This only proves the node handed the shares over, not that the backup service kept them. |
 
 ## Attestation freshness
 
@@ -42,14 +44,15 @@ participant set. These gauges tell you how much runway is left:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| `mpc_attestation_last_landed_timestamp_seconds` | when the last attestation from this node was confirmed on chain | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
+| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
 | `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node is already out. `-1` means an attestation is stored that carries no expiry. |
 
 ## Foreign chain RPC providers
 
 The node verifies user transactions on other chains through RPC providers you
-configure. Two metric families describe them: what happens during real
-verification traffic, and an hourly probe that needs no traffic.
+configure. Three metric families describe them: what happens during real
+verification traffic, an hourly probe that needs no traffic, and the on-chain
+whitelist and quorum the node must meet to serve a chain.
 
 ### During traffic
 
@@ -137,6 +140,24 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check. Solana has no probe and is left out of both
 gauges.
 
+### Whitelist and quorum
+
+The participants vote, per chain, the RPC providers a node may use and how many
+of them must agree on a verdict. The node registers and serves a chain only
+while its own providers can reach that quorum. Both gauges are labeled with the
+`chain` and updated on every whitelist change while the node is a running
+participant:
+
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum; `0` while the chain is not whitelisted |
+| `mpc_foreign_chain_rpc_providers_whitelisted` | distinct whitelisted providers this node's config conforms to |
+
+`whitelisted` must reach a non-zero `required`. Anything less means the chain is
+configured but neither registered nor served: a provider's URL or auth differs
+from the voted entry, or you run fewer of the voted providers than the quorum
+asks. The node logs the differing provider at startup and on every whitelist change.
+
 ## Recommended alerts
 
 ```promql
@@ -194,17 +215,22 @@ increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  f
 # 2h hold waits for two rounds to agree.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
 
+# Warn: a configured chain is whitelisted but this node cannot reach the voted
+# quorum, so it neither registers nor serves the chain.
+mpc_foreign_chain_rpc_providers_whitelisted < mpc_foreign_chain_rpc_quorum_required  for 10m
+
 # Warn: no backup for over a day. Only meaningful once backups are being taken
-# against this node.
-time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
+# against this node. Both backup gauges read 0 after a node restart until the
+# backup service's next hourly fetch, hence the 2h holds.
+time() - mpc_last_backup_served_timestamp_seconds > 86400  for 2h
 
 # Warn: a resharing happened and the new epoch has not been backed up since.
 # Also fires if this node has never served a backup, because the gauge starts at 0.
-mpc_last_backup_served_epoch < mpc_current_epoch_id  for 1h
+mpc_last_backup_served_epoch < mpc_current_epoch_id  for 2h
 
 # Warn: no attestation has landed in three resubmission intervals. This fires
 # within hours; the expiry alerts below only fire days later.
-time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
+mpc_indexer_latest_block_timestamp_seconds - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
 
 # Page: under three days of attestation runway left. Backstop for the alert
 # above; reached about four days after submissions stop landing. `> 0` keeps

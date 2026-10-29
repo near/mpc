@@ -51,8 +51,8 @@ to keep in sync, it does not help the fleet convergence described in item 4, and
 
 ## The expiry value
 
-`dcap-qvl` (0.6.5, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
-eight dates, matching Intel's own `qve_get_collateral_dates()`. The claims are built by
+`dcap-qvl` (0.7.0, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
+the dates below, taking certificate dates only from the chains it verified. The claims are built by
 `QuoteVerificationResult::claims()`, reached through `verify_with_policy`. The rest of this document
 calls that `claims()`.
 
@@ -63,7 +63,6 @@ calls that `claims()`.
 | PCK CRL | `nextUpdate` | 30 days |
 | Root CA CRL | `nextUpdate` | 1 year |
 | PCK certificate chain | `notAfter` | 7–30 years |
-| PCK CRL issuer chain | `notAfter` | 7–30 years |
 | TCB Info issuer chain | `notAfter` | 7–30 years |
 | QE Identity issuer chain | `notAfter` | 7–30 years |
 
@@ -130,15 +129,15 @@ verifier change needed, but it puts DER/X.509 parsing back into the contract was
 Six things depend on the expiry being `now + constant`. Five have to change with it; item 3 is
 future work this design only has to keep possible. Each is listed as the problem, then the fix.
 
-**1. Confirming a submission landed.** The node checks whether the stored expiry went up
-([`tx_sender.rs`](../../crates/node/src/indexer/tx_sender.rs)). That stops working when the value is
-a calendar date that repeats for weeks.
+**1. Knowing when a submission was accepted.** While the expiry is `now + 7 days`, it also says when
+the submission was accepted. That stops working when the value is a calendar date that repeats for
+weeks.
 
-Fix: store `attested_at_seconds` on
-[`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
-variants, so one field covers both. This restores today's semantics exactly, and gives operators a
-better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
-moves off 604 and the fee floor needs re-checking) and a state migration.
+Fix: store `attestation_accepted_at_seconds` on
+[`Node`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
+variants, so one field covers both. The node then reads the acceptance time directly, and operators
+get a better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
+moves 604 → 612 and the fee floor needs re-checking) and a state migration.
 
 *Considered: reading the receipt execution outcome. It works, and needs no extra tracked shard, but
 it is far more machinery. [#4301](https://github.com/near/mpc/issues/4301) now tracks the timestamp
@@ -155,7 +154,7 @@ Fix: keep a hash while a current participant uses it, and remove it only in `ver
 restamps the hashes in use before dropping the unused ones past their TTL. A hash in use is
 therefore never removed automatically, whatever the attestation's lifetime. Done in
 [#4527](https://github.com/near/mpc/pull/4527) and [#4572](https://github.com/near/mpc/pull/4572);
-see [Auto-Removal of Unused Launcher Image Hashes](auto-remove-launcher-hashes-design.md).
+see [Auto-Removal of Unused Launcher Image Hashes](../archive/design/auto-remove-launcher-hashes-design.md).
 
 **3. Shortening after a verifier rotation — future work.** Nothing to build here. This design just
 has to leave it possible. [#3734](https://github.com/near/mpc/issues/3734) wants a short window
@@ -164,7 +163,7 @@ was written as "lower the constant", and the constant is going away.
 
 It stays possible, and gets cheaper, via the timestamp from item 1: record `verifier_rotated_at`
 when `vote_tee_verifier_change` passes, and in `re_verify` let any entry with
-`attested_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
+`accepted_at < verifier_rotated_at` expire at `min(expiry, verifier_rotated_at + 1 day)`. Entries
 submitted after the rotation are untouched, every node gets a full day to re-attest, and there is no
 sweep or per-entry write.
 
@@ -213,12 +212,14 @@ time: in sandbox, `verify_quote_with_collateral_dates` burnt 179.0 TGas against 
 173.6, just under the 10% headroom the sandbox gas tests assert. 0.6.5
 ([#4596](https://github.com/near/mpc/pull/4596)) keeps the parsed JSON documents, leaving only the
 CRLs and certificates parsed again, and drops two duplicated signature checks, bringing them to
-124.3 and 122.1. Both fit the current 200 TGas budget with room to spare, so `verifier_tera_gas`
-stays as it is.
+124.3 and 122.1. 0.6.6 parses only the verified certificates, and on 0.7.0 they measure 123.5
+and 121.8. Both fit the current 200 TGas budget with room to spare, so `verifier_tera_gas` stays
+as it is.
 
 ## Rollout
 
-1. **Land item 1**, the stored submission timestamp, so confirmation keeps working.
+1. **Land item 1**, the stored submission timestamp, so the node keeps knowing when its attestation
+   was accepted.
 2. **Deploy the new verifier and vote it in**, per
    [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md). It still serves `verify_quote`,
    so nothing changes on chain yet. Reversible by voting back.
@@ -231,7 +232,7 @@ so step 2 is a rotation, not a first deployment.
 
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
-`attested_at_seconds` is the replacement health signal.
+`accepted_at_seconds` is the replacement health signal.
 [`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) sells the old behaviour as the cheapest health check and
 needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` description from
 [#4236](https://github.com/near/mpc/pull/4236).

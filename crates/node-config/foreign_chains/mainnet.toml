@@ -1,15 +1,7 @@
 # Foreign chain RPC config embedded in the node for mainnet, covered by the image hash vote.
 # A provider is enabled by the operator's `foreign_chains.credentials.<provider>` entry, whose API
 # key replaces the empty `token` below and whose slug replaces `{slug}` in `rpc_url`. Providers with
-# `auth.kind = "none"` are always enabled. Keep in sync with the network's provider whitelist.
-
-[bitcoin]
-timeout_sec = 30
-max_retries = 3
-expected_network_fingerprint = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"  # genesis block hash
-
-[bitcoin.providers.public]
-rpc_url = "https://bitcoin-rpc.publicnode.com"
+# `auth.kind = "none"` are always enabled.
 
 [abstract]
 timeout_sec = 30
@@ -208,5 +200,5 @@ expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"  #
 rpc_url = "https://mainnet.fogo.io"
 
 [fogo.providers.fluxrpc]
-auth = { kind = "path", placeholder = "{api_key}", token = { val = "" } }
-rpc_url="https://eu.fogo.fluxrpc.com?key={api_key}"
+auth = { kind = "query", name = "key", token = { val = "" } }
+rpc_url = "https://eu.fogo.fluxrpc.com"

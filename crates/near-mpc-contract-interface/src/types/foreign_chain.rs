@@ -1873,9 +1873,7 @@ pub struct ProviderConfig {
 )]
 pub struct ChainEntry {
     pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
-    /// Voted RPC response quorum. Stored for a deferred quorum policy and not yet
-    /// consumed: nodes currently require every provider that reaches a verdict to
-    /// agree on it.
+    /// How many whitelisted providers must agree before a node accepts a verdict.
     pub quorum: u64,
 }
 
@@ -1883,9 +1881,9 @@ pub struct ChainEntry {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
     use serde_json::json;
+    use std::assert_matches;
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {

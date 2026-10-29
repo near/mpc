@@ -4,12 +4,12 @@ use crate::db::SecretDB;
 use crate::foreign_chain_policy::{
     SupportersByForeignChain, foreign_tx_required_active_signers, spawn_supporters_by_foreign_chain,
 };
-use crate::indexer::foreign_chain::ForeignChainSupporters;
+use crate::foreign_chain_registrar::spawn_foreign_chains_registrar;
+use crate::indexer::foreign_chain::{ForeignChainSupporters, ForeignChainWhitelist};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::ChainSendTransactionRequest;
 use crate::indexer::{IndexerAPI, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
@@ -41,8 +41,6 @@ use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_account_id::AccountId;
-use near_mpc_contract_interface::call_args as contract_args;
-use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -180,6 +178,7 @@ where
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer.foreign_chain_supporters_receiver.clone(),
+                                self.indexer.foreign_chain_whitelist_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -378,6 +377,7 @@ where
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+        foreign_chain_whitelist_receiver: watch::Receiver<ForeignChainWhitelist>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -436,7 +436,11 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await;
+        let _foreign_chains_registrar = spawn_foreign_chains_registrar(
+            chain_txn_sender.clone(),
+            foreign_chain_whitelist_receiver.clone(),
+            config_file.foreign_chains.clone(),
+        );
 
         let resolve_peer_address =
             move |participant_id| peer_address_from_state(&contract_state_receiver, participant_id);
@@ -730,6 +734,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     supporters_by_foreign_chain,
+                    foreign_chain_whitelist_receiver,
                     foreign_tx_required_active_signers,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
@@ -1076,26 +1081,6 @@ fn stop_initializing(
     }
 }
 
-/// An empty config still registers so that dropping every chain propagates.
-async fn register_foreign_chains(
-    chain_txn_sender: &impl tx_sender::TransactionSender,
-    foreign_chains: &mpc_node_config::ForeignChainsConfig,
-) {
-    let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
-        .iter_chains()
-        .map(|(chain, _)| chain)
-        .collect::<std::collections::BTreeSet<_>>()
-        .into();
-    if let Err(err) = chain_txn_sender
-        .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
-            contract_args::RegisterForeignChainsConfigArgs::new(foreign_chains_config),
-        ))
-        .await
-    {
-        tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
-    }
-}
-
 fn make_initializing_stop_fn(
     key_event: ContractKeyEventInstance,
 ) -> (watch::Receiver<ContractKeyEventInstance>, StopFn) {
@@ -1114,28 +1099,18 @@ fn make_initializing_stop_fn(
 mod tests {
     use super::{
         current_epoch_id, participants_change_requires_restart, peer_address_from_state,
-        register_foreign_chains, stop_running,
+        stop_running,
     };
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
         base_config, me, participant, resharing, running,
     };
-    use crate::indexer::types::ChainSendTransactionRequest;
     use crate::primitives::ParticipantId;
-    use crate::tests::common::MockTransactionSender;
-    use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
-    use mpc_node_config::foreign_chains::RpcProviderName;
-    use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
     use mpc_primitives::EpochId;
-    use near_mpc_contract_interface::types as dtos;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
-    use std::collections::BTreeSet;
-    use std::num::NonZeroU64;
-    use tokio::sync::mpsc;
-    use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
 
     #[test]
@@ -1332,42 +1307,5 @@ mod tests {
             Some("bob-reshared.example.com:9090".to_string())
         );
         assert_eq!(joining_peer, Some("carol.example.com:7000".to_string()));
-    }
-
-    #[tokio::test]
-    async fn register_foreign_chains__should_send_registration() {
-        // Given: a node config covering Solana.
-        let foreign_chains = ForeignChainsConfig {
-            solana: Some(ForeignChainConfig {
-                timeout_sec: NonZeroU64::new(30).unwrap(),
-                max_retries: NonZeroU64::new(3).unwrap(),
-                expected_network_fingerprint: None,
-                providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
-                    RpcProviderName::from("public".to_string()),
-                    ForeignChainProviderConfig {
-                        rpc_url: "https://rpc.public.example.com".to_string(),
-                        auth: Default::default(),
-                    },
-                ),
-            }),
-            ..Default::default()
-        };
-        let (sender, mut receiver) = mpsc::channel(10);
-        let txn_sender = MockTransactionSender {
-            transaction_sender: sender,
-        };
-
-        // When
-        register_foreign_chains(&txn_sender, &foreign_chains).await;
-
-        // Then
-        let expected: dtos::ForeignChainsConfig =
-            BTreeSet::from([dtos::ForeignChain::Solana]).into();
-        assert_matches!(
-            receiver.try_recv(),
-            Ok(ChainSendTransactionRequest::RegisterForeignChainsConfig(args))
-                if args.foreign_chains_config == expected
-        );
-        assert_matches!(receiver.try_recv(), Err(TryRecvError::Empty));
     }
 }

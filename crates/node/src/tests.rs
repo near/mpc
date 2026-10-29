@@ -3,11 +3,14 @@ use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    assert_matches,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 use tokio::sync::{RwLock, watch};
 
@@ -21,11 +24,15 @@ use crate::indexer::handler::{
     VerifyForeignTxRequestFromChain,
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
+use crate::metrics::{
+    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS,
+    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, SUCCEEDED_OUTCOME_LABEL, TRIPLE_GENERATION_TASK_LABEL,
+};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, SyncMode, TripleConfig,
+    SignatureConfig, SyncMode, TripleBatchSize, TripleConfig,
 };
 
 use crate::primitives::ParticipantId;
@@ -34,7 +41,6 @@ use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
 use aes_gcm::aead::Generate;
-use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
@@ -86,7 +92,6 @@ pub fn make_key_storage_config(
     KeyStorageConfig {
         home_dir,
         local_encryption_key,
-        gcp: None,
     }
 }
 
@@ -235,6 +240,7 @@ impl IntegrationTestSetup {
                     desired_triples_to_buffer: 10,
                     parallel_triple_generation_stagger_time_sec: 1,
                     timeout_sec: 120,
+                    batch_size: TripleBatchSize::default(),
                 },
                 number_of_responder_keys: 0,
                 web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), ports.web_ui_port(i)),
@@ -477,15 +483,15 @@ async fn do_request_ckd_and_await_response(
     }
 }
 
-/// Request a Bitcoin verify foreign tx from the indexer and wait for the response.
+/// Request an Ethereum verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
-/// `bitcoin_tx_id` distinguishes concurrent requests: responses are matched by
+/// `tx_id` distinguishes concurrent requests: responses are matched by
 /// request payload, so callers must not reuse an id across requests.
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
     domain: &DomainConfig,
-    bitcoin_tx_id: [u8; 32],
+    tx_id: [u8; 32],
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
@@ -497,10 +503,10 @@ pub async fn request_verify_foreign_tx_and_await_response(
         verify_foreign_tx_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
         request: VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
-                tx_id: bitcoin_tx_id.into(),
-                confirmations: 2.into(),
-                extractors: [BitcoinExtractor::BlockHash].into(),
+            request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId(tx_id),
+                extractors: [EvmExtractor::BlockHash].into(),
+                finality: EvmFinality::Finalized,
             }),
             domain_id: domain.id.0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
@@ -553,6 +559,33 @@ pub async fn request_verify_foreign_tx_and_await_response(
             }
         }
     }
+}
+
+pub fn signatures_led(mode: &str) -> u64 {
+    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
+        .with_label_values(&[mode])
+        .get()
+}
+
+pub fn every_node_owns_triples(num_participants: usize) -> bool {
+    let triple_batches_led = MPC_LED_COMPUTATION_DURATION_SECONDS
+        .with_label_values(&[
+            ECDSA_PROTOCOL_SCHEME_LABEL,
+            TRIPLE_GENERATION_TASK_LABEL,
+            SUCCEEDED_OUTCOME_LABEL,
+        ])
+        .get_sample_count();
+    triple_batches_led >= num_participants as u64
+}
+
+pub async fn wait_until(condition: impl Fn() -> bool, what: &str) {
+    tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
+        while !condition() {
+            tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timeout waiting for {what}"));
 }
 
 pub fn into_participant_ids(
@@ -620,4 +653,31 @@ fn test_build_info_metric_values() {
 
     // The value should be 1
     assert_eq!(value, 1);
+}
+
+/// Waits until `node_count` nodes have registered exactly `chains`.
+pub async fn wait_for_registrations(
+    indexer: &FakeIndexerManager,
+    node_count: usize,
+    chains: &std::collections::BTreeSet<near_mpc_contract_interface::types::ForeignChain>,
+) {
+    let registered = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
+        loop {
+            {
+                let contract = indexer.contract_mut().await;
+                let configs = contract.foreign_chains_configs();
+                if configs.len() == node_count
+                    && configs.values().all(|node_config| **node_config == *chains)
+                {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+    assert!(
+        registered.is_ok(),
+        "timed out waiting for every node to register {chains:?}"
+    );
 }

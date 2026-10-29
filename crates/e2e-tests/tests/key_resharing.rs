@@ -123,7 +123,7 @@ async fn test_multi_domain() {
     })
     .await;
     let mut rng = StdRng::seed_from_u64(0);
-    assert_eq!(running.domains.next_domain_id, 3);
+    assert_eq!(running.domains.next_domain_id, DomainId(3));
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await
         .expect("sign request failed");
@@ -161,7 +161,7 @@ async fn test_multi_domain() {
         .await
         .expect("add_domains_and_wait failed");
     let running = running_state(&cluster).await.expect("running_state failed");
-    assert_eq!(running.domains.next_domain_id, 7);
+    assert_eq!(running.domains.next_domain_id, DomainId(7));
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await
         .expect("ckd request failed");
@@ -186,7 +186,7 @@ async fn test_multi_domain() {
     cluster.kill_nodes(&[0]).expect("failed to kill node 0");
     for node_idx in [1, 2, 3] {
         let outcome = cluster
-            .vote_cancel_keygen_from(node_idx, 8)
+            .vote_cancel_keygen_from(node_idx, DomainId(8))
             .await
             .expect("failed to send cancel keygen vote");
         assert!(
@@ -199,10 +199,9 @@ async fn test_multi_domain() {
     // then: contract returns to Running, the cancelled domain is absent from
     // both keyset and registry, and next_domain_id has advanced past it.
     cluster
-        .wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
+        .wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
         .await
         .expect("contract did not return to Running after cancellation");
     let running = running_state(&cluster).await.expect("running_state failed");
@@ -219,7 +218,8 @@ async fn test_multi_domain() {
         "cancelled domain 7 should not be in domain registry"
     );
     assert_eq!(
-        running.domains.next_domain_id, 8,
+        running.domains.next_domain_id,
+        DomainId(8),
         "next_domain_id should advance past cancelled domain"
     );
 }

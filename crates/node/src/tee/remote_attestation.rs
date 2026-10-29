@@ -1,28 +1,29 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{future::Future, time::Duration};
 
 use crate::{
-    indexer::{
-        ReadAttestationExpiry,
-        tx_sender::{TransactionSender, TransactionStatus},
-        types::ChainSendTransactionRequest,
-    },
+    indexer::{tx_sender::TransactionSender, types::ChainSendTransactionRequest},
     metrics::{
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
-        MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL,
-        MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
-        MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE,
+        MPC_TEE_ATTESTATION_OUTCOME_SENT, MPC_TEE_ATTESTATION_OUTCOME_SUCCESS,
+        MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL, MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
-    trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
+    trait_extensions::convert_to_contract_dto::{
+        IntoContractInterfaceType, to_attestation_measurements,
+    },
 };
 use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use mpc_attestation::{
-    attestation::{Attestation, VerificationError},
+    attestation::{Attestation, ExpectedMeasurements, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
-use near_mpc_contract_interface::types::{AllowedMpcDockerImageHash, Ed25519PublicKey};
+use near_mpc_contract_interface::types::{
+    self as dtos, AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation,
+    VerifiedAttestation,
+};
+use near_time::Clock;
 use tee_authority::tee_authority::{AttestationError, TeeAuthority};
 use tokio_util::time::FutureExt;
 
@@ -34,6 +35,9 @@ const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 const BACKOFF_FACTOR: f32 = 1.5;
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_hours(1);
+const ATTESTATION_LANDING_TIMEOUT: Duration = Duration::from_secs(10);
+const STALE_LANDING_AGE_SECONDS: i64 =
+    ATTESTATION_RESUBMISSION_INTERVAL.as_secs().cast_signed() * 3 / 2;
 
 pub(crate) trait GenerateAttestation: Send + Sync {
     fn generate_attestation(
@@ -61,20 +65,23 @@ pub struct AttestationSubmitter<T, A> {
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub attestation_reader: Arc<dyn ReadAttestationExpiry>,
+    pub allowed_os_measurements: watch::Receiver<Vec<dtos::ExpectedMeasurements>>,
+    pub stored_attestation: watch::Receiver<Option<StoredAttestation>>,
 }
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
 /// participant's attestation and TLS public key, using the provided [`TransactionSender`] and
-/// retrying with backoff until [`TransactionStatus::Executed`] is observed. Retries are
-/// unbounded; the caller stops them by dropping this future, as
+/// retrying with backoff while the send fails or no stored attestation that can be ours shows up
+/// within [`ATTESTATION_LANDING_TIMEOUT`].
+/// Retries are unbounded; the caller stops them by dropping this future, as
 /// [`periodic_attestation_submission`] does when a round times out.
 async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
+    stored_attestation: watch::Receiver<Option<StoredAttestation>>,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
-    pre_submit_expiry: Option<u64>,
-) -> anyhow::Result<()> {
+) {
+    let dstack_submitted = matches!(attestation, Attestation::Dstack(_));
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
         tls_public_key,
@@ -82,27 +89,29 @@ async fn submit_remote_attestation(
 
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
-        let propose_join_args_clone = submit_participant_info_args.clone();
-        let chain_args = ChainSendTransactionRequest::SubmitParticipantInfo {
-            args: Box::new(propose_join_args_clone),
-            pre_submit_expiry,
-        };
+        let mut stored_attestation = stored_attestation.clone();
+        let chain_args = ChainSendTransactionRequest::SubmitParticipantInfo(Box::new(
+            submit_participant_info_args.clone(),
+        ));
 
         async move {
-            let attestation_submission_response = tx_sender
-                .send_and_wait(chain_args)
+            tx_sender
+                .send(chain_args)
                 .await
                 .context("failed to submit transaction")?;
 
-            match attestation_submission_response {
-                TransactionStatus::Executed => Ok(()),
-                TransactionStatus::NotExecuted => {
-                    anyhow::bail!("attestation submission was not executed")
-                }
-                TransactionStatus::Unknown => {
-                    anyhow::bail!("attestation submission has unknown response")
-                }
-            }
+            let landed = stored_attestation
+                .wait_for(|stored| {
+                    can_be_own_attestation(
+                        stored.as_ref().map(|stored| &stored.attestation),
+                        dstack_submitted,
+                    )
+                })
+                .timeout(ATTESTATION_LANDING_TIMEOUT)
+                .await
+                .is_ok_and(|waited| waited.is_ok());
+            anyhow::ensure!(landed, "attestation submission was not executed");
+            Ok(())
         }
     };
 
@@ -113,7 +122,7 @@ async fn submit_remote_attestation(
         .without_max_times()
         .build();
 
-    set_attestation
+    let _ = set_attestation
         .retry(exponential_backoff)
         .sleep(tokio::time::sleep)
         .notify(|error, duration| {
@@ -123,7 +132,15 @@ async fn submit_remote_attestation(
                 "failed to submit attestation"
             );
         })
-        .await
+        .await;
+}
+
+fn can_be_own_attestation(stored: Option<&VerifiedAttestation>, dstack_submitted: bool) -> bool {
+    match stored {
+        None => false,
+        Some(VerifiedAttestation::Mock(_)) => !dstack_submitted,
+        Some(VerifiedAttestation::Dstack(_)) => true,
+    }
 }
 
 fn validate_remote_attestation(
@@ -132,6 +149,7 @@ fn validate_remote_attestation(
     account_public_key: Ed25519PublicKey,
     allowed_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
+    allowed_measurements: &[ExpectedMeasurements],
 ) -> Result<(), VerificationError> {
     let expected_report_data: ReportData =
         ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
@@ -145,7 +163,7 @@ fn validate_remote_attestation(
             now,
             allowed_docker_image_hashes,
             allowed_launcher_compose_hashes,
-            mpc_attestation::attestation::default_measurements(),
+            allowed_measurements,
         )
         .map(|_| ())
 }
@@ -174,26 +192,7 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
         }
     }
 
-    async fn read_expiry_baseline(&self) -> Option<u64> {
-        match self
-            .attestation_reader
-            .read_stored_attestation_expiry(&self.tls_public_key)
-            .await
-        {
-            Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
-            // Submit anyway on a read error: refreshing the attestation is the priority, and a
-            // broken read must not block submission (the confirmation just can't use a baseline).
-            Err(error) => {
-                tracing::warn!(
-                    ?error,
-                    "could not read pre-submit attestation baseline; submitting without it"
-                );
-                None
-            }
-        }
-    }
-
-    async fn submit_attestation(&self, attestation: Attestation, pre_submit_expiry: Option<u64>) {
+    async fn submit_attestation(&self, attestation: Attestation) {
         let allowed_image_hashes: Vec<_> = self
             .allowed_image_hashes
             .borrow()
@@ -201,30 +200,34 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             .map(|entry| entry.image_hash)
             .collect();
         let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
+        let allowed_measurements: Vec<_> = self
+            .allowed_os_measurements
+            .borrow()
+            .iter()
+            .map(to_attestation_measurements)
+            .collect();
         if let Err(error) = validate_remote_attestation(
             &attestation,
             self.tls_public_key.clone(),
             self.account_public_key.clone(),
             &allowed_image_hashes,
             &allowed_launcher_compose_hashes,
+            &allowed_measurements,
         ) {
             // Submit anyway: the contract runs the authoritative check, and this local one can
-            // fail on a stale view of the allowed hashes
+            // fail on a stale view of the allowlists
             tracing::warn!("Attestation is not valid: {error}");
         }
-        let submission = submit_remote_attestation(
+        submit_remote_attestation(
             self.tx_sender.clone(),
+            self.stored_attestation.clone(),
             attestation,
             self.tls_public_key.clone(),
-            pre_submit_expiry,
         )
         .await;
         MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
-            .with_label_values(&[outcome_label(submission.is_ok())])
+            .with_label_values(&[MPC_TEE_ATTESTATION_OUTCOME_SENT])
             .inc();
-        if let Err(error) = submission {
-            tracing::error!(?error, "attestation submission failed");
-        }
     }
 }
 
@@ -257,6 +260,7 @@ async fn periodic_attestation_submission<T: TransactionSender + Clone, A: Genera
 ) {
     loop {
         interval_ticker.tick().await;
+        warn_if_no_recent_acceptance(submitter.stored_attestation.borrow().as_ref());
         let deadline = Instant::now() + ATTESTATION_RESUBMISSION_INTERVAL;
         let Ok(generated) = submitter.generate_attestation().timeout_at(deadline).await else {
             record_round_timeout(MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION);
@@ -265,14 +269,27 @@ async fn periodic_attestation_submission<T: TransactionSender + Clone, A: Genera
         let Some(attestation) = generated else {
             continue;
         };
-        let Ok(pre_submit_expiry) = submitter.read_expiry_baseline().timeout_at(deadline).await
-        else {
-            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE);
-            continue;
-        };
-        let submission = submitter.submit_attestation(attestation, pre_submit_expiry);
+        let submission = submitter.submit_attestation(attestation);
         if submission.timeout_at(deadline).await.is_err() {
             record_round_timeout(MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION);
+        }
+    }
+}
+
+fn warn_if_no_recent_acceptance(stored: Option<&StoredAttestation>) {
+    if let Some(landed_at) = stored.map(|stored| stored.accepted_at_seconds) {
+        let landed_at = i64::try_from(landed_at).unwrap_or(i64::MAX);
+        let landing_age = Clock::real()
+            .now_utc()
+            .unix_timestamp()
+            .saturating_sub(landed_at);
+        if landing_age > STALE_LANDING_AGE_SECONDS {
+            tracing::warn!(
+                accepted_at_seconds = landed_at,
+                landing_age_seconds = landing_age,
+                "no attestation from this node accepted recently; its submit_participant_info \
+                 transactions were likely rejected"
+            );
         }
     }
 }
@@ -288,13 +305,18 @@ fn record_round_timeout(stage: &'static str) {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
-    use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
+    use crate::indexer::tx_sender::TransactionProcessorError;
     use crate::tick::MockTicker;
     use ed25519_dalek::SigningKey;
+    use near_mpc_contract_interface::types::{
+        MockAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
+    };
     use rand::SeedableRng;
+    use rstest::rstest;
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -302,6 +324,7 @@ mod tests {
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 
     const TEST_SUBMISSION_COUNT: usize = 2;
+    const STORED_MOCK: VerifiedAttestation = VerifiedAttestation::Mock(MockAttestation::Valid);
 
     #[derive(Clone, Default)]
     struct FailingAttestationGenerator {
@@ -333,27 +356,6 @@ mod tests {
             _report_data: ReportData,
         ) -> Result<Attestation, AttestationError> {
             std::future::pending().await
-        }
-    }
-
-    struct StubAttestationExpiryReader {
-        fail: bool,
-    }
-
-    impl ReadAttestationExpiry for StubAttestationExpiryReader {
-        fn read_stored_attestation_expiry<'a>(
-            &'a self,
-            _tls_public_key: &'a Ed25519PublicKey,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>,
-        > {
-            Box::pin(async {
-                if self.fail {
-                    Err(anyhow::anyhow!("simulated baseline read failure"))
-                } else {
-                    Ok(None)
-                }
-            })
         }
     }
 
@@ -397,14 +399,6 @@ mod tests {
             self.notify.notify_one();
             Ok(())
         }
-
-        async fn send_and_wait(
-            &self,
-            request: ChainSendTransactionRequest,
-        ) -> Result<TransactionStatus, TransactionProcessorError> {
-            self.send(request).await?;
-            Ok(TransactionStatus::Executed)
-        }
     }
 
     fn test_keys() -> (Ed25519PublicKey, Ed25519PublicKey) {
@@ -417,6 +411,7 @@ mod tests {
 
     struct TestSetup<A> {
         submitter: AttestationSubmitter<MockSender, A>,
+        stored_attestation: watch::Sender<Option<StoredAttestation>>,
     }
 
     /// Builds an [`AttestationSubmitter`] around a [`MockSender`].
@@ -428,6 +423,12 @@ mod tests {
         let (tls_public_key, account_public_key) = test_keys();
         let (_, allowed_image_hashes) = watch::channel(vec![]);
         let (_, allowed_launcher_compose_hashes) = watch::channel(vec![]);
+        let (_, allowed_os_measurements) = watch::channel(vec![]);
+        let (stored_attestation, stored_attestation_receiver) =
+            watch::channel(Some(StoredAttestation {
+                attestation: STORED_MOCK,
+                accepted_at_seconds: Clock::real().now_utc().unix_timestamp().try_into().unwrap(),
+            }));
         let submitter = AttestationSubmitter {
             tee_authority,
             tx_sender: MockSender::default(),
@@ -435,9 +436,13 @@ mod tests {
             account_public_key,
             allowed_image_hashes,
             allowed_launcher_compose_hashes,
-            attestation_reader: Arc::new(StubAttestationExpiryReader { fail: false }),
+            allowed_os_measurements,
+            stored_attestation: stored_attestation_receiver,
         };
-        TestSetup { submitter }
+        TestSetup {
+            submitter,
+            stored_attestation,
+        }
     }
 
     impl<A: GenerateAttestation + Clone + 'static> TestSetup<A> {
@@ -453,8 +458,39 @@ mod tests {
         }
     }
 
+    fn stored_dstack() -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(VerifiedDstackAttestation {
+            mpc_image_hash: [0; 32].into(),
+            launcher_compose_hash: [0; 32].into(),
+            expiry_timestamp_seconds: 0,
+            measurements: VerifiedMeasurements {
+                mrtd: [0; 48].into(),
+                rtmr0: [0; 48].into(),
+                rtmr1: [0; 48].into(),
+                rtmr2: [0; 48].into(),
+                key_provider_event_digest: [0; 48].into(),
+            },
+        })
+    }
+
+    #[rstest]
+    #[case::nothing_stored(None, true, false)]
+    #[case::mock_stored_for_a_dstack_submission(Some(STORED_MOCK), true, false)]
+    #[case::mock_stored_for_a_mock_submission(Some(STORED_MOCK), false, true)]
+    #[case::dstack_stored_for_a_dstack_submission(Some(stored_dstack()), true, true)]
+    fn can_be_own_attestation__should_be_false_while_no_stored_entry_can_be_ours(
+        #[case] stored: Option<VerifiedAttestation>,
+        #[case] dstack_submitted: bool,
+        #[case] expected: bool,
+    ) {
+        // When
+        let can_be_own = can_be_own_attestation(stored.as_ref(), dstack_submitted);
+
+        // Then
+        assert_eq!(can_be_own, expected);
+    }
+
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_submit_on_each_tick() {
         // Given
         let setup = test_setup();
@@ -468,26 +504,36 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
-    #[expect(non_snake_case)]
-    async fn periodic_attestation_submission__should_submit_when_baseline_read_fails() {
-        // Given: reading the stored attestation's expiry (used only to confirm the submission
-        // landed) fails; the submission must still go out, otherwise a broken read path would
-        // stop the node from refreshing its attestation until the contract evicts it
-        let mut setup = test_setup();
-        setup.submitter.attestation_reader = Arc::new(StubAttestationExpiryReader { fail: true });
+    #[tokio::test(start_paused = true)]
+    async fn periodic_attestation_submission__should_not_resend_while_an_attestation_is_stored() {
+        // Given
+        let setup = test_setup();
         let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL).await;
 
         // Then
-        assert_eq!(setup.sender().count(), TEST_SUBMISSION_COUNT);
+        assert_eq!(setup.sender().attempts(), TEST_SUBMISSION_COUNT);
         handle.abort();
     }
 
     #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_resend_while_nothing_is_stored() {
+        // Given
+        let setup = test_setup();
+        setup.stored_attestation.send_replace(None);
+        let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
+
+        // When
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL).await;
+
+        // Then
+        assert!(setup.sender().attempts() > TEST_SUBMISSION_COUNT);
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn periodic_attestation_submission__should_survive_submission_retry_timeout() {
         // Given: the first round times out, the second one lands
         let setup = test_setup();
@@ -510,7 +556,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_wait_for_the_next_tick_when_generation_fails()
     {
         // Given
@@ -536,7 +581,6 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_stop_submission_retries_at_the_round_timeout()
     {
         // Given
@@ -556,7 +600,6 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_cut_hung_generation_at_the_round_timeout() {
         // Given
         let setup = test_setup_with(HangingAttestationGenerator);
@@ -595,11 +638,11 @@ mod tests {
             account_public_key,
             &[NodeImageHash::from([42u8; 32])],
             &[LauncherDockerComposeHash::from([42u8; 32])],
+            &[],
         )
     }
 
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn validate_remote_attestation__should_accept_valid_attestation() {
         // Given
         let config = LocalTeeAuthorityConfig::default();
@@ -612,7 +655,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn validate_remote_attestation__should_reject_invalid_attestation() {
         // Given
         let config = LocalTeeAuthorityConfig::new(false);

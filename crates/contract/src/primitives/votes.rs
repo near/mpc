@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::primitives::participants::{IdentifiesParticipant, Participants};
+use crate::primitives::participants::{IdentifiesParticipant, ParticipantCount, Participants};
 use crate::primitives::proposal_hash::ProposalHash;
 use near_sdk::IntoStorageKey;
 use near_sdk::near;
@@ -95,6 +95,7 @@ where
 
     /// Removes any votes for proposal with [`ProposalHash`], together with any voters that voted for
     /// [`ProposalHash`].
+    #[cfg(test)]
     pub fn remove_votes_for_proposal(&mut self, proposal: &ProposalHash) {
         let Some(voters) = self.votes_by_proposal.remove(proposal) else {
             return;
@@ -156,12 +157,11 @@ where
         self.0.iter().filter(|voter| predicate(voter)).count()
     }
 
-    pub fn count_participants(&self, participants: &Participants) -> u64
+    pub fn count_participants(&self, participants: &Participants) -> ParticipantCount
     where
         V: IdentifiesParticipant,
     {
-        let count = self.count_for(|voter| participants.is_participant(voter));
-        u64::try_from(count).expect("usize should never fail to convert to u64 on wasm32")
+        ParticipantCount::from_len(self.count_for(|voter| participants.is_participant(voter)))
     }
 
     // returns Some(remaining_votes) in case a vote was removed
@@ -187,6 +187,7 @@ mod tests {
         sync::LazyLock,
     };
 
+    use crate::primitives::participants::ParticipantCount;
     use crate::primitives::proposal_hash::ProposalHash;
     use crate::primitives::test_utils::gen_authenticated_participants;
     use crate::primitives::votes::{VoterSet, Votes};
@@ -509,7 +510,7 @@ mod tests {
         let count = voter_set.count_participants(&current);
 
         // Then
-        assert_eq!(count, 2);
+        assert_eq!(count, ParticipantCount::new(2));
     }
 
     #[test]

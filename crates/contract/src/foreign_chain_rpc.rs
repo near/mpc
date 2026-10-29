@@ -96,8 +96,12 @@ impl Default for AllowedProviders {
 }
 
 impl AllowedProviders {
-    fn replace(&mut self, chain: ForeignChain, entry: ChainEntry) {
+    pub(crate) fn replace(&mut self, chain: ForeignChain, entry: ChainEntry) {
         self.entries.insert(chain, entry);
+    }
+
+    pub(crate) fn remove(&mut self, chain: &ForeignChain) {
+        self.entries.remove(chain);
     }
 
     /// Owned clone of the whitelist as DTOs; required by `allowed_foreign_chain_providers`,
@@ -149,15 +153,14 @@ impl ProviderVotes {
         participant: AuthenticatedParticipantId,
         threshold_parameters: &GovernanceThresholdParameters,
     ) -> bool {
-        let protocol_threshold = threshold_parameters.threshold().value();
+        let protocol_threshold = threshold_parameters.threshold();
         let participants = threshold_parameters.participants();
-        let count_usize = self
-            .pending
-            .vote((participant, chain), hash)
-            .count_for(|(p, c)| *c == chain && participants.is_participant(p));
-        let count = u64::try_from(count_usize)
-            .expect("usize should never fail to convert to u64 on wasm32");
-        if count >= protocol_threshold {
+        let count = dtos::ParticipantCount::from_len(
+            self.pending
+                .vote((participant, chain), hash)
+                .count_for(|(p, c)| *c == chain && participants.is_participant(p)),
+        );
+        if protocol_threshold.is_met_by(count) {
             // Drop ALL pending rows for this chain regardless of which proposal
             // they held — matches the previous `clear_chain` semantics.
             self.pending.retain_votes(|(_, c)| *c != chain);
@@ -217,9 +220,9 @@ mod tests {
     use crate::primitives::{
         key_state::AuthenticatedParticipantId, test_utils::gen_authenticated_participants,
     };
-    use assert_matches::assert_matches;
     use mpc_primitives::GovernanceThreshold;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
+    use std::assert_matches;
 
     /// Build a [`GovernanceThresholdParameters`] for tests, bypassing the relative-threshold
     /// validation so tests can express edge-case combinations (e.g. the stale-votes

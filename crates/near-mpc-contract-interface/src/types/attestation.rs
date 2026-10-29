@@ -94,6 +94,31 @@ impl VerifiedAttestation {
     }
 }
 
+/// An attestation as the contract stores it.
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StoredAttestation {
+    pub attestation: VerifiedAttestation,
+    /// Block time at which the contract accepted this attestation. Every accepted submission
+    /// restamps it.
+    pub accepted_at_seconds: u64,
+}
+
 #[derive(
     Clone,
     Debug,

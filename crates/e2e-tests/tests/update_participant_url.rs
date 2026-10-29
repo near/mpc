@@ -1,9 +1,7 @@
 use crate::common;
 
-use backon::{ConstantBuilder, Retryable};
-use e2e_tests::MpcCluster;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::{ParticipantUrl, ProtocolContractState};
 use rand::{SeedableRng, rngs::StdRng};
 
 /// End-to-end acceptance for #3677: a `update_participant_url` call on a real cluster is accepted,
@@ -24,9 +22,11 @@ async fn update_participant_url__should_keep_signing_after_url_update() {
     const TARGET_NODE: usize = 1;
     let account_id = cluster.nodes[TARGET_NODE].account_id().clone();
     // A different but still-reachable address (same listener), so the update is genuinely applied.
-    let new_url = cluster.nodes[TARGET_NODE]
+    let new_url: ParticipantUrl = cluster.nodes[TARGET_NODE]
         .p2p_url()
-        .replace("127.0.0.1", "localhost");
+        .replace("127.0.0.1", "localhost")
+        .try_into()
+        .unwrap();
     assert_ne!(cluster.nodes[TARGET_NODE].p2p_url(), new_url);
 
     let outcome = cluster
@@ -40,21 +40,12 @@ async fn update_participant_url__should_keep_signing_after_url_update() {
     );
 
     // Then
-    (|| async {
-        let url = participant_url(&cluster, &account_id).await?;
-        anyhow::ensure!(
-            url.as_deref() == Some(new_url.as_str()),
-            "url not yet updated: {url:?}"
-        );
-        Ok::<_, anyhow::Error>(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(60),
-    )
-    .await
-    .expect("contract did not reflect the updated url");
+    cluster
+        .wait_for_state(common::INDEXER_SYNC_TIMEOUT, |state| {
+            participant_url(state, &account_id).as_ref() == Some(&new_url)
+        })
+        .await
+        .expect("contract did not reflect the updated url");
 
     common::send_sign_request(&cluster, &running, &mut rng, &user)
         .await
@@ -62,19 +53,18 @@ async fn update_participant_url__should_keep_signing_after_url_update() {
 }
 
 /// Reads the registered URL of `account_id` from the contract's Running state.
-async fn participant_url(
-    cluster: &MpcCluster,
+fn participant_url(
+    state: &ProtocolContractState,
     account_id: &AccountId,
-) -> anyhow::Result<Option<String>> {
-    let state = cluster.get_contract_state().await?;
+) -> Option<ParticipantUrl> {
     let ProtocolContractState::Running(running) = state else {
-        anyhow::bail!("contract is not in Running state");
+        return None;
     };
-    Ok(running
+    running
         .parameters
         .participants
         .participants
-        .into_iter()
+        .iter()
         .find(|(a, _, _)| a == account_id)
-        .map(|(_, _, info)| info.url))
+        .map(|(_, _, info)| info.url.clone())
 }
