@@ -429,8 +429,7 @@ fn has_prefix(path: &[&str], prefix: &[String]) -> bool {
             .all(|(segment, expected)| *segment == expected.as_str())
 }
 
-/// Encodes `segment` as [`url::PathSegmentsMut::push`] does: like [`Url::parse`] encodes a path,
-/// plus `%`, `/` and, for special schemes, `\`. [`None`] for `.` and `..`, which `push` drops.
+/// Encodes `segment` as [`url::PathSegmentsMut::push`] does; [`None`] for `.` and `..`.
 pub(super) fn encode_path_segment(url: &Url, segment: &str) -> Option<String> {
     if matches!(segment, "." | "..") {
         return None;

@@ -127,6 +127,10 @@ pub fn substitute_path_token(
 }
 
 fn placeholder_segment_index(url: &Url, placeholder: &str) -> anyhow::Result<usize> {
+    anyhow::ensure!(
+        !placeholder.is_empty(),
+        "the placeholder for path authentication can not be empty"
+    );
     let encoded_placeholder = encode_path_segment(url, placeholder).with_context(|| {
         format!(
             "the placeholder, `{placeholder}`, for path authentication is not a valid path segment"
@@ -230,6 +234,7 @@ mod tests {
         "key"
     )]
     #[case::dot_placeholder("https://rpc.ankr.com/eth/", ".", "key")]
+    #[case::empty_placeholder("https://rpc.ankr.com/eth/", "", "key")]
     #[case::dot_dot_token("https://rpc.ankr.com/eth/{api_key}", "{api_key}", "..")]
     fn substitute_path_token__should_fail_unless_placeholder_and_token_are_full_path_segments(
         #[case] rpc_url: &str,
