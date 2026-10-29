@@ -45,8 +45,8 @@ impl BlockHeight {
     }
 
     /// Block distance from `earlier` to `self`. Saturates to `0` if `earlier > self`.
-    pub fn blocks_since(self, earlier: BlockHeight) -> u64 {
-        self.0.saturating_sub(earlier.0)
+    pub fn blocks_since(self, earlier: BlockHeight) -> BlockCount {
+        BlockCount(self.0.saturating_sub(earlier.0))
     }
 }
 
@@ -143,7 +143,10 @@ mod tests {
         let backward = earlier.blocks_since(later);
 
         // Then
-        assert_eq!((forward, backward), (3, 0));
+        assert_eq!(
+            (forward, backward),
+            (BlockCount::new(3), BlockCount::new(0))
+        );
     }
 
     #[test]
