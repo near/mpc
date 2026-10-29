@@ -120,8 +120,7 @@ for a merge to `main`. There is no `latest`.
 
 **Everything in a run pins to one commit.** The job takes `main` HEAD, forms
 `main-${SHA::7}`, resolves both tags to manifest digests, and passes them to
-`deploy-tee-cluster.sh` as `MPC_MANIFEST_DIGEST` and `LAUNCHER_MANIFEST_DIGEST`, together
-with the CI contract's account id as `MPC_CONTRACT_ID`. The CVM
+`deploy-tee-cluster.sh` as `MPC_MANIFEST_DIGEST` and `LAUNCHER_MANIFEST_DIGEST`. The CVM
 pulls by digest and never by tag: the contract allow-lists a digest via
 `vote_mpc_node_manifest_digest` and the launcher reads the approved one from
 `/mnt/shared/image-digest.bin`, and nothing measured can bind to a mutable pointer. The
@@ -196,8 +195,8 @@ A cluster needs three nodes: two would run, but at 2-of-2 no node can be replace
 rejected, which is exactly what the upgrade and migration tests do.
 
 **The launcher must come from Docker Hub.** The contract derives the allowed compose hash
-by filling `crates/contract/assets/launcher_docker_compose.yaml.template` with the image
-digests and its own account id, and the template hardcodes `nearone/mpc-launcher@sha256:…`.
+by filling `crates/contract/assets/launcher_docker_compose.yaml.template`
+(`crates/contract/src/tee/proposal.rs:401`), which hardcodes `nearone/mpc-launcher@sha256:…`.
 So a PR-built launcher cannot run in a CVM — harmless for a nightly job on published images.
 
 ## The gap this design does *not* close

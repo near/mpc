@@ -9,12 +9,6 @@
 #   - secrets.backup_encryption_key_hex
 # The placeholders below are intentionally non-hex so a forgotten swap
 # fails loudly at node startup.
-#
-# The contract account id is not set here. deploy-launcher.sh renders it from
-# MPC_CONTRACT_ID in the .env file into the launcher compose, which the CVM
-# measures; a launcher built with this variable rejects a user config that
-# carries mpc_contract_id. Launchers released before it ignore the variable
-# and still need mpc_contract_id under [mpc_node_config.node.indexer].
 
 [launcher_config]
 image_reference = "nearone/mpc-node"

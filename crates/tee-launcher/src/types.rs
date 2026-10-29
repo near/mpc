@@ -22,7 +22,7 @@ pub struct CliArgs {
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
     pub default_image_digest: DockerSha256Digest,
 
-    /// Account id of the MPC contract the node serves, measured through the launcher compose
+    /// Account id of the MPC contract the node serves
     #[arg(long, env = "MPC_CONTRACT_ID")]
     pub mpc_contract_id: AccountId,
 }

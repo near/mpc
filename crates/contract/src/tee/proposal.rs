@@ -25,9 +25,7 @@ impl ToProposalHash for LauncherVoteAction {
 /// `sha256(template(launcher_hash, mpc_hash, contract_id))`. Placeholders:
 /// - `{{LAUNCHER_IMAGE_HASH}}`: the launcher Docker image hash
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
-/// - `{{MPC_CONTRACT_ID}}`: the account id of this contract. The CVM measures the rendered
-///   compose into its disk sealing key, so a node can only be pointed at another contract by
-///   redeploying it with a compose that opens a different disk.
+/// - `{{MPC_CONTRACT_ID}}`: the account id of this contract
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
 
@@ -344,7 +342,7 @@ impl AllowedLauncherImages {
 }
 
 /// Given a launcher image hash and MPC docker image hash, compute the launcher docker compose hash
-/// by filling the template with them and this contract's account id and taking SHA-256.
+/// by filling the template and taking SHA-256.
 pub fn get_docker_compose_hash(
     launcher_image_hash: &LauncherImageHash,
     mpc_docker_image_hash: &NodeImageHash,

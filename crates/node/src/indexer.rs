@@ -1,6 +1,7 @@
 use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
+use anyhow::Context;
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -65,6 +66,15 @@ impl IndexerState {
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
+    }
+
+    async fn ensure_chain_matches_contract(&self) -> anyhow::Result<()> {
+        let status = self
+            .client
+            .status()
+            .await
+            .context("querying nearcore status")?;
+        chain_binding::ensure_chain_matches_contract(&self.mpc_contract_id, status.genesis_hash)
     }
 }
 

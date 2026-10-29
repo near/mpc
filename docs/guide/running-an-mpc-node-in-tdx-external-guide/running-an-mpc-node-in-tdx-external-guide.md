@@ -798,7 +798,7 @@ Including
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Rendering the launcher docker compose template [launcher_docker_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract, and with the contract account id.
+* Rendering the launcher docker compose template [launcher_docker_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
 * Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
@@ -947,7 +947,6 @@ Adjust the variables as per your environment.
 * `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
 * `home_dir`: must be `/data` or a path under it. `/data` is the only persistent volume in the node container; anything outside it is lost when the container is recreated, and the node starts over with new keys.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
-* The contract account id (**v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet) is not set here. It is rendered into the launcher compose, which the CVM measures, so it goes into the `.env` file as `MPC_CONTRACT_ID` (see [Preparing a Docker Compose File](#preparing-a-docker-compose-file)); the launcher rejects a `user-config.toml` that sets `mpc_contract_id`.
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](../node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
 * `secrets.backup_encryption_key_hex` — 64-hex-char AES key used to encrypt keyshares during a [node migration](../node-migration-guide.md). On a CVM this is the *only* way to supply the key: set it here in `user-config.toml`, not via `.env`. Leave it unset and the CVM generates a random key you can't read back, so set it explicitly before migrating. See the [migration guide](../node-migration-guide.md#step-3-generate-and-set-encryption-key) for details.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
@@ -1659,14 +1658,11 @@ by substituting two manifest digests and the contract account id:
 
 1. The **launcher** image digest (`{{LAUNCHER_IMAGE_HASH}}`)
 2. The **MPC node** image digest (`{{DEFAULT_IMAGE_DIGEST_HASH}}`)
-3. The **contract account id** (`{{MPC_CONTRACT_ID}}`): `v1.signer-prod.testnet`
-   on testnet, `v1.signer` on mainnet. The CVM measures it with the rest of the
-   compose, so the node and its disk sealing key are bound to that contract.
+3. The **contract account id** (`{{MPC_CONTRACT_ID}}`): `v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet
 
-Both digests must be approved by the contract and the account id must be the
-contract's own — otherwise the SHA256 of the rendered file will not match an
-entry in `allowed_launcher_compose_hashes` and the node's attestation will be
-rejected.
+Both digests must be approved by the contract — otherwise the SHA256 of the rendered
+file will not match an entry in `allowed_launcher_compose_hashes` and the
+node's attestation will be rejected.
 
 #### Step 1 — discover the currently-allowed digests
 
@@ -1694,9 +1690,8 @@ For details on how to verify each digest before trusting it, see
 > **If you plan to deploy via `deploy-launcher.sh`** (the script path
 > below): skip this step. Instead, uncomment and set the
 > `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` lines in your
-> `.env` file and check its `MPC_CONTRACT_ID`. The script renders the
-> template internally; you do not need to produce a
-> `launcher_docker_compose.yaml` here.
+> `.env` file. The script renders the template internally; you do not
+> need to produce a `launcher_docker_compose.yaml` here.
 
 The manual render (needed if you deploy via the Dstack Web interface):
 
@@ -1819,7 +1814,7 @@ The [`deploy-launcher.sh`](https://github.com/near/mpc/blob/main/deployment/cvm-
    ```
 
    The script will:
-   - Source the env file and validate that both digests are set + well-formed (`sha256:<64 hex>`) and that `MPC_CONTRACT_ID` is a well-formed account id.
+   - Source the env file and validate that both digests are set + well-formed (`sha256:<64 hex>`).
    - Render the contract template inline with the two digests and the contract account id. The result lives in a tempfile — there is **no persistent** `launcher_docker_compose.yaml` on disk afterwards. (If you need one for `attestation-cli` later, see the [manual render snippet](#step-2--render-the-template) above.)
    - Generate `app-compose.json`.
    - Prompt for confirmation, then deploy the CVM via `vmm-cli`.
@@ -2439,7 +2434,7 @@ There are four types of upgrades, with different frequencies and operator effort
 | Host BIOS / microcode / TDX module | Whenever Intel publishes a TCB recovery | Vendor firmware update + reboot + deploy a new CVM and move the key shares into it | Yes (microcode moves CPUSVN) |
 | Host OS packages | Continuous (unattended security upgrades) | None, once configured | No, the packages that would move it are held |
 
-When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template and its own account id. Operators do not need to vote on compose hashes separately.
+When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
 The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](../tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
 
@@ -2737,8 +2732,6 @@ Common operations on a deployed CVM: **stop**, **start**, and **update `user-con
 
 You usually don't need to edit `user-config.toml` after initial deployment. However, a future MPC release may introduce new `user-config.toml` fields; if so, the release notes will call it out.
 
-The contract the node serves cannot be changed this way: its account id is rendered into the launcher compose, which the CVM measures into its disk sealing key, so pointing a node at another contract means deploying a new CVM.
-
 ### Via Web UI
 
 | Operation | Action |
@@ -2949,7 +2942,7 @@ Common messages:
 
 - ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
-- ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)), or the compose was rendered with a contract account id other than the one you submit to (see [Preparing a Docker Compose File](#preparing-a-docker-compose-file)).
+- ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
 - **`wrong expected_measurements hash (found none matched expected one of the allowed measurement sets)`**: your boot measurements (MRTD, RTMR0-2, key-provider event digest) are not in the contract's allowed set, for example because the CVM runs a dev OS image. Deploy the production OS image and check that its measurements are voted in (see [OS measurement voting](#os-measurement-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
 - **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](../tdx-tcb-status.md), which also explains how to see it coming.

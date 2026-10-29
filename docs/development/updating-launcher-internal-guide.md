@@ -36,8 +36,8 @@ These are what operators actually run.
 
 - `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (non-TEE)
 
-Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`
-and `MPC_CONTRACT_ID`) consistent with the intended release.
+Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`)
+consistent with the intended release.
 
 ---
 

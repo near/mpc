@@ -161,10 +161,6 @@ for the right placement:
 | `tier3_public_addr` | `"203.0.113.10:24567"` (`IP_M`) | `"203.0.113.11:24567"` (`IP_T`) |
 | `my_near_account_id` | your mainnet account | your testnet account |
 
-The contract account id is not a `user-config.toml` field: set `MPC_CONTRACT_ID`
-in each CVM's `.env` (`v1.signer` for mainnet, `v1.signer-prod.testnet` for
-testnet); `deploy-launcher.sh` renders it into the measured launcher compose.
-
 `tier3_public_addr` is **required** here — without it the node
 auto-discovers its advertised address as the host's default-route
 outbound IP, which DSS peers may not be able to reach, and state sync

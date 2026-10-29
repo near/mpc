@@ -205,11 +205,6 @@ if ! [[ "$MPC_MANIFEST_DIGEST" =~ $digest_re ]]; then
   echo "Error: MPC_MANIFEST_DIGEST is not a valid sha256:<64 hex> digest."
   exit 1
 fi
-account_id_re='^[a-z0-9._-]{2,64}$'
-if ! [[ "$MPC_CONTRACT_ID" =~ $account_id_re ]]; then
-  echo "Error: MPC_CONTRACT_ID is not a valid NEAR account id."
-  exit 1
-fi
 
 
 

@@ -286,7 +286,6 @@ sequenceDiagram
 | T11 | Stale node running old binary | Operator neglect | Stale node -> Network | `verify_tee` kicks nodes after 7 days; resharing triggered | Below-threshold scenario pauses signing |
 | T12 | Malicious migration service | Rogue endpoint | Attacker -> Migration | Contract validates migration service registration + AES key needed | Contract bug + AES compromise |
 | T13 | Rogue CVM with confidentiality break | Attacker runs own TDX server with HW device that breaks CVM confidentiality; spins up rogue migration service with valid attestation | Attacker -> Node CVM | See analysis below (S2: local provisioning; S6/S7: **vulnerable**) | Attestation proves WHAT, not WHO |
-| T14 | Host repoints node at an attacker-controlled contract | Edit the unmeasured user config, restart CVM | Host OS -> Launcher/Node | Contract account id rendered into the measured launcher compose (RTMR3 -> sealing key); launcher rejects it in user config; node pins the production chains by genesis hash | Contracts outside production are not chain-pinned; composes of a superseded launcher stay accepted until its hash is removed |
 
 ---
 

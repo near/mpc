@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template) — rendered with the launcher and MPC node manifest digests and the contract account id before deployment (see below)
+* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template) — rendered with the launcher and MPC node manifest digests before deployment (see below)
 * [frodo.toml](../../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../../deployment/localnet/tee/frodo.env)/ [sam.env](../../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
@@ -85,11 +85,9 @@ mkdir -p "/tmp/$USER"
 
 
 Set the launcher and MPC node manifest digests in the env file
-(`LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`); `MPC_CONTRACT_ID`
-is already set to `mpc-contract.test.near` there. `deploy-launcher.sh`
-renders the contract template at deploy time, substituting the digests
-into the `image:` and `DEFAULT_IMAGE_DIGEST` fields and the contract
-account id into `MPC_CONTRACT_ID`.
+(`LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`). `deploy-launcher.sh`
+renders the contract template at deploy time, substituting these digests
+into the `image:` and `DEFAULT_IMAGE_DIGEST` fields.
 
 Example values:
 

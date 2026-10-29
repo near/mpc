@@ -22,7 +22,7 @@ All arguments are read from environment variables (set via docker-compose `envir
 | `PLATFORM` | Yes | `TEE` or `NONTEE` |
 | `DOCKER_CONTENT_TRUST` | Yes | Must be `1` |
 | `DEFAULT_IMAGE_DIGEST` | Yes | Fallback `sha256:...` digest when the approved-hashes file is absent |
-| `MPC_CONTRACT_ID` | Yes | Account id of the MPC contract the node serves. The launcher writes it into the node config, so the measured compose, not the user config, decides which contract the node follows |
+| `MPC_CONTRACT_ID` | Yes | Account id of the MPC contract, written to `node.indexer.mpc_contract_id` in the node config; a user config that sets it is rejected |
 
 ## Configuration (TOML)
 
@@ -56,7 +56,7 @@ port_mappings = [
 
 ### `[mpc_node_config]`
 
-Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section and `node.indexer.mpc_contract_id` from its own environment, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that sets either of them is rejected.
+Arbitrary TOML table passed through to the MPC node. The launcher writes this verbatim to `/mnt/shared/mpc-config.toml`, which the container reads on startup.
 
 ## Supported Registries
 

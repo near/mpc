@@ -43,7 +43,7 @@ This provides maximum parity with production while keeping the setup simple.
 Create or use a non-TEE launcher compose file with the following properties:
 
 - Set `PLATFORM=NONTEE`
-- Set `MPC_CONTRACT_ID` to the contract the node serves; a launcher built with this variable writes it into the node config and rejects a user config that sets `mpc_contract_id`, while launchers released before it ignore the variable and still need `mpc_contract_id` in the user config
+- Set `MPC_CONTRACT_ID` to the account id of the MPC contract
 - Mount `/var/run/docker.sock`
 - Do **not** mount `/var/run/dstack.sock`
 - Mount the user config file at `/tapp/user_config`

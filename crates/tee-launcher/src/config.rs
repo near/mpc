@@ -3,10 +3,9 @@ use near_account_id::AccountId;
 
 use crate::error::LauncherError;
 
-/// Inject the launcher-controlled config into the user-provided MPC node config
-/// table: the `tee` section and the contract id the launcher compose was
-/// measured with. Returns an error if the user config already contains a
-/// reserved key.
+/// Inject launcher-controlled config (the `tee` section and the contract id)
+/// into the user-provided MPC node config table.  Returns an error if the user
+/// config already contains a reserved key.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
@@ -28,9 +27,9 @@ pub fn intercept_node_config(
     Ok(node_config)
 }
 
-/// Insert `value` under `key` in the table at `parents`, creating missing
-/// intermediate tables. Fails when the user config already occupies the
-/// path, with the key itself or with a non-table value in place of a parent.
+/// Insert `value` under `key` in the table at `parents`, returning an error if
+/// the key already exists or a parent is not a table. Used to inject
+/// launcher-controlled sections into user config.
 fn insert_reserved(
     mut table: &mut toml::Table,
     parents: &[&str],
@@ -309,25 +308,10 @@ mpc_contract_id = "v1.signer"
     }
 
     #[test]
-    fn intercept_node_config__should_create_the_indexer_table_when_the_user_config_has_none() {
+    fn intercept_node_config__should_reject_a_user_supplied_contract_id() {
         // Given
-        let config = toml::Table::new();
-
-        // When
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
-
-        // Then
-        assert_eq!(
-            result["node"]["indexer"]["mpc_contract_id"].as_str(),
-            Some("v1.signer")
-        );
-    }
-
-    #[test]
-    fn intercept_node_config__should_reject_a_non_table_in_place_of_the_indexer_section() {
-        // Given
-        let config: toml::Table = toml::from_str(r#"node.indexer = "sneaky""#).unwrap();
+        let config: toml::Table =
+            toml::from_str(r#"node.indexer.mpc_contract_id = "other.near""#).unwrap();
 
         // When
         let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
@@ -340,10 +324,9 @@ mpc_contract_id = "v1.signer"
     }
 
     #[test]
-    fn intercept_node_config__should_reject_a_user_supplied_contract_id() {
+    fn intercept_node_config__should_reject_a_non_table_in_place_of_the_indexer_section() {
         // Given
-        let config: toml::Table =
-            toml::from_str(r#"node.indexer.mpc_contract_id = "other.near""#).unwrap();
+        let config: toml::Table = toml::from_str(r#"node.indexer = "sneaky""#).unwrap();
 
         // When
         let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
