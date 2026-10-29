@@ -85,11 +85,13 @@ impl BlockCount {
     }
 }
 
+/// Saturates at the maximum height: the shipped contract is built without overflow checks, where
+/// a wrapped height would silently compare as being in the past.
 impl Add<BlockCount> for BlockHeight {
     type Output = BlockHeight;
 
     fn add(self, count: BlockCount) -> BlockHeight {
-        BlockHeight(self.0 + count.0)
+        BlockHeight(self.0.saturating_add(count.0))
     }
 }
 
@@ -112,6 +114,22 @@ mod tests {
         assert_eq!(bytes, 7u64.to_le_bytes());
         assert_eq!(serde_json::from_str::<BlockHeight>(&json).unwrap(), height);
         assert_eq!(borsh::from_slice::<BlockHeight>(&bytes).unwrap(), height);
+    }
+
+    #[test]
+    fn block_count__should_encode_as_the_bare_integer() {
+        // Given
+        let count = BlockCount::new(7);
+
+        // When
+        let json = serde_json::to_string(&count).unwrap();
+        let bytes = borsh::to_vec(&count).unwrap();
+
+        // Then
+        assert_eq!(json, "7");
+        assert_eq!(bytes, 7u64.to_le_bytes());
+        assert_eq!(serde_json::from_str::<BlockCount>(&json).unwrap(), count);
+        assert_eq!(borsh::from_slice::<BlockCount>(&bytes).unwrap(), count);
     }
 
     #[test]
@@ -139,5 +157,18 @@ mod tests {
 
         // Then
         assert_eq!(later, BlockHeight::new(15));
+    }
+
+    #[test]
+    fn add__should_saturate_at_the_maximum_height() {
+        // Given
+        let height = BlockHeight::new(u64::MAX - 1);
+        let count = BlockCount::new(5);
+
+        // When
+        let later = height + count;
+
+        // Then
+        assert_eq!(later, BlockHeight::new(u64::MAX));
     }
 }
