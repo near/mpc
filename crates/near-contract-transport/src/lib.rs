@@ -24,6 +24,7 @@ pub use views::{
     ViewContract, WaitError, WatchContractState,
 };
 
+pub use mpc_primitives::BlockHeight;
 #[cfg(feature = "near-kit")]
 pub use near_kit_backend::{NearKitCallError, NearKitCaller, NearKitViewError};
-pub use types::{BlockHeight, FunctionCallArgs, NearGas, NearToken};
+pub use types::{FunctionCallArgs, NearGas, NearToken};
