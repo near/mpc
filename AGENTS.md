@@ -51,8 +51,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 1. **NEAR Indexer**: Monitors the signer contract (`v1.signer` on mainnet) for incoming `sign` requests
 2. **MPC Signing**: Threshold ECDSA based on cait-sith library with:
    - Background Beaver triple generation (up to 1M per node)
-   - Presignature generation (requires 2 triples each)
-   - Signature generation (1 round using a presignature, or presign-and-sign directly from 2 triples when `signature.online_presign` is enabled, the default)
+   - Signature generation: presign-and-sign in one computation over a pair of triples
 
 ### Key Crates
 
@@ -74,7 +73,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 - **`network.rs`**: Mesh network with task-based multiplexing
 - **`p2p.rs`**: TLS-based persistent connections
 - **`indexer/`**: Blockchain monitoring, transaction submission
-- **`db.rs`**: RocksDB persistence for keyshares, triples, presignatures
+- **`db.rs`**: RocksDB persistence for keyshares, triples
 
 ### Contract State Machine
 
@@ -91,7 +90,7 @@ NotInitialized → Running ↔ Initializing/Resharing
 1. User calls `sign()` on contract
 2. Indexer detects receipt, adds to SignRequestStorage
 3. Coordinator spawns signature provider job
-4. Provider acquires triple/presignature, runs FROST protocol
+4. Provider runs the domain's signing protocol (for cait-sith ECDSA, the leader takes a triple pair and presigns and signs in one computation)
 5. Nodes exchange partial signatures via P2P
 6. Final signature submitted back to contract
 

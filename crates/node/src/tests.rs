@@ -25,14 +25,14 @@ use crate::indexer::handler::{
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::metrics::{
-    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS,
-    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE, SUCCEEDED_OUTCOME_LABEL, TRIPLE_GENERATION_TASK_LABEL,
+    ECDSA_PROTOCOL_SCHEME_LABEL, MPC_LED_COMPUTATION_DURATION_SECONDS, SUCCEEDED_OUTCOME_LABEL,
+    TRIPLE_GENERATION_TASK_LABEL,
 };
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, SyncMode, TripleBatchSize, TripleConfig,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, SignatureConfig,
+    SyncMode, TripleBatchSize, TripleConfig,
 };
 
 use crate::primitives::ParticipantId;
@@ -224,15 +224,7 @@ impl IntegrationTestSetup {
                 my_near_account_id: participant_accounts[i].clone(),
                 // Don't care since we use the fake indexer
                 near_responder_account_id: AccountId::from_str("dont_care").unwrap(),
-                presignature: PresignatureConfig {
-                    concurrency: 1,
-                    desired_presignatures_to_buffer: 5,
-                    timeout_sec: 60,
-                },
-                signature: SignatureConfig {
-                    timeout_sec: 60,
-                    online_presign: true,
-                },
+                signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 foreign_chains: ForeignChainsConfig::default(),
                 triple: TripleConfig {
@@ -559,12 +551,6 @@ pub async fn request_verify_foreign_tx_and_await_response(
             }
         }
     }
-}
-
-pub fn signatures_led(mode: &str) -> u64 {
-    MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE
-        .with_label_values(&[mode])
-        .get()
 }
 
 pub fn every_node_owns_triples(num_participants: usize) -> bool {

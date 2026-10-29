@@ -107,11 +107,17 @@ pub enum EcdsaTaskId {
         start: UniqueId,
         count: u32,
     } = 2,
+    /// Retired with the stored presignatures, and only decoded: a peer that predates the
+    /// retirement still sends it, and a [`Packet`] that fails to decode closes the whole
+    /// connection rather than failing just this computation.
+    // TODO(#4999): remove once every node runs a release without stored presignatures.
     Presignature {
         id: UniqueId,
         domain_id: DomainId,
         paired_triple_id: UniqueId,
     } = 3,
+    /// Retired and only decoded, as [`Self::Presignature`].
+    // TODO(#4999): remove once every node runs a release without stored presignatures.
     Signature {
         id: SignatureId,
         presignature_id: UniqueId,
@@ -177,6 +183,8 @@ impl From<RobustEcdsaTaskId> for MpcTaskId {
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum VerifyForeignTxTaskId {
+    /// Retired and only decoded, as [`EcdsaTaskId::Presignature`].
+    // TODO(#4999): remove once every node runs a release without stored presignatures.
     VerifyForeignTx {
         id: VerifyForeignTxId,
         presignature_id: UniqueId,
@@ -210,6 +218,7 @@ mod tests {
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::KeyEventId;
+    use rstest::rstest;
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 
@@ -344,6 +353,46 @@ mod tests {
         .join("\n\n");
 
         insta::assert_snapshot!(table);
+    }
+
+    /// Encodings of the retired stored-presignature task ids, which peers that predate the
+    /// retirement still send: they must keep decoding, since a `Packet` that fails to decode
+    /// closes the connection it arrived on.
+    #[rstest]
+    #[case::ecdsa_presignature(
+        [vec![0, 3], borsh::to_vec(&(uid(1), DomainId(2), uid(3))).unwrap()].concat(),
+        EcdsaTaskId::Presignature {
+            id: uid(1),
+            domain_id: DomainId(2),
+            paired_triple_id: uid(3),
+        }
+        .into()
+    )]
+    #[case::ecdsa_signature(
+        [vec![0, 4], borsh::to_vec(&(hash(1), uid(2))).unwrap()].concat(),
+        EcdsaTaskId::Signature {
+            id: hash(1),
+            presignature_id: uid(2),
+        }
+        .into()
+    )]
+    #[case::verify_foreign_tx(
+        [vec![4, 0], borsh::to_vec(&(hash(1), uid(2))).unwrap()].concat(),
+        VerifyForeignTxTaskId::VerifyForeignTx {
+            id: hash(1),
+            presignature_id: uid(2),
+        }
+        .into()
+    )]
+    fn mpc_task_id__should_decode_retired_variants(
+        #[case] encoded: Vec<u8>,
+        #[case] expected: MpcTaskId,
+    ) {
+        // When
+        let decoded = borsh::from_slice::<MpcTaskId>(&encoded).unwrap();
+
+        // Then
+        assert_eq!(decoded, expected);
     }
 
     #[test]

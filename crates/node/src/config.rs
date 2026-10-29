@@ -576,10 +576,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -606,6 +602,22 @@ cores: 4
     }
 
     #[test]
+    fn config_file__should_ignore_retired_presignature_fields() {
+        // Given
+        let config_with_retired_fields = CONFIG_EXAMPLE.replace(
+            "signature:\n  timeout_sec: 60\n",
+            "presignature:\n  concurrency: 4\n  desired_presignatures_to_buffer: 64\n  \
+             timeout_sec: 60\nsignature:\n  timeout_sec: 60\n  online_presign: false\n",
+        );
+
+        // When
+        let config = ConfigFile::from_yaml(&config_with_retired_fields).unwrap();
+
+        // Then
+        assert_eq!(config, ConfigFile::from_yaml(CONFIG_EXAMPLE).unwrap());
+    }
+
+    #[test]
     fn config_from_file_re_serializes_with_updated_fields() {
         // given: config with old WebUIConfig format (host + port as separate fields)
         let old_format_config = r#"
@@ -624,10 +636,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -743,10 +751,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:

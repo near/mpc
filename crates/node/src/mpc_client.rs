@@ -65,15 +65,16 @@ pub struct MpcClient {
 }
 
 /// Whether a task is CPU-heavy asset generation that should run on the
-/// lower-priority gen runtime. Triples and presignatures qualify; signing,
+/// lower-priority gen runtime. Triples qualify; signing,
 /// keygen, resharing, CKD, and foreign-tx verification stay on the main MPC
 /// runtime. Inner matches are exhaustive so a new task kind forces a decision.
 fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
     match task_id {
         MpcTaskId::EcdsaTaskId(id) => match id {
-            EcdsaTaskId::ManyTriples { .. } | EcdsaTaskId::Presignature { .. } => true,
+            EcdsaTaskId::ManyTriples { .. } => true,
             EcdsaTaskId::KeyGeneration { .. }
             | EcdsaTaskId::KeyResharing { .. }
+            | EcdsaTaskId::Presignature { .. }
             | EcdsaTaskId::Signature { .. }
             | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
@@ -724,7 +725,7 @@ mod tests {
         // Given every task kind paired with whether it is CPU-heavy asset
         // generation that must run on the lower-priority gen runtime.
         let cases: [(MpcTaskId, bool); _] = [
-            // ECDSA: triples and presignatures are heavy generation.
+            // ECDSA: triples are heavy generation.
             (
                 EcdsaTaskId::ManyTriples {
                     start: uid(),
@@ -733,24 +734,7 @@ mod tests {
                 .into(),
                 true,
             ),
-            (
-                EcdsaTaskId::Presignature {
-                    id: uid(),
-                    domain_id: DomainId(0),
-                    paired_triple_id: uid(),
-                }
-                .into(),
-                true,
-            ),
             // ECDSA: signing and key events stay on the main runtime.
-            (
-                EcdsaTaskId::Signature {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }
-                .into(),
-                false,
-            ),
             (
                 EcdsaTaskId::OnlinePresignSignature {
                     id: CryptoHash::default(),
@@ -769,6 +753,24 @@ mod tests {
             (
                 EcdsaTaskId::KeyResharing {
                     key_event: key_event(),
+                }
+                .into(),
+                false,
+            ),
+            // ECDSA: retired stored-presignature tasks are only rejected.
+            (
+                EcdsaTaskId::Presignature {
+                    id: uid(),
+                    domain_id: DomainId(0),
+                    paired_triple_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                EcdsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
                 }
                 .into(),
                 false,

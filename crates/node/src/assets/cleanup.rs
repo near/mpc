@@ -2,9 +2,8 @@ use crate::assets::clean_db;
 use crate::config::ParticipantsConfig;
 use crate::db::{DBCol, EPOCH_ID_KEY, SecretDB};
 use crate::primitives;
-use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::PairedTriple;
-use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
+use mpc_primitives::{EpochId, ReconstructionThreshold};
 use serde::{self, Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -16,14 +15,14 @@ pub struct EpochData {
 }
 
 // This function compares the `current_epoch_data` with the epoch data stored in the database.
-// If the epoch id changed, then all assets (triples & presignatures) are deleted.
-// If the epoch id did not change, then the node will discard all owned assets (triples &
-// presignatures) involving any nodes that changed their TLS key.
+// If the epoch id changed, then all triples are deleted.
+// If the epoch id did not change, then the node will discard all owned triples involving any
+// nodes that changed their TLS key.
+// Presignatures, which signing no longer uses, are always deleted.
 pub fn delete_stale_triples_and_presignatures(
     db: &Arc<SecretDB>,
     current_epoch_data: EpochData,
     my_participant_id: primitives::ParticipantId,
-    ecdsa_domain_ds: Vec<DomainId>,
     triple_thresholds: BTreeSet<ReconstructionThreshold>,
 ) -> anyhow::Result<()> {
     let asset_cleanup: AssetCleanup = match get_epoch_data(db)? {
@@ -36,10 +35,11 @@ pub fn delete_stale_triples_and_presignatures(
     // process dies before the commit, none of the deletes or the marker are
     // persisted, and the next startup re-runs the full cleanup unchanged.
     let mut update_writer = db.update();
+    // TODO(#4999): remove this step and `DBCol::Presignature` once every node has run this release.
+    update_writer.delete_all(DBCol::Presignature)?;
     match asset_cleanup {
         AssetCleanup::Keep => {}
         AssetCleanup::DeleteAll => {
-            update_writer.delete_all(DBCol::Presignature)?;
             update_writer.delete_all(DBCol::TripleV2)?;
         }
         AssetCleanup::KeepOnly(persitent_participants) => {
@@ -52,17 +52,6 @@ pub fn delete_stale_triples_and_presignatures(
                     &persitent_participants,
                     my_participant_id,
                     &t.value().to_be_bytes(),
-                )?;
-            }
-            // Presignatures (per-domain, unchanged).
-            for domain_id in &ecdsa_domain_ds {
-                clean_db::<PresignOutputWithParticipants>(
-                    db,
-                    &mut update_writer,
-                    DBCol::Presignature,
-                    &persitent_participants,
-                    my_participant_id,
-                    &domain_id.0.to_be_bytes(),
                 )?;
             }
         }
@@ -98,7 +87,7 @@ fn cleanup_behavior(
 ) -> AssetCleanup {
     if previous_epoch_data.epoch_id != current_epoch_data.epoch_id {
         tracing::info!(
-            "Deleting presignatures and triples. NEW EPOCH: {:?}, OLD EPOCH {:?}.",
+            "Deleting triples. NEW EPOCH: {:?}, OLD EPOCH {:?}.",
             current_epoch_data.epoch_id,
             previous_epoch_data.epoch_id
         );
@@ -142,6 +131,7 @@ mod tests {
     use crate::providers::ecdsa::triple::TripleStorage;
     use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
+    use std::assert_matches;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
 
@@ -165,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_triples_and_presignatures() {
+    fn test_delete_triples() {
         // setup
         let (mut start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
@@ -188,7 +178,6 @@ mod tests {
             &ctx.db,
             start_data.clone(),
             my_participant_id,
-            [DomainId(0), DomainId(1)].to_vec(),
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
@@ -206,7 +195,6 @@ mod tests {
             &ctx.db,
             start_data.clone(),
             my_participant_id,
-            [DomainId(0), DomainId(1)].to_vec(),
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
@@ -220,13 +208,87 @@ mod tests {
             &ctx.db,
             end_data.clone(),
             my_participant_id,
-            [DomainId(0), DomainId(1)].to_vec(),
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
 
         ctx.assert_owned(0);
         assert_epoch_data_in_db_matches(&ctx, &end_data);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn delete_stale_triples_and_presignatures__should_delete_every_presignature() {
+        // Given
+        let (start_data, my_participant_id, reconstruction_threshold) =
+            test_utils::gen_four_participants();
+        let all_participants = get_participant_ids(start_data.clone());
+        let peer = *all_participants
+            .iter()
+            .find(|p| **p != my_participant_id)
+            .unwrap();
+        let ctx = TestContext::new(
+            my_participant_id,
+            Arc::new(Mutex::new(all_participants.clone())),
+        );
+        ctx.populate(&all_participants);
+        let presignature_keys: Vec<Vec<u8>> = [DomainId(0), DomainId(1)]
+            .into_iter()
+            .flat_map(|domain_id| {
+                [my_participant_id, peer].map(|owner| {
+                    [
+                        domain_id.0.to_be_bytes().as_slice(),
+                        &borsh::to_vec(&UniqueId::new(owner, 1, 0)).unwrap(),
+                    ]
+                    .concat()
+                })
+            })
+            .collect();
+        let mut writer = ctx.db.update();
+        for key in &presignature_keys {
+            writer.put(DBCol::Presignature, key, b"stored presignature");
+        }
+        writer.commit().unwrap();
+
+        // When
+        delete_stale_triples_and_presignatures(
+            &ctx.db,
+            start_data,
+            my_participant_id,
+            BTreeSet::from([reconstruction_threshold]),
+        )
+        .unwrap();
+
+        // Then
+        for key in &presignature_keys {
+            assert!(ctx.db.get(DBCol::Presignature, key).unwrap().is_none());
+        }
+        ctx.assert_owned(1);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn delete_stale_triples_and_presignatures__should_succeed_without_a_presignature_column() {
+        // Given
+        let (start_data, my_participant_id, reconstruction_threshold) =
+            test_utils::gen_four_participants();
+        let dir = tempfile::tempdir().unwrap();
+        let mut options = rocksdb::Options::default();
+        options.create_if_missing(true);
+        options.create_missing_column_families(true);
+        drop(rocksdb::DB::open_cf(&options, dir.path(), ["triple_v2", "epoch_id"]).unwrap());
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+
+        // When
+        let result = delete_stale_triples_and_presignatures(
+            &db,
+            start_data,
+            my_participant_id,
+            BTreeSet::from([reconstruction_threshold]),
+        );
+
+        // Then
+        assert_matches!(result, Ok(()));
     }
 
     /// End-to-end check that a triple written via [`TripleStorage::add_owned`]
@@ -262,7 +324,6 @@ mod tests {
             &db,
             start_data.clone(),
             my_participant_id,
-            vec![DomainId(0)],
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
@@ -281,7 +342,6 @@ mod tests {
             &db,
             start_data.clone(),
             my_participant_id,
-            vec![DomainId(0)],
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
@@ -325,7 +385,6 @@ mod tests {
             &db,
             start_data.clone(),
             my_participant_id,
-            vec![DomainId(0)],
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
@@ -339,7 +398,6 @@ mod tests {
             &db,
             start_data.clone(),
             my_participant_id,
-            vec![DomainId(0)],
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
@@ -380,7 +438,6 @@ mod tests {
             &db,
             start_data.clone(),
             my_participant_id,
-            vec![DomainId(0)],
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
@@ -394,7 +451,6 @@ mod tests {
             &db,
             start_data.clone(),
             my_participant_id,
-            vec![DomainId(0)],
             BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
