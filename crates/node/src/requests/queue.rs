@@ -823,7 +823,7 @@ where
                 } => {
                     mpc_pending_queue_finalized_responses.inc();
                     // Response block ≥ request block by construction; saturate just in case.
-                    let latency_blocks = block_height.blocks_since(request.block_height);
+                    let latency_blocks = block_height.blocks_since(request.block_height).value();
                     let latency_duration = received_at.signed_duration_since(request.time_indexed);
 
                     request_response_latency_blocks.observe(latency_blocks as f64);

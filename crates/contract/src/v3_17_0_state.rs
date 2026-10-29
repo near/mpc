@@ -334,7 +334,7 @@ mod tests {
         // Given
         testing_env!(VMContextBuilder::new().build());
         let stored = Config {
-            key_event_timeout_blocks: 30,
+            key_event_timeout_blocks: dtos::BlockCount::new(30),
             ..Default::default()
         };
 
@@ -354,7 +354,9 @@ mod tests {
         // Given
         testing_env!(VMContextBuilder::new().build());
         let stored = Config {
-            key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS + 1,
+            key_event_timeout_blocks: dtos::BlockCount::new(
+                DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS.value() + 1,
+            ),
             ..Default::default()
         };
 

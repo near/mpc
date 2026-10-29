@@ -29,9 +29,9 @@ pub mod types {
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
-        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
-        DomainConfig, DomainPurpose, DomainRegistry, EpochId, GovernanceThreshold,
-        GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
+        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, BlockCount,
+        BlockHeight, Curve, DomainConfig, DomainPurpose, DomainRegistry, EpochId,
+        GovernanceThreshold, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
         InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
         ParticipantCount, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
         ReconstructionThreshold, ResharingContractState, RunningContractState,

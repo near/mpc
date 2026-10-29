@@ -17,7 +17,7 @@ use crate::primitives::{
 };
 use initializing::InitializingContractState;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{DomainConfig, DomainId};
+use near_mpc_contract_interface::types::{BlockCount, DomainConfig, DomainId};
 use near_sdk::{env, near};
 use resharing::ResharingContractState;
 use running::RunningContractState;
@@ -69,7 +69,7 @@ impl ProtocolContractState {
     pub fn start_keygen_instance(
         &mut self,
         key_event_id: KeyEventId,
-        key_event_timeout_blocks: u64,
+        key_event_timeout_blocks: BlockCount,
     ) -> Result<(), Error> {
         let ProtocolContractState::Initializing(state) = self else {
             return Err(InvalidState::ProtocolStateNotInitializing.into());
@@ -79,7 +79,7 @@ impl ProtocolContractState {
     pub fn start_reshare_instance(
         &mut self,
         key_event_id: KeyEventId,
-        key_event_timeout_blocks: u64,
+        key_event_timeout_blocks: BlockCount,
     ) -> Result<(), Error> {
         let ProtocolContractState::Resharing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());

@@ -7,7 +7,7 @@ use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
 use crate::primitives::participants::IdentifiesParticipant;
-use near_mpc_contract_interface::types::{DomainId, ParticipantCount};
+use near_mpc_contract_interface::types::{BlockCount, DomainId, ParticipantCount};
 use near_sdk::near;
 use std::collections::BTreeSet;
 
@@ -49,7 +49,7 @@ impl InitializingContractState {
     pub fn start(
         &mut self,
         key_event_id: KeyEventId,
-        key_event_timeout_blocks: u64,
+        key_event_timeout_blocks: BlockCount,
     ) -> Result<(), Error> {
         self.generating_key
             .start(key_event_id, key_event_timeout_blocks)
@@ -161,7 +161,7 @@ pub mod tests {
     use crate::state::running::RunningContractState;
     use crate::state::test_utils::gen_initializing_state;
     use near_account_id::AccountId;
-    use near_mpc_contract_interface::types::DomainId;
+    use near_mpc_contract_interface::types::{BlockCount, DomainId};
     use rstest::rstest;
     use std::collections::BTreeSet;
 
@@ -194,17 +194,19 @@ pub mod tests {
                     .unwrap_err();
                 let _ = state.vote_abort(first_key_event_id).unwrap_err();
                 if *c != leader.0 {
-                    let _ = state.start(first_key_event_id, 1).unwrap_err();
+                    let _ = state
+                        .start(first_key_event_id, BlockCount::new(1))
+                        .unwrap_err();
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
                     let _ = state
-                        .start(first_key_event_id.next_attempt(), 1)
+                        .start(first_key_event_id.next_attempt(), BlockCount::new(1))
                         .unwrap_err();
                 }
             }
             // start the keygen; verify that the keygen is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            state.start(first_key_event_id, 0).unwrap();
+            state.start(first_key_event_id, BlockCount::new(0)).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
@@ -231,7 +233,9 @@ pub mod tests {
 
             // assert that votes for a different keygen do not count
             env.set_signer(&leader.0);
-            state.start(first_key_event_id.next_attempt(), 0).unwrap();
+            state
+                .start(first_key_event_id.next_attempt(), BlockCount::new(0))
+                .unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -276,7 +280,9 @@ pub mod tests {
 
             // check that vote_abort immediately causes failure.
             env.set_signer(&leader.0);
-            state.start(key_event.next_attempt(), 0).unwrap();
+            state
+                .start(key_event.next_attempt(), BlockCount::new(0))
+                .unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
             state.vote_abort(key_event).unwrap();
@@ -284,7 +290,9 @@ pub mod tests {
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            state.start(key_event.next_attempt(), 0).unwrap();
+            state
+                .start(key_event.next_attempt(), BlockCount::new(0))
+                .unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let pk = bogus_ed25519_public_key_extended();
             for (i, c) in candidates.clone().into_iter().enumerate() {
@@ -342,7 +350,7 @@ pub mod tests {
             domain_id: state.domains.get_domain_by_index(2).unwrap().id,
             epoch_id: state.epoch_id,
         };
-        state.start(first_key_event_id, 0).unwrap();
+        state.start(first_key_event_id, BlockCount::new(0)).unwrap();
 
         let pk = bogus_ed25519_public_key_extended();
         let participants = state
