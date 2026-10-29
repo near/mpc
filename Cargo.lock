@@ -1452,16 +1452,16 @@ dependencies = [
 
 [[package]]
 name = "blaire"
-version = "3.16.0"
+version = "3.18.0"
 dependencies = [
  "blaire-interface",
- "near-account-id 2.6.0",
+ "near-account-id",
  "near-mpc-crypto-types",
 ]
 
 [[package]]
 name = "blaire-interface"
-version = "3.16.0"
+version = "3.18.0"
 dependencies = [
  "serde",
 ]
