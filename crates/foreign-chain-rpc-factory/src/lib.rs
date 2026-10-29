@@ -103,8 +103,16 @@ pub fn build_http_client(provider: &ForeignChainProviderConfig) -> anyhow::Resul
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::TokenConfig;
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use mpc_node_config::foreign_chains::provider_identity::ProviderWhitelistMatches;
+    use mpc_node_config::{ForeignChainConfig, TokenConfig};
+    use near_mpc_contract_interface::types::{
+        AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
+    };
+    use rstest::rstest;
     use std::assert_matches;
+    use std::collections::BTreeMap;
+    use std::num::NonZeroU64;
 
     #[test]
     fn auth_config_to_rpc_auth__path_auth_substitutes_token_into_url() {
@@ -302,5 +310,91 @@ mod tests {
 
         // Then
         result.unwrap_err();
+    }
+
+    #[rstest]
+    #[case::alchemy_placeholder_in_the_host(
+        "https://base-mainnet.g.alchemy.com/v2",
+        "https://base-mainnet.g.alchemy.com/v2/com",
+        "com",
+        "example.org",
+        "base-mainnet.g.alchemy.com"
+    )]
+    #[case::quicknode_placeholder_in_the_slug(
+        "https://{}.base-mainnet.quiknode.pro",
+        "https://base.base-mainnet.quiknode.pro/base",
+        "base",
+        "evil.example.org/x",
+        "base.base-mainnet.quiknode.pro"
+    )]
+    #[case::quicknode_braced_placeholder_in_the_slug(
+        "https://{}.base-mainnet.quiknode.pro",
+        "https://{api_key}.base-mainnet.quiknode.pro/{api_key}",
+        "{api_key}",
+        "evil.example.org/x",
+        "{api_key}.base-mainnet.quiknode.pro"
+    )]
+    fn resolve_provider_auth__should_keep_the_host_of_a_whitelist_conforming_provider(
+        #[case] whitelisted_base_url: &str,
+        #[case] rpc_url: &str,
+        #[case] placeholder: &str,
+        #[case] token: &str,
+        #[case] checked_host: &str,
+    ) {
+        // Given
+        let local_name = RpcProviderName::from("local".to_string());
+        let provider = ForeignChainProviderConfig {
+            rpc_url: rpc_url.to_string(),
+            auth: AuthConfig::Path {
+                placeholder: placeholder.to_string(),
+                token: TokenConfig::Val {
+                    val: token.to_string(),
+                },
+            },
+        };
+        let local = ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: BTreeMap::from([(local_name.clone(), provider.clone())])
+                .try_into()
+                .unwrap(),
+            expected_network_fingerprint: None,
+        };
+        let whitelisted_id = ProviderId("whitelisted".to_string());
+        let entry = ChainEntry {
+            providers: BTreeMap::from([(
+                whitelisted_id.clone(),
+                ProviderConfig {
+                    base_url: whitelisted_base_url.to_string(),
+                    auth_scheme: AuthScheme::Path {
+                        placeholder: "{API_KEY}".to_string(),
+                    },
+                    chain_routing: ChainRouting::Embedded,
+                },
+            )])
+            .try_into()
+            .unwrap(),
+            quorum: 1,
+        };
+        assert_eq!(
+            ProviderWhitelistMatches::for_chain(&local, &entry)
+                .whitelist_conforming_providers()
+                .whitelist_provider_id(&local_name),
+            Some(&whitelisted_id),
+            "the provider must conform to the whitelist for this test to be meaningful"
+        );
+
+        // When
+        let (resolved_url, _) = resolve_provider_auth(&provider).unwrap();
+
+        // Then
+        let resolved_host = url::Url::parse(&resolved_url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned));
+        assert_eq!(
+            resolved_host.as_deref(),
+            Some(checked_host),
+            "resolved URL: {resolved_url}"
+        );
     }
 }

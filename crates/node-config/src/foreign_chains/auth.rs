@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 use url::Url;
 
-use super::provider_identity::ConfiguredAuth;
+use super::provider_identity::{ConfiguredAuth, encode_path_segment};
 
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -106,7 +106,8 @@ pub fn substitute_path_token(
     let mut url =
         Url::parse(rpc_url).with_context(|| format!("provided RPC URL is invalid: `{rpc_url}`"))?;
     let index = placeholder_segment_index(&url, placeholder)?;
-    let encoded_token = encode_path_segment(&url, token)?;
+    let encoded_token = encode_path_segment(&url, token)
+        .context("the token for path authentication is not a valid path segment")?;
     let path = url
         .path_segments()
         .into_iter()
@@ -126,7 +127,11 @@ pub fn substitute_path_token(
 }
 
 fn placeholder_segment_index(url: &Url, placeholder: &str) -> anyhow::Result<usize> {
-    let encoded_placeholder = encode_path_segment(url, placeholder)?;
+    let encoded_placeholder = encode_path_segment(url, placeholder).with_context(|| {
+        format!(
+            "the placeholder, `{placeholder}`, for path authentication is not a valid path segment"
+        )
+    })?;
     let indices: Vec<usize> = url
         .path_segments()
         .into_iter()
@@ -142,17 +147,6 @@ fn placeholder_segment_index(url: &Url, placeholder: &str) -> anyhow::Result<usi
             indices.len()
         ),
     }
-}
-
-/// Encodes `segment` as [`Url::parse`] encodes a path segment.
-fn encode_path_segment(url: &Url, segment: &str) -> anyhow::Result<String> {
-    let mut probe = url.clone();
-    probe
-        .path_segments_mut()
-        .map_err(|()| anyhow::anyhow!("the rpc url {url} has no path"))?
-        .clear()
-        .push(segment);
-    Ok(probe.path().trim_start_matches('/').to_owned())
 }
 
 #[cfg(test)]
@@ -199,6 +193,12 @@ mod tests {
         "evil.example.org",
         "https://{api_key}.quiknode.pro/evil.example.org"
     )]
+    #[case::percent_in_the_token(
+        "https://rpc.ankr.com/eth/{api_key}",
+        "{api_key}",
+        "a%2Fb",
+        "https://rpc.ankr.com/eth/a%252Fb"
+    )]
     #[case::url_delimiters_in_the_token(
         "https://rpc.ankr.com/eth/{api_key}",
         "{api_key}",
@@ -219,16 +219,25 @@ mod tests {
     }
 
     #[rstest]
-    #[case::absent("https://rpc.ankr.com/eth/key")]
-    #[case::two_segments("https://rpc.ankr.com/{api_key}/{api_key}")]
-    #[case::part_of_a_segment("https://rpc.ankr.com/eth/key{api_key}")]
-    #[case::in_the_query("https://rpc.ankr.com/eth?key={api_key}")]
-    #[case::only_in_the_host("https://{api_key}.quiknode.pro/")]
-    fn substitute_path_token__should_fail_unless_the_placeholder_is_one_full_path_segment(
+    #[case::absent("https://rpc.ankr.com/eth/key", "{api_key}", "key")]
+    #[case::two_segments("https://rpc.ankr.com/{api_key}/{api_key}", "{api_key}", "key")]
+    #[case::part_of_a_segment("https://rpc.ankr.com/eth/key{api_key}", "{api_key}", "key")]
+    #[case::in_the_query("https://rpc.ankr.com/eth?key={api_key}", "{api_key}", "key")]
+    #[case::only_in_the_host("https://{api_key}.quiknode.pro/", "{api_key}", "key")]
+    #[case::percent_encoded_placeholder(
+        "https://rpc.ankr.com/eth/%7Bapi_key%7D",
+        "%7Bapi_key%7D",
+        "key"
+    )]
+    #[case::dot_placeholder("https://rpc.ankr.com/eth/", ".", "key")]
+    #[case::dot_dot_token("https://rpc.ankr.com/eth/{api_key}", "{api_key}", "..")]
+    fn substitute_path_token__should_fail_unless_placeholder_and_token_are_full_path_segments(
         #[case] rpc_url: &str,
+        #[case] placeholder: &str,
+        #[case] token: &str,
     ) {
         // When
-        let substituted = substitute_path_token(rpc_url, "{api_key}", "key");
+        let substituted = substitute_path_token(rpc_url, placeholder, token);
 
         // Then
         assert!(substituted.is_err(), "got {substituted:?}");
