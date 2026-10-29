@@ -57,10 +57,12 @@ fn main() {
 
     config.warmup(&|| {
         let mut rng = MockCryptoRng::seed_from_u64(66);
-        robust_run_presign(
+        robust_run_sign(
             &participants,
             &key_packages,
             max_malicious,
+            coordinator,
+            pk,
             &config.latency,
             &mut rng,
         );
@@ -170,37 +172,13 @@ fn bench_robust_ecdsa(
     pk: frost_secp256k1::VerifyingKey,
     config: &BenchConfig,
 ) {
-    let mut presign_rng = MockCryptoRng::seed_from_u64(66);
-    let (presign_outputs, _) = robust_run_presign(
-        participants,
-        key_packages,
-        max_malicious,
-        &config.latency,
-        &mut presign_rng,
-    );
-
-    bench_simulation(
-        "RobustEcdsa: presign",
-        &|| {
-            let mut rng = MockCryptoRng::seed_from_u64(66);
-            robust_run_presign(
-                participants,
-                key_packages,
-                max_malicious,
-                &config.latency,
-                &mut rng,
-            )
-            .1
-        },
-        config.samples,
-    );
     bench_simulation(
         "RobustEcdsa: sign",
         &|| {
             let mut rng = MockCryptoRng::seed_from_u64(77);
             robust_run_sign(
                 participants,
-                &presign_outputs,
+                key_packages,
                 max_malicious,
                 coordinator,
                 pk,
@@ -373,85 +351,47 @@ fn ot_run_presign_and_sign(
     metrics
 }
 
-fn robust_run_presign(
-    participants: &[Participant],
-    key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    max_malicious: MaxMalicious,
-    latency: &LatencyModel,
-    rng: &mut MockCryptoRng,
-) -> (
-    Vec<(Participant, robust_ecdsa::PresignOutput)>,
-    SimulationMetrics,
-) {
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>,
-    )> = Vec::with_capacity(participants.len());
-    for (p, keygen_out) in key_packages {
-        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = robust_ecdsa::presign::presign(
-            participants,
-            *p,
-            robust_ecdsa::PresignArguments {
-                keygen_out: keygen_out.clone(),
-                max_malicious,
-            },
-            rng_p,
-        )
-        .expect("Presign should succeed");
-        protocols.push((*p, Box::new(protocol)));
-    }
-    run_simulation(protocols, latency)
-}
-
 fn robust_run_sign(
     participants: &[Participant],
-    presign_outputs: &[(Participant, robust_ecdsa::PresignOutput)],
+    key_packages: &[(Participant, ecdsa::KeygenOutput)],
     max_malicious: MaxMalicious,
     coordinator: Participant,
     pk: frost_secp256k1::VerifyingKey,
     latency: &LatencyModel,
     rng: &mut MockCryptoRng,
 ) -> SimulationMetrics {
-    let (args, msg_hash) =
-        ecdsa_generate_rerandpresig_args(rng, participants, pk, presign_outputs[0].1.big_r);
-    let derived_pk = args
-        .tweak
-        .derive_verifying_key(&pk)
-        .to_element()
-        .to_affine();
-
-    let rerand: Vec<_> = presign_outputs
-        .iter()
-        .map(|(p, presig)| {
-            (
-                *p,
-                robust_ecdsa::RerandomizedPresignOutput::rerandomize_presign(presig, &args)
-                    .expect("Rerandomize should succeed"),
-            )
-        })
-        .collect();
+    let tweak = ecdsa::Tweak::new(frost_core::random_nonzero::<ecdsa::Secp256K1Sha256, _>(rng));
+    let msg_hash = frost_core::random_nonzero::<ecdsa::Secp256K1Sha256, _>(rng);
+    let derived_pk = tweak.derive_verifying_key(&pk).to_element().to_affine();
 
     let mut protocols: Vec<(
         Participant,
         Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
     )> = Vec::with_capacity(participants.len());
-    for (p, presig) in rerand {
-        let protocol = robust_ecdsa::sign::sign(
+    for (p, keygen_out) in key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = robust_ecdsa::presign_and_sign(
             participants,
             coordinator,
-            max_malicious,
-            p,
-            derived_pk,
-            presig,
+            *p,
+            robust_ecdsa::PresignArguments {
+                keygen_out: keygen_out.clone(),
+                max_malicious,
+            },
+            tweak,
             msg_hash,
+            rng_p,
         )
         .expect("Signing should succeed");
-        protocols.push((p, Box::new(protocol)));
+        protocols.push((*p, Box::new(protocol)));
     }
 
     let (results, metrics) = run_simulation(protocols, latency);
     assert_eq!(results.len(), participants.len());
-    assert!(results.iter().any(|(_, sig)| sig.is_some()));
+    let signature = results
+        .iter()
+        .find_map(|(p, sig)| (*p == coordinator).then(|| sig.clone()).flatten())
+        .expect("coordinator should output a signature");
+    assert!(signature.verify(&derived_pk, &msg_hash));
     metrics
 }

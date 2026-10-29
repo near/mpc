@@ -21,6 +21,10 @@ pub(crate) const ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES:
 ///
 /// **This is a stub and leaks the signing key.** See the [module docs](super) before
 /// using it for anything.
+///
+/// The `N = 2 * max_malicious + 1` participant count and the `msg_hash != 0`
+/// rejection are retained from the removed scheme, which needed both to blunt
+/// split-view attacks.
 pub fn presign_and_sign<R>(
     participants: &[Participant],
     coordinator: Participant,
@@ -100,9 +104,6 @@ async fn do_presign_and_sign(
 mod test {
     use super::*;
     use crate::crypto::hash::test::scalar_hash_secp256k1;
-    use crate::ecdsa::robust_ecdsa::PresignOutput;
-    use crate::ecdsa::robust_ecdsa::presign::presign;
-    use crate::ecdsa::robust_ecdsa::sign::sign;
     use crate::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature, x_coordinate};
     use crate::test_utils::{
         GenProtocol, MockCryptoRng, assert_buffer_capacity, check_one_coordinator_output,
@@ -181,40 +182,6 @@ mod test {
             }
             run_protocol(protocols).unwrap()
         }
-
-        fn run_presign_then_tweaked_sign(&self, coordinator: Participant) -> Signature {
-            let mut presign_protocols: GenProtocol<PresignOutput> =
-                Vec::with_capacity(self.participants.len());
-            for (i, p) in self.participants.iter().enumerate() {
-                let protocol =
-                    presign(&self.participants, *p, self.args_for(i), self.rng_for(i)).unwrap();
-                presign_protocols.push((*p, Box::new(protocol)));
-            }
-            let presignatures = run_protocol(presign_protocols).unwrap();
-
-            let derived_public_key = self
-                .tweak
-                .derive_verifying_key(&self.key_packages[0].1.public_key)
-                .to_element()
-                .to_affine();
-            let mut sign_protocols: GenProtocol<SignatureOption> =
-                Vec::with_capacity(self.participants.len());
-            for (p, presignature) in presignatures {
-                let protocol = sign(
-                    &self.participants,
-                    coordinator,
-                    self.max_malicious,
-                    p,
-                    derived_public_key,
-                    presignature.with_tweak(&self.tweak),
-                    self.msg_hash,
-                )
-                .unwrap();
-                sign_protocols.push((p, Box::new(protocol)));
-            }
-            check_one_coordinator_output(run_protocol(sign_protocols).unwrap(), coordinator)
-                .unwrap()
-        }
     }
 
     fn to_k256_signature(signature: &Signature) -> ecdsa::Signature<k256::Secp256k1> {
@@ -259,23 +226,6 @@ mod test {
         for (participant, output) in &result {
             assert_eq!(output.is_some(), *participant == coordinator);
         }
-    }
-
-    #[test]
-    fn presign_and_sign__should_equal_presign_then_tweaked_sign_without_rerandomization() {
-        // Given
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let setup = Setup::new(2, &mut rng);
-        let coordinator = setup.participants[0];
-        let separate = setup.run_presign_then_tweaked_sign(coordinator);
-
-        // When
-        let merged = setup.run_presign_and_sign(coordinator);
-
-        // Then
-        let merged = check_one_coordinator_output(merged, coordinator).unwrap();
-        assert_eq!(merged.big_r, separate.big_r);
-        assert_eq!(merged.s, separate.s);
     }
 
     #[test]

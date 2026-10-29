@@ -1,127 +1,32 @@
 use elliptic_curve::scalar::IsHigh;
 
 use crate::{
-    MaxMalicious,
     ecdsa::{
         AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption,
-        robust_ecdsa::RerandomizedPresignOutput, x_coordinate,
+        robust_ecdsa::presign::PresignOutput, x_coordinate,
     },
-    errors::{InitializationError, ProtocolError},
+    errors::ProtocolError,
     participants::{Participant, ParticipantList},
-    protocol::{
-        Protocol,
-        helpers::recv_from_others,
-        internal::{Comms, SharedChannel, make_protocol},
-    },
+    protocol::{helpers::recv_from_others, internal::SharedChannel},
 };
 use frost_core::serialization::SerializableScalar;
 use subtle::ConditionallySelectable;
 type C = Secp256K1Sha256;
 
-/// Maximum incoming buffer entries for the coordinator in the robust ECDSA sign protocol.
-pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 1;
-/// Maximum incoming buffer entries for non-coordinator participants in the robust ECDSA sign protocol.
-#[cfg(test)]
-pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
-
-/// Depending on whether the current participant is a coordinator or not,
-/// runs the signature protocol as either a participant or a coordinator.
+/// The signing round, run on a caller-owned channel so that it can follow presigning on the
+/// same channel.
 ///
 /// This phase is scheme-agnostic: it sums the participants' Lagrange-linearized
 /// shares of `s`, so it carries over unchanged to whichever scheme replaces the
 /// current presigning stub. It provides no secrecy of its own, and inherits the key
 /// leak documented in the [module docs](super).
-///
-/// The `N = 2 * max_malicious + 1` participant count and the `msg_hash != 0`
-/// rejection below are retained from the removed scheme, which needed both to blunt
-/// split-view attacks.
-pub fn sign<M>(
-    participants: &[Participant],
-    coordinator: Participant,
-    max_malicious: M,
-    me: Participant,
-    public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
-    msg_hash: Scalar,
-) -> Result<impl Protocol<Output = SignatureOption> + use<M>, InitializationError>
-where
-    M: Into<MaxMalicious>,
-{
-    if participants.len() < 2 {
-        return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len(),
-        });
-    }
-
-    let participants =
-        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
-
-    // ensure my presence in the participant list
-    if !participants.contains(me) {
-        return Err(InitializationError::MissingParticipant {
-            role: "self",
-            participant: me,
-        });
-    }
-
-    // ensure the coordinator is a participant
-    if !participants.contains(coordinator) {
-        return Err(InitializationError::MissingParticipant {
-            role: "coordinator",
-            participant: coordinator,
-        });
-    }
-
-    // ensure number of participants during the signing phase is >= 2 * max_malicious + 1
-    let robust_ecdsa_threshold = max_malicious
-        .into()
-        .value()
-        .checked_mul(2)
-        .and_then(|v| v.checked_add(1))
-        .ok_or_else(|| {
-            InitializationError::BadParameters(
-                "2*threshold+1 must be less than usize::MAX".to_string(),
-            )
-        })?;
-    if robust_ecdsa_threshold > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
-        ));
-    }
-
-    if participants.len() != robust_ecdsa_threshold {
-        return Err(InitializationError::BadParameters(
-            "the number of participants during signing must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
-        ));
-    }
-    if bool::from(msg_hash.is_zero()) {
-        return Err(InitializationError::BadParameters(
-            "msg_hash cannot be 0 to avoid potential split view attacks".to_string(),
-        ));
-    }
-
-    let ctx = Comms::with_buffer_capacity(ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
-    let fut = fut_wrapper(
-        ctx.shared_channel(),
-        participants,
-        coordinator,
-        me,
-        public_key,
-        presignature,
-        msg_hash,
-    );
-    Ok(make_protocol(ctx, fut))
-}
-
-/// The signing round, run on a caller-owned channel so that it can follow presigning on the
-/// same channel.
-pub(crate) async fn sign_round(
+pub async fn sign_round(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
     public_key: AffinePoint,
-    presignature: &RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     if me == coordinator {
@@ -137,7 +42,7 @@ fn do_sign_participant(
     participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
-    presignature: &RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     let s_me = compute_signature_share(presignature, msg_hash, participants, me)?;
@@ -153,7 +58,7 @@ async fn do_sign_coordinator(
     participants: &ParticipantList,
     me: Participant,
     public_key: AffinePoint,
-    presignature: &RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     let mut s = compute_signature_share(presignature, msg_hash, participants, me)?.0;
@@ -191,12 +96,11 @@ async fn do_sign_coordinator(
 
 /// A common computation done by both the coordinator and the other participants
 fn compute_signature_share(
-    presignature: &RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
     participants: &ParticipantList,
     me: Participant,
 ) -> Result<SerializableScalar<C>, ProtocolError> {
-    // (beta_i + tweak * k_i) * delta^{-1}
     let big_r = presignature.big_r;
     let big_r_x_coordinate = x_coordinate(&big_r);
     // beta * Rx + e
@@ -208,46 +112,75 @@ fn compute_signature_share(
     Ok(SerializableScalar::<C>(linearized_s_me))
 }
 
-/// Wraps the coordinator and the participant into a single functions to be called
-async fn fut_wrapper(
-    mut chan: SharedChannel,
-    participants: ParticipantList,
-    coordinator: Participant,
-    me: Participant,
-    public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    sign_round(
-        &mut chan,
-        &participants,
-        coordinator,
-        me,
-        public_key,
-        &presignature,
-        msg_hash,
-    )
-    .await
-}
-
 #[cfg(test)]
 mod test {
 
+    use std::error::Error;
+
     use k256::{PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
+    use rand::seq::SliceRandom as _;
     use rand_core::{CryptoRngCore, SeedableRng};
 
     use super::*;
+    use crate::MaxMalicious;
+    use crate::crypto::hash::test::scalar_hash_secp256k1;
     use crate::ecdsa::{
         Field, Polynomial, ProjectivePoint, Secp256K1ScalarField,
-        robust_ecdsa::{
-            PresignOutput,
-            test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
-        },
+        robust_ecdsa::presign_and_sign::ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+    };
+    use crate::errors::InitializationError;
+    use crate::protocol::{
+        Protocol,
+        internal::{Comms, make_protocol},
     };
     use crate::test_utils::{
-        MockCryptoRng, assert_buffer_capacity, expected_buffer_by_role, generate_participants,
+        MockCryptoRng, check_one_coordinator_output, generate_participants, run_sign,
     };
-    use rstest::rstest;
+
+    /// Runs only the signing round, on presignatures the caller provides.
+    fn run_sign_round(
+        participants_presign: Vec<(Participant, PresignOutput)>,
+        public_key: ProjectivePoint,
+        msg: &[u8],
+        rng: &mut impl CryptoRngCore,
+    ) -> Result<(Participant, Signature), Box<dyn Error>> {
+        let msg_hash = scalar_hash_secp256k1(msg);
+        let coordinator = participants_presign
+            .choose(rng)
+            .expect("participant list is not empty")
+            .0;
+
+        let result = run_sign::<Secp256K1Sha256, _, _, _>(
+            participants_presign,
+            coordinator,
+            public_key,
+            msg_hash,
+            |participants, coordinator, me, public_key, presignature, msg_hash| {
+                let participants = ParticipantList::new(participants)
+                    .ok_or(InitializationError::DuplicateParticipants)?;
+                let ctx = Comms::with_buffer_capacity(
+                    ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                );
+                let mut chan = ctx.shared_channel();
+                let fut = async move {
+                    sign_round(
+                        &mut chan,
+                        &participants,
+                        coordinator,
+                        me,
+                        public_key.to_affine(),
+                        &presignature,
+                        msg_hash,
+                    )
+                    .await
+                };
+                Ok(Box::new(make_protocol(ctx, fut))
+                    as Box<dyn Protocol<Output = SignatureOption>>)
+            },
+        )?;
+        let signature = check_one_coordinator_output(result, coordinator)?;
+        Ok((coordinator, signature))
+    }
 
     type PresigSimulationOutput = (Scalar, Polynomial, Polynomial, Polynomial, ProjectivePoint);
 
@@ -312,7 +245,7 @@ mod test {
     }
 
     #[test]
-    fn test_sign_given_presignature_without_rerandomization() {
+    fn test_sign_given_presignature() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let max_malicious = 2;
         let msg = b"Hello? Is it me you're looking for?";
@@ -321,14 +254,7 @@ mod test {
         let (public_key, participants_presign) =
             simulate_sign_inputs(&participants, max_malicious, &mut rng);
 
-        let (_, sig) = run_sign_without_rerandomization(
-            &participants_presign,
-            max_malicious.into(),
-            public_key,
-            msg,
-            &mut rng,
-        )
-        .unwrap();
+        let (_, sig) = run_sign_round(participants_presign, public_key, msg, &mut rng).unwrap();
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
 
         // verify the correctness of the generated signature
@@ -338,40 +264,9 @@ mod test {
     }
 
     #[test]
-    fn test_sign_given_presignature_with_rerandomization() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let max_malicious = 2;
-        let msg = b"Hello? Is it me you're looking for?";
-
-        let participants = generate_participants(5);
-        let (public_key, participants_presign) =
-            simulate_sign_inputs(&participants, max_malicious, &mut rng);
-        let public_key_vk = frost_core::VerifyingKey::new(public_key);
-
-        let (tweak, _, sig) = run_sign_with_rerandomization(
-            &participants_presign,
-            max_malicious,
-            public_key,
-            msg,
-            &mut rng,
-        )
-        .unwrap();
-        let signature = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
-        let public_key = tweak.derive_verifying_key(&public_key_vk).to_element();
-
-        // verify the correctness of the generated signature
-        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
-            .verify(&msg[..], &signature)
-            .unwrap();
-
-        insta::assert_json_snapshot!(signature);
-    }
-
-    #[test]
     fn test_sign_fails_if_s_is_zero() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(3);
-        let max_malicious = 1;
 
         // presignatures with s_me = 0 for each participant
         let presignatures = participants
@@ -393,13 +288,7 @@ mod test {
         let public_key = ProjectivePoint::IDENTITY;
         let msg = [0u8; 32]; // arbitrary zero message
 
-        let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
-            &presignatures,
-            max_malicious.into(),
-            public_key,
-            &msg,
-            &mut rng,
-        );
+        let result = run_sign_round(presignatures, public_key, &msg, &mut rng);
 
         match result {
             Ok(_) => panic!("expected failure, got success"),
@@ -411,92 +300,5 @@ mod test {
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_sign_fails_if_max_malicious_too_high() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants(2);
-        let max_malicious = 1;
-
-        // arbitrary values
-        let presignatures = participants
-            .iter()
-            .map(|p| {
-                (
-                    *p,
-                    PresignOutput {
-                        big_r: ProjectivePoint::IDENTITY.to_affine(),
-                        alpha: Secp256K1ScalarField::zero(),
-                        beta: Secp256K1ScalarField::zero(),
-                        c: Secp256K1ScalarField::zero(),
-                        e: Secp256K1ScalarField::zero(),
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-        let public_key = ProjectivePoint::IDENTITY;
-        let msg = [0u8; 32];
-
-        let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
-            &presignatures,
-            max_malicious.into(),
-            public_key,
-            &msg,
-            &mut rng,
-        );
-
-        match result {
-            Ok(_) => panic!("expected failure, got success"),
-            Err(err) => {
-                let text = err.to_string();
-                assert!(
-                    text.contains("bad parameters: 2*max_malicious+1 must be less than or equals to participant count"),
-                    "unexpected error type: {text}"
-                );
-            }
-        }
-    }
-
-    #[rstest]
-    #[case(1)]
-    #[case(2)]
-    #[case(3)]
-    fn test_sign_buffer_entries(#[case] max_malicious: usize) {
-        // Given
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let num_participants = 2 * max_malicious + 1;
-        let participants = generate_participants(num_participants);
-        let (public_key, presignatures) =
-            simulate_sign_inputs(&participants, max_malicious, &mut rng);
-        let coordinator = participants[0];
-        let msg_scalar = crate::crypto::hash::test::scalar_hash_secp256k1(b"test msg");
-
-        // When + Then
-        assert_buffer_capacity(
-            &participants,
-            &mut rng,
-            |comms, p_list, p, _rng_p| {
-                let presignature = &presignatures.iter().find(|(pp, _)| *pp == p).unwrap().1;
-                let rerandomized =
-                    crate::ecdsa::robust_ecdsa::RerandomizedPresignOutput::new_without_rerandomization(
-                        presignature,
-                    );
-                fut_wrapper(
-                    comms.shared_channel(),
-                    p_list,
-                    coordinator,
-                    p,
-                    public_key.to_affine(),
-                    rerandomized,
-                    msg_scalar,
-                )
-            },
-            expected_buffer_by_role(
-                coordinator,
-                ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
-                ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
-            ),
-        );
     }
 }

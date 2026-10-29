@@ -42,8 +42,7 @@ scaled by the party's real key share, so $\sum_i \lambda_i \beta_i = k^{-1} x$.
 
 **Why this leaks the key.** Every presigner learns $k$ in the clear, so given any
 signature $(R, s)$ derived from this presignature the signing key follows from
-$x = (s \cdot k - h) \cdot R_\mathsf{x}^{-1}$. The nonce $\delta$-rerandomization
-below does not help: $\delta$ is derived from public inputs.
+$x = (s \cdot k - h) \cdot R_\mathsf{x}^{-1}$.
 
 # Signing
 
@@ -55,19 +54,11 @@ generates an ECDSA signature. The inputs to this phase are:
 
 1) The presignature $(R, \alpha_i, \beta_i, c_i, e_i)$,
 2) The public key $X$,
-3) A "fresh" public source of entropy $\rho$,
-4) A tweak $\epsilon$ used during key derivation,
-5) The message hash $h = H(m)$,
-6) The derived public key $Y = X + \epsilon \cdot G$.
+3) A tweak $\epsilon$ used during key derivation,
+4) The message hash $h = H(m)$,
+5) The derived public key $Y = X + \epsilon \cdot G$.
 
-**Rerandomization & Key Derivation:**
-
-1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(Y, \epsilon, h, R, \rho)$
-2. Each $P_i$ rerandomizes the following elements:
-
-    * $R  \gets R^\delta$
-    * $\alpha_i \gets \alpha_i \cdot \delta^{-1}$
-    * $\beta_i \gets (\beta_i + c_i \cdot \epsilon) \cdot \delta^{-1}$
+**Key Derivation:** each $P_i$ sets $\beta_i \gets \beta_i + c_i \cdot \epsilon$.
 
 **Round 1:**
 
@@ -96,8 +87,7 @@ the message hash $h$; there is no entropy input.
 
 **Round 1:** as in [Presigning](#presigning), producing $(R, \alpha_i, \beta_i, c_i, e_i)$.
 
-**Key derivation (local):** each $P_i$ sets $\beta_i \gets \beta_i + c_i \cdot \epsilon$. This is
-the $\delta = 1$ case of the rerandomization step above: the presignature is consumed by the
+**Key derivation (local):** as in [Signing](#signing). The presignature is consumed by the
 run that produced it and never stored, so nothing has to bind a stored $R$ to the message.
 
 **Round 2:** as in [Signing](#signing) Round 1, with the coordinator verifying $(R, s)$ against
