@@ -386,18 +386,24 @@ impl OutgoingConnection {
                         let serialized = borsh::to_vec(&data)?;
                         let bytes = Bytes::from(serialized);
                         let payload_size = bytes.len();
-
-                        // Add timeout to write operations to detect if writes are hanging
-                        // (e.g., due to half-open connection where peer stopped ACKing)
-                        match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
-                            Ok(Ok(_)) => {},
-                            Ok(Err(e)) => return Err(e.into()),
-                            Err(_) => {
-                                // Write timed out - connection is likely stuck/half-open
+                        tokio::select! {
+                            biased;
+                            _ = liveness_failed.cancelled() => {
                                 return Err(anyhow::anyhow!(
-                                    "write operation timed out after {}s (connection may be half-open)",
-                                    WRITE_OPERATION_TIMEOUT.as_secs()
+                                    "echo liveness check failed during write operation"
                                 ));
+                            }
+                            write_result = framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT) => {
+                                match write_result {
+                                    Ok(Ok(_)) => {},
+                                    Ok(Err(e)) => return Err(e.into()),
+                                    Err(_) => {
+                                        return Err(anyhow::anyhow!(
+                                            "write operation timed out after {}s (connection may be half-open)",
+                                            WRITE_OPERATION_TIMEOUT.as_secs()
+                                        ));
+                                    }
+                                }
                             }
                         }
 
@@ -944,15 +950,34 @@ async fn incoming_connection_handler(
 
     let result: anyhow::Result<()> = async {
         loop {
-            let payload_bytes = match framed_tls_stream_reader
-                .next()
-                .timeout(MESSAGE_READ_TIMEOUT_DURATION)
-                .await?
-            {
-                Some(result) => result?,
-                None => {
-                    // Stream ended cleanly (peer closed connection).
-                    return Ok(());
+            let payload_bytes = tokio::select! {
+                biased;
+                _ = async {
+                    loop {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        if let Some(outgoing) = peer.any_outgoing_connection() {
+                            if outgoing.closed.is_cancelled() {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                } => {
+                    // It's dead, just doesn't know it yet. See #4514
+                    return Err(anyhow::anyhow!(
+                        "outgoing connection closed for peer {}",
+                        peer_id
+                    ));
+                }
+                read_result = framed_tls_stream_reader.next().timeout(MESSAGE_READ_TIMEOUT_DURATION) => {
+                    match read_result? {
+                        Some(result) => result?,
+                        None => {
+                            // Stream ended cleanly (peer closed connection).
+                            return Ok(());
+                        }
+                    }
                 }
             };
 
