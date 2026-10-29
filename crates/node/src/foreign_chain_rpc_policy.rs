@@ -1,12 +1,82 @@
 //! Turns a chain's voted whitelist entry into the [`RpcQuorum`] this node's fan-out must meet.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
 use foreign_chain_inspector::RpcQuorum;
-use mpc_node_config::ForeignChainConfig;
-use mpc_node_config::foreign_chains::provider_identity::ProviderWhitelistMatches;
-use near_mpc_contract_interface::types::{ChainEntry, ProviderId};
+use mpc_node_config::foreign_chains::provider_identity::{
+    ProviderWhitelistMatches, WhitelistConformingProviders,
+};
+use mpc_node_config::{ForeignChainConfig, ForeignChainsConfig};
+use near_mpc_contract_interface::types::{ChainEntry, ForeignChain, ProviderId};
+
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
+
+/// The status of every configured chain against `whitelist`.
+pub(crate) fn rpc_quorum_statuses(
+    local: &ForeignChainsConfig,
+    whitelist: &ForeignChainWhitelist,
+) -> BTreeMap<ForeignChain, RpcQuorumStatus> {
+    local
+        .iter_chains()
+        .map(|(chain, local_chain)| (chain, rpc_quorum_status(local_chain, whitelist.get(&chain))))
+        .collect()
+}
+
+/// The chains a node registers and serves.
+pub(crate) fn eligible_chains(
+    statuses: &BTreeMap<ForeignChain, RpcQuorumStatus>,
+) -> BTreeSet<ForeignChain> {
+    statuses
+        .iter()
+        .filter(|(_, status)| status.reaches_quorum())
+        .map(|(chain, _)| *chain)
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RpcQuorumStatus {
+    /// The voted quorum, `None` while the chain is not whitelisted or the vote is zero.
+    pub required: Option<NonZeroUsize>,
+    /// Distinct whitelist providers the local config conforms to.
+    pub conforming: usize,
+}
+
+impl RpcQuorumStatus {
+    fn new(entry: &ChainEntry, conforming: &WhitelistConformingProviders) -> Self {
+        Self {
+            required: usize::try_from(entry.quorum)
+                .ok()
+                .and_then(NonZeroUsize::new),
+            conforming: conforming.whitelist_provider_count(),
+        }
+    }
+
+    pub fn reaches_quorum(&self) -> bool {
+        self.required
+            .is_some_and(|required| self.conforming >= required.get())
+    }
+}
+
+fn conforming_providers(
+    local_chain: &ForeignChainConfig,
+    entry: &ChainEntry,
+) -> WhitelistConformingProviders {
+    ProviderWhitelistMatches::for_chain(local_chain, entry).whitelist_conforming_providers()
+}
+
+pub(crate) fn rpc_quorum_status(
+    local_chain: &ForeignChainConfig,
+    entry: Option<&ChainEntry>,
+) -> RpcQuorumStatus {
+    match entry {
+        None => RpcQuorumStatus {
+            required: None,
+            conforming: 0,
+        },
+        Some(entry) => RpcQuorumStatus::new(entry, &conforming_providers(local_chain, entry)),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum RpcQuorumError {
@@ -27,16 +97,15 @@ pub(crate) fn rpc_quorum(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,
 ) -> Result<RpcQuorum, RpcQuorumError> {
-    let required = usize::try_from(entry.quorum)
-        .ok()
-        .and_then(NonZeroUsize::new)
+    let conforming = conforming_providers(local_chain, entry);
+    let status = RpcQuorumStatus::new(entry, &conforming);
+    let required = status
+        .required
         .ok_or(RpcQuorumError::InvalidQuorum(entry.quorum))?;
-    let conforming =
-        ProviderWhitelistMatches::for_chain(local_chain, entry).whitelist_conforming_providers();
-    if !conforming.meets_quorum(required) {
+    if !status.reaches_quorum() {
         return Err(RpcQuorumError::BelowQuorum {
             required,
-            conforming: conforming.whitelist_provider_count(),
+            conforming: status.conforming,
         });
     }
     let mut seen_whitelist_ids = BTreeSet::new();
@@ -116,9 +185,10 @@ mod tests {
             .collect()
     }
 
+    /// Two conforming providers and one whose host is not whitelisted.
     #[test]
     fn rpc_quorum__should_whitelist_the_local_names_of_the_conforming_providers() {
-        // Given: two conforming providers and one whose host is not whitelisted.
+        // Given
         let local = local(&[
             ("my-alchemy", "https://eth.alchemy.com/"),
             ("my-infura", "https://eth.infura.io/"),
@@ -156,9 +226,10 @@ mod tests {
         );
     }
 
+    /// Two local providers behind one whitelisted host, quorum two.
     #[test]
     fn rpc_quorum__should_count_providers_matching_the_same_whitelist_provider_once() {
-        // Given: two local providers behind one whitelisted host, quorum two.
+        // Given
         let local = local(&[
             ("alchemy-a", "https://eth.alchemy.com/"),
             ("alchemy-b", "https://eth.alchemy.com/"),
@@ -196,9 +267,10 @@ mod tests {
         );
     }
 
+    /// The whitelisted host on a port the whitelist does not name.
     #[test]
     fn rpc_quorum__should_not_count_a_misconfigured_provider() {
-        // Given: the whitelisted host on a port the whitelist does not name.
+        // Given
         let local = local(&[("my-alchemy", "https://eth.alchemy.com:8545/")]);
 
         // When
@@ -224,5 +296,63 @@ mod tests {
 
         // Then
         assert_eq!(quorum, Err(RpcQuorumError::InvalidQuorum(0)));
+    }
+
+    /// Ethereum reaches its quorum, Base does not, Polygon is not whitelisted.
+    #[test]
+    fn eligible_chains__should_keep_only_the_chains_with_a_reachable_quorum() {
+        // Given
+        let local = ForeignChainsConfig {
+            ethereum: Some(local(&[("my-alchemy", "https://eth.alchemy.com/")])),
+            base: Some(local(&[("my-alchemy", "https://eth.alchemy.com/")])),
+            polygon: Some(local(&[("my-alchemy", "https://eth.alchemy.com/")])),
+            ..Default::default()
+        };
+        let whitelist = ForeignChainWhitelist::from([
+            (ForeignChain::Ethereum, entry(&WHITELIST, 1)),
+            (ForeignChain::Base, entry(&WHITELIST, 2)),
+        ]);
+
+        // When
+        let eligible = eligible_chains(&rpc_quorum_statuses(&local, &whitelist));
+
+        // Then
+        assert_eq!(eligible, BTreeSet::from([ForeignChain::Ethereum]));
+    }
+
+    #[test]
+    fn rpc_quorum_status__should_be_zero_for_a_chain_that_is_not_whitelisted() {
+        // Given
+        let local = local(&[("my-alchemy", "https://eth.alchemy.com/")]);
+
+        // When
+        let status = rpc_quorum_status(&local, None);
+
+        // Then
+        assert_eq!(
+            status,
+            RpcQuorumStatus {
+                required: None,
+                conforming: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn rpc_quorum_status__should_count_conforming_providers_below_the_quorum_too() {
+        // Given
+        let local = local(&[("my-alchemy", "https://eth.alchemy.com/")]);
+
+        // When
+        let status = rpc_quorum_status(&local, Some(&entry(&WHITELIST, 2)));
+
+        // Then
+        assert_eq!(
+            status,
+            RpcQuorumStatus {
+                required: NonZeroUsize::new(2),
+                conforming: 1,
+            }
+        );
     }
 }

@@ -74,7 +74,7 @@ pub struct NodeMigrations {
 }
 ```
 
-`backup_services_info` is removed — `TeeState` already stores the TLS key inside `NodeId`.
+`backup_services_info` is removed — `TeeState` already stores each node's TLS key.
 The MPC node reads the backup service's TLS key from `backup_service_tee_state` instead.
 
 The attestation uses the same [`NodeId`][node-id] struct as MPC nodes:
