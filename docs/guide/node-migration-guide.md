@@ -456,7 +456,7 @@ near contract call-function as-transaction \
   send
 ```
 
-Until the new node's attestation from [the check above](#check-that-the-new-nodes-attestation-is-registered-on-the-contract) is registered for your account, the contract rejects this call with `Invalid TEE Remote Attestation: destination node has no valid attestation`. If `signer_account_pk` is not `$NEW_NODE_SIGNER_PUBLIC_KEY`, the key the new node attested with, it fails with `The destination signer key differs from the one its node attested with`.
+Until the new node's attestation from [the check above](#check-that-the-new-nodes-attestation-is-registered-on-the-contract) is registered for your account, the contract rejects this call with `The caller has no node stored under the destination TLS public key`. If `signer_account_pk` is not `$NEW_NODE_SIGNER_PUBLIC_KEY`, the key the new node attested with, it fails with `The destination signer key differs from the one its node attested with`.
 
 ### Verify Migration Was Registered on the Contract
 

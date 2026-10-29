@@ -34,6 +34,10 @@ pub enum NodeMigrationError {
     )]
     DestinationTlsKeyUnchanged,
     #[error(
+        "The caller has no node stored under the destination TLS public key; the new node must submit its attestation first."
+    )]
+    DestinationNodeNotFound,
+    #[error(
         "The destination signer key differs from the one its node attested with. Found: {found:?}, expected: {expected:?}"
     )]
     DestinationSignerKeyMismatch {
