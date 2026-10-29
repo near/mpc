@@ -3,7 +3,7 @@ use crate::{
     MaxMalicious, SigningShare,
     ecdsa::{
         AffinePoint, Field, KeygenOutput, RerandomizationArguments, Scalar, Secp256K1ScalarField,
-        Secp256K1Sha256,
+        Secp256K1Sha256, Tweak,
     },
     errors::{InitializationError, ProtocolError},
     protocol::{
@@ -66,6 +66,19 @@ impl PartialEq for PresignOutput {
     }
 }
 impl Eq for PresignOutput {}
+
+impl PresignOutput {
+    /// The presignature under the key derived with `tweak`, in the form the signing round
+    /// consumes: `beta' = beta + c * tweak`.
+    pub(crate) fn with_tweak(&self, tweak: &Tweak) -> RerandomizedPresignOutput {
+        RerandomizedPresignOutput {
+            big_r: self.big_r,
+            alpha: self.alpha,
+            beta: self.beta + self.c * tweak.value(),
+            e: self.e,
+        }
+    }
+}
 
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
@@ -156,6 +169,19 @@ pub fn presign<R>(
 where
     R: CryptoRngCore + Send + 'static,
 {
+    let participants = validate_presign_arguments(participants, me, &args)?;
+
+    let ctx = Comms::with_buffer_capacity(ROBUST_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
+    let fut = do_presign(ctx.shared_channel(), participants, me, args, rng);
+    Ok(make_protocol(ctx, fut))
+}
+
+/// Checks the participant set against `args` and returns it as a [`ParticipantList`].
+pub(crate) fn validate_presign_arguments(
+    participants: &[Participant],
+    me: Participant,
+    args: &PresignArguments,
+) -> Result<ParticipantList, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -203,13 +229,22 @@ where
         ));
     }
 
-    let ctx = Comms::with_buffer_capacity(ROBUST_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
-    let fut = do_presign(ctx.shared_channel(), participants, me, args, rng);
-    Ok(make_protocol(ctx, fut))
+    Ok(participants)
 }
 
-/// The stub presigning protocol. This is where the signing key leaks: see the
-/// [module docs](super).
+async fn do_presign(
+    mut chan: SharedChannel,
+    participants: ParticipantList,
+    me: Participant,
+    args: PresignArguments,
+    rng: impl CryptoRngCore,
+) -> Result<PresignOutput, ProtocolError> {
+    presign_round(&mut chan, &participants, me, args, rng).await
+}
+
+/// The stub presigning protocol, run on a caller-owned channel so that a longer protocol can
+/// continue on the same channel with further waitpoints. This is where the signing key leaks:
+/// see the [module docs](super).
 ///
 /// One broadcast round, in which every participant contributes a random summand to
 /// the nonce `k`. All parties therefore learn `k` and agree on `R = k * G`. The
@@ -222,9 +257,9 @@ where
 ///   to `k^{-1} * x`;
 /// - `e = 0`, since the zero-sharing mask it carried in the removed scheme has
 ///   nothing to mask here.
-async fn do_presign(
-    mut chan: SharedChannel,
-    participants: ParticipantList,
+pub(crate) async fn presign_round(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
     me: Participant,
     args: PresignArguments,
     mut rng: impl CryptoRngCore,
@@ -235,7 +270,7 @@ async fn do_presign(
 
     let mut k = k_me;
     for (_, k_p) in
-        recv_from_others::<SigningShare<C>>(&chan, wait_round_1, &participants, me).await?
+        recv_from_others::<SigningShare<C>>(chan, wait_round_1, participants, me).await?
     {
         k += k_p.to_scalar();
     }
@@ -306,6 +341,33 @@ mod test {
         assert!(result.iter().all(|(_, out)| out.e == Scalar::ZERO));
 
         insta::assert_json_snapshot!(result);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn with_tweak__should_shift_beta_by_tweak_times_c() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let presignature = PresignOutput {
+            big_r: (Secp256K1Group::generator() * Scalar::from(3u64)).to_affine(),
+            c: Scalar::from(5u64),
+            e: Scalar::from(7u64),
+            alpha: Scalar::from(11u64),
+            beta: Scalar::from(13u64),
+        };
+        let tweak = Tweak::new(frost_core::random_nonzero::<C, _>(&mut rng));
+
+        // When
+        let tweaked = presignature.with_tweak(&tweak);
+
+        // Then
+        assert_eq!(tweaked.big_r, presignature.big_r);
+        assert_eq!(tweaked.alpha, presignature.alpha);
+        assert_eq!(tweaked.e, presignature.e);
+        assert_eq!(
+            tweaked.beta,
+            presignature.beta + presignature.c * tweak.value()
+        );
     }
 
     #[rstest]

@@ -133,9 +133,6 @@ pub(crate) struct EcdsaTaskMonitors {
 pub(crate) struct RobustEcdsaTaskMonitors {
     pub(crate) make_signature_leader: TaskMonitor,
     pub(crate) make_signature_follower: TaskMonitor,
-
-    pub(crate) presignature_generation_leader: TaskMonitor,
-    pub(crate) presignature_generation_follower: TaskMonitor,
 }
 
 #[derive(Default)]
@@ -252,22 +249,6 @@ impl TaskIntervalProvider for RobustEcdsaTaskMonitors {
                 TaskLabels::new(
                     ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
-                    FOLLOWER_ROLE_LABEL,
-                ),
-            ),
-            (
-                self.presignature_generation_leader.intervals(),
-                TaskLabels::new(
-                    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
-                    PRESIGNATURE_GENERATION_TASK_LABEL,
-                    LEADER_ROLE_LABEL,
-                ),
-            ),
-            (
-                self.presignature_generation_follower.intervals(),
-                TaskLabels::new(
-                    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
-                    PRESIGNATURE_GENERATION_TASK_LABEL,
                     FOLLOWER_ROLE_LABEL,
                 ),
             ),

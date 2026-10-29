@@ -303,8 +303,8 @@ async fn request_lifecycle__signature_request_succeeds() {
 ```
 
 `must_setup_cluster` builds the default 3-node / 2-of-3 / 3-domain cluster, waits
-for `Running`, and blocks until presignatures are buffered. Pass a closure to
-override fields on `MpcClusterConfig`.
+for `Running`, and, if a domain uses CaitSith, blocks until presignatures are
+buffered. Pass a closure to override fields on `MpcClusterConfig`.
 
 ---
 

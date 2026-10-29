@@ -45,7 +45,8 @@ pub const FOREIGN_CHAIN_PROBE_PORT_SEED: u16 = 27;
 pub const RPC_PRESET_REGISTRATION_PORT_SEED: u16 = 28;
 pub const BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED: u16 = 29;
 
-/// Start a cluster, wait for Running state and presignatures to buffer.
+/// Start a cluster, wait for Running state and, if a domain uses [`Protocol::CaitSith`], for
+/// presignatures to buffer.
 ///
 /// Uses `configure` to override defaults (3 nodes, threshold 2, 3 domains).
 /// Pass `|_| {}` for defaults.
@@ -83,6 +84,10 @@ pub async fn must_setup_cluster(
 
     let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
+    let buffers_presignatures = config
+        .domains
+        .iter()
+        .any(|domain| domain.protocol == Protocol::CaitSith);
     let whitelist = config.foreign_chains.whitelist.clone();
     let threshold = config.threshold;
     let cluster = MpcCluster::start(config)
@@ -104,13 +109,15 @@ pub async fn must_setup_cluster(
         .await
         .expect("failed to whitelist foreign chains");
 
-    wait_for_presignatures(
-        &cluster,
-        &initial_participant_indices,
-        presignatures_to_buffer,
-    )
-    .await
-    .expect("presignature buffering failed");
+    if buffers_presignatures {
+        wait_for_presignatures(
+            &cluster,
+            &initial_participant_indices,
+            presignatures_to_buffer,
+        )
+        .await
+        .expect("presignature buffering failed");
+    }
 
     (cluster, running)
 }

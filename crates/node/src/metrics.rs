@@ -617,7 +617,6 @@ impl MpcTaskId {
                 match task {
                     RobustEcdsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
                     RobustEcdsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
-                    RobustEcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
                     RobustEcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
                 },
             ),

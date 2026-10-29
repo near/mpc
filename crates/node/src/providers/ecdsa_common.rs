@@ -1,9 +1,6 @@
-//! Plumbing shared by the two ECDSA providers (cait-sith
-//! [`EcdsaSignatureProvider`](crate::providers::ecdsa::EcdsaSignatureProvider) and
-//! [`RobustEcdsaSignatureProvider`](crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider),
-//! both over secp256k1). Both keep the same
-//! per-domain keyshare + presignature store; only the presignature payload `P` and the surrounding
-//! protocol differ, so the storage and per-domain scaffolding are generic over `P` here.
+//! Per-domain keyshare + presignature store of the cait-sith
+//! [`EcdsaSignatureProvider`](crate::providers::ecdsa::EcdsaSignatureProvider), generic over the
+//! presignature payload `P`.
 
 use crate::assets::DistributedAssetStorage;
 use crate::db::SecretDB;

@@ -682,11 +682,9 @@ where
                     config_file.clone().into(),
                     running_mpc_config.clone().into(),
                     network_client.clone(),
-                    clock,
-                    secret_db,
                     sign_request_store.clone(),
                     robust_ecdsa_keyshares,
-                )?);
+                ));
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
                     config_file.clone().into(),
