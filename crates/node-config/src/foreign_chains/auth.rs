@@ -108,47 +108,32 @@ pub fn substitute_path_token(
     let index = placeholder_segment_index(&url, placeholder)?;
     let encoded_token = encode_path_segment(&url, token)
         .context("the token for path authentication is not a valid path segment")?;
-    let path = url
-        .path_segments()
-        .into_iter()
-        .flatten()
-        .enumerate()
-        .map(|(i, segment)| {
-            if i == index {
-                encoded_token.as_str()
-            } else {
-                segment
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("/");
+    let mut segments: Vec<&str> = url.path_segments().into_iter().flatten().collect();
+    if let Some(segment) = segments.get_mut(index) {
+        *segment = &encoded_token;
+    }
+    let path = segments.join("/");
     url.set_path(&format!("/{path}"));
     Ok(url.into())
 }
 
 fn placeholder_segment_index(url: &Url, placeholder: &str) -> anyhow::Result<usize> {
-    anyhow::ensure!(
-        !placeholder.is_empty(),
-        "the placeholder for path authentication can not be empty"
-    );
     let encoded_placeholder = encode_path_segment(url, placeholder).with_context(|| {
         format!(
             "the placeholder, `{placeholder}`, for path authentication is not a valid path segment"
         )
     })?;
-    let indices: Vec<usize> = url
+    let mut indices = url
         .path_segments()
         .into_iter()
         .flatten()
         .enumerate()
         .filter(|(_, segment)| *segment == encoded_placeholder)
-        .map(|(index, _)| index)
-        .collect();
-    match indices.as_slice() {
-        [index] => Ok(*index),
+        .map(|(index, _)| index);
+    match (indices.next(), indices.next()) {
+        (Some(index), None) => Ok(index),
         _ => anyhow::bail!(
-            "the placeholder, `{placeholder}`, for path authentication must be exactly one full path segment of the rpc url {url}, found {} such segments",
-            indices.len()
+            "the placeholder, `{placeholder}`, for path authentication must be exactly one full path segment of the rpc url {url}"
         ),
     }
 }

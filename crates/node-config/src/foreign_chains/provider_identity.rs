@@ -422,16 +422,12 @@ fn extend_prefix(prefix: &mut Vec<String>, base: &Url, segment: &str, path: &[&s
 }
 
 fn has_prefix(path: &[&str], prefix: &[String]) -> bool {
-    path.len() >= prefix.len()
-        && path
-            .iter()
-            .zip(prefix)
-            .all(|(segment, expected)| *segment == expected.as_str())
+    path.get(..prefix.len()).is_some_and(|head| head == prefix)
 }
 
-/// Encodes `segment` as [`url::PathSegmentsMut::push`] does; [`None`] for `.` and `..`.
+/// Encodes `segment` as [`url::PathSegmentsMut::push`] does; [`None`] for an empty, `.` or `..`.
 pub(super) fn encode_path_segment(url: &Url, segment: &str) -> Option<String> {
-    if matches!(segment, "." | "..") {
+    if matches!(segment, "" | "." | "..") {
         return None;
     }
     let mut probe = url.clone();
