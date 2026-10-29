@@ -15,7 +15,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_18_0_state;
+pub mod v3_17_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
