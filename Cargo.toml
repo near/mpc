@@ -57,7 +57,6 @@ repository = "https://github.com/near/mpc"
 #workspace members
 attestation = { path = "crates/attestation" }
 attestation-types = { path = "crates/attestation-types" }
-blaire = { path = "crates/blaire" }
 blaire-interface = { path = "crates/blaire-interface" }
 chain-gateway = { path = "crates/chain-gateway" }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
