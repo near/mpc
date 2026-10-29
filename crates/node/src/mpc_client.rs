@@ -78,7 +78,6 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
             | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
         MpcTaskId::RobustEcdsaTaskId(id) => match id {
-            RobustEcdsaTaskId::Presignature { .. } => true,
             RobustEcdsaTaskId::KeyGeneration { .. }
             | RobustEcdsaTaskId::KeyResharing { .. }
             | RobustEcdsaTaskId::Signature { .. } => false,
@@ -156,12 +155,10 @@ impl MpcClient {
         // depend on any generation loop iterating.
         let asset_metrics_reporter = tracking::spawn("report asset metrics", {
             let ecdsa = self.ecdsa_signature_provider.clone();
-            let robust_ecdsa = self.robust_ecdsa_signature_provider.clone();
             async move {
                 let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
                 loop {
                     ecdsa.report_asset_metrics();
-                    robust_ecdsa.report_asset_metrics();
                     tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
                 }
             }
@@ -776,19 +773,9 @@ mod tests {
                 .into(),
                 false,
             ),
-            // RobustEcdsa: presignatures are heavy; signing and key events are not.
-            (
-                RobustEcdsaTaskId::Presignature {
-                    id: uid(),
-                    domain_id: DomainId(0),
-                }
-                .into(),
-                true,
-            ),
             (
                 RobustEcdsaTaskId::Signature {
                     id: CryptoHash::default(),
-                    presignature_id: uid(),
                 }
                 .into(),
                 false,

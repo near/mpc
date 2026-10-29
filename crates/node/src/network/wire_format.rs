@@ -162,20 +162,9 @@ impl From<CKDTaskId> for MpcTaskId {
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum RobustEcdsaTaskId {
-    KeyGeneration {
-        key_event: KeyEventId,
-    } = 0,
-    KeyResharing {
-        key_event: KeyEventId,
-    } = 1,
-    Presignature {
-        id: UniqueId,
-        domain_id: DomainId,
-    } = 2,
-    Signature {
-        id: SignatureId,
-        presignature_id: UniqueId,
-    } = 3,
+    KeyGeneration { key_event: KeyEventId } = 0,
+    KeyResharing { key_event: KeyEventId } = 1,
+    Signature { id: SignatureId } = 2,
 }
 
 impl From<RobustEcdsaTaskId> for MpcTaskId {
@@ -341,16 +330,7 @@ mod tests {
                     key_event: key_event(),
                 }
                 .into(),
-                RobustEcdsaTaskId::Presignature {
-                    id: uid(1),
-                    domain_id: DomainId(2),
-                }
-                .into(),
-                RobustEcdsaTaskId::Signature {
-                    id: hash(1),
-                    presignature_id: uid(2),
-                }
-                .into(),
+                RobustEcdsaTaskId::Signature { id: hash(1) }.into(),
                 MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTx {
                     id: hash(1),
                     presignature_id: uid(2),
