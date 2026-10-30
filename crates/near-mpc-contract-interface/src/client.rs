@@ -34,8 +34,8 @@ use crate::method_names::{
     GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
     GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
     LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
+    OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
+    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
     START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
@@ -50,12 +50,12 @@ use crate::types::{
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
     CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
-    LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash, MeasurementVotes,
-    MigrationInfo, NodeId, NodeImageHash, ParticipantUrl, ProposalHash,
-    ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey, SignRequestArgs,
-    SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash, Update,
-    UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    ForeignChainsConfigs, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
+    InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes,
+    LauncherImageHash, MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl,
+    ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
+    Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -633,6 +633,10 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(LAUNCHER_HASH_VOTES))
     }
 
+    pub fn parameters_votes(&self) -> ViewCall<C, GovernanceThresholdParametersVotes> {
+        self.view(ViewArgs::no_args(PARAMETERS_VOTES))
+    }
+
     pub fn os_measurement_votes(&self) -> ViewCall<C, MeasurementVotes> {
         self.view(ViewArgs::no_args(OS_MEASUREMENT_VOTES))
     }
@@ -1139,6 +1143,7 @@ mod tests {
         let _ = handle.allowed_os_measurements().await;
         let _ = handle.mpc_node_manifest_digest_votes().await;
         let _ = handle.launcher_hash_votes().await;
+        let _ = handle.parameters_votes().await;
         let _ = handle.os_measurement_votes().await;
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;

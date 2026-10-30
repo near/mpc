@@ -2455,6 +2455,19 @@ ERROR mpc_node::key_events: Key resharing attempt KeyEventId { ... } failed: <er
 
 The contract will retry with a fresh attempt; repeated failures need investigation.
 
+#### Query parameter votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  parameters_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+Shows the voters grouped by the proposal hash of the parameters they voted for: the SHA-256 of the borsh-encoded `ProposedGovernanceThresholdParameters`.
+
 ## Upgrades
 
 There are four types of upgrades, with different frequencies and operator effort:
