@@ -183,23 +183,11 @@ impl TeeState {
         node_id: NodeId,
         verified_attestation: VerifiedAttestation,
     ) -> Result<bool, AttestationSubmissionError> {
-        let tls_pk = node_id.tls_public_key.clone();
-
-        // Authorization: a TLS key registered to one account must not be
-        // overwritten by a submission from a different account. Without this,
-        // any caller could replace any participant's stored attestation, since
-        // the entry is keyed only by `tls_public_key`.
-        if let Some(existing) = self.nodes.get(&tls_pk)
-            && existing.owner != node_id.account_id
-        {
-            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
-        }
-
+        self.assert_tls_key_claimable(&node_id.account_id, &node_id.tls_public_key)?;
         let previous = self.nodes.insert(
-            tls_pk,
+            node_id.tls_public_key.clone(),
             Node::new(node_id, verified_attestation, Self::current_time_seconds()),
         );
-
         Ok(previous.is_none())
     }
 
@@ -427,13 +415,19 @@ impl TeeState {
             .collect()
     }
 
-    /// Account that owns the entry stored under `tls_public_key`, if any. Read-only,
-    /// so [`crate::MpcContract::submit_participant_info`] can classify a submission before doing any
-    /// verification work.
-    pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
-        self.nodes
+    pub(crate) fn assert_tls_key_claimable(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Result<(), AttestationSubmissionError> {
+        if self
+            .nodes
             .get(tls_public_key)
-            .map(|node| node.owner.clone())
+            .is_some_and(|node| node.owner != *account_id)
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+        }
+        Ok(())
     }
 
     /// Returns the id of every stored node, including nodes of accounts that are not participants.

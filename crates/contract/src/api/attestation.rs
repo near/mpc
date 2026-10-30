@@ -1,6 +1,5 @@
 //! TEE attestation lifecycle
 
-use crate::api::common::tls_key_claimant_other_than;
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::primitives::domain::validate_domains_against_governance;
@@ -8,7 +7,7 @@ use crate::primitives::thresholds::{
     GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{AttestationSubmissionError, Node, NodeId, TeeValidationResult};
+use crate::tee::tee_state::{Node, NodeId, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
@@ -98,9 +97,8 @@ impl MpcContract {
     /// consumes one attestation-storage grant, prepaid for the node's account by whoever
     /// onboards it; a re-attestation under a key the account already owns consumes none.
     ///
-    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account
-    /// holds the TLS key: as a current or proposed participant, as a migration destination, or
-    /// through an attestation stored under it.
+    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`](crate::tee::tee_state::AttestationSubmissionError::TlsKeyOwnedByOtherAccount)
+    /// if the node stored under the TLS key belongs to another account.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -170,39 +168,14 @@ impl MpcContract {
         account_id: &AccountId,
         tls_public_key: &dtos::Ed25519PublicKey,
     ) -> Result<(), Error> {
-        self.assert_tls_key_claimable(account_id, tls_public_key)?;
-        let is_reattestation =
-            self.tee_state.attestation_owner(tls_public_key).as_ref() == Some(account_id);
+        self.tee_state
+            .assert_tls_key_claimable(account_id, tls_public_key)?;
+        let is_reattestation = self.tee_state.node_of(account_id, tls_public_key).is_some();
         if !is_reattestation && self.grants_for(account_id) == 0 {
             return Err(InvalidParameters::NoAttestationStorageGrant {
                 account_id: account_id.to_string(),
             }
             .into());
-        }
-        Ok(())
-    }
-
-    fn assert_tls_key_claimable(
-        &self,
-        account_id: &AccountId,
-        tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> Result<(), Error> {
-        let existing_and_prospective_participants = [
-            self.protocol_state
-                .threshold_parameters_or_panic()
-                .participants(),
-            self.protocol_state.active_participants(),
-        ];
-        if tls_key_claimant_other_than(
-            account_id,
-            &existing_and_prospective_participants,
-            &self.node_migrations,
-            &self.tee_state,
-            tls_public_key,
-        )
-        .is_some()
-        {
-            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
         }
         Ok(())
     }
@@ -501,8 +474,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        NUM_DOMAINS, basic_setup, destination_of, make_public_key_for_curve,
-        setup_tee_test_contract, submit_valid_attestations,
+        basic_setup, destination_of, make_public_key_for_curve, setup_tee_test_contract,
+        submit_valid_attestations,
     };
     use crate::config::Config;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
@@ -514,9 +487,8 @@ mod tests {
     use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
-    use crate::state::test_utils::gen_running_state;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
-    use crate::tee::tee_state::{Node, TeeState};
+    use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
@@ -566,62 +538,6 @@ mod tests {
             .expect("Expected panic if predecessor != signer");
     }
 
-    /// How the contract ties a TLS key to an account without a stored attestation
-    enum TlsKeyAssignment {
-        /// A current participant's key
-        Participant,
-        /// The key of a participant the ongoing resharing drops
-        DroppedParticipant,
-        /// The key of a newcomer the ongoing resharing adds
-        ProposedParticipant,
-        /// The key a participant is migrating to
-        MigrationDestination,
-    }
-
-    fn contract_assigning_tls_key(
-        assignment: TlsKeyAssignment,
-    ) -> (MpcContract, AccountId, Ed25519PublicKey) {
-        let mut running = gen_running_state(NUM_DOMAINS);
-        let current = running.parameters.participants();
-        let (member, _, member_node) = current.participants()[0].clone();
-        let proposed = {
-            let mut proposed = current.clone();
-            proposed.remove(&member);
-            proposed.add_random_participants_till_n(current.len());
-            proposed
-        };
-        let (newcomer, _, new_node) = proposed.participants().last().unwrap().clone();
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(proposed, running.parameters.threshold()).unwrap(),
-            BTreeMap::new(),
-        );
-        let resharing_in_progress = ProtocolContractState::Resharing(
-            running
-                .transition_to_resharing_no_checks(&proposal)
-                .unwrap(),
-        );
-        let running = ProtocolContractState::Running(running);
-
-        let (state, owner, node) = match assignment {
-            TlsKeyAssignment::Participant => (running, member, member_node),
-            TlsKeyAssignment::DroppedParticipant => (resharing_in_progress, member, member_node),
-            TlsKeyAssignment::ProposedParticipant => (resharing_in_progress, newcomer, new_node),
-            TlsKeyAssignment::MigrationDestination => {
-                let mut contract = MpcContract::new_from_protocol_state(running);
-                let destination = dtos::DestinationNodeInfo {
-                    signer_account_pk: bogus_ed25519_public_key(),
-                    destination_node_info: new_node.clone().into(),
-                };
-                contract
-                    .node_migrations
-                    .set_destination_node_info(member.clone(), destination);
-                return (contract, member, new_node.tls_public_key);
-            }
-        };
-        let contract = MpcContract::new_from_protocol_state(state);
-        (contract, owner, node.tls_public_key)
-    }
-
     fn prepay_and_submit_mock_attestation(
         contract: &mut MpcContract,
         account_id: &AccountId,
@@ -650,25 +566,28 @@ mod tests {
         set_block_secs(DEFAULT_EXPIRATION_DURATION_SECONDS + 1);
     }
 
-    #[rstest]
-    fn submit_participant_info__should_accept_an_unattested_assigned_tls_key_only_from_its_owner(
-        #[values(
-            TlsKeyAssignment::Participant,
-            TlsKeyAssignment::DroppedParticipant,
-            TlsKeyAssignment::ProposedParticipant,
-            TlsKeyAssignment::MigrationDestination
-        )]
-        assignment: TlsKeyAssignment,
-    ) {
+    fn participant_setup() -> (MpcContract, AccountId, Ed25519PublicKey) {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let (participant, _, participant_info) =
+            contract.protocol_state.active_participants().participants()[0].clone();
+        (contract, participant, participant_info.tls_public_key)
+    }
+
+    #[test]
+    fn submit_participant_info__should_accept_an_expired_participant_node_only_from_its_owner() {
         // Given
-        let (mut contract, owner, tls_public_key) = contract_assigning_tls_key(assignment);
-        let outsider = gen_account_id();
+        let (mut contract, participant, tls_public_key) = participant_setup();
+        must_store_expired_node(&mut contract, create_node_id(&participant, &tls_public_key));
+        contract.clean_invalid_attestations(u32::MAX).unwrap();
 
         // When
-        let outsider_result =
-            prepay_and_submit_mock_attestation(&mut contract, &outsider, tls_public_key.clone());
+        let outsider_result = prepay_and_submit_mock_attestation(
+            &mut contract,
+            &gen_account_id(),
+            tls_public_key.clone(),
+        );
         let owner_result =
-            prepay_and_submit_mock_attestation(&mut contract, &owner, tls_public_key);
+            prepay_and_submit_mock_attestation(&mut contract, &participant, tls_public_key);
 
         // Then
         assert_matches!(
@@ -678,33 +597,6 @@ mod tests {
             ))
         );
         assert_matches!(owner_result, Ok(()));
-    }
-
-    #[test]
-    fn submit_participant_info__should_reject_a_squatter_refreshing_a_participants_tls_key() {
-        // Given
-        let (mut contract, _, tls_public_key) =
-            contract_assigning_tls_key(TlsKeyAssignment::Participant);
-        let squatter = gen_account_id();
-        contract
-            .tee_state
-            .verify_and_store_mock(
-                create_node_id(&squatter, &tls_public_key),
-                MpcMockAttestation::Valid,
-                Duration::MAX,
-            )
-            .unwrap();
-
-        // When
-        let result = prepay_and_submit_mock_attestation(&mut contract, &squatter, tls_public_key);
-
-        // Then
-        assert_matches!(
-            result,
-            Err(Error::AttestationSubmission(
-                AttestationSubmissionError::TlsKeyOwnedByOtherAccount
-            ))
-        );
     }
 
     enum ExpiringNode {
@@ -729,8 +621,7 @@ mod tests {
         #[case] is_kept: bool,
     ) {
         // Given
-        let (mut contract, participant, tls_public_key) =
-            contract_assigning_tls_key(TlsKeyAssignment::Participant);
+        let (mut contract, participant, tls_public_key) = participant_setup();
         let (node_id, migrating_account) = match expiring_node {
             ExpiringNode::CurrentNode => (create_node_id(&participant, &tls_public_key), None),
             ExpiringNode::MigrationDestination => (node_id_for(&participant), Some(participant)),
@@ -740,6 +631,7 @@ mod tests {
                 (node_id_for(&non_participant), Some(non_participant))
             }
             ExpiringNode::OtherAccountsNodeUnderParticipantTlsKey => {
+                contract.tee_state.nodes.remove(&tls_public_key);
                 (create_node_id(&gen_account_id(), &tls_public_key), None)
             }
         };
