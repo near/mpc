@@ -207,7 +207,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     paired_triple_id,
                 } => {
                     ECDSA_TASK_MONITORS
-                        .make_online_presign_signature_follower
+                        .make_signature_follower
                         .instrument(self.make_online_presign_signature_follower(
                             channel,
                             id,

@@ -118,7 +118,7 @@ pub(crate) static EDDSA_TASK_MONITORS: LazyLock<EddsaTaskMonitors> =
 pub(crate) struct EcdsaTaskMonitors {
     pub(crate) make_signature_leader: TaskMonitor,
 
-    pub(crate) make_online_presign_signature_follower: TaskMonitor,
+    pub(crate) make_signature_follower: TaskMonitor,
 
     pub(crate) triple_generation_leader: TaskMonitor,
     pub(crate) triple_generation_follower: TaskMonitor,
@@ -177,7 +177,7 @@ impl TaskIntervalProvider for EcdsaTaskMonitors {
                 ),
             ),
             (
-                self.make_online_presign_signature_follower.intervals(),
+                self.make_signature_follower.intervals(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL,

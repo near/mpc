@@ -90,7 +90,7 @@ NotInitialized → Running ↔ Initializing/Resharing
 1. User calls `sign()` on contract
 2. Indexer detects receipt, adds to SignRequestStorage
 3. Coordinator spawns signature provider job
-4. Provider runs the domain's signing protocol (for cait-sith ECDSA, the leader takes a triple pair and presigns and signs in one computation)
+4. Provider runs the domain's signing protocol
 5. Nodes exchange partial signatures via P2P
 6. Final signature submitted back to contract
 
