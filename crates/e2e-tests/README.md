@@ -118,7 +118,7 @@ impl NearBlockchain {
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
         key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
     pub fn client_for(&self, account_id: &str, key: &SigningKey)
-        -> anyhow::Result<NearKitCaller<ExecutedOptimistic>>;
+        -> anyhow::Result<E2eClient>;
 }
 ```
 
@@ -126,14 +126,18 @@ impl NearBlockchain {
 client. It exposes `account_id()`, `client()`, `call` (signed by the contract
 account), `view`, and `state()`.
 
-#### `NearKitCaller<T>` — signer-bound caller (`near-contract-transport`, feature `near-kit`)
+#### `E2eClient` — signer-bound client (`caller.rs`)
 
-Binds a signer to an account and implements the `CallContract` and `ViewContract` transport
-traits, s.t. typed calls and views go through `MpcContractHandle`.
+`OptimisticReads<SigningNear<ExecutedOptimistic>>`: a near-kit `SigningNear`
+whose views read at optimistic finality, so they see the effects of calls that
+return before finality. It is a near-kit `Viewer` and `TxSender`, so typed
+calls and views go through `MpcContractClient`. Views are polled with
+`near_contract_transport::watch::Subscribe`:
+`mpc_contract.state().subscribe(VIEW_POLL_INTERVAL).await`.
 
 ```rust
 pub trait CallMpc: Sized {
-    fn call_mpc(self, contract_id: &AccountId) -> MpcContractHandle<Self>;
+    fn call_mpc(self, contract_id: &AccountId) -> MpcContractClient<Self>;
 }
 ```
 

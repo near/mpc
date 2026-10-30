@@ -7,15 +7,11 @@ use std::{
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_contract_transport::{
-    NearKitCaller, NearKitViewError, NearToken, Subscription, WatchContractState,
-};
-use near_kit::AccountId;
-use near_kit::SigningNear;
-use near_kit::transaction::ExecutedOptimistic;
+use near_contract_transport::watch::{Subscribe, wait_for};
+use near_kit::{AccountId, Contract as _, NearToken};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
-    client::MpcContractHandle,
+    contract::{MpcContract, MpcContractClient, gas},
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
@@ -31,7 +27,7 @@ use rand::{SeedableRng, rngs::StdRng};
 use tokio::sync::OnceCell;
 
 use crate::blockchain::{DeployedContract, NearBlockchain};
-use crate::caller::CallMpc;
+use crate::caller::{CallMpc, E2eClient, VIEW_POLL_INTERVAL, Watched};
 use crate::conversions::ToNearKey;
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts, localhost_with_port};
 use crate::near_sandbox::NearSandbox;
@@ -164,7 +160,7 @@ pub fn chain_entry_matching(
 ///
 /// Scaffold for cross-version compatibility: when a wire-breaking change to
 /// `init` lands, add a `Legacy*` variant emitting the now-old shape as raw JSON
-/// ([`MpcContractHandle::init`] only speaks the current format) and branch on it
+/// ([`MpcContractClient::init`] only speaks the current format) and branch on it
 /// in `init_contract` so tests can still target the previous production
 /// contract. After the breaking change has rolled out to Mainnet/Testnet, drop
 /// the obsolete variant.
@@ -260,9 +256,9 @@ pub struct MpcCluster {
     pub sandbox: NearSandbox,
     pub blockchain: NearBlockchain,
     pub contract: DeployedContract,
-    pub mpc_contract_handle: MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
-    state_subscription: Subscription<ProtocolContractState, NearKitViewError>,
-    migration_info_subscription: OnceCell<Subscription<MigrationInfo, NearKitViewError>>,
+    pub mpc_contract: MpcContractClient<E2eClient>,
+    state_subscription: Watched<ProtocolContractState>,
+    migration_info_subscription: OnceCell<Watched<MigrationInfo>>,
     pub nodes: Vec<MpcNodeState>,
     pub node_keys: Vec<SigningKey>,
     /// Separate access keys used by the test to cast votes on node accounts.
@@ -334,9 +330,8 @@ impl MpcCluster {
             &config.contract_wasm,
         )
         .await?;
-        let mpc_contract_handle =
-            MpcContractHandle::new(contract.client(), contract_account.clone());
-        let state_subscription = mpc_contract_handle.state().subscribe().await;
+        let mpc_contract = MpcContract::client(contract.client(), contract_account.clone());
+        let state_subscription = mpc_contract.state().subscribe(VIEW_POLL_INTERVAL).await;
 
         let participant_indices = config.participant_indices();
 
@@ -345,7 +340,7 @@ impl MpcCluster {
         init_contract(
             &blockchain,
             &contract,
-            &mpc_contract_handle,
+            &mpc_contract,
             &state_subscription,
             &ports,
             InitContractArgs {
@@ -402,7 +397,7 @@ impl MpcCluster {
             sandbox,
             blockchain,
             contract,
-            mpc_contract_handle,
+            mpc_contract,
             state_subscription,
             migration_info_subscription: OnceCell::new(),
             nodes,
@@ -511,7 +506,7 @@ impl MpcCluster {
     }
 
     pub async fn get_contract_state(&self) -> anyhow::Result<ProtocolContractState> {
-        Ok(self.mpc_contract_handle.state().await?.value)
+        Ok(self.mpc_contract.state().await?)
     }
 
     pub async fn wait_for_state(
@@ -527,14 +522,17 @@ impl MpcCluster {
         timeout: Duration,
         predicate: impl Fn(&MigrationInfo) -> bool + Send,
     ) -> anyhow::Result<MigrationInfo> {
-        let observed = self
+        let mut migration_info = self
             .migration_info_subscription
-            .get_or_init(|| self.mpc_contract_handle.migration_info().subscribe())
+            .get_or_init(|| {
+                let mpc_contract = self.mpc_contract.clone();
+                mpc_contract.migration_info().subscribe(VIEW_POLL_INTERVAL)
+            })
             .await
-            .clone()
-            .wait_for(timeout, predicate)
-            .await?;
-        Ok(observed.value)
+            .clone();
+        Ok(wait_for(&mut migration_info, timeout, predicate)
+            .await?
+            .result)
     }
 
     /// Wait until the node at `idx` responds with HTTP 200 on its `/health` endpoint.
@@ -697,19 +695,24 @@ impl MpcCluster {
             .iter()
             .map(|&idx| self.nodes[idx].account_id())
             .collect();
-        self.mpc_contract_handle
+        let mpc_contract = self.mpc_contract.clone();
+        let mut tee_accounts = mpc_contract
             .get_tee_accounts()
-            .subscribe()
-            .await
-            .wait_for(PARTICIPANT_ATTESTATIONS_TIMEOUT, |tee_accounts| {
+            .subscribe(VIEW_POLL_INTERVAL)
+            .await;
+        wait_for(
+            &mut tee_accounts,
+            PARTICIPANT_ATTESTATIONS_TIMEOUT,
+            |tee_accounts| {
                 let have: HashSet<&AccountId> =
                     tee_accounts.iter().map(|node| &node.account_id).collect();
                 required.iter().all(|a| have.contains(a))
-            })
-            .await
-            .with_context(|| {
-                format!("not all proposed participants have TEE attestations (need: {required:?})")
-            })?;
+            },
+        )
+        .await
+        .with_context(|| {
+            format!("not all proposed participants have TEE attestations (need: {required:?})")
+        })?;
         Ok(())
     }
 
@@ -856,10 +859,7 @@ impl MpcCluster {
         Ok(())
     }
 
-    pub fn client_for(
-        &self,
-        account_id: &AccountId,
-    ) -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
+    pub fn client_for(&self, account_id: &AccountId) -> anyhow::Result<E2eClient> {
         let key = self
             .user_accounts
             .get(account_id)
@@ -874,10 +874,7 @@ impl MpcCluster {
         self.blockchain.client_for(account_id.as_ref(), key)
     }
 
-    pub fn contract_handle(
-        &self,
-        account_id: &AccountId,
-    ) -> MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
+    pub fn contract_handle(&self, account_id: &AccountId) -> MpcContractClient<E2eClient> {
         self.client_for(account_id)
             .unwrap()
             .call_mpc(self.contract_id())
@@ -910,21 +907,17 @@ impl MpcCluster {
         app_public_key: CKDAppPublicKey,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
+        let request = CKDRequestArgs::new("test".to_string(), app_public_key, domain_id);
+        let gas = gas::request_app_private_key(&request);
         self.contract_handle(account_id)
-            .request_app_private_key(CKDRequestArgs::new(
-                "test".to_string(),
-                app_public_key,
-                domain_id,
-            ))
+            .request_app_private_key(request)
+            .gas(gas)
             .await
             .context("failed to send CKD request")
     }
 
-    /// Build a [`NearKitCaller`] for the operator key of the given node.
-    pub fn operator_client_for(
-        &self,
-        node_index: usize,
-    ) -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
+    /// Build a client for the operator key of the given node.
+    pub fn operator_client_for(&self, node_index: usize) -> anyhow::Result<E2eClient> {
         let node = &self.nodes[node_index];
         self.blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
@@ -959,19 +952,11 @@ impl MpcCluster {
     pub async fn view_allowed_foreign_chain_providers(
         &self,
     ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
-        Ok(self
-            .mpc_contract_handle
-            .allowed_foreign_chain_providers()
-            .await?
-            .value)
+        Ok(self.mpc_contract.allowed_foreign_chain_providers().await?)
     }
 
     pub async fn foreign_chains_registrations(&self) -> anyhow::Result<ForeignChainsConfigs> {
-        Ok(self
-            .mpc_contract_handle
-            .get_foreign_chains_configs()
-            .await?
-            .value)
+        Ok(self.mpc_contract.get_foreign_chains_configs().await?)
     }
 
     /// Polls until the registered per-node configs equal `expected`.
@@ -979,15 +964,16 @@ impl MpcCluster {
         &self,
         expected: &ForeignChainsConfigs,
     ) -> anyhow::Result<()> {
-        self.mpc_contract_handle
+        let mpc_contract = self.mpc_contract.clone();
+        let mut registrations = mpc_contract
             .get_foreign_chains_configs()
-            .subscribe()
-            .await
-            .wait_for(CLUSTER_WAIT_TIMEOUT, |registrations| {
-                registrations == expected
-            })
-            .await
-            .with_context(|| format!("registrations did not reach {expected:?}"))?;
+            .subscribe(VIEW_POLL_INTERVAL)
+            .await;
+        wait_for(&mut registrations, CLUSTER_WAIT_TIMEOUT, |registrations| {
+            registrations == expected
+        })
+        .await
+        .with_context(|| format!("registrations did not reach {expected:?}"))?;
         Ok(())
     }
 
@@ -996,13 +982,16 @@ impl MpcCluster {
         &self,
         expected: &BTreeSet<ForeignChain>,
     ) -> anyhow::Result<()> {
-        self.mpc_contract_handle
+        let mpc_contract = self.mpc_contract.clone();
+        let mut available = mpc_contract
             .get_available_foreign_chains()
-            .subscribe()
-            .await
-            .wait_for(CLUSTER_WAIT_TIMEOUT, |available| **available == *expected)
-            .await
-            .with_context(|| format!("available chains did not reach {expected:?}"))?;
+            .subscribe(VIEW_POLL_INTERVAL)
+            .await;
+        wait_for(&mut available, CLUSTER_WAIT_TIMEOUT, |available| {
+            **available == *expected
+        })
+        .await
+        .with_context(|| format!("available chains did not reach {expected:?}"))?;
         Ok(())
     }
 
@@ -1323,7 +1312,8 @@ async fn prepay_attestation_grants(
         let outcome = blockchain
             .client_for(&account, near_key)?
             .call_mpc(contract.account_id())
-            .prepay_attestation_storage(account.parse()?, 1, fee)
+            .prepay_attestation_storage(account.parse()?, 1)
+            .deposit(fee)
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
         anyhow::ensure!(
@@ -1337,9 +1327,9 @@ async fn prepay_attestation_grants(
 }
 
 async fn attestation_storage_fee(
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
+    mpc_contract: &MpcContractClient<E2eClient>,
 ) -> anyhow::Result<NearToken> {
-    let config = mpc_contract_handle.config().await?.value;
+    let config = mpc_contract.config().await?;
     Ok(NearToken::from_millinear(u128::from(
         config.attestation_storage_fee_millinear,
     )))
@@ -1348,8 +1338,8 @@ async fn attestation_storage_fee(
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
-    state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
+    mpc_contract: &MpcContractClient<E2eClient>,
+    state_subscription: &Watched<ProtocolContractState>,
     ports: &TestPorts,
     args: InitContractArgs,
 ) -> anyhow::Result<()> {
@@ -1380,7 +1370,7 @@ async fn init_contract(
     };
     let outcome = match init_format {
         ContractInitFormat::Current => {
-            mpc_contract_handle
+            mpc_contract
                 .init(params, tee_verifier_account_id, Some(init_config))
                 .await?
         }
@@ -1391,7 +1381,7 @@ async fn init_contract(
         outcome.failure_message()
     );
 
-    let fee = attestation_storage_fee(mpc_contract_handle).await?;
+    let fee = attestation_storage_fee(mpc_contract).await?;
     prepay_attestation_grants(blockchain, contract, fee, &near_keys).await?;
 
     for &i in &participant_indices {
@@ -1466,7 +1456,7 @@ async fn deploy_and_trust_tee_verifier(
 async fn add_initial_domains(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
+    state_subscription: &Watched<ProtocolContractState>,
     operator_keys: &[SigningKey],
     participant_indices: &[usize],
     domains: &[DomainConfig],
@@ -1684,15 +1674,12 @@ async fn ensure_nodes_alive(nodes: &mut [MpcNodeState]) -> anyhow::Result<()> {
 }
 
 async fn wait_for_contract_state(
-    state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
+    state_subscription: &Watched<ProtocolContractState>,
     timeout: Duration,
     predicate: impl Fn(&ProtocolContractState) -> bool + Send,
 ) -> anyhow::Result<ProtocolContractState> {
-    let observed = state_subscription
-        .clone()
-        .wait_for(timeout, predicate)
-        .await?;
-    Ok(observed.value)
+    let mut state = state_subscription.clone();
+    Ok(wait_for(&mut state, timeout, predicate).await?.result)
 }
 
 #[cfg(test)]

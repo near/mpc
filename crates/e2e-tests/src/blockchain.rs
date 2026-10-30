@@ -1,19 +1,14 @@
 use ed25519_dalek::SigningKey;
-use std::time::Duration;
 
-use near_contract_transport::{
-    CallContract, FunctionCallArgs, NearGas, NearKitCaller, PollInterval,
-};
-use near_kit::SigningNear;
 use near_kit::protocol::Action;
 use near_kit::rpc::{FinalExecutionOutcome, Finality};
-use near_kit::transaction::{ExecutedOptimistic, Final};
+use near_kit::transaction::{ExecutedOptimistic, Final, FunctionCall};
+use near_kit::{Gas, SigningNear, TxSender};
 
+use crate::caller::{E2eClient, OptimisticReads};
 use crate::conversions::ToNearKey;
 
-const MAX_GAS: NearGas = NearGas::from_tgas(1000);
-const VIEW_POLL_INTERVAL: Duration = Duration::from_millis(500);
-const VIEW_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_GAS: Gas = Gas::from_tgas(1000);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -99,12 +94,11 @@ impl NearBlockchain {
         signer_key: &SigningKey,
         key_to_delete: near_kit::signer::PublicKey,
     ) -> anyhow::Result<()> {
-        let client = self
+        let outcome = self
             .make_client(account_id, signer_key)?
-            .wait_until::<Final>();
-        let outcome = client
             .transaction(parse_account_id(account_id)?)
             .add_action(Action::delete_key(key_to_delete))
+            .wait_until::<Final>()
             .await
             .map_err(|e| anyhow::anyhow!("failed to delete access key on {account_id}: {e}"))?;
         anyhow::ensure!(
@@ -114,17 +108,8 @@ impl NearBlockchain {
         Ok(())
     }
 
-    pub fn client_for(
-        &self,
-        account_id: &str,
-        key: &SigningKey,
-    ) -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
-        let poll_interval = PollInterval::new(VIEW_POLL_INTERVAL).expect("non-zero");
-        Ok(NearKitCaller::new(
-            self.make_client(account_id, key)?,
-            poll_interval,
-            VIEW_READ_TIMEOUT,
-        ))
+    pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<E2eClient> {
+        Ok(OptimisticReads(self.make_client(account_id, key)?))
     }
 
     pub fn rpc_url(&self) -> &str {
@@ -164,9 +149,8 @@ impl DeployedContract {
         &self.contract_id
     }
 
-    pub fn client(&self) -> NearKitCaller<SigningNear<ExecutedOptimistic>> {
-        let poll_interval = PollInterval::new(VIEW_POLL_INTERVAL).expect("non-zero");
-        NearKitCaller::new(self.client.clone(), poll_interval, VIEW_READ_TIMEOUT)
+    pub fn client(&self) -> E2eClient {
+        OptimisticReads(self.client.clone())
     }
 
     pub async fn call(
@@ -174,9 +158,12 @@ impl DeployedContract {
         method: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<FinalExecutionOutcome> {
-        let call_args = FunctionCallArgs::no_deposit(method, serde_json::to_vec(&args)?, MAX_GAS);
-        self.client()
-            .call_contract(&self.contract_id, call_args)
+        let action = FunctionCall::new(method)
+            .args(args)
+            .gas(MAX_GAS)
+            .into_action()?;
+        self.client
+            .send(self.contract_id.clone(), vec![action])
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }

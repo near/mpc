@@ -12,7 +12,7 @@ use crate::sandbox::{
             get_config, get_participant_attestation, get_participants, get_state, get_tee_accounts,
             prepay_and_submit_participant_info, vote_add_launcher_hash,
         },
-        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+        sandbox_mpc_contract::SandboxMpcContract,
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
         transactions::{CallMpcContract, execute_async_handle_calls},
@@ -248,11 +248,7 @@ async fn vote_in_whitelist(
     .await
     .expect("whitelist vote should succeed");
     assert_eq!(
-        contract
-            .allowed_foreign_chain_providers()
-            .await
-            .unwrap()
-            .value,
+        contract.allowed_foreign_chain_providers().await.unwrap(),
         whitelist,
         "whitelist should be voted in before the upgrade"
     );
@@ -298,7 +294,6 @@ async fn propose_upgrade_from_production_to_current_binary(
             .allowed_launcher_image_hashes()
             .await
             .unwrap()
-            .value
             .contains(&launcher_hash),
         "launcher hash should be voted in before the upgrade"
     );
@@ -319,7 +314,6 @@ async fn propose_upgrade_from_production_to_current_binary(
             .allowed_launcher_image_hashes()
             .await
             .unwrap()
-            .value
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
     );

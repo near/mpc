@@ -1,5 +1,7 @@
 use std::future::Future;
 
+use tokio::sync::watch::error::RecvError;
+
 use mpc_node::keyshare::Keyshare;
 use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState};
 
@@ -61,10 +63,12 @@ pub trait ReadContractState {
     ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
 }
 
-pub trait WatchContractState:
-    near_contract_transport::WatchContractState<
-        Value = ProtocolContractState,
-        ViewError: std::fmt::Debug,
-    >
-{
+pub trait WatchContractState {
+    type Error: std::fmt::Debug;
+
+    /// The latest observed state, or the error the last read failed with. Marks it seen.
+    fn latest(&mut self) -> Result<ProtocolContractState, Self::Error>;
+
+    /// Waits for a state not yet seen; errors once nothing observes the contract anymore.
+    fn changed(&mut self) -> impl Future<Output = Result<(), RecvError>> + Send;
 }

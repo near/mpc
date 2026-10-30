@@ -19,7 +19,7 @@ async fn test_public_key() -> anyhow::Result<()> {
         .build()
         .await;
 
-    let key = contract.public_key(None).await?.value;
+    let key = contract.public_key(None).await?;
     let pk = PublicKey::from_str(&String::from(&key))?;
     assert_eq!(pk.curve_type(), CurveType::SECP256K1);
     Ok(())
@@ -37,9 +37,8 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
         .await;
 
     let key = contract
-        .derived_public_key("test".to_string(), "alice.near".parse()?, None)
-        .await?
-        .value;
+        .derived_public_key("test".to_string(), Some("alice.near".parse()?), None)
+        .await?;
     let pk = PublicKey::from_str(&String::from(&key))?;
     assert_eq!(pk.curve_type(), CurveType::SECP256K1);
     Ok(())
@@ -89,7 +88,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
     }
 
     // Sanity check: nothing applied yet (only 5 of 6 threshold votes cast).
-    let whitelist_before = contract.allowed_foreign_chain_providers().await?.value;
+    let whitelist_before = contract.allowed_foreign_chain_providers().await?;
     assert!(
         whitelist_before.is_empty(),
         "chain should not be applied yet (only 5 of 6 threshold votes cast)"
@@ -106,7 +105,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
     );
 
     // Then
-    let whitelist = contract.allowed_foreign_chain_providers().await?.value;
+    let whitelist = contract.allowed_foreign_chain_providers().await?;
     let stored = whitelist
         .get(&ForeignChain::Ethereum)
         .expect("Ethereum entry should be present after 6 matching votes");

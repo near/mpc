@@ -49,7 +49,7 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
     .await?;
 
     let votes_before: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract.contract_update_votes().await?.value;
+        contract.contract_update_votes().await?;
 
     assert_eq!(
         votes_before,
@@ -94,7 +94,7 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
     // Then
     let final_participants = assert_running_return_participants(&contract).await?;
     let votes_after: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract.contract_update_votes().await?.value;
+        contract.contract_update_votes().await?;
 
     assert_eq!(
         votes_after,

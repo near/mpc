@@ -1,5 +1,5 @@
 use crate::sandbox::utils::sandbox_mpc_contract::SandboxMpcContract;
-use crate::sandbox::utils::sandbox_self_caller::SandboxSelfCaller;
+use crate::sandbox::utils::sandbox_self_caller::{POLL_INTERVAL, SandboxSelfCaller};
 use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
@@ -15,8 +15,10 @@ use k256::{
 };
 use mpc_contract::errors;
 use near_account_id::AccountId;
-use near_contract_transport::{ViewCall, WatchContractState};
+use near_contract_transport::watch::{Subscribe, wait_for};
+use near_kit_primitives::View;
 use near_mpc_contract_interface::call_args::{CKDRespondArgs, SignatureRespondArgs};
+use near_mpc_contract_interface::contract::gas;
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
     self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
@@ -31,6 +33,7 @@ use rand::{Rng, rngs::OsRng};
 use rand_core::CryptoRngCore;
 use sha2::Sha256;
 use signature::DigestSigner;
+use std::time::Duration;
 use threshold_signatures::{
     KeygenOutput,
     confidential_key_derivation::{self as ckd, BLS12381SHA256, hash_app_id_with_pk},
@@ -108,15 +111,18 @@ impl DomainResponseTest {
             Self::Sign(inner) => {
                 let status = handle.sign(inner.args.clone()).await?;
                 await_request_in_contract_queue(
-                    contract.get_pending_request(inner.response.request.clone()),
+                    contract.get_pending_request(&inner.response.request),
                 )
                 .await?;
                 Ok(status)
             }
             Self::CKD(inner) => {
-                let status = handle.request_app_private_key(inner.args.clone()).await?;
+                let status = handle
+                    .request_app_private_key(inner.args.clone())
+                    .gas(gas::request_app_private_key(&inner.args))
+                    .await?;
                 await_request_in_contract_queue(
-                    contract.get_pending_ckd_request(inner.response.request.clone()),
+                    contract.get_pending_ckd_request(&inner.response.request),
                 )
                 .await?;
                 Ok(status)
@@ -303,14 +309,20 @@ pub async fn submit_ckd_response_measure_gas(
 }
 
 pub async fn await_request_in_contract_queue(
-    pending_request: ViewCall<SandboxSelfCaller, Option<YieldIndex>>,
+    pending_request: View<SandboxSelfCaller, Option<YieldIndex>>,
 ) -> anyhow::Result<()> {
-    pending_request
-        .subscribe()
+    await_pending(DEFAULT_MAX_TIMEOUT_TX_INCLUDED, pending_request)
         .await
-        .wait_for(DEFAULT_MAX_TIMEOUT_TX_INCLUDED, Option::is_some)
-        .await
-        .context("waiting for request to appear in queue")?;
+        .context("waiting for request to appear in queue")
+}
+
+/// Polls `pending_request` until it returns a yield index.
+pub async fn await_pending(
+    timeout: Duration,
+    pending_request: View<SandboxSelfCaller, Option<YieldIndex>>,
+) -> anyhow::Result<()> {
+    let mut pending = pending_request.subscribe(POLL_INTERVAL).await;
+    wait_for(&mut pending, timeout, Option::is_some).await?;
     Ok(())
 }
 
@@ -405,7 +417,12 @@ pub async fn make_and_submit_requests(
                     });
                 }
                 DomainResponseTest::CKD(inner) => {
-                    let transaction = handle.request_app_private_key(inner.args).await.unwrap();
+                    let gas = gas::request_app_private_key(&inner.args);
+                    let transaction = handle
+                        .request_app_private_key(inner.args)
+                        .gas(gas)
+                        .await
+                        .unwrap();
                     pending_ckd_requests.push(PendingCKDRequest {
                         transaction,
                         ckd_response: inner.response,

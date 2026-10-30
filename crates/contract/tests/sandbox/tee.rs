@@ -15,7 +15,7 @@ use crate::sandbox::{
             submit_participant_info, vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
-        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+        sandbox_mpc_contract::SandboxMpcContract,
         sign_utils::DomainResponseTest,
         transactions::CallMpcContract,
     },
@@ -194,8 +194,7 @@ async fn assert_allowed_docker_image_hashes(
     let entries = contract
         .allowed_docker_image_hashes()
         .await
-        .expect("allowed_docker_image_hashes view should succeed")
-        .value;
+        .expect("allowed_docker_image_hashes view should succeed");
 
     let hashes: Vec<NodeImageHash> = entries.iter().map(|entry| entry.image_hash).collect();
     assert_eq!(hashes, expected);
@@ -695,14 +694,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         .build()
         .await;
 
-    assert_eq!(
-        contract
-            .allowed_launcher_compose_hashes()
-            .await?
-            .value
-            .len(),
-        0
-    );
+    assert_eq!(contract.allowed_launcher_compose_hashes().await?.len(), 0);
 
     // Vote in an MPC image hash — no compose hashes yet (no launcher images)
     let allowed_mpc_image_digest = image_digest();
@@ -710,11 +702,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
     }
     assert_eq!(
-        contract
-            .allowed_launcher_compose_hashes()
-            .await?
-            .value
-            .len(),
+        contract.allowed_launcher_compose_hashes().await?.len(),
         0,
         "no compose hashes without a launcher image"
     );
@@ -725,11 +713,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_add_launcher_hash(account, &contract, &launcher_hash).await?;
     }
     assert_eq!(
-        contract
-            .allowed_launcher_compose_hashes()
-            .await?
-            .value
-            .len(),
+        contract.allowed_launcher_compose_hashes().await?.len(),
         1,
         "1 compose hash: launcher x MPC image"
     );
@@ -1006,7 +990,7 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
         vote_for_hash(account, &contract, &image_hash).await?;
         vote_add_launcher_hash(account, &contract, &LauncherImageHash::from([0xAA; 32])).await?;
     }
-    let [compose_hash] = contract.allowed_launcher_compose_hashes().await?.value[..] else {
+    let [compose_hash] = contract.allowed_launcher_compose_hashes().await?[..] else {
         panic!("the launcher and image hashes must derive exactly one compose hash");
     };
     let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;

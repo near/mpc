@@ -1,7 +1,8 @@
 use crate::common;
 
 use e2e_tests::PARTICIPANT_ATTESTATIONS_TIMEOUT;
-use near_contract_transport::WatchContractState;
+use e2e_tests::caller::VIEW_POLL_INTERVAL;
+use near_contract_transport::watch::{Subscribe, wait_for};
 
 /// Tests that non-participant MPC nodes automatically submit their TEE
 /// attestations to the contract after startup.
@@ -18,14 +19,16 @@ async fn test_submit_participant_info() {
         })
         .await;
 
-    cluster
-        .mpc_contract_handle
+    let mpc_contract = cluster.mpc_contract.clone();
+    let mut tee_accounts = mpc_contract
         .get_tee_accounts()
-        .subscribe()
-        .await
-        .wait_for(PARTICIPANT_ATTESTATIONS_TIMEOUT, |tee_accounts| {
-            tee_accounts.len() == 4
-        })
-        .await
-        .expect("timed out waiting for all 4 nodes to submit attestations");
+        .subscribe(VIEW_POLL_INTERVAL)
+        .await;
+    wait_for(
+        &mut tee_accounts,
+        PARTICIPANT_ATTESTATIONS_TIMEOUT,
+        |tee_accounts| tee_accounts.len() == 4,
+    )
+    .await
+    .expect("timed out waiting for all 4 nodes to submit attestations");
 }

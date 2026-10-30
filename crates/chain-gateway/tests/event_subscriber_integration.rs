@@ -2,26 +2,41 @@ use std::time::Duration;
 
 use super::common::localnet::Localnet;
 use crate::common::{accounts::TestAccount, localnet::LocalnetBuilder};
-use chain_gateway::{
-    event_subscriber::{
-        block_events::{
-            BlockEventId, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
-            ReceiverFunctionCallData,
-        },
-        subscriber::{BlockEventSubscription, BlockEventSubscriptions},
+use chain_gateway::event_subscriber::{
+    block_events::{
+        BlockEventId, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
+        ReceiverFunctionCallData,
     },
-    transaction_sender::{SubmitFunctionCall, TransactionSigner},
+    subscriber::{BlockEventSubscription, BlockEventSubscriptions},
 };
 use chain_gateway_test_contract::{
     args::{
-        make_private_set_args, make_set_value_in_promise_args, make_spawn_promise_in_callback_args,
+        TestContract, make_private_set_args, make_set_value_in_promise_args,
+        make_spawn_promise_in_callback_args,
     },
-    consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW_VALUE},
+    consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE},
 };
-use near_contract_transport::{Json, ViewArgs, ViewContract, WatchContractState};
+use near_contract_transport::watch::{Observed, Subscribe, wait_for};
+use near_kit_primitives::signer::InMemorySigner;
+use near_kit_primitives::{Contract as _, ContractError};
 use rstest::rstest;
+use tokio::sync::watch;
+
+use crate::common::send;
 
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Watches the contract's `view_value`.
+async fn watch_value(
+    gateway: &chain_gateway::ChainGateway,
+    contract_id: near_account_id::AccountId,
+) -> watch::Receiver<Observed<String, ContractError<chain_gateway::errors::NearViewClientError>>> {
+    let contract = TestContract::client(gateway.clone(), contract_id);
+    contract
+        .view_value()
+        .subscribe(gateway.poll_interval())
+        .await
+}
 
 async fn recv_block_update(receiver: &mut tokio::sync::mpsc::Receiver<BlockUpdate>) -> BlockUpdate {
     tokio::time::timeout(EVENT_TIMEOUT, receiver.recv())
@@ -82,11 +97,11 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
 
     // When: A transaction returning a promise succeeds
     let call = make_set_value_in_promise_args("succeeds", false);
+    let expected_args =
+        serde_json::to_vec(&serde_json::json!({ "value": "succeeds", "return_error": false }))
+            .unwrap();
 
-    observer_gw
-        .submit_function_call_tx(&test_account.signer, contract_id, call.clone())
-        .await
-        .unwrap();
+    send(observer_gw, &test_account.signer, contract_id, call).await;
 
     // Then: expect a matching block update
     let BlockUpdate { events, .. } = recv_block_update(&mut receiver).await;
@@ -113,7 +128,7 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
         *predecessor_id, test_account.account_id,
         "predecessor_id should match user account"
     );
-    assert_eq!(*args_raw, call.args, "args must match");
+    assert_eq!(*args_raw, expected_args, "args must match");
 
     localnet.shutdown().await;
 }
@@ -137,18 +152,11 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     let end_marker: &str = "if you read this, you can be sure that the spawned promise has failed";
 
     let call = make_spawn_promise_in_callback_args(false, end_marker);
-    observer_gw
-        .submit_function_call_tx(&test_account.signer, contract_id.clone(), call)
-        .await
-        .unwrap();
+    send(observer_gw, &test_account.signer, contract_id.clone(), call).await;
 
-    let mut watch_value = observer_gw
-        .view::<String, Json>(contract_id, ViewArgs::no_args(VIEW_VALUE))
-        .subscribe()
-        .await;
+    let mut watch_value = watch_value(observer_gw, contract_id).await;
 
-    watch_value
-        .wait_for(EVENT_TIMEOUT, |value| value == end_marker)
+    wait_for(&mut watch_value, EVENT_TIMEOUT, |value| value == end_marker)
         .await
         .unwrap();
 
@@ -165,7 +173,7 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
 struct ReceiverFunctionCallTest {
     test_account: TestAccount,
     contract_id: near_account_id::AccountId,
-    contract_signer: TransactionSigner,
+    contract_signer: InMemorySigner,
     localnet: Localnet,
     receiver: tokio::sync::mpsc::Receiver<BlockUpdate>,
     private_set_event_id: BlockEventId,
@@ -191,8 +199,7 @@ async fn setup_receiver_function_call_filter_with_buffer(
         .with_event_subscriber(subscriber)
         .build()
         .await;
-    let contract_signer =
-        TransactionSigner::from_key(contract_id.clone(), localnet.contract.signing_key.clone());
+    let contract_signer = localnet.contract.signer();
     let receiver = localnet.take_block_update_receiver();
     let test_account = localnet.take_test_account();
     ReceiverFunctionCallTest {
@@ -225,10 +232,7 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
     // When: the contract calls itself:
     let call = make_private_set_args("maybe it works, maybe it doesn't", expect_success);
 
-    observer_gw
-        .submit_function_call_tx(&contract_signer, contract_id, call)
-        .await
-        .unwrap();
+    send(observer_gw, &contract_signer, contract_id, call).await;
 
     // Then: expect a matching block update
     let BlockUpdate { events, .. } = recv_block_update(&mut receiver).await;
@@ -268,10 +272,7 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
     // When: other than the contract calls it:
     let call = make_private_set_args("this will fail", true);
 
-    observer_gw
-        .submit_function_call_tx(&test_account.signer, contract_id, call)
-        .await
-        .unwrap();
+    send(observer_gw, &test_account.signer, contract_id, call).await;
 
     // Then: expect a matching block update
     let BlockUpdate { events, .. } = recv_block_update(&mut receiver).await;
@@ -315,19 +316,12 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
     } = setup_receiver_function_call_filter_with_buffer(buffer_size).await;
     let observer_gw = &localnet.observer.chain_gateway;
 
-    let mut watch_value = observer_gw
-        .view::<String, Json>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
-        .subscribe()
-        .await;
+    let mut watch_value = watch_value(observer_gw, contract_id.clone()).await;
 
     for target in ["first", "second"] {
         let call = make_private_set_args(target, true);
-        observer_gw
-            .submit_function_call_tx(&contract_signer, contract_id.clone(), call)
-            .await
-            .unwrap();
-        watch_value
-            .wait_for(EVENT_TIMEOUT, |value| value == target)
+        send(observer_gw, &contract_signer, contract_id.clone(), call).await;
+        wait_for(&mut watch_value, EVENT_TIMEOUT, |value| value == target)
             .await
             .unwrap();
     }
@@ -362,22 +356,17 @@ async fn test_block_status_handle_becomes_final() {
     // When: one tx that triggers an event and changes contract state.
     let target_value = "becomes-final";
     let call = make_set_value_in_promise_args(target_value, false);
-    observer_gw
-        .submit_function_call_tx(&test_account.signer, contract_id.clone(), call)
-        .await
-        .unwrap();
+    send(observer_gw, &test_account.signer, contract_id.clone(), call).await;
 
     let BlockUpdate { status, .. } = recv_block_update(&mut receiver).await;
 
     // Sync on the state viewer observing the finalised state change.
-    let mut watch_value = observer_gw
-        .view::<String, Json>(contract_id, ViewArgs::no_args(VIEW_VALUE))
-        .subscribe()
-        .await;
-    watch_value
-        .wait_for(EVENT_TIMEOUT, |value| value == target_value)
-        .await
-        .expect("we expect value to change due to our function call");
+    let mut watch_value = watch_value(observer_gw, contract_id).await;
+    wait_for(&mut watch_value, EVENT_TIMEOUT, |value| {
+        value == target_value
+    })
+    .await
+    .expect("we expect value to change due to our function call");
     drop(watch_value);
 
     // Then: the handle reports its block as final. The state viewer can see
