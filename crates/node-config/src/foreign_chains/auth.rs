@@ -81,9 +81,7 @@ pub(crate) fn validate_auth_config(auth: &AuthConfig, rpc_url: &str) -> anyhow::
                 !placeholder.trim().is_empty(),
                 "the placeholder for path authentication can not be empty. given: {placeholder}"
             );
-            let url = Url::parse(rpc_url)
-                .with_context(|| format!("provided RPC URL is invalid: `{rpc_url}`"))?;
-            placeholder_segment_index(&url, placeholder)?;
+            ensure_placeholder_is_one_path_segment(rpc_url, placeholder)?;
             Ok(())
         }
         AuthConfig::Query { name, .. } => {
@@ -102,12 +100,15 @@ pub fn substitute_path_token(
     rpc_url: &str,
     placeholder: &str,
     token: &str,
-) -> anyhow::Result<String> {
-    let mut url =
-        Url::parse(rpc_url).with_context(|| format!("provided RPC URL is invalid: `{rpc_url}`"))?;
+) -> Result<String, PathAuthError> {
+    let mut url = Url::parse(rpc_url).map_err(|source| PathAuthError::InvalidUrl {
+        url: rpc_url.to_string(),
+        source,
+    })?;
     let index = placeholder_segment_index(&url, placeholder)?;
-    let encoded_token = encode_path_segment(&url, token)
-        .context("the token for path authentication is not a valid path segment")?;
+    let encoded_token = encode_path_segment(&url, token).ok_or(PathAuthError::InvalidToken)?;
+    // `Url::path_segments_mut` cannot replace one segment, and re-pushing the existing
+    // segments would percent-encode them twice. Swap the segment in place instead.
     let mut segments: Vec<&str> = url.path_segments().into_iter().flatten().collect();
     if let Some(segment) = segments.get_mut(index) {
         *segment = &encoded_token;
@@ -117,12 +118,20 @@ pub fn substitute_path_token(
     Ok(url.into())
 }
 
-fn placeholder_segment_index(url: &Url, placeholder: &str) -> anyhow::Result<usize> {
-    let encoded_placeholder = encode_path_segment(url, placeholder).with_context(|| {
-        format!(
-            "the placeholder, `{placeholder}`, for path authentication is not a valid path segment"
-        )
+fn ensure_placeholder_is_one_path_segment(
+    rpc_url: &str,
+    placeholder: &str,
+) -> Result<(), PathAuthError> {
+    let url = Url::parse(rpc_url).map_err(|source| PathAuthError::InvalidUrl {
+        url: rpc_url.to_string(),
+        source,
     })?;
+    placeholder_segment_index(&url, placeholder).map(|_| ())
+}
+
+fn placeholder_segment_index(url: &Url, placeholder: &str) -> Result<usize, PathAuthError> {
+    let encoded_placeholder = encode_path_segment(url, placeholder)
+        .ok_or_else(|| PathAuthError::InvalidPlaceholder(placeholder.to_string()))?;
     let mut indices = url
         .path_segments()
         .into_iter()
@@ -132,10 +141,28 @@ fn placeholder_segment_index(url: &Url, placeholder: &str) -> anyhow::Result<usi
         .map(|(index, _)| index);
     match (indices.next(), indices.next()) {
         (Some(index), None) => Ok(index),
-        _ => anyhow::bail!(
-            "the placeholder, `{placeholder}`, for path authentication must be exactly one full path segment of the rpc url {url}"
-        ),
+        _ => Err(PathAuthError::PlaceholderNotASegment {
+            placeholder: placeholder.to_string(),
+            url: url.clone(),
+        }),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PathAuthError {
+    #[error("provided RPC URL is invalid: `{url}`: {source}")]
+    InvalidUrl {
+        url: String,
+        source: url::ParseError,
+    },
+    #[error("the placeholder, `{0}`, for path authentication is not a valid path segment")]
+    InvalidPlaceholder(String),
+    #[error(
+        "the placeholder, `{placeholder}`, for path authentication must be exactly one full path segment of the rpc url {url}"
+    )]
+    PlaceholderNotASegment { placeholder: String, url: Url },
+    #[error("the token for path authentication is not a valid path segment")]
+    InvalidToken,
 }
 
 #[cfg(test)]

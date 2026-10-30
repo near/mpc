@@ -1,7 +1,7 @@
 use anyhow::Context;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
-use mpc_node_config::foreign_chains::substitute_path_token;
+use mpc_node_config::foreign_chains;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 pub mod inspectors;
@@ -49,7 +49,7 @@ fn auth_config_to_rpc_auth(
         }
         AuthConfig::Path { placeholder, token } => {
             let token_value = token.resolve()?;
-            *rpc_url = substitute_path_token(rpc_url, &placeholder, &token_value)?;
+            *rpc_url = foreign_chains::substitute_path_token(rpc_url, &placeholder, &token_value)?;
             Ok(RpcAuthentication::KeyInUrl)
         }
         AuthConfig::Query { name, token } => {
@@ -327,7 +327,8 @@ mod tests {
         "evil.example.org/x",
         "base.base-mainnet.quiknode.pro"
     )]
-    #[case::quicknode_braced_placeholder_in_the_slug(
+    // The host is never substituted, even when it contains the placeholder literally.
+    #[case::placeholder_in_the_host_is_left_untouched(
         "https://{}.base-mainnet.quiknode.pro",
         "https://{api_key}.base-mainnet.quiknode.pro/{api_key}",
         "{api_key}",
