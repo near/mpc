@@ -108,8 +108,6 @@ pub fn substitute_path_token(
     let index = placeholder_segment_index(&url, placeholder)?;
     let encoded_token =
         provider_identity::encode_path_segment(&url, token).ok_or(PathAuthError::InvalidToken)?;
-    // `Url::path_segments_mut` cannot replace one segment, and re-pushing the existing
-    // segments would percent-encode them twice. Swap the segment in place instead.
     let mut segments: Vec<&str> = url.path_segments().into_iter().flatten().collect();
     if let Some(segment) = segments.get_mut(index) {
         *segment = &encoded_token;
