@@ -650,13 +650,6 @@ mod tests {
         set_block_secs(DEFAULT_EXPIRATION_DURATION_SECONDS + 1);
     }
 
-    fn participant_setup() -> (MpcContract, AccountId, Ed25519PublicKey) {
-        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let (participant, _, participant_info) =
-            contract.protocol_state.active_participants().participants()[0].clone();
-        (contract, participant, participant_info.tls_public_key)
-    }
-
     #[rstest]
     fn submit_participant_info__should_accept_an_unattested_assigned_tls_key_only_from_its_owner(
         #[values(
@@ -736,7 +729,8 @@ mod tests {
         #[case] is_kept: bool,
     ) {
         // Given
-        let (mut contract, participant, tls_public_key) = participant_setup();
+        let (mut contract, participant, tls_public_key) =
+            contract_assigning_tls_key(TlsKeyAssignment::Participant);
         let (node_id, migrating_account) = match expiring_node {
             ExpiringNode::CurrentNode => (create_node_id(&participant, &tls_public_key), None),
             ExpiringNode::MigrationDestination => (node_id_for(&participant), Some(participant)),
@@ -746,7 +740,6 @@ mod tests {
                 (node_id_for(&non_participant), Some(non_participant))
             }
             ExpiringNode::OtherAccountsNodeUnderParticipantTlsKey => {
-                contract.tee_state.nodes.remove(&tls_public_key);
                 (create_node_id(&gen_account_id(), &tls_public_key), None)
             }
         };
