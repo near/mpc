@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_contract_transport::{ObservedState, ViewContract};
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit_primitives::Viewer;
+use near_mpc_contract_interface::contract::MpcContractClient;
 use near_mpc_contract_interface::types::{
     AllowedMpcDockerImageHash, Ed25519PublicKey, ExpectedMeasurements, StoredAttestation,
 };
@@ -22,7 +22,7 @@ async fn monitor_tee_state<Fetcher, T, FetcherResponse, E>(
 ) where
     T: PartialEq,
     Fetcher: Fn() -> FetcherResponse + Send + Sync,
-    FetcherResponse: IntoFuture<Output = Result<ObservedState<T>, E>>,
+    FetcherResponse: IntoFuture<Output = Result<T, E>>,
     FetcherResponse::IntoFuture: Send,
     E: std::fmt::Debug,
 {
@@ -37,8 +37,8 @@ async fn monitor_tee_state<Fetcher, T, FetcherResponse, E>(
 
             loop {
                 match fetch_tee_state().await {
-                    Ok(observed) => {
-                        break observed.value;
+                    Ok(value) => {
+                        break value;
                     }
                     Err(e) => {
                         tracing::error!(target: "mpc", "error reading tee state from chain: {:?}", e);
@@ -67,9 +67,11 @@ async fn monitor_tee_state<Fetcher, T, FetcherResponse, E>(
     }
 }
 
-pub async fn monitor_allowed_docker_images<V: ViewContract + Clone + Send + Sync + 'static>(
+pub async fn monitor_allowed_docker_images<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
     sender: watch::Sender<Vec<AllowedMpcDockerImageHash>>,
-    contract: MpcContractHandle<V>,
+    contract: MpcContractClient<V>,
 ) {
     let fetcher = { || contract.allowed_docker_image_hashes() };
 
@@ -77,35 +79,39 @@ pub async fn monitor_allowed_docker_images<V: ViewContract + Clone + Send + Sync
 }
 
 pub async fn monitor_allowed_launcher_compose_hashes<
-    V: ViewContract + Clone + Send + Sync + 'static,
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
 >(
     sender: watch::Sender<Vec<LauncherDockerComposeHash>>,
-    contract: MpcContractHandle<V>,
+    contract: MpcContractClient<V>,
 ) {
     let fetcher = { || contract.allowed_launcher_compose_hashes() };
 
     monitor_tee_state(sender, &fetcher).await
 }
 
-pub async fn monitor_allowed_os_measurements<V: ViewContract + Clone + Send + Sync + 'static>(
+pub async fn monitor_allowed_os_measurements<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
     sender: watch::Sender<Vec<ExpectedMeasurements>>,
-    contract: MpcContractHandle<V>,
+    contract: MpcContractClient<V>,
 ) {
     let fetcher = { || contract.allowed_os_measurements() };
 
     monitor_tee_state(sender, &fetcher).await
 }
 
-pub async fn monitor_my_attestation<V: ViewContract + Clone + Send + Sync + 'static>(
+pub async fn monitor_my_attestation<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
     sender: watch::Sender<Option<StoredAttestation>>,
-    contract: MpcContractHandle<V>,
+    contract: MpcContractClient<V>,
     tls_public_key: Ed25519PublicKey,
 ) {
     let fetcher = async || {
         contract
             .get_attestation(&tls_public_key)
             .await
-            .inspect(|observed| record_stored_attestation(observed.value.as_ref()))
+            .inspect(|attestation| record_stored_attestation(attestation.as_ref()))
     };
 
     monitor_tee_state(sender, &fetcher).await

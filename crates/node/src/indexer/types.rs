@@ -2,8 +2,9 @@ use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{AffinePoint, Scalar, ecdsa::RecoveryId};
-use near_indexer_primitives::types::Gas;
+use near_kit_primitives::transaction::FunctionCall;
 use near_mpc_contract_interface::call_args as contract_args;
+use near_mpc_contract_interface::contract::MpcContract;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
@@ -14,8 +15,6 @@ use serde::Serialize;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
-
-const MAX_GAS: Gas = Gas::from_teragas(300);
 
 const RECOVERY_ID_FAILED: &str = "failed to compute the recovery id of the ECDSA signature";
 
@@ -85,21 +84,36 @@ impl ChainSendTransactionRequest {
         }
     }
 
-    pub fn gas_required(&self) -> Gas {
+    /// The contract call, with the gas `MpcContract` declares for it.
+    pub fn function_call(&self) -> FunctionCall {
         match self {
-            Self::Respond(_)
-            | Self::CKDRespond(_)
-            | Self::VotePk(_)
-            | Self::VoteReshared(_)
-            | Self::RegisterForeignChainsConfig(_)
-            | Self::StartReshare(_)
-            | Self::StartKeygen(_)
-            | Self::VoteAbortKeyEventInstance(_)
-            // TODO(#166): This is too high in most settings
-            | Self::VerifyTee()
-            | Self::SubmitParticipantInfo(_)
-            | Self::ConcludeNodeMigration(_)
-            | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
+            Self::Respond(args) => {
+                MpcContract::respond(args.request.clone(), args.response.clone())
+            }
+            Self::CKDRespond(args) => {
+                MpcContract::respond_ckd(args.request.clone(), args.response.clone())
+            }
+            Self::VotePk(args) => MpcContract::vote_pk(args.key_event_id, args.public_key.clone()),
+            Self::VoteReshared(args) => MpcContract::vote_reshared(args.key_event_id),
+            Self::RegisterForeignChainsConfig(args) => {
+                MpcContract::register_foreign_chains_config(args.foreign_chains_config.clone())
+            }
+            Self::StartReshare(args) => MpcContract::start_reshare_instance(args.key_event_id),
+            Self::StartKeygen(args) => MpcContract::start_keygen_instance(args.key_event_id),
+            Self::VoteAbortKeyEventInstance(args) => {
+                MpcContract::vote_abort_key_event_instance(args.key_event_id)
+            }
+            Self::VerifyTee() => MpcContract::verify_tee(),
+            Self::SubmitParticipantInfo(args) => MpcContract::submit_participant_info(
+                args.proposed_participant_attestation.clone(),
+                args.tls_public_key.clone(),
+            ),
+            Self::ConcludeNodeMigration(args) => {
+                MpcContract::conclude_node_migration(args.keyset.clone())
+            }
+            Self::VerifyForeignTransactionRespond(args) => {
+                MpcContract::respond_verify_foreign_tx(args.request.clone(), args.response.clone())
+            }
         }
     }
 }

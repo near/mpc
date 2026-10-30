@@ -5,8 +5,8 @@ use ed25519_dalek::VerifyingKey;
 use mpc_primitives::EpochId;
 use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
-use near_contract_transport::ViewContract;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit_primitives::Viewer;
+use near_mpc_contract_interface::contract::MpcContractClient;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
     GovernanceThresholdParameters, KeyEvent, ProtocolContractState,
@@ -306,8 +306,10 @@ impl ContractState {
 
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
-pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'static>(
-    contract: MpcContractHandle<V>,
+pub async fn monitor_contract_state<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: MpcContractClient<V>,
     port_override: Option<u16>,
     protocol_state_sender: watch::Sender<dtos::ProtocolContractState>,
 ) -> watch::Receiver<ContractState> {
@@ -321,8 +323,8 @@ pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'sta
 
             tracing::debug!(target: "indexer", "querying contract state");
 
-            let (height, protocol_state) = match contract.state().await {
-                Ok(observed) => (observed.observed_at.into(), observed.value),
+            let (height, protocol_state) = match contract.state().with_metadata().await {
+                Ok(observed) => (observed.block_height, observed.result),
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading config from chain during state: {:?}", e);
                     tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
