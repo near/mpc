@@ -15,12 +15,6 @@ BorshSchemaContainer {
                 "ParticipantInfo",
             ],
         },
-        "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)": Tuple {
-            elements: [
-                "AuthenticatedAccountId",
-                "ProposedGovernanceThresholdParameters",
-            ],
-        },
         "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -108,11 +102,6 @@ BorshSchemaContainer {
                     "ParticipantId",
                 ],
             ),
-        },
-        "BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)",
         },
         "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
             length_width: 4,
@@ -376,12 +365,9 @@ BorshSchemaContainer {
             ),
         },
         "GovernanceThresholdParametersVotes": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>",
-                    ),
+                    "Votes<AuthenticatedAccountId>",
                 ],
             ),
         },
@@ -719,20 +705,6 @@ BorshSchemaContainer {
                     (
                         "participants",
                         "Vec<(AccountId, ParticipantId, ParticipantInfo)>",
-                    ),
-                ],
-            ),
-        },
-        "ProposedGovernanceThresholdParameters": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "parameters",
-                        "GovernanceThresholdParameters",
-                    ),
-                    (
-                        "per_domain_thresholds",
-                        "BTreeMap<DomainId, ReconstructionThreshold>",
                     ),
                 ],
             ),

@@ -197,7 +197,7 @@ impl RunningContractState {
         }
 
         // finally, vote.
-        let accepted = new_num_participants == votes.vote(proposal, candidate);
+        let accepted = votes.vote(proposal, candidate);
         if accepted {
             votes.clear();
         }
