@@ -85,7 +85,7 @@ impl EchoTracker {
         self.outstanding.iter().map(|ping| ping.deadline).min()
     }
 
-    pub fn is_awaiting_pong(&self) -> bool {
+    pub fn is_awaiting_ack(&self) -> bool {
         !self.outstanding.is_empty()
     }
 
@@ -110,11 +110,11 @@ mod tests {
         assert!(tracker.start_echo(nonce, base_time, timeout));
         let time_warp_1 = base_time + Duration::from_millis(2500);
         assert!(!tracker.check_timeouts(time_warp_1));
-        assert!(tracker.is_awaiting_pong());
+        assert!(tracker.is_awaiting_ack());
         let time_warp_2 = base_time + Duration::from_millis(3500);
         let rtt = tracker.receive_ack(nonce, time_warp_2);
         assert_eq!(rtt, Some(Duration::from_millis(3500)));
-        assert!(!tracker.is_awaiting_pong());
+        assert!(!tracker.is_awaiting_ack());
     }
 
     #[test]
@@ -128,6 +128,6 @@ mod tests {
         assert!(tracker.start_echo(nonce, base_time, timeout));
         let expired_warp = base_time + Duration::from_millis(2001);
         assert!(tracker.check_timeouts(expired_warp));
-        assert!(!tracker.is_awaiting_pong());
+        assert!(!tracker.is_awaiting_ack());
     }
 }
