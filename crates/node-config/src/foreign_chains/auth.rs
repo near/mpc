@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 use url::Url;
 
-use super::provider_identity::{ConfiguredAuth, encode_path_segment};
+use super::provider_identity::{self, ConfiguredAuth};
 
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -106,7 +106,8 @@ pub fn substitute_path_token(
         source,
     })?;
     let index = placeholder_segment_index(&url, placeholder)?;
-    let encoded_token = encode_path_segment(&url, token).ok_or(PathAuthError::InvalidToken)?;
+    let encoded_token =
+        provider_identity::encode_path_segment(&url, token).ok_or(PathAuthError::InvalidToken)?;
     // `Url::path_segments_mut` cannot replace one segment, and re-pushing the existing
     // segments would percent-encode them twice. Swap the segment in place instead.
     let mut segments: Vec<&str> = url.path_segments().into_iter().flatten().collect();
@@ -130,7 +131,7 @@ fn ensure_placeholder_is_one_path_segment(
 }
 
 fn placeholder_segment_index(url: &Url, placeholder: &str) -> Result<usize, PathAuthError> {
-    let encoded_placeholder = encode_path_segment(url, placeholder)
+    let encoded_placeholder = provider_identity::encode_path_segment(url, placeholder)
         .ok_or_else(|| PathAuthError::InvalidPlaceholder(placeholder.to_string()))?;
     let mut indices = url
         .path_segments()
