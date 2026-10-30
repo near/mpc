@@ -135,12 +135,7 @@ pub fn gen_running_state_with_params(
             key: bogus_ed25519_public_key_extended(),
         });
     }
-    RunningContractState::new(
-        domains,
-        Keyset::new(epoch_id, keys),
-        threshold_parameters,
-        AddDomainsVotes::default(),
-    )
+    RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
 }
 
 /// Randomly generates an InitializingContractState where we already have keys for
@@ -152,14 +147,17 @@ pub fn gen_initializing_state(
     num_generated: usize,
 ) -> (Environment, InitializingContractState) {
     let mut env = Environment::new(None, None, None);
-    let mut running = gen_running_state(num_generated);
+    let running = gen_running_state(num_generated);
     let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
     let mut initializing_state = None;
+    let mut votes = AddDomainsVotes::default();
     for (account, _, _) in running.parameters.participants().participants().clone() {
         env.set_signer(&account);
         assert!(initializing_state.is_none());
-        initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();
+        initializing_state = running
+            .vote_add_domains(domains_to_add.clone(), &mut votes)
+            .unwrap();
     }
     let initializing_state = initializing_state
         .expect("Enough votes to add domains should transition into initializing");

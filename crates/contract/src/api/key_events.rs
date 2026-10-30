@@ -108,6 +108,8 @@ impl MpcContract {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
             self.parameters_votes.clear();
+            self.add_domains_votes
+                .retain(self.protocol_state.active_participants());
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.

@@ -15,12 +15,6 @@ BorshSchemaContainer {
                 "ParticipantInfo",
             ],
         },
-        "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "Vec<DomainConfig>",
-            ],
-        },
         "(DomainId, ReconstructionThreshold)": Tuple {
             elements: [
                 "DomainId",
@@ -35,12 +29,9 @@ BorshSchemaContainer {
             ),
         },
         "AddDomainsVotes": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>",
-                    ),
+                    "Votes<AuthenticatedParticipantId>",
                 ],
             ),
         },
@@ -102,11 +93,6 @@ BorshSchemaContainer {
                     "ParticipantId",
                 ],
             ),
-        },
-        "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
         },
         "BTreeMap<DomainId, ReconstructionThreshold>": Sequence {
             length_width: 4,
@@ -605,6 +591,10 @@ BorshSchemaContainer {
                         "parameters_votes",
                         "GovernanceThresholdParametersVotes",
                     ),
+                    (
+                        "add_domains_votes",
+                        "AddDomainsVotes",
+                    ),
                 ],
             ),
         },
@@ -917,10 +907,6 @@ BorshSchemaContainer {
                     (
                         "parameters",
                         "GovernanceThresholdParameters",
-                    ),
-                    (
-                        "add_domains_votes",
-                        "AddDomainsVotes",
                     ),
                     (
                         "previously_cancelled_resharing_epoch_id",

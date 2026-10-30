@@ -24,7 +24,9 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
-        key_state::{AuthenticatedAccountId, EpochId, KeyForDomain, Keyset},
+        key_state::{
+            AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
+        },
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
     },
@@ -43,6 +45,13 @@ struct OldGovernanceThresholdParametersVotes {
     proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
 }
 
+/// Shadow of the `3.18.0` `AddDomainsVotes` layout.
+// TODO(#4984): drop once no deployed contract stores add-domains votes by account.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldAddDomainsVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<dtos::DomainConfig>>,
+}
+
 /// Shadow of the `3.18.0` `RunningContractState` layout.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldRunningContractState {
@@ -50,18 +59,18 @@ struct OldRunningContractState {
     keyset: Keyset,
     parameters: GovernanceThresholdParameters,
     parameters_votes: OldGovernanceThresholdParametersVotes,
-    add_domains_votes: AddDomainsVotes,
+    add_domains_votes: OldAddDomainsVotes,
     previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
 impl From<OldRunningContractState> for RunningContractState {
     fn from(old: OldRunningContractState) -> Self {
-        // Pending parameter votes are dropped. Participants re-vote after the upgrade.
+        // Pending parameter and add-domains votes are dropped.
+        // Participants re-vote after the upgrade.
         RunningContractState {
             domains: old.domains,
             keyset: old.keyset,
             parameters: old.parameters,
-            add_domains_votes: old.add_domains_votes,
             previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
         }
     }
@@ -127,6 +136,7 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            add_domains_votes: AddDomainsVotes::default(),
         }
     }
 }
@@ -163,13 +173,14 @@ mod tests {
     }
 
     #[test]
-    fn from__should_drop_pending_parameter_votes() {
-        // Given: a 3.18.0 running state holding one pending parameter vote
+    fn from__should_drop_pending_votes() {
+        // Given: a 3.18.0 running state holding one pending vote of each kind
         let running = gen_running_state(1);
         let participants = running.parameters.participants();
         let signer = participants.participants()[0].0.clone();
         testing_env!(VMContextBuilder::new().signer_account_id(signer).build());
         let voter = AuthenticatedAccountId::new(participants).unwrap();
+        let domain_voter = AuthenticatedParticipantId::new(participants).unwrap();
         let proposal =
             ProposedGovernanceThresholdParameters::new(running.parameters.clone(), BTreeMap::new());
         let old = old_contract(OldProtocolContractState::Running(OldRunningContractState {
@@ -179,7 +190,9 @@ mod tests {
             parameters_votes: OldGovernanceThresholdParametersVotes {
                 proposal_by_account: BTreeMap::from([(voter, proposal)]),
             },
-            add_domains_votes: running.add_domains_votes.clone(),
+            add_domains_votes: OldAddDomainsVotes {
+                proposal_by_account: BTreeMap::from([(domain_voter, Vec::new())]),
+            },
             previously_cancelled_resharing_epoch_id: running
                 .previously_cancelled_resharing_epoch_id,
         }));
@@ -189,6 +202,7 @@ mod tests {
 
         // Then
         assert!(migrated.parameters_votes.is_empty());
+        assert!(migrated.add_domains_votes.is_empty());
         assert_eq!(
             migrated.protocol_state,
             ProtocolContractState::Running(running)

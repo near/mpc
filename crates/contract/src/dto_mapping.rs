@@ -23,7 +23,6 @@ use crate::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        proposal_hash::ToProposalHash,
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
@@ -807,15 +806,14 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     fn into_dto_type(self) -> dtos::AddDomainsVotes {
-        let mut votes = dtos::AddDomainsVotes::default();
-        for (participant, domains) in &self.proposal_by_account {
-            votes
-                .0
-                .entry(domains.to_proposal_hash())
-                .or_default()
-                .insert(participant.into_dto_type());
-        }
-        votes
+        dtos::AddDomainsVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
+                .collect(),
+        )
     }
 }
 
