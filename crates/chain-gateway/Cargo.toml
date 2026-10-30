@@ -6,7 +6,7 @@ edition = { workspace = true }
 autotests = false
 
 [features]
-test-utils = ["near-contract-transport/test-utils"]
+test-utils = []
 
 [dependencies]
 derive_more = { workspace = true }
@@ -14,15 +14,15 @@ ed25519-dalek = { workspace = true }
 near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
-near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
-near-mpc-bounded-collections = { workspace = true }
+near-kit-primitives = { workspace = true }
 near-o11y = { workspace = true }
 near-store = { workspace = true }
 nearcore = { workspace = true }
 prometheus = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -33,8 +33,8 @@ base64 = { workspace = true }
 chain-gateway = { path = ".", features = ["test-utils"] }
 chain-gateway-test-contract = { workspace = true }
 insta = { workspace = true }
+near-contract-transport = { workspace = true }
 near-sdk = { workspace = true }
-rand = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
