@@ -1,7 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::TcbInfo;
-
-use super::tee_state::NodeId;
+use near_mpc_contract_interface::types as dtos;
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
@@ -9,7 +8,7 @@ use super::tee_state::NodeId;
     derive(borsh::BorshSchema)
 )]
 pub struct VerificationContext {
-    pub(crate) node_id: NodeId,
+    pub(crate) node: dtos::Node,
     pub(crate) tcb_info: TcbInfo,
 }
 
@@ -30,7 +29,7 @@ mod tests {
     fn verification_context__should_serialize_within_the_callback_arg_budget() {
         // Given
         let context = VerificationContext {
-            node_id: NodeId {
+            node: dtos::Node {
                 account_id: "alice.near".parse().unwrap(),
                 tls_public_key: Ed25519PublicKey(p2p_tls_key()),
                 account_public_key: Ed25519PublicKey(account_key()),

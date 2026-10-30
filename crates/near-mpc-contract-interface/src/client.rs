@@ -52,7 +52,7 @@ use crate::types::{
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
     ForeignChainsConfigs, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
     InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes,
-    LauncherImageHash, MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl,
+    LauncherImageHash, MeasurementVotes, MigrationInfo, Node, NodeImageHash, ParticipantUrl,
     ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
     SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
     Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
@@ -655,7 +655,7 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(CONFIG))
     }
 
-    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeId>> {
+    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<Node>> {
         self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
     }
 

@@ -8,13 +8,12 @@ use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
 use crate::primitives::participants::Participants;
 use crate::primitives::test_utils::{
     NUM_PROTOCOLS, bogus_tee_verifier_account_id, gen_participant_url, gen_participants,
-    infer_purpose_from_protocol, node_id_for,
+    infer_purpose_from_protocol, node_for,
 };
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
-use crate::tee::tee_state::NodeId;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
     ReconstructionThreshold,
@@ -168,28 +167,25 @@ pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContrac
         .map(|(_, _, participant_info)| participant_info.tls_public_key.clone())
         .collect();
 
-    let node_id = contract
+    let node = contract
         .tee_state
         .nodes
         .iter()
         .find(|(public_key, _)| active_participant_pks.contains(public_key))
         .expect("No attested participants in tee_state")
-        .1
-        .id();
+        .1;
 
     // Build a new simulated environment with this node as caller.
-    // Set signer_account_pk to match the mock attestation (account_public_key == tls_public_key).
+    // Set signer_account_pk to match the mock attestation (signer_public_key == tls_public_key).
     let mut ctx_builder = VMContextBuilder::new();
     ctx_builder
-        .signer_account_id(node_id.account_id.clone())
-        .predecessor_account_id(node_id.account_id.clone())
-        .signer_account_pk(near_sdk::PublicKey::from(
-            node_id.account_public_key.clone(),
-        ))
+        .signer_account_id(node.owner.clone())
+        .predecessor_account_id(node.owner.clone())
+        .signer_account_pk(near_sdk::PublicKey::from(node.signer_public_key.clone()))
         .attached_deposit(NearToken::from_yoctonear(1));
 
     testing_env!(ctx_builder.build());
-    node_id.account_id.clone()
+    node.owner.clone()
 }
 
 pub(crate) fn setup_tee_test_contract(
@@ -260,25 +256,28 @@ pub(crate) fn submit_valid_attestations(
     }
 }
 
-pub(crate) fn must_attest_new_node(contract: &mut MpcContract, account_id: &AccountId) -> NodeId {
-    let node_id = node_id_for(account_id);
+pub(crate) fn must_attest_new_node(
+    contract: &mut MpcContract,
+    account_id: &AccountId,
+) -> dtos::Node {
+    let node = node_for(account_id);
     contract
         .tee_state
         .verify_and_store_mock(
-            node_id.clone(),
+            node.clone(),
             MpcMockAttestation::Valid,
             Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
         )
         .expect("attestation insertion should succeed");
-    node_id
+    node
 }
 
-pub(crate) fn destination_of(node_id: &NodeId) -> dtos::DestinationNodeInfo {
+pub(crate) fn destination_of(node: &dtos::Node) -> dtos::DestinationNodeInfo {
     dtos::DestinationNodeInfo {
-        signer_account_pk: node_id.account_public_key.clone(),
+        signer_account_pk: node.account_public_key.clone(),
         destination_node_info: dtos::ParticipantInfo {
             url: gen_participant_url(0),
-            tls_public_key: node_id.tls_public_key.clone(),
+            tls_public_key: node.tls_public_key.clone(),
         },
     }
 }

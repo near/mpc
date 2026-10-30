@@ -9,6 +9,8 @@ use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// A node the contract stores under its TLS key. Its attestation is a separate
+/// [`StoredAttestation`](crate::types::StoredAttestation).
 #[derive(
     Clone,
     Debug,
@@ -26,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct NodeId {
+pub struct Node {
     /// Operator account.
     pub account_id: AccountId,
     /// TLS public key used by the node for peer-to-peer communication.
@@ -190,47 +192,47 @@ mod tests {
         OTHER_ACCOUNT_KEY_STR.parse().unwrap()
     }
 
-    fn node_id_with_account_key(account_key: Ed25519PublicKey) -> NodeId {
-        NodeId {
+    fn node_with_account_key(account_key: Ed25519PublicKey) -> Node {
+        Node {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: tls_key(),
             account_public_key: account_key,
         }
     }
 
-    fn hash_of(node_id: &NodeId) -> u64 {
+    fn hash_of(node: &Node) -> u64 {
         let mut hasher = DefaultHasher::new();
-        node_id.hash(&mut hasher);
+        node.hash(&mut hasher);
         hasher.finish()
     }
 
     #[test]
-    fn node_id__eq_differs_when_account_public_key_differs() {
+    fn node__should_not_be_equal_when_account_public_key_differs() {
         // Given
-        let with_key = node_id_with_account_key(account_key());
-        let with_other_key = node_id_with_account_key(other_account_key());
+        let with_key = node_with_account_key(account_key());
+        let with_other_key = node_with_account_key(other_account_key());
 
         // Then
         assert_ne!(with_key, with_other_key);
     }
 
     #[test]
-    fn node_id__hash_differs_when_account_public_key_differs() {
+    fn node__should_hash_differently_when_account_public_key_differs() {
         // Given
-        let with_key = node_id_with_account_key(account_key());
-        let with_other_key = node_id_with_account_key(other_account_key());
+        let with_key = node_with_account_key(account_key());
+        let with_other_key = node_with_account_key(other_account_key());
 
         // Then
         assert_ne!(hash_of(&with_key), hash_of(&with_other_key));
     }
 
     #[test]
-    fn node_id__serializes_public_keys_as_strings() {
+    fn node__should_serialize_public_keys_as_strings() {
         // Given
-        let node_id = node_id_with_account_key(account_key());
+        let node = node_with_account_key(account_key());
 
         // When
-        let json = serde_json::to_string(&node_id).unwrap();
+        let json = serde_json::to_string(&node).unwrap();
 
         // Then
         let expected = format!(
@@ -240,17 +242,17 @@ mod tests {
     }
 
     #[test]
-    fn node_id__deserializes_json() {
+    fn node__should_deserialize_json() {
         // Given
         let json = format!(
             r#"{{"account_id":"alice.near","tls_public_key":"{TLS_KEY_STR}","account_public_key":"{ACCOUNT_KEY_STR}"}}"#,
         );
 
         // When
-        let deserialized: NodeId = serde_json::from_str(&json).unwrap();
+        let deserialized: Node = serde_json::from_str(&json).unwrap();
 
         // Then
-        assert_eq!(deserialized, node_id_with_account_key(account_key()));
+        assert_eq!(deserialized, node_with_account_key(account_key()));
     }
 
     fn measurements(byte: u8) -> ExpectedMeasurements {

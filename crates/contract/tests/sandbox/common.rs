@@ -27,7 +27,6 @@ use mpc_contract::{
             ProposedGovernanceThresholdParameters,
         },
     },
-    tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
 use near_contract_transport::WatchContractState;
@@ -397,17 +396,17 @@ pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
     dtos::Ed25519PublicKey::from(bytes)
 }
 
-/// Builds the set of [`NodeId`]s that a sandbox contract will store after
+/// Builds the set of [`dtos::Node`]s that a sandbox contract will store after
 /// each participant has submitted its attestation. Both the TLS key (from the
 /// participant's `tls_public_key`) and the account public key (read from the
 /// matching [`Account`]'s signer) must line up with what `submit_participant_info`
 /// will persist on-chain — it stores [`env::signer_account_pk()`] alongside the
 /// TLS key. Keep this in sync with [`MpcContract::submit_participant_info`] so
-/// that test-side [`NodeId`] comparisons against [`get_tee_accounts()`] stay valid.
-pub fn build_sandbox_node_ids(
+/// that test-side [`dtos::Node`] comparisons against [`get_tee_accounts()`] stay valid.
+pub fn build_sandbox_nodes(
     participants: &Participants,
     accounts: &[Account],
-) -> BTreeSet<NodeId> {
+) -> BTreeSet<dtos::Node> {
     participants
         .participants()
         .iter()
@@ -416,7 +415,7 @@ pub fn build_sandbox_node_ids(
                 .iter()
                 .find(|a| a.id() == account_id)
                 .expect("matching Account must exist for each participant");
-            NodeId {
+            dtos::Node {
                 account_id: account_id.clone(),
                 tls_public_key: info.tls_public_key.clone(),
                 account_public_key: account_ed25519_public_key(account),
@@ -428,15 +427,14 @@ pub fn build_sandbox_node_ids(
 pub async fn submit_tee_attestations(
     contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
-    node_ids: &BTreeSet<NodeId>,
+    nodes: &BTreeSet<dtos::Node>,
 ) -> anyhow::Result<()> {
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
-    for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+    for (account, node) in env_accounts.iter().zip(nodes) {
+        assert_eq!(*account.id(), node.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
         let result =
-            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
-                .await?;
+            submit_participant_info(account, contract, &attestation, &node.tls_public_key).await?;
         assert!(result.is_success());
     }
     Ok(())
@@ -447,17 +445,17 @@ pub async fn submit_tee_attestations(
 pub async fn prepay_and_submit_tee_attestations(
     contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
-    node_ids: &BTreeSet<NodeId>,
+    nodes: &BTreeSet<dtos::Node>,
 ) -> anyhow::Result<()> {
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
-    for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+    for (account, node) in env_accounts.iter().zip(nodes) {
+        assert_eq!(*account.id(), node.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid);
         let result = prepay_and_submit_participant_info(
             account,
             contract,
             &attestation,
-            &node_id.tls_public_key,
+            &node.tls_public_key,
         )
         .await?;
         assert!(result.is_success());
