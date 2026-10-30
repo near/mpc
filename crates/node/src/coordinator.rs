@@ -63,7 +63,7 @@ pub struct Coordinator<TransactionSender> {
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
 
-    /// Storage for triples, presignatures, signing requests.
+    /// Storage for triples, signing requests.
     pub secret_db: Arc<SecretDB>,
     /// Storage for keyshares.
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
@@ -365,7 +365,7 @@ where
     }
 
     /// Entry point to handle the Running state of the contract.
-    /// In this state, we generate triples and presignatures, and listen to
+    /// In this state, we generate triples, and listen to
     /// signature requests and submit signature responses.
     #[expect(clippy::too_many_arguments)]
     async fn run_mpc(
@@ -398,7 +398,6 @@ where
         if let Some(my_participant_id) = my_participant_id {
             let current_participants_config = running_state.participants.clone();
             let current_epoch_id = running_state.keyset.epoch_id;
-            let all_domains: Vec<_> = running_state.keyset.get_domain_ids();
             let current_epoch_data = EpochData {
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
@@ -408,7 +407,6 @@ where
                 &secret_db,
                 current_epoch_data,
                 my_participant_id,
-                all_domains,
                 triple_thresholds,
             )?;
         }

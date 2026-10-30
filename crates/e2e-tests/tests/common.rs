@@ -46,7 +46,7 @@ pub const RPC_PRESET_REGISTRATION_PORT_SEED: u16 = 28;
 pub const BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED: u16 = 29;
 
 /// Start a cluster, wait for Running state and, if a domain uses [`Protocol::CaitSith`], for
-/// presignatures to buffer.
+/// triples to buffer.
 ///
 /// Uses `configure` to override defaults (3 nodes, threshold 2, 3 domains).
 /// Pass `|_| {}` for defaults.
@@ -83,8 +83,8 @@ pub async fn must_setup_cluster(
     configure(&mut config);
 
     let initial_participant_indices = config.participant_indices();
-    let presignatures_to_buffer = config.presignatures_to_buffer;
-    let buffers_presignatures = config
+    let triples_to_buffer = config.triples_to_buffer;
+    let buffers_triples = config
         .domains
         .iter()
         .any(|domain| domain.protocol == Protocol::CaitSith);
@@ -109,33 +109,28 @@ pub async fn must_setup_cluster(
         .await
         .expect("failed to whitelist foreign chains");
 
-    if buffers_presignatures {
-        wait_for_presignatures(
-            &cluster,
-            &initial_participant_indices,
-            presignatures_to_buffer,
-        )
-        .await
-        .expect("presignature buffering failed");
+    if buffers_triples {
+        wait_for_triples(&cluster, &initial_participant_indices, triples_to_buffer)
+            .await
+            .expect("triple buffering failed");
     }
 
     (cluster, running)
 }
 
-/// Wait until the first `participant_count` nodes each have at least
-/// `presignatures_to_buffer` presignatures available.
-/// Non-participant nodes are excluded because they don't generate presignatures.
-pub async fn wait_for_presignatures(
+/// Wait until every node in `participant_indices` has at least
+/// `triples_to_buffer` triples available.
+/// Non-participant nodes are excluded because they don't generate triples.
+pub async fn wait_for_triples(
     cluster: &MpcCluster,
     participant_indices: &[usize],
-    presignatures_to_buffer: usize,
+    triples_to_buffer: usize,
 ) -> anyhow::Result<()> {
-    let expected =
-        i64::try_from(presignatures_to_buffer).context("presignatures exceeds i64::MAX")?;
+    let expected = i64::try_from(triples_to_buffer).context("triples exceeds i64::MAX")?;
     let deadline = tokio::time::Instant::now() + CLUSTER_WAIT_TIMEOUT;
     loop {
         let values = cluster
-            .get_metric_all_nodes(metrics::OWNED_PRESIGNATURES_AVAILABLE)
+            .get_metric_all_nodes(metrics::OWNED_TRIPLES_AVAILABLE)
             .await
             .context("failed to get metrics")?;
         let participant_values: Vec<_> = participant_indices.iter().map(|&i| values[i]).collect();
@@ -147,7 +142,7 @@ pub async fn wait_for_presignatures(
         }
         anyhow::ensure!(
             tokio::time::Instant::now() < deadline,
-            "participant nodes did not generate presignatures in time (values: {participant_values:?})"
+            "participant nodes did not generate triples in time (values: {participant_values:?})"
         );
         tokio::time::sleep(POLL_INTERVAL).await;
     }

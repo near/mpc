@@ -45,7 +45,6 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
                     purpose: DomainPurpose::CKD,
                 },
             ];
-            c.presignatures_to_buffer = 6;
         })
         .await;
 

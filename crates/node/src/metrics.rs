@@ -19,17 +19,6 @@ pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLoc
     .unwrap()
 });
 
-pub static MPC_NUM_BAD_PEER_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter_vec!(
-            "mpc_num_bad_peer_presign_requests",
-            "Presignature requests from a peer whose participant-set size did not \
-             match the domain's reconstruction threshold",
-            &["domain_id"]
-        )
-        .unwrap()
-    });
-
 pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
     LazyLock::new(|| {
         prometheus::register_histogram!(
@@ -41,14 +30,6 @@ pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> 
         )
         .unwrap()
     });
-
-pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    prometheus::register_histogram!(
-        "near_mpc_pre_signature_time_elapsed",
-        "Time taken to generate a pre signature",
-    )
-    .unwrap()
-});
 
 pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     prometheus::register_histogram!(
@@ -90,8 +71,6 @@ pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new
 /// Label on the owned-triple gauges: the reconstruction threshold `t` of the
 /// store, since CaitSith keeps one triple store per distinct `t`.
 pub const TRIPLE_STORE_LABEL: &str = "reconstruction_threshold";
-/// Label on the owned-presignature gauges: the domain the store belongs to.
-pub const PRESIGNATURE_STORE_LABEL: &str = "domain_id";
 
 pub static MPC_OWNED_NUM_TRIPLES_AVAILABLE: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
@@ -120,38 +99,6 @@ pub static MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::
             "Number of triples generated that we own, and not yet used, \
              for which some participant is offline",
             &[TRIPLE_STORE_LABEL]
-        )
-        .unwrap()
-    });
-
-pub static MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE: LazyLock<prometheus::IntGaugeVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_gauge_vec!(
-            "mpc_owned_num_presignatures_available",
-            "Number of presignatures generated that we own, and not yet used",
-            &[PRESIGNATURE_STORE_LABEL]
-        )
-        .unwrap()
-    });
-
-pub static MPC_OWNED_NUM_PRESIGNATURES_ONLINE: LazyLock<prometheus::IntGaugeVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_gauge_vec!(
-            "mpc_owned_num_presignatures_online",
-            "Number of presignatures generated that we own, and not yet used, \
-             for which the participant set is confirmed alive",
-            &[PRESIGNATURE_STORE_LABEL]
-        )
-        .unwrap()
-    });
-
-pub static MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::IntGaugeVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_gauge_vec!(
-            "mpc_owned_num_presignatures_with_offline_participant",
-            "Number of presignatures generated that we own, and not yet used, \
-         for which some participant is offline",
-            &[PRESIGNATURE_STORE_LABEL]
         )
         .unwrap()
     });
@@ -222,11 +169,11 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS: LazyLock<promethe
         .unwrap()
     });
 
-pub static MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS: LazyLock<prometheus::IntCounter> =
+pub static MPC_NUM_VERIFY_FOREIGN_TX_TRIPLE_WAITS: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
-            "mpc_num_verify_foreign_tx_presignature_waits",
-            "Number of verify foreign tx attempts that found no chain-compatible presignature \
+            "mpc_num_verify_foreign_tx_triple_waits",
+            "Number of verify foreign tx attempts that found no chain-compatible triple pair \
              immediately and had to wait for one"
         )
         .unwrap()
@@ -497,17 +444,6 @@ pub static PEERS_INDEXER_HEIGHTS: LazyLock<prometheus::IntGaugeVec> = LazyLock::
     .unwrap()
 });
 
-pub static MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter_vec!(
-            "mpc_num_ecdsa_signatures_led_by_mode",
-            "Number of cait-sith signature computations led by this node, by signing flow \
-             (stored_presignature or online_presign)",
-            &["mode"]
-        )
-        .unwrap()
-    });
-
 pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(
         "mpc_node_build_info",
@@ -562,9 +498,6 @@ pub(crate) const ECDSA_PROTOCOL_SCHEME_LABEL: &str = "ecdsa";
 pub(crate) const EDDSA_PROTOCOL_SCHEME_LABEL: &str = "eddsa";
 pub(crate) const ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL: &str = "robust_ecdsa";
 pub(crate) const CKD_PROTOCOL_SCHEME_LABEL: &str = "ckd";
-
-pub(crate) const ONLINE_PRESIGN_MODE_LABEL: &str = "online_presign";
-pub(crate) const STORED_PRESIGNATURE_MODE_LABEL: &str = "stored_presignature";
 
 pub(crate) const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
 pub(crate) const MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL: &str = "make_online_presign_signature";

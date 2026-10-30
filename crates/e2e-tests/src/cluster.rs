@@ -40,10 +40,9 @@ const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
-pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
-// Concurrent e2e tests on a shared CI runner can stretch
-// triple/presignature generation past 120 s; the most pressure-sensitive
-// consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
+// Concurrent e2e tests on a shared CI runner can stretch triple generation
+// past 120 s; the most pressure-sensitive consumer is `wait_for_triples` (see
+// `parallel_sign_calls` test).
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_mins(4);
 pub const VOTE_KEY_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
 pub const PARTICIPANT_ATTESTATIONS_TIMEOUT: Duration = Duration::from_mins(2);
@@ -92,8 +91,6 @@ pub struct MpcClusterConfig {
     pub port_seed: u16,
     /// Triple buffer size per node.
     pub triples_to_buffer: usize,
-    /// Presignature buffer size per node.
-    pub presignatures_to_buffer: usize,
     /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
     pub sandbox_version: String,
     /// Parent of the directory holding all test artifacts (logs, configs, DB).
@@ -181,7 +178,7 @@ impl MpcClusterConfig {
     ///
     /// - 3 nodes, 2-of-3 threshold
     /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
-    /// - 10 triples, 10 presignatures per node
+    /// - 20 triples per node
     pub fn default_for_test(
         port_seed: u16,
         contract_wasm: Vec<u8>,
@@ -215,7 +212,6 @@ impl MpcClusterConfig {
             tee_verifier_wasm,
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
-            presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
             sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
@@ -1519,7 +1515,6 @@ fn start_mpc_nodes(
             ports: NodePorts::from_allocator(ports, i),
             mpc_contract_id: contract_account.clone(),
             triples_to_buffer: config.triples_to_buffer,
-            presignatures_to_buffer: config.presignatures_to_buffer,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
@@ -1547,7 +1542,6 @@ fn start_mpc_nodes(
             ports: NodePorts::from_allocator(ports, target_idx),
             mpc_contract_id: contract_account.clone(),
             triples_to_buffer: 10,
-            presignatures_to_buffer: 10,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),

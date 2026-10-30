@@ -1,11 +1,10 @@
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::participants::ContractState;
-use crate::metrics::{ONLINE_PRESIGN_MODE_LABEL, STORED_PRESIGNATURE_MODE_LABEL};
-use crate::p2p::testing::{NodeTestPorts, port_seed};
+use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, every_node_owns_triples, request_verify_foreign_tx_and_await_response,
-    signatures_led, wait_for_registrations, wait_until,
+    wait_for_registrations, wait_until,
 };
 use crate::tracking::AutoAbortTask;
 use httpmock::prelude::*;
@@ -275,11 +274,9 @@ struct ForeignTxCluster {
 
 const FOREIGN_TX_CLUSTER_SIZE: usize = 4;
 
-/// Starts the cluster with `signature.online_presign` set as given and `whitelist` voted for the
-/// mock's URL, and waits until every node owns triples.
+/// Starts the cluster with `whitelist` voted for the mock's URL, and waits until every node owns
+/// triples.
 async fn must_start_foreign_tx_cluster(
-    case: u16,
-    online_presign: bool,
     whitelist: fn(&str) -> BTreeMap<ForeignChain, ChainEntry>,
 ) -> ForeignTxCluster {
     const NUM_PARTICIPANTS: usize = FOREIGN_TX_CLUSTER_SIZE;
@@ -296,12 +293,11 @@ async fn must_start_foreign_tx_cluster(
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        port_seed::VERIFY_FOREIGN_TX_ONLINE_PRESIGN_TEST.with_case(case),
+        port_seed::VERIFY_FOREIGN_TX_RPC_QUORUM_TEST,
         DEFAULT_BLOCK_TIME,
     );
     for config in &mut setup.configs {
         config.config.foreign_chains = ethereum_only_config(&rpc_mock.base_url());
-        config.config.signature.online_presign = online_presign;
     }
     let domain = DomainConfig {
         id: DomainId(0),
@@ -342,63 +338,6 @@ async fn must_start_foreign_tx_cluster(
     }
 }
 
-#[tokio::test]
-#[test_log::test]
-#[expect(non_snake_case)]
-async fn verify_foreign_tx__should_presign_online_when_online_presign_is_enabled() {
-    // Given
-    let mut cluster = must_start_foreign_tx_cluster(0, true, ethereum_whitelist).await;
-    let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
-    let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
-
-    // When
-    let response = request_verify_foreign_tx_and_await_response(
-        &mut cluster.indexer,
-        "user0",
-        &cluster.domain,
-        [42u8; 32],
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-    )
-    .await;
-
-    // Then
-    assert!(response.is_some());
-    assert!(signatures_led(ONLINE_PRESIGN_MODE_LABEL) > online_presign_before);
-    assert_eq!(
-        signatures_led(STORED_PRESIGNATURE_MODE_LABEL),
-        stored_presignature_before
-    );
-}
-
-#[tokio::test]
-#[test_log::test]
-#[expect(non_snake_case)]
-async fn verify_foreign_tx__should_sign_from_stored_presignatures_when_online_presign_is_disabled()
-{
-    // Given
-    let mut cluster = must_start_foreign_tx_cluster(1, false, ethereum_whitelist).await;
-    let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
-    let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
-
-    // When
-    let response = request_verify_foreign_tx_and_await_response(
-        &mut cluster.indexer,
-        "user0",
-        &cluster.domain,
-        [42u8; 32],
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-    )
-    .await;
-
-    // Then
-    assert!(response.is_some());
-    assert!(signatures_led(STORED_PRESIGNATURE_MODE_LABEL) > stored_presignature_before);
-    assert_eq!(
-        signatures_led(ONLINE_PRESIGN_MODE_LABEL),
-        online_presign_before
-    );
-}
-
 /// The quorum asks for two providers and every node runs one, so no node registers Ethereum
 /// itself. Registering three nodes directly, after their own empty registrations have landed,
 /// reproduces the window between a vote landing and the nodes dropping the chain.
@@ -407,7 +346,7 @@ async fn verify_foreign_tx__should_sign_from_stored_presignatures_when_online_pr
 #[expect(non_snake_case)]
 async fn verify_foreign_tx__should_not_be_served_when_local_providers_are_below_the_rpc_quorum() {
     // Given
-    let mut cluster = must_start_foreign_tx_cluster(2, true, ethereum_whitelist_out_of_reach).await;
+    let mut cluster = must_start_foreign_tx_cluster(ethereum_whitelist_out_of_reach).await;
     wait_for_registrations(&cluster.indexer, FOREIGN_TX_CLUSTER_SIZE, &BTreeSet::new()).await;
     {
         let mut contract = cluster.indexer.contract_mut().await;
