@@ -183,9 +183,9 @@ sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count{
   for 15m
 
 # Warn: computations are running out of headroom against the deadline that ends
-# them. Signature, presignature, CKD and foreign-tx verification run under a
-# configured 60s by default, and 45s is three quarters of it. Key generation and
-# resharing are left out: a handful per epoch cannot support a percentile.
+# them. Signature, CKD and foreign-tx verification run under a configured 60s
+# by default, and 45s is three quarters of it. Key generation and resharing are
+# left out: a handful per epoch cannot support a percentile.
 histogram_quantile(0.99, sum by (protocol_scheme, task, le) (
   rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task!~"triple_generation|key_generation|key_resharing"}[15m])
 )) > 45  for 15m

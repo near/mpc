@@ -338,6 +338,66 @@ mod tests {
         assert_eq!(entries, expected);
     }
 
+    const START_CONFIG_TOML: &str = r#"
+home_dir = "/data"
+
+[secrets]
+secret_store_key_hex = "00000000000000000000000000000000"
+
+[tee]
+image_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+latest_allowed_hash_file_path = "/data/latest_allowed_hash"
+
+[tee.authority]
+type = "local"
+
+[log]
+format = "plain"
+
+[node]
+my_near_account_id = "test.near"
+near_responder_account_id = "test.near"
+number_of_responder_keys = 1
+web_ui = "127.0.0.1:8082"
+migration_web_ui = "127.0.0.1:8078"
+
+[node.indexer]
+validate_genesis = false
+sync_mode = "Latest"
+concurrency = 1
+mpc_contract_id = "mpc-contract.test.near"
+finality = "optimistic"
+
+[node.triple]
+concurrency = 1
+desired_triples_to_buffer = 1
+timeout_sec = 60
+parallel_triple_generation_stagger_time_sec = 1
+
+[node.signature]
+timeout_sec = 60
+
+[node.ckd]
+timeout_sec = 60
+"#;
+
+    #[test]
+    fn start_config__should_ignore_retired_presignature_fields() {
+        // Given
+        let config_with_retired_fields = START_CONFIG_TOML.replace(
+            "[node.signature]\ntimeout_sec = 60\n",
+            "[node.presignature]\nconcurrency = 16\ndesired_presignatures_to_buffer = 8192\n\
+             timeout_sec = 60\n\n[node.signature]\ntimeout_sec = 60\nonline_presign = false\n",
+        );
+
+        // When
+        let config: StartConfig = toml::from_str(&config_with_retired_fields).unwrap();
+
+        // Then
+        let current: StartConfig = toml::from_str(START_CONFIG_TOML).unwrap();
+        assert_eq!(config.node, current.node);
+    }
+
     /// Helper: parse [`NearInitConfig`] from a TOML fragment that only sets
     /// `chain_id` and the field under test. Reduces noise in the address
     /// validation tests.
