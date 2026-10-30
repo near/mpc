@@ -10,7 +10,7 @@ use rand::{SeedableRng, rngs::StdRng};
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn leader_failover__should_answer_requests_whose_leader_cannot_submit_responses() {
-    const MAX_SIGN_REQUESTS: usize = 15;
+    const MAX_SIGN_REQUESTS: usize = 64;
 
     // Given
     let mut rng = StdRng::seed_from_u64(0);
