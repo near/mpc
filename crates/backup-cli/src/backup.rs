@@ -3,7 +3,6 @@ use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
 use near_contract_transport::{NearKitCaller, PollInterval};
 use near_kit::Near;
-use near_kit::transaction::Final;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
@@ -104,7 +103,7 @@ pub async fn run_command(args: cli::Args) {
             let poll_interval =
                 PollInterval::new(Duration::from_secs(subcommand_args.poll_interval_seconds))
                     .expect("clap's range(1..) rejects a zero poll_interval_seconds");
-            let rpc = NearKitCaller::<Final>::new(
+            let rpc = NearKitCaller::new(
                 Near::custom(rpc_url.as_str(), subcommand_args.near_chain_id.as_str()).build(),
                 poll_interval,
                 request_timeout,
