@@ -66,6 +66,9 @@ const TCP_CONNECTION_RETRIES: u32 = 3;
 
 const PING_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
+const OUTGOING_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+const OUTGOING_MAX_MISSED_CHECKS: u8 = 3;
+
 type FrameHeader = u32;
 const FRAME_HEADER_SIZE_BYTES: usize = size_of::<FrameHeader>();
 
@@ -255,11 +258,11 @@ impl OutgoingConnection {
         );
         // An older peer cannot parse `Echo`
         let (echo_task, echo_ack_sender) = if peer_supports_echo(peer_network_protocol_version) {
-            let echotracker = EchoTracker::new();
-            let (ack_sender, ack_receiver) = mpsc::channel(echotracker.max_outstanding().max(1));
+            let echo_tracker = EchoTracker::new();
+            let (ack_sender, ack_receiver) = mpsc::channel(echo_tracker.max_outstanding().max(1));
             let echo_task = tracking::spawn(
                 &format!("echo liveness task for {}", target_participant_id),
-                run_echo_liveness(sender.clone(), echotracker, ack_receiver, liveness_failed),
+                run_echo_liveness(sender.clone(), echo_tracker, ack_receiver, liveness_failed),
             );
             (Some(echo_task), Some(ack_sender))
         } else {
@@ -553,7 +556,7 @@ async fn run_echo_liveness(
                 let Some(nonce) = ack else {
                     break;
                 };
-                if !echo_tracker.is_awaiting_pong() {
+                if !echo_tracker.is_awaiting_ack() {
                     tracing::debug!(?nonce, "ignoring EchoAck, no outstanding Echo");
                     continue;
                 }
@@ -846,6 +849,22 @@ where
     Ok((sender, receiver))
 }
 
+#[derive(Default)]
+struct OutgoingWatchdog {
+    missed_checks: u8,
+}
+
+impl OutgoingWatchdog {
+    fn record_check(&mut self, outgoing_alive: bool) -> bool {
+        if outgoing_alive {
+            self.missed_checks = 0;
+            return false;
+        }
+        self.missed_checks = self.missed_checks.saturating_add(1);
+        self.missed_checks >= OUTGOING_MAX_MISSED_CHECKS
+    }
+}
+
 async fn incoming_connection_handler(
     message_sender: tokio::sync::mpsc::UnboundedSender<PeerMessage>,
     connectivities: Arc<AllNodeConnectivities<OutgoingConnection, IncomingConnection>>,
@@ -949,33 +968,41 @@ async fn incoming_connection_handler(
     let peer_id_string = peer_id.to_string();
 
     let result: anyhow::Result<()> = async {
+        let mut outgoing_check = interval_at(
+            Instant::now() + OUTGOING_CHECK_INTERVAL,
+            OUTGOING_CHECK_INTERVAL,
+        );
+        outgoing_check.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut outgoing_watchdog = OutgoingWatchdog::default();
         loop {
-            let payload_bytes = tokio::select! {
-                biased;
-                _ = async {
-                    loop {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        if let Some(outgoing) = peer.any_outgoing_connection() {
-                            if outgoing.closed.is_cancelled() {
-                                break;
+            let payload_bytes = {
+                let read = framed_tls_stream_reader
+                    .next()
+                    .timeout(MESSAGE_READ_TIMEOUT_DURATION);
+                tokio::pin!(read);
+                loop {
+                    tokio::select! {
+                        biased;
+                        _ = outgoing_check.tick() => {
+                            let outgoing_alive = peer
+                                .any_outgoing_connection()
+                                .is_some_and(|outgoing| !outgoing.closed.is_cancelled());
+                            if outgoing_watchdog.record_check(outgoing_alive) {
+                                // It's dead, just doesn't know it yet. See #4514
+                                return Err(anyhow::anyhow!(
+                                    "outgoing connection closed for peer {}",
+                                    peer_id
+                                ));
                             }
-                        } else {
-                            break;
                         }
-                    }
-                } => {
-                    // It's dead, just doesn't know it yet. See #4514
-                    return Err(anyhow::anyhow!(
-                        "outgoing connection closed for peer {}",
-                        peer_id
-                    ));
-                }
-                read_result = framed_tls_stream_reader.next().timeout(MESSAGE_READ_TIMEOUT_DURATION) => {
-                    match read_result? {
-                        Some(result) => result?,
-                        None => {
-                            // Stream ended cleanly (peer closed connection).
-                            return Ok(());
+                        read_result = &mut read => {
+                            break match read_result? {
+                                Some(result) => result?,
+                                None => {
+                                    // Stream ended cleanly (peer closed connection).
+                                    return Ok(());
+                                }
+                            };
                         }
                     }
                 }
@@ -1022,7 +1049,7 @@ async fn incoming_connection_handler(
                 Packet::Echo(heartbeat) => {
                     match peer.any_outgoing_connection() {
                         Some(outgoing) => outgoing.send_echo_ack(heartbeat),
-                        None => tracing::debug!("No connection to send Echo"),
+                        None => tracing::debug!("No outgoing connection to send EchoAck"),
                     }
                 }
                 Packet::EchoAck(heartbeat) => {
@@ -1338,8 +1365,8 @@ pub mod testing {
 mod tests {
     use super::{
         IncomingConnection, IncomingConnectionLimits, MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
-        OutgoingConnection, ParticipantIdentities, PersistentConnection,
-        incoming_connection_handler,
+        OUTGOING_MAX_MISSED_CHECKS, OutgoingConnection, OutgoingWatchdog, ParticipantIdentities,
+        PersistentConnection, incoming_connection_handler,
     };
     use crate::{
         config::MpcConfig,
@@ -2081,6 +2108,21 @@ mod tests {
         .await;
     }
 
+    #[test]
+    fn outgoing_watchdog__should_close_only_after_consecutive_missed_checks() {
+        // Given
+        let mut watchdog = OutgoingWatchdog::default();
+        // When / Then
+        for _ in 1..OUTGOING_MAX_MISSED_CHECKS {
+            assert!(!watchdog.record_check(false));
+        }
+        assert!(!watchdog.record_check(true));
+        for _ in 1..OUTGOING_MAX_MISSED_CHECKS {
+            assert!(!watchdog.record_check(false));
+        }
+        assert!(watchdog.record_check(false));
+    }
+
     #[cfg(test)]
     mod liveness_test {
         use super::*;
@@ -2191,28 +2233,123 @@ mod tests {
                 ack_rx,
                 liveness_failed.clone(),
             ));
-            let stale_nonce = {
-                advance(ECHO_INTERVAL).await;
-                match packet_rx.recv().await.expect("First Echo expected") {
-                    Packet::Echo(Heartbeat { nonce }) => nonce,
-                    _ => panic!("Expected Packet::Echo"),
-                }
+            advance(ECHO_INTERVAL).await;
+            let Some(Packet::Echo(Heartbeat { nonce: first_nonce })) = packet_rx.recv().await
+            else {
+                panic!("Expected Packet::Echo");
             };
-            // When / Then
-            ack_tx.send(stale_nonce).await.unwrap();
+            ack_tx.send(first_nonce).await.unwrap();
             tokio::task::yield_now().await;
-            let _fresh_nonce = {
-                advance(ECHO_INTERVAL).await;
-                match packet_rx.recv().await.expect("Second Echo expected") {
-                    Packet::Echo(Heartbeat { nonce }) => nonce,
-                    _ => panic!("Expected Packet::Echo"),
-                }
-            };
-            ack_tx.send(stale_nonce).await.unwrap();
+            advance(ECHO_INTERVAL).await;
+            assert!(packet_rx.recv().await.is_some());
+            // When
+            ack_tx.send(first_nonce).await.unwrap();
             tokio::task::yield_now().await;
             advance(ECHO_TIMEOUT + Duration::from_millis(10)).await;
             tokio::task::yield_now().await;
+            // Then
             assert!(liveness_failed.is_cancelled());
+        }
+
+        #[tokio::test(start_paused = true)]
+        #[test_log::test]
+        async fn run_echo_liveness__should_send_increasing_nonces_while_acked() {
+            // Given
+            let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
+            let (ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let liveness_failed = CancellationToken::new();
+            let echo_tracker = EchoTracker::new();
+            let _liveness_task = tokio::spawn(run_echo_liveness(
+                packet_tx,
+                echo_tracker,
+                ack_rx,
+                liveness_failed.clone(),
+            ));
+            // When / Then
+            for expected in 0..3 {
+                advance(ECHO_INTERVAL).await;
+                let Some(Packet::Echo(Heartbeat { nonce })) = packet_rx.recv().await else {
+                    panic!("Expected Packet::Echo");
+                };
+                assert_eq!(nonce, Serial8::new(expected));
+                ack_tx.send(nonce).await.unwrap();
+                tokio::task::yield_now().await;
+            }
+            assert!(!liveness_failed.is_cancelled());
+        }
+
+        #[tokio::test(start_paused = true)]
+        #[test_log::test]
+        async fn run_echo_liveness__should_stop_when_packet_receiver_is_dropped() {
+            // Given
+            let (packet_tx, packet_rx) = mpsc::unbounded_channel::<Packet>();
+            let (_ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let liveness_failed = CancellationToken::new();
+            let echo_tracker = EchoTracker::new();
+            let liveness_task = tokio::spawn(run_echo_liveness(
+                packet_tx,
+                echo_tracker,
+                ack_rx,
+                liveness_failed.clone(),
+            ));
+            // When
+            drop(packet_rx);
+            advance(ECHO_INTERVAL).await;
+            // Then
+            liveness_task.await.unwrap();
+            assert!(!liveness_failed.is_cancelled());
+        }
+
+        #[rstest]
+        #[case::older_peer(NetworkProtocolVersion::Oct2026, false)]
+        #[case::current_peer(NetworkProtocolVersion::Nov2026, true)]
+        #[tokio::test]
+        async fn outgoing_connection__should_send_echo_ack_only_to_nov2026_peers(
+            #[case] peer_version: NetworkProtocolVersion,
+            #[case] expected_sent: bool,
+        ) {
+            // Given
+            let (sender, mut packets) = mpsc::unbounded_channel();
+            let connection = OutgoingConnection {
+                sender,
+                _sender_task: tokio::spawn(std::future::pending()).into(),
+                _keepalive_task: tokio::spawn(std::future::pending()).into(),
+                _echo_task: None,
+                echo_ack_sender: None,
+                closed: CancellationToken::new(),
+                peer_network_protocol_version: peer_version,
+            };
+            // When
+            connection.send_echo_ack(Heartbeat {
+                nonce: Serial8::new(7),
+            });
+            // Then
+            assert_eq!(packets.try_recv().is_ok(), expected_sent);
+        }
+
+        #[tokio::test]
+        async fn outgoing_connection__should_forward_echo_acks_until_channel_is_full() {
+            // Given
+            let (sender, _packets) = mpsc::unbounded_channel();
+            let (ack_sender, mut acks) = mpsc::channel(1);
+            let connection = OutgoingConnection {
+                sender,
+                _sender_task: tokio::spawn(std::future::pending()).into(),
+                _keepalive_task: tokio::spawn(std::future::pending()).into(),
+                _echo_task: None,
+                echo_ack_sender: Some(ack_sender),
+                closed: CancellationToken::new(),
+                peer_network_protocol_version: NetworkProtocolVersion::Nov2026,
+            };
+            // When
+            for nonce in 1..=3 {
+                connection.receive_echo_ack(Heartbeat {
+                    nonce: Serial8::new(nonce),
+                });
+            }
+            // Then
+            assert_eq!(acks.try_recv(), Ok(Serial8::new(1)));
+            assert_eq!(acks.try_recv(), Err(mpsc::error::TryRecvError::Empty));
         }
     }
 }
