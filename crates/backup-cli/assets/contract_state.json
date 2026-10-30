@@ -163,9 +163,6 @@
         ]
       },
       "threshold": 7
-    },
-    "add_domains_votes": {
-      "proposal_by_account": {}
     }
   }
 }

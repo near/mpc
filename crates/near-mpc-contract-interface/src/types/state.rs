@@ -191,15 +191,25 @@ pub struct GovernanceThresholdParametersVotes(
     pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>,
 );
 
-/// Votes for adding new domains.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+/// Voters grouped by the [`ProposalHash`] of the [`DomainConfig`] list they voted to add.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct AddDomainsVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
-}
+pub struct AddDomainsVotes(pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>);
 
 // =============================================================================
 // Key Event Types
@@ -261,7 +271,6 @@ pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
-    pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
@@ -535,7 +544,7 @@ mod tests {
     // TODO(#4984): drop once no deployed contract reports the pre-tally voter-keyed shape.
     #[test]
     #[expect(non_snake_case)]
-    fn running_contract_state__should_ignore_the_legacy_parameters_votes_report() {
+    fn running_contract_state__should_ignore_the_legacy_vote_reports() {
         // Given: the `state()` of a 3.18 contract while a vote is pending
         let parameters = GovernanceThresholdParameters {
             participants: sample_participants(),
@@ -548,9 +557,6 @@ mod tests {
             },
             keyset: Keyset::new(EpochId::new(0), Vec::new()),
             parameters: parameters.clone(),
-            add_domains_votes: AddDomainsVotes {
-                proposal_by_account: BTreeMap::new(),
-            },
             previously_cancelled_resharing_epoch_id: None,
         };
         let mut json = serde_json::to_value(&state).unwrap();
@@ -560,11 +566,36 @@ mod tests {
                 per_domain_thresholds: BTreeMap::new(),
             },
         }});
+        json["add_domains_votes"] = serde_json::json!({ "proposal_by_account": {
+            "0": [DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(1),
+                purpose: DomainPurpose::Sign,
+            }],
+        }});
 
         // When
         let parsed: RunningContractState = serde_json::from_value(json).unwrap();
 
         // Then
         assert_eq!(parsed, state);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn add_domains_votes__should_serialize_as_a_transparent_map_keyed_by_proposal_hash() {
+        // Given
+        let proposal = ProposalHash::new([0xCD; 32]);
+        let votes = AddDomainsVotes(BTreeMap::from([(
+            proposal,
+            BTreeSet::from([AuthenticatedParticipantId(ParticipantId(3))]),
+        )]));
+
+        // When
+        let json = serde_json::to_value(&votes).unwrap();
+
+        // Then
+        assert_eq!(json[proposal.as_hex()][0], 3);
     }
 }

@@ -27,13 +27,13 @@ use crate::deposits::{
     SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
 };
 use crate::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS, AVAILABLE_ATTESTATION_GRANTS,
-    CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS, CLEAN_TEE_STATUS, CONFIG,
-    CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS,
-    GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
-    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
-    LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
+    ADD_DOMAINS_VOTES, ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS,
+    AVAILABLE_ATTESTATION_GRANTS, CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS,
+    CLEAN_TEE_STATUS, CONFIG, CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION,
+    GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
+    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
+    INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
     OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
     REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
@@ -46,7 +46,7 @@ use crate::method_names::{
     VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
+    AccountId, AddDomainsVotes, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
     CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
@@ -637,6 +637,10 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(PARAMETERS_VOTES))
     }
 
+    pub fn add_domains_votes(&self) -> ViewCall<C, AddDomainsVotes> {
+        self.view(ViewArgs::no_args(ADD_DOMAINS_VOTES))
+    }
+
     pub fn os_measurement_votes(&self) -> ViewCall<C, MeasurementVotes> {
         self.view(ViewArgs::no_args(OS_MEASUREMENT_VOTES))
     }
@@ -1144,6 +1148,7 @@ mod tests {
         let _ = handle.mpc_node_manifest_digest_votes().await;
         let _ = handle.launcher_hash_votes().await;
         let _ = handle.parameters_votes().await;
+        let _ = handle.add_domains_votes().await;
         let _ = handle.os_measurement_votes().await;
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;
