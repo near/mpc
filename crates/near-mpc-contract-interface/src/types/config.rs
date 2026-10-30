@@ -51,7 +51,7 @@ pub struct InitConfig {
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub remove_non_participant_tee_verifier_votes_tera_gas: Option<u64>,
-    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub verifier_tera_gas: Option<u64>,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: Option<u64>,
@@ -112,7 +112,7 @@ pub struct Config {
     pub clean_foreign_chain_data_tera_gas: u64,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub remove_non_participant_tee_verifier_votes_tera_gas: u64,
-    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,

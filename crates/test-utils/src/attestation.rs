@@ -1,13 +1,13 @@
 use mpc_attestation::{
     TcbInfo,
-    attestation::{Attestation, DstackAttestation},
+    attestation::{Attestation, DstackAttestation, VerifiedQuote},
     quote::QuoteBytes,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::types::HexVec;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use tee_verifier_interface::{Collateral, VerifiedReport};
+use tee_verifier_interface::{Collateral, CollateralDates, VerifiedReport};
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 pub const TEST_COLLATERAL_STRING: &str = include_str!("../assets/collateral.json");
@@ -137,6 +137,16 @@ pub fn mock_dstack_attestation() -> Attestation {
 /// quote, produced by running the DCAP step at [`VALID_ATTESTATION_TIMESTAMP`]
 /// (when the fixture collateral is valid).
 pub fn verified_report() -> VerifiedReport {
+    verified_quote().report
+}
+
+/// The [`CollateralDates`] the real `tee-verifier` would return alongside
+/// [`verified_report`].
+pub fn collateral_dates() -> CollateralDates {
+    verified_quote().collateral_dates
+}
+
+fn verified_quote() -> VerifiedQuote {
     mock_dstack_attestation_inner()
         .verify_dcap_quote(VALID_ATTESTATION_TIMESTAMP)
         .expect("fixture quote verifies at VALID_ATTESTATION_TIMESTAMP")

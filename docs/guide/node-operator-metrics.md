@@ -229,12 +229,13 @@ time() - mpc_last_backup_served_timestamp_seconds > 86400  for 2h
 mpc_last_backup_served_epoch < mpc_current_epoch_id  for 2h
 
 # Warn: no attestation has landed in three resubmission intervals. This fires
-# within hours; the expiry alerts below only fire days later.
+# within hours; the expiry alerts below can fire weeks later.
 mpc_indexer_latest_block_timestamp_seconds - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
 
-# Page: under three days of attestation runway left. Backstop for the alert
-# above; reached about four days after submissions stop landing. `> 0` keeps
-# the sentinel values out.
+# Page: under three days of attestation runway left. The attestation expires
+# with the collateral it was submitted with, so this is a backstop for the alert
+# above, and also fires for a node that keeps submitting nearly stale
+# collateral. `> 0` keeps the sentinel values out.
 mpc_attestation_expiry_timestamp_seconds > 0
   and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
       < 3 * 86400  for 15m

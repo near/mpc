@@ -7,7 +7,8 @@ attestation expiry and stores the one Intel already publishes.
 expiry = earliest_collateral_expiration
 ```
 
-`DEFAULT_EXPIRATION_DURATION_SECONDS` is deleted.
+`DEFAULT_EXPIRATION_DURATION_SECONDS` is gone; the 7-day value survives only for mock attestations,
+as `MOCK_EXPIRATION_DURATION_SECONDS`.
 
 | | Today | This design |
 |---|---|---|
@@ -126,8 +127,8 @@ verifier change needed, but it puts DER/X.509 parsing back into the contract was
 
 ## What else has to change
 
-Six things depend on the expiry being `now + constant`. Five have to change with it; item 3 is
-future work this design only has to keep possible. Each is listed as the problem, then the fix.
+Six things depend on the expiry being `now + constant`. Four have to change with it; item 3 is
+future work this design only has to keep possible, and item 4 is optional. Each is listed as the problem, then the fix.
 
 **1. Knowing when a submission was accepted.** While the expiry is `now + 7 days`, it also says when
 the submission was accepted. That stops working when the value is a calendar date that repeats for
@@ -167,7 +168,8 @@ when `vote_tee_verifier_change` passes, and in `re_verify` let any entry with
 submitted after the rotation are untouched, every node gets a full day to re-attest, and there is no
 sweep or per-entry write.
 
-**4. Near-expiry collateral.** A node presenting nearly stale collateral now gets a nearly worthless
+**4. Near-expiry collateral — optional.** Not a prerequisite for the rest
+([#4517](https://github.com/near/mpc/issues/4517)). A node presenting nearly stale collateral now gets a nearly worthless
 attestation. And because `nextUpdate` is shared across the fleet, every node's expiry converges on
 the same instant.
 
@@ -225,17 +227,16 @@ as it is.
    so nothing changes on chain yet. Reversible by voting back.
 3. **Upgrade `mpc-contract`** to call `verify_quote_with_collateral_dates`. Certificate-derived expiry takes
    effect here, and from this point voting back to the old verifier no longer works.
-4. **Release the node** with the near-expiry refresh rule from item 4.
+4. **Optional: release the node** with the near-expiry refresh rule from item 4.
 
 Both verifiers are already live (`tee-verifier-2026-08-04.near`, `tee-verifier-2026-07-22.testnet`),
 so step 2 is a rotation, not a first deployment.
 
 Operators will see a healthy node's `expiry_timestamp_seconds` sit further out than today, but stop
 advancing hourly: it moves only when the node picks up refreshed collateral, roughly monthly.
-`accepted_at_seconds` is the replacement health signal.
-[`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) sells the old behaviour as the cheapest health check and
-needs rewriting, as does the `mpc_attestation_expiry_timestamp_seconds` description from
-[#4236](https://github.com/near/mpc/pull/4236).
+`accepted_at_seconds` is the replacement health signal, as
+[`tdx-tcb-status.md`](../guide/tdx-tcb-status.md) and
+[`node-operator-metrics.md`](../guide/node-operator-metrics.md) describe.
 
 ## Open questions
 
