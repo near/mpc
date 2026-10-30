@@ -150,10 +150,10 @@ participant:
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum; `0` while the chain is not whitelisted |
+| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum |
 | `mpc_foreign_chain_rpc_providers_whitelisted` | distinct whitelisted providers this node's config conforms to |
 
-`whitelisted` must reach a non-zero `required`. Anything less means the chain is
+`whitelisted` must reach `required`. Anything less means the chain is
 configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
 asks. The node logs the differing provider at startup and on every whitelist change.
