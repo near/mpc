@@ -6,7 +6,7 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
-pub use auth::{AuthConfig, TokenConfig};
+pub use auth::{AuthConfig, PathAuthError, TokenConfig, substitute_path_token};
 pub use embedded::RpcPreset;
 use embedded::embedded_foreign_chains;
 pub use resolve::{
