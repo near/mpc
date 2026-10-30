@@ -397,7 +397,7 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let removed_entry_owners = self.tee_state.clean_invalid_attestations(
             tee_upgrade_deadline_duration,
-            max_scan as usize,
+            usize::try_from(max_scan).expect("u32 should fit in a usize on wasm32 targets"),
             is_in_use,
         );
         for account_id in &removed_entry_owners {
