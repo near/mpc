@@ -1,6 +1,6 @@
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
-use super::tx_signer::{TransactionSigner, TransactionSigners};
+use super::tx_signer::{NodeSender, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
 use crate::types::{
@@ -8,12 +8,12 @@ use crate::types::{
     SubmittedTxMetadata,
 };
 use anyhow::Context;
-use chain_gateway::primitives::FetchLatestFinalBlockInfo;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
-use near_contract_transport::ViewContract;
-use near_indexer_primitives::types::Gas;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit_primitives::protocol::Action;
+use near_kit_primitives::signer::PublicKey;
+use near_kit_primitives::{TxSender, Viewer};
+use near_mpc_contract_interface::contract::MpcContractClient;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::future::Future;
@@ -51,8 +51,13 @@ impl TransactionProcessorHandle {
         indexer_state: Arc<IndexerState>,
         tx_logger: impl LogTransaction,
     ) -> anyhow::Result<impl TransactionSender> {
-        let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
-            .context("Failed to initialize transaction signers")?;
+        let signers = TransactionSigners::new(
+            indexer_state.gateway.clone(),
+            config,
+            owner_account_id,
+            owner_secret_key,
+        )
+        .context("Failed to initialize transaction signers")?;
 
         let (transaction_sender, mut transaction_receiver) =
             mpsc::channel::<ChainSendTransactionRequest>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
@@ -68,13 +73,12 @@ impl TransactionProcessorHandle {
                         return;
                     };
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                    let recent_transaction = ensure_send_transaction(
-                        tx_signer.clone(),
-                        indexer_state,
-                        tx_request,
-                        txn_json,
-                    )
-                    .await;
+                    let Ok(action) = tx_request.function_call().into_action() else {
+                        tracing::error!(target: "mpc", "Failed to serialize response args");
+                        return;
+                    };
+                    let recent_transaction =
+                        ensure_send_transaction(tx_signer, indexer_state, tx_request, action).await;
 
                     tx_logger.log_transaction(recent_transaction);
                 });
@@ -104,53 +108,11 @@ enum TransactionStatus {
     Unknown,
 }
 
-/// Creates, signs, and submits a function call with the given method and serialized arguments.
-/// On success, returns the metadata of the submitted transaction for debugging.
-async fn submit_tx(
-    tx_signer: Arc<TransactionSigner>,
-    indexer_state: Arc<IndexerState>,
-    method: String,
-    params_ser: String,
-    gas: Gas,
-) -> anyhow::Result<SubmittedTxMetadata> {
-    let block = indexer_state
-        .gateway
-        .fetch_latest_final_block_info()
-        .await?;
-
-    let transaction = tx_signer.create_and_sign_function_call_tx(
-        indexer_state.mpc_contract_id.clone(),
-        method,
-        params_ser.into(),
-        gas,
-        block.value,
-        block.observed_at.into(),
-    );
-
-    let tx_hash = transaction.get_hash();
-    let nonce = transaction.transaction.nonce().nonce();
-    let signature = transaction.signature.clone();
-    tracing::info!(
-        target = "mpc",
-        "sending tx {:?} with ak={:?} nonce={:?}",
-        tx_hash,
-        tx_signer.public_key(),
-        nonce,
-    );
-
-    indexer_state.rpc_handler.submit_tx(transaction).await?;
-
-    Ok(SubmittedTxMetadata {
-        tx_hash,
-        nonce,
-        signature,
-        block_height: block.observed_at.into(),
-    })
-}
-
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
-async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
-    contract: &MpcContractHandle<C>,
+async fn observe_tx_result<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: &MpcContractClient<V>,
     request: &ChainSendTransactionRequest,
 ) -> anyhow::Result<TransactionStatus> {
     match request {
@@ -158,10 +120,8 @@ async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state.
             // A successful respond removes the request from contract state.
-            let pending_request_response = contract
-                .get_pending_request(respond_args.request.clone())
-                .await?
-                .value;
+            let pending_request_response =
+                contract.get_pending_request(&respond_args.request).await?;
 
             let transaction_status = match pending_request_response {
                 Some(_) => TransactionStatus::NotExecuted,
@@ -175,9 +135,8 @@ async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
             // pending ckd request still exists in the contract state.
             // A successful respond removes the request from contract state.
             let pending_request_response = contract
-                .get_pending_ckd_request(respond_args.request.clone())
-                .await?
-                .value;
+                .get_pending_ckd_request(&respond_args.request)
+                .await?;
 
             let transaction_status = match pending_request_response {
                 Some(_) => TransactionStatus::NotExecuted,
@@ -191,9 +150,8 @@ async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
             // pending verify foreign tx request still exists in the contract state.
             // A successful respond removes the request from contract state.
             let pending_request_response = contract
-                .get_pending_verify_foreign_tx_request(respond_args.request.clone())
-                .await?
-                .value;
+                .get_pending_verify_foreign_tx_request(&respond_args.request)
+                .await?;
 
             let transaction_status = match pending_request_response {
                 Some(_) => TransactionStatus::NotExecuted,
@@ -220,38 +178,45 @@ async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
 /// it to be included, then observes once whether it had its intended on-chain
 /// effect.
 async fn ensure_send_transaction(
-    tx_signer: Arc<TransactionSigner>,
+    tx_sender: Arc<NodeSender>,
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
-    params_ser: String,
+    action: Action,
 ) -> SubmittedTransaction {
     let method = request.method();
-    let signer = SignerContext {
-        account_id: tx_signer.account_id().clone(),
-        public_key: Ed25519PublicKey::from(&tx_signer.public_key()),
+    let signer = |public_key: &PublicKey| SignerContext {
+        account_id: tx_sender.account_id().clone(),
+        public_key: Ed25519PublicKey::from(
+            *public_key
+                .as_ed25519_bytes()
+                .expect("the node signs with ed25519 keys"),
+        ),
         method,
     };
-    let submitted_metadata = submit_tx(
-        tx_signer.clone(),
-        indexer_state.clone(),
-        method.to_string(),
-        params_ser.clone(),
-        request.gas_required(),
-    )
-    .await;
+    let sent = tx_sender
+        .send(indexer_state.mpc_contract_id.clone(), vec![action])
+        .await;
 
     // Stamp the submission time now, before the observation wait below, so the
     // debug page reflects when the transaction was actually routed.
     let submitted_at = Clock::real().now_utc();
 
-    let metadata = match submitted_metadata {
-        Ok(metadata) => metadata,
+    let (signer, metadata) = match sent {
+        Ok(sent) => (
+            signer(&sent.public_key),
+            SubmittedTxMetadata {
+                tx_hash: sent.tx_hash,
+                nonce: sent.nonce,
+                signature: sent.signature,
+                block_height: sent.block_height.into(),
+            },
+        ),
         Err(err) => {
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                 .with_label_values(&[method, "local_error"])
                 .inc();
             tracing::error!(%err, "Failed to forward transaction {:?}", request);
-            return SubmittedTransaction::submit_failed(signer, submitted_at);
+            return SubmittedTransaction::submit_failed(signer(&err.public_key), submitted_at);
         }
     };
 

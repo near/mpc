@@ -1,10 +1,9 @@
-use crate::sandbox::utils::transactions::SandboxCaller;
-use near_contract_transport::{
-    CallContract, FunctionCallArgs, HasPollInterval, ObservedState, PollInterval,
-    SerializedObservation, ViewArgs, ViewContract,
-};
+use crate::sandbox::utils::transactions::{SandboxCaller, SandboxSendError};
 use near_jsonrpc_client::{JsonRpcClient, methods::query::RpcQueryRequest};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_kit_primitives::protocol::Action;
+use near_kit_primitives::rpc::{BlockReference as KitBlockReference, ViewFunctionResult};
+use near_kit_primitives::{CryptoHash, TxSender, Viewer};
 use near_primitives::types::BlockReference;
 use near_primitives::views::QueryRequest;
 use near_workspaces::{
@@ -12,9 +11,11 @@ use near_workspaces::{
 };
 use std::time::Duration;
 
-/// The deployed MPC contract as a caller: calls are signed by the contract's own key, views go
-/// to the sandbox RPC directly because near-workspaces' `view` drops the block height that
-/// [`ObservedState`] needs.
+/// How often the sandbox tests poll contract views.
+pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// The deployed MPC contract as a backend: calls are signed by the contract's own key, views go
+/// to the sandbox RPC directly because near-workspaces' `view` drops the block height.
 #[derive(Clone)]
 pub struct SandboxSelfCaller {
     contract: Contract,
@@ -38,24 +39,22 @@ impl SandboxSelfCaller {
     }
 }
 
-impl CallContract for SandboxSelfCaller {
+impl TxSender for SandboxSelfCaller {
     type Output = ExecutionFinalResult;
-    type Error = near_workspaces::error::Error;
+    type SendError = SandboxSendError;
 
-    async fn call_contract(
-        &self,
-        contract_id: &AccountId,
-        call_args: FunctionCallArgs,
-    ) -> Result<Self::Output, Self::Error> {
-        SandboxCaller(self.contract.as_account())
-            .call_contract(contract_id, call_args)
-            .await
+    fn account_id(&self) -> &AccountId {
+        self.contract.id()
     }
-}
 
-impl HasPollInterval for SandboxSelfCaller {
-    fn poll_interval(&self) -> PollInterval {
-        PollInterval::new(Duration::from_millis(100)).expect("non-zero")
+    async fn send(
+        &self,
+        receiver_id: AccountId,
+        actions: Vec<Action>,
+    ) -> Result<ExecutionFinalResult, SandboxSendError> {
+        SandboxCaller(self.as_account().clone())
+            .send(receiver_id, actions)
+            .await
     }
 }
 
@@ -63,22 +62,26 @@ impl HasPollInterval for SandboxSelfCaller {
 #[error("{0}")]
 pub struct SandboxViewError(String);
 
-impl ViewContract for SandboxSelfCaller {
-    type Error = SandboxViewError;
+/// Every view reads the latest (optimistic) block, whatever block it asks for: near-kit
+/// defaults views to final, which can lag the transactions the tests just executed.
+impl Viewer for SandboxSelfCaller {
+    type ViewError = SandboxViewError;
 
-    async fn view_contract(
+    async fn view_function(
         &self,
         contract_id: &AccountId,
-        view_args: ViewArgs,
-    ) -> Result<SerializedObservation, Self::Error> {
+        method: &str,
+        args: &[u8],
+        _block: KitBlockReference,
+    ) -> Result<ViewFunctionResult, SandboxViewError> {
         let response = self
             .rpc
             .call(RpcQueryRequest {
                 block_reference: BlockReference::latest(),
                 request: QueryRequest::CallFunction {
                     account_id: contract_id.clone(),
-                    method_name: view_args.method_name,
-                    args: view_args.args.into(),
+                    method_name: method.to_string(),
+                    args: args.to_vec().into(),
                 },
             })
             .await
@@ -88,9 +91,11 @@ impl ViewContract for SandboxSelfCaller {
                 "view query did not return a call result".to_string(),
             ));
         };
-        Ok(ObservedState {
-            observed_at: response.block_height.into(),
-            value: result.result,
-        })
+        Ok(ViewFunctionResult::new(
+            result.result,
+            response.block_height,
+            CryptoHash::from_bytes(response.block_hash.0),
+        )
+        .with_logs(result.logs))
     }
 }

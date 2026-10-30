@@ -21,11 +21,11 @@ pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
 }
 
 pub async fn get_config(contract: &SandboxMpcContract) -> anyhow::Result<Config> {
-    Ok(contract.config().await?.value)
+    Ok(contract.config().await?)
 }
 
 pub async fn get_state(contract: &SandboxMpcContract) -> ProtocolContractState {
-    contract.state().await.unwrap().value
+    contract.state().await.unwrap()
 }
 
 pub async fn get_participants(contract: &SandboxMpcContract) -> anyhow::Result<Participants> {
@@ -38,12 +38,7 @@ pub async fn get_participants(contract: &SandboxMpcContract) -> anyhow::Result<P
 }
 
 pub async fn get_tee_accounts(contract: &SandboxMpcContract) -> anyhow::Result<BTreeSet<NodeId>> {
-    Ok(contract
-        .get_tee_accounts()
-        .await?
-        .value
-        .into_iter()
-        .collect())
+    Ok(contract.get_tee_accounts().await?.into_iter().collect())
 }
 
 pub async fn available_attestation_grants(
@@ -52,8 +47,7 @@ pub async fn available_attestation_grants(
 ) -> anyhow::Result<u32> {
     Ok(contract
         .available_attestation_grants(account_id.clone())
-        .await?
-        .value)
+        .await?)
 }
 
 pub async fn prepay_attestation_grants(
@@ -66,17 +60,14 @@ pub async fn prepay_attestation_grants(
     let total = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
     payer
         .call_mpc(contract.id())
-        .prepay_attestation_storage(beneficiary.clone(), grants, total)
+        .prepay_attestation_storage(beneficiary.clone(), grants)
+        .deposit(total)
         .await
         .map_err(Into::into)
 }
 
 async fn attestation_storage_fee(contract: &SandboxMpcContract) -> anyhow::Result<NearToken> {
-    let fee = contract
-        .config()
-        .await?
-        .value
-        .attestation_storage_fee_millinear;
+    let fee = contract.config().await?.attestation_storage_fee_millinear;
     Ok(NearToken::from_millinear(u128::from(fee)))
 }
 
@@ -109,21 +100,21 @@ pub async fn submit_participant_info(
 }
 
 pub async fn tee_verifier_account_id(contract: &SandboxMpcContract) -> AccountId {
-    contract.tee_verifier_account_id().await.unwrap().value
+    contract.tee_verifier_account_id().await.unwrap()
 }
 
 pub async fn get_participant_attestation(
     contract: &SandboxMpcContract,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<Option<StoredAttestation>> {
-    Ok(contract.get_attestation(tls_key).await?.value)
+    Ok(contract.get_attestation(tls_key).await?)
 }
 
 pub async fn assert_running_return_participants(
     contract: &SandboxMpcContract,
 ) -> anyhow::Result<Participants> {
     // Verify contract is back to running state with new threshold
-    let final_state: ProtocolContractState = contract.state().await?.value;
+    let final_state: ProtocolContractState = contract.state().await?;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
             "Expected contract to be in Running state after resharing, but got: {:?}",

@@ -1,27 +1,45 @@
 use crate::sandbox::utils::sandbox_self_caller::SandboxSelfCaller;
-use near_mpc_contract_interface::client::MpcContractHandle;
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_kit_primitives::Contract as _;
+use near_mpc_contract_interface::contract::{MpcContract, MpcContractClient};
+use near_workspaces::{Account, AccountId, Contract, Worker, network::Sandbox};
+use std::ops::Deref;
 
-pub type SandboxMpcContract = MpcContractHandle<SandboxSelfCaller>;
-
-/// What the typed interface does not cover: the contract's own account, key included.
-pub trait SandboxMpcContractExt {
-    fn from_deployed(worker: &Worker<Sandbox>, contract: Contract) -> Self;
-    fn as_account(&self) -> &Account;
-    fn view_code(&self) -> impl Future<Output = near_workspaces::Result<Vec<u8>>>;
+/// The deployed MPC contract: its typed client, plus what the typed interface does not cover,
+/// the contract's own account, key included. The generated client does not hand its backend
+/// back, so the caller is kept beside it.
+#[derive(Clone)]
+pub struct SandboxMpcContract {
+    client: MpcContractClient<SandboxSelfCaller>,
+    caller: SandboxSelfCaller,
 }
 
-impl SandboxMpcContractExt for SandboxMpcContract {
-    fn from_deployed(worker: &Worker<Sandbox>, contract: Contract) -> Self {
+impl SandboxMpcContract {
+    pub fn from_deployed(worker: &Worker<Sandbox>, contract: Contract) -> Self {
         let contract_id = contract.id().clone();
-        MpcContractHandle::new(SandboxSelfCaller::new(worker, contract), contract_id)
+        let caller = SandboxSelfCaller::new(worker, contract);
+        Self {
+            client: MpcContract::client(caller.clone(), contract_id),
+            caller,
+        }
     }
 
-    fn as_account(&self) -> &Account {
-        self.caller().as_account()
+    pub fn id(&self) -> &AccountId {
+        self.client.contract_id()
     }
 
-    async fn view_code(&self) -> near_workspaces::Result<Vec<u8>> {
-        self.caller().view_code().await
+    pub fn as_account(&self) -> &Account {
+        self.caller.as_account()
+    }
+
+    pub async fn view_code(&self) -> near_workspaces::Result<Vec<u8>> {
+        self.caller.view_code().await
+    }
+}
+
+impl Deref for SandboxMpcContract {
+    type Target = MpcContractClient<SandboxSelfCaller>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
     }
 }

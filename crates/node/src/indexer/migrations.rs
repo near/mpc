@@ -1,7 +1,7 @@
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_contract_transport::ViewContract;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit_primitives::Viewer;
+use near_mpc_contract_interface::contract::MpcContractClient;
 pub use near_mpc_contract_interface::types::MigrationInfo as ContractMigrationInfo;
 use tokio::sync::watch;
 
@@ -14,8 +14,10 @@ const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration
 /// Returns a tokio watch channel on which the latest migration state can be watched.
 ///
 /// The interval checking for new values is defined by [`MIGRATION_INFO_REFRESH_INTERVAL`]
-pub async fn monitor_migrations<V: ViewContract + Clone + Send + Sync + 'static>(
-    contract: MpcContractHandle<V>,
+pub async fn monitor_migrations<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: MpcContractClient<V>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     my_near_account_id: AccountId,
     my_p2p_public_key: VerifyingKey,
@@ -77,15 +79,17 @@ pub async fn monitor_migrations<V: ViewContract + Clone + Send + Sync + 'static>
     receiver
 }
 
-async fn fetch_migrations_once<C: ViewContract + Clone + Send + 'static>(
-    contract: &MpcContractHandle<C>,
+async fn fetch_migrations_once<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: &MpcContractClient<V>,
 ) -> (u64, ContractMigrationInfo) {
     loop {
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match contract.migration_info().await {
+        match contract.migration_info().with_metadata().await {
             Ok(observed) => {
-                return (observed.observed_at.into(), observed.value);
+                return (observed.block_height, observed.result);
             }
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading config from chain during migration_info: {:?}", e);

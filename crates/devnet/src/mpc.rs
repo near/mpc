@@ -1,6 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
-use crate::caller::{CallMpcContract, Verbosity, WithVerbosity};
+use crate::caller::{CallMpcContract, Verbosity};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcSubmitUpdateCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -365,7 +365,7 @@ impl MpcInitContractCmd {
             .clone()
             .expect("Require MPC network to have a contract deployed.");
 
-        let mpc_contract_handle = setup.accounts.account(&contract).call_mpc(&contract);
+        let mpc_contract = setup.accounts.account(&contract).call_mpc(&contract);
 
         let mut participant_entries = Vec::new();
         let mut next_id = ParticipantId::new(0);
@@ -386,7 +386,7 @@ impl MpcInitContractCmd {
             },
             threshold: GovernanceThreshold::new(self.threshold),
         };
-        mpc_contract_handle
+        mpc_contract
             .init(
                 parameters,
                 self.tee_verifier_account_id.clone(),
@@ -480,8 +480,7 @@ impl MpcSubmitUpdateCmd {
         let submitter = setup.accounts.account(submitter_account_id);
 
         submitter
-            .call_mpc(&contract)
-            .with_verbosity(Verbosity::Quiet)
+            .call_mpc_with_verbosity(&contract, Verbosity::Quiet)
             .submit_contract_update(Update::Code(contract_code))
             .await
             .into_return_value()

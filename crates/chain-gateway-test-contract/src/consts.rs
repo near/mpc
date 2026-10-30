@@ -1,4 +1,4 @@
-use near_contract_transport::NearGas;
+use near_sdk::Gas as NearGas;
 
 pub const DEFAULT_VALUE: &str = "hello from test";
 

@@ -1,79 +1,114 @@
 use crate::sandbox::utils::sandbox_mpc_contract::SandboxMpcContract;
-use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
-use near_workspaces::{
-    Account, AccountId, operations::TransactionStatus, result::ExecutionFinalResult,
-};
+use near_kit_primitives::protocol::{Action, FunctionCallAction};
+use near_kit_primitives::{Contract as _, ContractError, TxSender};
+use near_mpc_contract_interface::contract::{MpcContract, MpcContractClient};
+use near_workspaces::operations::{CallTransaction, TransactionStatus};
+use near_workspaces::result::ExecutionFinalResult;
+use near_workspaces::types::{Gas, NearToken};
+use near_workspaces::{Account, AccountId};
 use std::future::Future;
 
 pub(crate) trait CallMpcContract {
     fn call_mpc(
         &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<SandboxCaller<'_>>;
+    ) -> MpcContractClient<SandboxCaller>;
     fn call_mpc_async(
         &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<AsyncSandboxCaller<'_>>;
+    ) -> MpcContractClient<AsyncSandboxCaller>;
 }
 
 impl CallMpcContract for Account {
     fn call_mpc(
         &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<SandboxCaller<'_>> {
-        MpcContractHandle::new(SandboxCaller(self), contract_id.clone())
+    ) -> MpcContractClient<SandboxCaller> {
+        MpcContract::client(SandboxCaller(self.clone()), contract_id.clone())
     }
 
     fn call_mpc_async(
         &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<AsyncSandboxCaller<'_>> {
-        MpcContractHandle::new(AsyncSandboxCaller(self), contract_id.clone())
+    ) -> MpcContractClient<AsyncSandboxCaller> {
+        MpcContract::client(AsyncSandboxCaller(self.clone()), contract_id.clone())
     }
 }
 
-pub struct SandboxCaller<'a>(pub &'a Account);
-
-impl CallContract for SandboxCaller<'_> {
-    type Output = ExecutionFinalResult;
-    type Error = near_workspaces::error::Error;
-
-    async fn call_contract(
-        &self,
-        contract_id: &AccountId,
-        call_args: FunctionCallArgs,
-    ) -> Result<Self::Output, Self::Error> {
-        self.0
-            .call(contract_id, &call_args.method_name)
-            .args(call_args.args)
-            .gas(call_args.gas)
-            .deposit(call_args.deposit)
-            .transact()
-            .await
-    }
-}
+/// Sends each call as its own transaction from the account and waits for it to complete.
+#[derive(Clone)]
+pub struct SandboxCaller(pub Account);
 
 /// Different to [`SandboxCaller`], in that it doesn't wait for the transaction to complete, but
 /// returns a [`TransactionStatus`] which can be awaited.
-pub struct AsyncSandboxCaller<'a>(pub &'a Account);
+#[derive(Clone)]
+pub struct AsyncSandboxCaller(pub Account);
 
-impl CallContract for AsyncSandboxCaller<'_> {
-    type Output = TransactionStatus;
-    type Error = near_workspaces::error::Error;
+/// The near-workspaces call for the one function call a typed client sends.
+fn function_call(
+    account: &Account,
+    receiver_id: &AccountId,
+    actions: &[Action],
+) -> Result<CallTransaction, SandboxSendError> {
+    let [Action::FunctionCall(call)] = actions else {
+        return Err(SandboxSendError::NotOneFunctionCall(actions.len()));
+    };
+    let FunctionCallAction {
+        method_name,
+        args,
+        gas,
+        deposit,
+    } = call;
+    Ok(account
+        .call(receiver_id, method_name)
+        .args(args.clone())
+        .gas(Gas::from_gas(gas.as_gas()))
+        .deposit(NearToken::from_yoctonear(deposit.as_yoctonear())))
+}
 
-    async fn call_contract(
+#[derive(Debug, thiserror::Error)]
+pub enum SandboxSendError {
+    #[error("the sandbox callers send exactly one function call, got {0} actions")]
+    NotOneFunctionCall(usize),
+    #[error(transparent)]
+    Workspaces(#[from] near_workspaces::error::Error),
+}
+
+impl TxSender for SandboxCaller {
+    type Output = ExecutionFinalResult;
+    type SendError = SandboxSendError;
+
+    fn account_id(&self) -> &AccountId {
+        self.0.id()
+    }
+
+    async fn send(
         &self,
-        contract_id: &AccountId,
-        call_args: FunctionCallArgs,
-    ) -> Result<Self::Output, Self::Error> {
-        self.0
-            .call(contract_id, &call_args.method_name)
-            .args(call_args.args)
-            .gas(call_args.gas)
-            .deposit(call_args.deposit)
+        receiver_id: AccountId,
+        actions: Vec<Action>,
+    ) -> Result<ExecutionFinalResult, SandboxSendError> {
+        Ok(function_call(&self.0, &receiver_id, &actions)?
+            .transact()
+            .await?)
+    }
+}
+
+impl TxSender for AsyncSandboxCaller {
+    type Output = TransactionStatus;
+    type SendError = SandboxSendError;
+
+    fn account_id(&self) -> &AccountId {
+        self.0.id()
+    }
+
+    async fn send(
+        &self,
+        receiver_id: AccountId,
+        actions: Vec<Action>,
+    ) -> Result<TransactionStatus, SandboxSendError> {
+        Ok(function_call(&self.0, &receiver_id, &actions)?
             .transact_async()
-            .await
+            .await?)
     }
 }
 
@@ -81,25 +116,23 @@ impl CallContract for AsyncSandboxCaller<'_> {
 /// before awaiting any of them, then fails if any receipt failed.
 ///
 /// ```ignore
-/// execute_async_handle_calls(&accounts, &contract, |handle| async move {
-///     handle.vote_contract_update(update_hash).await
+/// execute_async_handle_calls(&accounts, &contract, |client| {
+///     client.vote_contract_update(args).into_future()
 /// })
 /// ```
-pub async fn execute_async_handle_calls<'a, F, Fut>(
-    accounts: &'a [Account],
+pub async fn execute_async_handle_calls<F, Fut>(
+    accounts: &[Account],
     contract: &SandboxMpcContract,
     call: F,
 ) -> anyhow::Result<()>
 where
-    F: Fn(MpcContractHandle<AsyncSandboxCaller<'a>>) -> Fut,
-    Fut: Future<
-        Output = Result<TransactionStatus, MpcContractHandleError<near_workspaces::error::Error>>,
-    >,
+    F: Fn(MpcContractClient<AsyncSandboxCaller>) -> Fut,
+    Fut: Future<Output = Result<TransactionStatus, ContractError<SandboxSendError>>>,
 {
     let mut transactions = vec![];
     for account in accounts {
-        let handle = account.call_mpc_async(contract.id());
-        transactions.push(call(handle).await?);
+        let client = account.call_mpc_async(contract.id());
+        transactions.push(call(client).await?);
     }
     for transaction in transactions {
         let result = transaction.await?;

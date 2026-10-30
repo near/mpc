@@ -1,26 +1,38 @@
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
-use near_contract_transport::{
-    HasPollInterval, PollInterval, SerializedObservation, ViewArgs, ViewContract,
-    mock::{Call, MockViewContract, MockViewError},
-};
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_kit_primitives::Viewer;
+use near_kit_primitives::rpc::{BlockReference, ViewFunctionResult};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
+use tokio::sync::Notify;
+
+/// What a view answers with: the raw result, or an error.
+pub type ViewResponse = Result<ViewFunctionResult, MockError>;
+
+/// A view the mock was asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewCall {
+    pub contract_id: AccountId,
+    pub method_name: String,
+    pub args: Vec<u8>,
+}
 
 #[derive(Clone)]
 pub struct MockChainState {
-    view: MockViewContract,
+    views: Arc<Mutex<MockViews>>,
+    view_called: Arc<Notify>,
     latest_final_block: Arc<Mutex<Result<LatestFinalBlockInfo, MockError>>>,
     signed_transaction_submitter_state: Arc<Mutex<MockSignedTransactionSubmitterState>>,
 }
 
-impl HasPollInterval for MockChainState {
-    fn poll_interval(&self) -> PollInterval {
-        self.view.poll_interval()
-    }
+struct MockViews {
+    response: ViewResponse,
+    responses_by_method: HashMap<String, ViewResponse>,
+    calls: Vec<ViewCall>,
 }
 
 pub struct MockSignedTransactionSubmitterState {
@@ -29,34 +41,37 @@ pub struct MockSignedTransactionSubmitterState {
 }
 
 impl MockChainState {
+    /// How often tests poll the mock's views.
+    pub const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
     pub fn builder() -> MockChainStateBuilder {
         MockChainStateBuilder::new()
     }
 
-    /// Update the view function query response.
-    pub fn set_view_response(&self, value: Result<SerializedObservation, MockViewError>) {
-        self.view.set_response(value);
+    /// Update the response of every view without a method-specific one.
+    pub fn set_view_response(&self, value: ViewResponse) {
+        self.views.lock().unwrap().response = value;
     }
 
     pub fn set_view_response_for_method(
         &self,
         method_name: impl Into<String>,
-        value: Result<SerializedObservation, MockViewError>,
+        value: ViewResponse,
     ) {
-        self.view.set_view_response_for_method(method_name, value)
+        let mut views = self.views.lock().unwrap();
+        views.responses_by_method.insert(method_name.into(), value);
     }
 
-    /// Wait for the next view_contract call
+    /// Wait for the next view call
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
-        self.view
-            .await_next_call(max_wait_duration)
+        tokio::time::timeout(max_wait_duration, self.view_called.notified())
             .await
             .map_err(|_| MockError::Timeout)
     }
 
     /// Returns a snapshot of all recorded view function calls.
-    pub fn view_calls(&self) -> Vec<Call> {
-        self.view.calls()
+    pub fn view_calls(&self) -> Vec<ViewCall> {
+        self.views.lock().unwrap().calls.clone()
     }
 
     /// Returns a snapshot of all recorded signed transactions.
@@ -67,7 +82,7 @@ impl MockChainState {
 }
 
 pub struct MockChainStateBuilder {
-    view_response: Result<SerializedObservation, MockViewError>,
+    view_response: ViewResponse,
     latest_final_block: Result<LatestFinalBlockInfo, MockError>,
     signed_transaction_submitter_response: Result<(), MockError>,
 }
@@ -81,7 +96,7 @@ impl Default for MockChainStateBuilder {
 impl MockChainStateBuilder {
     pub fn new() -> Self {
         Self {
-            view_response: Err(MockViewError("not initialized")),
+            view_response: Err(MockError::NotInitialized),
             latest_final_block: Err(MockError::NotInitialized),
             signed_transaction_submitter_response: Err(MockError::NotInitialized),
         }
@@ -97,14 +112,19 @@ impl MockChainStateBuilder {
         self
     }
 
-    pub fn with_view_response(mut self, r: Result<SerializedObservation, MockViewError>) -> Self {
+    pub fn with_view_response(mut self, r: ViewResponse) -> Self {
         self.view_response = r;
         self
     }
 
     pub fn build(self) -> MockChainState {
         MockChainState {
-            view: MockViewContract::new(self.view_response),
+            views: Arc::new(Mutex::new(MockViews {
+                response: self.view_response,
+                responses_by_method: HashMap::new(),
+                calls: Vec::new(),
+            })),
+            view_called: Arc::new(Notify::new()),
             latest_final_block: Arc::new(Mutex::new(self.latest_final_block)),
             signed_transaction_submitter_state: Arc::new(Mutex::new(
                 MockSignedTransactionSubmitterState {
@@ -116,15 +136,31 @@ impl MockChainStateBuilder {
     }
 }
 
-impl ViewContract for MockChainState {
-    type Error = MockViewError;
+impl Viewer for MockChainState {
+    type ViewError = MockError;
 
-    async fn view_contract(
+    async fn view_function(
         &self,
         contract_id: &AccountId,
-        view_args: ViewArgs,
-    ) -> Result<SerializedObservation, Self::Error> {
-        self.view.view_contract(contract_id, view_args).await
+        method: &str,
+        args: &[u8],
+        _block: BlockReference,
+    ) -> ViewResponse {
+        let response = {
+            let mut views = self.views.lock().unwrap();
+            views.calls.push(ViewCall {
+                contract_id: contract_id.clone(),
+                method_name: method.to_string(),
+                args: args.to_vec(),
+            });
+            views
+                .responses_by_method
+                .get(method)
+                .unwrap_or(&views.response)
+                .clone()
+        };
+        self.view_called.notify_waiters();
+        response
     }
 }
 
@@ -157,4 +193,6 @@ pub enum MockError {
     Timeout,
     #[error("rpc error")]
     RpcError,
+    #[error("view failed: {0}")]
+    View(&'static str),
 }

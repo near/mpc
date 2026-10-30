@@ -4,13 +4,21 @@ mod types;
 pub use errors::TeeContextError;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
-use chain_gateway::transaction_sender::{AccountCaller, SubmitFunctionCall, TransactionSigner};
+use std::sync::Arc;
+use std::time::Duration;
+
+use chain_gateway::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
+use chain_gateway::transaction_sender::GatewaySender;
 use near_account_id::AccountId;
-use near_contract_transport::{HasPollInterval, ViewContract, WatchContractState};
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_contract_transport::watch::Subscribe;
+use near_kit_primitives::signer::InMemorySigner;
+use near_kit_primitives::{Contract as _, Viewer};
+use near_mpc_contract_interface::contract::{MpcContract, MpcContractClient};
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
+
+type Client<G> = MpcContractClient<Arc<GatewaySender<G, InMemorySigner>>>;
 
 /// Shared TEE attestation lifecycle context.
 ///
@@ -18,13 +26,13 @@ use tokio_util::sync::CancellationToken;
 /// - Subscribes to changes in allowed image and launcher hashes.
 /// - Submits attestations.
 /// - Triggers on-chain re-validation of stored attestations.
-pub struct TeeContext<S> {
+pub struct TeeContext<G> {
     /// Allowed TEE hashes from the governance contract.
     allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
     /// Cancels the background hash-watcher task when [`TeeContext`] is dropped.
     _watcher_cancel: CancelOnDrop,
-    /// Typed handle for submitting attestations and triggering re-validation.
-    mpc_contract_handle: MpcContractHandle<AccountCaller<S>>,
+    /// Submits attestations and triggers re-validation.
+    contract: Client<G>,
 }
 
 /// Cancels the background hash-watcher task when dropped.
@@ -36,36 +44,32 @@ impl Drop for CancelOnDrop {
     }
 }
 
-impl<S> TeeContext<S>
+impl<G> TeeContext<G>
 where
-    S: SubmitFunctionCall + ViewContract + HasPollInterval + Clone + Send + Sync + 'static,
+    G: FetchLatestFinalBlockInfo + SubmitSignedTransaction + Viewer + Send + Sync + 'static,
+    G::ViewError: std::fmt::Display + Send + Sync + 'static,
 {
     /// Creates a new [`TeeContext`].
     ///
-    /// Subscribes to the governance contract's allowed image and launcher hash
-    /// view methods, waits for the first successful poll of each, then spawns
-    /// a background task that merges updates into a single
+    /// Polls the governance contract's allowed image and launcher hash
+    /// views every `poll_interval`, waits for the first successful poll of
+    /// each, then spawns a background task that merges updates into a single
     /// [`AllowedTeeHashes`] watch channel.
     pub async fn new(
-        chain_gateway: S,
+        chain_gateway: G,
         governance_contract: AccountId,
-        signer: TransactionSigner,
+        signer: InMemorySigner,
+        poll_interval: Duration,
     ) -> Result<Self, TeeContextError> {
+        let sender = Arc::new(GatewaySender::new(chain_gateway, signer));
+        let contract = MpcContract::client(sender, governance_contract);
         let cancel = CancellationToken::new();
-        let rx = spawn_hash_watcher(
-            chain_gateway.clone(),
-            governance_contract.clone(),
-            cancel.clone(),
-        )
-        .await?;
-
-        let caller = AccountCaller::new(chain_gateway, [signer].into());
-        let mpc_contract_handle = MpcContractHandle::new(caller, governance_contract);
+        let rx = spawn_hash_watcher(contract.clone(), poll_interval, cancel.clone()).await?;
 
         Ok(Self {
             allowed_hashes_rx: rx,
             _watcher_cancel: CancelOnDrop(cancel),
-            mpc_contract_handle,
+            contract,
         })
     }
 
@@ -83,33 +87,32 @@ where
         attestation: Attestation,
         tls_public_key: Ed25519PublicKey,
     ) -> Result<(), TeeContextError> {
-        self.mpc_contract_handle
+        self.contract
             .submit_participant_info(attestation, tls_public_key)
-            .await
-            .map(|_| ())
-            .map_err(Into::into)
+            .await?;
+        Ok(())
     }
 
     /// Triggers on-chain re-validation of all stored attestations.
     pub async fn verify_tee(&self) -> Result<(), TeeContextError> {
-        self.mpc_contract_handle
-            .verify_tee()
-            .await
-            .map(|_| ())
-            .map_err(Into::into)
+        self.contract.verify_tee().await?;
+        Ok(())
     }
 }
 
-/// Subscribes to both allowed hash view methods on the governance contract and
-/// merges updates into a single [`AllowedTeeHashes`] watch channel.
-async fn spawn_hash_watcher<V: ViewContract + HasPollInterval + Clone + Send + Sync + 'static>(
-    chain_gateway: V,
-    governance_contract: AccountId,
+/// Watches both allowed hash views on the governance contract and merges
+/// updates into a single [`AllowedTeeHashes`] watch channel.
+async fn spawn_hash_watcher<V>(
+    contract: MpcContractClient<V>,
+    poll_interval: Duration,
     cancel: CancellationToken,
-) -> Result<watch::Receiver<AllowedTeeHashes>, TeeContextError> {
+) -> Result<watch::Receiver<AllowedTeeHashes>, TeeContextError>
+where
+    V: Viewer<ViewError: std::fmt::Display + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+{
     let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-    tokio::spawn(watch_hashes(chain_gateway, governance_contract, tx, cancel));
+    tokio::spawn(watch_hashes(contract, poll_interval, tx, cancel));
 
     rx.changed()
         .await
@@ -121,18 +124,29 @@ async fn spawn_hash_watcher<V: ViewContract + HasPollInterval + Clone + Send + S
 /// Polls the governance contract for allowed image and launcher hashes,
 /// merging updates into a single [`watch::Sender<AllowedTeeHashes>`].
 ///
-/// Exits when the [`CancellationToken`] is cancelled or a subscription closes.
-async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 'static>(
-    chain_gateway: V,
-    governance_contract: AccountId,
+/// Exits when the [`CancellationToken`] is cancelled or a watch closes.
+async fn watch_hashes<V>(
+    contract: MpcContractClient<V>,
+    poll_interval: Duration,
     tx: watch::Sender<AllowedTeeHashes>,
     cancel: CancellationToken,
-) {
-    let handle = MpcContractHandle::new(chain_gateway, governance_contract);
-    let mut image_sub = handle.allowed_docker_image_hashes().subscribe().await;
-    let mut launcher_sub = handle.allowed_launcher_compose_hashes().subscribe().await;
+) where
+    V: Viewer<ViewError: std::fmt::Display + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+{
+    let images = contract.clone();
+    let mut image_sub = images
+        .allowed_docker_image_hashes()
+        .subscribe(poll_interval)
+        .await;
+    let mut launcher_sub = contract
+        .allowed_launcher_compose_hashes()
+        .subscribe(poll_interval)
+        .await;
 
-    let (image, launcher) = match (image_sub.latest(), launcher_sub.latest()) {
+    let (image, launcher) = match (
+        image_sub.borrow_and_update().clone(),
+        launcher_sub.borrow_and_update().clone(),
+    ) {
         (Ok(image), Ok(launcher)) => (image, launcher),
         (image_res, launcher_res) => {
             if let Err(err) = &image_res {
@@ -146,8 +160,8 @@ async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 
     };
 
     tx.send_modify(|h| {
-        h.allowed_docker_image_hashes = image.value;
-        h.allowed_launcher_compose_hashes = launcher.value;
+        h.allowed_docker_image_hashes = image.result;
+        h.allowed_launcher_compose_hashes = launcher.result;
     });
 
     loop {
@@ -158,21 +172,21 @@ async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 
             }
             result = image_sub.changed() => {
                 if result.is_err() {
-                    tracing::warn!("docker image hashes subscription closed");
+                    tracing::warn!("docker image hashes watch closed");
                     break;
                 }
-                match image_sub.latest() {
-                    Ok(observed) => tx.send_modify(|h| h.allowed_docker_image_hashes = observed.value),
+                match image_sub.borrow_and_update().clone() {
+                    Ok(observed) => tx.send_modify(|h| h.allowed_docker_image_hashes = observed.result),
                     Err(err) => tracing::warn!(%err, "failed to read latest docker image hashes"),
                 }
             }
             result = launcher_sub.changed() => {
                 if result.is_err() {
-                    tracing::warn!("launcher compose hashes subscription closed");
+                    tracing::warn!("launcher compose hashes watch closed");
                     break;
                 }
-                match launcher_sub.latest() {
-                    Ok(observed) => tx.send_modify(|h| h.allowed_launcher_compose_hashes = observed.value),
+                match launcher_sub.borrow_and_update().clone() {
+                    Ok(observed) => tx.send_modify(|h| h.allowed_launcher_compose_hashes = observed.result),
                     Err(err) => tracing::warn!(%err, "failed to read latest launcher compose hashes"),
                 }
             }
@@ -185,16 +199,16 @@ mod tests {
     use super::{AllowedTeeHashes, TeeContext, TeeContextError, watch_hashes};
     use chain_gateway::{
         errors::ChainGatewayError,
-        mock::{MockChainState, MockChainStateBuilder, MockError},
-        transaction_sender::TransactionSigner,
+        mock::{MockChainState, MockChainStateBuilder, MockError, ViewResponse},
+        transaction_sender::SendFailure,
         types::LatestFinalBlockInfo,
     };
-    use ed25519_dalek::SigningKey;
     use mpc_primitives::hash::LauncherDockerComposeHash;
     use near_account_id::AccountId;
-    use near_contract_transport::mock::MockViewError;
-    use near_contract_transport::{HasPollInterval, ObservedState};
-    use near_mpc_contract_interface::client::MpcContractHandleError;
+    use near_kit_primitives::rpc::ViewFunctionResult;
+    use near_kit_primitives::signer::{InMemorySigner, SecretKey};
+    use near_kit_primitives::{Contract as _, ContractError, CryptoHash};
+    use near_mpc_contract_interface::contract::MpcContract;
     use near_mpc_contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES;
     use near_mpc_contract_interface::types::{
         AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey, MockAttestation,
@@ -232,32 +246,36 @@ mod tests {
         ALLOWED_HASHES.map(|(hash, _)| hash.into()).to_vec()
     }
 
+    fn raw_view(value: &impl serde::Serialize, height: u64) -> ViewResponse {
+        Ok(ViewFunctionResult::new(
+            serde_json::to_vec(value).unwrap(),
+            height,
+            CryptoHash::default(),
+        ))
+    }
+
     fn mock_chain() -> MockChainState {
         let mock = MockChainStateBuilder::new()
-            .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
+            .with_view_response(raw_view(&allowed_image_hashes(), MOCK_BLOCK_HEIGHT))
             .build();
         mock.set_view_response_for_method(
             ALLOWED_LAUNCHER_COMPOSE_HASHES,
-            Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
-            }),
+            raw_view(&allowed_launcher_hashes(), MOCK_BLOCK_HEIGHT),
         );
         mock
     }
 
-    fn test_signer() -> TransactionSigner {
-        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
-        TransactionSigner::from_key("test.near".parse().unwrap(), signing_key)
+    fn test_signer() -> InMemorySigner {
+        InMemorySigner::new(
+            "test.near".parse::<AccountId>().unwrap(),
+            SecretKey::ed25519_from_bytes([1u8; 32]),
+        )
     }
 
     fn default_block_info() -> LatestFinalBlockInfo {
         LatestFinalBlockInfo {
-            observed_at: MOCK_BLOCK_HEIGHT.into(),
-            value: Default::default(),
+            height: MOCK_BLOCK_HEIGHT.into(),
+            hash: Default::default(),
         }
     }
 
@@ -266,44 +284,42 @@ mod tests {
         submit_response: Result<(), MockError>,
     ) -> TeeContext<MockChainState> {
         let mock = MockChainStateBuilder::new()
-            .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
+            .with_view_response(raw_view(&allowed_image_hashes(), MOCK_BLOCK_HEIGHT))
             .with_latest_block(latest_block)
             .with_signed_transaction_submitter_response(submit_response)
             .build();
         mock.set_view_response_for_method(
             ALLOWED_LAUNCHER_COMPOSE_HASHES,
-            Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
-            }),
+            raw_view(&allowed_launcher_hashes(), MOCK_BLOCK_HEIGHT),
         );
-        TeeContext::new(mock, governance_account(), test_signer())
-            .await
-            .unwrap()
+        TeeContext::new(
+            mock,
+            governance_account(),
+            test_signer(),
+            MockChainState::POLL_INTERVAL,
+        )
+        .await
+        .unwrap()
     }
 
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
         let mock = MockChainStateBuilder::new()
-            .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
+            .with_view_response(raw_view(&allowed_image_hashes(), MOCK_BLOCK_HEIGHT))
             .with_latest_block(Ok(default_block_info()))
             .with_signed_transaction_submitter_response(Ok(()))
             .build();
         mock.set_view_response_for_method(
             ALLOWED_LAUNCHER_COMPOSE_HASHES,
-            Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
-            }),
+            raw_view(&allowed_launcher_hashes(), MOCK_BLOCK_HEIGHT),
         );
-        let ctx = TeeContext::new(mock.clone(), governance_account(), test_signer())
-            .await
-            .unwrap();
+        let ctx = TeeContext::new(
+            mock.clone(),
+            governance_account(),
+            test_signer(),
+            MockChainState::POLL_INTERVAL,
+        )
+        .await
+        .unwrap();
         (ctx, mock)
     }
 
@@ -311,8 +327,11 @@ mod tests {
         ($result:expr, $pattern:pat) => {
             assert_matches!(
                 $result,
-                Err(TeeContextError::ContractCall(MpcContractHandleError::Call(
-                    $pattern
+                Err(TeeContextError::ContractCall(ContractError::Backend(
+                    SendFailure {
+                        error: $pattern,
+                        ..
+                    }
                 )))
             )
         };
@@ -393,10 +412,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn test_new_fails_when_view_errors() {
         let mock = MockChainStateBuilder::new()
-            .with_view_response(Err(MockViewError("view failed")))
+            .with_view_response(Err(MockError::View("view failed")))
             .build();
 
-        let result = TeeContext::new(mock.clone(), governance_account(), test_signer()).await;
+        let result = TeeContext::new(
+            mock.clone(),
+            governance_account(),
+            test_signer(),
+            MockChainState::POLL_INTERVAL,
+        )
+        .await;
         assert!(result.is_err());
 
         // The task exited on initial failure — no further polling should happen.
@@ -432,11 +457,17 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn test_watch_hashes_exits_on_initial_error() {
         let mock = MockChainState::builder()
-            .with_view_response(Err(MockViewError("view failed")))
+            .with_view_response(Err(MockError::View("view failed")))
             .build();
         let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-        watch_hashes(mock, governance_account(), tx, CancellationToken::new()).await;
+        watch_hashes(
+            MpcContract::client(mock, governance_account()),
+            MockChainState::POLL_INTERVAL,
+            tx,
+            CancellationToken::new(),
+        )
+        .await;
 
         assert!(rx.changed().await.is_err(), "sender should be dropped");
     }
@@ -451,7 +482,12 @@ mod tests {
 
         let cancel_clone = cancel.clone();
         tokio::select! {
-            _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
+            _ = watch_hashes(
+                MpcContract::client(mock, governance_account()),
+                MockChainState::POLL_INTERVAL,
+                tx,
+                cancel,
+            ) => {}
             _ = async {
                 rx.changed().await.unwrap();
                 cancel_clone.cancel();
@@ -481,23 +517,22 @@ mod tests {
         let mock_clone = mock.clone();
         let expected_image = updated_image.clone();
         tokio::select! {
-            _ = watch_hashes(mock.clone(), governance_account(), tx, cancel) => {}
+            _ = watch_hashes(
+                MpcContract::client(mock.clone(), governance_account()),
+                MockChainState::POLL_INTERVAL,
+                tx,
+                cancel,
+            ) => {}
             _ = async {
                 rx.changed().await.unwrap();
                 // Confirm initial value differs from the update we're about to make.
                 assert_ne!(rx.borrow().allowed_docker_image_hashes, expected_image);
-                mock_clone.set_view_response(Ok(ObservedState {
-                    observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
-                    value: serde_json::to_vec(&updated_image).unwrap(),
-                }));
+                mock_clone.set_view_response(raw_view(&updated_image, MOCK_BLOCK_HEIGHT + 1));
                 mock_clone.set_view_response_for_method(
                     ALLOWED_LAUNCHER_COMPOSE_HASHES,
-                    Ok(ObservedState {
-                        observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
-                        value: serde_json::to_vec(&updated_launcher).unwrap(),
-                    }),
+                    raw_view(&updated_launcher, MOCK_BLOCK_HEIGHT + 1),
                 );
-                tokio::time::sleep(std::time::Duration::from(mock.poll_interval()) * 3).await;
+                tokio::time::sleep(MockChainState::POLL_INTERVAL * 3).await;
                 rx.changed().await.unwrap();
                 cancel_clone.cancel();
             } => {}

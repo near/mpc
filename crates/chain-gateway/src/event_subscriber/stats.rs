@@ -1,5 +1,5 @@
 use crate::primitives::FetchLatestFinalBlockInfo;
-use near_contract_transport::BlockHeight;
+use crate::types::BlockHeight;
 
 #[derive(Debug, Clone)]
 pub struct IndexerStats {
@@ -45,7 +45,7 @@ pub async fn indexer_logger(
 
         let blocks_behind = match info_fetcher.fetch_latest_final_block_info().await {
             Ok(block_info) => {
-                let tip: u64 = block_info.observed_at.into();
+                let tip: u64 = block_info.height.into();
                 let processed: u64 = stats_copy.last_processed_block_height.into();
                 format!("{}", tip.saturating_sub(processed))
             }

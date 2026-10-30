@@ -92,8 +92,8 @@ where
                     .expect("an hour from now is a representable Instant");
             }
             match self.contract_state.latest() {
-                Ok(observed) => match self
-                    .back_up_if_needed(&observed.value, fetch_covered, &shutdown)
+                Ok(state) => match self
+                    .back_up_if_needed(&state, fetch_covered, &shutdown)
                     .await
                 {
                     Ok(BackupOutcome::BackedUp {
@@ -301,7 +301,6 @@ mod tests {
 
     use mpc_node::keyshare::Keyshare;
     use mpc_node::keyshare::test_utils::generate_dummy_keyshare;
-    use near_contract_transport::{ObservedState, TransportError, WatchContractState};
     use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolContractState};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -504,34 +503,21 @@ mod tests {
         }
     }
 
-    impl WatchContractState for FakeWatchContractState {
-        type Value = ProtocolContractState;
-        type ViewError = &'static str;
+    impl ports::WatchContractState for FakeWatchContractState {
+        type Error = &'static str;
 
-        fn latest(
-            &mut self,
-        ) -> Result<ObservedState<ProtocolContractState>, TransportError<&'static str>> {
+        fn latest(&mut self) -> Result<ProtocolContractState, &'static str> {
             let observed = self.states.borrow_and_update().clone();
             if observed.is_err() {
                 self.failed_read.notify_one();
             }
             observed
-                .map(|value| ObservedState {
-                    observed_at: 0.into(),
-                    value,
-                })
-                .map_err(TransportError::View)
         }
 
-        async fn changed(&mut self) -> Result<(), TransportError<&'static str>> {
-            self.states
-                .changed()
-                .await
-                .map_err(|_| TransportError::MonitoringClosed)
+        async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
+            self.states.changed().await
         }
     }
-
-    impl ports::WatchContractState for FakeWatchContractState {}
 
     fn keyshares_for(epoch_id: u64, domain_ids: &[u64]) -> Vec<Keyshare> {
         let mut rng = StdRng::seed_from_u64(42);

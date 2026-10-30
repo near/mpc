@@ -1,10 +1,10 @@
 use chain_gateway::{ChainGateway, NodeConfig};
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_contract_transport::{NearKitCaller, PollInterval};
-use near_kit::Near;
-use near_kit::transaction::Final;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_contract_transport::watch::Subscribe;
+use near_kit::rpc::ReqwestTransport;
+use near_kit::{Contract as _, Near};
+use near_mpc_contract_interface::contract::MpcContract;
 use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
 use std::{
@@ -101,22 +101,23 @@ pub async fn run_command(args: cli::Args) {
             };
 
             let request_timeout = Duration::from_secs(subcommand_args.node.request_timeout_seconds);
-            let poll_interval =
-                PollInterval::new(Duration::from_secs(subcommand_args.poll_interval_seconds))
-                    .expect("clap's range(1..) rejects a zero poll_interval_seconds");
-            let rpc = NearKitCaller::<Final>::new(
-                Near::custom(rpc_url.as_str(), subcommand_args.near_chain_id.as_str()).build(),
-                poll_interval,
-                request_timeout,
-            );
-            let mpc_contract = MpcContractHandle::new(rpc, subcommand_args.mpc_contract_account_id);
+            // clap's range(1..) rejects a zero poll_interval_seconds.
+            let poll_interval = Duration::from_secs(subcommand_args.poll_interval_seconds);
+            let http = near_kit::reqwest::Client::builder()
+                .timeout(request_timeout)
+                .build()
+                .expect("failed to build the HTTP client");
+            let rpc = Near::custom(rpc_url.as_str(), subcommand_args.near_chain_id.as_str())
+                .transport(ReqwestTransport::with_client(http))
+                .build();
+            let mpc_contract = MpcContract::client(rpc, subcommand_args.mpc_contract_account_id);
 
             mpc_contract.state().await.expect(
                 "could not read the MPC contract state; check that BACKUP_RPC_URL points to a \
                  reachable NEAR JSON-RPC endpoint of the configured chain and that \
                  MPC_CONTRACT_ACCOUNT_ID names the MPC contract",
             );
-            let contract_state = mpc_contract.state().subscribe().await;
+            let contract_state = mpc_contract.state().subscribe(poll_interval).await;
 
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
@@ -127,7 +128,7 @@ pub async fn run_command(args: cli::Args) {
                 contract_state,
                 status_reporter,
                 adapters::clock::SystemClock,
-                poll_interval.into(),
+                poll_interval,
                 shutdown,
             )
             .await
@@ -188,9 +189,10 @@ async fn run_backup_service_through_embedded_node(
         ChainGateway::start(NodeConfig::new(home_dir), None, shutdown.clone())
             .await
             .expect("failed to start the NEAR node");
-    let mpc_contract = MpcContractHandle::new(chain_gateway, mpc_contract_account_id);
+    let poll_interval = chain_gateway.poll_interval();
+    let mpc_contract = MpcContract::client(chain_gateway, mpc_contract_account_id);
     let Some(contract_state) = shutdown
-        .run_until_cancelled(mpc_contract.state().subscribe())
+        .run_until_cancelled(mpc_contract.state().subscribe(poll_interval))
         .await
     else {
         return;

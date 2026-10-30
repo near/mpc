@@ -4,9 +4,6 @@ pub enum TeeContextError {
     HashWatcherClosed,
     #[error(transparent)]
     ContractCall(
-        #[from]
-        near_mpc_contract_interface::client::MpcContractHandleError<
-            chain_gateway::errors::ChainGatewayError,
-        >,
+        #[from] near_kit_primitives::ContractError<chain_gateway::transaction_sender::SendFailure>,
     ),
 }

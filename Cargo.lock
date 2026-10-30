@@ -1863,14 +1863,14 @@ dependencies = [
  "near-crypto 2.14.0",
  "near-indexer",
  "near-indexer-primitives 2.14.0",
- "near-mpc-bounded-collections",
+ "near-kit-primitives",
  "near-o11y",
  "near-sdk",
  "near-store",
  "nearcore",
  "prometheus",
- "rand 0.8.8",
  "rstest",
+ "serde",
  "serde_json",
  "tempfile",
  "test-port-allocator",
@@ -1886,9 +1886,8 @@ name = "chain-gateway-test-contract"
 version = "3.18.0"
 dependencies = [
  "borsh",
- "near-contract-transport",
+ "near-kit-primitives",
  "near-sdk",
- "serde_json",
 ]
 
 [[package]]
@@ -6072,6 +6071,7 @@ dependencies = [
  "near-contract-transport",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives 0.38.0",
+ "near-kit-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-sdk",
@@ -6110,10 +6110,10 @@ dependencies = [
  "hex",
  "mpc-primitives",
  "near-account-id",
- "near-contract-transport",
  "near-crypto 0.38.0",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives 0.38.0",
+ "near-kit-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-sdk",
@@ -6182,10 +6182,10 @@ dependencies = [
  "near-async",
  "near-client",
  "near-config-utils 2.14.0",
- "near-contract-transport",
  "near-crypto 2.14.0",
  "near-indexer",
  "near-indexer-primitives 2.14.0",
+ "near-kit-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
@@ -6663,19 +6663,9 @@ dependencies = [
 name = "near-contract-transport"
 version = "3.18.0"
 dependencies = [
- "borsh",
- "derive_more 2.1.1",
- "near-account-id",
- "near-gas",
- "near-kit",
- "near-token",
- "rstest",
- "serde",
- "serde_json",
+ "near-kit-primitives",
  "thiserror 2.0.21",
  "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]
@@ -7004,33 +6994,60 @@ dependencies = [
 
 [[package]]
 name = "near-kit"
-version = "0.20.0"
+version = "0.30.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1e037efc6b79e69b2985785b329ea0bdd78c1b83bd524af8b07e4144fc7785a"
+checksum = "6309e0b276a9502eabbc1049dc647059b1560789551b6e77cda243b1df22dc0d"
+dependencies = [
+ "base64 0.23.1",
+ "borsh",
+ "gloo-timers 0.4.0",
+ "hyper",
+ "near-kit-primitives",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "near-kit-macros"
+version = "0.15.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd5d81f7bd9295dcfe4440017b2ecc075caa550ec5a5fa0b84c4922ffc7806ab"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "near-kit-primitives"
+version = "0.30.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1fc43add43b43d1aac47b86f3c1b9d7814806412fab1095e45d7d44e580660b"
 dependencies = [
  "base64 0.23.1",
  "borsh",
  "bs58 0.5.1",
  "ed25519-dalek 3.0.0",
  "getrandom 0.4.3",
- "gloo-timers 0.4.0",
  "hex",
- "hyper",
  "js-sys",
  "k256 0.14.0",
  "ml-dsa",
  "near-account-id",
  "near-gas",
  "near-global-contracts",
+ "near-kit-macros",
  "near-token",
- "reqwest 0.13.5",
  "serde",
  "serde_json",
  "serde_with",
  "sha2 0.11.0",
  "sha3 0.12.0",
  "thiserror 2.0.21",
- "tokio",
 ]
 
 [[package]]
@@ -7067,7 +7084,7 @@ dependencies = [
  "hex",
  "insta",
  "mpc-primitives",
- "near-contract-transport",
+ "near-kit-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-crypto-types",
  "near-sdk",
@@ -7078,7 +7095,6 @@ dependencies = [
  "serde_repr",
  "serde_with",
  "sha2 0.10.9",
- "thiserror 2.0.21",
  "tokio",
 ]
 
@@ -11256,11 +11272,12 @@ name = "tee-context"
 version = "3.18.0"
 dependencies = [
  "chain-gateway",
- "ed25519-dalek 2.2.0",
  "mpc-primitives",
  "near-account-id",
  "near-contract-transport",
+ "near-kit-primitives",
  "near-mpc-contract-interface",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",

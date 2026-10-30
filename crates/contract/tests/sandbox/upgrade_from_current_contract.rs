@@ -117,7 +117,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
     };
 
     let update = Update::Config(new_config.clone());
-    let old_config = contract.config().await.unwrap().value;
+    let old_config = contract.config().await.unwrap();
     approve_contract_update(&contract, &mpc_signer_accounts, hash(&update)).await;
 
     // When
@@ -132,7 +132,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
         execution.failures().is_empty(),
         "failed to apply the approved config: {execution:#?}"
     );
-    let config = contract.config().await.unwrap().value;
+    let config = contract.config().await.unwrap();
 
     assert_ne!(config, old_config);
     assert_eq!(config, new_config);
