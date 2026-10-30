@@ -1,0 +1,8 @@
+flowchart TB
+    WS["recency window opens, 60 s ago"]
+    subgraph OK["any block in this span passes checks 3 and 4"]
+        direction TB
+        TS["message timestamp, 50 s ago"] --> B["block B, 45 s ago"] --> REV["revocation, 30 s ago"] --> NOW["now"]
+    end
+    WS --> TS
+    style B stroke-width:3px
