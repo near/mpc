@@ -22,6 +22,7 @@ All arguments are read from environment variables (set via docker-compose `envir
 | `PLATFORM` | Yes | `TEE` or `NONTEE` |
 | `DOCKER_CONTENT_TRUST` | Yes | Must be `1` |
 | `DEFAULT_IMAGE_DIGEST` | Yes | Fallback `sha256:...` digest when the approved-hashes file is absent |
+| `MPC_CONTRACT_ID` | Yes | Account id of the MPC contract, written to `node.indexer.mpc_contract_id` in the node config; a user config that sets it is rejected |
 
 ## Configuration (TOML)
 

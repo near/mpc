@@ -58,7 +58,6 @@ cores = 4
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "v1.signer"
 finality = "optimistic"
 
 [mpc_node_config.node.triple]

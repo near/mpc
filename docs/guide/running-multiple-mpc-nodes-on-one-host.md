@@ -157,7 +157,6 @@ for the right placement:
 | Field | Mainnet | Testnet |
 |---|---|---|
 | `chain_id` | `"mainnet"` | `"testnet"` |
-| `mpc_contract_id` | `"v1.signer"` | `"v1.signer-prod.testnet"` |
 | `near_boot_nodes` | mainnet boot list | testnet boot list |
 | `tier3_public_addr` | `"203.0.113.10:24567"` (`IP_M`) | `"203.0.113.11:24567"` (`IP_T`) |
 | `my_near_account_id` | your mainnet account | your testnet account |

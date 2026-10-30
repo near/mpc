@@ -4,8 +4,8 @@
 #
 # The launcher Docker Compose is rendered at deploy time from
 #   crates/contract/assets/launcher_docker_compose.yaml.template
-# using the LAUNCHER_MANIFEST_DIGEST and MPC_MANIFEST_DIGEST env vars.
-# The rendered file's SHA256 must match an entry in the contract's
+# using the LAUNCHER_MANIFEST_DIGEST, MPC_MANIFEST_DIGEST and MPC_CONTRACT_ID
+# env vars. The rendered file's SHA256 must match an entry in the contract's
 # allowed_launcher_compose_hashes for attestation to succeed.
 #
 # Loads environment variables from a .env file, generates app-compose.json,
@@ -145,6 +145,7 @@ required_env_vars=(
   "USER_CONFIG_FILE_PATH"
   "APP_NAME"
   "OS_IMAGE"
+  "MPC_CONTRACT_ID"
 )
 
 for var in "${required_env_vars[@]}"; do
@@ -220,9 +221,9 @@ fi
 CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 
-# Render the launcher compose template with the supplied digests. The
-# rendered file's SHA256 must match an entry in the contract's
-# allowed_launcher_compose_hashes for attestation to succeed.
+# Render the launcher compose template with the supplied digests and contract
+# account id. The rendered file's SHA256 must match an entry in the
+# contract's allowed_launcher_compose_hashes for attestation to succeed.
 COMPOSE_TMP=$(mktemp)
 trap 'rm -f "$COMPOSE_TMP"' EXIT
 launcher_hex="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
@@ -230,6 +231,7 @@ mpc_hex="${MPC_MANIFEST_DIGEST#sha256:}"
 if ! sed \
   -e "s|{{LAUNCHER_IMAGE_HASH}}|${launcher_hex}|g" \
   -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${mpc_hex}|g" \
+  -e "s|{{MPC_CONTRACT_ID}}|${MPC_CONTRACT_ID}|g" \
   "$COMPOSE_TEMPLATE" > "$COMPOSE_TMP"; then
   echo "Error: sed failed rendering compose template from $COMPOSE_TEMPLATE"
   exit 1

@@ -1,6 +1,7 @@
 use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
+use anyhow::Context;
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -9,7 +10,7 @@ use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
 use near_client::{RpcHandlerActor, Status, client_actor::ClientActor};
-use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_indexer::near_primitives::{transaction::SignedTransaction, views::StatusResponse};
 use near_indexer_primitives::types::BlockHeight;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
@@ -20,6 +21,7 @@ use tokio::sync::{
 };
 use types::ChainSendTransactionRequest;
 
+pub mod chain_binding;
 pub mod configs;
 pub mod foreign_chain;
 pub mod handler;
@@ -65,6 +67,15 @@ impl IndexerState {
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
     }
+
+    async fn ensure_chain_matches_contract(&self) -> anyhow::Result<()> {
+        let status = self
+            .client
+            .status()
+            .await
+            .context("querying nearcore status")?;
+        chain_binding::ensure_chain_matches_contract(&self.mpc_contract_id, status.genesis_hash)
+    }
 }
 
 #[derive(Clone)]
@@ -78,22 +89,23 @@ const INTERVAL: Duration = Duration::from_millis(500);
 const REQUIRED_STABLE_POLLS: u32 = 4;
 
 impl IndexerClient {
-    /// Polls sync status, yielding `(syncing, head_height)`, or `None` on a
-    /// failed request.
-    async fn sync_info(&self) -> Option<(bool, BlockHeight)> {
+    async fn status(&self) -> anyhow::Result<StatusResponse> {
         let status_request = Status {
             is_health_check: false,
             detailed: false,
         };
-        let Ok(Ok(status)) = self
+        Ok(self
             .client
             .send_async(
                 near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
             )
-            .await
-        else {
-            return None;
-        };
+            .await??)
+    }
+
+    /// Polls sync status, yielding `(syncing, head_height)`, or `None` on a
+    /// failed request.
+    async fn sync_info(&self) -> Option<(bool, BlockHeight)> {
+        let status = self.status().await.ok()?;
         Some((
             status.sync_info.syncing,
             status.sync_info.latest_block_height,

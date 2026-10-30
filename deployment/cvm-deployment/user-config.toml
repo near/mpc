@@ -102,7 +102,6 @@ cores = 6
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "v1.signer-prod.testnet" # mainnet: "v1.signer"
 finality = "optimistic"
 # MPC P2P convention is port 80. Forces it on every peer URL (listen +
 # dial) regardless of the URL's scheme/port.

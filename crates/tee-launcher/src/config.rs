@@ -1,36 +1,55 @@
 use launcher_interface::types::TeeConfig;
+use near_account_id::AccountId;
 
 use crate::error::LauncherError;
 
-/// Inject launcher-controlled config section (`tee`) into the user-provided
-/// MPC node config table.  Returns an error if the user config already
-/// contains a reserved key.
+/// Inject launcher-controlled config (the `tee` section and the contract id)
+/// into the user-provided MPC node config table.  Returns an error if the user
+/// config already contains a reserved key.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
+    mpc_contract_id: &AccountId,
 ) -> Result<toml::Table, LauncherError> {
     insert_reserved(
         &mut node_config,
+        &[],
         "tee",
         toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
+    )?;
+    insert_reserved(
+        &mut node_config,
+        &["node", "indexer"],
+        "mpc_contract_id",
+        toml::Value::String(mpc_contract_id.to_string()),
     )?;
 
     Ok(node_config)
 }
 
-/// Insert `value` under `key` in `table`, returning an error if the key
-/// already exists. Used to inject launcher-controlled sections into user config.
+/// Insert `value` under `key` in the table at `parents`, returning an error if
+/// the key already exists or a parent is not a table. Used to inject
+/// launcher-controlled sections into user config.
 fn insert_reserved(
-    table: &mut toml::Table,
+    mut table: &mut toml::Table,
+    parents: &[&str],
     key: &str,
     value: toml::Value,
 ) -> Result<(), LauncherError> {
+    let reserved_key = || LauncherError::ReservedConfigKey([parents, &[key]].concat().join("."));
+    for parent in parents {
+        table = table
+            .entry(*parent)
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .as_table_mut()
+            .ok_or_else(reserved_key)?;
+    }
     match table.entry(key) {
         toml::map::Entry::Vacant(vacant) => {
             vacant.insert(value);
             Ok(())
         }
-        toml::map::Entry::Occupied(_) => Err(LauncherError::ReservedConfigKey(key.to_string())),
+        toml::map::Entry::Occupied(_) => Err(reserved_key()),
     }
 }
 
@@ -69,6 +88,7 @@ pub fn validate_image_reference(image_ref: &str) -> Result<(), LauncherError> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use launcher_interface::types::{DockerSha256Digest, TeeAuthorityConfig, TeeConfig};
     use std::assert_matches;
@@ -88,6 +108,10 @@ mod tests {
         digest('a')
     }
 
+    fn sample_contract_id() -> AccountId {
+        "v1.signer".parse().unwrap()
+    }
+
     fn sample_tee_config() -> TeeConfig {
         TeeConfig {
             authority: TeeAuthorityConfig::Dstack {
@@ -104,7 +128,8 @@ mod tests {
         let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result =
+            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
 
         // then
         assert!(result.contains_key("tee"));
@@ -122,7 +147,7 @@ type = "Local"
         .unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config());
+        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
 
         // then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
@@ -134,11 +159,11 @@ type = "Local"
         let config = toml::Table::new();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result =
+            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
 
         // then
         assert!(result.contains_key("tee"));
-        assert_eq!(result.len(), 1);
     }
 
     #[test]
@@ -155,7 +180,8 @@ key = "value"
         .unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result =
+            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
 
         // then
         assert_eq!(result["home_dir"].as_str(), Some("/data"));
@@ -177,7 +203,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee).unwrap();
+        let result = intercept_node_config(config, &tee, &sample_contract_id()).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -196,7 +222,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee).unwrap();
+        let result = intercept_node_config(config, &tee, &sample_contract_id()).unwrap();
 
         // then — Local variant is a unit variant; just verify the key exists
         assert!(result.contains_key("tee"));
@@ -218,7 +244,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee).unwrap();
+        let result = intercept_node_config(config, &tee, &sample_contract_id()).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -235,7 +261,8 @@ key = "value"
         let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result =
+            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
         let toml_str = toml::to_string(&result).unwrap();
 
         // then — the output can be parsed back
@@ -250,10 +277,65 @@ key = "value"
         let config: toml::Table = toml::from_str(r#"tee = "sneaky""#).unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config());
+        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
 
         // then — any occupied entry is rejected regardless of value type
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
+    }
+
+    #[test]
+    fn intercept_node_config__should_inject_the_contract_id_next_to_the_user_indexer_settings() {
+        // Given
+        let config: toml::Table = toml::from_str(
+            r#"[node.indexer]
+sync_mode = "Latest"
+"#,
+        )
+        .unwrap();
+
+        // When
+        let result =
+            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
+
+        // Then
+        let expected_indexer: toml::Value = toml::from_str(
+            r#"sync_mode = "Latest"
+mpc_contract_id = "v1.signer"
+"#,
+        )
+        .unwrap();
+        assert_eq!(result["node"]["indexer"], expected_indexer);
+    }
+
+    #[test]
+    fn intercept_node_config__should_reject_a_user_supplied_contract_id() {
+        // Given
+        let config: toml::Table =
+            toml::from_str(r#"node.indexer.mpc_contract_id = "other.near""#).unwrap();
+
+        // When
+        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
+
+        // Then
+        assert_matches!(
+            result,
+            Err(LauncherError::ReservedConfigKey(key)) if key == "node.indexer.mpc_contract_id"
+        );
+    }
+
+    #[test]
+    fn intercept_node_config__should_reject_a_non_table_in_place_of_the_indexer_section() {
+        // Given
+        let config: toml::Table = toml::from_str(r#"node.indexer = "sneaky""#).unwrap();
+
+        // When
+        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
+
+        // Then
+        assert_matches!(
+            result,
+            Err(LauncherError::ReservedConfigKey(key)) if key == "node.indexer.mpc_contract_id"
+        );
     }
 
     // --- validate_image_reference: positive (valid references) ---

@@ -927,7 +927,6 @@ near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
 migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
 
 [mpc_node_config.node.indexer]
-mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for testnet, v1.signer for mainnet
 validate_genesis = false
 sync_mode = "Latest"
 finality = "optimistic"
@@ -948,7 +947,6 @@ Adjust the variables as per your environment.
 * `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
 * `home_dir`: must be `/data` or a path under it. `/data` is the only persistent volume in the node container; anything outside it is lost when the container is recreated, and the node starts over with new keys.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
-* `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](../node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
 * `secrets.backup_encryption_key_hex` — 64-hex-char AES key used to encrypt keyshares during a [node migration](../node-migration-guide.md). On a CVM this is the *only* way to supply the key: set it here in `user-config.toml`, not via `.env`. Leave it unset and the CVM generates a random key you can't read back, so set it explicitly before migrating. See the [migration guide](../node-migration-guide.md#step-3-generate-and-set-encryption-key) for details.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
@@ -1690,12 +1688,13 @@ show, per chain, the quorum and how many of your providers count, see
 The launcher Docker Compose file is **rendered** at deploy time from the
 template at
 [`crates/contract/assets/launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)
-by substituting two manifest digests:
+by substituting two manifest digests and the contract account id:
 
 1. The **launcher** image digest (`{{LAUNCHER_IMAGE_HASH}}`)
 2. The **MPC node** image digest (`{{DEFAULT_IMAGE_DIGEST_HASH}}`)
+3. The **contract account id** (`{{MPC_CONTRACT_ID}}`): `v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet
 
-Both must be approved by the contract — otherwise the SHA256 of the rendered
+Both digests must be approved by the contract — otherwise the SHA256 of the rendered
 file will not match an entry in `allowed_launcher_compose_hashes` and the
 node's attestation will be rejected.
 
@@ -1736,17 +1735,19 @@ The manual render (needed if you deploy via the Dstack Web interface):
 # exactly one 'sha256:' per digest line.
 export LAUNCHER_IMAGE_HASH=<launcher digest from step 1>
 export MPC_IMAGE_HASH=<mpc-node digest from step 1>
+export MPC_CONTRACT_ID=v1.signer-prod.testnet   # v1.signer on mainnet
 
 sed \
   -e "s|{{LAUNCHER_IMAGE_HASH}}|${LAUNCHER_IMAGE_HASH#sha256:}|g" \
   -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${MPC_IMAGE_HASH#sha256:}|g" \
+  -e "s|{{MPC_CONTRACT_ID}}|${MPC_CONTRACT_ID}|g" \
   crates/contract/assets/launcher_docker_compose.yaml.template \
   > launcher_docker_compose.yaml
 ```
 
 > **Note:** The rendered file is measured, and its SHA256 is part of the
 > remote attestation. Do not modify the rendered file further (including
-> whitespace) — only the two digest substitutions should differ from the
+> whitespace) — only the three substitutions should differ from the
 > template.
 
 ### Required Ports and IP Allocation
@@ -1821,14 +1822,15 @@ The [`deploy-launcher.sh`](https://github.com/near/mpc/blob/main/deployment/cvm-
    [`default.env`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/default.env).
 
 2. **Uncomment and set the two digest lines** in the `.env` file, using
-   the values discovered in Step 1 above:
+   the values discovered in Step 1 above, and check `MPC_CONTRACT_ID`:
 
    ```env
    LAUNCHER_MANIFEST_DIGEST=sha256:<launcher digest>
    MPC_MANIFEST_DIGEST=sha256:<mpc node digest>
+   MPC_CONTRACT_ID=v1.signer-prod.testnet   # v1.signer on mainnet
    ```
 
-   These are shipped commented out by default. If left commented, the
+   The digests are shipped commented out by default. If left commented, the
    script refuses to run and prints the on-chain discovery commands —
    you can't accidentally deploy without setting them.
 
@@ -1847,7 +1849,7 @@ The [`deploy-launcher.sh`](https://github.com/near/mpc/blob/main/deployment/cvm-
 
    The script will:
    - Source the env file and validate that both digests are set + well-formed (`sha256:<64 hex>`).
-   - Render the contract template inline with the two digests. The result lives in a tempfile — there is **no persistent** `launcher_docker_compose.yaml` on disk afterwards. (If you need one for `attestation-cli` later, see the [manual render snippet](#step-2--render-the-template) above.)
+   - Render the contract template inline with the two digests and the contract account id. The result lives in a tempfile — there is **no persistent** `launcher_docker_compose.yaml` on disk afterwards. (If you need one for `attestation-cli` later, see the [manual render snippet](#step-2--render-the-template) above.)
    - Generate `app-compose.json`.
    - Prompt for confirmation, then deploy the CVM via `vmm-cli`.
 
@@ -1977,7 +1979,7 @@ cargo install --path crates/attestation-cli
 
 2. **Launcher docker-compose file** — A `launcher_docker_compose.yaml` rendered from the contract template. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
 
-   If you deployed via `deploy-launcher.sh` (script path), the rendered compose was used in a tempfile and removed on exit — you don't have a persistent copy. Materialize one now by running the manual render block from [Preparing a Docker Compose File → Step 2](#step-2--render-the-template) (the `sed …` snippet) with the same `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` you deployed with. The output `launcher_docker_compose.yaml` is what the CLI needs below.
+   If you deployed via `deploy-launcher.sh` (script path), the rendered compose was used in a tempfile and removed on exit — you don't have a persistent copy. Materialize one now by running the manual render block from [Preparing a Docker Compose File → Step 2](#step-2--render-the-template) (the `sed …` snippet) with the same `LAUNCHER_MANIFEST_DIGEST`, `MPC_MANIFEST_DIGEST` and `MPC_CONTRACT_ID` you deployed with. The output `launcher_docker_compose.yaml` is what the CLI needs below.
 
 #### Run the verification
 

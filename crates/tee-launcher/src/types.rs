@@ -1,6 +1,7 @@
 use std::num::NonZeroU16;
 
 use launcher_interface::types::DockerSha256Digest;
+use near_account_id::AccountId;
 
 use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,10 @@ pub struct CliArgs {
     /// Fallback image digest when the approved-hashes file is absent
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
     pub default_image_digest: DockerSha256Digest,
+
+    /// Account id of the MPC contract the node serves
+    #[arg(long, env = "MPC_CONTRACT_ID")]
+    pub mpc_contract_id: AccountId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

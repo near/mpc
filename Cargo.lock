@@ -11276,6 +11276,7 @@ dependencies = [
  "dstack-sdk",
  "launcher-interface",
  "mpc-primitives",
+ "near-account-id",
  "near-mpc-bounded-collections",
  "rustls",
  "serde",

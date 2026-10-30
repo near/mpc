@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::UnixSeconds;
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
-use near_sdk::{env::sha256_array, log};
+use near_sdk::{env, log};
 use std::time::Duration;
 
 use crate::primitives::{
@@ -22,9 +22,10 @@ impl ToProposalHash for LauncherVoteAction {
 }
 
 /// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
-/// `sha256(template(launcher_hash, mpc_hash))`. Placeholders:
+/// `sha256(template(launcher_hash, mpc_hash, contract_id))`. Placeholders:
 /// - `{{LAUNCHER_IMAGE_HASH}}`: the launcher Docker image hash
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
+/// - `{{MPC_CONTRACT_ID}}`: the account id of this contract
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
 
@@ -350,8 +351,9 @@ pub fn get_docker_compose_hash(
         .replace(
             "{{DEFAULT_IMAGE_DIGEST_HASH}}",
             &mpc_docker_image_hash.as_hex(),
-        );
-    LauncherDockerComposeHash::from(sha256_array(filled_yaml))
+        )
+        .replace("{{MPC_CONTRACT_ID}}", env::current_account_id().as_str());
+    LauncherDockerComposeHash::from(env::sha256_array(filled_yaml))
 }
 
 #[cfg(test)]
@@ -787,5 +789,26 @@ mod tests {
 
         // Different launcher hashes should produce different compose hashes
         assert_ne!(compose_1, compose_2);
+    }
+
+    #[test]
+    fn get_docker_compose_hash__should_bind_the_compose_to_the_contract_account() {
+        // Given
+        let launcher = dummy_launcher_hash(1);
+        let mpc_hash = dummy_code_hash(10);
+        let context_for = |account: &str| {
+            VMContextBuilder::new()
+                .current_account_id(account.parse().unwrap())
+                .build()
+        };
+
+        // When
+        testing_env!(context_for("v1.signer"));
+        let compose_bound_to_signer = get_docker_compose_hash(&launcher, &mpc_hash);
+        testing_env!(context_for("other.near"));
+        let compose_bound_to_other = get_docker_compose_hash(&launcher, &mpc_hash);
+
+        // Then
+        assert_ne!(compose_bound_to_signer, compose_bound_to_other);
     }
 }

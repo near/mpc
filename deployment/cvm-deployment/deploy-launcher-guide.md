@@ -7,7 +7,7 @@ This script automates the deployment of a **Dstack Launcher VM** (`launcher_test
 It:
 
 - Loads deployment parameters from a `.env` file (defaults to `default.env`)
-- Renders the launcher Docker Compose template (`crates/contract/assets/launcher_docker_compose.yaml.template`) using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars
+- Renders the launcher Docker Compose template (`crates/contract/assets/launcher_docker_compose.yaml.template`) using the `LAUNCHER_MANIFEST_DIGEST`, `MPC_MANIFEST_DIGEST` and `MPC_CONTRACT_ID` env vars
 - Loads the rendered compose and `user_config` files
 - Generates an `app-compose.json` configuration
 - Deploys and starts CVM  via `vmm-cli`
@@ -153,6 +153,7 @@ OS_IMAGE=dstack-0.5.8
 # before running deploy-launcher.sh, which refuses to run otherwise.
 LAUNCHER_MANIFEST_DIGEST=sha256:<your launcher digest>
 MPC_MANIFEST_DIGEST=sha256:<your mpc node digest>
+MPC_CONTRACT_ID=v1.signer-prod.testnet # mainnet: v1.signer
 
 # Path of the user_config file
 USER_CONFIG_FILE_PATH=user-config.toml
