@@ -9,6 +9,7 @@ use chain_gateway::event_subscriber::block_events::BlockContext;
 use futures::StreamExt;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
+use near_contract_transport::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
@@ -153,7 +154,7 @@ async fn handle_message(
     mpc_contract_id: &AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
 ) -> anyhow::Result<()> {
-    let block_height = streamer_message.block.header.height;
+    let block_height = BlockHeight::from(streamer_message.block.header.height);
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
@@ -249,7 +250,7 @@ async fn handle_message(
         }
     }
 
-    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
+    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height.value() as i64);
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS.set(
         i64::try_from(streamer_message.block.header.timestamp_nanosec / 1_000_000_000)
             .unwrap_or(i64::MAX),

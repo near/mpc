@@ -5,9 +5,8 @@ use crate::requests::metrics;
 use crate::types::{self, Request, RequestId, RequestsUpdate};
 use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 use k256::sha2::Sha256;
-use near_contract_transport::BlockHeight;
+use near_contract_transport::{BlockCount, BlockHeight};
 use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
 use std::cmp::Reverse;
@@ -28,10 +27,10 @@ pub trait NetworkAPIForRequests: Send + Sync + 'static {
 pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
 /// A participant is considered stale if its indexer's highest height is more than this many
 /// blocks behind the reference height of [`PendingRequests::eligible_leaders_and_heights`].
-const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
+const STALE_PARTICIPANT_THRESHOLD: BlockCount = BlockCount::new(10);
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
-pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
+pub const REQUEST_EXPIRATION_BLOCKS: BlockCount = BlockCount::new(200);
 /// The maximum time we'll wait, after a transaction is submitted to the chain, before we decide
 /// that the transaction is lost and that we should retry.
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
@@ -561,14 +560,14 @@ impl DropReason {
 
 pub(super) struct EligibleLeadersAndHeights {
     pub eligible_leaders: HashSet<ParticipantId>,
-    pub reference_height: u64,
-    pub my_indexer_height: u64,
+    pub reference_height: BlockHeight,
+    pub my_indexer_height: BlockHeight,
 }
 
 /// Returns the highest height reached by more than half of `heights` (their lower median), or
 /// `None` if `heights` is empty.
-fn majority_height(heights: impl IntoIterator<Item = u64>) -> Option<u64> {
-    let mut heights: Vec<u64> = heights.into_iter().collect();
+fn majority_height(heights: impl IntoIterator<Item = BlockHeight>) -> Option<BlockHeight> {
+    let mut heights: Vec<BlockHeight> = heights.into_iter().collect();
     heights.sort_unstable_by_key(|height| Reverse(*height));
     heights.get(heights.len() / 2).copied()
 }
@@ -693,11 +692,12 @@ where
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
-        let height_of =
-            |participant: &ParticipantId| indexer_heights.get(participant).copied().unwrap_or(0);
+        let height_of = |participant: &ParticipantId| {
+            BlockHeight::from(indexer_heights.get(participant).copied().unwrap_or(0))
+        };
         let my_indexer_height = height_of(&self.my_participant_id);
         let reference_height =
-            majority_height(alive_participants.iter().map(height_of)).unwrap_or(0);
+            majority_height(alive_participants.iter().map(height_of)).unwrap_or_default();
         let eligible_leaders = self
             .all_participants
             .iter()
@@ -764,7 +764,7 @@ where
         enum Removal {
             Dropped,
             Resolved {
-                latency_blocks: NumBlocks,
+                latency_blocks: BlockCount,
                 latency_duration: near_time::Duration,
             },
         }
@@ -772,8 +772,8 @@ where
 
         // Any request strictly older than `cutoff_block` is considered expired. This is measured
         // against our own indexer height to prevent spurious timeouts for old requests
-        let cutoff_block: BlockHeight =
-            (my_indexer_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1).into();
+        let cutoff_block =
+            my_indexer_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + BlockCount::new(1);
 
         for (id, request) in &mut self.requests {
             let _span = tracing::debug_span!(
@@ -823,10 +823,10 @@ where
                 } => {
                     mpc_pending_queue_finalized_responses.inc();
                     // Response block ≥ request block by construction; saturate just in case.
-                    let latency_blocks = block_height.blocks_since(request.block_height).value();
+                    let latency_blocks = block_height.blocks_since(request.block_height);
                     let latency_duration = received_at.signed_duration_since(request.time_indexed);
 
-                    request_response_latency_blocks.observe(latency_blocks as f64);
+                    request_response_latency_blocks.observe(latency_blocks.value() as f64);
                     request_response_latency_seconds.observe(latency_duration.as_seconds_f64());
 
                     requests_to_remove.push((
@@ -850,7 +850,7 @@ where
                 };
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
-                        indexed_block_height: request.block_height.into(),
+                        indexed_block_height: request.block_height,
                         request: request.request,
                         progress: request.computation_progress,
                         completion_delay,
@@ -882,7 +882,9 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height};
+    use super::{
+        BlockHeight, NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height,
+    };
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
         CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL,
@@ -1302,7 +1304,8 @@ mod tests {
 
         // When: we set the network height past the expiry of the first, but before expiry of the
         // second signature
-        setup.set_participant_network_height(block_height_req_1 + REQUEST_EXPIRATION_BLOCKS);
+        setup
+            .set_participant_network_height(block_height_req_1 + REQUEST_EXPIRATION_BLOCKS.value());
 
         // Then: The first request expired, so only the second one is returned.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
@@ -1312,7 +1315,8 @@ mod tests {
         // When: we set participants to a newer height, expiring the second request as well;
         drop(to_attempt1);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        setup.set_participant_network_height(block_height_req_2 + REQUEST_EXPIRATION_BLOCKS);
+        setup
+            .set_participant_network_height(block_height_req_2 + REQUEST_EXPIRATION_BLOCKS.value());
         // Then: it should not retry.
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
@@ -1438,7 +1442,7 @@ mod tests {
         let eligible = pending_requests.eligible_leaders_and_heights();
 
         // Then
-        assert_eq!(eligible.reference_height, 100);
+        assert_eq!(eligible.reference_height, BlockHeight::new(100));
         assert_eq!(
             eligible.eligible_leaders,
             setup.participant_ids.iter().copied().collect()
@@ -1463,7 +1467,7 @@ mod tests {
         // Then
         assert!(to_attempt.is_empty());
         let eligible = pending_requests.eligible_leaders_and_heights();
-        assert_eq!(eligible.reference_height, 120);
+        assert_eq!(eligible.reference_height, BlockHeight::new(120));
         assert_eq!(eligible.eligible_leaders, peers.copied().collect());
     }
 
@@ -1480,10 +1484,10 @@ mod tests {
         #[case] expected: Option<u64>,
     ) {
         // When
-        let majority = majority_height(heights);
+        let majority = majority_height(heights.into_iter().map(BlockHeight::new));
 
         // Then
-        assert_eq!(majority, expected);
+        assert_eq!(majority, expected.map(BlockHeight::new));
     }
 
     #[test_log::test]
@@ -1660,7 +1664,7 @@ mod tests {
         let block_height = setup.update(&mut pending_requests);
 
         // When: set network height to H + REQUEST_EXPIRATION_BLOCKS - 1
-        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS.value() - 1);
 
         // Then: request is NOT expired (returned by get_requests_to_attempt)
         let to_attempt = pending_requests.get_requests_to_attempt();
@@ -1681,7 +1685,7 @@ mod tests {
         );
 
         // When: set network height to H + REQUEST_EXPIRATION_BLOCKS
-        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS);
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS.value());
 
         // Then: request IS expired, not returned by get_requests_to_attempt and removed from
         // queue.
@@ -1708,7 +1712,7 @@ mod tests {
             if i != TestSetup::MY_INDEX {
                 setup
                     .network_api
-                    .set_height(*p, block_height + REQUEST_EXPIRATION_BLOCKS);
+                    .set_height(*p, block_height + REQUEST_EXPIRATION_BLOCKS.value());
             }
         }
 
@@ -1733,7 +1737,7 @@ mod tests {
         // When
         setup
             .network_api
-            .set_height(me, block_height + REQUEST_EXPIRATION_BLOCKS);
+            .set_height(me, block_height + REQUEST_EXPIRATION_BLOCKS.value());
         for (i, p) in setup.participant_ids.iter().enumerate() {
             if i != TestSetup::MY_INDEX {
                 setup.network_api.set_height(*p, block_height);

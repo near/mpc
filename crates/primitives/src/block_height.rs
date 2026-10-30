@@ -36,12 +36,12 @@ impl BlockHeight {
         self.0
     }
 
-    pub fn saturating_add(self, delta: u64) -> Self {
-        Self(self.0.saturating_add(delta))
+    pub fn saturating_add(self, delta: BlockCount) -> Self {
+        Self(self.0.saturating_add(delta.0))
     }
 
-    pub fn saturating_sub(self, delta: u64) -> Self {
-        Self(self.0.saturating_sub(delta))
+    pub fn saturating_sub(self, delta: BlockCount) -> Self {
+        Self(self.0.saturating_sub(delta.0))
     }
 
     /// Block distance from `earlier` to `self`. Saturates to `0` if `earlier > self`.

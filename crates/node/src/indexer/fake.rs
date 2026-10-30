@@ -512,7 +512,7 @@ impl FakeIndexerCore {
                             state.state.clone().into();
                         let config = ContractState::from_contract_state(
                             &dto_state,
-                            state.env.block_height,
+                            state.env.block_height.into(),
                             None,
                         )
                         .expect("Failed to convert contract state");

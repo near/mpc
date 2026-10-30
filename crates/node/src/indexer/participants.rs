@@ -5,7 +5,7 @@ use ed25519_dalek::VerifyingKey;
 use mpc_primitives::EpochId;
 use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
-use near_contract_transport::ViewContract;
+use near_contract_transport::{BlockHeight, ViewContract};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
@@ -27,7 +27,7 @@ pub struct ContractKeyEventInstance {
 
 pub fn convert_key_event_to_instance(
     key_event: &KeyEvent,
-    current_height: u64,
+    current_height: BlockHeight,
     completed_domains: Vec<dtos::KeyForDomain>,
     per_domain_thresholds: &BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
 ) -> anyhow::Result<ContractKeyEventInstance> {
@@ -45,9 +45,7 @@ pub fn convert_key_event_to_instance(
         .unwrap_or(domain.reconstruction_threshold);
 
     Ok(match &key_event.instance {
-        Some(current_instance)
-            if dtos::BlockHeight::from(current_height) < current_instance.expires_on =>
-        {
+        Some(current_instance) if current_height < current_instance.expires_on => {
             ContractKeyEventInstance {
                 id: dtos::KeyEventId {
                     epoch_id: key_event.epoch_id,
@@ -186,7 +184,7 @@ impl ContractState {
 impl ContractState {
     pub fn from_contract_state(
         state: &ProtocolContractState,
-        height: u64,
+        height: BlockHeight,
         port_override: Option<u16>,
     ) -> anyhow::Result<Self> {
         Ok(match state {
@@ -324,7 +322,7 @@ pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'sta
             tracing::debug!(target: "indexer", "querying contract state");
 
             let (height, protocol_state) = match contract.state().await {
-                Ok(observed) => (observed.observed_at.into(), observed.value),
+                Ok(observed) => (observed.observed_at, observed.value),
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading config from chain during state: {:?}", e);
                     tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
@@ -547,7 +545,7 @@ pub mod test_utils {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::ContractState;
+    use super::{BlockHeight, ContractState};
     use crate::indexer::participants::{
         UNREACHABLE_PARTICIPANT_ADDRESS, convert_participant_infos,
     };
@@ -740,7 +738,7 @@ mod tests {
         let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
 
         // When converting the on-chain state into the node's representation.
-        let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
+        let state = ContractState::from_contract_state(&dto, BlockHeight::new(0), None).unwrap();
 
         // Then the resharing key event carries the new threshold, and the previous
         // registry (old side of the reshare) keeps the old threshold.
@@ -772,7 +770,7 @@ mod tests {
         let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
 
         // When converting the on-chain state.
-        let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
+        let state = ContractState::from_contract_state(&dto, BlockHeight::new(0), None).unwrap();
 
         // Then the resharing key event keeps the existing threshold.
         let ContractState::Running(running) = state else {

@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use crate::indexer::IndexerState;
 use chain_gateway::primitives::FetchLatestFinalBlockInfo;
+use near_contract_transport::BlockHeight;
 
 #[derive(Debug, Clone)]
 pub(crate) struct IndexerStats {
-    pub block_heights_processing: std::collections::BTreeSet<u64>,
+    pub block_heights_processing: std::collections::BTreeSet<BlockHeight>,
     pub blocks_processed_count: u64,
-    pub last_processed_block_height: u64,
+    pub last_processed_block_height: BlockHeight,
 }
 
 impl IndexerStats {
@@ -15,7 +16,7 @@ impl IndexerStats {
         Self {
             block_heights_processing: std::collections::BTreeSet::new(),
             blocks_processed_count: 0,
-            last_processed_block_height: 0,
+            last_processed_block_height: BlockHeight::new(0),
         }
     }
 }
@@ -35,17 +36,15 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
             / (interval_secs as f64);
 
         let time_to_catch_the_tip_duration = if block_processing_speed > 0.0
-            && let Ok(block_height) = indexer_state
-                .gateway
-                .fetch_latest_final_block_info()
-                .await
-                .map(|info| u64::from(info.observed_at))
+            && let Ok(info) = indexer_state.gateway.fetch_latest_final_block_info().await
         {
             // 0 when we're ahead of the chain tip — no catching up needed.
-            let blocks_behind = block_height.saturating_sub(stats_copy.last_processed_block_height);
+            let blocks_behind = info
+                .observed_at
+                .blocks_since(stats_copy.last_processed_block_height);
 
             Some(std::time::Duration::from_millis(
-                ((blocks_behind as f64 / block_processing_speed) * 1000f64) as u64,
+                ((blocks_behind.value() as f64 / block_processing_speed) * 1000f64) as u64,
             ))
         } else {
             None
