@@ -39,7 +39,10 @@ use rustls::{ClientConfig, CommonState};
 use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
     time::Duration,
 };
 use tokio::{
@@ -82,6 +85,8 @@ const TCP_USER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30)
 
 /// Timeout for individual write operations to detect if writes are hanging.
 const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+const TLS_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Maximum time to complete the TLS handshake on an accepted incoming
 /// connection. Without this bound, a peer that opens the TCP connection but
@@ -230,6 +235,7 @@ impl OutgoingConnection {
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
         sender_connection_id: u32,
+        echo_nonces: Arc<AtomicU8>,
     ) -> anyhow::Result<OutgoingConnection> {
         let mut tls_stream = Self::connect_tls(client_config, target_address).await?;
         let peer_id =
@@ -258,11 +264,18 @@ impl OutgoingConnection {
         );
         // An older peer cannot parse `Echo`
         let (echo_task, echo_ack_sender) = if peer_supports_echo(peer_network_protocol_version) {
-            let echo_tracker = EchoTracker::new();
+            let echo_tracker = EchoTracker::new()
+                .with_next_nonce(Serial8::new(echo_nonces.load(Ordering::Relaxed)));
             let (ack_sender, ack_receiver) = mpsc::channel(echo_tracker.max_outstanding().max(1));
             let echo_task = tracking::spawn(
                 &format!("echo liveness task for {}", target_participant_id),
-                run_echo_liveness(sender.clone(), echo_tracker, ack_receiver, liveness_failed),
+                run_echo_liveness(
+                    sender.clone(),
+                    echo_tracker,
+                    echo_nonces,
+                    ack_receiver,
+                    liveness_failed,
+                ),
             );
             (Some(echo_task), Some(ack_sender))
         } else {
@@ -473,8 +486,14 @@ impl OutgoingConnection {
         // Send TLS close_notify before dropping the connection so
         // the peer does not see an unexpected EOF.
         let mut tls_stream = framed_tls_stream.into_inner();
-        if let Err(err) = tls_stream.shutdown().await {
-            tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
+        match tls_stream.shutdown().timeout(TLS_SHUTDOWN_TIMEOUT).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
+            }
+            Err(_) => {
+                tracing::debug!("TLS shutdown timed out on outgoing connection");
+            }
         }
 
         result
@@ -534,6 +553,7 @@ async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
 async fn run_echo_liveness(
     sender: UnboundedSender<Packet>,
     mut echo_tracker: EchoTracker,
+    echo_nonces: Arc<AtomicU8>,
     mut acks: mpsc::Receiver<Serial8>,
     liveness_failed: CancellationToken,
 ) {
@@ -544,6 +564,7 @@ async fn run_echo_liveness(
         tokio::select! {
             _ = echo_interval.tick() => {
                 let nonce = echo_tracker.prepare_next_nonce();
+                echo_nonces.store(echo_tracker.next_nonce().0, Ordering::Relaxed);
                 if !echo_tracker.start_echo(nonce, Instant::now(), ECHO_TIMEOUT) {
                     tracing::warn!(?nonce, "echo unsent, check tracker");
                     continue;
@@ -561,7 +582,11 @@ async fn run_echo_liveness(
                     continue;
                 }
                 if echo_tracker.receive_ack(nonce, Instant::now()).is_none() {
-                    tracing::debug!(?nonce, "ignoring EchoAck, unknown nonce");
+                    if echo_tracker.is_stale(nonce) {
+                        tracing::debug!(?nonce, "ignoring stale EchoAck");
+                    } else {
+                        tracing::warn!(?nonce, "ignoring unknown EchoAck");
+                    }
                 }
             }
             _ = async {
@@ -571,7 +596,6 @@ async fn run_echo_liveness(
                 }
             } => {
                 if echo_tracker.check_timeouts(Instant::now()) {
-                    tracing::warn!("Echo acknowledgement failed");
                     liveness_failed.cancel();
                     break;
                 }
@@ -623,6 +647,7 @@ impl PersistentConnection {
             async move {
                 let mut log_throttle = LogThrottle::new(Duration::from_mins(1));
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
+                let echo_nonces = Arc::new(AtomicU8::new(0));
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
                     // next dial is affected, established connections are untouched.
@@ -634,6 +659,7 @@ impl PersistentConnection {
                         target_participant_id,
                         &participant_identities,
                         connection_attempt,
+                        echo_nonces.clone(),
                     )
                     .await
                     {
@@ -1904,6 +1930,7 @@ mod tests {
                 ParticipantId::from_raw(1),
                 &ParticipantIdentities::default(),
                 0,
+                Arc::default(),
             ),
         )
         .await
@@ -2131,6 +2158,7 @@ mod tests {
         use crate::network::rfc1982::Serial8;
         use crate::p2p::run_echo_liveness;
         use crate::primitives::Heartbeat;
+        use std::sync::atomic::{AtomicU8, Ordering};
         use tokio::sync::mpsc;
         use tokio::time::{Duration, advance};
         use tokio_util::sync::CancellationToken;
@@ -2148,6 +2176,7 @@ mod tests {
             let _liveness_task = tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
+                Arc::default(),
                 ack_rx,
                 liveness_failed.clone(),
             ));
@@ -2178,6 +2207,7 @@ mod tests {
             let _liveness_task = tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
+                Arc::default(),
                 ack_rx,
                 liveness_failed.clone(),
             ));
@@ -2200,6 +2230,7 @@ mod tests {
             let _liveness_task = tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
+                Arc::default(),
                 ack_rx,
                 liveness_failed.clone(),
             ));
@@ -2230,6 +2261,7 @@ mod tests {
             let _liveness_task = tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
+                Arc::default(),
                 ack_rx,
                 liveness_failed.clone(),
             ));
@@ -2259,9 +2291,11 @@ mod tests {
             let (ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
             let liveness_failed = CancellationToken::new();
             let echo_tracker = EchoTracker::new();
+            let echo_nonces = Arc::new(AtomicU8::new(0));
             let _liveness_task = tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
+                echo_nonces.clone(),
                 ack_rx,
                 liveness_failed.clone(),
             ));
@@ -2276,6 +2310,7 @@ mod tests {
                 tokio::task::yield_now().await;
             }
             assert!(!liveness_failed.is_cancelled());
+            assert_eq!(echo_nonces.load(Ordering::Relaxed), 3);
         }
 
         #[tokio::test(start_paused = true)]
@@ -2289,6 +2324,7 @@ mod tests {
             let liveness_task = tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
+                Arc::default(),
                 ack_rx,
                 liveness_failed.clone(),
             ));
