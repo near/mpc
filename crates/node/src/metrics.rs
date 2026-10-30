@@ -31,14 +31,6 @@ pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> 
         .unwrap()
     });
 
-pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    prometheus::register_histogram!(
-        "near_mpc_pre_signature_time_elapsed",
-        "Time taken to generate a pre signature",
-    )
-    .unwrap()
-});
-
 pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     prometheus::register_histogram!(
         "near_mpc_signature_time_elapsed",

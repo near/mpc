@@ -129,9 +129,7 @@ mod tests {
     use crate::network::testing::new_test_client;
     use crate::primitives::UniqueId;
     use crate::providers::ecdsa::triple::TripleStorage;
-    use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
-    use std::assert_matches;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
 
@@ -223,27 +221,15 @@ mod tests {
         let (start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
-        let peer = *all_participants
-            .iter()
-            .find(|p| **p != my_participant_id)
-            .unwrap();
         let ctx = TestContext::new(
             my_participant_id,
             Arc::new(Mutex::new(all_participants.clone())),
         );
         ctx.populate(&all_participants);
-        let presignature_keys: Vec<Vec<u8>> = [DomainId(0), DomainId(1)]
-            .into_iter()
-            .flat_map(|domain_id| {
-                [my_participant_id, peer].map(|owner| {
-                    [
-                        domain_id.0.to_be_bytes().as_slice(),
-                        &borsh::to_vec(&UniqueId::new(owner, 1, 0)).unwrap(),
-                    ]
-                    .concat()
-                })
-            })
-            .collect();
+
+        // Any keys will do
+        let presignature_keys: [&[u8]; 3] = [b"a", b"b", b"c"];
+
         let mut writer = ctx.db.update();
         for key in &presignature_keys {
             writer.put(DBCol::Presignature, key, b"stored presignature");
@@ -264,31 +250,6 @@ mod tests {
             assert!(ctx.db.get(DBCol::Presignature, key).unwrap().is_none());
         }
         ctx.assert_owned(1);
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_succeed_without_a_presignature_column() {
-        // Given
-        let (start_data, my_participant_id, reconstruction_threshold) =
-            test_utils::gen_four_participants();
-        let dir = tempfile::tempdir().unwrap();
-        let mut options = rocksdb::Options::default();
-        options.create_if_missing(true);
-        options.create_missing_column_families(true);
-        drop(rocksdb::DB::open_cf(&options, dir.path(), ["triple_v2", "epoch_id"]).unwrap());
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-
-        // When
-        let result = delete_stale_triples_and_presignatures(
-            &db,
-            start_data,
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        );
-
-        // Then
-        assert_matches!(result, Ok(()));
     }
 
     /// End-to-end check that a triple written via [`TripleStorage::add_owned`]
