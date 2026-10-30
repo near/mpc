@@ -137,7 +137,7 @@ expression: abi
       },
       {
         "name": "clean_invalid_attestations",
-        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists), returning one attestation-storage grant to the owner of\n each entry removed. Returns the number of entries removed. Callable by anyone while the\n protocol is in [`Running`](ProtocolContractState::Running).",
+        "doc": " Scans up to the given number of stored nodes and removes those whose attestation fails\n re-verification (expired or referencing stale whitelists), except the nodes in use: each\n participant's current node and the node it is migrating to. Gives one attestation-storage\n grant back to the owner of each node removed and returns the number of nodes removed.\n Callable by anyone while the protocol is in [`Running`](ProtocolContractState::Running).",
         "kind": "call",
         "params": {
           "serialization_type": "json",
