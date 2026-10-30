@@ -399,7 +399,6 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::tee_state::NodeId;
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs};
     use dtos::Ed25519PublicKey;
     use mpc_attestation::attestation::{
@@ -992,7 +991,7 @@ mod tests {
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds);
 
             let insertion_result = contract.tee_state.verify_and_store_mock(
-                NodeId {
+                dtos::Node {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone(),
                     account_public_key: dtos::Ed25519PublicKey::try_from(&self.signer_account_pk)

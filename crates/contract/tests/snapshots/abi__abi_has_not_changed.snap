@@ -452,14 +452,14 @@ expression: abi
       },
       {
         "name": "get_tee_accounts",
-        "doc": " Returns the id of every stored node, including nodes of accounts that are not participants.",
+        "doc": " Returns every stored node, including nodes of accounts that are not participants.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/NodeId"
+              "$ref": "#/definitions/Node"
             }
           }
         }
@@ -862,7 +862,7 @@ expression: abi
                       "[u8; 48]"
                     ]
                   },
-                  "NodeId": {
+                  "Node": {
                     "Struct": [
                       [
                         "account_id",
@@ -962,8 +962,8 @@ expression: abi
                   "VerificationContext": {
                     "Struct": [
                       [
-                        "node_id",
-                        "NodeId"
+                        "node",
+                        "Node"
                       ],
                       [
                         "tcb_info",
@@ -4260,7 +4260,8 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "NodeId": {
+        "Node": {
+          "description": "A node the contract stores under its TLS key. Its attestation is a separate [`StoredAttestation`](crate::types::StoredAttestation).",
           "type": "object",
           "required": [
             "account_id",

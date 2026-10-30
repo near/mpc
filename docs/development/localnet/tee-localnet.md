@@ -374,7 +374,7 @@ near contract call-function as-transaction \
 
 You should see both nodes with valid attestations containing a `tls_public_key` and an `account_public_key`.
 
-> **Note:** If the `account_public_key` is `null`, this means the attestation recorded on the contract is the mock attestation, and the real attestation verification failed.
+> **Note:** If a node's `account_public_key` equals its `tls_public_key`, this means the attestation recorded on the contract is the mock attestation, and the real attestation verification failed.
 
 
 ---

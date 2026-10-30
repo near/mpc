@@ -14,7 +14,7 @@ use crate::{
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, NodeId, Protocol,
+    self as dtos, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, Protocol,
     ReconstructionThreshold,
 };
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
@@ -152,16 +152,16 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
-pub fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
-    NodeId {
+pub fn create_node(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> dtos::Node {
+    dtos::Node {
         account_id: account_id.clone(),
         tls_public_key: tls_public_key.clone(),
         account_public_key: bogus_ed25519_public_key(),
     }
 }
 
-pub fn node_id_for(account_id: &AccountId) -> NodeId {
-    create_node_id(account_id, &bogus_ed25519_public_key())
+pub fn node_for(account_id: &AccountId) -> dtos::Node {
+    create_node(account_id, &bogus_ed25519_public_key())
 }
 
 pub fn authenticate_as(
