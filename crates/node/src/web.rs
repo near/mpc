@@ -87,8 +87,6 @@ struct WebServerState {
 #[derive(Clone, Serialize)]
 struct NodeConfigResponse {
     my_near_account_id: AccountId,
-    near_responder_account_id: AccountId,
-    number_of_responder_keys: usize,
     web_ui: SocketAddr,
     migration_web_ui: SocketAddr,
     pprof_bind_address: SocketAddr,
@@ -109,8 +107,6 @@ impl From<ConfigFile> for NodeConfigResponse {
     fn from(config: ConfigFile) -> Self {
         Self {
             my_near_account_id: config.my_near_account_id,
-            near_responder_account_id: config.near_responder_account_id,
-            number_of_responder_keys: config.number_of_responder_keys,
             web_ui: config.web_ui,
             migration_web_ui: config.migration_web_ui,
             pprof_bind_address: config.pprof_bind_address,
@@ -280,7 +276,6 @@ async fn third_party_licenses() -> Html<&'static str> {
 struct PublicKeys {
     near_signer_public_key: Ed25519PublicKey,
     near_p2p_public_key: Ed25519PublicKey,
-    near_responder_public_keys: Vec<Ed25519PublicKey>,
 }
 
 fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
@@ -296,17 +291,9 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
             .p2p_private_key
             .verifying_key(),
     );
-    let near_responder_public_keys = secrets_config
-        .persistent_secrets
-        .near_responder_keys
-        .iter()
-        .map(|x| Ed25519PublicKey::from(&x.verifying_key()))
-        .collect();
-
     PublicKeys {
         near_signer_public_key,
         near_p2p_public_key,
-        near_responder_public_keys,
     }
 }
 
@@ -319,7 +306,7 @@ pub fn static_web_data(
     StaticWebData {
         near_signer_public_key: public_keys.near_signer_public_key,
         near_p2p_public_key: public_keys.near_p2p_public_key,
-        near_responder_public_keys: public_keys.near_responder_public_keys,
+        near_responder_public_keys: vec![],
         tee_participant_info,
     }
 }
@@ -460,8 +447,6 @@ mod tests {
     fn test_config() -> ConfigFile {
         ConfigFile {
             my_near_account_id: AccountId::from_str("test.near").unwrap(),
-            near_responder_account_id: AccountId::from_str("test.near").unwrap(),
-            number_of_responder_keys: 1,
             web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8080),
             migration_web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8081),
             pprof_bind_address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8082),

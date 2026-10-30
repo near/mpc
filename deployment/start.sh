@@ -82,8 +82,7 @@ if not p2p_key_str or not account_sk_str:
 
 secrets = {
     "p2p_private_key": p2p_key_str,
-    "near_signer_key": account_sk_str,
-    "near_responder_keys": [account_sk_str]
+    "near_signer_key": account_sk_str
 }
 
 # Write to secrets.json
@@ -95,19 +94,9 @@ EOF
 }
 
 initialize_mpc_config() {
-
-    if [ -n "$MPC_RESPONDER_ID" ]; then
-        responder_id="$MPC_RESPONDER_ID"
-    else
-        echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
-        responder_id="$MPC_ACCOUNT_ID"
-    fi
-
     cat <<EOF >"$1"
 # Configuration File
 my_near_account_id: $MPC_ACCOUNT_ID
-near_responder_account_id: $responder_id
-number_of_responder_keys: 50
 web_ui: 0.0.0.0:8080
 migration_web_ui: 0.0.0.0:8079
 pprof_bind_address: 0.0.0.0:34001
@@ -143,14 +132,6 @@ update_mpc_config() {
     # Use sed to replace placeholder values
     sed -i "s/my_near_account_id:.*/my_near_account_id: $MPC_ACCOUNT_ID/" "$1"
     sed -i "s/mpc_contract_id:.*/mpc_contract_id: $MPC_CONTRACT_ID/" "$1"
-
-    if [ -n "$MPC_RESPONDER_ID" ]; then
-        responder_id="$MPC_RESPONDER_ID"
-    else
-        echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
-        responder_id="$MPC_ACCOUNT_ID"
-    fi
-    sed -i "s/near_responder_account_id:.*/near_responder_account_id: $responder_id/" "$1"
 }
 
 generate_secrets_json() {

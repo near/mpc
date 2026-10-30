@@ -252,9 +252,6 @@ Each node exposes its keys via:
 export FRODO_PUBKEY=$(curl -s http://$SERVER_IP_1:18081/public_data | jq -r ".near_signer_public_key")
 export SAM_PUBKEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r ".near_signer_public_key")
 
-export FRODO_RESPONDER_KEY=$(curl -s http://$SERVER_IP_1:18081/public_data | jq -r ".near_responder_public_keys[0]")
-export SAM_RESPONDER_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r ".near_responder_public_keys[0]")
-
 export FRODO_P2P_KEY=$(curl -s http://$SERVER_IP_1:18081/public_data | jq -r '.near_p2p_public_key')
 export SAM_P2P_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r '.near_p2p_public_key')
 ```
@@ -271,17 +268,9 @@ near account add-key $FRODO_ACCOUNT grant-function-call-access \
   --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$FRODO_PUBKEY" network-config testnet sign-with-keychain send
 
-near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
-  use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config testnet sign-with-keychain send
-
 near account add-key $SAM_ACCOUNT grant-function-call-access \
   --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$SAM_PUBKEY" network-config testnet sign-with-keychain send
-
-near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
-  use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config testnet sign-with-keychain send
 ```
 
 ---

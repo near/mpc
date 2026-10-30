@@ -423,4 +423,42 @@ mod tests {
         assert_eq!(parsed.network_addr, None);
         assert_eq!(parsed.tier3_public_addr, None);
     }
+
+    #[test]
+    fn start_config__should_parse_operator_template_with_legacy_responder_fields() {
+        // Given
+        let user_config: toml::Table = toml::from_str(include_str!(
+            "../../../deployment/cvm-deployment/user-config.toml"
+        ))
+        .unwrap();
+        let mut mpc_node_config = user_config["mpc_node_config"].as_table().unwrap().clone();
+        assert!(
+            mpc_node_config["node"]
+                .as_table()
+                .unwrap()
+                .contains_key("near_responder_account_id")
+        );
+        // Replace the operator placeholder, and inject `tee` like the launcher does.
+        mpc_node_config["near_init"]["tier3_public_addr"] = "203.0.113.1:24567".into();
+        let tee: toml::Table = toml::from_str(&format!(
+            r#"
+            image_hash = "sha256:{}"
+            latest_allowed_hash_file_path = "/tmp/hash"
+            authority = {{ type = "local" }}
+            "#,
+            "0".repeat(64)
+        ))
+        .unwrap();
+        mpc_node_config.insert("tee".into(), tee.into());
+
+        // When
+        let config: StartConfig = mpc_node_config.try_into().unwrap();
+
+        // Then
+        config.validate().unwrap();
+        assert_eq!(
+            config.node.my_near_account_id.as_str(),
+            "your-mpc-account.testnet"
+        );
+    }
 }

@@ -168,18 +168,12 @@ pub struct BlockArgs {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
     /// The near account ID that this node owns.
-    /// If an on-chain contract is used, this account is used to invoke
-    /// identity-sensitive functions of the contract (join, vote, etc.).
+    /// If an on-chain contract is used, this account is used for all contract
+    /// calls, including responses to signature requests.
     /// If static ParticipantsConfig is specified, this account id is used
     /// to identify our own participant ID from within the static config.
-    /// In both cases this account is *not* used to send signature responses.
     pub my_near_account_id: AccountId,
 
-    /// Near account ID of the account that will be used to submit signature responses.
-    /// For reference, go to the `spawn_real_indexer` logic.
-    pub near_responder_account_id: AccountId,
-    /// Number of keys that will be used to sign the signature responses.
-    pub number_of_responder_keys: usize,
     // TODO(#2038): remove custom deserializer
     #[serde(deserialize_with = "deserialize_to_socket_addr")]
     pub web_ui: SocketAddr,

@@ -2,7 +2,6 @@
 
 mod describe;
 
-use crate::account::OperatingAccounts;
 use crate::cli::{
     MpcDescribeCmd, MpcTerraformDeployChainCmd, MpcTerraformDeployInfraCmd,
     MpcTerraformDeployNomadCmd, MpcTerraformDestroyInfraCmd,
@@ -89,7 +88,6 @@ async fn export_terraform_infra_vars(
 /// needed by the infra-ops scripts.
 async fn export_terraform_vars(
     name: &str,
-    accounts: &OperatingAccounts,
     mpc_setup: &MpcNetworkSetup,
     docker_image: Option<String>,
     chain_id: &str,
@@ -98,17 +96,11 @@ async fn export_terraform_vars(
     let terraform_file = {
         let mut mpc_nodes = Vec::new();
         for (i, account_id) in mpc_setup.participants.iter().enumerate() {
-            let responding_account_id = accounts
-                .account(account_id)
-                .get_mpc_participant()
-                .unwrap()
-                .responding_account_id
-                .clone();
             mpc_nodes.push(TerraformMpcNode {
                 account: account_id.clone(),
                 url: format!("http://mpc-node-{}.service.mpc.consul:3000", i),
-                number_of_responder_keys: mpc_setup.num_responding_access_keys,
-                near_responder_account_id: responding_account_id,
+                number_of_responder_keys: 1,
+                near_responder_account_id: account_id.clone(),
             });
         }
         let docker_image = docker_image.as_deref().unwrap_or(DEFAULT_MPC_DOCKER_IMAGE);
@@ -245,6 +237,7 @@ fn rebind_neard_config(config: &str) -> String {
 struct TerraformMpcNode {
     account: AccountId,
     url: String,
+    // TODO(#4911): remove once infra-ops no longer requires these; the node ignores them.
     number_of_responder_keys: usize,
     near_responder_account_id: AccountId,
 }
@@ -332,14 +325,9 @@ impl MpcTerraformDeployNomadCmd {
             .mpc_setups
             .get(name)
             .expect(&format!("MPC network {} does not exist", name));
-        let terraform_vars_file = export_terraform_vars(
-            name,
-            &setup.accounts,
-            mpc_setup,
-            self.docker_image.clone(),
-            &config.chain_id,
-        )
-        .await;
+        let terraform_vars_file =
+            export_terraform_vars(name, mpc_setup, self.docker_image.clone(), &config.chain_id)
+                .await;
         let nomad_server_url = mpc_setup
             .nomad_server_url
             .clone()

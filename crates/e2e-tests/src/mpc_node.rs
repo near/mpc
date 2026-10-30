@@ -420,7 +420,6 @@ impl MpcNodeSetup {
         let secrets = json!({
             "p2p_private_key": format_key(&self.p2p_signing_key),
             "near_signer_key": format_key(&self.near_signer_key),
-            "near_responder_keys": [format_key(&self.near_signer_key)],
         });
 
         std::fs::write(&secrets_path, serde_json::to_vec_pretty(&secrets)?)
@@ -464,9 +463,7 @@ impl MpcNodeSetup {
                 tier3_public_addr: None,
             }),
             node: ConfigFile {
-                my_near_account_id: signer.clone(),
-                near_responder_account_id: signer,
-                number_of_responder_keys: 1,
+                my_near_account_id: signer,
                 web_ui: format!("127.0.0.1:{}", self.ports.web_ui).parse()?,
                 migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui).parse()?,
                 pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof).parse()?,
