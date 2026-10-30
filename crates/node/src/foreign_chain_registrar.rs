@@ -279,7 +279,7 @@ mod tests {
                 metric
                     .get_label()
                     .iter()
-                    .any(|label| label.get_value() == chain.label())
+                    .any(|label| label.value() == chain.label())
             })
             .map(|metric| metric.get_gauge().get_value() as i64)
     }
