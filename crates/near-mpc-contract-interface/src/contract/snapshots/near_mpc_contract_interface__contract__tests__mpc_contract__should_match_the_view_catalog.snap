@@ -1,5 +1,5 @@
 ---
-source: crates/near-mpc-contract-interface/src/client.rs
+source: crates/near-mpc-contract-interface/src/contract/tests.rs
 expression: catalog
 ---
 contract: mpc.near

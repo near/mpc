@@ -19,9 +19,10 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 borsh = { workspace = true }
-near-contract-transport = { workspace = true }
 near-sdk = { workspace = true }
-serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+near-kit-primitives = { workspace = true }
 
 [lints]
 workspace = true

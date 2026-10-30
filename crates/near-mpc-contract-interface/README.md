@@ -23,28 +23,36 @@ Note that this crate is not intended to hold complicated validation logic that m
 Two feature flags provide typed helpers for constructing contract calls:
 
 - `call-args` — argument structs for the contract's methods
-- `client` (implies `call-args`) — `MpcContractHandle`, a typed client
-  generic over the transport traits of `near-contract-transport`. It is the
-  single source of each method's wire format: method name, argument struct,
-  gas, and deposit. Backends implementing `ViewContract` also get typed view
-  methods.
+- `client` (implies `call-args`) — `MpcContract`, the contract declared as a
+  `#[near_kit_primitives::contract]` trait mirroring the contract's
+  signatures: each method's name, parameters (sent by name, as near-sdk reads
+  them) and return type. Its generated `MpcContractClient<C>` runs views over
+  any near-kit `Viewer` and calls over any `TxSender`. Each call declares its
+  gas and deposit (`#[call(gas = .., deposit = ..)]`, from the `contract::gas`
+  and `contract::deposit` modules), so callers attach them only where they
+  depend on the arguments.
 
 ```rust
 # #[cfg(feature = "client")] mod example {
-use near_contract_transport::CallContract;
-use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
-use near_mpc_contract_interface::types::{AccountId, SignRequestArgs};
+use near_kit_primitives::{AccountId, Contract as _, ContractError, TxSender};
+use near_mpc_contract_interface::contract::MpcContract;
+use near_mpc_contract_interface::types::SignRequestArgs;
 
-// `caller` is any backend implementing the `CallContract` trait from
-// `near-contract-transport` — e.g. an RPC client or a sandbox account
-// submitting the transaction.
-async fn sign<C: CallContract>(
-    caller: C,
+// `sender` is any near-kit `TxSender`, e.g. a `SigningNear` client or a
+// sandbox account submitting the transaction.
+async fn sign<C>(
+    sender: C,
     contract_id: AccountId,
     request: SignRequestArgs,
-) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-    let mpc_contract_handle = MpcContractHandle::new(caller, contract_id);
-    mpc_contract_handle.sign(request).await
+) -> Result<C::Output, ContractError<C::SendError>>
+where
+    C: TxSender + Clone + 'static,
+    C::Output: 'static,
+    C::SendError: 'static,
+{
+    MpcContract::client(sender, contract_id)
+        .sign(request)
+        .await
 }
 # }
 ```

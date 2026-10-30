@@ -5,7 +5,7 @@ pub mod call_args;
 pub mod deposits;
 
 #[cfg(feature = "client")]
-pub mod client;
+pub mod contract;
 
 pub mod method_names;
 pub mod types {
