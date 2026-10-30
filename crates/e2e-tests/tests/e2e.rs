@@ -8,6 +8,7 @@ mod foreign_chain_configuration;
 mod foreign_chain_probe;
 mod foreign_chain_tx_validation;
 mod key_resharing;
+mod leader_failover;
 mod lost_assets;
 mod migration_endpoint;
 mod migration_service;
