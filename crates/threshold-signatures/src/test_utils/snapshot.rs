@@ -123,8 +123,8 @@ mod test {
     use super::*;
     use crate::SigningShare;
     use crate::ecdsa::{
-        KeygenOutput, Polynomial,
-        robust_ecdsa::{PresignArguments, PresignOutput, presign::presign},
+        KeygenOutput, Polynomial, Scalar, SignatureOption, Tweak,
+        robust_ecdsa::{PresignArguments, presign_and_sign},
     };
     use crate::test_utils::{
         GenProtocol, MockCryptoRng, generate_participants, run_protocol_and_take_snapshots,
@@ -192,7 +192,7 @@ mod test {
     }
 
     #[test]
-    fn ecdsa_presign_should_return_same_snapshot_when_executed_twice() {
+    fn ecdsa_presign_and_sign_should_return_same_snapshot_when_executed_twice() {
         let max_malicious = 2;
         let num_participants = 5;
         let participants = generate_participants(num_participants);
@@ -200,6 +200,9 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42u64);
         let f = Polynomial::generate_polynomial(None, max_malicious, &mut rng).unwrap();
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
+        let coordinator = participants[0];
+        let tweak = Tweak::new(Scalar::from(3u64));
+        let msg_hash = Scalar::from(5u64);
 
         let mut results = Vec::new();
         let mut snapshots = Vec::new();
@@ -209,18 +212,22 @@ mod test {
         for _ in 0..2 {
             // needed because each iteration must compute the same values
             let mut root_rng = MockCryptoRng::seed_from_u64(root_rng_seed);
-            let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
+            let mut protocols: GenProtocol<SignatureOption> =
+                Vec::with_capacity(participants.len());
             for p in &participants {
                 let rng_p = MockCryptoRng::seed_from_u64(root_rng.next_u64());
                 // simulating the key packages for each participant
                 let keygen_out = prepare_keys(*p, &f, big_x);
-                let protocol = presign(
+                let protocol = presign_and_sign(
                     &participants[..],
+                    coordinator,
                     *p,
                     PresignArguments {
                         keygen_out,
                         max_malicious: max_malicious.into(),
                     },
+                    tweak,
+                    msg_hash,
                     rng_p,
                 )
                 .unwrap();
@@ -232,11 +239,12 @@ mod test {
         }
 
         // Check the results are the same
-        assert!(
-            results[0]
+        let as_scalars = |output: &SignatureOption| output.as_ref().map(|sig| (sig.big_r, sig.s));
+        assert!(results[0].iter().all(|(p1, o1)| {
+            results[1]
                 .iter()
-                .all(|(p1, o1)| { results[1].iter().any(|(p2, o2)| p1 == p2 && o1 == o2) })
-        );
+                .any(|(p2, o2)| p1 == p2 && as_scalars(o1) == as_scalars(o2))
+        }));
 
         // Check the messages sent per participants are the same
         for p in participants {
