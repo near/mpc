@@ -448,7 +448,7 @@ where
     }
 }
 
-/// Persistent storage for a single type of asset (triples or presignatures).
+/// Persistent storage for a single type of asset (e.g. triples).
 /// The storage is distributed across all participants, with each participant
 /// owning some of the assets. Each asset has exactly one owner.
 ///
@@ -482,8 +482,7 @@ pub struct DistributedAssetStorage<T> {
 ///
 /// The caller is responsible for committing `update_writer`. Sharing a writer
 /// across multiple calls lets a single cleanup pass (per-`t` triple columns +
-/// per-domain presignature columns + epoch marker) be committed as one atomic
-/// batch.
+/// epoch marker) be committed as one atomic batch.
 pub fn clean_db<T>(
     db: &Arc<SecretDB>,
     update_writer: &mut SecretDBUpdate,
@@ -566,18 +565,19 @@ where
         Ok(UniqueId::try_from_slice(&key[prefix_len..])?)
     }
 
-    /// Generates an ID that won't conflict with existing ones, and reserves it
-    /// so that the next call to the same function will return a different one.
-    /// TODO(#10): This reservation does not persist across restarts, leading to
-    /// the assumption that the clock moves forward at least a second across
-    /// restarts.
+    /// Same as [`Self::generate_and_reserve_id_range`], for a single ID.
+    #[cfg(test)]
     pub fn generate_and_reserve_id(&self) -> anyhow::Result<UniqueId> {
         self.generate_and_reserve_id_range(1)
     }
 
-    /// Same as `generate_and_reserve_id`, but for a range of IDs.
+    /// Generates a range of IDs that won't conflict with existing ones, and reserves it
+    /// so that the next call to the same function will return a different one.
     /// The returned ID represents a range that starts from that ID and ending at
     /// that ID .add_to_counter(count - 1).
+    /// TODO(#10): This reservation does not persist across restarts, leading to
+    /// the assumption that the clock moves forward at least a second across
+    /// restarts.
     pub fn generate_and_reserve_id_range(&self, count: u32) -> anyhow::Result<UniqueId> {
         assert!(count > 0);
         let mut last_id = self

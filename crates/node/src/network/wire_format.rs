@@ -107,11 +107,17 @@ pub enum EcdsaTaskId {
         start: UniqueId,
         count: u32,
     } = 2,
+    /// Retired with the stored presignatures, and only decoded: a peer that predates the
+    /// retirement still sends it, and a [`Packet`] that fails to decode closes the whole
+    /// connection rather than failing just this computation.
+    // TODO(#4999): remove once every node runs a release without stored presignatures.
     Presignature {
         id: UniqueId,
         domain_id: DomainId,
         paired_triple_id: UniqueId,
     } = 3,
+    /// Retired and only decoded, as [`Self::Presignature`].
+    // TODO(#4999): remove once every node runs a release without stored presignatures.
     Signature {
         id: SignatureId,
         presignature_id: UniqueId,
@@ -162,20 +168,9 @@ impl From<CKDTaskId> for MpcTaskId {
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum RobustEcdsaTaskId {
-    KeyGeneration {
-        key_event: KeyEventId,
-    } = 0,
-    KeyResharing {
-        key_event: KeyEventId,
-    } = 1,
-    Presignature {
-        id: UniqueId,
-        domain_id: DomainId,
-    } = 2,
-    Signature {
-        id: SignatureId,
-        presignature_id: UniqueId,
-    } = 3,
+    KeyGeneration { key_event: KeyEventId } = 0,
+    KeyResharing { key_event: KeyEventId } = 1,
+    Signature { id: SignatureId } = 2,
 }
 
 impl From<RobustEcdsaTaskId> for MpcTaskId {
@@ -188,6 +183,8 @@ impl From<RobustEcdsaTaskId> for MpcTaskId {
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum VerifyForeignTxTaskId {
+    /// Retired and only decoded, as [`EcdsaTaskId::Presignature`].
+    // TODO(#4999): remove once every node runs a release without stored presignatures.
     VerifyForeignTx {
         id: VerifyForeignTxId,
         presignature_id: UniqueId,
@@ -341,16 +338,7 @@ mod tests {
                     key_event: key_event(),
                 }
                 .into(),
-                RobustEcdsaTaskId::Presignature {
-                    id: uid(1),
-                    domain_id: DomainId(2),
-                }
-                .into(),
-                RobustEcdsaTaskId::Signature {
-                    id: hash(1),
-                    presignature_id: uid(2),
-                }
-                .into(),
+                RobustEcdsaTaskId::Signature { id: hash(1) }.into(),
                 MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTx {
                     id: hash(1),
                     presignature_id: uid(2),

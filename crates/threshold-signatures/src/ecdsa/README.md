@@ -21,7 +21,7 @@ See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 
 ### Robust ECDSA (`robust_ecdsa/`) -- stub, not a secure scheme
 
-The previous implementation was removed and replaced by a stub that produces valid signatures while leaking the signing key, so that the node plumbing built around this protocol stays exercised until a real robust scheme replaces it. Requires exactly `N = 2t+1` signers where `t = MaxMalicious`.
+The previous implementation was removed and replaced by a stub that produces valid signatures while leaking the signing key, so that the node plumbing built around this protocol stays exercised until a real robust scheme replaces it. Alternatively, `presign_and_sign` runs the presigning and signing rounds as one protocol, leaving no presignature to store. Requires exactly `N = 2t+1` signers where `t = MaxMalicious`.
 
 See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) before using it for anything.
 

@@ -13,7 +13,6 @@ use crate::providers::HasParticipants;
 use crate::providers::ecdsa::{
     CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION, EcdsaSignatureProvider,
 };
-use crate::providers::ecdsa_common::active_participants_query;
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::{TripleBatchSize, TripleConfig};
 use mpc_primitives::ReconstructionThreshold;
@@ -69,7 +68,7 @@ impl TripleStorage {
             reconstruction_threshold.value().to_be_bytes().to_vec(),
             client.my_participant_id(),
             |participants, pair| pair.is_subset_of_active_participants(participants),
-            active_participants_query(client),
+            Arc::new(move || client.all_alive_participant_ids()),
         )?))
     }
 }
@@ -449,7 +448,7 @@ mod tests {
             paired_triple_id,
             num_participants,
             reconstruction_threshold,
-            &metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS,
+            &metrics::MPC_NUM_BAD_PEER_ONLINE_PRESIGN_REQUESTS,
             DomainId(0),
         );
 

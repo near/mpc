@@ -2,21 +2,20 @@ use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::wire_format::RobustEcdsaTaskId;
-use crate::primitives::UniqueId;
 use crate::protocol::NamedProtocol;
 use crate::providers::robust_ecdsa::{
-    EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
-    compute_thresholds,
+    EcdsaMessageHash, KeygenOutput, RobustEcdsaSignatureProvider, compute_thresholds,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
 use k256::{Scalar, elliptic_curve::PrimeField};
 use near_mpc_contract_interface::types::Tweak;
-use std::{sync::Arc, time::Duration};
+use rand::rngs::OsRng;
+use std::time::Duration;
 use threshold_signatures::{
-    MaxMalicious, ParticipantList,
-    ecdsa::robust_ecdsa::{PresignOutput, RerandomizedPresignOutput},
-    ecdsa::{RerandomizationArguments, Signature, SignatureOption},
+    MaxMalicious,
+    ecdsa::robust_ecdsa::{PresignArguments, presign_and_sign},
+    ecdsa::{Signature, SignatureOption},
     frost_secp256k1::VerifyingKey,
     participants::Participant,
 };
@@ -29,17 +28,23 @@ impl RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
         let keyshare = self.keyshare(sign_request.domain)?;
-        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await?;
-        let participants = presignature.participants.clone();
-        let channel = self.client.new_channel_for_task(
-            RobustEcdsaTaskId::Signature {
-                id,
-                presignature_id,
-            },
-            presignature.participants,
-        )?;
-        let (_num_signers, robust_ecdsa_threshold) =
+        let (num_signers, robust_ecdsa_threshold) =
             compute_thresholds(keyshare.reconstruction_threshold)?;
+        let running_participants: Vec<_> = self
+            .mpc_config
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect();
+
+        let participants = self
+            .client
+            .select_random_active_participants_including_me(num_signers, &running_participants)
+            .context("Can't choose active participants for a robust-ecdsa signature")?;
+        let channel = self
+            .client
+            .new_channel_for_task(RobustEcdsaTaskId::Signature { id }, participants.clone())?;
 
         let msg_hash = *sign_request
             .payload
@@ -49,10 +54,8 @@ impl RobustEcdsaSignatureProvider {
         let (signature, public_key) = SignComputation {
             keygen_out: keyshare.keygen_output,
             max_malicious: robust_ecdsa_threshold,
-            presign_out: presignature.presignature,
             msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
-            entropy: sign_request.entropy,
         }
         .perform_leader_centric_computation(
             channel,
@@ -77,11 +80,8 @@ impl RobustEcdsaSignatureProvider {
         &self,
         channel: NetworkTaskChannel,
         id: SignatureId,
-        presignature_id: UniqueId,
     ) -> anyhow::Result<()> {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
-        // The presignature must be owned by the leader, never one of ours.
-        presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let sign_request = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
             self.sign_request_store.get(id),
@@ -99,14 +99,11 @@ impl RobustEcdsaSignatureProvider {
             .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
 
         let participants = channel.participants().to_vec();
-        FollowerSignComputation {
+        SignComputation {
             keygen_out: keyshare.keygen_output,
             max_malicious: robust_ecdsa_threshold,
-            presignature_store: keyshare.presignature_store.clone(),
-            presignature_id,
             msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
-            entropy: sign_request.entropy,
         }
         .perform_leader_centric_computation(
             channel,
@@ -127,16 +124,12 @@ impl RobustEcdsaSignatureProvider {
 
 /// Performs an MPC signature operation. This is the same for the initiator
 /// and for passive participants.
-/// The entropy is used to rerandomize the presignature (inspired by
-/// \[[GS21](https://eprint.iacr.org/2021/1330.pdf)\])
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
     pub max_malicious: MaxMalicious,
-    pub presign_out: PresignOutput,
     pub msg_hash: EcdsaMessageHash,
     pub tweak: Tweak,
-    pub entropy: [u8; 32],
 }
 
 impl NamedProtocol for SignComputation {
@@ -164,72 +157,23 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .into_option()
             .context("Couldn't construct k256 point")?;
 
-        let derived_public_key = tweak
-            .derive_verifying_key(&self.keygen_out.public_key)
-            .to_element()
-            .to_affine();
-        let participants = ParticipantList::new(&cs_participants).unwrap();
+        let derived_public_key = tweak.derive_verifying_key(&self.keygen_out.public_key);
 
-        let rerand_args = RerandomizationArguments::new(
-            self.keygen_out.public_key.to_element().to_affine(),
-            tweak,
-            self.msg_hash.into(),
-            self.presign_out.big_r,
-            participants,
-            self.entropy,
-        );
-        let rerandomized_presignature =
-            RerandomizedPresignOutput::rerandomize_presign(&self.presign_out, &rerand_args)?;
-
-        let protocol = threshold_signatures::ecdsa::robust_ecdsa::sign::sign(
+        let protocol = presign_and_sign(
             &cs_participants,
             channel.sender().get_leader().into(),
-            self.max_malicious,
             channel.my_participant_id().into(),
-            derived_public_key,
-            rerandomized_presignature,
+            PresignArguments {
+                keygen_out: self.keygen_out,
+                max_malicious: self.max_malicious,
+            },
+            tweak,
             msg_hash,
+            OsRng,
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
         let signature = Self::run(channel, protocol).await?;
-        Ok((signature, VerifyingKey::new(derived_public_key.into())))
-    }
-
-    fn leader_waits_for_success(&self) -> bool {
-        false
-    }
-}
-
-/// Performs an MPC signature operation as a follower.
-/// The difference is that the follower needs to look up the presignature, which may fail.
-pub struct FollowerSignComputation {
-    pub keygen_out: KeygenOutput,
-    pub max_malicious: MaxMalicious,
-    pub presignature_id: UniqueId,
-    pub presignature_store: Arc<PresignatureStorage>,
-    pub msg_hash: EcdsaMessageHash,
-    pub tweak: Tweak,
-    pub entropy: [u8; 32],
-}
-
-#[async_trait::async_trait]
-impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
-    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
-        let presign_out = self
-            .presignature_store
-            .take_unowned(self.presignature_id)?
-            .presignature;
-        SignComputation {
-            keygen_out: self.keygen_out,
-            max_malicious: self.max_malicious,
-            presign_out,
-            msg_hash: self.msg_hash,
-            tweak: self.tweak,
-            entropy: self.entropy,
-        }
-        .compute(channel)
-        .await?;
-        Ok(())
+        Ok((signature, derived_public_key))
     }
 
     fn leader_waits_for_success(&self) -> bool {

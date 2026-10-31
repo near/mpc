@@ -13,7 +13,7 @@ pub fn near_config_file(home_dir: &Path) -> PathBuf {
     home_dir.join("config.json")
 }
 
-/// SecretDB: triples and presignatures.
+/// SecretDB: triples.
 pub fn assets_dir(home_dir: &Path) -> PathBuf {
     home_dir.join("assets")
 }

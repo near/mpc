@@ -10,32 +10,24 @@
 //! anywhere. Everything in this module is scheme-agnostic and is expected to survive
 //! that replacement unchanged.
 
-pub mod presign;
 mod sign;
 
 use crate::network::wire_format::{MpcTaskId, RobustEcdsaTaskId};
-pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 
-use crate::assets::metrics::{PRESIGNATURE_GAUGES, report_store};
 use crate::config::{MpcConfig, ParticipantsConfig};
-use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::providers::ecdsa_common;
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
-use crate::tracking;
 use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
 use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::{DomainId, Protocol};
-use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::MaxMalicious;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::ecdsa::robust_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
@@ -48,7 +40,7 @@ pub struct RobustEcdsaSignatureProvider {
     keyshares: HashMap<DomainId, EcdsaKeyshare>,
 }
 
-pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
+pub(super) type EcdsaKeyshare = DomainKeyshare<Secp256K1Sha256>;
 
 #[derive(
     Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
@@ -66,37 +58,23 @@ impl RobustEcdsaSignatureProvider {
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
-        clock: Clock,
-        db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
-    ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
-
-        Ok(Self {
+        keyshares: HashMap<DomainId, EcdsaKeyshare>,
+    ) -> Self {
+        Self {
             config,
             mpc_config,
             client,
             sign_request_store,
             keyshares,
-        })
+        }
     }
 
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
-        ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
-    }
-
-    /// Reports the owned-asset gauges for every presignature store of this
-    /// provider, labelled by domain. Robust ECDSA uses no triples.
-    pub fn report_asset_metrics(&self) -> anyhow::Result<()> {
-        for (domain_id, keyshare) in &self.keyshares {
-            report_store(
-                &PRESIGNATURE_GAUGES,
-                domain_id,
-                &keyshare.presignature_store,
-            )?;
-        }
-        Ok(())
+        self.keyshares
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
@@ -156,27 +134,16 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                 RobustEcdsaTaskId::KeyResharing { .. } => {
                     anyhow::bail!("Key resharing rejected in normal node operation");
                 }
-                RobustEcdsaTaskId::Presignature { id, domain_id } => {
-                    ROBUST_ECDSA_TASK_MONITORS
-                        .presignature_generation_follower
-                        .instrument(
-                            self.run_presignature_generation_follower(channel, id, domain_id),
-                        )
-                        .await?;
-                }
-                RobustEcdsaTaskId::Signature {
-                    id,
-                    presignature_id,
-                } => {
+                RobustEcdsaTaskId::Signature { id } => {
                     ROBUST_ECDSA_TASK_MONITORS
                         .make_signature_follower
-                        .instrument(self.make_signature_follower(channel, id, presignature_id))
+                        .instrument(self.make_signature_follower(channel, id))
                         .await?;
                 }
             },
 
             _ => anyhow::bail!(
-                "eddsa task handler: received unexpected task id: {:?}",
+                "robust ecdsa task handler: received unexpected task id: {:?}",
                 channel.task_id()
             ),
         }
@@ -184,29 +151,6 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        let generate_presignatures = self
-            .keyshares
-            .iter()
-            .map(|(domain_id, data)| {
-                tracking::spawn(
-                    &format!("generate presignatures for domain {}", domain_id.0),
-                    presign::run_background_presignature_generation(
-                        self.client.clone(),
-                        self.mpc_config.clone(),
-                        self.config.presignature.clone().into(),
-                        *domain_id,
-                        data.clone(),
-                    ),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
-            tracing::error!(
-                "Robust ECDSA background presignature task ended unexpectedly: {join_error}"
-            );
-        }
-
         Ok(())
     }
 }
