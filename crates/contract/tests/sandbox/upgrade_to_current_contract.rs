@@ -10,7 +10,7 @@ use crate::sandbox::{
         contract_build::current_contract,
         mpc_contract::{
             get_config, get_participant_attestation, get_participants, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, vote_add_launcher_hash, vote_add_os_measurement,
+            prepay_and_submit_participant_info, vote_add_launcher_hash,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
@@ -199,7 +199,7 @@ async fn fill_stored_attestations(
     tls_keys
 }
 
-/// Chains whitelisted on mainnet on 2026-10-28 besides Bitcoin.
+/// Chains whitelisted on mainnet on 2026-10-28, without the Bitcoin entry that 3.18.0 drops.
 const PRODUCTION_WHITELISTED_CHAINS: [ForeignChain; 12] = [
     ForeignChain::Abstract,
     ForeignChain::Aptos,
@@ -303,35 +303,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         "launcher hash should be voted in before the upgrade"
     );
 
-    // Leave a launcher vote pending so migration decodes a non-empty vote map off the
-    // production layout.
-    let pending_launcher_hash = mpc_primitives::hash::LauncherImageHash::from([0xBB; 32]);
-    vote_add_launcher_hash(&accounts[0], &contract, &pending_launcher_hash)
-        .await
-        .unwrap();
-
-    // Same for the OS measurement vote map.
-    let pending_measurement = dtos::ExpectedMeasurements {
-        mrtd: mpc_primitives::hash::MrtdHash::from([0xCD; 48]),
-        rtmr0: mpc_primitives::hash::Rtmr0Hash::from([0xCD; 48]),
-        rtmr1: mpc_primitives::hash::Rtmr1Hash::from([0xCD; 48]),
-        rtmr2: mpc_primitives::hash::Rtmr2Hash::from([0xCD; 48]),
-        key_provider_event_digest: mpc_primitives::hash::KeyProviderEventDigest::from([0xCD; 48]),
-    };
-    vote_add_os_measurement(&accounts[0], &contract, &pending_measurement)
-        .await
-        .unwrap();
-
-    vote_in_whitelist(
-        &contract,
-        &accounts,
-        BTreeMap::from([
-            (ForeignChain::Bitcoin, chain_entry(1, 1)),
-            (ForeignChain::Base, chain_entry(3, 3)),
-        ]),
-    )
-    .await;
-
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
@@ -354,16 +325,6 @@ async fn propose_upgrade_from_production_to_current_binary(
     );
 
     assert_eq!(
-        contract
-            .allowed_foreign_chain_providers()
-            .await
-            .unwrap()
-            .value,
-        BTreeMap::from([(ForeignChain::Base, chain_entry(3, 2))]),
-        "migration should drop Bitcoin and lower the Base quorum by one"
-    );
-
-    assert_eq!(
         get_tee_accounts(&contract).await.unwrap().len(),
         STORED_ATTESTATION_ENTRIES,
         "every stored attestation should survive migration"
@@ -372,55 +333,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         .await
         .unwrap()
         .expect("a migrated attestation should still be readable");
-
-    assert!(
-        contract
-            .launcher_hash_votes()
-            .await
-            .unwrap()
-            .value
-            .is_empty(),
-        "pending launcher votes should be dropped by the migration"
-    );
-    assert!(
-        contract
-            .os_measurement_votes()
-            .await
-            .unwrap()
-            .value
-            .is_empty(),
-        "pending OS measurement votes should be dropped by the migration"
-    );
-
-    let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
-    for account in &accounts[..threshold] {
-        vote_add_launcher_hash(account, &contract, &pending_launcher_hash)
-            .await
-            .unwrap();
-    }
-    assert!(
-        contract
-            .allowed_launcher_image_hashes()
-            .await
-            .unwrap()
-            .value
-            .contains(&pending_launcher_hash),
-        "a fresh launcher threshold vote should succeed after the upgrade"
-    );
-    for account in &accounts[..threshold] {
-        vote_add_os_measurement(account, &contract, &pending_measurement)
-            .await
-            .unwrap();
-    }
-    assert!(
-        contract
-            .allowed_os_measurements()
-            .await
-            .unwrap()
-            .value
-            .contains(&pending_measurement),
-        "a fresh OS measurement threshold vote should succeed after the upgrade"
-    );
 }
 
 #[rstest]
@@ -440,7 +352,6 @@ async fn migrate__should_run_within_contract_update_gas_budget(
     let whitelist = PRODUCTION_WHITELISTED_CHAINS
         .into_iter()
         .map(|chain| (chain, chain_entry(4, 3)))
-        .chain([(ForeignChain::Bitcoin, chain_entry(1, 1))])
         .collect();
     vote_in_whitelist(&contract, &accounts, whitelist).await;
     upgrade_to_new(&contract).await.unwrap();

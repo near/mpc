@@ -1,199 +1,54 @@
-# MPC
+# NEAR MPC
 
-This repository contains the code for the NEAR MPC node that powers [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures).
+The threshold signature network behind [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) — signatures produced jointly by *t*-of-*n* nodes running in TEEs, with no single party ever holding the complete key.
+
+```mermaid
+flowchart LR
+    User["<b>User</b><br/><i>typically another<br/>smart contract</i>"]
+    Contract["<b>Signer contract</b><br/><i>queues sign requests,<br/>manages the signer set</i>"]
+    Nodes["<b>MPC nodes</b> (t-of-n)<br/><i>hold keyshares,<br/>run the signing protocols</i>"]
+
+    User -- "(1) requests a signature" ---> Contract
+    Contract -- "(4) returns the signature" ---> User
+    Contract ~~~ Nodes
+    Nodes -- "(2) observe pending requests" ---> Contract
+    Nodes -- "(3) respond with the signature" ---> Contract
+```
+
+## What it does
+
+- **Signing** — signs arbitrary payloads under keys derived per caller and derivation path, so a single NEAR account can control any number of keys without any of them ever existing in full. Supports [ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md) (Secp256k1) and [EdDSA](crates/threshold-signatures/docs/eddsa/signing.md) (Ed25519).
+- **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** — derives application-specific keys without revealing the master secret (BLS12-381).
+- **[Read RPC](docs/archive/design/foreign-chain-transactions.md)** — nodes independently verify transactions on foreign chains (Ethereum, Solana, Aptos, …) and threshold-sign the observed values, letting NEAR contracts react to external chain events without a trusted relayer. Known under the working name *foreign chain transaction verification* in the code.
 
 ## How it works
 
-There are two main parts of the binary: NEAR indexer and MPC signing.
+A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain. Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
-### NEAR Indexer
+## Where to go next
 
-The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [chain-gateway design doc](docs/archive/design/chain-gateway-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, or no response has landed on chain within a failover interval, backup leaders take over in turn.
+- **Building on the network?** Start with the [Chain Signatures documentation](https://docs.near.org/chain-abstraction/chain-signatures); the [`near-mpc-sdk`](crates/near-mpc-sdk) crate provides request builders and response verification.
+- **Operating a node?** Check the [node requirements](docs/guide/node-requirements.md) and the [operating guide](docs/guide/operating-an-mpc-node.md); the rest of [`docs/guide/`](docs/guide) covers TEE setups, metrics, and migrations.
+- **Developing this code?** [Building and testing](docs/development/building-and-testing.md) gets you from checkout to green checks; [`docs/development/`](docs/development) has the rest, including the [engineering standards](docs/development/engineering-standards.md).
+- **Contributing?** The [contribution guidelines](CONTRIBUTING.md) describe our issue and PR workflow.
+- **Researching security?** We strive to have every feature and critical code path independently audited; the reports live in [`audits/`](audits/README.md). To report a vulnerability, follow the [security policy](.github/SECURITY.md).
 
-### MPC Signing
+## Repository layout
 
-The node supports multiple threshold signature schemes, organized into *domains*. Each domain has a unique ID, a signature scheme, and a purpose (signing, foreign-chain transactions, or confidential key derivation). All schemes share the same curve-independent [distributed key generation (DKG)](crates/threshold-signatures/docs/dkg.md) but differ in their signing workflows.
+All crates live in a [Cargo workspace](Cargo.toml) under `crates/`. The ones you are most likely to look for:
 
-#### Supported schemes
-
-**[OT-based ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md)** (Secp256k1) — Originally derived from [Cait-Sith](https://github.com/cronokirby/cait-sith). Uses an offline phase with two protocols:
-  - *Triple generation*: runs continuously in the background (target: up to 1M Beaver triples per node).
-  - *Presignature generation*: also runs in the background; each presignature consumes two triples.
-  - *Signing*: by default, three rounds that presign and sign in one computation over a pair of triples; otherwise, one round using a stored presignature.
-
-**[Robust ECDSA](crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md)** (Secp256k1) — **currently an insecure stub, never enabled in production.** The previous implementation was removed; the remaining stub produces valid signatures while leaking the signing key, and exists to keep the surrounding plumbing exercised until a real robust scheme replaces it.
-
-**[EdDSA](crates/threshold-signatures/docs/eddsa/signing.md)** (Ed25519) — Based on [FROST](https://eprint.iacr.org/2020/852) threshold signatures:
-  - *Presignature generation*: participants exchange nonce commitments.
-  - *Signing*: one round using a presignature.
-
-For each scheme, the participating set is fixed from the offline phase through to signature generation: if a presignature is generated by a specific set of participants, the resulting signature uses the same set.
-
-#### Other capabilities
-
-**[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** (BLS12-381) — Derives application-specific keys without revealing the master secret. Takes an application ID and an ephemeral public key, and produces a deterministic secret using threshold BLS signatures and ElGamal encryption. Two variants are supported: *privately verifiable* (app verifies after decryption) and *publicly verifiable* (anyone can verify the encrypted result on-chain without knowing the app's secret key).
-
-**Foreign chain transaction verification** — The network can verify transactions on foreign chains (Ethereum, Solana, Aptos, etc.) before signing. Nodes independently query configured RPC providers, run deterministic extractors over the results, and produce a threshold signature over the observed values. This enables NEAR contracts to react to external chain events without a trusted relayer. See [docs/archive/design/foreign-chain-transactions.md](docs/archive/design/foreign-chain-transactions.md) for the full design.
-
-## TEE Integration
-
-MPC nodes can run inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
-
-## Security Audits
-
-We strive to have every feature and critical code path independently audited. The final reports are in [audits](audits/README.md).
-
-## Dependencies
-
-All crates are organized in a [Cargo workspace](Cargo.toml) under `crates/`. All dependencies are handled by Cargo.
-
-## Development Environment (Nix)
-
-A Nix flake provides a reproducible development environment with the Rust toolchain, LLVM/Clang, NEAR CLI, and all system dependencies pre-configured. Run `nix develop` to enter the shell.
-
-For setup details (direnv integration, VS Code config, verification), see [docs/development/nix-dev-environment.md](docs/development/nix-dev-environment.md).
-
-## Building
-
-Build the MPC node:
-
-```bash
-cargo build -p mpc-node --release
-```
-
-Build the smart contract:
-
-```bash
-cargo near build non-reproducible-wasm --features abi --profile=release-contract \
-  --manifest-path crates/contract/Cargo.toml --locked
-```
-
-The Rust toolchain version is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup handles installation automatically.
-
-## Testing
-
-### Terminology
-
-We use the following terminology when referring to tests:
-- _unit test_ -> a rust test in `/src` folder (per crate)
-- _integration test_ -> a rust test in `/tests` folder (per crate)
-- _e2e test_ -> a rust test in the `crates/e2e-tests` crate
-
-### Run tests
-
-- **Unit and integration tests**: Run with `cargo nextest run --cargo-profile=test-release`
-- **E2E tests**: See the README in [`crates/e2e-tests`](crates/e2e-tests/README.md).
-
-### Updating snapshots
-
-We use [`cargo insta`](https://insta.rs/) for snapshot testing to guard against
-unintended changes to ABIs, serialization formats, and deterministic outputs.
-
-If a snapshot test fails, it means the output has changed relative to the
-accepted `.snap` file. To resolve this:
-
-1. **Review the diff.** Run the failing test to see what changed:
-   ```bash
-   cargo nextest run --cargo-profile=test-release <test_name>
-   ```
-   This creates a `.snap.new` file next to the existing `.snap` file.
-
-2. **Accept or reject.** Use `cargo insta` to interactively review pending
-   snapshots:
-   ```bash
-   cargo insta review
-   ```
-   This walks you through each changed snapshot and lets you accept or reject it.
-
-   Alternatively, to accept all pending snapshots at once:
-   ```bash
-   cargo insta accept
-   ```
-
-3. **Commit the updated `.snap` files.** The updated snapshots should be
-   committed alongside your code changes.
-
-> **Important:** Snapshot tests exist to catch accidental breaking changes.
-> Before accepting a new snapshot, make sure the change is intentional and
-> won't break compatibility (e.g. with existing on-chain data or client
-> integrations).
-
-If you don't have `cargo insta` installed:
-```bash
-cargo install cargo-insta
-```
-
-## Reproducible Builds
-
-Both the node and launcher Docker images support reproducible builds, ensuring identical binaries from the same source. Run `./deployment/build-images.sh` from the project root.
-
-For prerequisites and options, see [docs/guide/reproducible-builds.md](docs/guide/reproducible-builds.md).
+| Crate | Purpose |
+|-------|---------|
+| [`mpc-node`](crates/node) | The binary run by MPC participants: NEAR indexer, P2P networking, and the threshold protocols themselves |
+| [`mpc-contract`](crates/contract) | The smart contract on NEAR: accepts signature requests, manages the participant set and protocol state, governs upgrades through participant voting |
+| [`near-mpc-contract-interface`](crates/near-mpc-contract-interface) | Wire formats accepted by the contract, plus a `client` feature for constructing typed contract calls |
+| [`near-mpc-sdk`](crates/near-mpc-sdk) | Logic shared between the MPC contract and its callers |
+| [`threshold-signatures`](crates/threshold-signatures) | The threshold cryptography itself |
 
 ## Releases
 
-This project follows a standard release process with semantic versioning. Each release includes both the MPC node binary and the chain signatures contract as a single bundle.
+The node and contract ship together as semantically versioned releases; see [RELEASES.md](RELEASES.md) for the process and compatibility guarantees. Docker images build [reproducibly](docs/guide/reproducible-builds.md).
 
-For detailed information about our release process, compatibility guarantees, and procedures, see [RELEASES.md](RELEASES.md).
+## Get in touch
 
-**Key Release Principles:**
-
-- Releases are created from the `main` branch using semantic versioning.
-- Minor versions maintain backward compatibility with previous node versions.
-- Major versions ensure contract compatibility with the previous major version.
-
-## Contributions
-
-We welcome contributions in the form of issues, feature requests, and pull requests. Please ensure any changes are well-documented and tested. For major changes, open an issue to discuss the proposed modifications first.
-
-### Development workflow
-
-We run several checks in CI that require tools beyond the default Rust toolchain. The [nix environment](docs/development/nix-dev-environment.md) installs all of them automatically.
-
-- [`cargo-make`](https://github.com/sagiegurari/cargo-make)
-- [`cargo-nextest`](https://github.com/nextest-rs/nextest)
-- [`cargo-sort`](https://github.com/DevinR528/cargo-sort)
-- [`cargo-shear`](https://github.com/Boshen/cargo-shear)
-- [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny)
-- [`zizmor`](https://github.com/woodruffw/zizmor)
-- [`lychee`](https://github.com/lycheeverse/lychee)
-- [`editorconfig-checker`](https://github.com/editorconfig-checker/editorconfig-checker)
-- [`ast-grep`](https://github.com/ast-grep/ast-grep)
-
-This set does not include all checks, but only the most common reasons for CI
-failures. Therefore, we suggest running these checks locally before opening a
-PR. Running these checks with the correct parameters can be done easily with
-`cargo-make`.
-
-Running fast checks:
-
-```console
-cargo make check-all-fast
-```
-
-Running all `cargo-make` supported checks:
-
-```console
-cargo make check-all
-```
-
-### Documentation
-
-Documentation in this repository falls into two categories: live documentation, aiming to explain how something works _right now_, and archived documentation records that may help future developers retrace past decisions. Live documentation _must_ be updated if invalidated by a change, but archived documentation _must not_ be updated, as doing so would undermine its purpose.
-
-Archived documentation must be labeled as such with a status banner: a `**Status:** ARCHIVED` line immediately below the document's title. Any document without such a banner is considered live.
-
-To archive a file, one must open a PR adding the status banner.
-
-### Repository layout
-
-The following is a non-exhaustive list of crates from this repository that may be relevant to the reader of this document:
-
-**The node** [(`mpc-node`)](crates/node) is the binary run by MPC participants: NEAR indexer, P2P networking, and the threshold protocols themselves.
-
-**The contract** [(`mpc-contract`)](crates/contract) is the smart contract deployed on NEAR. It accepts signature requests, manages the participant set and protocol state, and governs upgrades through participant voting.
-
-**The contract interface** [(`near-mpc-contract-interface`)](crates/near-mpc-contract-interface) contains the wire formats accepted by the contract as well as a `client` feature for constructing typed contract calls over generic backends (RPC nodes, nearcore indexer).
-
-**The MPC SDK crate** [(`near-mpc-sdk`)](crates/near-mpc-sdk) contains logic shared between the MPC contract and its callers.
-
-**Threshold Signatures** [(`threshold-signatures`)](crates/threshold-signatures) implements the threshold cryptography itself.
+Questions, feedback, or building something on top? Join the [NEAR Dev Telegram](https://t.me/neardev).

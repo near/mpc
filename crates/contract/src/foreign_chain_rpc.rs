@@ -100,10 +100,6 @@ impl AllowedProviders {
         self.entries.insert(chain, entry);
     }
 
-    pub(crate) fn remove(&mut self, chain: &ForeignChain) {
-        self.entries.remove(chain);
-    }
-
     /// Owned clone of the whitelist as DTOs; required by `allowed_foreign_chain_providers`,
     /// which serializes the result across the contract boundary.
     pub fn snapshot(&self) -> BTreeMap<ForeignChain, dtos::ChainEntry> {

@@ -18,7 +18,6 @@ async fn test_key_resharing() {
         c.num_nodes = 5;
         c.initial_participant_indices = (0..2).collect();
         c.triples_to_buffer = 2;
-        c.presignatures_to_buffer = 2;
     })
     .await;
     let mut rng = StdRng::seed_from_u64(0);
@@ -119,7 +118,6 @@ async fn test_multi_domain() {
         c.num_nodes = 4;
         c.initial_participant_indices = (0..2).collect();
         c.triples_to_buffer = 2;
-        c.presignatures_to_buffer = 2;
     })
     .await;
     let mut rng = StdRng::seed_from_u64(0);
