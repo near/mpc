@@ -17,7 +17,6 @@ async fn test_cancellation_of_resharing() {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..3).collect();
             c.triples_to_buffer = 2;
-            c.presignatures_to_buffer = 2;
         })
         .await;
     let mut rng = StdRng::seed_from_u64(0);
