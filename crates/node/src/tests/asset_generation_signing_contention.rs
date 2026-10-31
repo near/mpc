@@ -1,13 +1,13 @@
 //! Reproduction for issue #1175 — "asset generation impacts signing performance".
 //!
-//! Background asset generation (triples + presignatures) and signing both run on
+//! Background asset generation (triples) and signing both run on
 //! the same `cores`-limited per-epoch MPC runtime (see
 //! [`crate::coordinator::Coordinator`]'s `create_runtime_and_run`) with no priority
 //! separation between them. The cait-sith poke loop in
 //! [`crate::protocol::run_protocol`] is CPU-bound and does not yield between
 //! network rounds, and the follower/passive side of generation
 //! ([`crate::mpc_client`]'s `monitor_passive_channels_inner`) is unbounded. After a
-//! resharing every node's triple/presignature stores are empty at once, so the
+//! resharing every node's triple stores are empty at once, so the
 //! whole network refills simultaneously and each node is flooded with generation
 //! work — which starves signing.
 //!
@@ -20,12 +20,10 @@
 //!     empty and so triple generation runs flat out.
 //!
 //! The generation knobs are the literal mainnet values (triple concurrency 2,
-//! presignature concurrency 16, the 2^14 triple buffer). What recreates the
-//! saturation cheaply is capping each node's MPC runtime at a few threads
-//! (`CORES_PER_NODE`): with presignature concurrency exceeding that cap, the
-//! post-resharing refill drives presignature generation hard enough to contend
-//! with signing. The steady scenario uses a tiny triple buffer so generation
-//! idles instead.
+//! the 2^14 triple buffer). What recreates the saturation cheaply is capping each
+//! node's MPC runtime at a few threads (`CORES_PER_NODE`), so that the
+//! post-resharing triple refill contends with signing. The steady scenario uses a
+//! tiny triple buffer so generation idles instead.
 //!
 //! The fix runs asset generation on a separate, lower-OS-priority tokio runtime
 //! ([`ConfigFile::separate_asset_generation_runtime`], on by default) so the OS
@@ -60,7 +58,7 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use average::{Estimate, Max, Mean, Quantile};
-use mpc_node_config::{PresignatureConfig, TripleBatchSize, TripleConfig};
+use mpc_node_config::{TripleBatchSize, TripleConfig};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -84,25 +82,16 @@ const REFILL_TRIPLES_TO_BUFFER: usize = 16_384;
 /// Small enough to fill in a couple of batches and then idle — steady state, where
 /// the buffer is already full.
 const STEADY_TRIPLES_TO_BUFFER: usize = 128;
-/// Mainnet triple concurrency. The op that saturates the runtime here is
-/// leader-side presignature generation (see `PRESIGNATURE_CONCURRENCY`); in the
-/// post-resharing scenario the large triple buffer keeps triples flowing, so
-/// presignature generation runs flat out.
+/// Mainnet triple concurrency.
 const REFILL_TRIPLE_CONCURRENCY: usize = 2;
-/// Steady state only tops off as signing consumes triples (online presign) or
-/// presignatures; one triple batch at a time keeps the small buffer full without
-/// itself loading the runtime.
+/// Steady state only tops off as signing consumes triples; one triple batch at a
+/// time keeps the small buffer full without itself loading the runtime.
 const STEADY_TRIPLE_CONCURRENCY: usize = 1;
 const TRIPLE_STAGGER_SEC: u64 = 0;
-/// Mainnet presignature concurrency, which exceeds `CORES_PER_NODE`: leader-side
-/// presignature generation alone oversubscribes the MPC runtime once triples are
-/// available, so it is the op that contends with signing.
-const PRESIGNATURE_CONCURRENCY: usize = 16;
-const PRESIGNATURES_TO_BUFFER: usize = 64;
 
-/// Enough to drain the startup presignature-generation burst (concurrency 16
-/// fills the buffer at startup) before measuring, so the steady scenario doesn't
-/// produce spurious timeouts under the tight per-signature budget.
+/// Enough to get past the startup triple-generation burst before measuring, so the
+/// steady scenario doesn't produce spurious timeouts under the tight per-signature
+/// budget.
 const WARMUP_SIGNATURES: usize = 8;
 const MEASURED_SIGNATURES: usize = 8;
 /// A realistic per-request budget: well above the steady-state latency (~0.6s
@@ -231,11 +220,6 @@ async fn measure_signing_latency(
             timeout_sec: 120,
             batch_size: TripleBatchSize::default(),
         };
-        node.config.presignature = PresignatureConfig {
-            concurrency: PRESIGNATURE_CONCURRENCY,
-            desired_presignatures_to_buffer: PRESIGNATURES_TO_BUFFER,
-            timeout_sec: 60,
-        };
     }
 
     {
@@ -259,7 +243,7 @@ async fn measure_signing_latency(
         .await
         .expect("timeout waiting for keygen to complete");
 
-    // Warm up so presignatures are flowing before we start measuring. (User names
+    // Warm up so triples are flowing before we start measuring. (User names
     // must be valid NEAR account IDs: lowercase alphanumeric.)
     for i in 0..WARMUP_SIGNATURES {
         let _ = request_signature_and_await_response(

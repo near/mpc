@@ -24,7 +24,6 @@ async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_whe
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 6;
             c.triples_to_buffer = 2;
-            c.presignatures_to_buffer = 2;
             c.domains = vec![
                 DomainConfig {
                     id: DomainId(0),

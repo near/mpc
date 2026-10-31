@@ -940,7 +940,7 @@ impl NetworkTaskChannel {
     ///
     /// A message from outside the channel's participant set is dropped rather than turned into an
     /// error: letting it fail the computation would hand any excluded node the power to abort a
-    /// computation (and burn its presignature) with a single message.
+    /// computation (and burn its triple pair) with a single message.
     async fn receive_one(&mut self) -> anyhow::Result<Option<TaskChannelComputationData>> {
         let message = self.receive_raw().await?;
         if !self.sender.participants.contains(&message.from) {

@@ -113,9 +113,27 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
+/// The signing round, run on a caller-owned channel so that it can follow presigning on the
+/// same channel.
+pub(crate) async fn sign_round(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    public_key: AffinePoint,
+    presignature: &RerandomizedPresignOutput,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    if me == coordinator {
+        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
+    } else {
+        do_sign_participant(chan, participants, coordinator, me, presignature, msg_hash)
+    }
+}
+
 /// Performs signing from any participant's perspective (except the coordinator)
 fn do_sign_participant(
-    mut chan: SharedChannel,
+    chan: &mut SharedChannel,
     participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
@@ -131,18 +149,18 @@ fn do_sign_participant(
 
 /// Performs signing from only the coordinator's perspective
 async fn do_sign_coordinator(
-    mut chan: SharedChannel,
-    participants: ParticipantList,
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
     me: Participant,
     public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
+    presignature: &RerandomizedPresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    let mut s = compute_signature_share(&presignature, msg_hash, &participants, me)?.0;
+    let mut s = compute_signature_share(presignature, msg_hash, participants, me)?.0;
     let wait_round = chan.next_waitpoint();
 
     for (_, s_i) in
-        recv_from_others::<SerializableScalar<C>>(&chan, wait_round, &participants, me).await?
+        recv_from_others::<SerializableScalar<C>>(chan, wait_round, participants, me).await?
     {
         // Sum the linearized shares
         s += s_i.0;
@@ -192,7 +210,7 @@ fn compute_signature_share(
 
 /// Wraps the coordinator and the participant into a single functions to be called
 async fn fut_wrapper(
-    chan: SharedChannel,
+    mut chan: SharedChannel,
     participants: ParticipantList,
     coordinator: Participant,
     me: Participant,
@@ -200,18 +218,16 @@ async fn fut_wrapper(
     presignature: RerandomizedPresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    if me == coordinator {
-        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
-    } else {
-        do_sign_participant(
-            chan,
-            &participants,
-            coordinator,
-            me,
-            &presignature,
-            msg_hash,
-        )
-    }
+    sign_round(
+        &mut chan,
+        &participants,
+        coordinator,
+        me,
+        public_key,
+        &presignature,
+        msg_hash,
+    )
+    .await
 }
 
 #[cfg(test)]

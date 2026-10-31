@@ -25,22 +25,10 @@ const REQUEST_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(
 /// Generous budget for [`warm_up`], absorbing the one-time cold-start after each online-set change.
 const WARMUP_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_mins(1);
 
-/// Warm-up signatures per domain. An online-set change strands most of a node's buffered
-/// presignatures on the participants that left, and the first request to find the buffer empty pays
-/// for generating a fresh one; the rest run against a buffer that generation is keeping up with.
+/// Warm-up signatures per domain. An online-set change strands most of a node's buffered triples
+/// on the participants that left, and the first request to find the buffer empty pays for
+/// generating a fresh one; the rest run against a buffer that generation is keeping up with.
 const WARMUP_SIGNATURES: usize = 5;
-
-/// Presignatures each node buffers per domain, raised from the default 5 so that the presignatures
-/// a departing node strands rarely leave a node with none at all. Stays within the triples a single
-/// generation batch yields.
-const PRESIGNATURES_TO_BUFFER: usize = 16;
-
-/// Deepens every node's presignature buffers. Call before the nodes are run.
-fn buffer_presignatures(setup: &mut IntegrationTestSetup) {
-    for node in &mut setup.configs {
-        node.config.presignature.desired_presignatures_to_buffer = PRESIGNATURES_TO_BUFFER;
-    }
-}
 
 /// Sign or CKD request per `domain`'s protocol; both are gated by its reconstruction threshold.
 async fn request_and_await_response(
@@ -57,10 +45,10 @@ async fn request_and_await_response(
     }
 }
 
-/// Primes each domain's presignatures for the current online set with [`WARMUP_SIGNATURES`]
-/// generously-budgeted signs, whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and
-/// RobustEcdsa consume pre-generated presignatures; Frost and CKD sign directly, so pass only the
-/// block's signable CaitSith/RobustEcdsa domains after every online-set change.
+/// Primes each domain's triples for the current online set with [`WARMUP_SIGNATURES`]
+/// generously-budgeted signs, whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith
+/// consumes pre-generated triples; RobustEcdsa, Frost and CKD sign directly, so pass only the
+/// block's signable CaitSith domains after every online-set change.
 async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
     for domain in domains {
         for _ in 0..WARMUP_SIGNATURES {
@@ -176,7 +164,6 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         contract.add_domains(domains.clone());
     }
 
-    buffer_presignatures(&mut setup);
     let _runs = setup
         .configs
         .into_iter()
@@ -193,7 +180,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         .expect("must not exceed timeout");
 
     // When all 5 are online: every domain signs.
-    warm_up(&mut setup.indexer, &[&low, &high, &robust]).await;
+    warm_up(&mut setup.indexer, &[&low, &high]).await;
     assert_can_sign(&mut setup.indexer, "user_all_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_all_high", &high).await;
     assert_can_sign(&mut setup.indexer, "user_all_robust", &robust).await;
@@ -222,7 +209,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
     // Then restoring both nodes restores signing for every domain.
     disabled_b.reenable_and_wait_till_running().await;
     disabled_a.reenable_and_wait_till_running().await;
-    warm_up(&mut setup.indexer, &[&high, &robust]).await;
+    warm_up(&mut setup.indexer, &[&high]).await;
     assert_can_sign(&mut setup.indexer, "user_restored_high", &high).await;
     assert_can_sign(&mut setup.indexer, "user_restored_robust", &robust).await;
     assert_can_sign(&mut setup.indexer, "user_restored_ckd_high", &ckd_high).await;
@@ -314,7 +301,6 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         contract.add_domains(domains.iter().map(|d| d.before.clone()).collect());
     }
 
-    buffer_presignatures(&mut setup);
     let _runs = setup
         .configs
         .into_iter()
@@ -331,12 +317,8 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         .expect("must not exceed timeout");
 
     // Sanity: all five initial nodes online, every domain works at its pre-reshare `t`.
-    let presignature_domains_before = [
-        &caitsith_kept.before,
-        &caitsith_updated.before,
-        &robust_updated.before,
-    ];
-    warm_up(&mut setup.indexer, &presignature_domains_before).await;
+    let caitsith_domains_before = [&caitsith_kept.before, &caitsith_updated.before];
+    warm_up(&mut setup.indexer, &caitsith_domains_before).await;
     assert_availability(
         &mut setup.indexer,
         "pre",
@@ -380,12 +362,8 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         .expect("Timeout waiting for resharing to complete");
 
     // Then all domains still work with the full reshared set.
-    let presignature_domains_after = [
-        &caitsith_kept.after,
-        &caitsith_updated.after,
-        &robust_updated.after,
-    ];
-    warm_up(&mut setup.indexer, &presignature_domains_after).await;
+    let caitsith_domains_after = [&caitsith_kept.after, &caitsith_updated.after];
+    warm_up(&mut setup.indexer, &caitsith_domains_after).await;
     assert_availability(
         &mut setup.indexer,
         "post",
@@ -405,7 +383,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
     let _disabled_a = setup.indexer.disable(5.into()).await;
     let _disabled_b = setup.indexer.disable(4.into()).await;
     let _disabled_c = setup.indexer.disable(3.into()).await;
-    warm_up(&mut setup.indexer, &presignature_domains_after).await;
+    warm_up(&mut setup.indexer, &caitsith_domains_after).await;
     assert_availability(
         &mut setup.indexer,
         "three_online",
