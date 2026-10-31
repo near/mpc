@@ -77,13 +77,13 @@ pub struct NodeMigrations {
 `backup_services_info` is removed — `TeeState` already stores each node's TLS key.
 The MPC node reads the backup service's TLS key from `backup_service_tee_state` instead.
 
-The attestation uses the same [`NodeId`][node-id] struct as MPC nodes:
+The attestation uses the same [`Node`](../../crates/near-mpc-contract-interface/src/types/tee.rs) struct as MPC nodes:
 
 ```rust
-NodeId {
+Node {
     account_id: env::predecessor_account_id(),
     tls_public_key,
-    account_public_key: Some(account_public_key),
+    account_public_key,
 }
 ```
 
@@ -171,7 +171,6 @@ The [migration service `impl` block][migration-service-impl] needs:
 [migration-service-impl]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/lib.rs#L2009-L2011
 [migration-info]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/lib.rs#L2012
 [tee-state]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/tee/tee_state.rs#L103
-[node-id]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/tee/tee_state.rs#L27
 [add-participant]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/tee/tee_state.rs#L154
 [clean-non-participants]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/tee/tee_state.rs#L407
 [node-migrations]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/node_migrations.rs#L11

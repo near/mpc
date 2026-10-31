@@ -502,7 +502,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
   sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
 ```
 
-*Note:* If attestation public key is **null**, the contract uses the default mock attestation.
+*Note:* If a node's `account_public_key` equals its `tls_public_key`, the contract uses the default mock attestation.
 
 *Note:* After attestation succeeds, both nodes spam logs aggressively (bug to fix).
 

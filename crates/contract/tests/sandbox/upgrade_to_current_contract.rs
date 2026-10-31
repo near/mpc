@@ -478,7 +478,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
             .await
             .unwrap()
             .into_iter()
-            .map(|node_id| node_id.account_id.clone())
+            .map(|node| node.account_id.clone())
             .collect();
 
     let participant_set: HashSet<AccountId> = initial_participants

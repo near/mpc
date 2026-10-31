@@ -7,16 +7,16 @@ use mpc_contract::{
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{bogus_ed25519_public_key, create_node_id, gen_participants, node_id_for},
+        test_utils::{bogus_ed25519_public_key, create_node, gen_participants, node_for},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
             ProposedGovernanceThresholdParameters,
         },
     },
-    tee::tee_state::{AttestationSubmissionError, NodeId},
+    tee::tee_state::AttestationSubmissionError,
 };
 use near_mpc_contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, ProtocolContractState,
+    Attestation, InitConfig, MockAttestation, Node, ProtocolContractState,
 };
 use std::{
     assert_matches,
@@ -114,18 +114,18 @@ impl TestSetupBuilder {
                 common::transition_to_initializing(&mut setup.contract, &participants);
             }
             ContractProtocolState::Resharing => {
-                let all_nodes = setup.get_participant_node_ids();
+                let all_nodes = setup.get_participant_nodes();
                 let threshold_nodes = all_nodes.iter().take(threshold as usize);
 
-                for node_id in threshold_nodes.clone() {
+                for node in threshold_nodes.clone() {
                     setup.submit_attestation_for_node(
-                        node_id,
+                        node,
                         Attestation::Mock(MockAttestation::Valid),
                     );
                 }
 
-                for node_id in threshold_nodes {
-                    testing_env!(common::participant_context(&node_id.account_id));
+                for node in threshold_nodes {
+                    testing_env!(common::participant_context(&node.account_id));
                     let proposal = ProposedGovernanceThresholdParameters::new(
                         parameters.clone(),
                         BTreeMap::new(),
@@ -165,29 +165,25 @@ impl TestSetup {
 
     /// Prepays one grant, then submits. For a first submission; re-attesting a key the account
     /// already owns consumes no grant, so use [`Self::submit_attestation_for_node`] there.
-    fn prepay_and_submit_attestation_for_node(
-        &mut self,
-        node_id: &NodeId,
-        attestation: Attestation,
-    ) {
-        self.prepay_grants(&node_id.account_id, 1);
-        self.submit_attestation_for_node(node_id, attestation);
+    fn prepay_and_submit_attestation_for_node(&mut self, node: &Node, attestation: Attestation) {
+        self.prepay_grants(&node.account_id, 1);
+        self.submit_attestation_for_node(node, attestation);
     }
 
     /// For a re-attestation, which consumes no grant.
-    fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
-        self.try_submit_attestation_for_node(node_id, attestation)
+    fn submit_attestation_for_node(&mut self, node: &Node, attestation: Attestation) {
+        self.try_submit_attestation_for_node(node, attestation)
             .unwrap();
     }
 
     fn try_submit_attestation_for_node(
         &mut self,
-        node_id: &NodeId,
+        node: &Node,
         attestation: Attestation,
     ) -> Result<(), mpc_contract::errors::Error> {
-        testing_env!(common::participant_context(&node_id.account_id));
+        testing_env!(common::participant_context(&node.account_id));
         self.contract
-            .submit_participant_info(attestation, node_id.tls_public_key.clone())
+            .submit_participant_info(attestation, node.tls_public_key.clone())
             .map(|_| ())
     }
 
@@ -211,15 +207,15 @@ impl TestSetup {
                 .unwrap();
         }
     }
-    /// Returns the list of NodeIds for all participants. The
+    /// Returns the node of every participant. The
     /// `account_public_key` is a placeholder — only the `account_id` (to set
     /// the signer context) and `tls_public_key` (passed to
     /// `submit_participant_info`) are consumed by these tests.
-    fn get_participant_node_ids(&self) -> Vec<NodeId> {
+    fn get_participant_nodes(&self) -> Vec<Node> {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| {
-                create_node_id(account_id, &participant_info.tls_public_key)
+                create_node(account_id, &participant_info.tls_public_key)
             })
             .collect()
     }
@@ -258,7 +254,7 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
         .with_threshold(THRESHOLD)
         .build();
 
-    let participant_nodes = setup.get_participant_node_ids();
+    let participant_nodes = setup.get_participant_nodes();
     let victim_node = participant_nodes[0].clone();
     let victim_attestation = Attestation::Mock(MockAttestation::Valid);
     setup.submit_attestation_for_node(&victim_node, victim_attestation);
@@ -270,7 +266,7 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
         .expect("victim attestation should be stored");
 
     // When: an unrelated account submits an attestation that targets the victim's TLS key.
-    let attacker_node = create_node_id(
+    let attacker_node = create_node(
         &"attacker.near".parse().unwrap(),
         &victim_node.tls_public_key,
     );
@@ -299,7 +295,7 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
 fn submit_participant_info__should_reject_a_new_entry_without_a_grant() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
-    let newcomer = node_id_for(&"newcomer.near".parse().unwrap());
+    let newcomer = node_for(&"newcomer.near".parse().unwrap());
     testing_env!(common::participant_context(&newcomer.account_id));
 
     // When
@@ -331,7 +327,7 @@ fn submit_participant_info__should_reject_a_new_entry_without_a_grant() {
 fn submit_participant_info__should_store_a_new_entry_and_consume_one_grant() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
-    let newcomer = node_id_for(&"newcomer.near".parse().unwrap());
+    let newcomer = node_for(&"newcomer.near".parse().unwrap());
     setup.prepay_grants(&newcomer.account_id, 1);
     assert_eq!(
         setup
@@ -375,8 +371,8 @@ fn submit_participant_info__should_allow_two_entries_for_two_grants() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
     let account_id: AccountId = "operator-node.near".parse().unwrap();
-    let first = create_node_id(&account_id, &bogus_ed25519_public_key());
-    let second = create_node_id(&account_id, &bogus_ed25519_public_key());
+    let first = create_node(&account_id, &bogus_ed25519_public_key());
+    let second = create_node(&account_id, &bogus_ed25519_public_key());
     setup.prepay_grants(&account_id, 2);
 
     // When
@@ -407,7 +403,7 @@ fn submit_participant_info__should_allow_two_entries_for_two_grants() {
 fn submit_participant_info__should_reject_a_tls_key_owned_by_another_account() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
-    let owner = setup.get_participant_node_ids()[0].clone();
+    let owner = setup.get_participant_nodes()[0].clone();
     setup.submit_attestation_for_node(&owner, Attestation::Mock(MockAttestation::Valid));
     let attacker: AccountId = "attacker.near".parse().unwrap();
     setup.prepay_grants(&attacker, 1);
@@ -442,7 +438,7 @@ fn submit_participant_info__should_reject_a_tls_key_owned_by_another_account() {
 fn submit_participant_info__should_reattest_with_zero_deposit() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
-    let node = setup.get_participant_node_ids()[0].clone();
+    let node = setup.get_participant_nodes()[0].clone();
     let attestation = Attestation::Mock(MockAttestation::Valid);
     setup.submit_attestation_for_node(&node, attestation.clone());
     let stored_before = setup
@@ -493,13 +489,13 @@ fn clean_tee_status__should_not_touch_attestations() {
 
     // Submit TEE info for current 2 participants (all have valid attestations)
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-    let participant_nodes = setup.get_participant_node_ids();
-    for node_id in &participant_nodes {
-        setup.submit_attestation_for_node(node_id, valid_attestation.clone());
+    let participant_nodes = setup.get_participant_nodes();
+    for node in &participant_nodes {
+        setup.submit_attestation_for_node(node, valid_attestation.clone());
     }
 
     // Add TEE account for someone who is NOT a current participant
-    let removed_participant_node = node_id_for(&"removed.participant.near".parse().unwrap());
+    let removed_participant_node = node_for(&"removed.participant.near".parse().unwrap());
     setup.prepay_and_submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
@@ -555,10 +551,10 @@ fn clean_invalid_attestations__should_remove_expired_nodes_not_in_use() {
         expected_measurements: None,
     });
 
-    let participant_node = setup.get_participant_node_ids()[0].clone();
+    let participant_node = setup.get_participant_nodes()[0].clone();
     setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
 
-    let stale_node = node_id_for(&"stale.near".parse().unwrap());
+    let stale_node = node_for(&"stale.near".parse().unwrap());
     setup.prepay_and_submit_attestation_for_node(&stale_node, expiring_attestation);
 
     const EXPECTED_STORED: usize = PARTICIPANT_COUNT + 1; // original mocks + outsider entry
@@ -577,7 +573,7 @@ fn clean_invalid_attestations__should_remove_expired_nodes_not_in_use() {
         .map(|node| node.tls_public_key)
         .collect();
     let participant_tls_keys: BTreeSet<_> = setup
-        .get_participant_node_ids()
+        .get_participant_nodes()
         .into_iter()
         .map(|node| node.tls_public_key)
         .collect();
@@ -875,11 +871,11 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     );
 
     // Use existing participant nodes for testing different hash versions
-    let node_ids = test_setup.get_participant_node_ids();
+    let nodes = test_setup.get_participant_nodes();
 
     // Test that nodes can submit attestations with all hash versions at T=10s
     // All attestations should succeed during grace period (current time: T=10s)
-    for (node, &hash) in node_ids.iter().zip(hashes.iter()) {
+    for (node, &hash) in nodes.iter().zip(hashes.iter()) {
         let attestation = TestSetup::create_attestation_with_hash_constraint(hash);
         test_setup.submit_attestation_for_node(node, attestation);
     }
@@ -900,7 +896,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Verify that submitting attestation with expired hash_v1 now fails
     let expired_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v1);
-    let result = test_setup.try_submit_attestation_for_node(&node_ids[0], expired_attestation);
+    let result = test_setup.try_submit_attestation_for_node(&nodes[0], expired_attestation);
     assert!(
         result.is_err(),
         "Attestation with expired hash_v1 should fail"
@@ -908,8 +904,8 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Test late-joining nodes at current time T=20s (after hash_v1 expired)
     // Only hash_v2 and hash_v3 should be valid for new nodes
-    // Reuse existing node_ids (nodes 2 and 3 since hash_v1 expired)
-    for (node, hash) in node_ids[1..].iter().zip(expected_after_v1_expiry.iter()) {
+    // Reuse existing nodes (2 and 3, since hash_v1 expired)
+    for (node, hash) in nodes[1..].iter().zip(expected_after_v1_expiry.iter()) {
         let late_attestation = TestSetup::create_attestation_with_hash_constraint(*hash);
         test_setup.submit_attestation_for_node(node, late_attestation);
     }
@@ -926,7 +922,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // Reuse the third node (index 2) for final validation
     let final_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v3);
     // This should succeed since hash_v3 is the only remaining valid hash
-    test_setup.submit_attestation_for_node(&node_ids[2], final_attestation);
+    test_setup.submit_attestation_for_node(&nodes[2], final_attestation);
 }
 
 #[rstest]
@@ -952,7 +948,7 @@ fn vote_mpc_node_manifest_digest_works_in_contract_protocol_states(
 fn prepay_attestation_storage__should_let_one_account_fund_another() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
-    let node = node_id_for(&"node.near".parse().unwrap());
+    let node = node_for(&"node.near".parse().unwrap());
     let operator: AccountId = "operator.near".parse().unwrap();
     let fee = u128::from(setup.contract.config().attestation_storage_fee_millinear);
     testing_env!(common::participant_context_with_deposit(
@@ -1007,7 +1003,7 @@ fn clean_invalid_attestations__should_return_the_grant_and_let_it_be_reused() {
     const NOW_NS: u64 = 5_000 * NANOS_IN_SECOND;
 
     let mut setup = TestSetupBuilder::new().build();
-    let node = node_id_for(&"churn.near".parse().unwrap());
+    let node = node_for(&"churn.near".parse().unwrap());
     let expiring = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
@@ -1039,7 +1035,7 @@ fn clean_invalid_attestations__should_return_the_grant_and_let_it_be_reused() {
     );
 
     // And: it can be spent again, with no further prepayment.
-    let replacement = node_id_for(&node.account_id);
+    let replacement = node_for(&node.account_id);
     testing_env!(common::participant_context(&node.account_id));
     let result = setup
         .contract
