@@ -394,38 +394,45 @@ fn first_path_mismatch(
     path: &[&str],
     auth: ConfiguredAuth<'_>,
 ) -> Option<Mismatch> {
-    let expected = base.clone();
-    if !path.starts_with(&path_segments(&expected)) {
+    let mut expected: Vec<String> = path_segments(base).into_iter().map(str::to_owned).collect();
+    if !has_prefix(path, &expected) {
         return Some(Mismatch::BaseUrl);
     }
-    let expected = match &whitelisted.chain_routing {
-        ChainRouting::PathSegment { segment } => {
-            let expected = with_segment(expected, segment);
-            if !path.starts_with(&path_segments(&expected)) {
-                return Some(Mismatch::ChainRouting);
-            }
-            expected
-        }
-        _ => expected,
-    };
+    if let ChainRouting::PathSegment { segment } = &whitelisted.chain_routing
+        && !extend_prefix(&mut expected, base, segment, path)
+    {
+        return Some(Mismatch::ChainRouting);
+    }
     if let (ConfiguredAuth::Path { placeholder }, AuthScheme::Path { .. }) =
         (auth, &whitelisted.auth_scheme)
+        && !extend_prefix(&mut expected, base, placeholder, path)
     {
-        let expected = with_segment(expected, placeholder);
-        if !path.starts_with(&path_segments(&expected)) {
-            return Some(Mismatch::PlaceholderPosition);
-        }
+        return Some(Mismatch::PlaceholderPosition);
     }
     None
 }
 
-/// Encodes `segment` as [`Url::parse`] does, so `{api_key}` becomes `%7Bapi_key%7D` and equals the
-/// placeholder in a parsed local URL.
-fn with_segment(mut url: Url, segment: &str) -> Url {
-    if let Ok(mut segments) = url.path_segments_mut() {
-        segments.pop_if_empty().push(segment);
+/// Appends the encoded `segment` to `prefix`; `false` if `path` no longer starts with `prefix`.
+fn extend_prefix(prefix: &mut Vec<String>, base: &Url, segment: &str, path: &[&str]) -> bool {
+    let Some(encoded) = encode_path_segment(base, segment) else {
+        return false;
+    };
+    prefix.push(encoded);
+    has_prefix(path, prefix)
+}
+
+fn has_prefix(path: &[&str], prefix: &[String]) -> bool {
+    path.get(..prefix.len()).is_some_and(|head| head == prefix)
+}
+
+/// Encodes `segment` as [`url::PathSegmentsMut::push`] does; [`None`] for an empty, `.` or `..`.
+pub(super) fn encode_path_segment(url: &Url, segment: &str) -> Option<String> {
+    if matches!(segment, "" | "." | "..") {
+        return None;
     }
-    url
+    let mut probe = url.clone();
+    probe.path_segments_mut().ok()?.clear().push(segment);
+    Some(probe.path().trim_start_matches('/').to_owned())
 }
 
 fn path_segments(url: &Url) -> Vec<&str> {
@@ -706,6 +713,7 @@ mod tests {
     #[case::part_of_the_segment("https://eth.alchemy.com/v2/key{api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
     #[case::in_the_query("https://eth.alchemy.com/v2?key={api_key}", "{api_key}", vec![Mismatch::PlaceholderPosition])]
     #[case::in_the_host("https://eth.alchemy.com/v2/key", "alchemy", vec![Mismatch::PlaceholderPosition])]
+    #[case::dot("https://eth.alchemy.com/v2/", ".", vec![Mismatch::PlaceholderPosition])]
     #[case::spanning_segments("https://eth.alchemy.com/v2/a/b", "a/b", vec![Mismatch::PlaceholderPosition])]
     fn match_provider__should_check_the_placeholder_by_position_as_the_url_encodes_it(
         #[case] rpc_url: &str,

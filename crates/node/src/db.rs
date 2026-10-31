@@ -28,6 +28,7 @@ pub enum DBCol {
     /// triple is stored under the threshold it was generated with so that
     /// presign can draw from a store of matching `t`.
     TripleV2,
+    /// Retired: kept only so that startup deletes the presignatures older versions stored.
     Presignature,
     SignRequest,
     CKDRequest,

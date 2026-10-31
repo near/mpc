@@ -7,8 +7,7 @@ use ed25519_dalek::SigningKey;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{
     BlockArgs, CKDConfig, ChainId, ConfigFile, IndexerConfig, KeygenConfig, LogConfig, LogFormat,
-    NearInitConfig, PresignatureConfig, SecretsStartConfig, SignatureConfig, StartConfig, SyncMode,
-    TripleConfig,
+    NearInitConfig, SecretsStartConfig, SignatureConfig, StartConfig, SyncMode, TripleConfig,
 };
 use near_indexer_primitives::types::Finality;
 use near_kit::AccountId;
@@ -199,7 +198,6 @@ pub struct MpcNodeSetup {
     secret_store_key_hex: String,
     backup_encryption_key_hex: String,
     triples_to_buffer: usize,
-    presignatures_to_buffer: usize,
 
     // Foreign chains configuration
     foreign_chains_config: mpc_node_config::ForeignChainsConfig,
@@ -244,7 +242,6 @@ impl MpcNodeSetup {
             secret_store_key_hex,
             backup_encryption_key_hex,
             triples_to_buffer: args.triples_to_buffer,
-            presignatures_to_buffer: args.presignatures_to_buffer,
             foreign_chains_config: args.foreign_chains_config,
             tls_trust_roots: args.tls_trust_roots,
             config_path,
@@ -488,15 +485,7 @@ impl MpcNodeSetup {
                     parallel_triple_generation_stagger_time_sec: 1,
                     batch_size: mpc_node_config::TripleBatchSize::default(),
                 },
-                presignature: PresignatureConfig {
-                    concurrency: 2,
-                    desired_presignatures_to_buffer: self.presignatures_to_buffer,
-                    timeout_sec: 60,
-                },
-                signature: SignatureConfig {
-                    timeout_sec: 60,
-                    online_presign: true,
-                },
+                signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),
@@ -525,7 +514,6 @@ pub struct MpcNodeSetupArgs {
     pub ports: NodePorts,
     pub mpc_contract_id: AccountId,
     pub triples_to_buffer: usize,
-    pub presignatures_to_buffer: usize,
     /// Chain ID from the sandbox's genesis.json.
     pub chain_id: String,
     /// Path to genesis.json on the host (copied from sandbox container).

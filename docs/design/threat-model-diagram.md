@@ -58,7 +58,7 @@ graph TB
             subgraph MPC_BOX["MPC Node"]
                 direction TB
                 MPC_NODE["MPC Node Process"]
-                ASSETS["Protected Assets:<br/>- TLS private key (P2P)<br/>- Node account private key<br/>- Keyshare<br/>- Triples / presignatures<br/>- AES wrapping private key"]
+                ASSETS["Protected Assets:<br/>- TLS private key (P2P)<br/>- Node account private key<br/>- Keyshare<br/>- Triples<br/>- AES wrapping private key"]
                 MPC_NODE --- ASSETS
             end
 
@@ -158,7 +158,7 @@ graph TB
 | TLS private key | Encrypted disk (Gramine sealed) | TDX CVM memory encryption |
 | Node account key | Encrypted disk | TDX CVM memory encryption |
 | Keyshare | Encrypted disk | TDX CVM memory encryption |
-| Triples / presignatures | Encrypted disk | TDX CVM memory encryption |
+| Triples | Encrypted disk | TDX CVM memory encryption |
 | AES transport key | Sealed in CVM | TDX CVM memory encryption |
 | Operator keys | Operator-managed (out of scope) | Operator-managed |
 
