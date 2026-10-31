@@ -1,3 +1,8 @@
+use crate::indexer::configs::IndexerConfigExt;
+use crate::tee::{
+    AllowedImageHashesFile, monitor_allowed_image_hashes,
+    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
+};
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
@@ -42,11 +47,6 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-
-use crate::tee::{
-    AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
-};
 
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
 
@@ -121,17 +121,22 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         .ok();
 
     // Load configuration and initialize persistent secrets
-    let node_config = config.node.clone();
     let persistent_secrets = PersistentSecrets::generate_or_get_existing(
         &config.home_dir,
-        node_config.number_of_responder_keys,
+        config.node.number_of_responder_keys,
     )?;
+    let node_config = config.node.clone();
+    let mpc_indexer_config = node_config.indexer.clone();
+    let near_indexer_config = mpc_indexer_config.to_near_indexer_config(config.home_dir.clone());
+    let near_config = near_indexer_config
+        .load_near_config()
+        .context("failed to load nearcore config")?;
 
-    profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
+    profiler::web_server::start_web_server(config.node.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
     // TODO(#2102): Decide if the MPC responder account is actually needed
-    let respond_config = RespondConfig::from_parts(&node_config, &persistent_secrets);
+    let respond_config = RespondConfig::from_parts(&config.node, &persistent_secrets);
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
         Some(key) => key.clone(),
@@ -209,10 +214,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
-            static_web_data(&secrets, attestation),
+            static_web_data(&secrets, &near_config.network_config.node_id(), attestation),
             protocol_state_receiver,
             migration_state_receiver,
-            config.node.clone(),
+            node_config.clone(),
             read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
         ))
@@ -236,8 +241,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     let indexer_shutdown_token = CancellationToken::new();
     let indexer_api = spawn_real_indexer(
         config.home_dir.clone(),
-        node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
+        mpc_indexer_config,
+        near_indexer_config,
+        near_config,
         persistent_secrets.near_signer_key.clone(),
         respond_config,
         indexer_exit_sender,

@@ -14,6 +14,7 @@ use mpc_node_config::{
     TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
+use near_indexer::near_primitives::network::PeerId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
@@ -310,14 +311,15 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
 
 pub fn static_web_data(
     value: &SecretsConfig,
+    node_id: &PeerId,
     tee_participant_info: Option<Attestation>,
 ) -> StaticWebData {
     let public_keys = get_public_keys(value);
-
     StaticWebData {
         near_signer_public_key: public_keys.near_signer_public_key,
         near_p2p_public_key: public_keys.near_p2p_public_key,
         near_responder_public_keys: public_keys.near_responder_public_keys,
+        near_core_network_public_key: node_id.to_string(),
         tee_participant_info,
     }
 }

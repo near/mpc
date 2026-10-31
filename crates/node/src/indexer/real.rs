@@ -9,7 +9,6 @@ use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
-use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes,
     monitor_allowed_os_measurements, monitor_my_attestation,
@@ -21,7 +20,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
-use near_indexer::Indexer;
+use near_indexer::{Indexer, NearConfig};
 use near_mpc_contract_interface::types::{Ed25519PublicKey, ProtocolContractState};
 use std::future::Future;
 use std::path::PathBuf;
@@ -59,8 +58,10 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 #[expect(clippy::too_many_arguments)]
 pub fn spawn_real_indexer(
     home_dir: PathBuf,
-    mpc_indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
+    mpc_indexer_config: IndexerConfig,
+    near_indexer_config: near_indexer::IndexerConfig,
+    near_config: NearConfig,
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
@@ -102,11 +103,6 @@ pub fn spawn_real_indexer(
         // as we can't block the main thread for waiting on the `txn_sender`.
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
-            let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
-
-            let near_config = near_indexer_config
-                .load_near_config()
-                .expect("near config is present");
 
             // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
             // and differs from the last applied value, wipe the data dir. Must run

@@ -18,6 +18,8 @@ fn make_static_web_data(attestation: Attestation) -> StaticWebData {
         near_signer_public_key: Ed25519PublicKey(account_key()),
         near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
         near_responder_public_keys: vec![],
+        near_core_network_public_key: "ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ"
+            .to_string(),
         tee_participant_info: Some(attestation),
     }
 }
@@ -126,6 +128,8 @@ fn run_verification_rejects_none_attestation() {
         near_signer_public_key: Ed25519PublicKey(account_key()),
         near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
         near_responder_public_keys: vec![],
+        near_core_network_public_key: "ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ"
+            .to_string(),
         tee_participant_info: None,
     };
 
@@ -154,6 +158,8 @@ fn run_verification_rejects_mock_attestation() {
         near_signer_public_key: Ed25519PublicKey(account_key()),
         near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
         near_responder_public_keys: vec![],
+        near_core_network_public_key: "ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ"
+            .to_string(),
         tee_participant_info: Some(Attestation::Mock(
             mpc_attestation::attestation::MockAttestation::Valid,
         )),

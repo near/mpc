@@ -43,6 +43,7 @@ use crate::web::{start_web_server, static_web_data};
 use aes_gcm::aead::Generate;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
+use near_indexer::near_primitives::network::PeerId;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Finality;
 use near_mpc_bounded_collections::UpperBoundedVec;
@@ -119,13 +120,14 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
+                let dummy_peer_id = PeerId::random();
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui,
-                    static_web_data(&self.secrets, None),
+                    static_web_data(&self.secrets, &dummy_peer_id, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
