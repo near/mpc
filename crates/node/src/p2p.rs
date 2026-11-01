@@ -1575,6 +1575,17 @@ mod tests {
         result
     }
 
+    fn participant_extractor() -> impl Fn(&MpcConfig) -> Vec<ParticipantId> {
+        |mpc_config: &MpcConfig| {
+            mpc_config
+                .participants
+                .participants
+                .iter()
+                .map(|p| p.id)
+                .collect()
+        }
+    }
+
     #[tokio::test]
     #[test_log::test]
     async fn test_wait_for_ready() {
@@ -1590,14 +1601,7 @@ mod tests {
         )
         .unwrap();
 
-        let all_participants = |mpc_config: &MpcConfig| {
-            mpc_config
-                .participants
-                .participants
-                .iter()
-                .map(|p| p.id)
-                .collect::<Vec<_>>()
-        };
+        let all_participants = participant_extractor();
 
         // Make node 3 use the wrong address for the 0th node. All connections should work
         // except from 3 to 0.
@@ -1704,6 +1708,21 @@ mod tests {
         ids
     }
 
+    fn make_test_outgoing_connection(
+        sender: mpsc::UnboundedSender<Packet>,
+        peer_version: NetworkProtocolVersion,
+    ) -> Arc<OutgoingConnection> {
+        Arc::new(OutgoingConnection {
+            sender,
+            _sender_task: tokio::spawn(std::future::pending()).into(),
+            _keepalive_task: tokio::spawn(std::future::pending()).into(),
+            _echo_task: None,
+            echo_ack_sender: None,
+            closed: CancellationToken::new(),
+            peer_network_protocol_version: peer_version,
+        })
+    }
+
     #[rstest]
     #[case::older_peer(NetworkProtocolVersion::Sep2026, false)]
     #[case::current_peer(NetworkProtocolVersion::Oct2026, true)]
@@ -1715,15 +1734,7 @@ mod tests {
     ) {
         // Given
         let (sender, mut packets) = mpsc::unbounded_channel();
-        let connection = Arc::new(OutgoingConnection {
-            sender,
-            _sender_task: tokio::spawn(std::future::pending()).into(),
-            _keepalive_task: tokio::spawn(std::future::pending()).into(),
-            _echo_task: None,
-            echo_ack_sender: None,
-            closed: CancellationToken::new(),
-            peer_network_protocol_version: peer_version,
-        });
+        let connection = Arc::new(make_test_outgoing_connection(sender, peer_version));
         let connectivity =
             Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
         connectivity.set_outgoing_connection(&connection);
@@ -1757,14 +1768,7 @@ mod tests {
         )
         .unwrap();
 
-        let all_participants = |mpc_config: &MpcConfig| {
-            mpc_config
-                .participants
-                .participants
-                .iter()
-                .map(|p| p.id)
-                .collect::<Vec<_>>()
-        };
+        let all_participants = participant_extractor();
         start_root_task_with_periodic_dump(async move {
             let (alice, _alice_receiver) =
                 super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
@@ -2339,15 +2343,7 @@ mod tests {
         ) {
             // Given
             let (sender, mut packets) = mpsc::unbounded_channel();
-            let connection = OutgoingConnection {
-                sender,
-                _sender_task: tokio::spawn(std::future::pending()).into(),
-                _keepalive_task: tokio::spawn(std::future::pending()).into(),
-                _echo_task: None,
-                echo_ack_sender: None,
-                closed: CancellationToken::new(),
-                peer_network_protocol_version: peer_version,
-            };
+            let connection = make_test_outgoing_connection(sender, peer_version);
             // When
             connection.send_echo_ack(Heartbeat {
                 nonce: Rfc1982SerialU8::new(7),
