@@ -51,8 +51,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 1. **NEAR Indexer**: Monitors the signer contract (`v1.signer` on mainnet) for incoming `sign` requests
 2. **MPC Signing**: Threshold ECDSA based on cait-sith library with:
    - Background Beaver triple generation (up to 1M per node)
-   - Presignature generation (requires 2 triples each)
-   - Signature generation (1 round using a presignature, or presign-and-sign directly from 2 triples when `signature.online_presign` is enabled, the default)
+   - Signature generation: presign-and-sign in one computation over a pair of triples
 
 ### Key Crates
 
@@ -74,7 +73,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 - **`network.rs`**: Mesh network with task-based multiplexing
 - **`p2p.rs`**: TLS-based persistent connections
 - **`indexer/`**: Blockchain monitoring, transaction submission
-- **`db.rs`**: RocksDB persistence for keyshares, triples, presignatures
+- **`db.rs`**: RocksDB persistence for keyshares, triples
 
 ### Contract State Machine
 
@@ -91,7 +90,7 @@ NotInitialized → Running ↔ Initializing/Resharing
 1. User calls `sign()` on contract
 2. Indexer detects receipt, adds to SignRequestStorage
 3. Coordinator spawns signature provider job
-4. Provider acquires triple/presignature, runs FROST protocol
+4. Provider runs the domain's signing protocol
 5. Nodes exchange partial signatures via P2P
 6. Final signature submitted back to contract
 
@@ -178,7 +177,7 @@ Markdown under `docs/` is sorted by audience: `docs/guide/` for node operators, 
 
 ## Documentation alignment
 
-Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified, even when a change invalidates them: leave them as they are rather than un-archiving them to update them. When a PR archives a file, flag contents at risk of becoming stale (such as file paths). This is non-blocking, as version history preserves the paths valid at archiving time. The archiving procedure is described in [README.md §Documentation](README.md#documentation).
+Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified, even when a change invalidates them: leave them as they are rather than un-archiving them to update them. When a PR archives a file, flag contents at risk of becoming stale (such as file paths). This is non-blocking, as version history preserves the paths valid at archiving time. The archiving procedure is described in [CONTRIBUTING.md §Documentation](CONTRIBUTING.md#documentation).
 
 All other documents are considered live and expected to be updated if invalidated by a change.
 

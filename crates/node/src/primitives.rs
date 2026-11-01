@@ -6,11 +6,11 @@ use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use threshold_signatures::participants::Participant;
 
-/// A unique ID representing a resource (e.g., a triple/presignature/signature, or a channel).
+/// A unique ID representing a resource (e.g., a triple, or a channel).
 /// The ID shall be globally unique across all participants and across time.
 ///
 /// The ID does not need to be globally unique across different *types* of assets,
-/// as in, it is OK for a triple to have the same unique ID as a presignature.
+/// as in, it is OK for a triple to have the same unique ID as a channel.
 ///
 /// The uniqueness of the unique ID is based on some assumptions:
 ///  - Participants follow the correct unique ID generation algorithm;

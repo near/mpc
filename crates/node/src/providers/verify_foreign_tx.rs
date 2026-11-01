@@ -7,7 +7,6 @@ use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeig
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
-use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use foreign_chain_inspector::FanOut;
@@ -63,11 +62,6 @@ pub(crate) struct ForeignChainInspectors<Client> {
 
 /// A [`FanOut`] whose provider calls are reported to the node's Prometheus metrics.
 pub(crate) type MeasuredFanOut<Inspector> = FanOut<Inspector, ProviderCallMetrics>;
-
-/// Handshake protocol version that introduced
-/// [`VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign`].
-pub const VERIFY_FOREIGN_TX_ONLINE_PRESIGN_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
-    NetworkProtocolVersion::Oct2026;
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
@@ -241,26 +235,18 @@ impl VerifyForeignTxProvider {
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
-            MpcTaskId::VerifyForeignTxTaskId(task) => match task {
-                VerifyForeignTxTaskId::VerifyForeignTx {
-                    id,
-                    presignature_id,
-                } => {
-                    self.make_verify_foreign_tx_follower(channel, id, presignature_id)
-                        .await?;
-                }
+            MpcTaskId::VerifyForeignTxTaskId(
                 VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
                     id,
                     paired_triple_id,
-                } => {
-                    self.make_verify_foreign_tx_online_presign_follower(
-                        channel,
-                        id,
-                        paired_triple_id,
-                    )
+                },
+            ) => {
+                self.make_verify_foreign_tx_online_presign_follower(channel, id, paired_triple_id)
                     .await?;
-                }
-            },
+            }
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
+                anyhow::bail!("Retired stored-presignature task rejected");
+            }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",
                 channel.task_id()
