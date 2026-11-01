@@ -1,5 +1,5 @@
 use crate::log_throttle::{Decision, LogThrottle};
-use crate::network::rfc1982::Serial8;
+use crate::network::rfc1982::Rfc1982SerialU8;
 use crate::{
     config::MpcConfig,
     metrics::networking_metrics::{
@@ -176,7 +176,7 @@ struct OutgoingConnection {
     /// Task that periodically sends an `Echo` to the other side and expects the peer to
     /// answer with an `EchoAck`.
     _echo_task: Option<AutoAbortTask<()>>,
-    echo_ack_sender: Option<mpsc::Sender<Serial8>>,
+    echo_ack_sender: Option<mpsc::Sender<Rfc1982SerialU8>>,
     /// This is cancelled when the connection is closed. Used to wait for the
     /// connection to close.
     closed: CancellationToken,
@@ -265,7 +265,7 @@ impl OutgoingConnection {
         // An older peer cannot parse `Echo`
         let (echo_task, echo_ack_sender) = if peer_supports_echo(peer_network_protocol_version) {
             let echo_tracker = EchoTracker::new()
-                .with_next_nonce(Serial8::new(echo_nonces.load(Ordering::Relaxed)));
+                .with_next_nonce(Rfc1982SerialU8::new(echo_nonces.load(Ordering::Relaxed)));
             let (ack_sender, ack_receiver) = mpsc::channel(echo_tracker.max_outstanding().max(1));
             let echo_task = tracking::spawn(
                 &format!("echo liveness task for {}", target_participant_id),
@@ -534,7 +534,7 @@ impl OutgoingConnection {
 
 fn peer_supports_echo(version: NetworkProtocolVersion) -> bool {
     let echo = Packet::Echo(Heartbeat {
-        nonce: Serial8::default(),
+        nonce: Rfc1982SerialU8::default(),
     });
     version.supports(echo.min_protocol_version())
 }
@@ -554,7 +554,7 @@ async fn run_echo_liveness(
     sender: UnboundedSender<Packet>,
     mut echo_tracker: EchoTracker,
     echo_nonces: Arc<AtomicU8>,
-    mut acks: mpsc::Receiver<Serial8>,
+    mut acks: mpsc::Receiver<Rfc1982SerialU8>,
     liveness_failed: CancellationToken,
 ) {
     let mut echo_interval = interval_at(Instant::now() + ECHO_INTERVAL, ECHO_INTERVAL);
@@ -2154,7 +2154,7 @@ mod tests {
         use super::*;
         use crate::network::constants::{ECHO_INTERVAL, ECHO_TIMEOUT};
         use crate::network::liveness_check::EchoTracker;
-        use crate::network::rfc1982::Serial8;
+        use crate::network::rfc1982::Rfc1982SerialU8;
         use crate::p2p::run_echo_liveness;
         use crate::primitives::Heartbeat;
         use std::sync::atomic::{AtomicU8, Ordering};
@@ -2167,7 +2167,7 @@ mod tests {
         async fn run_echo_liveness__should_send_echo_on_interval_and_clear_on_ack() {
             // Given
             let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
             let liveness_failed = CancellationToken::new();
             let echo_tracker = EchoTracker::new();
 
@@ -2199,7 +2199,7 @@ mod tests {
         async fn run_echo_liveness__should_cancel_token_when_peer_times_out() {
             // Given
             let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (_ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let (_ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
             let liveness_failed = CancellationToken::new();
             let echo_tracker = EchoTracker::new();
             // When
@@ -2223,7 +2223,7 @@ mod tests {
         async fn run_echo_liveness__should_ignore_rogue_nonces() {
             // Given
             let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
             let liveness_failed = CancellationToken::new();
             let echo_tracker = EchoTracker::new();
             let _liveness_task = tokio::spawn(run_echo_liveness(
@@ -2240,7 +2240,7 @@ mod tests {
                 _ => panic!("Expected Packet::Echo"),
             };
             // When
-            let rogue_nonce = Serial8(valid_nonce.0.wrapping_add(5));
+            let rogue_nonce = Rfc1982SerialU8(valid_nonce.0.wrapping_add(5));
             ack_tx.send(rogue_nonce).await.unwrap();
             tokio::task::yield_now().await;
             advance(ECHO_TIMEOUT + Duration::from_millis(10)).await;
@@ -2254,7 +2254,7 @@ mod tests {
         async fn run_echo_liveness__should_ignore_stale_nonces() {
             // Given
             let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
             let liveness_failed = CancellationToken::new();
             let echo_tracker = EchoTracker::new();
             let _liveness_task = tokio::spawn(run_echo_liveness(
@@ -2287,7 +2287,7 @@ mod tests {
         async fn run_echo_liveness__should_send_increasing_nonces_while_acked() {
             // Given
             let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
             let liveness_failed = CancellationToken::new();
             let echo_tracker = EchoTracker::new();
             let echo_nonces = Arc::new(AtomicU8::new(0));
@@ -2304,7 +2304,7 @@ mod tests {
                 let Some(Packet::Echo(Heartbeat { nonce })) = packet_rx.recv().await else {
                     panic!("Expected Packet::Echo");
                 };
-                assert_eq!(nonce, Serial8::new(expected));
+                assert_eq!(nonce, Rfc1982SerialU8::new(expected));
                 ack_tx.send(nonce).await.unwrap();
                 tokio::task::yield_now().await;
             }
@@ -2317,7 +2317,7 @@ mod tests {
         async fn run_echo_liveness__should_stop_when_packet_receiver_is_dropped() {
             // Given
             let (packet_tx, packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (_ack_tx, ack_rx) = mpsc::channel::<Serial8>(1);
+            let (_ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
             let liveness_failed = CancellationToken::new();
             let echo_tracker = EchoTracker::new();
             let liveness_task = tokio::spawn(run_echo_liveness(
@@ -2356,7 +2356,7 @@ mod tests {
             };
             // When
             connection.send_echo_ack(Heartbeat {
-                nonce: Serial8::new(7),
+                nonce: Rfc1982SerialU8::new(7),
             });
             // Then
             assert_eq!(packets.try_recv().is_ok(), expected_sent);
@@ -2379,11 +2379,11 @@ mod tests {
             // When
             for nonce in 1..=3 {
                 connection.receive_echo_ack(Heartbeat {
-                    nonce: Serial8::new(nonce),
+                    nonce: Rfc1982SerialU8::new(nonce),
                 });
             }
             // Then
-            assert_eq!(acks.try_recv(), Ok(Serial8::new(1)));
+            assert_eq!(acks.try_recv(), Ok(Rfc1982SerialU8::new(1)));
             assert_eq!(acks.try_recv(), Err(mpsc::error::TryRecvError::Empty));
         }
     }

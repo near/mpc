@@ -1,4 +1,4 @@
-use crate::network::rfc1982::Serial8;
+use crate::network::rfc1982::Rfc1982SerialU8;
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -6,14 +6,14 @@ const DEFAULT_MAX_OUTSTANDING_ECHOES: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct EchoTracker {
-    next_nonce: Serial8,
+    next_nonce: Rfc1982SerialU8,
     outstanding: Vec<OutstandingEcho>,
     max_outstanding: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OutstandingEcho {
-    nonce: Serial8,
+    nonce: Rfc1982SerialU8,
     sent_at: Instant,
     deadline: Instant,
 }
@@ -31,30 +31,35 @@ impl EchoTracker {
 
     pub fn with_capacity(max_outstanding: usize) -> Self {
         Self {
-            next_nonce: Serial8::default(),
+            next_nonce: Rfc1982SerialU8::default(),
             outstanding: Vec::with_capacity(max_outstanding),
             max_outstanding,
         }
     }
 
-    pub fn with_next_nonce(mut self, next_nonce: Serial8) -> Self {
+    pub fn with_next_nonce(mut self, next_nonce: Rfc1982SerialU8) -> Self {
         self.next_nonce = next_nonce;
         self
     }
 
-    pub fn next_nonce(&self) -> Serial8 {
+    pub fn next_nonce(&self) -> Rfc1982SerialU8 {
         self.next_nonce
     }
 
-    pub fn prepare_next_nonce(&mut self) -> Serial8 {
-        self.next_nonce.next()
+    pub fn prepare_next_nonce(&mut self) -> Rfc1982SerialU8 {
+        self.next_nonce.post_increment()
     }
 
-    pub fn is_stale(&self, nonce: Serial8) -> bool {
-        nonce.rfc1982_less_than(self.next_nonce)
+    pub fn is_stale(&self, nonce: Rfc1982SerialU8) -> bool {
+        nonce.less_than(self.next_nonce)
     }
 
-    pub fn start_echo(&mut self, nonce: Serial8, sent_at: Instant, timeout: Duration) -> bool {
+    pub fn start_echo(
+        &mut self,
+        nonce: Rfc1982SerialU8,
+        sent_at: Instant,
+        timeout: Duration,
+    ) -> bool {
         if self.outstanding.len() >= self.max_outstanding {
             return false;
         }
@@ -72,7 +77,11 @@ impl EchoTracker {
         true
     }
 
-    pub fn receive_ack(&mut self, incoming_nonce: Serial8, now: Instant) -> Option<Duration> {
+    pub fn receive_ack(
+        &mut self,
+        incoming_nonce: Rfc1982SerialU8,
+        now: Instant,
+    ) -> Option<Duration> {
         if let Some(idx) = self
             .outstanding
             .iter()
@@ -133,25 +142,25 @@ mod tests {
     #[test]
     fn test_nonce_sequence_wraparound() {
         // Given
-        let mut tracker = EchoTracker::new().with_next_nonce(Serial8::new(254));
+        let mut tracker = EchoTracker::new().with_next_nonce(Rfc1982SerialU8::new(254));
 
         // When / Then
-        assert_eq!(tracker.prepare_next_nonce(), Serial8::new(254));
-        assert_eq!(tracker.prepare_next_nonce(), Serial8::new(255));
-        assert_eq!(tracker.prepare_next_nonce(), Serial8::new(0));
-        assert_eq!(tracker.next_nonce(), Serial8::new(1));
+        assert_eq!(tracker.prepare_next_nonce(), Rfc1982SerialU8::new(254));
+        assert_eq!(tracker.prepare_next_nonce(), Rfc1982SerialU8::new(255));
+        assert_eq!(tracker.prepare_next_nonce(), Rfc1982SerialU8::new(0));
+        assert_eq!(tracker.next_nonce(), Rfc1982SerialU8::new(1));
     }
 
     #[test]
     fn test_is_stale_only_for_nonces_before_the_next_one() {
         // Given
-        let tracker = EchoTracker::new().with_next_nonce(Serial8::new(2));
+        let tracker = EchoTracker::new().with_next_nonce(Rfc1982SerialU8::new(2));
 
         // When / Then
-        assert!(tracker.is_stale(Serial8::new(1)));
-        assert!(tracker.is_stale(Serial8::new(255)));
-        assert!(!tracker.is_stale(Serial8::new(2)));
-        assert!(!tracker.is_stale(Serial8::new(3)));
+        assert!(tracker.is_stale(Rfc1982SerialU8::new(1)));
+        assert!(tracker.is_stale(Rfc1982SerialU8::new(255)));
+        assert!(!tracker.is_stale(Rfc1982SerialU8::new(2)));
+        assert!(!tracker.is_stale(Rfc1982SerialU8::new(3)));
     }
 
     #[test]
