@@ -32,6 +32,10 @@ Polynomial arithmetic and Lagrange interpolation:
 
 A binding and perfectly hiding hash commitment scheme: `SHA256(NEAR_COMMIT_LABEL || randomness || START_LABEL || msgpack(value))`.
 
+### `pedersen.rs`
+
+Pedersen commitments over secp256k1: `Com(v; r) = v * G + r * H_ped`, extended coefficientwise to polynomials. `H_ped` is a fixed second generator derived by hashing a protocol tag to the curve (RFC 9380 hash-to-curve), so its discrete logarithm is unknown to every party.
+
 ### `hash.rs`
 
 Domain-separated SHA-256 hashing:
