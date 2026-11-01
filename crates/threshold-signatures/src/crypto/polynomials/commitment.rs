@@ -142,6 +142,20 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
         Ok(CoefficientCommitment::new(interpolation))
     }
 
+    /// Removes the identity constant term, the inverse of [`Self::extend_with_identity`].
+    pub fn strip_identity_constant(&self) -> Result<Self, ProtocolError> {
+        let coefficients = self.get_coefficients();
+        let (first, tail) = coefficients
+            .split_first()
+            .ok_or(ProtocolError::EmptyOrZeroCoefficients)?;
+        if first.value() != C::Group::identity() {
+            return Err(ProtocolError::InvalidInput(
+                "the constant term is not the identity".to_string(),
+            ));
+        }
+        Self::new(tail)
+    }
+
     /// Extends the Commited Polynomial with an extra value as a constant
     /// Used usually after sending a smaller polynomial to prevent serialization from
     /// failing if the constant term is the identity

@@ -21,8 +21,10 @@
 //! the module, including [`sign::sign`] and presignature rerandomization, is
 //! scheme-agnostic.
 //!
-//! TODO(#4383): replace this stub with a real robust scheme.
+//! TODO(#4383): replace this stub with a real robust scheme. The real scheme is
+//! implemented in [`ecdsa_v2_sign::sign()`]; the stub remains until the node switches to it.
 
+pub mod ecdsa_v2_sign;
 pub mod presign;
 pub mod presign_and_sign;
 pub mod sign;
@@ -30,5 +32,6 @@ pub mod sign;
 #[cfg(test)]
 mod test;
 
+pub use ecdsa_v2_sign::{SignArguments, sign};
 pub use presign::{PresignArguments, PresignOutput, RerandomizedPresignOutput};
 pub use presign_and_sign::presign_and_sign;
