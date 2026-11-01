@@ -1,4 +1,4 @@
-use crate::network::rfc1982::Serial8;
+use crate::network::rfc1982::Rfc1982SerialU8;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -255,7 +255,7 @@ pub struct Version {
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Heartbeat {
-    pub nonce: Serial8,
+    pub nonce: Rfc1982SerialU8,
 }
 
 #[cfg(test)]
