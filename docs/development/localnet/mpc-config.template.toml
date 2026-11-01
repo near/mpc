@@ -37,14 +37,8 @@ desired_triples_to_buffer = 128
 timeout_sec = 120
 parallel_triple_generation_stagger_time_sec = 1
 
-[node.presignature]
-concurrency = 4
-desired_presignatures_to_buffer = 64
-timeout_sec = 60
-
 [node.signature]
 timeout_sec = 60
-online_presign = true
 
 [node.indexer]
 validate_genesis = false

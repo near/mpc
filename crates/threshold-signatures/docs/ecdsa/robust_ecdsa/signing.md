@@ -14,8 +14,8 @@
 
 We keep the module's type surface, participant-count rules and threshold arithmetic
 (`N = 2t + 1` signers for `t = MaxMalicious`) so that reintroducing a robust scheme
-means rewriting one function rather than rebuilding the node's presignature storage,
-task routing, resharing and contract-side threshold validation around it.
+means rewriting one function rather than rebuilding the node's task routing,
+resharing and contract-side threshold validation around it.
 
 ### Note: We denote $\mathcal{P}$ the set of participants included in the DKG and the threshold $t = \mathsf{MaxMalicious}$
 
@@ -86,5 +86,23 @@ generates an ECDSA signature. The inputs to this phase are:
 **Output:** the signature $(R, s)$.
 
 *Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
+
+# Presigning and signing in one protocol
+
+`presign_and_sign` runs the presigning round and the signing round as a single protocol
+over one channel, for a set of parties $\mathcal{P}_1$ of size exactly $N_1 = 2t + 1$ that
+already know the message. The inputs are those of presigning plus the tweak $\epsilon$ and
+the message hash $h$; there is no entropy input.
+
+**Round 1:** as in [Presigning](#presigning), producing $(R, \alpha_i, \beta_i, c_i, e_i)$.
+
+**Key derivation (local):** each $P_i$ sets $\beta_i \gets \beta_i + c_i \cdot \epsilon$. This is
+the $\delta = 1$ case of the rerandomization step above: the presignature is consumed by the
+run that produced it and never stored, so nothing has to bind a stored $R$ to the message.
+
+**Round 2:** as in [Signing](#signing) Round 1, with the coordinator verifying $(R, s)$ against
+the derived key $X + \epsilon \cdot G$.
+
+**Output:** the signature $(R, s)$, known only to the coordinator.
 
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).

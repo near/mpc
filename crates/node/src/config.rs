@@ -576,10 +576,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -624,10 +620,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -743,10 +735,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:

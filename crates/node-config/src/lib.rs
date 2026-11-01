@@ -86,17 +86,8 @@ impl From<TripleBatchSize> for u32 {
 pub struct InvalidTripleBatchSize(usize);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PresignatureConfig {
-    pub concurrency: usize,
-    pub desired_presignatures_to_buffer: usize,
-    pub timeout_sec: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
-    #[serde(default = "default_true")]
-    pub online_presign: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -190,7 +181,6 @@ pub struct ConfigFile {
     pub pprof_bind_address: SocketAddr,
     pub indexer: IndexerConfig,
     pub triple: TripleConfig,
-    pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
     pub ckd: CKDConfig,
     #[serde(default)]
@@ -200,7 +190,7 @@ pub struct ConfigFile {
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
-    /// When true (the default), asset generation (triples and presignatures)
+    /// When true (the default), asset generation (triples)
     /// runs on a separate, lower-OS-priority runtime so it does not starve
     /// signing. Set to false to run it on the main MPC runtime.
     #[serde(default = "default_true")]

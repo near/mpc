@@ -28,7 +28,7 @@ dates, so treat the row as the notice.
 **A microcode update can make the CVM's encrypted disk unreadable.** The disk key
 derives from the SGX sealing key, which `EGETKEY` derives from CPUSVN among other
 inputs. A TCB recovery fix moves CPUSVN, so the existing disk no longer unseals,
-and key shares, triples, presignatures and the P2P identity key all live on it.
+and key shares, triples and the P2P identity key all live on it.
 
 So before touching firmware: take a fresh backup with the `backup-cli`
 following
