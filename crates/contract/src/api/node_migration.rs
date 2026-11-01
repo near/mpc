@@ -435,7 +435,7 @@ mod tests {
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs};
     use dtos::Ed25519PublicKey;
     use mpc_attestation::attestation::{
-        DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation as MpcMockAttestation,
+        MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation as MpcMockAttestation,
     };
     use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
@@ -1236,7 +1236,7 @@ mod tests {
                 .signer_account_id(account_id.clone())
                 .predecessor_account_id(account_id.clone())
                 .attached_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT)
-                .block_timestamp((DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * NANOS_PER_SECOND)
+                .block_timestamp((MOCK_EXPIRATION_DURATION_SECONDS + 1) * NANOS_PER_SECOND)
                 .build()
         );
 
