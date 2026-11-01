@@ -264,7 +264,7 @@ impl OutgoingConnection {
         );
         // An older peer cannot parse `Echo`
         let (echo_task, echo_ack_sender) = if peer_supports_echo(peer_network_protocol_version) {
-            let echo_tracker = EchoTracker::new()
+            let echo_tracker = EchoTracker::default()
                 .with_next_nonce(Rfc1982SerialU8::new(echo_nonces.load(Ordering::Relaxed)));
             let (ack_sender, ack_receiver) = mpsc::channel(echo_tracker.max_outstanding().max(1));
             let echo_task = tracking::spawn(
@@ -499,10 +499,6 @@ impl OutgoingConnection {
         result
     }
 
-    async fn wait_for_close(&self) {
-        self.closed.cancelled().await;
-    }
-
     fn send(&self, packet: Packet) -> anyhow::Result<()> {
         self.sender.send(packet)?;
         Ok(())
@@ -590,9 +586,10 @@ async fn run_echo_liveness(
                 }
             }
             _ = async {
-                match next_timeout {
-                    Some(deadline) => sleep_until(deadline).await,
-                    None => std::future::pending().await,
+                if let Some(deadline) = next_timeout {
+                    sleep_until(deadline).await;
+                } else {
+                    std::future::pending().await
                 }
             } => {
                 if echo_tracker.check_timeouts(Instant::now()) {
@@ -696,7 +693,7 @@ impl PersistentConnection {
                     };
                     let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
-                    new_conn.wait_for_close().await;
+                    new_conn.closed.cancelled().await;
                     connection_attempt = connection_attempt.wrapping_add(1);
                     // TODO(#1829): check if we can add a timeout
                 }
@@ -1005,6 +1002,7 @@ async fn incoming_connection_handler(
                 let read = framed_tls_stream_reader
                     .next()
                     .timeout(MESSAGE_READ_TIMEOUT_DURATION);
+                // pin outside so that read progress is preserved for each loop iteration
                 tokio::pin!(read);
                 loop {
                     tokio::select! {
@@ -1022,13 +1020,12 @@ async fn incoming_connection_handler(
                             }
                         }
                         read_result = &mut read => {
-                            break match read_result? {
-                                Some(result) => result?,
-                                None => {
-                                    // Stream ended cleanly (peer closed connection).
-                                    return Ok(());
-                                }
-                            };
+                            if let Some(result) = read_result? {
+                                break result?;
+                            }  else {
+                                // Stream ended cleanly (peer closed connection).
+                                return Ok(());
+                            }
                         }
                     }
                 }
@@ -1073,9 +1070,10 @@ async fn incoming_connection_handler(
                     }))?;
                 }
                 Packet::Echo(heartbeat) => {
-                    match peer.any_outgoing_connection() {
-                        Some(outgoing) => outgoing.send_echo_ack(heartbeat),
-                        None => tracing::debug!("No outgoing connection to send EchoAck"),
+                    if let Some(outgoing) = peer.any_outgoing_connection() {
+                        outgoing.send_echo_ack(heartbeat);
+                    } else {
+                        tracing::debug!("No outgoing connection to send EchoAck");
                     }
                 }
                 Packet::EchoAck(heartbeat) => {
@@ -2163,17 +2161,33 @@ mod tests {
         use tokio::time::{Duration, advance};
         use tokio_util::sync::CancellationToken;
 
+        fn setup_liveness() -> (
+            mpsc::UnboundedSender<Packet>,
+            mpsc::UnboundedReceiver<Packet>,
+            mpsc::Sender<Rfc1982SerialU8>,
+            mpsc::Receiver<Rfc1982SerialU8>,
+            CancellationToken,
+        ) {
+            let (packet_tx, packet_rx) = mpsc::unbounded_channel();
+            let (ack_tx, ack_rx) = mpsc::channel(1);
+            (
+                packet_tx,
+                packet_rx,
+                ack_tx,
+                ack_rx,
+                CancellationToken::new(),
+            )
+        }
+
         #[tokio::test(start_paused = true)]
         #[test_log::test]
         async fn run_echo_liveness__should_send_echo_on_interval_and_clear_on_ack() {
             // Given
-            let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
-            let liveness_failed = CancellationToken::new();
-            let echo_tracker = EchoTracker::new();
+            let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
+            let echo_tracker = EchoTracker::default();
 
             // When
-            let _liveness_task = tokio::spawn(run_echo_liveness(
+            tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
                 Arc::default(),
@@ -2182,14 +2196,11 @@ mod tests {
             ));
             advance(ECHO_INTERVAL).await;
             // Then
-            let sent_packet = packet_rx.recv().await.unwrap();
-            let nonce = match sent_packet {
-                Packet::Echo(Heartbeat { nonce }) => nonce,
-                other => panic!("Expected Packet::Echo, got {:?}", other),
+            let Some(Packet::Echo(Heartbeat { nonce })) = packet_rx.recv().await else {
+                panic!("Expected Packet::Echo");
             };
             // When
             ack_tx.send(nonce).await.unwrap();
-            tokio::task::yield_now().await;
             advance(ECHO_TIMEOUT + Duration::from_millis(100)).await;
             // Then
             assert!(!liveness_failed.is_cancelled());
@@ -2199,12 +2210,10 @@ mod tests {
         #[test_log::test]
         async fn run_echo_liveness__should_cancel_token_when_peer_times_out() {
             // Given
-            let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (_ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
-            let liveness_failed = CancellationToken::new();
-            let echo_tracker = EchoTracker::new();
+            let (packet_tx, mut packet_rx, _ack_tx, ack_rx, liveness_failed) = setup_liveness();
+            let echo_tracker = EchoTracker::default();
             // When
-            let _liveness_task = tokio::spawn(run_echo_liveness(
+            tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
                 Arc::default(),
@@ -2214,7 +2223,6 @@ mod tests {
             advance(ECHO_INTERVAL).await;
             assert!(packet_rx.recv().await.is_some());
             advance(ECHO_TIMEOUT + Duration::from_millis(10)).await;
-            tokio::task::yield_now().await;
             // Then
             assert!(liveness_failed.is_cancelled());
         }
@@ -2223,11 +2231,9 @@ mod tests {
         #[test_log::test]
         async fn run_echo_liveness__should_ignore_rogue_nonces() {
             // Given
-            let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
-            let liveness_failed = CancellationToken::new();
-            let echo_tracker = EchoTracker::new();
-            let _liveness_task = tokio::spawn(run_echo_liveness(
+            let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
+            let echo_tracker = EchoTracker::default();
+            tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
                 Arc::default(),
@@ -2235,17 +2241,14 @@ mod tests {
                 liveness_failed.clone(),
             ));
             advance(ECHO_INTERVAL).await;
-            let sent_packet = packet_rx.recv().await.expect("Echo packet expected");
-            let valid_nonce = match sent_packet {
-                Packet::Echo(Heartbeat { nonce }) => nonce,
-                _ => panic!("Expected Packet::Echo"),
+            let Some(Packet::Echo(Heartbeat { nonce: valid_nonce })) = packet_rx.recv().await
+            else {
+                panic!("Expected Packet::Echo");
             };
             // When
             let rogue_nonce = Rfc1982SerialU8(valid_nonce.0.wrapping_add(5));
             ack_tx.send(rogue_nonce).await.unwrap();
-            tokio::task::yield_now().await;
             advance(ECHO_TIMEOUT + Duration::from_millis(10)).await;
-            tokio::task::yield_now().await;
             // Then
             assert!(liveness_failed.is_cancelled());
         }
@@ -2254,11 +2257,9 @@ mod tests {
         #[test_log::test]
         async fn run_echo_liveness__should_ignore_stale_nonces() {
             // Given
-            let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
-            let liveness_failed = CancellationToken::new();
-            let echo_tracker = EchoTracker::new();
-            let _liveness_task = tokio::spawn(run_echo_liveness(
+            let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
+            let echo_tracker = EchoTracker::default();
+            tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
                 Arc::default(),
@@ -2271,14 +2272,11 @@ mod tests {
                 panic!("Expected Packet::Echo");
             };
             ack_tx.send(first_nonce).await.unwrap();
-            tokio::task::yield_now().await;
             advance(ECHO_INTERVAL).await;
             assert!(packet_rx.recv().await.is_some());
             // When
             ack_tx.send(first_nonce).await.unwrap();
-            tokio::task::yield_now().await;
             advance(ECHO_TIMEOUT + Duration::from_millis(10)).await;
-            tokio::task::yield_now().await;
             // Then
             assert!(liveness_failed.is_cancelled());
         }
@@ -2287,12 +2285,10 @@ mod tests {
         #[test_log::test]
         async fn run_echo_liveness__should_send_increasing_nonces_while_acked() {
             // Given
-            let (packet_tx, mut packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
-            let liveness_failed = CancellationToken::new();
-            let echo_tracker = EchoTracker::new();
+            let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
+            let echo_tracker = EchoTracker::default();
             let echo_nonces = Arc::new(AtomicU8::new(0));
-            let _liveness_task = tokio::spawn(run_echo_liveness(
+            tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
                 echo_nonces.clone(),
@@ -2307,7 +2303,6 @@ mod tests {
                 };
                 assert_eq!(nonce, Rfc1982SerialU8::new(expected));
                 ack_tx.send(nonce).await.unwrap();
-                tokio::task::yield_now().await;
             }
             assert!(!liveness_failed.is_cancelled());
             assert_eq!(echo_nonces.load(Ordering::Relaxed), 3);
@@ -2317,10 +2312,8 @@ mod tests {
         #[test_log::test]
         async fn run_echo_liveness__should_stop_when_packet_receiver_is_dropped() {
             // Given
-            let (packet_tx, packet_rx) = mpsc::unbounded_channel::<Packet>();
-            let (_ack_tx, ack_rx) = mpsc::channel::<Rfc1982SerialU8>(1);
-            let liveness_failed = CancellationToken::new();
-            let echo_tracker = EchoTracker::new();
+            let (packet_tx, packet_rx, _ack_tx, ack_rx, liveness_failed) = setup_liveness();
+            let echo_tracker = EchoTracker::default();
             let liveness_task = tokio::spawn(run_echo_liveness(
                 packet_tx,
                 echo_tracker,
@@ -2337,8 +2330,8 @@ mod tests {
         }
 
         #[rstest]
-        #[case::older_peer(NetworkProtocolVersion::Oct2026, false)]
-        #[case::current_peer(NetworkProtocolVersion::Nov2026, true)]
+        #[case(NetworkProtocolVersion::Oct2026, false)]
+        #[case(NetworkProtocolVersion::Nov2026, true)]
         #[tokio::test]
         async fn outgoing_connection__should_send_echo_ack_only_to_nov2026_peers(
             #[case] peer_version: NetworkProtocolVersion,

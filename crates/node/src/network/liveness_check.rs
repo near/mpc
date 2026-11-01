@@ -25,10 +25,6 @@ impl Default for EchoTracker {
 }
 
 impl EchoTracker {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn with_capacity(max_outstanding: usize) -> Self {
         Self {
             next_nonce: Rfc1982SerialU8::default(),
@@ -82,19 +78,12 @@ impl EchoTracker {
         incoming_nonce: Rfc1982SerialU8,
         now: Instant,
     ) -> Option<Duration> {
-        if let Some(idx) = self
+        let acked = *self
             .outstanding
             .iter()
-            .position(|echo| echo.nonce == incoming_nonce)
-        {
-            let echo = self.outstanding.swap_remove(idx);
-            Some(
-                now.checked_duration_since(echo.sent_at)
-                    .unwrap_or(Duration::ZERO),
-            )
-        } else {
-            None
-        }
+            .find(|echo| echo.nonce == incoming_nonce)?;
+        self.outstanding.retain(|echo| echo.sent_at > acked.sent_at);
+        Some(now.saturating_duration_since(acked.sent_at))
     }
 
     pub fn check_timeouts(&mut self, now: Instant) -> bool {
@@ -121,9 +110,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_deterministic_time_warp() {
+    #[expect(non_snake_case)]
+    fn echo_tracker__should_handle_time_warp_deterministically() {
         // Given
-        let mut tracker = EchoTracker::new();
+        let mut tracker = EchoTracker::default();
         let base_time = Instant::now();
         let timeout = Duration::from_secs(5);
         let nonce = tracker.prepare_next_nonce();
@@ -140,9 +130,10 @@ mod tests {
     }
 
     #[test]
-    fn test_nonce_sequence_wraparound() {
+    #[expect(non_snake_case)]
+    fn echo__tracker__should_wraparound_for_nonce_sequence() {
         // Given
-        let mut tracker = EchoTracker::new().with_next_nonce(Rfc1982SerialU8::new(254));
+        let mut tracker = EchoTracker::default().with_next_nonce(Rfc1982SerialU8::new(254));
 
         // When / Then
         assert_eq!(tracker.prepare_next_nonce(), Rfc1982SerialU8::new(254));
@@ -152,9 +143,10 @@ mod tests {
     }
 
     #[test]
-    fn test_is_stale_only_for_nonces_before_the_next_one() {
+    #[expect(non_snake_case)]
+    fn echo_tracker__should_evaluate_nonces_before_next_as_stale() {
         // Given
-        let tracker = EchoTracker::new().with_next_nonce(Rfc1982SerialU8::new(2));
+        let tracker = EchoTracker::default().with_next_nonce(Rfc1982SerialU8::new(2));
 
         // When / Then
         assert!(tracker.is_stale(Rfc1982SerialU8::new(1)));
@@ -164,9 +156,10 @@ mod tests {
     }
 
     #[test]
-    fn test_deterministic_expiry() {
+    #[expect(non_snake_case)]
+    fn echo_tracker__should_have_deterministic_expiry() {
         // Given
-        let mut tracker = EchoTracker::new();
+        let mut tracker = EchoTracker::default();
         let base_time = Instant::now();
         let timeout = Duration::from_secs(2);
         let nonce = tracker.prepare_next_nonce();
@@ -175,5 +168,26 @@ mod tests {
         let expired_warp = base_time + Duration::from_millis(2001);
         assert!(tracker.check_timeouts(expired_warp));
         assert!(!tracker.is_awaiting_ack());
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn echo_tracker__should_clear_earlier_unanswered_echoes_for_receive_ack() {
+        // Given
+        let mut tracker = EchoTracker::default();
+        let t0 = Instant::now();
+        let timeout = Duration::from_secs(10);
+        let first = tracker.prepare_next_nonce();
+        let second = tracker.prepare_next_nonce();
+        assert!(tracker.start_echo(first, t0, timeout));
+        assert!(tracker.start_echo(second, t0 + Duration::from_secs(5), timeout));
+
+        // When
+        let rtt = tracker.receive_ack(second, t0 + Duration::from_millis(5500));
+
+        // Then
+        assert_eq!(rtt, Some(Duration::from_millis(500)));
+        assert!(!tracker.is_awaiting_ack());
+        assert!(!tracker.check_timeouts(t0 + Duration::from_secs(11)));
     }
 }
