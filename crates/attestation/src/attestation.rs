@@ -16,11 +16,11 @@ use sha2::{Digest as _, Sha256, Sha384};
 use tee_verifier_interface::{TDReport10, TcbStatus, VerifiedReport};
 
 #[cfg(feature = "local-verify")]
-use tee_verifier_conversions::verify_quote_with_collateral_dates;
+use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
 #[cfg(feature = "local-verify")]
-use tee_verifier_interface::{
-    CollateralDates, VerificationResultWithCollateralDates, VerifierError,
-};
+use dcap_qvl::{QuotePolicy, verify::QuoteVerifier};
+#[cfg(feature = "local-verify")]
+use tee_verifier_interface::CollateralDates;
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -170,22 +170,19 @@ impl DstackAttestation {
         &self,
         timestamp_seconds: u64,
     ) -> Result<VerifiedQuote, VerificationError> {
-        match verify_quote_with_collateral_dates(
-            self.quote.clone(),
-            self.collateral.clone(),
-            timestamp_seconds,
-        ) {
-            VerificationResultWithCollateralDates::Verified {
-                report,
-                collateral_dates,
-            } => Ok(VerifiedQuote {
-                report,
-                collateral_dates,
-            }),
-            VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(
-                reason,
-            )) => Err(VerificationError::DcapVerification(reason)),
-        }
+        let claims = QuoteVerifier::new_prod()
+            .verify_with_policy(
+                &self.quote.0,
+                self.collateral.clone().into_dcap_type(),
+                timestamp_seconds,
+                &QuotePolicy::claims_only(timestamp_seconds),
+            )
+            .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
+        let (report, collateral_dates) = claims.into_interface_type();
+        Ok(VerifiedQuote {
+            report,
+            collateral_dates,
+        })
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
