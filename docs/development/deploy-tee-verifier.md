@@ -52,9 +52,10 @@ cargo near build reproducible-wasm --manifest-path crates/tee-verifier/Cargo.tom
 sha256sum target/near/tee_verifier/tee_verifier.wasm
 ```
 
-The build runs inside the pinned `sourcescan/cargo-near` image declared in
-`crates/tee-verifier/Cargo.toml` and prints the size in bytes and the SHA-256 (hex and
-bs58). Record the hash; it is published alongside the vote.
+Run it on the release tag you are deploying. The build runs inside the pinned
+`sourcescan/cargo-near` image declared in `crates/tee-verifier/Cargo.toml` and prints the
+size in bytes and the SHA-256 (hex and bs58). If that release publishes a TEE verifier
+digest, the hash must match it. Record the hash; it is published alongside the vote.
 
 ## 2. Create the verifier account
 
