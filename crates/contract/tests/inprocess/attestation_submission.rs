@@ -18,7 +18,10 @@ use mpc_contract::{
 use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
-use std::{assert_matches, collections::BTreeMap};
+use std::{
+    assert_matches,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use near_account_id::AccountId;
 use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
@@ -530,10 +533,10 @@ fn clean_tee_status__should_not_touch_attestations() {
 }
 
 /// **Test that [`clean_invalid_attestations()`] prunes expired attestations end-to-end via
-/// the public endpoint**, including attestations that belong to current participants.
+/// the public endpoint**, except those of the nodes current participants use.
 /// Restores the cleanup-path coverage that lived in the old `clean_tee_status` test.
 #[test]
-fn clean_invalid_attestations__should_remove_expired_entries() {
+fn clean_invalid_attestations__should_remove_expired_nodes_not_in_use() {
     // Given
     const PARTICIPANT_COUNT: usize = 2;
     const THRESHOLD: u64 = 2;
@@ -552,9 +555,6 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
         expected_measurements: None,
     });
 
-    // init_running seeds one mock `Valid` attestation per participant. Overwrite the
-    // first participant's entry with an expiring one, and add a brand-new entry for an
-    // outsider account.
     let participant_node = setup.get_participant_node_ids()[0].clone();
     setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
 
@@ -564,18 +564,25 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     const EXPECTED_STORED: usize = PARTICIPANT_COUNT + 1; // original mocks + outsider entry
     assert_eq!(setup.contract.get_tee_accounts().len(), EXPECTED_STORED);
 
-    // When: time advances past the expiry and cleanup runs with a generous max_scan.
+    // When
     set_system_time(NOW_NS);
     let removed = setup.contract.clean_invalid_attestations(100).unwrap();
 
-    // Then: both entries with `expiry_timestamp_seconds` in the past are evicted; the
-    // second participant's un-overwritten `Valid` mock remains.
-    const EXPECTED_REMOVED: u32 = 2;
+    // Then
+    const EXPECTED_REMOVED: u32 = 1;
+    let stored_tls_keys: BTreeSet<_> = setup
+        .contract
+        .get_tee_accounts()
+        .into_iter()
+        .map(|node| node.tls_public_key)
+        .collect();
+    let participant_tls_keys: BTreeSet<_> = setup
+        .get_participant_node_ids()
+        .into_iter()
+        .map(|node| node.tls_public_key)
+        .collect();
     assert_eq!(removed, EXPECTED_REMOVED);
-    assert_eq!(
-        setup.contract.get_tee_accounts().len(),
-        EXPECTED_STORED - EXPECTED_REMOVED as usize
-    );
+    assert_eq!(stored_tls_keys, participant_tls_keys);
 }
 
 /// **Test that [`clean_invalid_attestations()`] rejects calls outside [`Running`] state** so
