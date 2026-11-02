@@ -24,8 +24,6 @@ filter = "info"
 
 [node]
 my_near_account_id = "$NEAR_ACCOUNT_ID"
-near_responder_account_id = "$NEAR_ACCOUNT_ID"
-number_of_responder_keys = 1
 web_ui = "127.0.0.1:$WEB_UI_PORT"
 migration_web_ui = "127.0.0.1:$MIGRATION_WEB_UI_PORT"
 pprof_bind_address = "127.0.0.1:$PPROF_PORT"

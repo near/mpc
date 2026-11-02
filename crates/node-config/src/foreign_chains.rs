@@ -263,8 +263,6 @@ mod tests {
     /// Every section a [`ConfigFile`] requires except `foreign_chains`.
     const CONFIG_WITHOUT_FOREIGN_CHAINS: &str = r#"
 my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
 web_ui:
   host: localhost
   port: 8080

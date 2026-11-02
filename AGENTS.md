@@ -120,6 +120,9 @@ See `docs/development/engineering-standards.md` for the full rationale and addit
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
+### Numeric Conversions
+Do not convert numbers with `as`: it silently truncates, wraps or loses precision. Use `From` for lossless conversions and `TryFrom` otherwise, handling a failed conversion as `docs/development/engineering-standards.md` §Don't panic describes.
+
 ### Test-Only Code
 Code that only unit tests use must be `#[cfg(test)]`, whether it is a function, method, type, constant or import. Production builds then skip it, and the dead-code lint keeps catching code nothing uses. Do not keep such code compiled in with `#[allow(dead_code)]`.
 
