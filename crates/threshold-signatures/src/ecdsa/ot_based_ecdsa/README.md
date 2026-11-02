@@ -21,7 +21,7 @@ See [`triples/README.md`](triples/README.md) for the full OT pipeline.
 
 ### `presign_and_sign.rs`
 
-The signing protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally between the two, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
+The signing protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally between the two. Nothing binds `R`, which `triple0` alone determines, to the message, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
 
 ### `presign.rs`
 

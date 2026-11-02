@@ -81,6 +81,11 @@ The presignature $(R, k_i, \sigma_i)$ stays local to the run.
 Each $P_i$ sets $\sigma_i \gets \sigma_i + \epsilon \cdot k_i$, so that the signature verifies under
 the derived public key $X + \epsilon \cdot G$.
 
+Nothing binds $R$ to $h$ or $\epsilon$: $R$ is determined by $\mathsf{triple}_0$ alone and is known
+to every party once round 1 completes. The presignature is consumed by the run that produced it,
+and the requirement above forbids reusing $\mathsf{triple}_0$: two runs sharing $R$ with different
+$h$ or $\epsilon$ reveal the private key.
+
 # Signing
 
 **Round 3:**

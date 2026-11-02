@@ -70,7 +70,7 @@ It's **critical** that the output is then destroyed, so that no other
 group of parties attempts to re-use that output for another signature.
 In particular, the parties need some way of agreeing on which
 outputs have been created and used.
-If the threshold $t_i$ is such that $N_{i} \leq 2t - 1$, then it's impossible
+If the triple threshold $t_0$ is such that $N_0 \leq 2t_0 - 1$, then it's impossible
 to have two non-overlapping quorums, so if each party locally registers the
 fact that an output has been used, then agreement can be had not to
 use a certain output.
