@@ -25,8 +25,6 @@ backup_encryption_key_hex = "000000000000000000000000000000000000000000000000000
 
 [mpc_node_config.node]
 my_near_account_id = "${MPC_ACCOUNT_ID}"
-near_responder_account_id = "${MPC_ACCOUNT_ID}"
-number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
 migration_web_ui = "0.0.0.0:8079"
 cores = 4
