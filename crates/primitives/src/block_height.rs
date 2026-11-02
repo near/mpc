@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Constructor,
     derive_more::Display,
 )]
 #[cfg_attr(
@@ -25,10 +26,6 @@ use serde::{Deserialize, Serialize};
 pub struct BlockHeight(u64);
 
 impl BlockHeight {
-    pub const fn new(value: u64) -> Self {
-        Self(value)
-    }
-
     pub const fn value(self) -> u64 {
         self.0
     }
