@@ -9,7 +9,9 @@ This is the production launcher.
 1. Loads a TOML configuration file from `/tapp/user_config`
 2. Selects an approved manifest digest (from on-disk approved list, override, or default)
 3. Pulls the image directly by manifest digest (`docker pull <image>@sha256:<digest>`)
-4. In TEE mode: extends RTMR3 by emitting the manifest digest to dstack
+4. In TEE mode: extends RTMR3 with the manifest digest. On dstack 0.6+ guests it writes the
+   event directly (RTMR sysfs + dstack's runtime event log), since 0.6 removed `EmitEvent`;
+   on older guests it calls dstack's `EmitEvent`
 5. Writes the MPC node config to a shared volume
 6. Launches the MPC container via `docker compose up -d`
 
@@ -90,6 +92,8 @@ Priority order:
 | `/mnt/shared/image-digest.bin` | JSON file with approved image hashes (written by the MPC node) |
 | `/mnt/shared/mpc-config.toml` | MPC node config (written by the launcher) |
 | `/var/run/dstack.sock` | dstack unix socket (TEE mode only) |
+| `/run/log/dstack/` | dstack runtime event log and lock (TEE mode, dstack 0.6+) |
+| `/tdx-measurements/rtmr3:sha384` | Guest RTMR sysfs attribute, mounted from `/sys/devices/virtual/misc/tdx_guest/measurements` (TEE mode, dstack 0.6+) |
 
 ## Key Differences from the Python Launcher
 
@@ -98,7 +102,7 @@ Priority order:
 | Config format | `.env` key-value file | TOML |
 | MPC node config | Environment variables passed to container | TOML file mounted into container |
 | Container launch | `docker run` with flags | `docker compose up -d` with rendered template |
-| RTMR3 extension | `curl` to unix socket | `dstack-sdk` native client |
+| RTMR3 extension | `curl` to unix socket | RTMR sysfs + dstack event log (dstack 0.6+), `dstack-sdk` `EmitEvent` otherwise |
 
 ## Building
 

@@ -5,6 +5,9 @@ pub enum LauncherError {
     #[error("EmitEvent failed while extending RTMR3: {0}")]
     DstackEmitEventFailed(String),
 
+    #[error("failed to measure the MPC image into RTMR3: {0}")]
+    RuntimeEvent(#[from] crate::runtime_event::RuntimeEventError),
+
     #[error("MPC_HASH_OVERRIDE invalid: {0}")]
     InvalidHashOverride(String),
 

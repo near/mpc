@@ -21,6 +21,7 @@ pub mod compose;
 pub mod config;
 pub mod constants;
 pub mod error;
+pub mod runtime_event;
 pub mod selection;
 pub mod types;
 pub mod validation;
@@ -123,6 +124,19 @@ fn load_approved_hashes(
 }
 
 async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(), LauncherError> {
+    let paths = runtime_event::RuntimeEventPaths::default();
+    if paths.rtmr_sysfs_available() {
+        tracing::info!("measuring MPC image into RTMR3 via sysfs");
+        return runtime_event::RuntimeEvent {
+            name: MPC_IMAGE_HASH_EVENT,
+            payload: manifest_digest.as_ref(),
+        }
+        .emit(&paths)
+        .map_err(LauncherError::from);
+    }
+
+    // dstack < 0.6 guests have no RTMR sysfs interface but still serve `EmitEvent`.
+    tracing::info!("measuring MPC image into RTMR3 via dstack EmitEvent");
     let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
     dstack_client
