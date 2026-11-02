@@ -258,7 +258,6 @@ fn submit_participant_info__should_reject_a_new_entry_without_a_grant() {
         setup
             .contract
             .get_attestation(newcomer.tls_public_key)
-            .unwrap()
             .is_none()
     );
 }
@@ -286,7 +285,6 @@ fn submit_participant_info__should_store_a_new_entry_and_consume_one_grant() {
         setup
             .contract
             .get_attestation(newcomer.tls_public_key)
-            .unwrap()
             .is_some()
     );
     assert_eq!(
@@ -318,14 +316,12 @@ fn submit_participant_info__should_allow_two_entries_for_two_grants() {
         setup
             .contract
             .get_attestation(first.tls_public_key)
-            .unwrap()
             .is_some()
     );
     assert!(
         setup
             .contract
             .get_attestation(second.tls_public_key)
-            .unwrap()
             .is_some()
     );
     assert_eq!(setup.contract.available_attestation_grants(account_id), 0);
@@ -378,7 +374,6 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
     let stored_before = setup
         .contract
         .get_attestation(node.tls_public_key.clone())
-        .unwrap()
         .expect("participant attestation should be stored");
 
     // When: the same participant re-attests with no attached deposit, an hour later.
@@ -392,7 +387,6 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
     let stored_after = setup
         .contract
         .get_attestation(node.tls_public_key)
-        .unwrap()
         .expect("participant attestation should still be stored");
     assert_eq!(
         stored_after.accepted_at_seconds,
@@ -886,7 +880,6 @@ fn prepay_attestation_storage__should_let_one_account_fund_another() {
         setup
             .contract
             .get_attestation(node.tls_public_key)
-            .unwrap()
             .is_some()
     );
     assert_eq!(

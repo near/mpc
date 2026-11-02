@@ -227,16 +227,14 @@ impl MpcContract {
             )
     }
 
-    #[handle_result]
     pub fn get_attestation(
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<Option<dtos::StoredAttestation>, Error> {
-        Ok(self
-            .tee_state
+    ) -> Option<dtos::StoredAttestation> {
+        self.tee_state
             .nodes
             .get(&tls_public_key)
-            .map(IntoInterfaceType::into_dto_type))
+            .map(IntoInterfaceType::into_dto_type)
     }
 
     /// Returns every stored node, including nodes of accounts that are not participants.
