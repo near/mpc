@@ -54,6 +54,7 @@ mod tests {
     use crate::types::LatestFinalBlockInfo;
     use ed25519_dalek::{SigningKey, Verifier, VerifyingKey};
     use near_account_id::AccountId;
+    use near_contract_transport::BlockHeight;
     use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
     use near_indexer::near_primitives::transaction::SignedTransaction;
     use near_indexer_primitives::CryptoHash;
@@ -86,7 +87,7 @@ mod tests {
         let (key0, key1) = (signer0.public_key(), signer1.public_key());
         let mock = MockChainStateBuilder::new()
             .with_latest_block(Ok(LatestFinalBlockInfo {
-                observed_at: 100.into(),
+                observed_at: BlockHeight::new(100),
                 value: CryptoHash::hash_bytes(b"blk"),
             }))
             .with_signed_transaction_submitter_response(Ok(()))

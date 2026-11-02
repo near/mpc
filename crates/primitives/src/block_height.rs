@@ -17,8 +17,6 @@ use serde::{Deserialize, Serialize};
     BorshSerialize,
     BorshDeserialize,
     derive_more::Display,
-    derive_more::From,
-    derive_more::Into,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

@@ -781,6 +781,7 @@ mod tests {
         VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
         VerifyForeignTransactionResponse,
     };
+    use near_contract_transport::BlockHeight;
     use near_contract_transport::{
         CallContract, FunctionCallArgs, NearToken, ObservedState, mock::MockViewContract,
     };
@@ -1126,7 +1127,7 @@ mod tests {
     async fn mpc_contract_handle__should_match_the_view_catalog() {
         // Given
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: 0.into(),
+            observed_at: BlockHeight::new(0),
             value: Vec::new(),
         }));
         let handle = MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap());

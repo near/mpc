@@ -11,7 +11,7 @@ impl IndexerStats {
     pub(crate) fn new() -> Self {
         IndexerStats {
             blocks_processed_count: 0,
-            last_processed_block_height: 0.into(),
+            last_processed_block_height: BlockHeight::new(0),
         }
     }
 }
@@ -45,8 +45,8 @@ pub async fn indexer_logger(
 
         let blocks_behind = match info_fetcher.fetch_latest_final_block_info().await {
             Ok(block_info) => {
-                let tip: u64 = block_info.observed_at.into();
-                let processed: u64 = stats_copy.last_processed_block_height.into();
+                let tip = block_info.observed_at.value();
+                let processed = stats_copy.last_processed_block_height.value();
                 format!("{}", tip.saturating_sub(processed))
             }
             Err(_) => "∞".to_string(),

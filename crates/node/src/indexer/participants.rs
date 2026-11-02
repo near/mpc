@@ -322,7 +322,7 @@ pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'sta
             tracing::debug!(target: "indexer", "querying contract state");
 
             let (height, protocol_state) = match contract.state().await {
-                Ok(observed) => (observed.observed_at.into(), observed.value),
+                Ok(observed) => (observed.observed_at.value(), observed.value),
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading config from chain during state: {:?}", e);
                     tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;

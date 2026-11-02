@@ -9,6 +9,7 @@ use chain_gateway::event_subscriber::block_events::BlockContext;
 use futures::StreamExt;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
+use near_contract_transport::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
@@ -259,7 +260,7 @@ async fn handle_message(
         .send(ChainBlockUpdate {
             block: BlockContext {
                 hash: streamer_message.block.header.hash,
-                height: streamer_message.block.header.height.into(),
+                height: BlockHeight::new(streamer_message.block.header.height),
                 prev_hash: streamer_message.block.header.prev_hash,
                 last_final_block: streamer_message.block.header.last_final_block,
                 entropy: streamer_message.block.header.random_value.into(),

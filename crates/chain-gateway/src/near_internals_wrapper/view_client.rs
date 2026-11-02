@@ -1,3 +1,4 @@
+use near_contract_transport::BlockHeight;
 use std::sync::Arc;
 
 use near_account_id::AccountId;
@@ -70,7 +71,7 @@ impl NearViewClientActorHandle {
         let variant = match response.kind {
             near_indexer_primitives::views::QueryResponseKind::CallResult(call_result) => {
                 return Ok(ObservedState {
-                    observed_at: response.block_height.into(),
+                    observed_at: BlockHeight::new(response.block_height),
                     value: call_result.result,
                 });
             }
@@ -110,7 +111,7 @@ impl FetchLatestFinalBlockInfo for NearViewClientActorHandle {
             message: err.to_string(),
         })?;
         Ok(LatestFinalBlockInfo {
-            observed_at: response.header.height.into(),
+            observed_at: BlockHeight::new(response.header.height),
             value: response.header.hash,
         })
     }

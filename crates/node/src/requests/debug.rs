@@ -204,7 +204,7 @@ where
                 &request_eligible_leaders,
             );
             request_lines.push((
-                request.block_height.into(),
+                request.block_height.value(),
                 request.request.get_id(),
                 debug_line,
             ));

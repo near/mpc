@@ -305,7 +305,7 @@ impl RecentBlocksTracker {
             root_children: Vec::new(),
             canonical_head: Weak::new(),
             final_head: None,
-            maximum_height_available: 0.into(),
+            maximum_height_available: BlockHeight::new(0),
             hash_to_node: HashMap::new(),
         }
     }
@@ -541,7 +541,7 @@ impl Debug for RecentBlocksTracker {
                 .saturating_sub(self.window_size)
                 .saturating_add(1),
             self.maximum_height_available,
-            self.minimum_height_to_keep().unwrap_or(0.into())
+            self.minimum_height_to_keep().unwrap_or(BlockHeight::new(0))
         )?;
         let final_head = self.final_head.as_ref().map(|n| n.hash);
         let canonical_head = self.canonical_head.upgrade().map(|n| n.hash);
@@ -565,7 +565,7 @@ impl Debug for RecentBlocksTracker {
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils {
     use super::super::block_events::BlockContext;
-    use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
+    use super::{BlockHeight, BlockStatus, BlockStatusHandle, RecentBlocksTracker};
     use crate::types::BlockEntropy;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
@@ -636,7 +636,7 @@ pub mod test_utils {
 
             BlockContext {
                 hash: self.hash,
-                height: self.height.into(),
+                height: BlockHeight::new(self.height),
                 entropy: self.entropy.clone(),
                 timestamp_nanosec: self.timestamp_nanosec,
                 prev_hash: parent_hash,
@@ -781,7 +781,7 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::test_utils::Tester;
-    use super::{AtomicBlockStatus, BlockStatus};
+    use super::{AtomicBlockStatus, BlockHeight, BlockStatus};
     use std::sync::Arc;
     use std::sync::atomic::AtomicU8;
 
@@ -1075,7 +1075,10 @@ mod tests {
         tester.add(&b1);
         tester.add(&b2);
         tester.add(&b3);
-        assert_eq!(tester.tracker.minimum_height_to_keep(), Some(1.into()))
+        assert_eq!(
+            tester.tracker.minimum_height_to_keep(),
+            Some(BlockHeight::new(1))
+        )
     }
 
     #[test]

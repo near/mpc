@@ -1,3 +1,4 @@
+use crate::BlockHeight;
 use std::error::Error;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -87,7 +88,7 @@ impl<T: WaitLevel> ViewContract for NearKitCaller<T> {
             .await
             .map_err(|_elapsed| NearKitViewError::Timeout(self.read_timeout))??;
         Ok(ObservedState {
-            observed_at: result.block_height.into(),
+            observed_at: BlockHeight::new(result.block_height),
             value: result.result,
         })
     }
