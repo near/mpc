@@ -11,6 +11,7 @@ use crate::primitives::{
     key_state::{EpochId, KeyForDomain, Keyset},
     participants::{ParticipantId, Participants},
     test_utils::{gen_participant, gen_participants, gen_threshold_params},
+    threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
         governance_threshold_lower_relative_bound,
@@ -78,12 +79,13 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
     let mut env = Environment::new(Some(100), None, None);
     let mut running = gen_running_state(num_domains);
     let proposal = gen_valid_params_proposal(&running.parameters);
+    let mut votes = GovernanceThresholdParametersVotes::default();
     let mut resharing_state = None;
     for (account, _, _) in proposal.participants().participants() {
         env.set_signer(account);
         assert!(resharing_state.is_none());
         resharing_state = running
-            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
+            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal, &mut votes)
             .unwrap();
     }
     (

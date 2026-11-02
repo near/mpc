@@ -321,6 +321,7 @@ impl MpcContract {
             tee_verifier_account_id: bogus_tee_verifier_account_id(),
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: Default::default(),
         }
     }
 }
