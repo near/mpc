@@ -90,7 +90,7 @@ where
             .map_err(Into::into)
     }
 
-    /// Triggers on-chain re-validation of all stored attestations.
+    /// Triggers on-chain re-validation of the participants' attestations.
     pub async fn verify_tee(&self) -> Result<(), TeeContextError> {
         self.mpc_contract_handle
             .verify_tee()
