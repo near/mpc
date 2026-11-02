@@ -46,7 +46,7 @@ pub fn convert_key_event_to_instance(
 
     Ok(match &key_event.instance {
         Some(current_instance)
-            if dtos::BlockHeight::from(current_height) < current_instance.expires_on =>
+            if dtos::BlockHeight::new(current_height) < current_instance.expires_on =>
         {
             ContractKeyEventInstance {
                 id: dtos::KeyEventId {

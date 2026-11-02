@@ -59,8 +59,6 @@ impl BlockHeight {
     BorshSerialize,
     BorshDeserialize,
     derive_more::Display,
-    derive_more::From,
-    derive_more::Into,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -78,13 +76,13 @@ impl BlockCount {
     }
 }
 
-/// Saturates at the maximum height: the shipped contract is built without overflow checks, where
-/// a wrapped height would silently compare as being in the past.
+/// Panics on overflow: without overflow checks a wrapped height would silently compare as being
+/// in the past.
 impl Add<BlockCount> for BlockHeight {
     type Output = BlockHeight;
 
     fn add(self, count: BlockCount) -> BlockHeight {
-        BlockHeight(self.0.saturating_add(count.0))
+        BlockHeight(self.0.checked_add(count.0).expect("block height overflow"))
     }
 }
 
@@ -156,15 +154,13 @@ mod tests {
     }
 
     #[test]
-    fn add__should_saturate_at_the_maximum_height() {
+    #[should_panic(expected = "block height overflow")]
+    fn add__should_panic_on_overflow() {
         // Given
         let height = BlockHeight::new(u64::MAX - 1);
         let count = BlockCount::new(5);
 
         // When
-        let later = height + count;
-
-        // Then
-        assert_eq!(later, BlockHeight::new(u64::MAX));
+        let _ = height + count;
     }
 }

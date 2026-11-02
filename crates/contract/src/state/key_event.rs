@@ -240,7 +240,7 @@ enum VoteSuccessResult {
 }
 
 fn current_block_height() -> BlockHeight {
-    env::block_height().into()
+    BlockHeight::new(env::block_height())
 }
 
 /// State for a single attempt at generating or resharing a key.
