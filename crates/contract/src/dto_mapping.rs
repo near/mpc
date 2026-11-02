@@ -964,7 +964,6 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            // TODO(#2825): reporting dropped ahead of the switch to hash-only votes.
             parameters_votes: dtos::GovernanceThresholdParametersVotes {
                 proposal_by_account: BTreeMap::new(),
             },

@@ -1,17 +1,30 @@
-use crate::primitives::key_state::AuthenticatedAccountId;
-use crate::primitives::participants::{ParticipantCount, Participants};
+use crate::primitives::proposal_hash::{Borsh, Sha256, ToProposalHash};
 use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
-use near_sdk::{log, near};
-use std::collections::BTreeMap;
+use crate::primitives::votes::Votes;
+use crate::primitives::{
+    key_state::AuthenticatedAccountId,
+    participants::{ParticipantCount, Participants},
+};
+use crate::storage_keys::StorageKey;
+use near_sdk::near;
 
-/// Tracks votes for proposed threshold parameters (new participants, threshold,
-/// and per-domain threshold updates). Each current participant can maintain one vote.
-// TODO(#2825): Replace with Votes<AuthenticatedAccountId> from votes.rs.
+impl ToProposalHash for ProposedGovernanceThresholdParameters {
+    type Serializer = Borsh;
+    type Hasher = Sha256;
+}
+
+/// Votes on proposed threshold parameters, one per account, stored by proposal hash.
 #[near(serializers=[borsh])]
-#[derive(Debug, Default)]
-pub struct GovernanceThresholdParametersVotes {
-    pub(crate) proposal_by_account:
-        BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
+#[derive(Debug)]
+pub struct GovernanceThresholdParametersVotes(Votes<AuthenticatedAccountId>);
+
+impl Default for GovernanceThresholdParametersVotes {
+    fn default() -> Self {
+        Self(Votes::new(
+            StorageKey::ParametersVotesByVoter,
+            StorageKey::ParametersVotesByProposal,
+        ))
+    }
 }
 
 impl GovernanceThresholdParametersVotes {
@@ -21,44 +34,35 @@ impl GovernanceThresholdParametersVotes {
         proposal: &ProposedGovernanceThresholdParameters,
         participants: &Participants,
     ) -> ParticipantCount {
-        ParticipantCount::from_len(
-            self.proposal_by_account
-                .iter()
-                .filter(|&(acc, prop)| participants.is_participant(acc) && prop == proposal)
-                .count(),
-        )
+        self.0
+            .voters_for(&proposal.to_proposal_hash())
+            .map_or(ParticipantCount::new(0), |voters| {
+                voters.count_participants(participants)
+            })
     }
-    /// Registers a vote by `participant` for `proposal`.
-    /// Removes any existing votes by `participant`.
-    /// Returns the number of participants who have voted for the same proposal (including the new
-    /// vote).
+
+    /// Registers a vote by `participant` for `proposal`, replacing any existing vote by
+    /// `participant`. Returns `true` once every proposed participant voted for `proposal`.
     pub fn vote(
         &mut self,
         proposal: &ProposedGovernanceThresholdParameters,
         participant: AuthenticatedAccountId,
-    ) -> ParticipantCount {
-        if self
-            .proposal_by_account
-            .insert(participant, proposal.clone())
-            .is_some()
-        {
-            log!("removed one vote for signer");
-        }
-        ParticipantCount::from_len(
-            self.proposal_by_account
-                .values()
-                .filter(|&prop| prop == proposal)
-                .count(),
-        )
+    ) -> bool {
+        let proposed_participants = proposal.participants();
+        let n_votes = self
+            .0
+            .vote(participant, proposal.to_proposal_hash())
+            .count_participants(proposed_participants);
+        n_votes == proposed_participants.count()
     }
 
     pub fn clear(&mut self) {
-        self.proposal_by_account.clear();
+        self.0.clear();
     }
 
     #[cfg(test)]
     pub fn is_empty(&self) -> bool {
-        self.proposal_by_account.is_empty()
+        self.0.all().is_empty()
     }
 }
 
@@ -68,7 +72,14 @@ mod tests {
     use crate::primitives::{
         key_state::AuthenticatedAccountId,
         participants::{ParticipantCount, Participants},
-        test_utils::{gen_participant, gen_proposed_threshold_params},
+        test_utils::{
+            authenticate_account_as, gen_participant, gen_participants,
+            gen_proposed_threshold_params,
+        },
+        thresholds::{
+            GovernanceThreshold, GovernanceThresholdParameters,
+            ProposedGovernanceThresholdParameters,
+        },
     };
     use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
@@ -86,16 +97,13 @@ mod tests {
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
         let params = gen_proposed_threshold_params(30);
         let mut votes = GovernanceThresholdParametersVotes::default();
-        assert_eq!(
-            votes.vote(&params, participant.clone()),
-            ParticipantCount::new(1)
-        );
+        assert!(!votes.vote(&params, participant.clone()));
         assert_eq!(
             votes.n_votes(&params, &participants),
             ParticipantCount::new(1)
         );
         let params2 = gen_proposed_threshold_params(30);
-        assert_eq!(votes.vote(&params2, participant), ParticipantCount::new(1));
+        assert!(!votes.vote(&params2, participant));
         assert_eq!(
             votes.n_votes(&params2, &participants),
             ParticipantCount::new(1)
@@ -112,15 +120,12 @@ mod tests {
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
-        assert_eq!(
-            votes.vote(&params, participant.clone()),
-            ParticipantCount::new(1)
-        );
+        assert!(!votes.vote(&params, participant.clone()));
         assert_eq!(
             votes.n_votes(&params2, &participants),
             ParticipantCount::new(1)
         );
-        assert_eq!(votes.vote(&params2, participant), ParticipantCount::new(2));
+        assert!(!votes.vote(&params2, participant));
         assert_eq!(
             votes.n_votes(&params2, &participants),
             ParticipantCount::new(2)
@@ -227,6 +232,36 @@ mod tests {
         assert_eq!(
             votes.n_votes(&params, &new_participants),
             ParticipantCount::new(1)
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote__should_accept_once_all_proposed_participants_voted() {
+        // Given
+        let participants = gen_participants(3);
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap(),
+            BTreeMap::new(),
+        );
+        let voters: Vec<AuthenticatedAccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| authenticate_account_as(account_id, &participants))
+            .collect();
+        let mut votes = GovernanceThresholdParametersVotes::default();
+        assert!(!votes.vote(&proposal, voters[0].clone()));
+        assert!(!votes.vote(&proposal, voters[1].clone()));
+
+        // When
+        let accepted = votes.vote(&proposal, voters[2].clone());
+
+        // Then
+        assert!(accepted);
+        assert_eq!(
+            votes.n_votes(&proposal, &participants),
+            ParticipantCount::new(3)
         );
     }
 }

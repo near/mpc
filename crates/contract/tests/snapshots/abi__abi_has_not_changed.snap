@@ -3717,7 +3717,7 @@ expression: abi
           }
         },
         "GovernanceThresholdParametersVotes": {
-          "description": "Votes for threshold parameter changes.",
+          "description": "Votes for threshold parameter changes. Always empty: the contract stores only proposal hashes and no longer reports pending votes. Kept for wire compatibility.",
           "type": "object",
           "required": [
             "proposal_by_account"
