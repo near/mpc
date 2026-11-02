@@ -6418,6 +6418,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-block-primitives"
+version = "3.18.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.1.1",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "near-cache"
 version = "2.14.0"
 source = "git+https://github.com/near/nearcore?tag=2.14.0#bc4e9e8cfb03d9e82f027883055624e18576993e"
@@ -6664,8 +6675,8 @@ name = "near-contract-transport"
 version = "3.18.0"
 dependencies = [
  "borsh",
- "mpc-primitives",
  "near-account-id",
+ "near-block-primitives",
  "near-gas",
  "near-kit",
  "near-token",

@@ -4,7 +4,6 @@
 extern crate alloc;
 
 pub mod account_id;
-pub mod block_height;
 pub mod domain;
 pub mod hash;
 pub mod key_state;
@@ -14,7 +13,6 @@ pub mod threshold;
 pub mod yield_index;
 
 pub use account_id::AccountId;
-pub use block_height::BlockHeight;
 pub use key_state::{AttemptId, EpochId, KeyEventId};
 pub use participant_count::ParticipantCount;
 pub use participant_id::ParticipantId;
