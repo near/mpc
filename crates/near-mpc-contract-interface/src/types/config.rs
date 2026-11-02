@@ -1,4 +1,4 @@
-use mpc_primitives::BlockCount;
+use near_block_primitives::BlockCount;
 
 /// The initial configuration parameters for when initializing the contract.
 /// All fields are optional, as the contract can fill in defaults for any

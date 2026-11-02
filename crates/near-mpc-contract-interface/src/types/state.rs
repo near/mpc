@@ -17,9 +17,9 @@ use super::primitives::DomainId;
 // =============================================================================
 
 pub use mpc_primitives::{
-    AttemptId, BlockCount, BlockHeight, EpochId, GovernanceThreshold, ParticipantCount,
-    ReconstructionThreshold,
+    AttemptId, EpochId, GovernanceThreshold, ParticipantCount, ReconstructionThreshold,
 };
+pub use near_block_primitives::{BlockCount, BlockHeight};
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(

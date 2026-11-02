@@ -7078,6 +7078,7 @@ dependencies = [
  "hex",
  "insta",
  "mpc-primitives",
+ "near-block-primitives",
  "near-contract-transport",
  "near-mpc-bounded-collections",
  "near-mpc-crypto-types",
