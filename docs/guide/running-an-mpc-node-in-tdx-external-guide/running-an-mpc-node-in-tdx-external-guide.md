@@ -1925,7 +1925,7 @@ There are 2 keys that should be retrieved from node.
 * Node Account Key (`near_signer_public_key`) - this key is used by the node for all its contract calls, including signature responses and operations such as `vote_reshared`.
   This key needs to be added to the NEAR account that was created in the step above.
 
-`/public_data` also has a `near_responder_public_keys` field. It is not used; do not add these keys. If your account still has responder keys from an older setup, you can delete them, but keep the key that matches `near_signer_public_key`.
+On 3.17.x and older, `/public_data` also has a `near_responder_public_keys` field. It is not used; do not add these keys. If your account still has responder keys from an older setup, you can delete them, but keep the key that matches `near_signer_public_key`.
 
 ### Retrieve the Node Account Key and P2P Key
 
