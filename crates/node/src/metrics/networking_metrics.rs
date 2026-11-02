@@ -50,6 +50,8 @@ const NETWORK_MESSAGE_SIZES_BYTES_BUCKETS: &[f64] = &[
     MTU_BYTES * 4096.0, // ~5.2MB
 ];
 
+const ECHO_RTT_SECONDS_BUCKETS: &[f64] = &[0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 5.0, 8.0, 10.0];
+
 pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     register_int_gauge_vec!(
         "mpc_network_live_connections",
@@ -78,6 +80,16 @@ pub(crate) static INCOMING_CONNECTIONS_REJECTED: LazyLock<IntCounterVec> = LazyL
         "mpc_network_incoming_connections_rejected",
         "Connection dropped due to peer exceeding its' connection limit",
         &[LABEL_PEER_PARTICIPANT_ID],
+    )
+    .unwrap()
+});
+
+pub(crate) static MPC_P2P_ECHO_RTT_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
+    register_histogram_vec!(
+        "mpc_p2p_echo_rtt_seconds",
+        "RTT of an Echo/EchoAck with a peer",
+        &[LABEL_PEER_PARTICIPANT_ID],
+        ECHO_RTT_SECONDS_BUCKETS.to_vec()
     )
     .unwrap()
 });
