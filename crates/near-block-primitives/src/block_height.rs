@@ -60,18 +60,14 @@ impl BlockHeight {
     BorshDeserialize,
     derive_more::Constructor,
     derive_more::Display,
+    derive_more::From,
+    derive_more::Into,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct BlockCount(u64);
-
-impl BlockCount {
-    pub const fn value(self) -> u64 {
-        self.0
-    }
-}
 
 /// Panics on overflow: without overflow checks a wrapped height would silently compare as being
 /// in the past.
