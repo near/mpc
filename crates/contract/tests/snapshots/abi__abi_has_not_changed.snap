@@ -3093,7 +3093,7 @@ expression: abi
               "minimum": 0.0
             },
             "ckd_call_gas_attachment_requirement_tera_gas": {
-              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "description": "Gas required for a CKD request.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3770,7 +3770,7 @@ expression: abi
               "minimum": 0.0
             },
             "ckd_call_gas_attachment_requirement_tera_gas": {
-              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "description": "Gas required for a CKD request.",
               "type": [
                 "integer",
                 "null"

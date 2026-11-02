@@ -105,3 +105,107 @@ pub(crate) fn config_from_init(init: InitConfig) -> Config {
             .unwrap_or(DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR),
     }
 }
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_from_init__should_fill_unset_fields_with_defaults() {
+        // Given
+        let init = InitConfig::default();
+
+        // When
+        let config = config_from_init(init);
+
+        // Then
+        assert_eq!(
+            config,
+            Config {
+                key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
+                tee_upgrade_deadline_duration_seconds:
+                    DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS,
+                apply_contract_update_tera_gas: DEFAULT_APPLY_CONTRACT_UPDATE_TERA_GAS,
+                sign_call_gas_attachment_requirement_tera_gas:
+                    DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS,
+                ckd_call_gas_attachment_requirement_tera_gas:
+                    DEFAULT_CKD_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS,
+                return_signature_and_clean_state_on_success_call_tera_gas:
+                    DEFAULT_RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS,
+                return_ck_and_clean_state_on_success_call_tera_gas:
+                    DEFAULT_RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS,
+                fail_on_timeout_tera_gas: DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS,
+                fail_attestation_submission_tera_gas: DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS,
+                clean_tee_status_tera_gas: DEFAULT_CLEAN_TEE_STATUS_TERA_GAS,
+                clean_invalid_attestations_tera_gas: DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS,
+                cleanup_orphaned_node_migrations_tera_gas:
+                    DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
+                remove_non_participant_update_votes_tera_gas:
+                    DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS,
+                clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
+                remove_non_participant_tee_verifier_votes_tera_gas:
+                    DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS,
+                verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
+                resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
+                launcher_hash_unused_ttl_seconds: DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS,
+                attestation_storage_fee_millinear: DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR,
+            }
+        );
+    }
+
+    #[test]
+    fn config_from_init__should_keep_provided_fields() {
+        // Given
+        let init = InitConfig {
+            key_event_timeout_blocks: Some(1),
+            tee_upgrade_deadline_duration_seconds: Some(2),
+            apply_contract_update_tera_gas: Some(3),
+            sign_call_gas_attachment_requirement_tera_gas: Some(4),
+            ckd_call_gas_attachment_requirement_tera_gas: Some(5),
+            return_signature_and_clean_state_on_success_call_tera_gas: Some(6),
+            return_ck_and_clean_state_on_success_call_tera_gas: Some(7),
+            fail_on_timeout_tera_gas: Some(8),
+            fail_attestation_submission_tera_gas: Some(9),
+            clean_tee_status_tera_gas: Some(10),
+            clean_invalid_attestations_tera_gas: Some(11),
+            cleanup_orphaned_node_migrations_tera_gas: Some(12),
+            remove_non_participant_update_votes_tera_gas: Some(13),
+            clean_foreign_chain_data_tera_gas: Some(14),
+            remove_non_participant_tee_verifier_votes_tera_gas: Some(15),
+            verifier_tera_gas: Some(16),
+            resolve_verification_tera_gas: Some(17),
+            launcher_hash_unused_ttl_seconds: Some(18),
+            attestation_storage_fee_millinear: Some(19),
+        };
+
+        // When
+        let config = config_from_init(init);
+
+        // Then
+        assert_eq!(
+            config,
+            Config {
+                key_event_timeout_blocks: 1,
+                tee_upgrade_deadline_duration_seconds: 2,
+                apply_contract_update_tera_gas: 3,
+                sign_call_gas_attachment_requirement_tera_gas: 4,
+                ckd_call_gas_attachment_requirement_tera_gas: 5,
+                return_signature_and_clean_state_on_success_call_tera_gas: 6,
+                return_ck_and_clean_state_on_success_call_tera_gas: 7,
+                fail_on_timeout_tera_gas: 8,
+                fail_attestation_submission_tera_gas: 9,
+                clean_tee_status_tera_gas: 10,
+                clean_invalid_attestations_tera_gas: 11,
+                cleanup_orphaned_node_migrations_tera_gas: 12,
+                remove_non_participant_update_votes_tera_gas: 13,
+                clean_foreign_chain_data_tera_gas: 14,
+                remove_non_participant_tee_verifier_votes_tera_gas: 15,
+                verifier_tera_gas: 16,
+                resolve_verification_tera_gas: 17,
+                launcher_hash_unused_ttl_seconds: 18,
+                attestation_storage_fee_millinear: 19,
+            }
+        );
+    }
+}

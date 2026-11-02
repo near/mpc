@@ -29,7 +29,7 @@ pub struct InitConfig {
     pub apply_contract_update_tera_gas: Option<u64>,
     /// Gas required for a sign request.
     pub sign_call_gas_attachment_requirement_tera_gas: Option<u64>,
-    /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
+    /// Gas required for a CKD request.
     pub ckd_call_gas_attachment_requirement_tera_gas: Option<u64>,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub return_signature_and_clean_state_on_success_call_tera_gas: Option<u64>,
@@ -90,7 +90,7 @@ pub struct Config {
     pub apply_contract_update_tera_gas: u64,
     /// Gas required for a sign request.
     pub sign_call_gas_attachment_requirement_tera_gas: u64,
-    /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
+    /// Gas required for a CKD request.
     pub ckd_call_gas_attachment_requirement_tera_gas: u64,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub return_signature_and_clean_state_on_success_call_tera_gas: u64,
