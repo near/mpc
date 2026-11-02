@@ -277,7 +277,6 @@ pub mod running_tests {
     use near_sdk::AccountId;
     use std::assert_matches;
 
-    /// Returns the state plus an [`Environment`] signing as the first participant.
     fn setup(num_domains: usize) -> (RunningContractState, Environment) {
         with_first_participant_signer(gen_running_state(num_domains))
     }
@@ -303,10 +302,9 @@ pub mod running_tests {
         (state, env)
     }
 
-    /// Returns a participant present in both the current and proposed sets:
-    /// [`gen_valid_params_proposal`] keeps only a random subset of the current
-    /// participants, so an arbitrary current one may be absent from the proposal
-    /// and a freshly added one would be deferred as a pending newcomer.
+    /// Returns a participant present in both the current and proposed sets.
+    /// [`gen_valid_params_proposal`] keeps only a random subset of the current ones.
+    /// A freshly added participant would be deferred as a pending newcomer.
     fn overlapping_signer(
         state: &RunningContractState,
         proposal: &ProposedGovernanceThresholdParameters,
