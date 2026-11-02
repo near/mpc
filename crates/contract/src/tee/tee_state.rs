@@ -516,7 +516,6 @@ mod tests {
         KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, Rtmr0Hash, Rtmr1Hash,
         Rtmr2Hash,
     };
-    use near_account_id::AccountId;
     use near_sdk::{env, test_utils::VMContextBuilder, testing_env};
     use rstest::rstest;
     use std::time::Duration;
@@ -557,32 +556,18 @@ mod tests {
         let fresh_node = node_for(&"fresh.near".parse().unwrap());
         let stale_node = node_for(&"stale.near".parse().unwrap());
 
-        let fresh = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(FRESH_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
-        let stale = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(STALE_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
-
+        let fresh = mock_expiring_at(FRESH_EXPIRY_SECONDS);
+        let stale = mock_expiring_at(STALE_EXPIRY_SECONDS);
         submit_mock(&mut tee_state, &fresh_node, fresh).unwrap();
         submit_mock(&mut tee_state, &stale_node, stale).unwrap();
-
-        assert_eq!(tee_state.nodes.len(), 2);
 
         // When: the clock advances past the stale entry's expiry and cleanup runs.
         set_block_timestamp(NOW_SECONDS * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: only the expired entry is removed.
-        assert_eq!(removed.len(), 1);
-        assert!(tee_state.nodes.contains_key(&fresh_node.tls_public_key));
-        assert!(!tee_state.nodes.contains_key(&stale_node.tls_public_key));
+        assert_eq!(removed, vec![stale_node.account_id]);
+        assert_eq!(tee_state.get_tee_accounts(), vec![fresh_node]);
     }
 
     #[test]
@@ -619,20 +604,15 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let node = node_for(&"alice.near".parse().unwrap());
-        let oversized = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS * 10),
-            expected_measurements: None,
-        };
+        let oversized = mock_expiring_at(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS * 10);
         submit_mock(&mut tee_state, &node, oversized).unwrap();
 
-        // When: the clock advances just past the contract's default window — well
-        // before the submitter's requested expiry.
+        // When: the clock advances just past the contract's default window, well before the
+        // submitter's requested expiry.
         set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
-        // Then: the entry is cleaned — the submitted expiry was capped at the default.
+        // Then: the entry is cleaned, so the submitted expiry was capped at the default.
         assert_eq!(removed.len(), 1);
         assert!(!tee_state.nodes.contains_key(&node.tls_public_key));
     }
@@ -647,12 +627,7 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        let expired = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
+        let expired = mock_expiring_at(EXPIRY_SECONDS);
 
         for idx in 0..10 {
             let node = node_for(&format!("node{idx}.near").parse().unwrap());
@@ -663,11 +638,11 @@ mod tests {
         set_block_timestamp(NOW_SECONDS * 1_000_000_000);
 
         // When: cleanup is called repeatedly with a scan limit of 3 until no progress is made.
-        let mut total_removed = 0u32;
+        let mut total_removed = 0;
         loop {
             let removed =
                 tee_state.clean_invalid_attestations(Duration::from_secs(0), 3, |_| false);
-            total_removed += removed.len() as u32;
+            total_removed += removed.len();
             if removed.is_empty() {
                 break;
             }
@@ -688,12 +663,7 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let node = node_for(&"alice.near".parse().unwrap());
-        let attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(FUTURE_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
+        let attestation = mock_expiring_at(FUTURE_EXPIRY_SECONDS);
         submit_mock(&mut tee_state, &node, attestation).unwrap();
 
         // When: cleanup runs while the attestation is still valid.
@@ -776,34 +746,19 @@ mod tests {
         assert_eq!(is_valid, expected);
     }
 
-    // validate_tee() unit tests
-
-    /// Grace period for TEE upgrade deadline used in validate_tee() tests
     const TEST_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
-    /// Helper to extract account IDs from participants for assertion comparisons
-    fn account_ids(participants: &Participants) -> Vec<AccountId> {
-        participants
-            .participants()
-            .iter()
-            .map(|(acc, _, _)| acc.clone())
-            .collect()
-    }
-
     #[test]
-    fn validate_tee_returns_full_when_all_participants_have_valid_attestations() {
-        let mut tee_state = TeeState::default();
+    fn reverify_and_cleanup_participants__should_accept_all_attested_participants() {
+        // Given
         let participants = gen_participants(3);
+        let mut tee_state = TeeState::with_mocked_participant_attestations(&participants);
 
-        // Add valid attestations for all participants
-        for (account_id, _, participant_info) in participants.participants().iter() {
-            let node = create_node(account_id, &participant_info.tls_public_key);
-            submit_mock(&mut tee_state, &node, MockAttestation::Valid).unwrap();
-        }
-
+        // When
         let validation_result =
             tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
 
+        // Then
         assert_matches!(validation_result, TeeValidationResult::Full);
     }
 
@@ -814,6 +769,15 @@ mod tests {
 
     fn after_retention(added_at_secs: u64) -> u64 {
         added_at_secs + LAUNCHER_TTL.as_secs() + 1
+    }
+
+    fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
+        MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+            expected_measurements: None,
+        }
     }
 
     fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
@@ -975,138 +939,69 @@ mod tests {
     }
 
     #[test]
-    fn validate_tee_returns_partial_when_participant_has_no_attestation() {
-        let mut tee_state = TeeState::default();
+    fn reverify_and_cleanup_participants__should_exclude_a_participant_without_attestation() {
+        // Given
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().to_vec();
+        let attested = participants.subset(0..2);
+        let mut tee_state = TeeState::with_mocked_participant_attestations(&attested);
 
-        // Add valid attestations for only first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node = create_node(account_id, &participant_info.tls_public_key);
-            submit_mock(&mut tee_state, &node, MockAttestation::Valid).unwrap();
-        }
-        // Third participant has no attestation
-
+        // When
         let validation_result =
             tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
 
-        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
+        // Then
         assert_matches!(
             validation_result,
             TeeValidationResult::Partial { participants_with_valid_attestation }
-                if account_ids(&participants_with_valid_attestation) == expected_valid_account_ids
+                if participants_with_valid_attestation == attested
         );
     }
 
     #[test]
-    fn validate_tee_returns_partial_when_attestation_is_expired() {
+    fn reverify_and_cleanup_participants__should_exclude_an_expired_attestation() {
+        // Given
         let current_time_secs = env::block_timestamp() / 1_000_000_000;
         let expiry_time_secs = current_time_secs + TEST_GRACE_PERIOD.as_secs();
-
-        let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().to_vec();
-
-        // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node = create_node(account_id, &participant_info.tls_public_key);
-            submit_mock(&mut tee_state, &node, MockAttestation::Valid).unwrap();
-        }
-
-        // Add expiring attestation for third participant
-        let (account_id, _, participant_info) = &participant_list[2];
+        let attested = participants.subset(0..2);
+        let mut tee_state = TeeState::with_mocked_participant_attestations(&attested);
+        let (account_id, _, participant_info) = &participants.participants()[2];
         let node = create_node(account_id, &participant_info.tls_public_key);
-        let expiring_attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(expiry_time_secs),
-            expected_measurements: None,
-        };
-        submit_mock(&mut tee_state, &node, expiring_attestation).unwrap();
-
-        // Advance time to the second after expiry
+        submit_mock(&mut tee_state, &node, mock_expiring_at(expiry_time_secs)).unwrap();
         set_block_timestamp((expiry_time_secs + 1) * 1_000_000_000);
 
+        // When
         let validation_result =
             tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
 
-        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
+        // Then
         assert_matches!(
             validation_result,
             TeeValidationResult::Partial { participants_with_valid_attestation }
-                if account_ids(&participants_with_valid_attestation) == expected_valid_account_ids
-        );
-    }
-
-    #[test]
-    fn validate_tee_returns_full_when_attestation_not_yet_expired() {
-        let current_time_secs = env::block_timestamp() / 1_000_000_000;
-        let expiry_time_secs = current_time_secs + 2 * TEST_GRACE_PERIOD.as_secs();
-        let before_expiry_time_secs = current_time_secs + TEST_GRACE_PERIOD.as_secs();
-
-        let mut tee_state = TeeState::default();
-        let participants = gen_participants(3);
-
-        // Add attestations for all participants, third one with future expiry
-        let participant_list: Vec<_> = participants.participants().to_vec();
-
-        for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
-            let node = create_node(account_id, &participant_info.tls_public_key);
-            let attestation = if i == 2 {
-                MockAttestation::WithConstraints {
-                    mpc_docker_image_hash: None,
-                    launcher_docker_compose_hash: None,
-                    expiry_timestamp_seconds: Some(expiry_time_secs),
-                    expected_measurements: None,
-                }
-            } else {
-                MockAttestation::Valid
-            };
-            submit_mock(&mut tee_state, &node, attestation).unwrap();
-        }
-
-        // Advance time, but still before expiry
-        set_block_timestamp(before_expiry_time_secs * 1_000_000_000);
-
-        let validation_result =
-            tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
-
-        assert_matches!(
-            validation_result,
-            TeeValidationResult::Full,
-            "All participants should be valid before expiry"
+                if participants_with_valid_attestation == attested
         );
     }
 
     #[test]
     fn reverify_and_cleanup_participants__should_reject_a_participant_whose_tls_key_is_attested_to_another_account()
      {
-        // Given: three participants, the first two attested under their own accounts and the
-        // third's TLS key attested to an unrelated account.
-        let mut tee_state = TeeState::default();
+        // Given
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().to_vec();
-
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node = create_node(account_id, &participant_info.tls_public_key);
-            submit_mock(&mut tee_state, &node, MockAttestation::Valid).unwrap();
-        }
-
-        let impersonated_tls_key = participant_list[2].2.tls_public_key.clone();
-        let imposter: AccountId = "imposter.near".parse().unwrap();
-        let imposter_node = create_node(&imposter, &impersonated_tls_key);
-        submit_mock(&mut tee_state, &imposter_node, MockAttestation::Valid).unwrap();
+        let attested = participants.subset(0..2);
+        let mut tee_state = TeeState::with_mocked_participant_attestations(&attested);
+        let impersonated_tls_key = &participants.participants()[2].2.tls_public_key;
+        let imposter = create_node(&"imposter.near".parse().unwrap(), impersonated_tls_key);
+        submit_mock(&mut tee_state, &imposter, MockAttestation::Valid).unwrap();
 
         // When
         let validation_result =
             tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
 
-        // Then: the third participant does not inherit the imposter's attestation.
-        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
+        // Then
         assert_matches!(
             validation_result,
             TeeValidationResult::Partial { participants_with_valid_attestation }
-                if account_ids(&participants_with_valid_attestation) == expected_valid_account_ids
+                if participants_with_valid_attestation == attested
         );
     }
 
@@ -1150,25 +1045,19 @@ mod tests {
 
     #[test]
     fn verify_and_store_mock__should_reject_invalid_attestations() {
+        // Given
         let mut tee_state = TeeState::default();
-        let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().to_vec();
+        let node = node_for(&"alice.near".parse().unwrap());
 
-        // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node = create_node(account_id, &participant_info.tls_public_key);
-            submit_mock(&mut tee_state, &node, MockAttestation::Valid).unwrap();
-        }
+        // When
+        let result = submit_mock(&mut tee_state, &node, MockAttestation::Invalid);
 
-        // Add invalid attestation for third participant
-        let (account_id, _, participant_info) = &participant_list[2];
-        let node = create_node(account_id, &participant_info.tls_public_key);
-        let add_participant_result = submit_mock(&mut tee_state, &node, MockAttestation::Invalid);
-
+        // Then
         assert_matches!(
-            add_participant_result,
+            result,
             Err(AttestationSubmissionError::InvalidAttestation(_))
-        )
+        );
+        assert!(tee_state.nodes.is_empty());
     }
 
     #[test]

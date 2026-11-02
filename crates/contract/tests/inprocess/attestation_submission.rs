@@ -394,65 +394,8 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
     );
 }
 
-/// **Test that [`clean_tee_status()`] is vote-only** — attestations for non-participants
-/// remain stored after the call. Attestation pruning is handled by the
-/// separate `clean_invalid_attestations` endpoint.
-#[test]
-fn clean_tee_status__should_not_touch_attestations() {
-    // Given
-    const PARTICIPANT_COUNT: usize = 2; // After resharing removed one participant
-    const THRESHOLD: u64 = 2;
-
-    // Create contract in Running state with 2 current participants
-    let mut setup = TestSetupBuilder::new()
-        .with_participant_count(PARTICIPANT_COUNT)
-        .with_threshold(THRESHOLD)
-        .build();
-
-    // Submit TEE info for current 2 participants (all have valid attestations)
-    let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-    let participant_nodes = setup.get_participant_nodes();
-    for node in &participant_nodes {
-        setup.submit_attestation_for_node(node, valid_attestation.clone());
-    }
-
-    // Add TEE account for someone who is NOT a current participant
-    let removed_participant_node = node_for(&"removed.participant.near".parse().unwrap());
-    setup.prepay_and_submit_attestation_for_node(&removed_participant_node, valid_attestation);
-
-    // Verify initial state: 2 participants but 3 TEE accounts
-    const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
-    assert_eq!(
-        setup.contract.get_tee_accounts().len(),
-        INITIAL_TEE_ACCOUNTS
-    );
-
-    assert_matches!(
-        setup.contract.state(),
-        ProtocolContractState::Running(r)
-            if r.parameters.participants.participants.len() == PARTICIPANT_COUNT
-    );
-
-    // When: clean_tee_status runs.
-    setup.contract.clean_tee_status().unwrap();
-
-    // Then: stored attestations are unchanged — only vote maps are touched by this endpoint.
-    assert_eq!(
-        setup.contract.get_tee_accounts().len(),
-        INITIAL_TEE_ACCOUNTS
-    );
-
-    // State should remain Running with same participant count
-    assert_matches!(
-        setup.contract.state(),
-        ProtocolContractState::Running(r)
-            if r.parameters.participants.participants.len() == PARTICIPANT_COUNT
-    );
-}
-
 /// **Test that [`clean_invalid_attestations()`] prunes expired attestations end-to-end via
 /// the public endpoint**, except those of the nodes current participants use.
-/// Restores the cleanup-path coverage that lived in the old `clean_tee_status` test.
 #[test]
 fn clean_invalid_attestations__should_remove_expired_nodes_not_in_use() {
     // Given

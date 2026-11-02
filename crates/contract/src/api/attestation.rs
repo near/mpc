@@ -465,17 +465,16 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, destination_of, initializing_state, make_public_key_for_curve,
-        resharing_state, setup_tee_test_contract, submit_valid_attestations,
+        basic_setup, destination_of, forwarded_participant_call_contract, initializing_state,
+        make_public_key_for_curve, resharing_state,
     };
     use crate::config::Config;
     use crate::primitives::key_state::{
         AttemptId, AuthenticatedAccountId, EpochId, KeyForDomain, Keyset,
     };
-    use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        create_node, gen_account_id, gen_participants, node_for,
+        bogus_ed25519_public_key, bogus_tee_verifier_account_id, create_node, gen_account_id,
+        gen_participants, node_for,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
@@ -506,29 +505,15 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
-    fn test_submit_participant_info_panics_if_predecessor_differs() {
-        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+    fn submit_participant_info__should_panic_when_predecessor_differs_from_signer() {
+        // Given
+        let mut contract = forwarded_participant_call_contract();
 
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
-
-        let (participant_id, _, participant_info) = participants
-            .participants()
-            .first()
-            .expect("at least one participant")
-            .clone();
-
-        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-
-        // Case: signer != predecessor — should panic
-        let ctx = VMContextBuilder::new()
-            .signer_account_id(participant_id.clone())
-            .predecessor_account_id("outsider.near".parse().unwrap())
-            .build();
-        testing_env!(ctx);
-
-        let _ = contract
-            .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
-            .expect("Expected panic if predecessor != signer");
+        // When, Then
+        let _ = contract.submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            bogus_ed25519_public_key(),
+        );
     }
 
     fn prepay_and_submit_mock_attestation(
@@ -833,33 +818,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "Caller must be an attested participant")]
     fn test_attested_but_not_participant_panics() {
-        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+        // Given
+        let (mut contract, _, _) = participant_setup();
+        let outsider = gen_account_id();
+        prepay_and_submit_mock_attestation(&mut contract, &outsider, bogus_ed25519_public_key())
+            .unwrap();
 
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
-
-        let outsider_id: AccountId = "outsider.near".parse().unwrap();
-
-        let fake_tls_pk = bogus_ed25519_near_public_key(); // unique TLS key for outsider
-        let dto_public_key = dtos::Ed25519PublicKey::try_from(&fake_tls_pk).unwrap();
-
-        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-
-        // A new entry consumes a grant; stand in for the operator's prepayment.
-        contract
-            .available_attestation_grants
-            .insert(outsider_id.clone(), 1);
-
-        // use outsider account to call submit_participant_info
-        let ctx = VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone())
-            .predecessor_account_id(outsider_id.clone())
-            .build();
-        testing_env!(ctx);
-
-        let _ = contract
-            .submit_participant_info(valid_attestation, dto_public_key)
-            .expect("Outsider attestation submission should succeed");
-
+        // When, Then
         contract.assert_caller_is_attested_participant_and_protocol_active();
     }
 
@@ -906,74 +871,27 @@ mod tests {
     /// 4. The participant with expired attestation is excluded from the new parameters
     #[test]
     fn test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation() {
-        const PARTICIPANT_COUNT: usize = 3;
-        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
-
-        let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters =
-            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
-                .unwrap();
-
-        // Set up contract in Running state
-        let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
-            id: domain_id,
+        // Given
+        let domain = DomainConfig {
+            id: DomainId::default(),
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
-        }];
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let key_for_domain = KeyForDomain {
-            domain_id,
-            key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
         };
-        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
-
-        let mut contract = MpcContract::init_running(
-            domains.clone(),
-            DomainId(1),
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
-
-        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
-
-        // Get participant info for the target (last participant)
-        let participant_list: Vec<_> = participants.participants().to_vec();
-        let (target_account_id, _, target_participant_info) = &participant_list[2];
-
-        // Replace the target's attestation with an expired one
-        let node = create_node(target_account_id, &target_participant_info.tls_public_key);
-        let expiring_attestation = MpcMockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
-        contract
-            .tee_state
-            .verify_and_store_mock(node, expiring_attestation, TEE_UPGRADE_DURATION)
-            .expect("mock attestation is not yet expired and valid");
-
-        // Capture the running state before verify_tee for comparison
-        let ProtocolContractState::Running(running_state_before) = &contract.protocol_state else {
+        let mut contract = running_contract_with_expired_last_attestation(3, 2, domain.clone());
+        let ProtocolContractState::Running(running_state_before) = contract.protocol_state.clone()
+        else {
             panic!("expected Running state");
         };
-        let running_state_before = running_state_before.clone();
-
-        // Set time to the second after expiry
-        let (first_account_id, _, _) = &participant_list[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(first_account_id.clone())
-                .predecessor_account_id(first_account_id.clone())
-                .block_timestamp((ATTESTATION_EXPIRY_SECONDS + 1) * 1_000_000_000) // nanoseconds
-                .build()
+        let parameters = &running_state_before.parameters;
+        let expected_resharing_key = KeyEvent::new(
+            running_state_before.keyset.epoch_id.next(),
+            domain,
+            GovernanceThresholdParameters::new(
+                parameters.participants().subset(0..2),
+                parameters.threshold(),
+            )
+            .unwrap(),
         );
         // A pending parameter vote must not survive the kickout's transition to Resharing.
         let voter = AuthenticatedAccountId::new(parameters.participants()).unwrap();
@@ -982,48 +900,28 @@ mod tests {
         contract.parameters_votes.vote(&pending_proposal, voter);
         assert!(!contract.parameters_votes.is_empty());
 
-        // Call verify_tee - should trigger resharing
+        // When
         let result = contract.verify_tee();
-        assert_matches!(
-            result,
-            Ok(true),
-            "verify_tee should return Ok(true) when threshold is met"
-        );
-        assert!(contract.parameters_votes.is_empty());
 
-        // Verify contract transitioned to Resharing state
+        // Then
+        assert_matches!(result, Ok(true));
+        assert!(contract.parameters_votes.is_empty());
         let ProtocolContractState::Resharing(resharing_state) = &contract.protocol_state else {
             panic!(
                 "expected Resharing state, got {:?}",
                 contract.protocol_state
             );
         };
-
-        // Build expected participants: exclude the target (participant 2) who has expired attestation
-        let expected_participants = Participants::init(
-            ParticipantId(PARTICIPANT_COUNT as u32),
-            participant_list[0..2]
-                .iter()
-                .map(|(acc, id, info)| (acc.clone(), *id, info.clone()))
-                .collect(),
+        assert_eq!(
+            *resharing_state,
+            ResharingContractState {
+                previous_running_state: running_state_before,
+                reshared_keys: Vec::new(),
+                resharing_key: expected_resharing_key,
+                cancellation_requests: BTreeSet::new(),
+                per_domain_thresholds: BTreeMap::new(),
+            }
         );
-        let expected_params =
-            GovernanceThresholdParameters::new(expected_participants, parameters.threshold())
-                .unwrap();
-
-        let expected_resharing_state = ResharingContractState {
-            previous_running_state: running_state_before,
-            reshared_keys: Vec::new(),
-            resharing_key: KeyEvent::new(
-                keyset.epoch_id.next(),
-                domains[0].clone(),
-                expected_params,
-            ),
-            cancellation_requests: BTreeSet::new(),
-            per_domain_thresholds: BTreeMap::new(),
-        };
-
-        assert_eq!(*resharing_state, expected_resharing_state);
     }
 
     /// A Running contract with `participant_count` participants and a single `domain`, where
