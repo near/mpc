@@ -106,11 +106,11 @@ impl EchoTracker {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
 
     #[test]
-    #[expect(non_snake_case)]
     fn echo_tracker__should_handle_time_warp_deterministically() {
         // Given
         let mut tracker = EchoTracker::default();
@@ -130,7 +130,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn echo__tracker__should_wraparound_for_nonce_sequence() {
         // Given
         let mut tracker = EchoTracker::default().with_next_nonce(Rfc1982SerialU8::new(254));
@@ -143,7 +142,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn echo_tracker__should_evaluate_nonces_before_next_as_stale() {
         // Given
         let tracker = EchoTracker::default().with_next_nonce(Rfc1982SerialU8::new(2));
@@ -156,7 +154,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn echo_tracker__should_have_deterministic_expiry() {
         // Given
         let mut tracker = EchoTracker::default();
@@ -171,7 +168,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn echo_tracker__should_clear_earlier_unanswered_echoes_for_receive_ack() {
         // Given
         let mut tracker = EchoTracker::default();
