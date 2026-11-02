@@ -52,7 +52,6 @@ use near_mpc_contract_interface::types::Payload;
 use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use tokio::time::timeout;
 
@@ -224,8 +223,6 @@ impl IntegrationTestSetup {
                 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 my_near_account_id: participant_accounts[i].clone(),
-                // Don't care since we use the fake indexer
-                near_responder_account_id: AccountId::from_str("dont_care").unwrap(),
                 signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 foreign_chains: ForeignChainsConfig::default(),
@@ -236,7 +233,6 @@ impl IntegrationTestSetup {
                     timeout_sec: 120,
                     batch_size: TripleBatchSize::default(),
                 },
-                number_of_responder_keys: 0,
                 web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), ports.web_ui_port(i)),
                 migration_web_ui: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
@@ -251,7 +247,6 @@ impl IntegrationTestSetup {
                 persistent_secrets: PersistentSecrets {
                     p2p_private_key: p2p_key.clone(),
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
-                    near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },
                 local_storage_aes_key: rand::random(),
                 backup_encryption_key: Key::<Aes256Gcm>::generate().into(),
