@@ -45,7 +45,7 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
                 .unwrap_or(BlockCount::new(0));
 
             Some(std::time::Duration::from_millis(
-                ((blocks_behind.value() as f64 / block_processing_speed) * 1000f64) as u64,
+                ((u64::from(blocks_behind) as f64 / block_processing_speed) * 1000f64) as u64,
             ))
         } else {
             None

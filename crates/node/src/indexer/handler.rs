@@ -250,7 +250,7 @@ async fn handle_message(
         }
     }
 
-    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height.value() as i64);
+    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(u64::from(block_height) as i64);
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS.set(
         i64::try_from(streamer_message.block.header.timestamp_nanosec / 1_000_000_000)
             .unwrap_or(i64::MAX),

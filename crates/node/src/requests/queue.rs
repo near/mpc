@@ -835,7 +835,7 @@ where
                         });
                     let latency_duration = received_at.signed_duration_since(request.time_indexed);
 
-                    request_response_latency_blocks.observe(latency_blocks.value() as f64);
+                    request_response_latency_blocks.observe(u64::from(latency_blocks) as f64);
                     request_response_latency_seconds.observe(latency_duration.as_seconds_f64());
 
                     requests_to_remove.push((
@@ -1313,8 +1313,9 @@ mod tests {
 
         // When: we set the network height past the expiry of the first, but before expiry of the
         // second signature
-        setup
-            .set_participant_network_height(block_height_req_1 + REQUEST_EXPIRATION_BLOCKS.value());
+        setup.set_participant_network_height(
+            block_height_req_1 + u64::from(REQUEST_EXPIRATION_BLOCKS),
+        );
 
         // Then: The first request expired, so only the second one is returned.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
@@ -1324,8 +1325,9 @@ mod tests {
         // When: we set participants to a newer height, expiring the second request as well;
         drop(to_attempt1);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        setup
-            .set_participant_network_height(block_height_req_2 + REQUEST_EXPIRATION_BLOCKS.value());
+        setup.set_participant_network_height(
+            block_height_req_2 + u64::from(REQUEST_EXPIRATION_BLOCKS),
+        );
         // Then: it should not retry.
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
@@ -1673,7 +1675,9 @@ mod tests {
         let block_height = setup.update(&mut pending_requests);
 
         // When: set network height to H + REQUEST_EXPIRATION_BLOCKS - 1
-        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS.value() - 1);
+        setup.set_participant_network_height(
+            block_height + u64::from(REQUEST_EXPIRATION_BLOCKS) - 1,
+        );
 
         // Then: request is NOT expired (returned by get_requests_to_attempt)
         let to_attempt = pending_requests.get_requests_to_attempt();
@@ -1694,7 +1698,7 @@ mod tests {
         );
 
         // When: set network height to H + REQUEST_EXPIRATION_BLOCKS
-        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS.value());
+        setup.set_participant_network_height(block_height + u64::from(REQUEST_EXPIRATION_BLOCKS));
 
         // Then: request IS expired, not returned by get_requests_to_attempt and removed from
         // queue.
@@ -1721,7 +1725,7 @@ mod tests {
             if i != TestSetup::MY_INDEX {
                 setup
                     .network_api
-                    .set_height(*p, block_height + REQUEST_EXPIRATION_BLOCKS.value());
+                    .set_height(*p, block_height + u64::from(REQUEST_EXPIRATION_BLOCKS));
             }
         }
 
@@ -1746,7 +1750,7 @@ mod tests {
         // When
         setup
             .network_api
-            .set_height(me, block_height + REQUEST_EXPIRATION_BLOCKS.value());
+            .set_height(me, block_height + u64::from(REQUEST_EXPIRATION_BLOCKS));
         for (i, p) in setup.participant_ids.iter().enumerate() {
             if i != TestSetup::MY_INDEX {
                 setup.network_api.set_height(*p, block_height);
