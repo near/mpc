@@ -76,10 +76,10 @@ impl BlockCount {
 /// Panics on overflow: without overflow checks a wrapped height would silently compare as being
 /// in the past.
 impl Add<BlockCount> for BlockHeight {
-    type Output = BlockHeight;
+    type Output = Self;
 
-    fn add(self, count: BlockCount) -> BlockHeight {
-        BlockHeight(self.0.checked_add(count.0).expect("block height overflow"))
+    fn add(self, rhs: BlockCount) -> Self {
+        Self(self.0.checked_add(rhs.0).expect("block height overflow"))
     }
 }
 
