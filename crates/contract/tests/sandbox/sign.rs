@@ -2,7 +2,7 @@ use crate::sandbox::{
     common::{SandboxTestSetup, candidates, create_account_given_id, init},
     utils::{
         consts::ALL_PROTOCOLS,
-        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+        sandbox_mpc_contract::SandboxMpcContract,
         shared_key_utils::SharedSecretKey,
         sign_utils::{
             CKDRequestTest, DomainResponseTest, await_request_in_contract_queue,
@@ -290,7 +290,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
             .await?;
         dbg!(&status);
 
-        await_request_in_contract_queue(contract.get_pending_request(req.response.request.clone()))
+        await_request_in_contract_queue(contract.get_pending_request(&req.response.request))
             .await?;
 
         // Call `respond` as if we are the MPC network itself.

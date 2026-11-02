@@ -1,37 +1,54 @@
 use std::sync::Arc;
 
 use crate::account::{OperatingAccessKey, OperatingAccount};
-use near_contract_transport::{CallContract, FunctionCallArgs};
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit_primitives::protocol::Action;
+use near_kit_primitives::{Contract as _, TxSender};
+use near_mpc_contract_interface::contract::{MpcContract, MpcContractClient};
 use near_primitives::types::AccountId;
 use near_primitives::views::TxExecutionStatus;
 use tokio::sync::Mutex;
 
 pub(crate) trait CallMpcContract {
-    fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller>;
+    /// The returned client logs each call and waits for transaction to be final
+    fn call_mpc(&self, contract_id: &AccountId) -> MpcContractClient<DevnetCaller> {
+        self.call_mpc_with_verbosity(contract_id, Verbosity::Verbose)
+    }
+
+    fn call_mpc_with_verbosity(
+        &self,
+        contract_id: &AccountId,
+        verbosity: Verbosity,
+    ) -> MpcContractClient<DevnetCaller>;
 }
 
 impl CallMpcContract for OperatingAccount {
-    /// The returned handle logs each call and waits for transaction to be final
-    fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller> {
-        MpcContractHandle::new(
+    fn call_mpc_with_verbosity(
+        &self,
+        contract_id: &AccountId,
+        verbosity: Verbosity,
+    ) -> MpcContractClient<DevnetCaller> {
+        MpcContract::client(
             DevnetCaller::new(
+                self.account_id().clone(),
                 self.any_access_key_handle(),
                 TxExecutionStatus::Final,
-                Verbosity::Verbose,
+                verbosity,
             ),
             contract_id.clone(),
         )
     }
 }
 
+#[derive(Clone)]
 pub struct DevnetCaller {
+    account_id: AccountId,
     key: Arc<Mutex<OperatingAccessKey>>,
     wait_until: TxExecutionStatus,
     verbosity: Verbosity,
 }
 
+#[derive(Clone, Copy)]
 pub enum Verbosity {
     Verbose,
     Quiet,
@@ -39,50 +56,46 @@ pub enum Verbosity {
 
 impl DevnetCaller {
     pub(crate) fn new(
+        account_id: AccountId,
         key: Arc<Mutex<OperatingAccessKey>>,
         wait_until: TxExecutionStatus,
         verbosity: Verbosity,
     ) -> Self {
         Self {
+            account_id,
             key,
             wait_until,
             verbosity,
         }
     }
-
-    pub(crate) fn with_verbosity(self, verbosity: Verbosity) -> Self {
-        Self { verbosity, ..self }
-    }
 }
 
-pub trait WithVerbosity {
-    fn with_verbosity(self, verbosity: Verbosity) -> Self;
-}
-
-impl WithVerbosity for MpcContractHandle<DevnetCaller> {
-    fn with_verbosity(self, verbosity: Verbosity) -> Self {
-        self.map_caller(|caller| caller.with_verbosity(verbosity))
-    }
-}
-
-impl CallContract for DevnetCaller {
+/// Sends one function call per transaction, through the account's access key.
+impl TxSender for DevnetCaller {
     type Output = RpcTransactionResponse;
-    type Error = anyhow::Error;
+    type SendError = anyhow::Error;
 
-    async fn call_contract(
+    fn account_id(&self) -> &AccountId {
+        &self.account_id
+    }
+
+    async fn send(
         &self,
-        contract_id: &AccountId,
-        call_args: FunctionCallArgs,
-    ) -> Result<Self::Output, Self::Error> {
+        receiver_id: AccountId,
+        actions: Vec<Action>,
+    ) -> Result<Self::Output, Self::SendError> {
+        let [Action::FunctionCall(call)] = actions.as_slice() else {
+            anyhow::bail!("DevnetCaller sends exactly one function call, got {actions:?}");
+        };
         self.key
             .lock()
             .await
             .submit_tx_to_call_function(
-                contract_id,
-                &call_args.method_name,
-                &call_args.args,
-                call_args.gas.as_tgas(),
-                call_args.deposit.as_yoctonear(),
+                &receiver_id,
+                &call.method_name,
+                &call.args,
+                call.gas.as_tgas(),
+                call.deposit.as_yoctonear(),
                 self.wait_until.clone(),
                 matches!(self.verbosity, Verbosity::Verbose),
             )

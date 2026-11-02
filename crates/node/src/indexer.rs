@@ -5,13 +5,11 @@ use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
-use near_async::{
-    messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
-};
-use near_client::{RpcHandlerActor, Status, client_actor::ClientActor};
-use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_async::{messaging::CanSendAsync, tokio::TokioRuntimeHandle};
+use near_client::{Status, client_actor::ClientActor};
 use near_indexer_primitives::types::BlockHeight;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit_primitives::Contract as _;
+use near_mpc_contract_interface::contract::{MpcContract, MpcContractClient};
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
 use std::{sync::Arc, time::Duration};
@@ -37,12 +35,10 @@ pub mod types;
 pub mod fake;
 
 pub(crate) struct IndexerState {
-    contract: MpcContractHandle<ChainGateway>,
+    contract: MpcContractClient<ChainGateway>,
     gateway: ChainGateway,
     /// For querying blockchain sync status.
     client: IndexerClient,
-    /// For sending txs to the chain.
-    rpc_handler: IndexerRpcHandler,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
     /// Stores runtime indexing statistics.
@@ -53,14 +49,12 @@ impl IndexerState {
     pub fn new(
         gateway: ChainGateway,
         client: TokioRuntimeHandle<ClientActor>,
-        rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            contract: MpcContractHandle::new(gateway.clone(), mpc_contract_id.clone()),
+            contract: MpcContract::client(gateway.clone(), mpc_contract_id.clone()),
             gateway,
             client: IndexerClient { client },
-            rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
@@ -137,33 +131,6 @@ impl SyncProgress {
             Some(start_head) => {
                 self.run_polls += 1;
                 self.run_polls >= REQUIRED_STABLE_POLLS && head_height > start_head
-            }
-        }
-    }
-}
-
-// #[derive(Debug)]
-struct IndexerRpcHandler {
-    rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
-}
-
-impl IndexerRpcHandler {
-    /// Creates, signs, and submits a function call with the given method and serialized arguments.
-    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
-        let response = self
-            .rpc_handler
-            .send_async(near_client::ProcessTxRequest {
-                transaction,
-                is_forwarded: false,
-                check_only: false,
-            })
-            .await?;
-
-        match response {
-            // We're not a validator, so we should always be routing the transaction.
-            near_client::ProcessTxResponse::RequestRouted => Ok(()),
-            _ => {
-                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
             }
         }
     }

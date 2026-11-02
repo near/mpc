@@ -472,6 +472,10 @@ impl OperatingAccount {
         Ok(res.code)
     }
 
+    pub fn account_id(&self) -> &AccountId {
+        &self.account_data.account_id
+    }
+
     pub fn any_access_key_handle(&self) -> Arc<Mutex<OperatingAccessKey>> {
         self.keys[0].clone()
     }

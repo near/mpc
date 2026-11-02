@@ -39,7 +39,7 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
                 .gateway
                 .fetch_latest_final_block_info()
                 .await
-                .map(|info| u64::from(info.observed_at))
+                .map(|info| u64::from(info.height))
         {
             // 0 when we're ahead of the chain tip — no catching up needed.
             let blocks_behind = block_height.saturating_sub(stats_copy.last_processed_block_height);

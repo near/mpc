@@ -2,7 +2,12 @@ use std::sync::Arc;
 
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
-use near_contract_transport::{ObservedState, SerializedObservation, ViewArgs};
+use near_indexer_primitives::types::{BlockId, BlockReference, Finality, SyncCheckpoint};
+use near_kit_primitives::CryptoHash as KitCryptoHash;
+use near_kit_primitives::rpc::{
+    BlockReference as KitBlockReference, Finality as KitFinality,
+    SyncCheckpoint as KitSyncCheckpoint, ViewFunctionResult,
+};
 
 use crate::types::LatestFinalBlockInfo;
 use crate::{
@@ -31,21 +36,20 @@ impl NearViewClientActorHandle {
 }
 
 impl NearViewClientActorHandle {
-    /// calls view method contract_id::method_name(args) and returns the result
+    /// calls view method contract_id::method_name(args) at `block` and returns the result
     pub(crate) async fn view_near(
         &self,
         contract_id: &AccountId,
-        view_args: ViewArgs,
-    ) -> Result<SerializedObservation, NearViewClientError> {
-        let method_name = view_args.method_name;
+        method_name: &str,
+        args: &[u8],
+        block: KitBlockReference,
+    ) -> Result<ViewFunctionResult, NearViewClientError> {
         let query = near_client::Query {
-            block_reference: near_indexer_primitives::types::BlockReference::Finality(
-                near_indexer_primitives::types::Finality::Final,
-            ),
+            block_reference: to_nearcore_block_reference(block),
             request: near_indexer_primitives::views::QueryRequest::CallFunction {
                 account_id: to_near_internal(contract_id),
-                method_name: method_name.clone(),
-                args: view_args.args.into(),
+                method_name: method_name.to_string(),
+                args: args.to_vec().into(),
             },
         };
 
@@ -69,10 +73,12 @@ impl NearViewClientActorHandle {
 
         let variant = match response.kind {
             near_indexer_primitives::views::QueryResponseKind::CallResult(call_result) => {
-                return Ok(ObservedState {
-                    observed_at: response.block_height.into(),
-                    value: call_result.result,
-                });
+                return Ok(ViewFunctionResult::new(
+                    call_result.result,
+                    response.block_height,
+                    KitCryptoHash::from_bytes(response.block_hash.0),
+                )
+                .with_logs(call_result.logs));
             }
             near_indexer_primitives::views::QueryResponseKind::ViewAccount(_) => "ViewAccount",
             near_indexer_primitives::views::QueryResponseKind::ViewCode(_) => "ViewCode",
@@ -110,8 +116,32 @@ impl FetchLatestFinalBlockInfo for NearViewClientActorHandle {
             message: err.to_string(),
         })?;
         Ok(LatestFinalBlockInfo {
-            observed_at: response.header.height.into(),
-            value: response.header.hash,
+            height: response.header.height.into(),
+            hash: response.header.hash,
         })
+    }
+}
+
+fn to_nearcore_block_reference(block: KitBlockReference) -> BlockReference {
+    match block {
+        KitBlockReference::Finality(KitFinality::Optimistic) => {
+            BlockReference::Finality(Finality::None)
+        }
+        KitBlockReference::Finality(KitFinality::NearFinal) => {
+            BlockReference::Finality(Finality::DoomSlug)
+        }
+        KitBlockReference::Finality(KitFinality::Final) => {
+            BlockReference::Finality(Finality::Final)
+        }
+        KitBlockReference::Height(height) => BlockReference::BlockId(BlockId::Height(height)),
+        KitBlockReference::Hash(hash) => BlockReference::BlockId(BlockId::Hash(
+            near_indexer_primitives::CryptoHash(*hash.as_bytes()),
+        )),
+        KitBlockReference::SyncCheckpoint(KitSyncCheckpoint::Genesis) => {
+            BlockReference::SyncCheckpoint(SyncCheckpoint::Genesis)
+        }
+        KitBlockReference::SyncCheckpoint(KitSyncCheckpoint::EarliestAvailable) => {
+            BlockReference::SyncCheckpoint(SyncCheckpoint::EarliestAvailable)
+        }
     }
 }

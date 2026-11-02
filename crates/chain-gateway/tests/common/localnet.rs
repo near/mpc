@@ -2,9 +2,9 @@ use std::time::{Duration, Instant};
 
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
-use chain_gateway_test_contract::consts::VIEW_VALUE;
+use chain_gateway_test_contract::args::TestContract;
 use ed25519_dalek::SigningKey;
-use near_contract_transport::{Json, ObservedState, ViewArgs, ViewContract};
+use near_kit_primitives::Contract as _;
 use tokio_util::sync::CancellationToken;
 
 use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
@@ -117,16 +117,15 @@ impl LocalnetBuilder {
         let deadline = Instant::now() + Duration::from_mins(1);
         loop {
             localnet.assert_nodes_alive();
-            let state: ObservedState<String> = localnet
-                .observer
-                .chain_gateway
-                .view::<_, Json>(
-                    localnet.contract.account_id.clone(),
-                    ViewArgs::no_args(VIEW_VALUE),
-                )
-                .await
-                .expect("view call should succeed during startup wait");
-            if u64::from(state.observed_at) > 0 {
+            let state = TestContract::client(
+                localnet.observer.chain_gateway.clone(),
+                localnet.contract.account_id.clone(),
+            )
+            .view_value()
+            .with_metadata()
+            .await
+            .expect("view call should succeed during startup wait");
+            if state.block_height > 0 {
                 break;
             }
             assert!(

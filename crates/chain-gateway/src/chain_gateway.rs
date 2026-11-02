@@ -5,9 +5,10 @@ use std::time::Duration;
 
 use near_account_id::AccountId;
 use near_async::ActorSystem;
-use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_kit_primitives::Viewer;
+use near_kit_primitives::rpc::{BlockReference, ViewFunctionResult};
 use near_store::db::RocksDB;
 use nearcore::{NearConfig, NearNode};
 use tokio::sync::mpsc::Receiver;
@@ -24,7 +25,6 @@ use crate::node_config::NodeConfig;
 use crate::primitives::{
     FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction, view_when_synced,
 };
-use near_contract_transport::SerializedObservation;
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -44,15 +44,21 @@ impl IsSyncing for ChainGateway {
     }
 }
 
-impl ViewContract for ChainGateway {
-    type Error = NearViewClientError;
+/// Views wait until the node has caught up, then read at the requested block.
+impl Viewer for ChainGateway {
+    type ViewError = NearViewClientError;
 
-    async fn view_contract(
+    async fn view_function(
         &self,
         contract_id: &AccountId,
-        view_args: ViewArgs,
-    ) -> Result<SerializedObservation, Self::Error> {
-        view_when_synced(self, || self.view_client.view_near(contract_id, view_args)).await
+        method: &str,
+        args: &[u8],
+        block: BlockReference,
+    ) -> Result<ViewFunctionResult, Self::ViewError> {
+        view_when_synced(self, || {
+            self.view_client.view_near(contract_id, method, args, block)
+        })
+        .await
     }
 }
 
@@ -81,18 +87,18 @@ impl SubmitSignedTransaction for ChainGateway {
 const MIN_CHAIN_GATEWAY_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_POLLS_PER_BLOCK: u32 = 2;
 
-fn poll_interval(expected_block_time: Duration) -> PollInterval {
-    PollInterval::new(max(
+fn poll_interval(expected_block_time: Duration) -> Duration {
+    max(
         expected_block_time
             .checked_div(MAX_POLLS_PER_BLOCK)
             .unwrap_or(Duration::ZERO),
         MIN_CHAIN_GATEWAY_POLL_INTERVAL,
-    ))
-    .expect("at least the 50ms floor")
+    )
 }
 
-impl HasPollInterval for ChainGateway {
-    fn poll_interval(&self) -> PollInterval {
+impl ChainGateway {
+    /// How often to poll a view: twice per expected block, at least every 50ms.
+    pub fn poll_interval(&self) -> Duration {
         poll_interval(self.expected_block_time)
     }
 }
@@ -332,7 +338,7 @@ mod tests {
         let interval = poll_interval(block_time);
 
         // Then
-        assert_eq!(Duration::from(interval) * MAX_POLLS_PER_BLOCK, block_time);
+        assert_eq!(interval * MAX_POLLS_PER_BLOCK, block_time);
     }
 
     #[test]
@@ -344,7 +350,7 @@ mod tests {
         let interval = poll_interval(block_time);
 
         // Then
-        assert_eq!(Duration::from(interval), MIN_CHAIN_GATEWAY_POLL_INTERVAL);
+        assert_eq!(interval, MIN_CHAIN_GATEWAY_POLL_INTERVAL);
     }
 
     #[tokio::test]

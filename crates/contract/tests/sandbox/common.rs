@@ -6,9 +6,9 @@ use crate::sandbox::utils::{
         assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
         submit_participant_info,
     },
-    sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+    sandbox_mpc_contract::SandboxMpcContract,
     shared_key_utils::{DomainKey, make_key_for_domain},
-    sign_utils::{PendingSignRequest, make_and_submit_requests},
+    sign_utils::{PendingSignRequest, await_pending, make_and_submit_requests},
     transactions::{CallMpcContract, execute_async_handle_calls},
 };
 use digest::Digest;
@@ -30,7 +30,6 @@ use mpc_contract::{
     tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
-use near_contract_transport::WatchContractState;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     self as dtos, AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality,
@@ -676,13 +675,12 @@ pub async fn await_pending_foreign_tx_request_observed_on_contract(
 ) {
     const TIMEOUT: Duration = Duration::from_secs(10);
 
-    contract
-        .get_pending_verify_foreign_tx_request(request.clone())
-        .subscribe()
-        .await
-        .wait_for(TIMEOUT, Option::is_some)
-        .await
-        .expect("Timed out waiting for pending foreign-tx request on-chain");
+    await_pending(
+        TIMEOUT,
+        contract.get_pending_verify_foreign_tx_request(request),
+    )
+    .await
+    .expect("Timed out waiting for pending foreign-tx request on-chain");
 }
 
 /// Sign a foreign-tx payload hash with the root secret key and return the

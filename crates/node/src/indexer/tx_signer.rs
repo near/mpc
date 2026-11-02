@@ -1,148 +1,200 @@
 use crate::config::RespondConfig;
 use crate::indexer::types::ChainSendTransactionRequest;
-use chain_gateway::account_id_compat::to_near_internal;
-use ed25519_dalek::{SigningKey, VerifyingKey};
-use k256::ecdsa::signature::Signer;
+use anyhow::Context;
+use chain_gateway::ChainGateway;
+use chain_gateway::transaction_sender::GatewaySender;
+use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
-use near_indexer::near_primitives::account::AccessKey;
-use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::near_primitives::transaction::{
-    FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
-};
-use near_indexer_primitives::types::{Balance, Gas};
+use near_kit_primitives::signer::{InMemorySigner, RotatingSigner, SecretKey, Signer};
 use std::sync::Arc;
-use std::sync::Mutex;
 
-pub(crate) struct TransactionSigner {
-    signing_key: SigningKey,
-    account_id: AccountId,
-    nonce: Mutex<u64>,
+/// Signs and submits through the node's gateway. Each sender tracks the nonce
+/// of every key it signs with.
+pub(crate) type NodeSender<G = ChainGateway> = GatewaySender<G, Arc<dyn Signer>>;
+
+pub(crate) struct TransactionSigners<G = ChainGateway> {
+    /// Rotates through the respond keys for responding to signature requests.
+    /// They can belong to an arbitrary near account.
+    respond: Arc<NodeSender<G>>,
+    /// Signs vote_pk, vote_reshared, etc., which must come from the account
+    /// that this node runs under.
+    owner: Arc<NodeSender<G>>,
 }
 
-impl TransactionSigner {
-    pub(crate) fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self {
-        TransactionSigner {
-            account_id,
-            signing_key,
-            nonce: Mutex::new(0),
-        }
-    }
-
-    /// Atomically increments the nonce and returns the previous value
-    fn make_nonce(&self, last_known_block_height: u64) -> u64 {
-        let min_nonce = AccessKey::ACCESS_KEY_NONCE_RANGE_MULTIPLIER * last_known_block_height;
-        let mut nonce = self.nonce.lock().unwrap();
-        let new_nonce = std::cmp::max(min_nonce, *nonce + 1);
-        *nonce = new_nonce;
-        new_nonce
-    }
-
-    pub(crate) fn create_and_sign_function_call_tx(
-        &self,
-        receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
-        block_hash: CryptoHash,
-        block_height: u64,
-    ) -> SignedTransaction {
-        // The node signs with a function-call access key, which cannot attach a deposit.
-        let action = FunctionCallAction {
-            method_name,
-            args,
-            gas,
-            deposit: Balance::from_near(0),
-        };
-
-        let verifying_key = self.signing_key.verifying_key();
-        let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
-        #[expect(clippy::disallowed_methods)]
-        let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
-
-        let transaction = Transaction::V0(TransactionV0 {
-            signer_id: to_near_internal(&self.account_id),
-            public_key: near_core_public_key,
-            nonce: self.make_nonce(block_height),
-            receiver_id: to_near_internal(&receiver_id),
-            block_hash,
-            actions: vec![action.into()],
-        });
-
-        let tx_hash = transaction.get_hash_and_size().0;
-
-        let signature: ed25519_dalek::Signature = self.signing_key.sign(&tx_hash.0);
-        let near_crypto_signature: near_crypto::Signature =
-            near_crypto::Signature::ED25519(signature);
-
-        SignedTransaction::new(near_crypto_signature, transaction.clone())
-    }
-
-    pub(crate) fn public_key(&self) -> VerifyingKey {
-        self.signing_key.verifying_key()
-    }
-
-    pub(crate) fn account_id(&self) -> &AccountId {
-        &self.account_id
-    }
-}
-
-pub(crate) struct TransactionSigners {
-    /// Signers that we cycle through for responding to signature requests.
-    /// These can correspond to arbitrary near accounts.
-    respond_signers: Vec<Arc<TransactionSigner>>,
-    /// Signer we use for signing vote_pk, vote_reshared, etc., which must
-    /// correspond to the account that this node runs under.
-    owner_signer: Arc<TransactionSigner>,
-    /// next respond signer to use.
-    next_id: usize,
-}
-
-impl TransactionSigners {
+impl<G: Clone> TransactionSigners<G> {
     pub fn new(
+        gateway: G,
         respond_config: RespondConfig,
         owner_account_id: AccountId,
         owner_signing_key: SigningKey,
     ) -> anyhow::Result<Self> {
-        let respond_signers = respond_config
-            .access_keys
-            .iter()
-            .map(|key| {
-                Arc::new(TransactionSigner::from_key(
-                    respond_config.account_id.clone(),
-                    key.clone(),
-                ))
-            })
-            .collect::<Vec<_>>();
-        let owner_signer = Arc::new(TransactionSigner::from_key(
-            owner_account_id,
-            owner_signing_key,
-        ));
-        anyhow::ensure!(
-            !respond_signers.is_empty(),
-            "At least one responding access key must be provided",
-        );
+        let respond_keys = respond_config.access_keys.iter().map(secret_key).collect();
+        let respond = RotatingSigner::new(respond_config.account_id, respond_keys)
+            .context("At least one responding access key must be provided")?;
+        let owner = InMemorySigner::new(owner_account_id, secret_key(&owner_signing_key));
         Ok(TransactionSigners {
-            respond_signers,
-            owner_signer,
-            next_id: 0,
+            respond: Arc::new(GatewaySender::new(
+                gateway.clone(),
+                Arc::new(respond) as Arc<dyn Signer>,
+            )),
+            owner: Arc::new(GatewaySender::new(
+                gateway,
+                Arc::new(owner) as Arc<dyn Signer>,
+            )),
         })
     }
 
-    fn next_respond_signer(&mut self) -> Arc<TransactionSigner> {
-        let signer = self.respond_signers[self.next_id].clone();
-        self.next_id = (self.next_id + 1) % self.respond_signers.len();
-        signer
-    }
-
-    fn owner_signer(&self) -> Arc<TransactionSigner> {
-        self.owner_signer.clone()
-    }
-
-    pub fn signer_for(&mut self, req: &ChainSendTransactionRequest) -> Arc<TransactionSigner> {
+    pub fn signer_for(&self, req: &ChainSendTransactionRequest) -> Arc<NodeSender<G>> {
         match req {
-            ChainSendTransactionRequest::Respond(_) => self.next_respond_signer(),
-            ChainSendTransactionRequest::CKDRespond(_) => self.next_respond_signer(),
-            _ => self.owner_signer(),
+            ChainSendTransactionRequest::Respond(_) => self.respond.clone(),
+            ChainSendTransactionRequest::CKDRespond(_) => self.respond.clone(),
+            _ => self.owner.clone(),
         }
+    }
+}
+
+fn secret_key(key: &SigningKey) -> SecretKey {
+    SecretKey::ed25519_from_bytes(key.to_bytes())
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::TransactionSigners;
+    use crate::config::RespondConfig;
+    use crate::indexer::types::ChainSendTransactionRequest;
+    use chain_gateway::mock::{MockChainState, MockChainStateBuilder};
+    use chain_gateway::types::LatestFinalBlockInfo;
+    use ed25519_dalek::SigningKey;
+    use near_account_id::AccountId;
+    use near_indexer_primitives::CryptoHash;
+    use near_kit_primitives::TxSender;
+    use near_kit_primitives::signer::PublicKey;
+    use near_mpc_contract_interface::call_args::SignatureRespondArgs;
+    use near_mpc_contract_interface::types::{
+        DomainId, K256AffinePoint, K256Scalar, K256Signature, Payload, SignatureRequest,
+        SignatureResponse,
+    };
+
+    fn signers() -> (TransactionSigners<MockChainState>, MockChainState) {
+        let chain = MockChainStateBuilder::new()
+            .with_latest_block(Ok(LatestFinalBlockInfo {
+                height: 100.into(),
+                hash: CryptoHash::hash_bytes(b"blk"),
+            }))
+            .with_signed_transaction_submitter_response(Ok(()))
+            .build();
+        let respond = RespondConfig {
+            account_id: "responder.near".parse().unwrap(),
+            access_keys: vec![
+                SigningKey::from_bytes(&[1; 32]),
+                SigningKey::from_bytes(&[2; 32]),
+            ],
+        };
+        let signers = TransactionSigners::new(
+            chain.clone(),
+            respond,
+            "owner.near".parse().unwrap(),
+            SigningKey::from_bytes(&[3; 32]),
+        )
+        .unwrap();
+        (signers, chain)
+    }
+
+    fn respond() -> ChainSendTransactionRequest {
+        ChainSendTransactionRequest::Respond(SignatureRespondArgs::new(
+            SignatureRequest::new(
+                DomainId(0),
+                Payload::Ecdsa([7u8; 32].into()),
+                &"alice.near".parse().unwrap(),
+                "test",
+            ),
+            SignatureResponse::Secp256k1(K256Signature {
+                big_r: K256AffinePoint {
+                    affine_point: [7u8; 33],
+                },
+                s: K256Scalar { scalar: [7u8; 32] },
+                recovery_id: 0,
+            }),
+        ))
+    }
+
+    fn key(seed: u8) -> PublicKey {
+        PublicKey::ed25519_from_bytes(
+            SigningKey::from_bytes(&[seed; 32])
+                .verifying_key()
+                .to_bytes(),
+        )
+        .unwrap()
+    }
+
+    async fn send(
+        signers: &TransactionSigners<MockChainState>,
+        request: ChainSendTransactionRequest,
+    ) -> (AccountId, PublicKey) {
+        let sender = signers.signer_for(&request);
+        let sent = sender
+            .send(
+                "mpc.near".parse().unwrap(),
+                vec![request.function_call().into_action().unwrap()],
+            )
+            .await
+            .unwrap();
+        (sender.account_id().clone(), sent.public_key)
+    }
+
+    #[tokio::test]
+    async fn signer_for__should_rotate_responses_and_send_the_rest_from_the_owner() {
+        // Given
+        let (signers, chain) = signers();
+        let responder: AccountId = "responder.near".parse().unwrap();
+        let owner: AccountId = "owner.near".parse().unwrap();
+
+        // When
+        let mut sent = Vec::new();
+        for request in [
+            respond(),
+            respond(),
+            ChainSendTransactionRequest::VerifyTee(),
+            respond(),
+        ] {
+            sent.push(send(&signers, request).await);
+        }
+
+        // Then
+        assert_eq!(
+            sent,
+            [
+                (responder.clone(), key(1)),
+                (responder.clone(), key(2)),
+                (owner, key(3)),
+                (responder, key(1)),
+            ]
+        );
+        let nonces: Vec<u64> = chain
+            .signed_transactions()
+            .iter()
+            .map(|tx| tx.transaction.nonce().nonce())
+            .collect();
+        let first =
+            near_indexer::near_primitives::account::AccessKey::ACCESS_KEY_NONCE_RANGE_MULTIPLIER
+                * 100;
+        assert_eq!(nonces, [first, first, first, first + 1]);
+    }
+
+    #[test]
+    fn new__should_require_a_respond_key() {
+        let chain = MockChainStateBuilder::new().build();
+        let respond = RespondConfig {
+            account_id: "responder.near".parse().unwrap(),
+            access_keys: Vec::new(),
+        };
+        let result = TransactionSigners::new(
+            chain,
+            respond,
+            "owner.near".parse().unwrap(),
+            SigningKey::from_bytes(&[3; 32]),
+        );
+        assert!(result.is_err());
     }
 }

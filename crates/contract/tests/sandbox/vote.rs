@@ -126,7 +126,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(running.keyset.epoch_id, epoch_id);
 
     // verify that the contract's `public_key` view method returns the key for the new domain
-    let contract_public_key = contract.public_key(Some(domain_id)).await.unwrap().value;
+    let contract_public_key = contract.public_key(Some(domain_id)).await.unwrap();
     assert_eq!(contract_public_key, public_key);
 
     Ok(())

@@ -130,9 +130,10 @@ mpc-contract = { workspace = true, features = [
     "test-utils",
 ] }
 near-abi = { workspace = true }
-near-contract-transport = { workspace = true, features = ["traits"] }
+near-contract-transport = { workspace = true }
 near-jsonrpc-client = { workspace = true }
 near-jsonrpc-primitives = { workspace = true }
+near-kit-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
 near-mpc-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-primitives = { workspace = true }

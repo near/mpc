@@ -14,8 +14,7 @@ use crate::sandbox::{
     common::{candidates, init_contract, init_contract_running, make_threshold_params},
     utils::{
         contract_build::current_contract_with_bench_methods,
-        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
-        shared_key_utils::new_secp256k1,
+        sandbox_mpc_contract::SandboxMpcContract, shared_key_utils::new_secp256k1,
     },
 };
 use near_account_id::AccountId;

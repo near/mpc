@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use backon::{BackoffBuilder, ExponentialBuilder};
-use near_contract_transport::ViewContract;
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit_primitives::Viewer;
+use near_mpc_contract_interface::contract::MpcContractClient;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 
@@ -21,8 +21,10 @@ pub type ForeignChainWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
 /// Returns once the first supporters snapshot is read, then keeps it updated in
 /// the background. Mirrors `monitor_contract_state`: the receiver always holds a
 /// real value, and a failed refresh keeps the previous one.
-pub async fn monitor_foreign_chain_supporters<V: ViewContract + Clone + Send + Sync + 'static>(
-    contract: MpcContractHandle<V>,
+pub async fn monitor_foreign_chain_supporters<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: MpcContractClient<V>,
 ) -> watch::Receiver<ForeignChainSupporters> {
     let initial = loop {
         match read_supporters(&contract).await {
@@ -60,17 +62,16 @@ pub async fn monitor_foreign_chain_supporters<V: ViewContract + Clone + Send + S
 
 /// The two view calls are not atomic: a change finalized between them yields
 /// a transiently inconsistent snapshot, corrected on the next poll.
-async fn read_supporters<C: ViewContract + Clone + Send + 'static>(
-    contract: &MpcContractHandle<C>,
+async fn read_supporters<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: &MpcContractClient<V>,
 ) -> anyhow::Result<ForeignChainSupporters> {
     let (available_chains, configs) = tokio::try_join!(
         contract.get_available_foreign_chains(),
         contract.get_foreign_chains_configs()
     )?;
-    Ok(supporters_by_available_chain(
-        &available_chains.value,
-        &configs.value,
-    ))
+    Ok(supporters_by_available_chain(&available_chains, &configs))
 }
 
 /// Maps each available chain to the TLS keys registered as supporting it;
@@ -94,8 +95,10 @@ pub(crate) fn supporters_by_available_chain(
 }
 
 /// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
-async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send + 'static>(
-    contract: &MpcContractHandle<C>,
+async fn fetch_foreign_chain_whitelist_with_retry<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: &MpcContractClient<V>,
 ) -> ForeignChainWhitelist {
     let mut backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
@@ -106,7 +109,7 @@ async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send
 
     loop {
         match contract.allowed_foreign_chain_providers().await {
-            Ok(observed) => return observed.value,
+            Ok(whitelist) => return whitelist,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading allowed_foreign_chain_providers from chain: {:?}", e);
                 let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
@@ -118,8 +121,10 @@ async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send
 
 /// Returns once the first whitelist is read, then keeps it updated in the background, like
 /// [`monitor_foreign_chain_supporters`].
-pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sync + 'static>(
-    contract: MpcContractHandle<V>,
+pub async fn monitor_foreign_chain_whitelist<
+    V: Viewer<ViewError: std::error::Error + Send + Sync + 'static> + Clone + Send + Sync + 'static,
+>(
+    contract: MpcContractClient<V>,
 ) -> watch::Receiver<ForeignChainWhitelist> {
     let initial = fetch_foreign_chain_whitelist_with_retry(&contract).await;
     let (sender, receiver) = watch::channel(initial);

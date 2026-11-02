@@ -1,8 +1,8 @@
 use chain_gateway::errors::NearViewClientError;
-use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
-use near_contract_transport::{
-    Json, ObservedState, TransportError, ViewArgs, ViewContract, WatchContractState,
-};
+use chain_gateway_test_contract::args::TestContract;
+use chain_gateway_test_contract::consts::DEFAULT_VALUE;
+use near_contract_transport::watch::Subscribe;
+use near_kit_primitives::{Contract as _, ContractError, View};
 use std::assert_matches;
 
 use crate::common::localnet::Localnet;
@@ -14,12 +14,12 @@ async fn test_view_method_contract_state() {
     let contract_id = localnet.contract.account_id.clone();
     let observer_gw = &localnet.observer.chain_gateway;
 
-    let value: ObservedState<String> = observer_gw
-        .view::<_, Json>(contract_id, ViewArgs::no_args(VIEW_VALUE))
+    let value = TestContract::client(observer_gw.clone(), contract_id)
+        .view_value()
         .await
         .expect("view call should succeed");
 
-    assert_eq!(value.value, DEFAULT_VALUE);
+    assert_eq!(value, DEFAULT_VALUE);
     localnet.shutdown().await;
 }
 
@@ -30,14 +30,12 @@ async fn test_view_method_nonexistent_method_returns_error() {
     let contract_id = localnet.contract.account_id.clone();
     let observer_gw = &localnet.observer.chain_gateway;
 
-    let result = observer_gw
-        .view::<String, Json>(contract_id, ViewArgs::no_args("nonexistent"))
-        .await;
+    let result = View::<_, String>::json(observer_gw.clone(), contract_id, "nonexistent").await;
 
     let err = result.expect_err("calling a nonexistent method should fail");
     assert_matches!(
         err,
-        TransportError::View(NearViewClientError::ResponseError { .. })
+        ContractError::Backend(NearViewClientError::ResponseError { .. })
     );
     localnet.shutdown().await;
 }
@@ -50,13 +48,17 @@ async fn test_subscription_receives_initial_value() {
     let observer_gw = &localnet.observer.chain_gateway;
 
     {
-        let mut sub = observer_gw
-            .view::<String, Json>(contract_id, ViewArgs::no_args(VIEW_VALUE))
-            .subscribe()
+        let contract = TestContract::client(observer_gw.clone(), contract_id);
+        let sub = contract
+            .view_value()
+            .subscribe(observer_gw.poll_interval())
             .await;
 
-        let res = sub.latest().expect("subscription latest should succeed");
-        assert_eq!(res.value, DEFAULT_VALUE);
+        let res = sub
+            .borrow()
+            .clone()
+            .expect("subscription latest should succeed");
+        assert_eq!(res.result, DEFAULT_VALUE);
     }
     localnet.shutdown().await;
 }

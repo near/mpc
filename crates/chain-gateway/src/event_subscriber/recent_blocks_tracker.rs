@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use crate::event_subscriber::block_events::BlockContext;
 use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
-use near_contract_transport::BlockHeight;
+use crate::types::BlockHeight;
 
 #[expect(rustdoc::private_intra_doc_links)]
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.

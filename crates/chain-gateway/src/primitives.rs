@@ -3,7 +3,7 @@
 //!     - FetchLatestFinalBlockInfo-> fetches height and hash of the latest final block
 //!     - SubmitSignedTransaction --> submits a signed transaction to the blockchain
 //!
-//! View calls go through [`near_contract_transport::ViewContract`].
+//! View calls go through [`near_kit_primitives::Viewer`], implemented by [`crate::ChainGateway`].
 use crate::types::LatestFinalBlockInfo;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::future::Future;
@@ -54,8 +54,9 @@ pub trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
     ) -> impl Future<Output = Result<LatestFinalBlockInfo, Self::Error>> + Send;
 }
 
-/// note: this is the only trait that exposes NEAR internals, but it's only used crate-internally
-pub(crate) trait SubmitSignedTransaction: Send + Sync + 'static {
+/// The only trait that exposes NEAR internals; public so that
+/// [`GatewaySender`](crate::transaction_sender::GatewaySender) can be generic over it.
+pub trait SubmitSignedTransaction: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     fn submit_signed_transaction(
         &self,

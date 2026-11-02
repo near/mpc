@@ -1,52 +1,41 @@
+//! A typed client for the contract, and the calls the integration tests send.
+
+use near_kit_primitives::transaction::FunctionCall;
+
 use super::consts::{
-    PRIVATE_SET, PRIVATE_SET_ARGS_GAS, SET_VALUE, SET_VALUE_GAS, SET_VALUE_IN_PROMISE,
-    SET_VALUE_IN_PROMISE_GAS, SPAWN_PROMISE_WITH_CALLBACK, SPAWN_PROMISE_WITH_CALLBACK_GAS,
+    PRIVATE_SET_ARGS_GAS, SET_VALUE_GAS, SET_VALUE_IN_PROMISE_GAS, SPAWN_PROMISE_WITH_CALLBACK_GAS,
 };
 
-use near_contract_transport::{FunctionCallArgs, NearToken};
-
-pub fn make_set_value_args(value: &str) -> FunctionCallArgs {
-    FunctionCallArgs {
-        method_name: SET_VALUE.to_string(),
-        args: serde_json::to_vec(&serde_json::json!({ "value": value })).unwrap(),
-        deposit: NearToken::ZERO,
-        gas: SET_VALUE_GAS,
-    }
+#[near_kit_primitives::contract]
+pub trait TestContract {
+    fn view_value(&self) -> String;
+    #[call]
+    fn set_value(&mut self, value: String);
+    #[call]
+    fn private_set(&mut self, value: String, succeeds: bool);
+    #[call]
+    fn set_value_in_promise(&mut self, value: String, return_error: bool);
+    #[call]
+    fn spawn_promise_with_callback(&mut self, successfully_spawn_promise: bool, end_marker: String);
 }
 
-pub fn make_private_set_args(value: &str, succeeds: bool) -> FunctionCallArgs {
-    FunctionCallArgs {
-        method_name: PRIVATE_SET.to_string(),
-        args: serde_json::to_vec(&serde_json::json!({ "value": value, "succeeds": succeeds }))
-            .unwrap(),
-        deposit: NearToken::ZERO,
-        gas: PRIVATE_SET_ARGS_GAS,
-    }
+pub fn make_set_value_args(value: &str) -> FunctionCall {
+    TestContract::set_value(value.to_string()).gas(SET_VALUE_GAS)
 }
 
-pub fn make_set_value_in_promise_args(value: &str, return_error: bool) -> FunctionCallArgs {
-    FunctionCallArgs {
-        method_name: SET_VALUE_IN_PROMISE.to_string(),
-        args: serde_json::to_vec(
-            &serde_json::json!({ "value": value, "return_error": return_error }),
-        )
-        .unwrap(),
-        deposit: NearToken::ZERO,
-        gas: SET_VALUE_IN_PROMISE_GAS,
-    }
+pub fn make_private_set_args(value: &str, succeeds: bool) -> FunctionCall {
+    TestContract::private_set(value.to_string(), succeeds).gas(PRIVATE_SET_ARGS_GAS)
+}
+
+pub fn make_set_value_in_promise_args(value: &str, return_error: bool) -> FunctionCall {
+    TestContract::set_value_in_promise(value.to_string(), return_error)
+        .gas(SET_VALUE_IN_PROMISE_GAS)
 }
 
 pub fn make_spawn_promise_in_callback_args(
     successfully_spawn_promise: bool,
     end_marker: &str,
-) -> FunctionCallArgs {
-    FunctionCallArgs {
-        method_name: SPAWN_PROMISE_WITH_CALLBACK.to_string(),
-        args: serde_json::to_vec(
-            &serde_json::json!({ "successfully_spawn_promise": successfully_spawn_promise, "end_marker": end_marker }),
-        )
-        .unwrap(),
-        deposit: NearToken::ZERO,
-        gas: SPAWN_PROMISE_WITH_CALLBACK_GAS,
-    }
+) -> FunctionCall {
+    TestContract::spawn_promise_with_callback(successfully_spawn_promise, end_marker.to_string())
+        .gas(SPAWN_PROMISE_WITH_CALLBACK_GAS)
 }

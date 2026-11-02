@@ -1,100 +1,12 @@
 //! Argument types for the NEAR MPC signer contract function calls.
 
 use crate::types::{
-    AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements,
-    ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
-    NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    Attestation, CKDRequest, CKDResponse, ChainEntry, Ed25519PublicKey, ForeignChain, KeyEventId,
+    Keyset, PublicKey, SignatureRequest, SignatureResponse, VerifyForeignTransactionRequest,
     VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct InitArgs {
-    pub parameters: GovernanceThresholdParameters,
-    pub tee_verifier_account_id: AccountId,
-    pub init_config: Option<InitConfig>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct InitRunningArgs {
-    pub domains: Vec<DomainConfig>,
-    pub next_domain_id: DomainId,
-    pub keyset: Keyset,
-    pub parameters: GovernanceThresholdParameters,
-    pub tee_verifier_account_id: AccountId,
-    pub init_config: Option<InitConfig>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct SignArgs {
-    pub request: SignRequestArgs,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct RequestAppPrivateKeyArgs {
-    pub request: CKDRequestArgs,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VerifyForeignTransactionArgs {
-    pub request: VerifyForeignTransactionRequestArgs,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteAddDomainsArgs {
-    pub domains: Vec<DomainConfig>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteNewParametersArgs {
-    pub prospective_epoch_id: EpochId,
-    pub proposal: ProposedGovernanceThresholdParameters,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteCancelKeygenArgs {
-    pub next_domain_id: DomainId,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteMpcNodeManifestDigestArgs {
-    pub mpc_node_manifest_digest: NodeImageHash,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteAddLauncherHashArgs {
-    pub launcher_hash: LauncherImageHash,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteAddOsMeasurementArgs {
-    pub measurement: ExpectedMeasurements,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteTeeVerifierChangeArgs {
-    pub candidate_account_id: AccountId,
-    pub expected_code_hash: TeeVerifierCodeHash,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct UpdateParticipantUrlArgs {
-    pub url: ParticipantUrl,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct RegisterBackupServiceArgs {
-    pub backup_service_info: BackupServiceInfo,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct StartNodeMigrationArgs {
-    pub destination_node_info: DestinationNodeInfo,
-}
 
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
 pub struct SignatureRespondArgs {
@@ -114,43 +26,18 @@ pub struct VerifyForeignTransactionRespondArgs {
     pub response: VerifyForeignTransactionResponse,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct GetPendingSignatureRequestArgs {
-    pub request: SignatureRequest,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct GetPendingCKDRequestArgs {
-    pub request: CKDRequest,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct GetPendingVerifyForeignTxRequestArgs {
-    pub request: VerifyForeignTransactionRequest,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct GetAttestationArgs<'a> {
-    pub tls_public_key: &'a Ed25519PublicKey,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
+#[derive(Serialize, Debug, Clone, derive_more::Constructor)]
 pub struct VotePkArgs {
     pub key_event_id: KeyEventId,
     pub public_key: PublicKey,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
+#[derive(Serialize, Debug, Clone, derive_more::Constructor)]
 pub struct VoteResharedArgs {
     pub key_event_id: KeyEventId,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteContractUpdateArgs {
-    pub update_hash: UpdateHash,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
+#[derive(Serialize, Debug, Clone, derive_more::Constructor)]
 pub struct RegisterForeignChainsConfigArgs {
     pub foreign_chains_config: crate::types::ForeignChainsConfig,
 }
@@ -160,20 +47,14 @@ pub struct VoteUpdateForeignChainProvidersArgs {
     pub votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
+#[derive(Serialize, Debug, Clone, derive_more::Constructor)]
 pub struct StartReshareArgs {
     pub key_event_id: KeyEventId,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
+#[derive(Serialize, Debug, Clone, derive_more::Constructor)]
 pub struct StartKeygenArgs {
     pub key_event_id: KeyEventId,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct PrepayAttestationStorageArgs {
-    pub account_id: AccountId,
-    pub grants: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::Constructor)]
@@ -182,34 +63,12 @@ pub struct SubmitParticipantInfoArgs {
     pub tls_public_key: Ed25519PublicKey,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
+#[derive(Serialize, Debug, Clone, derive_more::Constructor)]
 pub struct VoteAbortKeyEventInstanceArgs {
     pub key_event_id: KeyEventId,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
+#[derive(Serialize, Debug, Clone, derive_more::Constructor)]
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct CleanInvalidAttestationsArgs {
-    pub max_scan: u32,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct PublicKeyArgs {
-    pub domain_id: Option<DomainId>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct DerivedPublicKeyArgs {
-    pub path: String,
-    pub predecessor: Option<AccountId>,
-    pub domain_id: Option<DomainId>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct AvailableAttestationGrantsArgs {
-    pub account_id: AccountId,
 }

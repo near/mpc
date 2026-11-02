@@ -34,7 +34,7 @@ async fn contract_configuration_can_be_set_on_initialization() {
         .build()
         .await;
 
-    let stored_config = contract.config().await.unwrap().value;
+    let stored_config = contract.config().await.unwrap();
     assert_eq!(
         serde_json::to_value(stored_config).unwrap(),
         serde_json::to_value(init_config).unwrap()
