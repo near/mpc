@@ -352,10 +352,14 @@ impl MpcContract {
                     threshold_parameters,
                     BTreeMap::new(),
                 );
-                let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
                 self.parameters_votes.clear();
-                if let Some(resharing) = res {
-                    self.protocol_state = ProtocolContractState::Resharing(resharing);
+                match running_state.transition_to_resharing_no_checks(&proposed_parameters) {
+                    Some(resharing) => {
+                        self.protocol_state = ProtocolContractState::Resharing(resharing);
+                    }
+                    None => self
+                        .add_domains_votes
+                        .retain(running_state.parameters.participants()),
                 }
 
                 Ok(true)

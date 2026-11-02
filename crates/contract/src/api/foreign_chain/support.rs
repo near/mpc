@@ -177,7 +177,6 @@ mod tests {
         must_attest_new_node, participant_account_ids,
     };
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
@@ -687,12 +686,8 @@ mod tests {
             new_participants,
             GovernanceThreshold::new(3),
         );
-        contract.protocol_state = ProtocolContractState::Running(RunningContractState::new(
-            domains,
-            keyset,
-            new_params,
-            AddDomainsVotes::default(),
-        ));
+        contract.protocol_state =
+            ProtocolContractState::Running(RunningContractState::new(domains, keyset, new_params));
 
         // When: vote_reshared recomputes the cache, then clean_foreign_chain_data
         // prunes participant[2]'s stale storage entry.
