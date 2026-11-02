@@ -7,25 +7,28 @@ use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
 use crate::primitives::participants::Participants;
 use crate::primitives::test_utils::{
-    NUM_PROTOCOLS, bogus_tee_verifier_account_id, gen_participants, infer_purpose_from_protocol,
+    NUM_PROTOCOLS, bogus_tee_verifier_account_id, gen_participant_url, gen_participants,
+    infer_purpose_from_protocol, node_id_for,
 };
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
+use crate::tee::tee_state::NodeId;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
     ReconstructionThreshold,
 };
 use elliptic_curve::{Field as _, Group};
 use k256::elliptic_curve;
+use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{NearToken, VMContext, testing_env};
 use rand_core::CryptoRngCore;
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_core::Group as _;
 use threshold_signatures::frost_ed25519::Ed25519Group;
@@ -254,6 +257,29 @@ pub(crate) fn submit_valid_attestations(
             "submit_participant_info should succeed with valid attestation for participant {}",
             participant_index
         );
+    }
+}
+
+pub(crate) fn must_attest_new_node(contract: &mut MpcContract, account_id: &AccountId) -> NodeId {
+    let node_id = node_id_for(account_id);
+    contract
+        .tee_state
+        .verify_and_store_mock(
+            node_id.clone(),
+            MpcMockAttestation::Valid,
+            Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+        )
+        .expect("attestation insertion should succeed");
+    node_id
+}
+
+pub(crate) fn destination_of(node_id: &NodeId) -> dtos::DestinationNodeInfo {
+    dtos::DestinationNodeInfo {
+        signer_account_pk: node_id.account_public_key.clone(),
+        destination_node_info: dtos::ParticipantInfo {
+            url: gen_participant_url(0),
+            tls_public_key: node_id.tls_public_key.clone(),
+        },
     }
 }
 

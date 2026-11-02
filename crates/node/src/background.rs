@@ -21,10 +21,6 @@ impl InFlightGenerationTracker {
         self.generations_in_flight
             .load(std::sync::atomic::Ordering::Relaxed)
     }
-
-    pub fn num_in_flight_atomic(&self) -> Arc<AtomicUsize> {
-        self.generations_in_flight.clone()
-    }
 }
 
 /// Drop guard to increment and decrement number of generations in flight.

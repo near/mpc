@@ -869,5 +869,5 @@ There are two distinct Near Account Keys with different responsibilities:
 ## Identified Risks
 
 - **Rollback & asset reuse**
-  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples, presignatures).
+  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples).
   - Currently, these assets are persisted on disk — mitigation will be required in future iterations.

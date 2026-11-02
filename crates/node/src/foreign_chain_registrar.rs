@@ -41,7 +41,7 @@ pub(crate) fn spawn_foreign_chains_registrar(
     })
 }
 
-/// An empty set still registers so that dropping every chain propagates.
+/// An empty set is still sent, so the contract drops this node as a supporter of every chain.
 async fn register_foreign_chains(
     txn_sender: &impl TransactionSender,
     chains: &BTreeSet<dtos::ForeignChain>,
@@ -60,17 +60,18 @@ async fn register_foreign_chains(
         })
 }
 
+/// Resets both gauges first, so a chain without a status loses its series.
 fn publish_rpc_quorum_metrics(statuses: &BTreeMap<dtos::ForeignChain, RpcQuorumStatus>) {
+    metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED.reset();
+    metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED.reset();
     for (chain, status) in statuses {
         let labels = [chain.label()];
         metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED
             .with_label_values(&labels)
-            .set(status.required.map_or(0, |required| {
-                i64::try_from(required.get()).unwrap_or(i64::MAX)
-            }));
+            .set(i64::try_from(status.required_whitelisted_providers.get()).unwrap_or(i64::MAX));
         metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED
             .with_label_values(&labels)
-            .set(i64::try_from(status.conforming).unwrap_or(i64::MAX));
+            .set(i64::try_from(status.configured_whitelisted_providers).unwrap_or(i64::MAX));
     }
 }
 
@@ -86,6 +87,7 @@ mod tests {
     use near_mpc_contract_interface::types::{
         AuthScheme, ChainEntry, ChainRouting, ForeignChain, ProviderConfig, ProviderId,
     };
+    use prometheus::core::Collector;
     use std::assert_matches;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::error::TryRecvError;
@@ -268,10 +270,31 @@ mod tests {
         root.await;
     }
 
+    fn series(gauge: &prometheus::IntGaugeVec, chain: ForeignChain) -> Option<i64> {
+        gauge
+            .collect()
+            .iter()
+            .flat_map(|family| family.get_metric().to_vec())
+            .find(|metric| {
+                metric
+                    .get_label()
+                    .iter()
+                    .any(|label| label.value() == chain.label())
+            })
+            .map(|metric| metric.get_gauge().get_value() as i64)
+    }
+
+    fn gauges(chain: ForeignChain) -> Option<(i64, i64)> {
+        Some((
+            series(&metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED, chain)?,
+            series(&metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED, chain)?,
+        ))
+    }
+
     /// Polygon is whitelisted with quorum 1, Base is configured but not whitelisted. The gauges are
-    /// global to the test binary, so no other test in this crate may register either chain.
+    /// global and reset on publish, so this test needs its own process, as nextest gives it.
     #[test]
-    fn publish_rpc_quorum_metrics__should_set_both_gauges_for_every_configured_chain() {
+    fn publish_rpc_quorum_metrics__should_set_both_gauges_for_the_whitelisted_chains_only() {
         // Given
         let local = ForeignChainsConfig {
             polygon: Some(local_chain()),
@@ -284,18 +307,37 @@ mod tests {
         publish_rpc_quorum_metrics(&rpc_quorum_statuses(&local, &whitelist));
 
         // Then
-        let gauges = |chain: ForeignChain| {
-            let labels = [chain.label()];
-            (
-                metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED
-                    .with_label_values(&labels)
-                    .get(),
-                metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED
-                    .with_label_values(&labels)
-                    .get(),
-            )
+        assert_eq!(gauges(ForeignChain::Polygon), Some((1, 1)));
+        assert_eq!(gauges(ForeignChain::Base), None);
+    }
+
+    #[test]
+    fn publish_rpc_quorum_metrics__should_drop_the_gauges_of_a_chain_that_left_the_whitelist() {
+        // Given
+        let local = ForeignChainsConfig {
+            starknet: Some(local_chain()),
+            ..Default::default()
         };
-        assert_eq!(gauges(ForeignChain::Polygon), (1, 1));
-        assert_eq!(gauges(ForeignChain::Base), (0, 0));
+        let whitelist = ForeignChainWhitelist::from([(ForeignChain::Starknet, entry(1))]);
+        publish_rpc_quorum_metrics(&rpc_quorum_statuses(&local, &whitelist));
+
+        // When
+        publish_rpc_quorum_metrics(&rpc_quorum_statuses(&local, &ForeignChainWhitelist::new()));
+
+        // Then
+        assert_eq!(
+            series(
+                &metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED,
+                ForeignChain::Starknet
+            ),
+            None
+        );
+        assert_eq!(
+            series(
+                &metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED,
+                ForeignChain::Starknet
+            ),
+            None
+        );
     }
 }

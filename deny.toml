@@ -54,6 +54,9 @@ ignore = [
   # aarch64 backend; release and CI builds target x86_64, where the miscompiled lowering
   # is never emitted.
   "RUSTSEC-2026-0379", # wasmtime aarch64 jumps to incorrect target on large `br_table`
+  # Fixed in wasmtime >= 48.0.8, with no patched 45.x release. Affects only component-model
+  # `borrow<T>` tracking; no crate in the workspace enables wasmtime's `component-model` feature.
+  "RUSTSEC-2026-0424", # wasmtime borrowed resources between components use unchecked memory
   # TODO(#4839): remove once cargo can resolve zip >= 9.0.0.
   # zip comes only from nearcore's near-rosetta-rpc via utoipa-swagger-ui, whose build script
   # never calls the vulnerable `extract` APIs: it writes entries as plain files from a pinned

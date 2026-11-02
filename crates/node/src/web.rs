@@ -10,8 +10,8 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, TripleConfig, foreign_chains::RpcPreset,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, SignatureConfig,
+    TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -94,7 +94,6 @@ struct NodeConfigResponse {
     pprof_bind_address: SocketAddr,
     indexer: IndexerConfig,
     triple: TripleConfig,
-    presignature: PresignatureConfig,
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
@@ -116,7 +115,6 @@ impl From<ConfigFile> for NodeConfigResponse {
             pprof_bind_address: config.pprof_bind_address,
             indexer: config.indexer,
             triple: config.triple,
-            presignature: config.presignature,
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
@@ -481,15 +479,7 @@ mod tests {
                 timeout_sec: 120,
                 batch_size: TripleBatchSize::default(),
             },
-            presignature: PresignatureConfig {
-                concurrency: 1,
-                desired_presignatures_to_buffer: 5,
-                timeout_sec: 60,
-            },
-            signature: SignatureConfig {
-                timeout_sec: 60,
-                online_presign: true,
-            },
+            signature: SignatureConfig { timeout_sec: 60 },
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig {
