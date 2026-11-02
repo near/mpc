@@ -67,10 +67,7 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
         new_participants
             .insert_with_id(
                 account_id.clone(),
-                mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
-                    tls_public_key: participant_info.tls_public_key.clone(),
-                },
+                participant_info.clone(),
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
@@ -168,10 +165,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         new_participants
             .insert_with_id(
                 account_id.clone(),
-                mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
-                    tls_public_key: participant_info.tls_public_key.clone(),
-                },
+                participant_info.clone(),
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;

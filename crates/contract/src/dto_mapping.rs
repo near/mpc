@@ -22,7 +22,7 @@ use crate::{
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
-        participants::{ParticipantInfo, Participants},
+        participants::Participants,
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
@@ -185,25 +185,9 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
     }
 }
 
-impl IntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
-    fn into_contract_type(self) -> ParticipantInfo {
-        ParticipantInfo {
-            url: self.url,
-            tls_public_key: self.tls_public_key,
-        }
-    }
-}
-
 impl IntoContractType<Participants> for dtos::Participants {
     fn into_contract_type(self) -> Participants {
-        let participants = self
-            .participants
-            .into_iter()
-            .map(|(account_id, participant_id, info)| {
-                (account_id, participant_id, info.into_contract_type())
-            })
-            .collect();
-        Participants::init(self.next_id, participants)
+        Participants::init(self.next_id, self.participants)
     }
 }
 
@@ -623,8 +607,8 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 #[cfg(feature = "test-utils")]
 mod test_conversions {
     use super::{
-        GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, Keyset,
-        ParticipantInfo, ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
+        GovernanceThresholdParameters, IntoInterfaceType, Keyset,
+        ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
     };
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
@@ -648,21 +632,6 @@ mod test_conversions {
     impl From<ProposedGovernanceThresholdParameters> for dtos::ProposedGovernanceThresholdParameters {
         fn from(params: ProposedGovernanceThresholdParameters) -> Self {
             (&params).into_dto_type()
-        }
-    }
-
-    impl From<ParticipantInfo> for dtos::ParticipantInfo {
-        fn from(info: ParticipantInfo) -> Self {
-            dtos::ParticipantInfo {
-                url: info.url,
-                tls_public_key: info.tls_public_key,
-            }
-        }
-    }
-
-    impl From<dtos::ParticipantInfo> for ParticipantInfo {
-        fn from(info: dtos::ParticipantInfo) -> Self {
-            info.into_contract_type()
         }
     }
 }
@@ -771,23 +740,9 @@ impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
 
 impl IntoInterfaceType<dtos::Participants> for &Participants {
     fn into_dto_type(self) -> dtos::Participants {
-        let participants = self
-            .participants()
-            .iter()
-            .map(|(account_id, participant_id, info)| {
-                (
-                    account_id.clone(),
-                    dtos::ParticipantId(participant_id.get()),
-                    dtos::ParticipantInfo {
-                        url: info.url.clone(),
-                        tls_public_key: info.tls_public_key.clone(),
-                    },
-                )
-            })
-            .collect();
         dtos::Participants {
-            next_id: dtos::ParticipantId(self.next_id().get()),
-            participants,
+            next_id: self.next_id(),
+            participants: self.participants().clone(),
         }
     }
 }

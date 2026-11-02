@@ -13,9 +13,7 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{
-    ParticipantInfo as DtoParticipantInfo, ParticipantUrl, ProtocolContractState,
-};
+use near_mpc_contract_interface::types::{ParticipantInfo, ParticipantUrl, ProtocolContractState};
 use near_sdk::{NearToken, testing_env};
 use std::{assert_matches, str::FromStr};
 
@@ -23,7 +21,7 @@ fn relocated_url() -> ParticipantUrl {
     "https://relocated.example.com:9000".try_into().unwrap()
 }
 
-fn participant_info(contract: &MpcContract, account_id: &AccountId) -> DtoParticipantInfo {
+fn participant_info(contract: &MpcContract, account_id: &AccountId) -> ParticipantInfo {
     let ProtocolContractState::Running(running) = contract.state() else {
         panic!("expected Running state");
     };

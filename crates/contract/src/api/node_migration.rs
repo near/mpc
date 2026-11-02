@@ -2,7 +2,7 @@
 //! migration to new hardware, and updating a participant's URL.
 
 use crate::api::common::require_deposit;
-use crate::dto_mapping::{IntoContractType, TryIntoContractType};
+use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{self, Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::Keyset;
 use crate::primitives::participants::{ParticipantInfo, Participants};
@@ -254,18 +254,12 @@ impl MpcContract {
             .info(&account_id)
             .map(|info| info.tls_public_key.clone());
 
-        let contract_participant_info = expected_destination_node
-            .destination_node_info
-            .into_contract_type();
-        log!(
-            "Moving Account {:?} to {:?}",
-            account_id,
-            contract_participant_info
-        );
+        let destination_info = expected_destination_node.destination_node_info;
+        log!("Moving Account {:?} to {:?}", account_id, destination_info);
 
         running_state
             .parameters
-            .update_info(account_id, contract_participant_info)?;
+            .update_info(account_id, destination_info)?;
 
         // Safe to drop unconditionally: `assert_migration_destination_allowed` above rejects a
         // destination that reuses `old_key`, so the config removed here is never the new node's.
@@ -728,10 +722,7 @@ mod tests {
                 is_migration_started: true,
                 attested_node,
                 expected_error_check: None,
-                expected_post_call_info: Some((
-                    *expected_participant_id,
-                    expected_info.into_contract_type(),
-                )),
+                expected_post_call_info: Some((*expected_participant_id, expected_info)),
             };
             setup.run(&mut contract, &keyset);
         }
