@@ -120,10 +120,10 @@ mod tests {
 
         // When / Then
         assert!(tracker.start_echo(nonce, base_time, timeout));
-        let time_warp_1 = base_time + Duration::from_millis(2500);
+        let time_warp_1 = base_time.checked_add(Duration::from_millis(2500)).unwrap();
         assert!(!tracker.check_timeouts(time_warp_1));
         assert!(tracker.is_awaiting_ack());
-        let time_warp_2 = base_time + Duration::from_millis(3500);
+        let time_warp_2 = base_time.checked_add(Duration::from_millis(3500)).unwrap();
         let rtt = tracker.receive_ack(nonce, time_warp_2);
         assert_eq!(rtt, Some(Duration::from_millis(3500)));
         assert!(!tracker.is_awaiting_ack());
@@ -165,7 +165,7 @@ mod tests {
         let nonce = tracker.prepare_next_nonce();
         // When / Then
         assert!(tracker.start_echo(nonce, base_time, timeout));
-        let expired_warp = base_time + Duration::from_millis(2001);
+        let expired_warp = base_time.checked_add(Duration::from_millis(2001)).unwrap();
         assert!(tracker.check_timeouts(expired_warp));
         assert!(!tracker.is_awaiting_ack());
     }
@@ -180,14 +180,18 @@ mod tests {
         let first = tracker.prepare_next_nonce();
         let second = tracker.prepare_next_nonce();
         assert!(tracker.start_echo(first, t0, timeout));
-        assert!(tracker.start_echo(second, t0 + Duration::from_secs(5), timeout));
+        assert!(tracker.start_echo(
+            second,
+            t0.checked_add(Duration::from_secs(5)).unwrap(),
+            timeout
+        ));
 
         // When
-        let rtt = tracker.receive_ack(second, t0 + Duration::from_millis(5500));
+        let rtt = tracker.receive_ack(second, t0.checked_add(Duration::from_millis(5500)).unwrap());
 
         // Then
         assert_eq!(rtt, Some(Duration::from_millis(500)));
         assert!(!tracker.is_awaiting_ack());
-        assert!(!tracker.check_timeouts(t0 + Duration::from_secs(11)));
+        assert!(!tracker.check_timeouts(t0.checked_add(Duration::from_secs(11)).unwrap()));
     }
 }
