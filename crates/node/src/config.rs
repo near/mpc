@@ -365,9 +365,9 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 pub mod tests {
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
-        Rng, RngCore,
+        Rng, RngCore, SeedableRng as _,
         distributions::{Alphanumeric, Uniform},
-        rngs::OsRng,
+        rngs::{OsRng, StdRng},
     };
     use std::{
         assert_matches,
@@ -477,9 +477,10 @@ pub mod tests {
     fn generate_or_get_existing__should_load_secrets_with_legacy_responder_keys() {
         // Given
         let temp_dir = TempDir::new().unwrap();
+        let mut rng = StdRng::from_seed([1u8; 32]);
         let expected_secrets = PersistentSecrets {
-            p2p_private_key: SigningKey::generate(&mut OsRng),
-            near_signer_key: SigningKey::generate(&mut OsRng),
+            p2p_private_key: SigningKey::generate(&mut rng),
+            near_signer_key: SigningKey::generate(&mut rng),
         };
         let mut legacy_secrets = serde_json::to_value(&expected_secrets).unwrap();
         legacy_secrets["near_responder_keys"] =
