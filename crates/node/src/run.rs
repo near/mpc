@@ -1,7 +1,6 @@
 use crate::{
     config::{
-        PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk,
+        PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
         start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
@@ -122,16 +121,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
-    let persistent_secrets = PersistentSecrets::generate_or_get_existing(
-        &config.home_dir,
-        node_config.number_of_responder_keys,
-    )?;
+    let persistent_secrets = PersistentSecrets::generate_or_get_existing(&config.home_dir)?;
 
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
-
-    // TODO(#2102): Decide if the MPC responder account is actually needed
-    let respond_config = RespondConfig::from_parts(&node_config, &persistent_secrets);
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
         Some(key) => key.clone(),
@@ -239,7 +232,6 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
         persistent_secrets.near_signer_key.clone(),
-        respond_config,
         indexer_exit_sender,
         protocol_state_sender,
         migration_state_sender,
