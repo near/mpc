@@ -234,6 +234,21 @@ mod test {
     }
 
     #[test]
+    fn presign_and_sign__should_produce_deterministic_signature() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let setup = Setup::new(3, 2, &mut rng);
+        let coordinator = setup.participants[0];
+
+        // When
+        let result = setup.run_presign_and_sign(coordinator);
+
+        // Then
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        insta::assert_json_snapshot!(to_k256_signature(&signature));
+    }
+
+    #[test]
     fn presign_and_sign__should_reject_coordinator_outside_participants() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);

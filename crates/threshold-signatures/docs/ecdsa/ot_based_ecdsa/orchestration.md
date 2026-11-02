@@ -25,8 +25,9 @@ signing as one protocol once the message is known, so the presignature is never 
 
 Each of these phases can potentially use a different set of parties,
 and these sets can have different sizes.
-Furthermore, each phase can have a different threshold describing
-how large the party set for the next phase needs to be.
+Triple generation also has its own threshold $t_0$, describing how large
+the signing party set needs to be. Signing has no threshold of its own:
+it must use the triples' threshold $t_0$.
 
 Concretely, we have the following situation:
 
@@ -38,14 +39,14 @@ $$
 \cr
 &\mathcal{P} &\supseteq &\mathcal{P}_0 &\supseteq &\mathcal{P}_1\cr
 &N &\geq &N_0 &\geq &N_1\cr
-&t &&t_0 &&t_1\cr
+&t &&t_0\cr
 \end{matrix}
 $$
 
 Each phase has a different set of parties, with each subsequent phase
 having a subset of the parties present in the previous one.
 The size of each party set, $N_i$, can also vary.
-The thresholds can also change, subject to the following conditions:
+The triple threshold $t_0$ can differ from $t$, subject to the following conditions:
 
 $$
 \begin{aligned}
@@ -54,8 +55,8 @@ $$
 \end{aligned}
 $$
 
-In other words, the first threshold $t$ is at most $N$, and every
-other threshold must be at least that large.
+In other words, the first threshold $t$ is at most $N$, and $t_0$
+must be at least that large.
 Otherwise, the only constraint is that each subsequent party set must
 be at least as large as the previous threshold.
 

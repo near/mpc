@@ -1,6 +1,6 @@
 # OT-based Threshold ECDSA (`src/ecdsa/ot_based_ecdsa/`)
 
-This module implements the Cait-Sith OT-based threshold ECDSA scheme over Secp256k1. Signing runs as triple generation followed by a single online protocol, `presign_and_sign`; the two phases can involve different participant sets and thresholds.
+This module implements the Cait-Sith OT-based threshold ECDSA scheme over Secp256k1. Signing runs as triple generation followed by a single online protocol, `presign_and_sign`; the signers may be a subset of the triple generators, but must use the triples' threshold.
 
 ## Pipeline
 
