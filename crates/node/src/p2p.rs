@@ -1718,8 +1718,8 @@ mod tests {
     ) -> Arc<OutgoingConnection> {
         Arc::new(OutgoingConnection {
             sender,
-            _sender_task: tokio::spawn(std::future::pending()).into(),
-            _keepalive_task: tokio::spawn(std::future::pending()).into(),
+            _sender_task: tokio::spawn(futures::future::pending()).into(),
+            _keepalive_task: tokio::spawn(futures::future::pending()).into(),
             _echo_task: None,
             echo_ack_sender: None,
             closed: CancellationToken::new(),
@@ -2141,21 +2141,29 @@ mod tests {
         .await;
     }
 
-    #[cfg(test)]
     mod liveness_test {
         use super::*;
-        use crate::network::constants::{ECHO_INTERVAL, ECHO_TIMEOUT};
-        use crate::network::liveness_check::EchoTracker;
-        use crate::network::rfc1982::Rfc1982SerialU8;
-        use crate::p2p::{
-            OUTGOING_CHECK_INTERVAL, configure_framed_stream, new_tls_mesh_network,
-            peer_supports_echo, run_echo_liveness,
+        use crate::{
+            network::{
+                constants::{ECHO_INTERVAL, ECHO_TIMEOUT},
+                handshake::MIN_EXPECTED_CONNECTION_ID,
+                liveness_check::EchoTracker,
+                rfc1982::Rfc1982SerialU8,
+            },
+            p2p::{
+                OUTGOING_CHECK_INTERVAL, configure_framed_stream, peer_supports_echo,
+                run_echo_liveness,
+            },
+            primitives::Heartbeat,
         };
-        use crate::primitives::Heartbeat;
+        use bytes::Bytes;
+        use futures::SinkExt;
         use prometheus::Histogram;
         use std::sync::atomic::{AtomicU8, Ordering};
-        use tokio::sync::mpsc;
-        use tokio::time::{Duration, advance, sleep};
+        use tokio::{
+            sync::mpsc::{self, error::TryRecvError},
+            time::{Duration, advance, pause, resume, sleep},
+        };
         use tokio_stream::StreamExt;
         use tokio_util::sync::CancellationToken;
 
@@ -2187,6 +2195,62 @@ mod tests {
             Histogram::with_opts(prometheus::HistogramOpts::new("test_echo_rtt", "test")).unwrap()
         }
 
+        struct LoopbackPeer {
+            connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
+            client: tokio_util::codec::Framed<
+                tokio_rustls::client::TlsStream<TcpStream>,
+                tokio_util::codec::LengthDelimitedCodec,
+            >,
+            handler: tracking::AutoAbortTask<anyhow::Result<()>>,
+        }
+
+        impl LoopbackPeer {
+            async fn connect() -> Self {
+                let (my_id, peer_id) = (ParticipantId::from_raw(0), ParticipantId::from_raw(1));
+                let mut participant_identities = ParticipantIdentities::default();
+                participant_identities
+                    .key_to_participant_id
+                    .insert(make_signing_key().verifying_key(), peer_id);
+                let connectivities = Arc::new(AllNodeConnectivities::<
+                    OutgoingConnection,
+                    IncomingConnection,
+                >::new(my_id, &[my_id, peer_id]));
+                let (sender, _) = mpsc::unbounded_channel();
+                let (local, remote) = must_accept_silent_connection().await;
+                let handler = tracking::spawn(
+                    "incoming connection handler",
+                    incoming_connection_handler(
+                        sender,
+                        connectivities.clone(),
+                        local,
+                        make_tls_acceptor(),
+                        Arc::new(participant_identities),
+                        my_id,
+                        Arc::new(IncomingConnectionLimits::new([peer_id])),
+                    ),
+                );
+
+                let mut client = tokio_rustls::TlsConnector::from(make_client_config())
+                    .connect("dummy".try_into().unwrap(), remote)
+                    .await
+                    .unwrap();
+                OutgoingConnection::negotiate_protocol(&mut client, MIN_EXPECTED_CONNECTION_ID)
+                    .await
+                    .unwrap();
+
+                Self {
+                    connectivity: connectivities.get(peer_id).unwrap(),
+                    client: configure_framed_stream(client),
+                    handler,
+                }
+            }
+
+            async fn send(&mut self, packet: Packet) {
+                let bytes = Bytes::from(borsh::to_vec(&packet).unwrap());
+                self.client.send(bytes).await.unwrap();
+            }
+        }
+
         #[test]
         fn peer_supports_echo__should_evaluate_protocol_version() {
             assert!(!peer_supports_echo(NetworkProtocolVersion::Dec2025));
@@ -2196,12 +2260,13 @@ mod tests {
         #[rstest]
         #[case(NetworkProtocolVersion::Oct2026, false)]
         #[case(NetworkProtocolVersion::Nov2026, true)]
-        #[tokio::test]
+        #[tokio::test(start_paused = true)]
         async fn outgoing_connection__should_send_echos_only_to_nov2026_peers(
             #[case] peer_version: NetworkProtocolVersion,
             #[case] expected_sent: bool,
         ) {
             // Given
+            resume();
             let (sender, mut packets) = mpsc::unbounded_channel();
             let connection = test_outgoing_connection(sender, peer_version);
 
@@ -2215,7 +2280,6 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
-        #[test_log::test]
         async fn run_echo_liveness__should_send_echo_on_interval_and_clear_on_ack() {
             // Given
             let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
@@ -2242,7 +2306,6 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
-        #[test_log::test]
         async fn run_echo_liveness__should_cancel_token_when_peer_times_out() {
             // Given
             let (packet_tx, mut packet_rx, _ack_tx, ack_rx, liveness_failed) = setup_liveness();
@@ -2266,7 +2329,6 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
-        #[test_log::test]
         async fn run_echo_liveness__should_ignore_rogue_nonces() {
             // Given
             let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
@@ -2295,7 +2357,6 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
-        #[test_log::test]
         async fn run_echo_liveness__should_ignore_stale_nonces() {
             // Given
             let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
@@ -2326,7 +2387,6 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
-        #[test_log::test]
         async fn run_echo_liveness__should_send_increasing_nonces_while_acked() {
             // Given
             let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
@@ -2354,7 +2414,6 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
-        #[test_log::test]
         async fn run_echo_liveness__should_stop_when_receiver_dropped() {
             // Given
             let (packet_tx, packet_rx, _ack_tx, ack_rx, liveness_failed) = setup_liveness();
@@ -2378,7 +2437,6 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
-        #[test_log::test]
         async fn run_echo_liveness__should_capture_rtt_on_ack() {
             // Given
             let (packet_tx, mut packet_rx, ack_tx, ack_rx, liveness_failed) = setup_liveness();
@@ -2403,20 +2461,21 @@ mod tests {
 
             // Then
             assert_eq!(round_trip_time.get_sample_count(), 1);
-            assert!((round_trip_time.get_sample_sum()).abs() > 0.00);
+            assert!(round_trip_time.get_sample_sum().abs() > 0.00);
         }
 
-        #[tokio::test]
+        #[tokio::test(start_paused = true)]
         async fn outgoing_connection__should_forward_echo_acks_until_channel_is_full() {
             // Given
-            let (sender, _packets) = mpsc::unbounded_channel();
-            let (ack_sender, mut acks) = mpsc::channel(1);
+            resume();
+            let (tx, _rx) = mpsc::unbounded_channel();
+            let (ack_tx, mut ack_rx) = mpsc::channel(1);
             let connection = OutgoingConnection {
-                sender,
-                _sender_task: tokio::spawn(std::future::pending()).into(),
-                _keepalive_task: tokio::spawn(std::future::pending()).into(),
+                sender: tx,
+                _sender_task: tokio::spawn(async {}).into(),
+                _keepalive_task: tokio::spawn(async {}).into(),
                 _echo_task: None,
-                echo_ack_sender: Some(ack_sender),
+                echo_ack_sender: Some(ack_tx),
                 closed: CancellationToken::new(),
                 peer_network_protocol_version: NetworkProtocolVersion::Nov2026,
             };
@@ -2429,8 +2488,8 @@ mod tests {
                 .for_each(|hb| connection.receive_echo_ack(hb));
 
             // Then
-            assert_eq!(acks.try_recv(), Ok(Rfc1982SerialU8::new(1)));
-            assert_eq!(acks.try_recv(), Err(mpsc::error::TryRecvError::Empty));
+            assert_eq!(ack_rx.try_recv(), Ok(Rfc1982SerialU8::new(1)));
+            assert_eq!(ack_rx.try_recv(), Err(TryRecvError::Empty));
         }
 
         #[tokio::test(start_paused = true)]
@@ -2483,38 +2542,114 @@ mod tests {
             assert!(watchdog.record_check(false));
         }
 
+        #[rstest]
+        #[case::outgoing_connection_absent(None, true)]
+        #[case::outgoing_connection_closed(Some(false), true)]
+        #[case::outgoing_connection_active(Some(true), false)]
         #[tokio::test(start_paused = true)]
-        async fn incoming_connection_handler__should_watchdog_on_outgoing_disconnect() {
-            // Given
-            let configs = generate_test_p2p_configs(
-                &["test0".parse().unwrap(), "test1".parse().unwrap()],
-                2,
-                &port_seed::PEER_PROTOCOL_VERSION_TEST,
-            )
-            .unwrap();
-            let (config0, secret0, config1, secret1) = (
-                configs.first().unwrap().0.clone(),
-                configs.first().unwrap().1.clone(),
-                configs.get(1).unwrap().0.clone(),
-                configs.get(1).unwrap().1.clone(),
-            );
-            let (participant0, participant1) =
-                (config0.my_participant_id, config1.my_participant_id);
-            let all_participants = [participant0, participant1];
-
+        async fn incoming_connection_handler__should_close_only_when_outgoing_down(
+            #[case] open_state: Option<bool>,
+            #[case] expect_close: bool,
+        ) {
             start_root_task_with_periodic_dump(async move {
-                let (sender0, _receiver0) = new_tls_mesh_network(&config0, &secret0).await.unwrap();
-                let (sender1, _receiver1) = new_tls_mesh_network(&config1, &secret1).await.unwrap();
-                sender0.wait_for_ready(2, &all_participants).await.unwrap();
-                sender1.wait_for_ready(2, &all_participants).await.unwrap();
-                let connectivity = sender1.connectivity(participant0);
+                // Given
+                resume();
+                let mut loopback = LoopbackPeer::connect().await;
+                pause();
+                let (tx, mut rx) = mpsc::unbounded_channel();
+                let outgoing = test_outgoing_connection(tx, NetworkProtocolVersion::Nov2026);
+                match open_state {
+                    None => {}
+                    Some(false) => {
+                        loopback.connectivity.set_outgoing_connection(&outgoing);
+                        outgoing.closed.cancel();
+                    }
+                    Some(true) => loopback.connectivity.set_outgoing_connection(&outgoing),
+                }
 
                 // When
-                drop((sender1, _receiver1));
-                advance(OUTGOING_CHECK_INTERVAL * 3).await;
+                let wait = OUTGOING_CHECK_INTERVAL
+                    .saturating_mul(u32::from(OUTGOING_MAX_MISSED_CHECKS).saturating_add(2));
+                advance(wait).await;
 
                 // Then
-                assert!(!connectivity.is_bidirectionally_connected());
+                if expect_close {
+                    let result = loopback.handler.await.unwrap();
+                    let err = result.expect_err("handler must fail when outgoing down");
+                    assert!(format!("{err:#}").contains("outgoing connection closed for peer"));
+                } else {
+                    resume();
+                    loopback
+                        .send(Packet::Echo(Heartbeat {
+                            nonce: Rfc1982SerialU8::new(1),
+                        }))
+                        .await;
+                    let reply = timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
+                    assert!(matches!(reply, Some(Packet::EchoAck(_))));
+                }
+            })
+            .await;
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn incoming_connection_handler__should_ack_an_echo() {
+            start_root_task_with_periodic_dump(async move {
+                // Given
+                resume();
+                let mut loopback = LoopbackPeer::connect().await;
+                let (tx, mut rx) = mpsc::unbounded_channel();
+                let outgoing = test_outgoing_connection(tx, NetworkProtocolVersion::Nov2026);
+                loopback.connectivity.set_outgoing_connection(&outgoing);
+
+                // When
+                loopback
+                    .send(Packet::Echo(Heartbeat {
+                        nonce: Rfc1982SerialU8::new(10),
+                    }))
+                    .await;
+
+                // Then
+                let reply = timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
+                let Some(Packet::EchoAck(Heartbeat { nonce })) = reply else {
+                    panic!("Expected Packet::EchoAck");
+                };
+                assert_eq!(nonce, Rfc1982SerialU8::new(10));
+            })
+            .await;
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn incoming_connection_handler__should_send_ack_to_outgoing() {
+            start_root_task_with_periodic_dump(async move {
+                // Given
+                resume();
+                let mut loopback = LoopbackPeer::connect().await;
+                let ((tx, _rx), (ack_tx, mut ack_rx)) =
+                    (mpsc::unbounded_channel(), mpsc::channel(1));
+                let outgoing = Arc::new(OutgoingConnection {
+                    sender: tx,
+                    _sender_task: tokio::spawn(async {}).into(),
+                    _keepalive_task: tokio::spawn(async {}).into(),
+                    _echo_task: None,
+                    echo_ack_sender: Some(ack_tx),
+                    closed: CancellationToken::new(),
+                    peer_network_protocol_version: NetworkProtocolVersion::Nov2026,
+                });
+                loopback.connectivity.set_outgoing_connection(&outgoing);
+
+                // When
+                loopback
+                    .send(Packet::EchoAck(Heartbeat {
+                        nonce: Rfc1982SerialU8::new(10),
+                    }))
+                    .await;
+
+                // Then
+                let nonce = timeout(Duration::from_secs(5), ack_rx.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(nonce, Rfc1982SerialU8::new(10));
             })
             .await;
         }
@@ -2524,9 +2659,8 @@ mod tests {
             // Given
             let (local, remote) = tokio::io::duplex(64);
             let mut framed_client = configure_framed_stream(remote);
-            let (_tx, rx) = mpsc::unbounded_channel();
-            let closed = CancellationToken::new();
-            let liveness_failed = CancellationToken::new();
+            let (tx, rx) = mpsc::unbounded_channel();
+            let (closed, liveness_failed) = (CancellationToken::new(), CancellationToken::new());
             let handle = tokio::spawn(OutgoingConnection::run_sender_loop(
                 local,
                 rx,
@@ -2551,6 +2685,7 @@ mod tests {
                     .contains("liveness check failed")
             );
             assert!(closed.is_cancelled());
+            drop(tx);
         }
     }
 }

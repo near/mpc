@@ -25,11 +25,11 @@ impl Rfc1982SerialU8 {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
 
     #[test]
-    #[expect(non_snake_case)]
     fn rfc1982serialu8__should_wraparound() {
         // Given
         let old_seq = Rfc1982SerialU8::new(255);
@@ -45,7 +45,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn rfc1982serialu8__should_adhere_to_rfc_equality_and_bounds() {
         // Given
         let seq = Rfc1982SerialU8::new(100);
