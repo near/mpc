@@ -693,11 +693,11 @@ where
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
         let height_of = |participant: &ParticipantId| {
-            BlockHeight::from(indexer_heights.get(participant).copied().unwrap_or(0))
+            BlockHeight::new(indexer_heights.get(participant).copied().unwrap_or(0))
         };
         let my_indexer_height = height_of(&self.my_participant_id);
-        let reference_height =
-            majority_height(alive_participants.iter().map(height_of)).unwrap_or_default();
+        let reference_height = majority_height(alive_participants.iter().map(height_of))
+            .unwrap_or(BlockHeight::new(0));
         let eligible_leaders = self
             .all_participants
             .iter()
@@ -822,8 +822,17 @@ where
                     block_height,
                 } => {
                     mpc_pending_queue_finalized_responses.inc();
-                    // Response block ≥ request block by construction; saturate just in case.
-                    let latency_blocks = block_height.blocks_since(request.block_height);
+                    // Response block ≥ request block by construction; `None` means a reorg or a bug.
+                    let latency_blocks = block_height
+                        .blocks_since(request.block_height)
+                        .unwrap_or_else(|| {
+                            tracing::warn!(
+                                target: "request",
+                                "response block {block_height} precedes request block {}",
+                                request.block_height
+                            );
+                            BlockCount::new(0)
+                        });
                     let latency_duration = received_at.signed_duration_since(request.time_indexed);
 
                     request_response_latency_blocks.observe(latency_blocks.value() as f64);

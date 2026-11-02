@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::indexer::IndexerState;
 use chain_gateway::primitives::FetchLatestFinalBlockInfo;
-use near_contract_transport::BlockHeight;
+use near_contract_transport::{BlockCount, BlockHeight};
 
 #[derive(Debug, Clone)]
 pub(crate) struct IndexerStats {
@@ -41,7 +41,8 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
             // 0 when we're ahead of the chain tip — no catching up needed.
             let blocks_behind = info
                 .observed_at
-                .blocks_since(stats_copy.last_processed_block_height);
+                .blocks_since(stats_copy.last_processed_block_height)
+                .unwrap_or(BlockCount::new(0));
 
             Some(std::time::Duration::from_millis(
                 ((blocks_behind.value() as f64 / block_processing_speed) * 1000f64) as u64,

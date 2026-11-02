@@ -37,9 +37,9 @@ impl BlockHeight {
         Self(self.0.saturating_sub(delta.0))
     }
 
-    /// Block distance from `earlier` to `self`. Saturates to `0` if `earlier > self`.
-    pub fn blocks_since(self, earlier: BlockHeight) -> BlockCount {
-        BlockCount(self.0.saturating_sub(earlier.0))
+    /// Block distance from `earlier` to `self`, or `None` if `earlier` is the later height.
+    pub fn blocks_since(self, earlier: BlockHeight) -> Option<BlockCount> {
+        self.0.checked_sub(earlier.0).map(BlockCount)
     }
 }
 
@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn blocks_since__should_saturate_at_zero() {
+    fn blocks_since__should_be_none_when_earlier_is_later() {
         // Given
         let earlier = BlockHeight::new(10);
         let later = BlockHeight::new(13);
@@ -127,10 +127,7 @@ mod tests {
         let backward = earlier.blocks_since(later);
 
         // Then
-        assert_eq!(
-            (forward, backward),
-            (BlockCount::new(3), BlockCount::new(0))
-        );
+        assert_eq!((forward, backward), (Some(BlockCount::new(3)), None));
     }
 
     #[test]

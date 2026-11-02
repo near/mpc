@@ -154,7 +154,7 @@ async fn handle_message(
     mpc_contract_id: &AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
 ) -> anyhow::Result<()> {
-    let block_height = BlockHeight::from(streamer_message.block.header.height);
+    let block_height = BlockHeight::new(streamer_message.block.header.height);
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
