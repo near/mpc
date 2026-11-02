@@ -415,6 +415,10 @@ impl TeeState {
             .collect()
     }
 
+    /// Fails if another account's node is stored under the TLS key. Checking only the stored node
+    /// is enough because every key a participant uses, its current one and its migration
+    /// destination, holds that participant's own node: joining and migrating require it, and
+    /// [`crate::MpcContract::clean_invalid_attestations`] keeps it.
     pub(crate) fn assert_tls_key_claimable(
         &self,
         account_id: &AccountId,
