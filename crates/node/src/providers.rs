@@ -8,18 +8,17 @@
 
 pub mod ckd;
 pub mod ecdsa;
-pub mod ecdsa_common;
 pub mod eddsa;
 pub mod robust_ecdsa;
 pub mod verify_foreign_tx;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
-use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::network::wire_format::MpcTaskId;
+use crate::primitives::ParticipantId;
 use crate::types::SignatureId;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
-pub use ecdsa::EcdsaTaskId;
 pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
 use threshold_signatures::{Ciphersuite, KeygenOutput, ReconstructionThreshold};

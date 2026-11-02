@@ -1,7 +1,7 @@
 use mpc_attestation::{
+    TcbInfo,
     attestation::{Attestation, DstackAttestation},
     quote::QuoteBytes,
-    tcb_info::TcbInfo,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::types::HexVec;
@@ -121,9 +121,12 @@ pub fn account_secret_key() -> &'static str {
     include_str!("../assets/near_account_secret_key").trim()
 }
 
+pub fn mock_tcb_info() -> TcbInfo {
+    serde_json::from_str(TEST_TCB_INFO_STRING).expect("tcb_info.json deserializes")
+}
+
 pub fn mock_dstack_attestation_inner() -> DstackAttestation {
-    let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
-    DstackAttestation::new(quote(), collateral(), tcb_info)
+    DstackAttestation::new(quote(), collateral(), mock_tcb_info())
 }
 
 pub fn mock_dstack_attestation() -> Attestation {

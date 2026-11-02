@@ -8,7 +8,7 @@ use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::primitives::DomainId;
 
@@ -16,7 +16,9 @@ use super::primitives::DomainId;
 // Simple Wrapper Types (newtypes)
 // =============================================================================
 
-pub use mpc_primitives::{AttemptId, EpochId, GovernanceThreshold, ReconstructionThreshold};
+pub use mpc_primitives::{
+    AttemptId, EpochId, GovernanceThreshold, ParticipantCount, ReconstructionThreshold,
+};
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(
@@ -116,7 +118,7 @@ pub struct DomainConfig {
 )]
 pub struct DomainRegistry {
     pub domains: Vec<DomainConfig>,
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
 }
 
 // =============================================================================
@@ -261,7 +263,7 @@ pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
-    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    pub cancellation_requests: BTreeSet<AuthenticatedAccountId>,
     /// Per-domain [`ReconstructionThreshold`] updates carried from the accepted
     /// proposal. Applied to the [`DomainRegistry`] when resharing completes.
     #[serde(default)]
@@ -447,7 +449,7 @@ mod tests {
                 "alice.near".parse().unwrap(),
                 ParticipantId(0),
                 ParticipantInfo {
-                    url: "https://alice.com".to_string(),
+                    url: "https://alice.com".try_into().unwrap(),
                     tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                         .parse()
                         .unwrap(),

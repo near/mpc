@@ -12,22 +12,24 @@
 
 use crate::sandbox::{
     common::{candidates, init_contract, init_contract_running, make_threshold_params},
-    utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
-};
-use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
-    primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+    utils::{
+        contract_build::current_contract_with_bench_methods,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+        shared_key_utils::new_secp256k1,
+    },
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    AttemptId, DomainConfig, DomainId, DomainPurpose, EpochId, KeyForDomain, Keyset, Protocol,
+    ReconstructionThreshold,
 };
 use near_sdk::Gas;
-use near_workspaces::{Account, Contract};
+use near_workspaces::Account;
 use rstest::rstest;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
+use test_utils::sandbox::SandboxWorker;
 
 /// Path to gas thresholds configuration file.
 const GAS_THRESHOLDS_FILE: &str = "gas_thresholds.json";
@@ -90,21 +92,21 @@ impl GasThresholdsConfig {
     fn apply_buffer(&self, ggas_from_json: Gas) -> Gas {
         let ggas = ggas_from_json.as_gas(); // JSON value is in GGas, parsed as raw gas
         let buffered = (ggas as f64 * (1.0 + self.buffer_percent / 100.0)).ceil() as u64;
-        const GGAS: u64 = 1_000_000_000;
-        Gas::from_gas(buffered * GGAS)
+        Gas::from_ggas(buffered)
     }
 }
 
 /// Test environment for a specific participant count.
 struct TestEnv {
     /// The deployed MPC signer contract instance.
-    contract: Contract,
+    contract: SandboxMpcContract,
     /// Single real account used to make all benchmark calls.
     caller: Account,
     /// Fake participant account IDs for lookup benchmarks (first/middle/last).
     account_ids: Vec<AccountId>,
     /// Total number of participants registered in the contract.
     n_participants: usize,
+    _worker: SandboxWorker,
 }
 
 impl TestEnv {
@@ -196,7 +198,7 @@ async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>,
         method,
         result.failures()
     );
-    let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
+    let gas_burnt = result.total_gas_burnt;
     assert_gas_within_threshold(method, gas_burnt, max_gas);
 }
 
@@ -227,7 +229,7 @@ async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
             account_id,
             result.failures()
         );
-        let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
+        let gas_burnt = result.total_gas_burnt;
         assert_gas_within_threshold(&format!("{}[{}]", method, label), gas_burnt, max_gas);
     }
 }
@@ -259,11 +261,10 @@ async fn setup_test_env_running(n_participants: usize) -> TestEnv {
 }
 
 async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -> TestEnv {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
+    let contract = SandboxMpcContract::from_deployed(&worker, contract);
     let account_ids: Vec<AccountId> = (0..n_participants)
         .map(|i| format!("node-{i}.test.near").parse().unwrap())
         .collect();
@@ -280,15 +281,14 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
             purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();
-        let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();
         let key = KeyForDomain {
             attempt: AttemptId::new(),
             domain_id,
-            key: public_key,
+            key: dto_pk.into(),
         };
         let keyset = Keyset::new(EpochId::new(1), vec![key]);
         let domains = vec![domain];
-        let next_domain_id = domains.len() as u64 + 1;
+        let next_domain_id = DomainId(domains.len() as u64 + 1);
         init_contract_running(
             &contract,
             domains,
@@ -309,5 +309,6 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         caller,
         account_ids,
         n_participants,
+        _worker: worker,
     }
 }

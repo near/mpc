@@ -259,11 +259,6 @@ impl<'a, T> ParticipantMap<'a, T> {
             .collect::<Option<Vec<_>>>()
     }
 
-    // Returns the set of included participants
-    pub fn participants(&self) -> &[Participant] {
-        self.participants.participants()
-    }
-
     pub fn index(&self, index: Participant) -> Result<&T, ProtocolError> {
         let index = self.participants.index(index)?;
         self.data
@@ -307,13 +302,10 @@ impl<'a> ParticipantCounter<'a> {
     ///
     /// This can be checked to not process a message twice.
     pub fn put(&mut self, participant: Participant) -> bool {
-        let i = match self.participants.indices.get(&participant) {
-            None => return false,
-            Some(&i) => i,
-        };
-
-        // Need the old value to be false.
-        if let Some(seen_i) = self.seen.get_mut(i) {
+        if let Some(&i) = self.participants.indices.get(&participant)
+            && let Some(seen_i) = self.seen.get_mut(i)
+        {
+            // Need the old value to be false.
             let inserted = !std::mem::replace(seen_i, true);
             if inserted {
                 self.counter -= 1;

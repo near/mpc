@@ -2,12 +2,10 @@ use std::time::{Duration, Instant};
 
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
-use chain_gateway::state_viewer::ViewMethod;
-use near_contract_transport::ObservedState;
-
 use chain_gateway_test_contract::consts::VIEW_VALUE;
 use ed25519_dalek::SigningKey;
-use near_contract_transport::ViewArgs;
+use near_contract_transport::{Json, ObservedState, ViewArgs, ViewContract};
+use tokio_util::sync::CancellationToken;
 
 use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};
@@ -89,7 +87,7 @@ impl LocalnetBuilder {
             validator = validator.with_account(test_account);
         }
 
-        let validator = validator.start(None).await;
+        let validator = validator.start(None, CancellationToken::new()).await;
 
         // Start an observer node (non-validator, just like what the MPC node would be running).
         // Copy genesis from validator so both nodes share the same chain
@@ -103,7 +101,7 @@ impl LocalnetBuilder {
             .with_genesis_from(&validator)
             .without_validator_key()
             .with_boot_nodes(&boot_node)
-            .start(self.event_subscriber)
+            .start(self.event_subscriber, CancellationToken::new())
             .await;
 
         let localnet = Localnet {
@@ -116,13 +114,13 @@ impl LocalnetBuilder {
         // Wait for block production: poll until the observer sees a finalized block
         // beyond genesis (height > 0). This ensures the P2P connection is established
         // and the validator has started producing blocks.
-        let deadline = Instant::now() + Duration::from_secs(60);
+        let deadline = Instant::now() + Duration::from_mins(1);
         loop {
             localnet.assert_nodes_alive();
             let state: ObservedState<String> = localnet
                 .observer
                 .chain_gateway
-                .view_method(
+                .view::<_, Json>(
                     localnet.contract.account_id.clone(),
                     ViewArgs::no_args(VIEW_VALUE),
                 )
@@ -158,13 +156,18 @@ impl Localnet {
     pub async fn shutdown(mut self) {
         self.validator.node_handle.send_shutdown();
         self.observer.node_handle.send_shutdown();
-        // RocksDB cleanup happens asynchronously after the actor system stops;
-        // block until all instances are dropped to avoid test interference.
-        tokio::task::spawn_blocking(|| {
-            near_store::db::RocksDB::block_until_all_instances_are_dropped();
-        })
-        .await
-        .unwrap();
+    }
+}
+
+impl Drop for Localnet {
+    fn drop(&mut self) {
+        // A node handle's drop blocks until every node in this process has closed its databases.
+        // Rust drops the fields one by one on this thread, so the first handle's drop would wait
+        // for the other node, which only stops when told to. Without these calls, only its own
+        // handle's drop would tell it, and that drop can't start while the first one is waiting,
+        // so the first drop would wait forever
+        self.validator.node_handle.send_shutdown();
+        self.observer.node_handle.send_shutdown();
     }
 }
 

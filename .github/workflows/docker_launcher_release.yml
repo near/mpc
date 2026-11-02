@@ -25,6 +25,8 @@ on:
         required: true
         type: string
 
+permissions: {}
+
 jobs:
   retag-launcher-image:
     name: "Retag launcher image for release"

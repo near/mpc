@@ -174,10 +174,11 @@ fn setup_triples_snapshot(participant_num: usize) -> TriplesSetup {
 
 /// Cheap per-sample setup: creates fresh triples protocol and clones the cached simulator
 fn prepare_simulated_triples(setup: &TriplesSetup) -> PreparedSimulatedTriples {
-    let real_protocol = generate_triple_many::<2, _, _>(
+    let real_protocol = generate_triple_many(
         &setup.participants,
         setup.real_participant,
         *RECONSTRUCTION_LOWER_BOUND,
+        2,
         setup.real_participant_rng.clone(),
     )
     .map(|prot| Box::new(prot) as Box<dyn Protocol<Output = Vec<(TripleShare, TriplePub)>>>)

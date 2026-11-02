@@ -11,17 +11,23 @@ pub use near_mpc_crypto_types::{CKDAppPublicKey, CKDAppPublicKeyPV, CkdAppId};
     derive(schemars::JsonSchema)
 )]
 pub struct CKDRequestArgs {
+    /// Identifies the derived key. The key is determined by the caller's
+    /// account ID and this derivation path. Different paths produce
+    /// different keys.
     pub derivation_path: String,
+    /// Public key used to encrypt the response. Can be chosen independently
+    /// for each request and does not affect the derived key.
     pub app_public_key: CKDAppPublicKey,
+    /// Identifies the CKD domain used to derive the key.
     pub domain_id: DomainId,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
     use serde_json::json;
+    use std::assert_matches;
 
     fn dummy_g1() -> Bls12381G1PublicKey {
         Bls12381G1PublicKey([1u8; 48])

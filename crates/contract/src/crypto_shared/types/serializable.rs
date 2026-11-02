@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
 #[derive(
@@ -28,7 +27,6 @@ use serde::{Deserialize, Serialize};
 pub struct SerializableEdwardsPoint(
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        schemars(with = "[u8; 32]"),
         borsh(schema(with_funcs(
             declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
             definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"

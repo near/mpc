@@ -82,7 +82,7 @@ args = [
 
 [tasks.zizmor]
 command = "zizmor"
-args = [".github/"]
+args = ["--persona=auditor", "--strict-collection", ".github/"]
 
 [tasks.opengrep]
 command = "bash"
@@ -156,7 +156,7 @@ RUSTDOCFLAGS = "-D warnings"
 
 [tasks.check-markdown-links]
 command = "lychee"
-args = ["--no-progress", "."]
+args = ["--no-progress", "--hidden", "."]
 
 [tasks.sandbox-image-version]
 description = "Check that sandbox Docker image version matches nearcore"

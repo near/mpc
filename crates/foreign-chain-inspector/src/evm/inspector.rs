@@ -4,8 +4,8 @@ use std::hash::Hash;
 use jsonrpsee::core::client::ClientT;
 
 use crate::{
-    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, NO_PARAMS,
-    NetworkFingerprint, NetworkFingerprintInspector,
+    ClassifyRpcOutcome, EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
+    NO_PARAMS, NetworkFingerprint, NetworkFingerprintInspector, Verdict,
 };
 
 use foreign_chain_rpc_interfaces::evm::{
@@ -51,11 +51,11 @@ where
             .client
             .request(CHAIN_ID_METHOD, NO_PARAMS)
             .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+            .classified()?;
         Ok(NetworkFingerprint::new(chain_id.canonical_text()))
     }
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(ChainIdResponse(fingerprint.to_owned()).canonical_text())
     }
 }
@@ -75,17 +75,21 @@ where
         transaction: Chain::TransactionHash,
         finality: EthereumFinality,
         extractors: Vec<EvmExtractor>,
-    ) -> Result<Vec<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
         let get_transaction_receipt_args = GetTransactionReceiptARgs {
             transaction_hash: H256(transaction.into()),
         };
-        let transaction_receipt: GetTransactionReceiptResponse = self
+        let transaction_receipt: Option<GetTransactionReceiptResponse> = self
             .client
             .request(
                 GET_TRANSACTION_RECEIPT_METHOD,
                 &get_transaction_receipt_args,
             )
-            .await?;
+            .await
+            .classified()?;
+        let Some(transaction_receipt) = transaction_receipt else {
+            return Ok(Verdict::TransactionNotFound);
+        };
 
         // Defensive: `eth_getTransactionReceipt` looks the receipt up *by hash*, so a
         // well-behaved backend always echoes back the hash we queried.
@@ -98,22 +102,38 @@ where
 
         self.verify_finality_level(transaction_receipt.block_number, finality)
             .await?;
-        self.verify_block_is_canonical(
-            transaction_receipt.block_number,
-            transaction_receipt.block_hash,
-        )
-        .await?;
+
+        let canonical = self
+            .canonical_block_at(transaction_receipt.block_number)
+            .await?;
+        if canonical.number != transaction_receipt.block_number {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                "the canonical block lookup at height {} answered with the block at height {}",
+                transaction_receipt.block_number, canonical.number,
+            )));
+        }
+        if canonical.hash != transaction_receipt.block_hash {
+            return Ok(Verdict::NonCanonicalBlock {
+                block_number: transaction_receipt.block_number.as_u64(),
+                receipt_hash: transaction_receipt.block_hash.into(),
+                canonical_hash: canonical.hash.into(),
+            });
+        }
 
         let transaction_success = transaction_receipt.status == U64::one();
 
         if !transaction_success {
-            return Err(ForeignChainInspectionError::TransactionFailed);
+            return Ok(Verdict::TransactionFailed);
         }
 
-        extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&transaction_receipt))
-            .collect()
+        let mut extracted_values = Vec::with_capacity(extractors.len());
+        for extractor in &extractors {
+            let Some(value) = extractor.extract_value(&transaction_receipt)? else {
+                return Ok(Verdict::LogIndexOutOfBounds);
+            };
+            extracted_values.push(value);
+        }
+        Ok(Verdict::Extracted(extracted_values))
     }
 }
 
@@ -148,7 +168,8 @@ where
         let head: GetBlockByNumberResponse = self
             .client
             .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
-            .await?;
+            .await
+            .classified()?;
 
         if head.number < receipt_block_number {
             return Err(ForeignChainInspectionError::NotFinalized);
@@ -156,38 +177,23 @@ where
         Ok(())
     }
 
-    /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
-    /// block at `receipt_block_number` and comparing hashes. `eth_getBlockByNumber` only ever
-    /// resolves to a canonical block, so a mismatch means the receipt was indexed against a
-    /// side block (stale tx index, partially-applied reorg, divergent RPC backend, etc.).
-    ///
-    /// The canonical block's height is also asserted against the requested one — a divergent
-    /// RPC that returns a hash from a different height would otherwise sneak past a
-    /// hash-only check.
-    async fn verify_block_is_canonical(
+    /// The canonical block at `block_number`. `eth_getBlockByNumber` only ever resolves to a
+    /// canonical block, so a receipt whose block disagrees with it was indexed against a side
+    /// block (stale tx index, partially applied reorg, divergent RPC backend, etc.). The caller
+    /// checks the height first: an answer from a different height is the provider's own fault,
+    /// not a statement about the chain.
+    async fn canonical_block_at(
         &self,
-        receipt_block_number: U64,
-        receipt_block_hash: H256,
-    ) -> Result<(), ForeignChainInspectionError> {
+        block_number: U64,
+    ) -> Result<GetBlockByNumberResponse, ForeignChainInspectionError> {
         let args = GetBlockByNumberArgs::new(
-            BlockNumberOrTag::Number(receipt_block_number),
+            BlockNumberOrTag::Number(block_number),
             ReturnFullTransactionObjects::from(false),
         );
-        let canonical: GetBlockByNumberResponse = self
-            .client
+        self.client
             .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
-            .await?;
-
-        let hash_matches = canonical.hash == receipt_block_hash;
-        let height_matches = canonical.number == receipt_block_number;
-        if !hash_matches || !height_matches {
-            return Err(ForeignChainInspectionError::NonCanonicalBlock {
-                block_number: receipt_block_number.as_u64(),
-                receipt_hash: receipt_block_hash.into(),
-                canonical_hash: canonical.hash.into(),
-            });
-        }
-        Ok(())
+            .await
+            .classified()
     }
 }
 
@@ -207,19 +213,21 @@ impl EvmExtractor {
     fn extract_value<Chain: EvmChain>(
         &self,
         rpc_response: &GetTransactionReceiptResponse,
-    ) -> Result<EvmExtractedValue<Chain>, ForeignChainInspectionError> {
+    ) -> Result<Option<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
         match self {
-            EvmExtractor::BlockHash => Ok(EvmExtractedValue::BlockHash(From::from(
+            EvmExtractor::BlockHash => Ok(Some(EvmExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
-            ))),
+            )))),
             EvmExtractor::Log { log_index } => {
                 let target_index = ethereum_types::U64::from(*log_index);
-                let log = rpc_response
+                let Some(log) = rpc_response
                     .logs
                     .iter()
                     .find(|log| log.log_index == target_index)
                     .cloned()
-                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+                else {
+                    return Ok(None);
+                };
 
                 // The receipt's transaction hash has already been checked against the
                 // requested one, so binding the log to the receipt transitively binds
@@ -239,7 +247,7 @@ impl EvmExtractor {
                     });
                 }
 
-                Ok(EvmExtractedValue::Log(log))
+                Ok(Some(EvmExtractedValue::Log(log)))
             }
         }
     }

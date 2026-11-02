@@ -6,6 +6,7 @@ use near_indexer_primitives::near_primitives::transaction::{
 };
 use std::sync::Mutex;
 
+use crate::account_id_compat::to_near_internal;
 use crate::types::LatestFinalBlockInfo;
 use near_contract_transport::FunctionCallArgs;
 
@@ -59,10 +60,10 @@ impl TransactionSigner {
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
         let transaction = Transaction::V0(TransactionV0 {
-            signer_id: self.account_id.clone(),
+            signer_id: to_near_internal(&self.account_id),
             public_key: near_core_public_key,
             nonce: self.make_nonce(info.observed_at.into()),
-            receiver_id,
+            receiver_id: to_near_internal(&receiver_id),
             block_hash: info.value,
             actions: vec![action.into()],
         });
@@ -94,7 +95,10 @@ mod tests {
     use near_indexer_primitives::types::Gas;
     use rand::{SeedableRng, rngs::StdRng};
 
-    use crate::{transaction_sender::TransactionSigner, types::LatestFinalBlockInfo};
+    use crate::{
+        account_id_compat::to_near_internal, transaction_sender::TransactionSigner,
+        types::LatestFinalBlockInfo,
+    };
 
     const TEST_GAS: NearGas = NearGas::from_gas(300_000_000_000_000);
 
@@ -176,8 +180,8 @@ mod tests {
         };
 
         assert_eq!(tx.nonce, signer_clone.make_nonce(info.observed_at.into()));
-        assert_eq!(tx.signer_id, signer.account_id);
-        assert_eq!(tx.receiver_id, receiver_id);
+        assert_eq!(tx.signer_id, to_near_internal(&signer.account_id));
+        assert_eq!(tx.receiver_id, to_near_internal(&receiver_id));
         assert_eq!(tx.block_hash, info.value);
         assert_eq!(tx.actions.len(), 1);
         match &tx.actions[0] {

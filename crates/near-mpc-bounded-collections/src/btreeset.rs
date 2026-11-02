@@ -128,8 +128,8 @@ impl<T: Ord + schemars::JsonSchema> schemars::JsonSchema for NonEmptyBTreeSet<T>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     #[test]
     fn new_creates_single_element_set() {

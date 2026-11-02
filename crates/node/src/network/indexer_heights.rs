@@ -45,3 +45,38 @@ impl IndexerHeightTracker {
             .collect()
     }
 }
+
+/// A tracker serves one participant set, so its series must not outlive it.
+impl Drop for IndexerHeightTracker {
+    fn drop(&mut self) {
+        metrics::PEERS_INDEXER_HEIGHTS.reset();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial(peers_indexer_heights)]
+    #[expect(non_snake_case)]
+    fn indexer_height_tracker__should_remove_every_series_when_dropped() {
+        // Given
+        let participants = [0, 1, 2].map(ParticipantId::from_raw);
+        let tracker = IndexerHeightTracker::new(&participants);
+        for participant in participants {
+            tracker.set_height(participant, 100);
+        }
+        assert_eq!(
+            metrics::series_count(&*metrics::PEERS_INDEXER_HEIGHTS),
+            participants.len()
+        );
+
+        // When
+        drop(tracker);
+
+        // Then
+        assert_eq!(metrics::series_count(&*metrics::PEERS_INDEXER_HEIGHTS), 0);
+    }
+}

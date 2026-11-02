@@ -3,6 +3,7 @@ pub mod bitcoin;
 pub mod evm;
 pub mod starknet;
 pub mod sui;
+pub mod svm;
 
 // Helper macro to implement ToRpcParams for types that implement serde::Serialize.
 macro_rules! to_rpc_params_impl {

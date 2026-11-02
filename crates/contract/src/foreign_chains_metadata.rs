@@ -41,7 +41,7 @@ impl ForeignChainsMetadata {
     pub(crate) fn update_available_chains_config_cache(
         &mut self,
         active_tls_keys: &BTreeSet<dtos::Ed25519PublicKey>,
-        reconstruction_threshold: u64,
+        required_active_signers: u64,
     ) {
         let mut chain_to_supporter_count: std::collections::BTreeMap<dtos::ForeignChain, u64> =
             std::collections::BTreeMap::new();
@@ -60,7 +60,7 @@ impl ForeignChainsMetadata {
         }
         self.available_foreign_chains = chain_to_supporter_count
             .into_iter()
-            .filter_map(|(chain, count)| (count >= reconstruction_threshold).then_some(chain))
+            .filter_map(|(chain, count)| (count >= required_active_signers).then_some(chain))
             .collect::<BTreeSet<_>>()
             .into();
     }
@@ -86,40 +86,6 @@ impl ForeignChainsMetadata {
             .map(|(id, chains)| (id.clone(), chains.clone()))
             .collect::<std::collections::BTreeMap<_, _>>()
             .into()
-    }
-}
-
-#[near(serializers=[borsh])]
-#[derive(Debug)]
-/// The legacy account-keyed map of which chains each node reports supporting, superseded by
-/// the TLS-key-keyed configs in [`ForeignChainsMetadata`]. Kept until nodes move to the new
-/// API, as noted on the [`MpcContract`](crate::MpcContract) field it backs.
-pub(crate) struct SupportedForeignChainsByNode {
-    pub(crate) foreign_chain_support_by_node:
-        IterableMap<dtos::AccountId, dtos::SupportedForeignChains>,
-}
-
-impl Default for SupportedForeignChainsByNode {
-    fn default() -> Self {
-        Self {
-            foreign_chain_support_by_node: IterableMap::new(
-                StorageKey::SupportedForeignChainsByNode,
-            ),
-        }
-    }
-}
-
-impl SupportedForeignChainsByNode {
-    pub(crate) fn to_dto(&self) -> dtos::ForeignChainSupportByNode {
-        let foreign_chain_configuration_by_node = self
-            .foreign_chain_support_by_node
-            .iter()
-            .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
-            .collect();
-
-        dtos::ForeignChainSupportByNode {
-            foreign_chain_support_by_node: foreign_chain_configuration_by_node,
-        }
     }
 }
 

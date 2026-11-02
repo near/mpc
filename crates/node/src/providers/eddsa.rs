@@ -4,8 +4,8 @@ mod sign;
 
 use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
+use crate::network::wire_format::{EddsaTaskId, MpcTaskId};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
 use crate::providers::DomainKeyshare;
 #[cfg(test)]
 use crate::providers::PublicKeyConversion;
@@ -14,12 +14,10 @@ use crate::storage::SignRequestStorage;
 use crate::types::SignatureId;
 #[cfg(test)]
 use anyhow::Context;
-use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::DomainId;
 #[cfg(test)]
 use near_mpc_contract_interface::types::Ed25519PublicKey;
-use near_mpc_contract_interface::types::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
@@ -60,19 +58,6 @@ impl EddsaSignatureProvider {
             .get(&domain_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum EddsaTaskId {
-    KeyGeneration { key_event: KeyEventId },
-    KeyResharing { key_event: KeyEventId },
-    Signature { id: SignatureId },
-}
-
-impl From<EddsaTaskId> for MpcTaskId {
-    fn from(value: EddsaTaskId) -> Self {
-        MpcTaskId::EddsaTaskId(value)
     }
 }
 

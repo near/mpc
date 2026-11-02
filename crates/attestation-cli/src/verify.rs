@@ -1,11 +1,7 @@
 use std::path::Path;
 
 use anyhow::Context;
-use attestation::{
-    attestation::VerificationError,
-    measurements::{ExpectedMeasurements, Measurements},
-    tcb_info::TcbInfo,
-};
+use attestation::{ExpectedMeasurements, Measurements, TcbInfo, attestation::VerificationError};
 use mpc_attestation::attestation::{
     AcceptedAttestation, ValidatedDstackAttestation, VerifiedAttestation,
 };
@@ -123,7 +119,7 @@ fn load_measurements(
                 .context("parsing expected measurements JSON")?;
             Ok(vec![measurement])
         }
-        None => Ok(mpc_attestation::attestation::default_measurements().to_vec()),
+        None => Ok(vec![mpc_attestation::attestation::default_measurements()]),
     }
 }
 
@@ -173,7 +169,7 @@ mod tests {
     fn parse_measurements_from_json_matches_compiled() {
         let json = include_str!("../../mpc-attestation/assets/tcb_info.json");
         let runtime = parse_measurements_from_json(json).unwrap();
-        let compiled = &mpc_attestation::attestation::default_measurements()[0];
+        let compiled = mpc_attestation::attestation::default_measurements();
 
         assert_eq!(runtime.rtmrs.mrtd, compiled.rtmrs.mrtd);
         assert_eq!(runtime.rtmrs.rtmr0, compiled.rtmrs.rtmr0);

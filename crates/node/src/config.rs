@@ -1,3 +1,4 @@
+use crate::durable_fs::{write_file_durably, write_file_durably_with_permissions};
 use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
 use mpc_node_config::ConfigFile;
@@ -7,12 +8,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
-};
+use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
 
 pub(crate) mod start;
 
@@ -153,6 +149,10 @@ impl ParticipantsConfig {
         };
         None
     }
+
+    pub fn participant_id_set(&self) -> BTreeSet<ParticipantId> {
+        self.participants.iter().map(|p| p.id).collect()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -186,26 +186,11 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
     ))
 }
 
-/// Writes data to a file with owner-only permissions (0o600).
-/// Permissions are set explicitly after writing to ensure correctness
-/// even if the file already exists with different permissions.
+/// Writes data to a file with owner-only permissions (0o600), even if the file
+/// already exists with different permissions.
 fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .with_context(|| format!("failed to create secret file {}", path.display()))?;
-    file.write_all(data)
-        .with_context(|| format!("failed to write secret file {}", path.display()))?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).with_context(|| {
-        format!(
-            "failed to set permissions on secret file {}",
-            path.display()
-        )
-    })?;
-    Ok(())
+    write_file_durably_with_permissions(path, data, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to write secret file {}", path.display()))
 }
 
 pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
@@ -426,6 +411,23 @@ impl RespondConfig {
     }
 }
 
+pub(crate) fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
+    let config_path = home_dir.join("config.yaml");
+    let original_config_string =
+        fs::read_to_string(&config_path).context("failed to read config.yaml")?;
+    let config =
+        ConfigFile::from_yaml(&original_config_string).context("failed to parse config.yaml")?;
+
+    let re_serialized = serde_yaml::to_string(&config)?;
+    let update_config_with_new_schema = re_serialized != original_config_string;
+    if update_config_with_new_schema {
+        write_file_durably(&config_path, re_serialized.as_bytes())
+            .context("failed to rewrite config.yaml")?;
+    }
+
+    Ok(config)
+}
+
 #[cfg(feature = "network-hardship-simulation")]
 pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
     let listen_blocks_file = home_dir.join("listen_blocks.flag");
@@ -444,15 +446,18 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
-    use assert_matches::assert_matches;
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
         Rng, RngCore,
         distributions::{Alphanumeric, Uniform},
         rngs::OsRng,
     };
-    use std::net::{Ipv4Addr, SocketAddr};
+    use std::{
+        assert_matches,
+        net::{Ipv4Addr, SocketAddr},
+    };
 
     use crate::providers::PublicKeyConversion;
     use tempfile::TempDir;
@@ -571,10 +576,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -619,10 +620,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -738,10 +735,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -767,8 +760,8 @@ cores: 4
     }
 
     #[test]
-    fn from_file_does_not_rewrite_when_already_current_format() {
-        // given: write a config that is already in the canonical serialized format
+    fn load_config_file__should_not_rewrite_when_already_current_format() {
+        // Given
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -776,17 +769,17 @@ cores: 4
         let canonical = serde_yaml::to_string(&config).unwrap();
         fs::write(&path, &canonical).unwrap();
 
-        // when
-        let _ = ConfigFile::from_file(&path).unwrap();
+        // When
+        let _ = load_config_file(dir.path()).unwrap();
 
-        // then: file content is byte-for-byte identical (no rewrite)
+        // Then
         let content_after = fs::read_to_string(&path).unwrap();
         assert_eq!(canonical, content_after);
     }
 
     #[test]
-    fn from_file_rewrites_old_format_atomically() {
-        // given: write a config using the old host+port WebUI format
+    fn load_config_file__should_rewrite_old_format_atomically() {
+        // Given
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -796,18 +789,16 @@ cores: 4
         );
         fs::write(&path, &old_format).unwrap();
 
-        // when
-        let config = ConfigFile::from_file(&path).unwrap();
+        // When
+        let config = load_config_file(dir.path()).unwrap();
 
-        // then: file is rewritten in the new format
+        // Then
         let content_after = fs::read_to_string(&path).unwrap();
         assert!(
             content_after.contains("web_ui: 127.0.0.1:8082"),
             "Expected new SocketAddr format, got:\n{content_after}"
         );
-        // no temp file left behind
         assert!(!dir.path().join("config.yaml.tmp").exists());
-        // rewritten content round-trips correctly
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
     }

@@ -7,7 +7,7 @@ pub const MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS: u128 = ONE_NEAR / 10;
 pub const PERCENT_OF_ORIGINAL_BALANCE_BELOW_WHICH_TO_REFILL: u128 = 70;
 
 /// The default docker image to deploy the node with.
-pub const DEFAULT_MPC_DOCKER_IMAGE: &str = "nearone/mpc-node-gcp:testnet-release";
+pub const DEFAULT_MPC_DOCKER_IMAGE: &str = "nearone/mpc-node:testnet-release";
 /// The default parallel signing contract path to test with.
 pub const DEFAULT_PARALLEL_SIGN_CONTRACT_PATH: &str =
     "../../target/near/test_parallel_contract/test_parallel_contract.wasm";

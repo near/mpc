@@ -20,7 +20,6 @@ near-account-id = { workspace = true, features = ["borsh", "serde", "schemars-v0
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 insta = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }

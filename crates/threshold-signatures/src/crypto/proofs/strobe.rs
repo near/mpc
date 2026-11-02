@@ -13,24 +13,19 @@ use crate::crypto::constants::{
     STROBE_R,
 };
 
-// SAFETY: `KeccakState` is `[u8; KECCAK_STATE_BYTES]`. These functions iterate `i` in
-// `0..KECCAK_STATE_WORDS`, indexing `st[8*i..8*i+8]` — the maximum accessed byte is
-// `8*24 + 7 = 199`, which is within bounds.
-#[allow(clippy::indexing_slicing)]
 fn transmute_state(st: &KeccakState) -> [u64; KECCAK_STATE_WORDS] {
+    let (chunks, _) = st.as_chunks::<8>();
     let mut result = [0u64; KECCAK_STATE_WORDS];
-    for (i, resulti) in result.iter_mut().enumerate() {
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&st[8 * i..8 * i + 8]);
-        *resulti = u64::from_le_bytes(bytes);
+    for (resulti, chunk) in result.iter_mut().zip(chunks) {
+        *resulti = u64::from_le_bytes(*chunk);
     }
     result
 }
 
-#[allow(clippy::indexing_slicing)]
 fn untransmute_state(transmuted_state: [u64; KECCAK_STATE_WORDS], state: &mut KeccakState) {
-    for (i, ti) in transmuted_state.iter().enumerate() {
-        state[8 * i..8 * i + 8].copy_from_slice(&ti.to_le_bytes());
+    let (chunks, _) = state.as_chunks_mut::<8>();
+    for (chunk, ti) in chunks.iter_mut().zip(transmuted_state) {
+        *chunk = ti.to_le_bytes();
     }
 }
 

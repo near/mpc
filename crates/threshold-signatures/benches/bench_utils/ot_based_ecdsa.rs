@@ -36,7 +36,7 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
     for p in &participants {
         let seed = rng.next_u64();
         let rng_p = MockCryptoRng::seed_from_u64(seed);
-        let protocol = generate_triple_many::<2, _, _>(&participants, *p, threshold, rng_p)
+        let protocol = generate_triple_many(&participants, *p, threshold, 2, rng_p)
             .expect("Triple generation should succeed");
         protocols.push((*p, Box::new(protocol)));
         seeds.insert(*p, seed);
@@ -160,7 +160,7 @@ pub fn split_even_odd<T: Clone>(v: Vec<T>) -> (Vec<T>, Vec<T>) {
     let mut even = Vec::with_capacity(v.len() / 2 + 1);
     let mut odd = Vec::with_capacity(v.len() / 2);
     for (i, x) in v.into_iter().enumerate() {
-        if i % 2 == 0 {
+        if i.is_multiple_of(2) {
             even.push(x);
         } else {
             odd.push(x);

@@ -13,6 +13,7 @@ impl IndexerConfigExt for IndexerConfig {
             await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::StreamWhileSyncing,
             finality: self.finality.clone(),
             validate_genesis: self.validate_genesis,
+            skip_broken_blocks: false,
         }
     }
 }

@@ -282,24 +282,6 @@ impl MpcTerraformDeployInfraCmd {
             .current_dir(&infra_dir)
             .print_and_run();
 
-        // If we need to reset keyshares, force replace the secrets.
-        // We still need to run another apply afterwards because deleting the secrets
-        // would also delete the IAM rules.
-        if self.reset_keyshares {
-            let mut command = std::process::Command::new("terraform");
-            command
-                .arg("apply")
-                .arg("-var-file")
-                .arg(&terraform_vars_file);
-            for i in 0..mpc_setup.participants.len() {
-                command.arg("-replace").arg(format!(
-                    "google_secret_manager_secret.keyshare_secret[{}]",
-                    i
-                ));
-            }
-            command.current_dir(&infra_dir).print_and_run();
-        }
-
         std::process::Command::new("terraform")
             .arg("apply")
             .arg("-var-file")

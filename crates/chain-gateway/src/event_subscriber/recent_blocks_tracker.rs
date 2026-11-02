@@ -269,8 +269,10 @@ impl BlockNode {
                 _ => unreachable!(),
             }
         }
-        if indents.last().is_some_and(|indent| *indent >= 2) {
-            *indents.last_mut().unwrap() -= 2;
+        if let Some(indent) = indents.last_mut()
+            && *indent >= 2
+        {
+            *indent -= 2;
         }
         write!(
             f,
@@ -426,16 +428,9 @@ impl RecentBlocksTracker {
         new_final_height: BlockHeight,
         subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
     ) {
-        let mut new_root_children = Vec::new();
-        for node in self.root_children.iter() {
-            if !node.status.is_final() && node.height <= new_final_height {
-                // the entire subtree can be removed
-                subtrees_to_remove.push_back(node.clone());
-            } else {
-                new_root_children.push(node.clone());
-            }
-        }
-        self.root_children = new_root_children;
+        subtrees_to_remove.extend(self.root_children.extract_if(.., |node| {
+            !node.status.is_final() && node.height <= new_final_height
+        }));
     }
 
     fn remove_subtrees(&mut self, mut subtrees_to_remove: VecDeque<Arc<BlockNode>>) {

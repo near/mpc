@@ -12,6 +12,8 @@ on:
       - 'release/v*'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build-and-push-images:
     name: "Build and push Rust launcher Docker image with commit hash"

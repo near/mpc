@@ -3,7 +3,6 @@ use frost_core::serialization::SerializableScalar;
 use itertools::multizip;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::thresholds::ReconstructionThreshold;
@@ -78,7 +77,7 @@ async fn do_generation(
     threshold: ReconstructionThreshold,
     rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutput, ProtocolError> {
-    let mut triple = do_generation_many::<1>(comms, participants, me, threshold, rng).await?;
+    let mut triple = do_generation_many(comms, participants, me, threshold, 1, rng).await?;
     if triple.len() != 1 {
         return Err(ProtocolError::Other(
             "Triple generation did not output one element".to_string(),
@@ -98,41 +97,59 @@ struct ParallelToMultiplicationTaskOutputMany {
     b_i_v: Vec<Scalar>,
 }
 
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-#[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>"))]
-struct FixedArray<T, const N: usize>(#[serde_as(as = "[_; N]")] [T; N]);
+/// Rejects a round message from a peer that does not carry one entry per batch instance.
+trait CheckBatchLen {
+    fn check_batch_len(&self, batch_size: usize, from: Participant) -> Result<(), ProtocolError>;
+}
 
-#[serde_as]
+impl<T> CheckBatchLen for Vec<T> {
+    fn check_batch_len(&self, batch_size: usize, from: Participant) -> Result<(), ProtocolError> {
+        if self.len() == batch_size {
+            Ok(())
+        } else {
+            Err(ProtocolError::UnexpectedLength {
+                expected: batch_size,
+                actual: self.len(),
+                participant: from,
+            })
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(clippy::struct_field_names)]
-struct PolynomialCommitmentsMessageMany<const N: usize> {
-    #[serde_as(as = "[_; N]")]
-    big_e_v: [PolynomialCommitment; N],
-    #[serde_as(as = "[_; N]")]
-    big_f_v: [PolynomialCommitment; N],
-    #[serde_as(as = "[_; N]")]
-    big_l_v: [PolynomialCommitment; N],
-    #[serde_as(as = "[_; N]")]
-    randomizer_v: [Randomness; N],
-    #[serde_as(as = "[_; N]")]
-    phi_proof0_v: [dlog::Proof<Secp256K1Sha256>; N],
-    #[serde_as(as = "[_; N]")]
-    phi_proof1_v: [dlog::Proof<Secp256K1Sha256>; N],
+struct PolynomialCommitmentsMessageMany {
+    big_e_v: Vec<PolynomialCommitment>,
+    big_f_v: Vec<PolynomialCommitment>,
+    big_l_v: Vec<PolynomialCommitment>,
+    randomizer_v: Vec<Randomness>,
+    phi_proof0_v: Vec<dlog::Proof<Secp256K1Sha256>>,
+    phi_proof1_v: Vec<dlog::Proof<Secp256K1Sha256>>,
+}
+
+impl CheckBatchLen for PolynomialCommitmentsMessageMany {
+    fn check_batch_len(&self, batch_size: usize, from: Participant) -> Result<(), ProtocolError> {
+        self.big_e_v.check_batch_len(batch_size, from)?;
+        self.big_f_v.check_batch_len(batch_size, from)?;
+        self.big_l_v.check_batch_len(batch_size, from)?;
+        self.randomizer_v.check_batch_len(batch_size, from)?;
+        self.phi_proof0_v.check_batch_len(batch_size, from)?;
+        self.phi_proof1_v.check_batch_len(batch_size, from)
+    }
 }
 
 #[allow(clippy::too_many_lines)]
-async fn do_generation_many<const N: usize>(
+async fn do_generation_many(
     comms: Comms,
     participants: ParticipantList,
     me: Participant,
     threshold: ReconstructionThreshold,
+    batch_size: usize,
     mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutputMany, ProtocolError> {
-    if N == 0 {
+    if batch_size == 0 {
         return Err(ProtocolError::InvalidInput(
-            "N must be greater than 0".to_string(),
+            "batch_size must be greater than 0".to_string(),
         ));
     }
 
@@ -157,7 +174,7 @@ async fn do_generation_many<const N: usize>(
         .checked_sub(2)
         .ok_or(ProtocolError::IntegerOverflow)?;
 
-    for _ in 0..N {
+    for _ in 0..batch_size {
         // Spec 1.2
         let e = Polynomial::generate_polynomial(None, degree1, &mut rng)?;
         let f = Polynomial::generate_polynomial(None, degree1, &mut rng)?;
@@ -190,7 +207,7 @@ async fn do_generation_many<const N: usize>(
 
     // Spec 2.1
     let mut all_commitments_vec: Vec<ParticipantMap<Commitment>> = vec![];
-    for comi in my_commitments.iter().take(N) {
+    for comi in my_commitments.iter().take(batch_size) {
         let mut m = ParticipantMap::new(&participants);
         m.put(me, *comi);
         all_commitments_vec.push(m);
@@ -200,7 +217,8 @@ async fn do_generation_many<const N: usize>(
         .iter()
         .any(|all_commitments| !all_commitments.full())
     {
-        let (from, FixedArray(commitments)) = chan.recv::<FixedArray<Commitment, N>>(wait0).await?;
+        let (from, commitments) = chan.recv::<Vec<Commitment>>(wait0).await?;
+        commitments.check_batch_len(batch_size, from)?;
         for (acv, commit) in all_commitments_vec.iter_mut().zip(commitments.iter()) {
             acv.put(from, *commit);
         }
@@ -208,7 +226,7 @@ async fn do_generation_many<const N: usize>(
 
     // Spec 2.2
     let mut my_confirmations = vec![];
-    for c in all_commitments_vec.iter().take(N) {
+    for c in all_commitments_vec.iter().take(batch_size) {
         let my_confirmation = hash(c)?;
         my_confirmations.push(my_confirmation);
     }
@@ -218,13 +236,19 @@ async fn do_generation_many<const N: usize>(
         rmp_serde::encode::to_vec(&my_confirmations).map_err(|_| ProtocolError::ErrorEncoding)?;
     transcript.message(b"confirmation", &enc_confirmations);
 
-    let my_phi_proof0_nonces: Vec<_> = (0..N).map(|_| <C>::generate_nonce(&mut rng)).collect();
-    let my_phi_proof1_nonces: Vec<_> = (0..N).map(|_| <C>::generate_nonce(&mut rng)).collect();
-    let my_phi_proof_nonces: Vec<_> = (0..N)
+    let my_phi_proof0_nonces: Vec<_> = (0..batch_size)
+        .map(|_| <C>::generate_nonce(&mut rng))
+        .collect();
+    let my_phi_proof1_nonces: Vec<_> = (0..batch_size)
+        .map(|_| <C>::generate_nonce(&mut rng))
+        .collect();
+    let my_phi_proof_nonces: Vec<_> = (0..batch_size)
         .map(|_| frost_core::random_nonzero::<C, _>(&mut rng))
         .collect();
 
-    let my_l0_phi_proof_nonces: Vec<_> = (0..N).map(|_| <C>::generate_nonce(&mut rng)).collect();
+    let my_l0_phi_proof_nonces: Vec<_> = (0..batch_size)
+        .map(|_| <C>::generate_nonce(&mut rng))
+        .collect();
 
     // Spec 2.4
     let multiplication_task = {
@@ -236,7 +260,7 @@ async fn do_generation_many<const N: usize>(
             .iter()
             .map(|f| f.eval_at_zero().map(|x| x.0))
             .collect::<Result<Vec<_>, _>>()?;
-        multiplication_many::<N>(
+        multiplication_many(
             comms.clone(),
             my_confirmations.clone(),
             participants.clone(),
@@ -296,13 +320,13 @@ async fn do_generation_many<const N: usize>(
 
         // Spec 2.7
         let wait2 = chan.next_waitpoint();
-        let message: PolynomialCommitmentsMessageMany<N> = PolynomialCommitmentsMessageMany {
-            big_e_v: big_e_i_v.to_array()?,
-            big_f_v: big_f_i_v.to_array()?,
-            big_l_v: big_l_i_v.to_array()?,
-            randomizer_v: my_randomizers.to_array()?,
-            phi_proof0_v: my_phi_proof0v.to_array()?,
-            phi_proof1_v: my_phi_proof1v.to_array()?,
+        let message = PolynomialCommitmentsMessageMany {
+            big_e_v: big_e_i_v,
+            big_f_v: big_f_i_v,
+            big_l_v: big_l_i_v,
+            randomizer_v: my_randomizers,
+            phi_proof0_v: my_phi_proof0v,
+            phi_proof1_v: my_phi_proof1v,
         };
         chan.send_many(wait2, &message)?;
         let (big_e_i_v, big_f_i_v, big_l_i_v) = (message.big_e_v, message.big_f_v, message.big_l_v);
@@ -341,16 +365,18 @@ async fn do_generation_many<const N: usize>(
         }
 
         // Spec 3.3 + 3.4, and part of 3.6, 5.3, for summing up the Es, Fs, and Ls.
-        let mut big_e_v: Vec<_> = big_e_i_v.iter().cloned().collect();
-        let mut big_f_v: Vec<_> = big_f_i_v.iter().cloned().collect();
-        let mut big_l_v: Vec<_> = big_l_i_v.iter().cloned().collect();
-        let mut big_e_j_zero_v: Vec<_> =
-            (0..N).map(|_| ParticipantMap::new(&participants)).collect();
+        let mut big_e_v = big_e_i_v.clone();
+        let mut big_f_v = big_f_i_v.clone();
+        let mut big_l_v = big_l_i_v.clone();
+        let mut big_e_j_zero_v: Vec<_> = (0..batch_size)
+            .map(|_| ParticipantMap::new(&participants))
+            .collect();
 
         for (from, their) in
-            recv_from_others::<PolynomialCommitmentsMessageMany<N>>(&chan, wait2, &participants, me)
+            recv_from_others::<PolynomialCommitmentsMessageMany>(&chan, wait2, &participants, me)
                 .await?
         {
+            their.check_batch_len(batch_size, from)?;
             for (
                 all_commitments,
                 their_big_e,
@@ -435,13 +461,14 @@ async fn do_generation_many<const N: usize>(
         }
 
         // Spec 3.5 + 3.6
-        for (_, (FixedArray(a_j_i_v), FixedArray(b_j_i_v))) in
-            recv_from_others::<(
-                FixedArray<SerializableScalar<C>, N>,
-                FixedArray<SerializableScalar<C>, N>,
-            )>(&chan, wait3, &participants, me)
-            .await?
+        for (from, (a_j_i_v, b_j_i_v)) in recv_from_others::<(
+            Vec<SerializableScalar<C>>,
+            Vec<SerializableScalar<C>>,
+        )>(&chan, wait3, &participants, me)
+        .await?
         {
+            a_j_i_v.check_batch_len(batch_size, from)?;
+            b_j_i_v.check_batch_len(batch_size, from)?;
             for ((a_i, b_i), (a_j_i, b_j_i)) in a_i_v
                 .iter_mut()
                 .zip(b_i_v.iter_mut())
@@ -501,13 +528,14 @@ async fn do_generation_many<const N: usize>(
         // Spec 4.1 + 4.2 + 4.3
 
         let mut big_c_v: Vec<_> = big_c_i_v.clone();
-        for (from, (FixedArray(big_c_j_v), FixedArray(their_phi_proofs))) in
-            recv_from_others::<(
-                FixedArray<CoefficientCommitment, N>,
-                FixedArray<dlogeq::Proof<C>, N>,
-            )>(&chan, wait4, &participants, me)
-            .await?
+        for (from, (big_c_j_v, their_phi_proofs)) in recv_from_others::<(
+            Vec<CoefficientCommitment>,
+            Vec<dlogeq::Proof<C>>,
+        )>(&chan, wait4, &participants, me)
+        .await?
         {
+            big_c_j_v.check_batch_len(batch_size, from)?;
+            their_phi_proofs.check_batch_len(batch_size, from)?;
             for ((((big_e_j_zero, big_f), big_c_j), their_phi_proof), big_c) in big_e_j_zero_v
                 .iter()
                 .zip(big_f_v.iter())
@@ -620,13 +648,16 @@ async fn do_generation_many<const N: usize>(
     // Spec 5.1 + 5.2 + 5.3
     let mut hat_big_c_v: Vec<_> = hat_big_c_i_v.clone();
 
-    for (from, (FixedArray(their_hat_big_c_i_points), FixedArray(their_phi_proofs))) in
-        recv_from_others::<(
-            FixedArray<CoefficientCommitment, N>,
-            FixedArray<dlog::Proof<C>, N>,
-        )>(&chan, wait5, &participants, me)
-        .await?
+    for (from, (their_hat_big_c_i_points, their_phi_proofs)) in recv_from_others::<(
+        Vec<CoefficientCommitment>,
+        Vec<dlog::Proof<C>>,
+    )>(
+        &chan, wait5, &participants, me
+    )
+    .await?
     {
+        their_hat_big_c_i_points.check_batch_len(batch_size, from)?;
+        their_phi_proofs.check_batch_len(batch_size, from)?;
         for ((their_point, their_phi_proof), hat_big_c) in their_hat_big_c_i_points
             .iter()
             .zip(their_phi_proofs.iter())
@@ -671,10 +702,10 @@ async fn do_generation_many<const N: usize>(
     }
 
     // Spec 5.5 + 5.6
-    for (_, FixedArray(c_j_i_v)) in
-        recv_from_others::<FixedArray<SerializableScalar<C>, N>>(&chan, wait6, &participants, me)
-            .await?
+    for (from, c_j_i_v) in
+        recv_from_others::<Vec<SerializableScalar<C>>>(&chan, wait6, &participants, me).await?
     {
+        c_j_i_v.check_batch_len(batch_size, from)?;
         for (c_i, c_j_i) in c_i_v.iter_mut().zip(c_j_i_v.iter()) {
             *c_i += c_j_i.0;
         }
@@ -812,60 +843,212 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
-/// As [`generate_triple`] but for many triples at once
-pub fn generate_triple_many<const N: usize, T, R>(
+/// As [`generate_triple`] but for `batch_size` triples at once.
+///
+/// All participants must pass the same `batch_size`; it is not negotiated in-protocol, and a
+/// mismatch aborts the run. Every round carries all `batch_size` instances in one message, so the
+/// batch size trades message count against per-message size and peak CPU per poke.
+pub fn generate_triple_many<T, R>(
     participants: &[Participant],
     me: Participant,
     threshold: T,
+    batch_size: usize,
     rng: R,
-) -> Result<impl Protocol<Output = TripleGenerationOutputMany> + use<N, T, R>, InitializationError>
+) -> Result<impl Protocol<Output = TripleGenerationOutputMany> + use<T, R>, InitializationError>
 where
     T: Into<ReconstructionThreshold>,
     R: CryptoRngCore + Send + 'static,
 {
+    if batch_size == 0 {
+        return Err(InitializationError::BadParameters(
+            "batch_size must be greater than 0".into(),
+        ));
+    }
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
     let ctx = Comms::with_buffer_capacity(triple_generation_max_incoming_buffer_entries(
         participants.len(),
-        N,
+        batch_size,
     )?);
-    let fut = do_generation_many::<N>(ctx.clone(), participants, me, threshold, rng);
+    let fut = do_generation_many(ctx.clone(), participants, me, threshold, batch_size, rng);
     Ok(make_protocol(ctx, fut))
 }
 
-/// Extension trait for converting a `Vec<T>` into a fixed-size array `[T; N]`.
-trait ToArray<T, const N: usize> {
-    fn to_array(self) -> Result<[T; N], ProtocolError>;
-}
-
-impl<T, const N: usize> ToArray<T, N> for Vec<T> {
-    fn to_array(self) -> Result<[T; N], ProtocolError> {
-        let len = self.len();
-        self.try_into()
-            .map_err(|_: Self| ProtocolError::UnexpectedLength {
-                expected: N,
-                actual: len,
-            })
-    }
-}
-
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod test {
     use rand::{RngCore, SeedableRng};
     use rstest::rstest;
 
     use crate::{
-        ecdsa::{ProjectivePoint, ot_based_ecdsa::triples::generate_triple},
+        crypto::{
+            proofs::{dlog, strobe_transcript::Transcript},
+            random::Randomness,
+        },
+        ecdsa::{
+            CoefficientCommitment, PolynomialCommitment, ProjectivePoint, Scalar,
+            ot_based_ecdsa::triples::generate_triple,
+        },
         participants::{Participant, ParticipantList},
         protocol::Protocol,
         test_utils::{
             MockCryptoRng, generate_participants, run_protocol, run_protocol_counting_yields,
         },
     };
+    use frost_core::serialization::SerializableScalar;
 
     use super::{
-        C, TripleGenerationOutput, TripleGenerationOutputMany, do_generation_many,
-        generate_triple_many, triple_generation_max_incoming_buffer_entries,
+        C, CheckBatchLen, PolynomialCommitmentsMessageMany, ProtocolError, TripleGenerationOutput,
+        TripleGenerationOutputMany, do_generation_many, generate_triple_many,
+        triple_generation_max_incoming_buffer_entries,
     };
+
+    /// The `[T; N]` const-generic encoding of a batched round that preceded [`Vec`].
+    /// Kept only to pin that the move to [`Vec`] left the bytes on the wire untouched, which is
+    /// why a node running either representation can take part in the same batch.
+    #[serde_with::serde_as]
+    #[derive(serde::Serialize)]
+    struct LegacyFixedArrays<const N: usize> {
+        #[serde_as(as = "[_; N]")]
+        scalars: [SerializableScalar<C>; N],
+        #[serde_as(as = "[_; N]")]
+        randomizers: [Randomness; N],
+    }
+
+    #[test]
+    fn batched_round_encoding__should_match_the_legacy_fixed_array_encoding() {
+        // Given the same batch of values held as fixed-size arrays and as vectors
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let scalars: [SerializableScalar<C>; 3] =
+            std::array::from_fn(|_| SerializableScalar::<C>(Scalar::generate_biased(&mut rng)));
+        let randomizers: [Randomness; 3] = std::array::from_fn(|_| Randomness::random(&mut rng));
+
+        // When each is encoded the way the protocol encodes a round message
+        let current = rmp_serde::encode::to_vec(&(scalars.to_vec(), randomizers.to_vec())).unwrap();
+        let legacy = rmp_serde::encode::to_vec(&LegacyFixedArrays {
+            scalars,
+            randomizers,
+        })
+        .unwrap();
+
+        // Then the bytes are identical
+        assert_eq!(legacy, current);
+    }
+
+    const BATCH_SIZE: usize = 3;
+
+    #[rstest]
+    #[case::too_short(BATCH_SIZE - 1, false)]
+    #[case::exact(BATCH_SIZE, true)]
+    #[case::too_long(BATCH_SIZE + 1, false)]
+    fn check_batch_len__should_accept_only_a_vector_of_the_batch_size(
+        #[case] peer_len: usize,
+        #[case] accepted: bool,
+    ) {
+        // Given
+        let from = Participant::from(7u32);
+        let received = vec![0u8; peer_len];
+
+        // When
+        let result = received.check_batch_len(BATCH_SIZE, from);
+
+        // Then
+        match result {
+            Ok(()) => assert!(accepted),
+            Err(ProtocolError::UnexpectedLength {
+                expected,
+                actual,
+                participant,
+            }) => {
+                assert!(!accepted);
+                assert_eq!(
+                    (expected, actual, participant),
+                    (BATCH_SIZE, peer_len, from)
+                );
+            }
+            Err(e) => panic!("unexpected error: {e:?}"),
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum Field {
+        BigE,
+        BigF,
+        BigL,
+        Randomizer,
+        PhiProof0,
+        PhiProof1,
+    }
+
+    /// A well-formed message carrying exactly one entry per field.
+    fn single_instance_message(rng: &mut MockCryptoRng) -> PolynomialCommitmentsMessageMany {
+        let commitment =
+            PolynomialCommitment::new(&[CoefficientCommitment::new(ProjectivePoint::GENERATOR)])
+                .unwrap();
+        let x = Scalar::generate_biased(&mut *rng);
+        let k = Scalar::generate_biased(&mut *rng);
+        let proof = dlog::prove_with_nonce(
+            &mut Transcript::new(b"test"),
+            dlog::Statement::<C> {
+                public: &(ProjectivePoint::GENERATOR * x),
+            },
+            &dlog::Witness::<C> {
+                x: SerializableScalar(x),
+            },
+            (k, ProjectivePoint::GENERATOR * k),
+        )
+        .unwrap();
+
+        PolynomialCommitmentsMessageMany {
+            big_e_v: vec![commitment.clone()],
+            big_f_v: vec![commitment.clone()],
+            big_l_v: vec![commitment],
+            randomizer_v: vec![Randomness::random(rng)],
+            phi_proof0_v: vec![proof.clone()],
+            phi_proof1_v: vec![proof],
+        }
+    }
+
+    #[test]
+    fn polynomial_commitments_message__should_accept_one_entry_per_field() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let message = single_instance_message(&mut rng);
+
+        // When
+        let result = message.check_batch_len(1, Participant::from(0u32));
+
+        // Then
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[rstest]
+    #[case::big_e(Field::BigE)]
+    #[case::big_f(Field::BigF)]
+    #[case::big_l(Field::BigL)]
+    #[case::randomizer(Field::Randomizer)]
+    #[case::phi_proof0(Field::PhiProof0)]
+    #[case::phi_proof1(Field::PhiProof1)]
+    fn polynomial_commitments_message__should_reject_any_field_of_the_wrong_length(
+        #[case] longer: Field,
+    ) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let mut message = single_instance_message(&mut rng);
+        match longer {
+            Field::BigE => message.big_e_v.push(message.big_e_v[0].clone()),
+            Field::BigF => message.big_f_v.push(message.big_f_v[0].clone()),
+            Field::BigL => message.big_l_v.push(message.big_l_v[0].clone()),
+            Field::Randomizer => message.randomizer_v.push(Randomness::random(&mut rng)),
+            Field::PhiProof0 => message.phi_proof0_v.push(message.phi_proof0_v[0].clone()),
+            Field::PhiProof1 => message.phi_proof1_v.push(message.phi_proof1_v[0].clone()),
+        }
+
+        // When
+        let result = message.check_batch_len(1, Participant::from(0u32));
+
+        // Then
+        assert!(result.is_err(), "{result:?}");
+    }
 
     #[test]
     fn test_triple_generation() {
@@ -925,7 +1108,6 @@ mod test {
     /// cooperative yields; fails if the `yield_point` calls in the crypto loops
     /// are removed.
     #[test]
-    #[expect(non_snake_case)]
     fn generate_triple_many__should_emit_yield_actions() {
         // Given - a real triple-generation batch across three participants
         let mut rng = MockCryptoRng::seed_from_u64(42);
@@ -937,8 +1119,7 @@ mod test {
         )> = Vec::with_capacity(participants.len());
         for &p in &participants {
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let protocol =
-                generate_triple_many::<2, _, _>(&participants, p, threshold, rng_p).unwrap();
+            let protocol = generate_triple_many(&participants, p, threshold, 2, rng_p).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -966,8 +1147,7 @@ mod test {
 
         for &p in &participants {
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let protocol =
-                generate_triple_many::<1, _, _>(&participants, p, threshold, rng_p).unwrap();
+            let protocol = generate_triple_many(&participants, p, threshold, 1, rng_p).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -1011,7 +1191,7 @@ mod test {
     // participant is receiver for all peers). For N>1 it is a conservative
     // upper bound because hash-based role assignment makes it unlikely for one
     // participant to be receiver for all N*(P-1) pairs.
-    fn run_and_check_buffer<const N: usize>(num_participants: usize, threshold: usize) {
+    fn run_and_check_buffer(num_participants: usize, threshold: usize, batch_size: usize) {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(num_participants);
@@ -1020,7 +1200,14 @@ mod test {
             &participants,
             &mut rng,
             |comms, p_list, p, rng_p| {
-                do_generation_many::<N>(comms.clone(), p_list, p, threshold.into(), rng_p)
+                do_generation_many(
+                    comms.clone(),
+                    p_list,
+                    p,
+                    threshold.into(),
+                    batch_size,
+                    rng_p,
+                )
             },
         );
 
@@ -1028,7 +1215,8 @@ mod test {
         let _ = run_protocol(protocols).unwrap();
 
         // Then
-        let capacity = triple_generation_max_incoming_buffer_entries(num_participants, N).unwrap();
+        let capacity =
+            triple_generation_max_incoming_buffer_entries(num_participants, batch_size).unwrap();
         let max_entries = comms_refs
             .iter()
             .map(|(_, comms)| comms.buffer_len())
@@ -1037,18 +1225,8 @@ mod test {
         assert!(
             max_entries <= capacity,
             "Buffer entries ({max_entries}) exceed capacity ({capacity}) \
-             for P={num_participants} N={N}"
+             for P={num_participants} N={batch_size}"
         );
-    }
-
-    /// Dispatches a runtime `num_triples` to a const-generic `run_and_check_buffer::<N>`.
-    macro_rules! dispatch_n {
-        ($n:expr, $p:expr, $t:expr, [$($val:literal),+]) => {
-            match $n {
-                $($val => run_and_check_buffer::<$val>($p, $t),)+
-                _ => panic!("unsupported N={}", $n),
-            }
-        };
     }
 
     #[rstest]
@@ -1070,11 +1248,6 @@ mod test {
         #[case] threshold: usize,
         #[case] num_triples: usize,
     ) {
-        dispatch_n!(
-            num_triples,
-            num_participants,
-            threshold,
-            [1, 2, 4, 8, 16, 64]
-        );
+        run_and_check_buffer(num_participants, threshold, num_triples);
     }
 }

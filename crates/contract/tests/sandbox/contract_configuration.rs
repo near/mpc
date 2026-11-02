@@ -1,83 +1,4 @@
-use crate::sandbox::utils::transactions::CallMpcContract;
-use crate::sandbox::{
-    common::SandboxTestSetup, upgrade_from_current_contract::current_contract_proposal,
-};
-use near_mpc_contract_interface::method_names;
-
-#[tokio::test]
-async fn test_high_gas_deposit_config_value_passes_upgrades() {
-    let (saw_completion, saw_failure) = run_upgrade_scenario(1).await;
-
-    assert!(saw_completion, "Update never completed");
-    assert!(!saw_failure, "Upgrade unexpectedly failed");
-}
-
-#[tokio::test]
-async fn test_zero_gas_deposit_config_value_fails_upgrades() {
-    let (saw_completion, saw_failure) = run_upgrade_scenario(0).await;
-
-    assert!(
-        saw_failure,
-        "Upgrade never failed; expected failure with zero gas"
-    );
-    assert!(
-        !saw_completion,
-        "Upgrade unexpectedly completed with zero gas"
-    );
-}
-
-async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
-    let init_config = near_mpc_contract_interface::types::InitConfig {
-        contract_upgrade_deposit_tera_gas: Some(min_gas),
-        ..Default::default()
-    };
-
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_init_config(init_config)
-        .with_number_of_participants(3)
-        .build()
-        .await;
-
-    let execution = mpc_signer_accounts[0]
-        .call_mpc(contract.id())
-        .propose_update(current_contract_proposal())
-        .await
-        .unwrap();
-
-    assert!(execution.is_success());
-    let proposal_id: u64 = execution.json().unwrap();
-
-    let mut saw_completion = false;
-    let mut saw_failure = false;
-
-    for voter in mpc_signer_accounts {
-        let execution = voter
-            .call_mpc(contract.id())
-            .vote_update(proposal_id)
-            .await
-            .unwrap();
-
-        dbg!(&execution);
-
-        if !execution.is_success() {
-            saw_failure = true;
-            break;
-        }
-
-        let update_completed: bool = execution.json().expect("Vote cast was unsuccessful");
-
-        if update_completed {
-            saw_completion = true;
-            break;
-        }
-    }
-
-    (saw_completion, saw_failure)
-}
+use crate::sandbox::common::SandboxTestSetup;
 
 #[tokio::test]
 async fn contract_configuration_can_be_set_on_initialization() {
@@ -85,7 +6,7 @@ async fn contract_configuration_can_be_set_on_initialization() {
         attestation_storage_fee_millinear: Some(20),
         key_event_timeout_blocks: Some(11),
         tee_upgrade_deadline_duration_seconds: Some(22),
-        contract_upgrade_deposit_tera_gas: Some(33),
+        apply_contract_update_tera_gas: Some(33),
         sign_call_gas_attachment_requirement_tera_gas: Some(44),
         ckd_call_gas_attachment_requirement_tera_gas: Some(55),
         return_signature_and_clean_state_on_success_call_tera_gas: Some(66),
@@ -100,22 +21,22 @@ async fn contract_configuration_can_be_set_on_initialization() {
         remove_non_participant_tee_verifier_votes_tera_gas: Some(14),
         verifier_tera_gas: Some(15),
         resolve_verification_tera_gas: Some(16),
-        // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
         launcher_hash_unused_ttl_seconds: Some(14 * 24 * 60 * 60),
     };
 
-    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
         .with_init_config(init_config.clone())
         .with_number_of_participants(2)
         .build()
         .await;
 
-    let stored_config: near_mpc_contract_interface::types::InitConfig = contract
-        .view(method_names::CONFIG)
-        .await
-        .unwrap()
-        .json()
-        .unwrap();
-
-    assert_eq!(stored_config, init_config);
+    let stored_config = contract.config().await.unwrap().value;
+    assert_eq!(
+        serde_json::to_value(stored_config).unwrap(),
+        serde_json::to_value(init_config).unwrap()
+    );
 }

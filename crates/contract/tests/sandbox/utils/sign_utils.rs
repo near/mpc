@@ -1,3 +1,5 @@
+use crate::sandbox::utils::sandbox_mpc_contract::SandboxMpcContract;
+use crate::sandbox::utils::sandbox_self_caller::SandboxSelfCaller;
 use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
@@ -5,37 +7,30 @@ use super::shared_key_utils::{
     DomainKey, SharedSecretKey, derive_secret_key_ed25519, derive_secret_key_secp256k1,
     generate_random_app_public_key,
 };
+use anyhow::Context as _;
 use digest::{Digest, FixedOutput};
 use k256::{
     FieldBytes,
     elliptic_curve::{Field as _, Group as _},
 };
-use mpc_contract::{
-    errors,
-    primitives::{
-        ckd::CKDRequest,
-        signature::{SignatureRequest, YieldIndex},
-    },
-};
+use mpc_contract::errors;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::call_args::SignatureRespondArgs;
-use near_mpc_contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, RESPOND, RESPOND_CKD,
-};
+use near_contract_transport::{ViewCall, WatchContractState};
+use near_mpc_contract_interface::call_args::{CKDRespondArgs, SignatureRespondArgs};
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
     self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
 };
-use near_mpc_contract_interface::types::{CKDResponse, DomainId, Payload};
+use near_mpc_contract_interface::types::{
+    CKDRequest, CKDResponse, DomainId, Payload, SignatureRequest, YieldIndex,
+};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
-use near_workspaces::{Account, Contract, Worker, network::Sandbox, operations::TransactionStatus};
+use near_workspaces::{Account, Worker, network::Sandbox, operations::TransactionStatus};
 use rand::{Rng, rngs::OsRng};
 use rand_core::CryptoRngCore;
-use serde::Serialize;
 use sha2::Sha256;
 use signature::DigestSigner;
-use std::time::Duration;
 use threshold_signatures::{
     KeygenOutput,
     confidential_key_derivation::{self as ckd, BLS12381SHA256, hash_app_id_with_pk},
@@ -77,7 +72,7 @@ impl DomainResponseTest {
     pub async fn run(
         &self,
         account: &Account,
-        contract: &Contract,
+        contract: &SandboxMpcContract,
         attested_account: &Account,
     ) -> anyhow::Result<()> {
         let status = self
@@ -90,7 +85,7 @@ impl DomainResponseTest {
 
     pub async fn submit_response(
         &self,
-        contract: &Contract,
+        contract: &SandboxMpcContract,
         attested_account: &Account,
     ) -> anyhow::Result<()> {
         match &self {
@@ -106,18 +101,24 @@ impl DomainResponseTest {
     pub async fn submit_request_ensure_included(
         &self,
         account: &Account,
-        contract: &Contract,
+        contract: &SandboxMpcContract,
     ) -> anyhow::Result<TransactionStatus> {
         let handle = account.call_mpc_async(contract.id());
         match self {
             Self::Sign(inner) => {
                 let status = handle.sign(inner.args.clone()).await?;
-                await_request_in_contract_queue(contract, &inner.response.request, None).await?;
+                await_request_in_contract_queue(
+                    contract.get_pending_request(inner.response.request.clone()),
+                )
+                .await?;
                 Ok(status)
             }
             Self::CKD(inner) => {
                 let status = handle.request_app_private_key(inner.args.clone()).await?;
-                await_request_in_contract_queue(contract, &inner.response.request, None).await?;
+                await_request_in_contract_queue(
+                    contract.get_pending_ckd_request(inner.response.request.clone()),
+                )
+                .await?;
                 Ok(status)
             }
         }
@@ -181,7 +182,7 @@ pub async fn verify_timeout(status: TransactionStatus) -> anyhow::Result<()> {
 
 #[derive(Debug)]
 pub struct CKDRequestTest {
-    pub response: CKDResponseArgs,
+    pub response: CKDRespondArgs,
     pub args: CKDRequestArgs,
 }
 
@@ -217,7 +218,7 @@ impl CKDRequestTest {
         };
 
         CKDRequestTest {
-            response: CKDResponseArgs { request, response },
+            response: CKDRespondArgs { request, response },
             args,
         }
     }
@@ -237,7 +238,7 @@ impl CKDRequestTest {
         };
 
         CKDRequestTest {
-            response: CKDResponseArgs { request, response },
+            response: CKDRespondArgs { request, response },
             args,
         }
     }
@@ -261,108 +262,56 @@ impl CKDRequestTest {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct CKDResponseArgs {
-    pub request: CKDRequest,
-    pub response: CKDResponse,
-}
-
-async fn submit_response(
-    contract: &Contract,
+pub async fn submit_signature_response(
+    response: &SignatureRespondArgs,
+    contract: &SandboxMpcContract,
     attested_account: &Account,
-    method: &str,
-    args: impl Serialize,
 ) -> anyhow::Result<()> {
-    let respond = attested_account
-        .call(contract.id(), method)
-        .args_json(args)
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&respond);
-    respond.into_result()?;
+    attested_account
+        .call_mpc(contract.id())
+        .respond(response.request.clone(), response.response.clone())
+        .await?
+        .into_result()?;
     Ok(())
 }
 
-pub async fn submit_signature_response(
-    response: &SignatureRespondArgs,
-    contract: &Contract,
-    attested_account: &Account,
-) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND, response).await
-}
-
 pub async fn submit_ckd_response(
-    response: &CKDResponseArgs,
-    contract: &Contract,
+    response: &CKDRespondArgs,
+    contract: &SandboxMpcContract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND_CKD, response).await
+    attested_account
+        .call_mpc(contract.id())
+        .respond_ckd(response.request.clone(), response.response.clone())
+        .await?
+        .into_result()?;
+    Ok(())
 }
 
 pub async fn submit_ckd_response_measure_gas(
-    response: &CKDResponseArgs,
-    contract: &Contract,
+    response: &CKDRespondArgs,
+    contract: &SandboxMpcContract,
     attested_account: &Account,
 ) -> anyhow::Result<near_workspaces::types::Gas> {
     let respond = attested_account
-        .call(contract.id(), RESPOND_CKD)
-        .args_json(response)
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .respond_ckd(response.request.clone(), response.response.clone())
         .await?;
     let gas = respond.total_gas_burnt;
     respond.into_result()?;
     Ok(gas)
 }
 
-trait ContractQueueRequest: serde::Serialize + Sync {
-    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex>;
-}
-
-impl ContractQueueRequest for CKDRequest {
-    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
-        contract
-            .view(GET_PENDING_CKD_REQUEST)
-            .args_json(serde_json::json!({ "request": self }))
-            .await
-            .unwrap()
-            .json()
-            .unwrap()
-    }
-}
-
-impl ContractQueueRequest for SignatureRequest {
-    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
-        contract
-            .view(GET_PENDING_REQUEST)
-            .args_json(serde_json::json!({ "request": self }))
-            .await
-            .unwrap()
-            .json()
-            .unwrap()
-    }
-}
-
-async fn await_request_in_contract_queue<T: ContractQueueRequest>(
-    contract: &Contract,
-    request: &T,
-    max_timeout: Option<Duration>,
+pub async fn await_request_in_contract_queue(
+    pending_request: ViewCall<SandboxSelfCaller, Option<YieldIndex>>,
 ) -> anyhow::Result<()> {
-    let timeout = max_timeout.unwrap_or(DEFAULT_MAX_TIMEOUT_TX_INCLUDED);
-    let start = std::time::Instant::now();
-
-    loop {
-        if request.is_in_queue(contract).await.is_some() {
-            return Ok(());
-        }
-
-        if start.elapsed() >= timeout {
-            anyhow::bail!("timed out waiting for request to appear in queue");
-        }
-
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    pending_request
+        .subscribe()
+        .await
+        .wait_for(DEFAULT_MAX_TIMEOUT_TX_INCLUDED, Option::is_some)
+        .await
+        .context("waiting for request to appear in queue")?;
+    Ok(())
 }
 
 /// Derives a confidential key following <https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md>
@@ -432,7 +381,7 @@ fn create_response_ckd_pv(
 
 pub async fn make_and_submit_requests(
     keys: &[DomainKey],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     worker: &Worker<Sandbox>,
     rng: &mut impl CryptoRngCore,
 ) -> (Vec<PendingSignRequest>, Vec<PendingCKDRequest>) {
@@ -548,7 +497,7 @@ pub struct PendingSignRequest {
 
 pub struct PendingCKDRequest {
     pub transaction: TransactionStatus,
-    pub ckd_response: CKDResponseArgs,
+    pub ckd_response: CKDRespondArgs,
 }
 
 fn gen_ed25519_sign_test(
