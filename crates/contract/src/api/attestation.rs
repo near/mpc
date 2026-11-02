@@ -504,7 +504,7 @@ mod tests {
         NUM_DOMAINS, basic_setup, destination_of, make_public_key_for_curve,
         setup_tee_test_contract, submit_valid_attestations,
     };
-    use crate::config::Config;
+    use crate::config::DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
@@ -1425,9 +1425,7 @@ mod tests {
 
         // When
         let floor = env::storage_byte_cost().saturating_mul(u128::from(floor_bytes));
-        let fee = NearToken::from_millinear(u128::from(
-            Config::default().attestation_storage_fee_millinear,
-        ));
+        let fee = NearToken::from_millinear(u128::from(DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR));
 
         // Then
         assert!(

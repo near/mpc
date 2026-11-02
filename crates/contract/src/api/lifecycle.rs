@@ -1,7 +1,7 @@
 //! Contract lifecycle: initialization, state migration, and the top-level
 //! state and config views.
 
-use crate::config::Config;
+use crate::config::config_from_init;
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
@@ -49,7 +49,7 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = init_config.map(Into::into).unwrap_or_default();
+        let config = config_from_init(init_config.unwrap_or_default());
 
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -128,7 +128,7 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = init_config.map(Into::into).unwrap_or_default();
+        let config = config_from_init(init_config.unwrap_or_default());
 
         Ok(MpcContract {
             config,
@@ -189,7 +189,7 @@ impl MpcContract {
     }
 
     pub fn config(&self) -> dtos::Config {
-        dtos::Config::from(&self.config)
+        self.config.clone()
     }
 
     // contract version

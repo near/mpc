@@ -2,8 +2,6 @@
 //! approved, plus sweeping votes from departed participants.
 
 use crate::api::common::refund_to;
-use crate::config::Config;
-use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::primitives::proposal_hash::{ProposalHash, ToProposalHash};
@@ -64,13 +62,10 @@ impl MpcContract {
                     NearToken::from_near(0),
                     Gas::from_tgas(self.config.apply_contract_update_tera_gas),
                 ),
-            dtos::Update::Config(config) => {
-                let config: Config = config.into();
-                Self::ext_self()
-                    .with_static_gas(Gas::from_tgas(config.apply_contract_update_tera_gas))
-                    .with_unused_gas_weight(0)
-                    .update_config(config.into_dto_type())
-            }
+            dtos::Update::Config(config) => Self::ext_self()
+                .with_static_gas(Gas::from_tgas(config.apply_contract_update_tera_gas))
+                .with_unused_gas_weight(0)
+                .update_config(config),
         }
         .detach();
         refund_to(&submitter, surplus);
@@ -151,7 +146,7 @@ impl MpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
-        self.config = config.into();
+        self.config = config;
     }
 }
 

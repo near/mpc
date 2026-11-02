@@ -1,6 +1,7 @@
 //! Test fixtures shared by more than one of the per-feature test modules in this tree.
 
 use crate::MpcContract;
+use crate::config::config_from_init;
 use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::Error;
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
@@ -311,7 +312,7 @@ impl MpcContract {
             ),
             accept_requests: true,
             contract_update_votes: Default::default(),
-            config: Default::default(),
+            config: config_from_init(dtos::InitConfig::default()),
             tee_state: Default::default(),
             node_migrations: Default::default(),
             foreign_chains: Lazy::new(

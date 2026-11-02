@@ -225,7 +225,7 @@ impl MpcContract {
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External callers
 /// may pick a different value; this only governs the automatic invocation.
 ///
-/// Sized against [`crate::config::Config::clean_invalid_attestations_tera_gas`]: scanning an
+/// Sized against [`dtos::Config::clean_invalid_attestations_tera_gas`]: scanning an
 /// entry costs gas whether or not it is removed, so raising this without raising that
 /// overruns the budget.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 30;

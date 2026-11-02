@@ -33,9 +33,8 @@ use crate::{
     foreign_chains_metadata::ForeignChainsMetadata, tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
-use config::Config;
 use near_mpc_contract_interface::types::{
-    CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+    CKDRequest, Config, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 
 use near_sdk::{

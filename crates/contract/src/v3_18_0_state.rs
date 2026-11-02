@@ -9,7 +9,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{
-    CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+    CKDRequest, Config, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
     AccountId, require,
@@ -17,7 +17,6 @@ use near_sdk::{
 };
 
 use crate::{
-    config::Config,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     state::ProtocolContractState,
