@@ -142,12 +142,12 @@ impl MpcContract {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
                 let is_new_node = self.tee_state.verify_and_store_mock(
-                    node.clone(),
+                    node,
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
                 if is_new_node {
-                    self.consume_attestation_storage_grant(&node.account_id);
+                    self.consume_attestation_storage_grant(&account_id);
                 }
 
                 Ok(PromiseOrValue::Value(()))
@@ -397,7 +397,7 @@ impl MpcContract {
 
         let attestation_result = match result {
             Ok(VerificationResult::Verified(report)) => {
-                self.verify_post_dcap_and_store(&context, &report)
+                self.verify_post_dcap_and_store(context, &report)
             }
             Ok(VerificationResult::Rejected(reason)) => {
                 log!("verifier rejected quote for {account_id}: {reason}");
@@ -434,27 +434,19 @@ impl MpcContract {
     /// the TLS key, or the grant may have been spent.
     fn verify_post_dcap_and_store(
         &mut self,
-        context: &VerificationContext,
+        VerificationContext { node, tcb_info }: VerificationContext,
         report: &VerifiedReport,
     ) -> Result<(), Error> {
-        let account_id = context.node.account_id.clone();
+        let account_id = node.account_id.clone();
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        self.assert_attestation_submission_allowed(&account_id, &context.node.tls_public_key)?;
+        self.assert_attestation_submission_allowed(&account_id, &node.tls_public_key)?;
 
-        let is_new_node = match self.tee_state.verify_and_store_dstack(
-            context.node.clone(),
-            &context.tcb_info,
-            report,
-            tee_upgrade_deadline_duration,
-        ) {
-            Ok(is_new_node) => is_new_node,
-            Err(err) => {
-                log!("post-DCAP check failed for {account_id}: {err}");
-                return Err(err.into());
-            }
-        };
+        let is_new_node = self
+            .tee_state
+            .verify_and_store_dstack(node, &tcb_info, report, tee_upgrade_deadline_duration)
+            .inspect_err(|err| log!("post-DCAP check failed for {account_id}: {err}"))?;
         if is_new_node {
             self.consume_attestation_storage_grant(&account_id);
         }
@@ -882,12 +874,7 @@ mod tests {
         #[case] stored_node: fn(dtos::Node) -> dtos::Node,
     ) {
         // Given
-        let (mut contract, participants, account_id) = setup_tee_test_contract(3, 2);
-        let tls_public_key = participants
-            .info(&account_id)
-            .unwrap()
-            .tls_public_key
-            .clone();
+        let (mut contract, account_id, tls_public_key) = participant_setup();
         let signers_node = create_node(&account_id, &tls_public_key);
         contract.tee_state.nodes.remove(&tls_public_key);
         contract
@@ -1145,19 +1132,12 @@ mod tests {
         const LAUNCHER_TTL_SECONDS: u64 = 100;
         const ADOPTED_ADDED_AT_SECS: u64 = 1;
         const NEVER_ADOPTED_ADDED_AT_SECS: u64 = ADOPTED_ADDED_AT_SECS + 1;
-        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let (mut contract, account_id, tls_public_key) = participant_setup();
         contract.config.launcher_hash_unused_ttl_seconds = LAUNCHER_TTL_SECONDS;
         let ttl = Duration::from_secs(LAUNCHER_TTL_SECONDS);
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
         let never_adopted = LauncherImageHash::from([2u8; 32]);
-        let (account_id, _, participant_info) = contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .participants()[0]
-            .clone();
 
         set_block_secs(ADOPTED_ADDED_AT_SECS);
         contract
@@ -1167,7 +1147,7 @@ mod tests {
         contract
             .tee_state
             .verify_and_store_mock(
-                create_node(&account_id, &participant_info.tls_public_key),
+                create_node(&account_id, &tls_public_key),
                 MpcMockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
                     launcher_docker_compose_hash: Some(get_docker_compose_hash(
@@ -1267,18 +1247,21 @@ mod tests {
     /// Storage the contract pays for one stored attestation entry, measured the way the runtime
     /// charges it. NEAR caps an account id at 64 bytes; both of a node's keys are fixed-size,
     /// so this is the worst case for the given attestation variant.
-    fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
+    fn measure_stored_entry_bytes(attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());
-        let node = create_node(
-            &"a".repeat(64).parse().unwrap(),
-            &bogus_ed25519_public_key(),
-        );
+        let tls_public_key = bogus_ed25519_public_key();
 
         let mut tee_state = TeeState::default();
         let before = env::storage_usage();
         tee_state.nodes.insert(
-            node.tls_public_key.clone(),
-            Node::new(node, verified_attestation, u64::MAX),
+            tls_public_key.clone(),
+            Node {
+                owner: "a".repeat(64).parse().unwrap(),
+                tls_public_key,
+                signer_public_key: bogus_ed25519_public_key(),
+                attestation,
+                attestation_accepted_at_seconds: u64::MAX,
+            },
         );
         tee_state.nodes.flush();
 

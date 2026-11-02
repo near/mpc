@@ -2,8 +2,8 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, account_ed25519_public_key, build_sandbox_nodes, gen_accounts,
-        prepay_and_submit_tee_attestations,
+        SandboxTestSetup, build_sandbox_nodes, gen_accounts, prepay_and_submit_tee_attestations,
+        sandbox_node,
     },
     utils::{
         interface::IntoContractType,
@@ -19,8 +19,7 @@ use mpc_contract::primitives::{
     participants::Participants, test_utils::bogus_ed25519_public_key,
     thresholds::GovernanceThresholdParameters,
 };
-use near_mpc_contract_interface::types::Protocol;
-use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation, Protocol};
 use test_utils::attestation::p2p_tls_key;
 
 /// Integration test that validates the end-to-end behavior of the TEE attestation store
@@ -52,13 +51,13 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
     let internal_initial_participants: Participants = (&initial_participants).into_contract_type();
-    let expected_nodes = build_sandbox_nodes(&internal_initial_participants, &mpc_signer_accounts);
+    let mut expected_nodes =
+        build_sandbox_nodes(&internal_initial_participants, &mpc_signer_accounts);
 
     // Verify TEE info for initial participants was added
     let nodes_with_tees = get_tee_accounts(&contract).await.unwrap();
     assert_eq!(nodes_with_tees, expected_nodes);
 
-    // Add two prospective Participants
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_nodes =
         build_sandbox_nodes(&non_participants, &env_non_participant_accounts);
@@ -68,18 +67,9 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
         &non_participant_nodes,
     )
     .await?;
-    let mut expected_nodes = expected_nodes;
     expected_nodes.extend(non_participant_nodes);
 
-    // add a new TEE quote for an existing participant, but with a different
-    // signer key. The contract records `env::signer_account_pk()`, so the
-    // account public key stored in the new attestation is the signer's real
-    // key — match that here.
-    let new_node = dtos::Node {
-        account_id: mpc_signer_accounts[0].id().clone(),
-        tls_public_key: bogus_ed25519_public_key(),
-        account_public_key: account_ed25519_public_key(&mpc_signer_accounts[0]),
-    };
+    let new_node = sandbox_node(&mpc_signer_accounts[0], bogus_ed25519_public_key());
     let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key
     let result = prepay_and_submit_participant_info(
         &mpc_signer_accounts[0],
@@ -115,9 +105,8 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
             .expect("Failed to insert participant");
     }
 
-    let post_reshare_participants = build_sandbox_nodes(&new_participants, &mpc_signer_accounts);
     let new_threshold_parameters = GovernanceThresholdParameters::new(
-        new_participants,
+        new_participants.clone(),
         mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
     )
     .unwrap();
@@ -132,18 +121,9 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     )
     .await?;
 
-    // Verify contract is back to running state with new threshold
-    let final_participants = assert_running_return_participants(&contract)
-        .await
-        .expect("Expected contract to be in Running state after resharing.");
-
-    // Get current participants to compare
-    let final_participant_nodes = build_sandbox_nodes(
-        &(&final_participants).into_contract_type(),
-        &mpc_signer_accounts,
-    );
-    // Verify only the new participants are current
-    assert_eq!(final_participant_nodes, post_reshare_participants);
+    let final_participants: Participants =
+        (&assert_running_return_participants(&contract).await?).into_contract_type();
+    assert_eq!(final_participants, new_participants);
 
     // Verify TEE storage: valid attestations previously stored are still present — the
     // post-reshare `clean_invalid_attestations` sweep only evicts invalid / expired entries.
@@ -244,7 +224,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
     assert!(
         !tee_accounts_after_reshare
             .iter()
-            .any(|node| node.account_id == stale_account.id().clone()),
+            .any(|node| node.account_id == *stale_account.id()),
         "expired outsider attestation should have been evicted by the post-reshare sweep",
     );
 

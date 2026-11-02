@@ -16,8 +16,8 @@ pub struct VerificationContext {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use near_mpc_contract_interface::types::Ed25519PublicKey;
-    use test_utils::attestation::{account_key, mock_tcb_info, p2p_tls_key};
+    use crate::primitives::test_utils::node_for;
+    use test_utils::attestation::mock_tcb_info;
 
     /// Every dstack submission pays for these bytes twice, once to send the callback
     /// receipt and once to execute it. Sized to reject a re-added quote (the smaller of
@@ -29,11 +29,7 @@ mod tests {
     fn verification_context__should_serialize_within_the_callback_arg_budget() {
         // Given
         let context = VerificationContext {
-            node: dtos::Node {
-                account_id: "alice.near".parse().unwrap(),
-                tls_public_key: Ed25519PublicKey(p2p_tls_key()),
-                account_public_key: Ed25519PublicKey(account_key()),
-            },
+            node: node_for(&"alice.near".parse().unwrap()),
             tcb_info: mock_tcb_info(),
         };
 

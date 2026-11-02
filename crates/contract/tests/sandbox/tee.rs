@@ -3,7 +3,6 @@
 use crate::sandbox::{
     common::{
         SandboxTestSetup, build_sandbox_nodes, gen_accounts, prepay_and_submit_tee_attestations,
-        submit_tee_attestations,
     },
     utils::{
         consts::ALL_PROTOCOLS,
@@ -333,7 +332,7 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
     let SandboxTestSetup {
         worker,
         contract,
-        mut mpc_signer_accounts,
+        mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
@@ -343,7 +342,6 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
     let participants: Participants =
         (&assert_running_return_participants(&contract).await?).into_contract_type();
     let participant_nodes = build_sandbox_nodes(&participants, &mpc_signer_accounts);
-    submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_nodes).await?;
 
     // Verify current participants have TEE data
     assert_eq!(get_tee_accounts(&contract).await?, participant_nodes);
@@ -389,19 +387,16 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     let SandboxTestSetup {
         worker,
         contract,
-        mut mpc_signer_accounts,
+        mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
-    // Submit a structurally-valid attestation for every current participant so those
-    // entries survive the sweep.
     let participants: Participants =
         (&assert_running_return_participants(&contract).await?).into_contract_type();
     let participant_nodes = build_sandbox_nodes(&participants, &mpc_signer_accounts);
-    submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_nodes).await?;
 
     // Submit an attestation from a non-participant that will expire shortly.
     let (stale_accounts, _stale_participants) = gen_accounts(&worker, 1).await;
@@ -776,9 +771,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     // Submit an expiring attestation for the last participant
     let target_account = &mpc_signer_accounts[2];
     let internal_participants: Participants = (&initial_participants).into_contract_type();
-    let target_node = build_sandbox_nodes(&internal_participants, &mpc_signer_accounts)
-        .into_iter()
-        .find(|node| node.account_id == *target_account.id())
+    let target_info = internal_participants
+        .info(target_account.id())
         .expect("target participant not found");
 
     let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp));
@@ -787,7 +781,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &target_node.tls_public_key,
+        &target_info.tls_public_key,
     )
     .await?
     .is_success();
@@ -902,17 +896,15 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     // Submit an expiring attestation for every participant past the first `remaining_valid`.
     let internal_participants: Participants = (&initial_participants).into_contract_type();
-    let nodes = build_sandbox_nodes(&internal_participants, &mpc_signer_accounts);
     for target_account in &mpc_signer_accounts[remaining_valid..] {
-        let target_node = nodes
-            .iter()
-            .find(|node| node.account_id == *target_account.id())
+        let target_info = internal_participants
+            .info(target_account.id())
             .expect("target participant not found");
         let submit_success = submit_participant_info(
             target_account,
             &contract,
             &expiring_attestation,
-            &target_node.tls_public_key,
+            &target_info.tls_public_key,
         )
         .await?
         .is_success();

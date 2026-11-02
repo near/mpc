@@ -7,7 +7,7 @@ use mpc_contract::{
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{bogus_ed25519_public_key, create_node, gen_participants, node_for},
+        test_utils::{create_node, gen_participants, node_for},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
             ProposedGovernanceThresholdParameters,
@@ -24,7 +24,7 @@ use std::{
 };
 
 use near_account_id::AccountId;
-use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
 
@@ -180,7 +180,7 @@ impl TestSetup {
         &mut self,
         node: &Node,
         attestation: Attestation,
-    ) -> Result<(), mpc_contract::errors::Error> {
+    ) -> Result<(), Error> {
         testing_env!(common::participant_context(&node.account_id));
         self.contract
             .submit_participant_info(attestation, node.tls_public_key.clone())
@@ -207,10 +207,7 @@ impl TestSetup {
                 .unwrap();
         }
     }
-    /// Returns the node of every participant. The
-    /// `account_public_key` is a placeholder — only the `account_id` (to set
-    /// the signer context) and `tls_public_key` (passed to
-    /// `submit_participant_info`) are consumed by these tests.
+    /// Every participant's node, with a placeholder signer key these tests never read.
     fn get_participant_nodes(&self) -> Vec<Node> {
         self.participants_list
             .iter()
@@ -238,57 +235,6 @@ fn set_system_time(nano_seconds_since_unix_epoch: u64) {
     );
 }
 
-/// **Test that `submit_participant_info` rejects an attempt by one account to overwrite
-/// another account's stored attestation entry**, keyed by TLS public key. Without this
-/// gate, any caller could replace a legit participant's attestation and lock them out of
-/// every attestation-gated method (DoS via cross-participant overwrite).
-#[test]
-fn submit_participant_info__should_reject_overwrite_from_other_account() {
-    // Given: a running contract with two participants who have submitted their
-    // attestations. We will treat `participants_list[0]` as the victim.
-    const PARTICIPANT_COUNT: usize = 2;
-    const THRESHOLD: u64 = 2;
-
-    let mut setup = TestSetupBuilder::new()
-        .with_participant_count(PARTICIPANT_COUNT)
-        .with_threshold(THRESHOLD)
-        .build();
-
-    let participant_nodes = setup.get_participant_nodes();
-    let victim_node = participant_nodes[0].clone();
-    let victim_attestation = Attestation::Mock(MockAttestation::Valid);
-    setup.submit_attestation_for_node(&victim_node, victim_attestation);
-
-    let stored_before = setup
-        .contract
-        .get_attestation(victim_node.tls_public_key.clone())
-        .unwrap()
-        .expect("victim attestation should be stored");
-
-    // When: an unrelated account submits an attestation that targets the victim's TLS key.
-    let attacker_node = create_node(
-        &"attacker.near".parse().unwrap(),
-        &victim_node.tls_public_key,
-    );
-    let attack_result = setup
-        .try_submit_attestation_for_node(&attacker_node, Attestation::Mock(MockAttestation::Valid));
-
-    // Then: the contract rejects the call with the TLS-ownership error and the victim's
-    // entry is unchanged.
-    assert_matches!(
-        &attack_result,
-        Err(Error::AttestationSubmission(
-            AttestationSubmissionError::TlsKeyOwnedByOtherAccount
-        ))
-    );
-    let stored_after = setup
-        .contract
-        .get_attestation(victim_node.tls_public_key)
-        .unwrap()
-        .expect("victim attestation should still be stored");
-    assert_eq!(stored_before, stored_after);
-}
-
 /// A new entry needs a grant. Without one the submission is rejected outright, before any
 /// verification work, so an unfunded node cannot make the contract pay for its storage.
 #[test]
@@ -296,16 +242,10 @@ fn submit_participant_info__should_reject_a_new_entry_without_a_grant() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
     let newcomer = node_for(&"newcomer.near".parse().unwrap());
-    testing_env!(common::participant_context(&newcomer.account_id));
 
     // When
-    let result = setup
-        .contract
-        .submit_participant_info(
-            Attestation::Mock(MockAttestation::Valid),
-            newcomer.tls_public_key.clone(),
-        )
-        .map(|_| ());
+    let result =
+        setup.try_submit_attestation_for_node(&newcomer, Attestation::Mock(MockAttestation::Valid));
 
     // Then
     assert_matches!(
@@ -335,16 +275,10 @@ fn submit_participant_info__should_store_a_new_entry_and_consume_one_grant() {
             .available_attestation_grants(newcomer.account_id.clone()),
         1
     );
-    testing_env!(common::participant_context(&newcomer.account_id));
 
     // When
-    let result = setup
-        .contract
-        .submit_participant_info(
-            Attestation::Mock(MockAttestation::Valid),
-            newcomer.tls_public_key.clone(),
-        )
-        .map(|_| ());
+    let result =
+        setup.try_submit_attestation_for_node(&newcomer, Attestation::Mock(MockAttestation::Valid));
 
     // Then
     assert_matches!(&result, Ok(()));
@@ -371,8 +305,8 @@ fn submit_participant_info__should_allow_two_entries_for_two_grants() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
     let account_id: AccountId = "operator-node.near".parse().unwrap();
-    let first = create_node(&account_id, &bogus_ed25519_public_key());
-    let second = create_node(&account_id, &bogus_ed25519_public_key());
+    let first = node_for(&account_id);
+    let second = node_for(&account_id);
     setup.prepay_grants(&account_id, 2);
 
     // When
@@ -399,24 +333,24 @@ fn submit_participant_info__should_allow_two_entries_for_two_grants() {
 
 /// A submission for a TLS key owned by somebody else is rejected by the precondition, not by
 /// the store, so it never reaches verification and never consumes the caller's grant.
-#[test]
-fn submit_participant_info__should_reject_a_tls_key_owned_by_another_account() {
+#[rstest]
+fn submit_participant_info__should_reject_a_tls_key_owned_by_another_account(
+    #[values(false, true)] is_attacker_prepaid: bool,
+) {
     // Given
     let mut setup = TestSetupBuilder::new().build();
     let owner = setup.get_participant_nodes()[0].clone();
     setup.submit_attestation_for_node(&owner, Attestation::Mock(MockAttestation::Valid));
     let attacker: AccountId = "attacker.near".parse().unwrap();
-    setup.prepay_grants(&attacker, 1);
-    testing_env!(common::participant_context(&attacker));
+    if is_attacker_prepaid {
+        setup.prepay_grants(&attacker, 1);
+    }
 
     // When: the attacker submits for the owner's TLS key.
-    let result = setup
-        .contract
-        .submit_participant_info(
-            Attestation::Mock(MockAttestation::Valid),
-            owner.tls_public_key.clone(),
-        )
-        .map(|_| ());
+    let result = setup.try_submit_attestation_for_node(
+        &create_node(&attacker, &owner.tls_public_key),
+        Attestation::Mock(MockAttestation::Valid),
+    );
 
     // Then
     assert_matches!(
@@ -427,7 +361,7 @@ fn submit_participant_info__should_reject_a_tls_key_owned_by_another_account() {
     );
     assert_eq!(
         setup.contract.available_attestation_grants(attacker),
-        1,
+        u32::from(is_attacker_prepaid),
         "a rejected submission must not consume the grant"
     );
 }
@@ -449,14 +383,8 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
 
     // When: the same participant re-attests with no attached deposit, an hour later.
     const ONE_HOUR_SECONDS: u64 = 3600;
-    testing_env!(VMContext {
-        block_timestamp: near_sdk::env::block_timestamp() + ONE_HOUR_SECONDS * NANOS_IN_SECOND,
-        ..common::participant_context(&node.account_id)
-    });
-    let result = setup
-        .contract
-        .submit_participant_info(attestation, node.tls_public_key.clone())
-        .map(|_| ());
+    set_system_time(near_sdk::env::block_timestamp() + ONE_HOUR_SECONDS * NANOS_IN_SECOND);
+    let result = setup.try_submit_attestation_for_node(&node, attestation);
 
     // Then: the submission succeeds and restamps the entry, so it was stored rather than
     // silently dropped.
@@ -949,14 +877,8 @@ fn prepay_attestation_storage__should_let_one_account_fund_another() {
     assert_eq!(setup.contract.available_attestation_grants(operator), 0);
 
     // When: the node submits for itself, attaching nothing.
-    testing_env!(common::participant_context(&node.account_id));
-    let result = setup
-        .contract
-        .submit_participant_info(
-            Attestation::Mock(MockAttestation::Valid),
-            node.tls_public_key.clone(),
-        )
-        .map(|_| ());
+    let result =
+        setup.try_submit_attestation_for_node(&node, Attestation::Mock(MockAttestation::Valid));
 
     // Then
     assert_matches!(&result, Ok(()));
@@ -1015,14 +937,8 @@ fn clean_invalid_attestations__should_return_the_grant_and_let_it_be_reused() {
 
     // And: it can be spent again, with no further prepayment.
     let replacement = node_for(&node.account_id);
-    testing_env!(common::participant_context(&node.account_id));
     let result = setup
-        .contract
-        .submit_participant_info(
-            Attestation::Mock(MockAttestation::Valid),
-            replacement.tls_public_key.clone(),
-        )
-        .map(|_| ());
+        .try_submit_attestation_for_node(&replacement, Attestation::Mock(MockAttestation::Valid));
     assert_matches!(&result, Ok(()));
     assert_eq!(
         setup.contract.available_attestation_grants(node.account_id),

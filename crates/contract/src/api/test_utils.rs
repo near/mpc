@@ -157,35 +157,26 @@ pub(crate) fn basic_setup_with_protocol(
 
 /// Temporarily sets the testing environment so that calls appear
 /// to come from an attested MPC node registered in the contract's `tee_state`.
-/// Returns the [`AccountId`] of the node used.
-pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContract) -> AccountId {
-    let active_participant_pks: Vec<dtos::Ed25519PublicKey> = contract
+pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContract) {
+    let node = contract
         .protocol_state
         .active_participants()
         .participants()
         .iter()
-        .map(|(_, _, participant_info)| participant_info.tls_public_key.clone())
-        .collect();
-
-    let node = contract
-        .tee_state
-        .nodes
-        .iter()
-        .find(|(public_key, _)| active_participant_pks.contains(public_key))
-        .expect("No attested participants in tee_state")
-        .1;
-
-    // Build a new simulated environment with this node as caller.
-    // Set signer_account_pk to match the mock attestation (signer_public_key == tls_public_key).
-    let mut ctx_builder = VMContextBuilder::new();
-    ctx_builder
-        .signer_account_id(node.owner.clone())
-        .predecessor_account_id(node.owner.clone())
-        .signer_account_pk(near_sdk::PublicKey::from(node.signer_public_key.clone()))
-        .attached_deposit(NearToken::from_yoctonear(1));
-
-    testing_env!(ctx_builder.build());
-    node.owner.clone()
+        .find_map(|(account_id, _, participant_info)| {
+            contract
+                .tee_state
+                .node_of(account_id, &participant_info.tls_public_key)
+        })
+        .expect("No attested participants in tee_state");
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(node.owner.clone())
+            .predecessor_account_id(node.owner.clone())
+            .signer_account_pk(node.signer_public_key.clone().into())
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build()
+    );
 }
 
 pub(crate) fn setup_tee_test_contract(

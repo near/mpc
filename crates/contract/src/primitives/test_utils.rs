@@ -20,7 +20,6 @@ use near_mpc_contract_interface::types::{
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 use std::collections::BTreeMap;
-// Re-export for convenience
 
 const ALL_PROTOCOLS: [Protocol; 4] = [
     Protocol::CaitSith,
