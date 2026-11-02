@@ -304,7 +304,6 @@ pub fn static_web_data(
     StaticWebData {
         near_signer_public_key: public_keys.near_signer_public_key,
         near_p2p_public_key: public_keys.near_p2p_public_key,
-        near_responder_public_keys: vec![],
         tee_participant_info,
     }
 }

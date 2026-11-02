@@ -8,11 +8,6 @@ pub struct StaticWebData {
 
     pub near_p2p_public_key: Ed25519PublicKey,
 
-    /// Always empty; responder keys are no longer used.
-    // TODO(#4911): remove once clients that require this field (e.g. older `attestation-cli`) are no longer supported.
-    #[serde(default)]
-    pub near_responder_public_keys: Vec<Ed25519PublicKey>,
-
     pub tee_participant_info: Option<Attestation>,
 }
 
@@ -34,16 +29,10 @@ mod tests {
         // Given
         let near_signer_public_key = gen_ed25519_public_key(1);
         let near_p2p_public_key = gen_ed25519_public_key(2);
-        let near_responder_public_keys = vec![
-            gen_ed25519_public_key(3),
-            gen_ed25519_public_key(4),
-            gen_ed25519_public_key(5),
-        ];
 
         let data = StaticWebData {
             near_signer_public_key: near_signer_public_key.clone(),
             near_p2p_public_key: near_p2p_public_key.clone(),
-            near_responder_public_keys: near_responder_public_keys.clone(),
             tee_participant_info: None,
         };
 
@@ -56,18 +45,15 @@ mod tests {
         // Then
         assert_eq!(decoded.near_signer_public_key, near_signer_public_key);
         assert_eq!(decoded.near_p2p_public_key, near_p2p_public_key);
-        assert_eq!(
-            decoded.near_responder_public_keys,
-            near_responder_public_keys
-        );
     }
 
     #[test]
-    fn static_web_data__should_deserialize_without_responder_keys() {
+    fn static_web_data__should_deserialize_response_with_legacy_responder_keys() {
         // Given
         let json = serde_json::json!({
             "near_signer_public_key": gen_ed25519_public_key(1),
             "near_p2p_public_key": gen_ed25519_public_key(2),
+            "near_responder_public_keys": [gen_ed25519_public_key(3)],
             "tee_participant_info": null,
         });
 
@@ -75,6 +61,9 @@ mod tests {
         let decoded: Result<StaticWebData, _> = serde_json::from_value(json);
 
         // Then
-        assert!(decoded.unwrap().near_responder_public_keys.is_empty());
+        assert_eq!(
+            decoded.unwrap().near_signer_public_key,
+            gen_ed25519_public_key(1)
+        );
     }
 }
