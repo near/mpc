@@ -1,13 +1,10 @@
 # OT-based Threshold ECDSA (`src/ecdsa/ot_based_ecdsa/`)
 
-This module implements the Cait-Sith OT-based threshold ECDSA scheme over Secp256k1. Signing runs either as three phases, each of which can involve different participant sets and thresholds, or as triple generation followed by a single merged online protocol.
+This module implements the Cait-Sith OT-based threshold ECDSA scheme over Secp256k1. Signing runs as triple generation followed by a single online protocol, `presign_and_sign`; the two phases can involve different participant sets and thresholds.
 
 ## Pipeline
 
 ```
-Triple Generation (offline)  -->  Presigning (offline)  -->  Signing (online)
-   2 triples per presig              1 presignature              1 signature
-
 Triple Generation (offline)  -->  Presigning and signing (online)
    2 triples per signature                1 signature
 ```
@@ -22,26 +19,24 @@ Beaver triple generation via Oblivious Transfer. Produces `(TripleShare, TripleP
 
 See [`triples/README.md`](triples/README.md) for the full OT pipeline.
 
+### `presign_and_sign.rs`
+
+The signing protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally between the two, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
+
 ### `presign.rs`
 
-Two-round presigning protocol. Consumes two Beaver triples to produce a `PresignOutput` containing `(R, k_i, sigma_i)`. The presignature can later be rerandomized for a specific signing context. See the [presigning specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
+The two presigning rounds of `presign_and_sign`. Consume two Beaver triples to produce a presignature `(R, k_i, sigma_i)` that stays local to the run. See the [presigning specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning).
 
 ### `sign.rs`
 
-One-round online signing protocol. Takes a `RerandomizedPresignOutput` (produced by rerandomizing a presignature with HKDF-SHA3-256) and the message hash, then produces the final ECDSA `Signature`. The coordinator aggregates partial signatures and returns the result. See the [signing specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
-
-### `presign_and_sign.rs`
-
-Merged online protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally rather than through rerandomization, so each triple, not just the pair, must be used at most once (see the [requirement](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning)). See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
+The signing round of `presign_and_sign`, with a designated coordinator. Takes the tweaked presignature and the message hash; the coordinator aggregates partial signatures into the final ECDSA `Signature`. See the [signing specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#signing).
 
 ## Types
 
-- **`PresignArguments`** -- input to presigning: two triples + keygen output + threshold
-- **`PresignOutput`** -- presignature: `(big_r, k, sigma)`
-- **`RerandomizedPresignOutput`** -- presignature after rerandomization for a specific message/context
+- **`PresignArguments`** -- input to `presign_and_sign`: two triples + keygen output + threshold
 
 ## Further Reading
 
-- [`docs/ecdsa/ot_based_ecdsa/intro.md`](../../../docs/ecdsa/ot_based_ecdsa/intro.md) -- overview of the three-phase pipeline
-- [`docs/ecdsa/ot_based_ecdsa/signing.md`](../../../docs/ecdsa/ot_based_ecdsa/signing.md) -- presigning and signing protocol specification
+- [`docs/ecdsa/ot_based_ecdsa/intro.md`](../../../docs/ecdsa/ot_based_ecdsa/intro.md) -- overview of the protocol documents
+- [`docs/ecdsa/ot_based_ecdsa/signing.md`](../../../docs/ecdsa/ot_based_ecdsa/signing.md) -- signing protocol specification
 - [`docs/ecdsa/ot_based_ecdsa/orchestration.md`](../../../docs/ecdsa/ot_based_ecdsa/orchestration.md) -- orchestration diagram and threshold constraints

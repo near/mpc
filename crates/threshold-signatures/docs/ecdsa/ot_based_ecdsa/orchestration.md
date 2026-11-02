@@ -1,9 +1,9 @@
 Cait-Sith is composed of multiple protocols.
 For example, key generation is a separate protocol from signing.
 Some protocols are broken into sub-protocols.
-For example, signing is broken into three phases, the first can be
-done without any secret information, the second with just the shares of the
-secret key, and the final one after learning the message to sign.
+For example, signing is broken into two phases, the first can be
+done without any secret information, and the second after learning the
+message to sign.
 
 This document describes the high-level orchestration of the protocols.
 
@@ -17,18 +17,11 @@ We call $t$ our threshold.
 
 # Signing
 
-Signing is split into three phases:
+Signing is split into two phases:
 
 1. Triple generation.
-2. Presigning.
-3. Signing.
-
-Presigning and signing can also run as one protocol once the message is known
-(`presign_and_sign`, see [signing](./signing.md#presigning-and-signing-in-one-protocol)),
-in which case the presignature is never stored and phases 2 and 3 share one party set.
-Each protocol owns its whole message channel: running the presigning protocol followed by
-the signing protocol over the same channel is not supported, because both start at the same
-waitpoint and their messages would be confused.
+2. Signing (`presign_and_sign`, see [signing](./signing.md)), which runs presigning and
+signing as one protocol once the message is known, so the presignature is never stored.
 
 Each of these phases can potentially use a different set of parties,
 and these sets can have different sizes.
@@ -41,12 +34,11 @@ $$
 \begin{matrix}
 &\scriptsize{\text{Key-Gen}}
 &&\scriptsize{\text{Triples}}
-&&\scriptsize{\text{Presigning}}
 &&\scriptsize{\text{Signing}}
 \cr
-&\mathcal{P} &\supseteq &\mathcal{P}_0 &\supseteq &\mathcal{P}_1 &\supseteq &\mathcal{P}_2\cr
-&N &\geq &N_0 &\geq &N_1 & \geq &N_2\cr
-&t &&t_0 &&t_1 &&t_2\cr
+&\mathcal{P} &\supseteq &\mathcal{P}_0 &\supseteq &\mathcal{P}_1\cr
+&N &\geq &N_0 &\geq &N_1\cr
+&t &&t_0 &&t_1\cr
 \end{matrix}
 $$
 
@@ -58,8 +50,7 @@ The thresholds can also change, subject to the following conditions:
 $$
 \begin{aligned}
 &N_0 \geq t\cr
-&N_1 \geq t_0 \geq t\cr
-&N_2 \geq t_1 \geq t
+&N_1 \geq t_0 \geq t
 \end{aligned}
 $$
 
@@ -70,12 +61,12 @@ be at least as large as the previous threshold.
 
 ## Discarding information
 
-Each phase can be run many times in advance, recording the information
+Triple generation can be run many times in advance, recording the
 public information produced, as well as the list of parties which produced it.
 Then, this output is consumed by having a set of parties use it
-for a subsequent phase.
+for signing.
 It's **critical** that the output is then destroyed, so that no other
-group of parties attempts to re-use that output for another phase.
+group of parties attempts to re-use that output for another signature.
 In particular, the parties need some way of agreeing on which
 outputs have been created and used.
 If the threshold $t_i$ is such that $N_{i} \leq 2t - 1$, then it's impossible
@@ -96,3 +87,5 @@ Here's a figure describing the dependencies between the different phases:
 </picture>
 
 The red boxes mean that the output of that phase can only be used once.
+Presign and Sign run as one protocol once $m$ is known, so the presignature
+is consumed by the run that produced it.
