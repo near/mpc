@@ -3,6 +3,7 @@
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters};
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
+use crate::state::ProtocolContractState;
 use crate::tee::tee_state::TeeValidationResult;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
@@ -109,6 +110,17 @@ impl MpcContract {
     pub fn parameters_votes(&self) -> dtos::GovernanceThresholdParametersVotes {
         (&self.parameters_votes).into_dto_type()
     }
+
+    /// Returns the pending `vote_add_domains` votes, keyed by proposal hash.
+    pub fn add_domains_votes(&self) -> dtos::AddDomainsVotes {
+        match &self.protocol_state {
+            ProtocolContractState::Running(state) => (&state.add_domains_votes).into_dto_type(),
+            ProtocolContractState::Resharing(state) => {
+                (&state.previous_running_state.add_domains_votes).into_dto_type()
+            }
+            _ => dtos::AddDomainsVotes::default(),
+        }
+    }
 }
 
 impl MpcContract {
@@ -134,7 +146,6 @@ mod tests {
         authenticate_account_as, bogus_tee_verifier_account_id, gen_participants,
     };
     use crate::primitives::thresholds::GovernanceThresholdParameters;
-    use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::find_leader;
     use crate::tee::test_utils::Environment;
     use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
@@ -623,6 +634,56 @@ mod tests {
             contract.parameters_votes(),
             expected_tally(&proposal, &[voter])
         );
+    }
+
+    #[test]
+    fn add_domains_votes__should_report_pending_votes_by_proposal_hash() {
+        // Given: two participants propose the same domain and a third a different one
+        let (mut contract, participants, _, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let domain = |protocol| {
+            vec![dtos::DomainConfig {
+                id: DomainId(domain_id.0 + 1),
+                protocol,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            }]
+        };
+        let (caitsith, frost) = (domain(Protocol::CaitSith), domain(Protocol::Frost));
+        let voters: Vec<_> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, id, _)| (account_id.clone(), *id))
+            .collect();
+
+        // When
+        let mut env = Environment::new(Some(0), None, None);
+        for (account_id, domains) in [
+            (&voters[0].0, &caitsith),
+            (&voters[1].0, &caitsith),
+            (&voters[2].0, &frost),
+        ] {
+            env.set_signer(account_id);
+            contract.vote_add_domains(domains.clone()).unwrap();
+        }
+
+        // Then
+        let expected = dtos::AddDomainsVotes(BTreeMap::from([
+            (
+                caitsith.to_proposal_hash(),
+                [voters[0].1, voters[1].1]
+                    .map(dtos::AuthenticatedParticipantId)
+                    .into(),
+            ),
+            (
+                frost.to_proposal_hash(),
+                [voters[2].1].map(dtos::AuthenticatedParticipantId).into(),
+            ),
+        ]));
+        assert_eq!(contract.add_domains_votes(), expected);
     }
 
     #[test]

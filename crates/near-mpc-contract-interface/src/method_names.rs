@@ -78,6 +78,7 @@ pub const AVAILABLE_ATTESTATION_GRANTS: &str = "available_attestation_grants";
 pub const TEE_VERIFIER_ACCOUNT_ID: &str = "tee_verifier_account_id";
 pub const TEE_VERIFIER_VOTES: &str = "tee_verifier_votes";
 pub const PARAMETERS_VOTES: &str = "parameters_votes";
+pub const ADD_DOMAINS_VOTES: &str = "add_domains_votes";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_AVAILABLE_FOREIGN_CHAINS: &str = "get_available_foreign_chains";
 pub const GET_FOREIGN_CHAINS_CONFIGS: &str = "get_foreign_chains_configs";

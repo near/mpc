@@ -16,6 +16,24 @@ expression: abi
   "body": {
     "functions": [
       {
+        "name": "add_domains_votes",
+        "doc": " Returns the pending `vote_add_domains` votes, keyed by proposal hash.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
         "kind": "view",
@@ -2485,24 +2503,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AddDomainsVotes": {
-          "description": "Votes for adding new domains.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/DomainConfig"
-                }
-              }
-            }
-          }
-        },
         "AllowedMpcDockerImageHash": {
           "type": "object",
           "required": [
@@ -4765,15 +4765,11 @@ expression: abi
           "description": "State when the contract is ready for signature operations.",
           "type": "object",
           "required": [
-            "add_domains_votes",
             "domains",
             "keyset",
             "parameters"
           ],
           "properties": {
-            "add_domains_votes": {
-              "$ref": "#/definitions/AddDomainsVotes"
-            },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
             },
