@@ -14,7 +14,6 @@ use mpc_attestation::{
     collateral::Collateral,
 };
 use near_mpc_contract_interface::types as dtos;
-use std::collections::BTreeMap;
 
 use crate::{
     config::Config,
@@ -24,6 +23,7 @@ use crate::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
+        threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
     },
@@ -816,6 +816,21 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     }
 }
 
+impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
+    for &GovernanceThresholdParametersVotes
+{
+    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotes {
+        dtos::GovernanceThresholdParametersVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
+                .collect(),
+        )
+    }
+}
+
 impl IntoInterfaceType<dtos::MeasurementVotes> for &Votes<AuthenticatedAccountId> {
     fn into_dto_type(self) -> dtos::MeasurementVotes {
         dtos::MeasurementVotes(
@@ -964,9 +979,6 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            parameters_votes: dtos::GovernanceThresholdParametersVotes {
-                proposal_by_account: BTreeMap::new(),
-            },
             add_domains_votes: (&self.add_domains_votes).into_dto_type(),
             previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }
