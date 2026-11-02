@@ -124,7 +124,7 @@ async fn submit_tx(
         params_ser.into(),
         gas,
         block.value,
-        block.observed_at.value(),
+        u64::from(block.observed_at),
     );
 
     let tx_hash = transaction.get_hash();
@@ -144,7 +144,7 @@ async fn submit_tx(
         tx_hash,
         nonce,
         signature,
-        block_height: block.observed_at.value(),
+        block_height: u64::from(block.observed_at),
     })
 }
 

@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
     BorshDeserialize,
     derive_more::Constructor,
     derive_more::Display,
+    derive_more::From,
+    derive_more::Into,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -26,10 +28,6 @@ use serde::{Deserialize, Serialize};
 pub struct BlockHeight(u64);
 
 impl BlockHeight {
-    pub const fn value(self) -> u64 {
-        self.0
-    }
-
     pub fn saturating_add(self, delta: u64) -> Self {
         Self(self.0.saturating_add(delta))
     }

@@ -85,7 +85,7 @@ async fn fetch_migrations_once<C: ViewContract + Clone + Send + 'static>(
 
         match contract.migration_info().await {
             Ok(observed) => {
-                return (observed.observed_at.value(), observed.value);
+                return (u64::from(observed.observed_at), observed.value);
             }
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading config from chain during migration_info: {:?}", e);

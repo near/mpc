@@ -45,8 +45,8 @@ pub async fn indexer_logger(
 
         let blocks_behind = match info_fetcher.fetch_latest_final_block_info().await {
             Ok(block_info) => {
-                let tip = block_info.observed_at.value();
-                let processed = stats_copy.last_processed_block_height.value();
+                let tip = u64::from(block_info.observed_at);
+                let processed = u64::from(stats_copy.last_processed_block_height);
                 format!("{}", tip.saturating_sub(processed))
             }
             Err(_) => "∞".to_string(),

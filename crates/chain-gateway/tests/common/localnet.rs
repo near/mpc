@@ -126,7 +126,7 @@ impl LocalnetBuilder {
                 )
                 .await
                 .expect("view call should succeed during startup wait");
-            if state.observed_at.value() > 0 {
+            if u64::from(state.observed_at) > 0 {
                 break;
             }
             assert!(

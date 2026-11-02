@@ -299,7 +299,7 @@ impl MpcClient {
                         break;
                     };
 
-                    self.network_client.update_indexer_height(block_update.block.height.value());
+                    self.network_client.update_indexer_height(u64::from(block_update.block.height));
 
                     let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 

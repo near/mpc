@@ -62,7 +62,7 @@ impl TransactionSigner {
         let transaction = Transaction::V0(TransactionV0 {
             signer_id: to_near_internal(&self.account_id),
             public_key: near_core_public_key,
-            nonce: self.make_nonce(info.observed_at.value()),
+            nonce: self.make_nonce(u64::from(info.observed_at)),
             receiver_id: to_near_internal(&receiver_id),
             block_hash: info.value,
             actions: vec![action.into()],
@@ -180,7 +180,10 @@ mod tests {
             _ => panic!("expected Transaction::V0"),
         };
 
-        assert_eq!(tx.nonce, signer_clone.make_nonce(info.observed_at.value()));
+        assert_eq!(
+            tx.nonce,
+            signer_clone.make_nonce(u64::from(info.observed_at))
+        );
         assert_eq!(tx.signer_id, to_near_internal(&signer.account_id));
         assert_eq!(tx.receiver_id, to_near_internal(&receiver_id));
         assert_eq!(tx.block_hash, info.value);

@@ -204,7 +204,7 @@ where
                 &request_eligible_leaders,
             );
             request_lines.push((
-                request.block_height.value(),
+                u64::from(request.block_height),
                 request.request.get_id(),
                 debug_line,
             ));

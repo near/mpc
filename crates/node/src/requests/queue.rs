@@ -850,7 +850,7 @@ where
                 };
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
-                        indexed_block_height: request.block_height.value(),
+                        indexed_block_height: u64::from(request.block_height),
                         request: request.request,
                         progress: request.computation_progress,
                         completion_delay,
