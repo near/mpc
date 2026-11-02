@@ -58,6 +58,7 @@ impl BlockHeight {
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Constructor,
     derive_more::Display,
 )]
 #[cfg_attr(
@@ -67,10 +68,6 @@ impl BlockHeight {
 pub struct BlockCount(u64);
 
 impl BlockCount {
-    pub const fn new(value: u64) -> Self {
-        Self(value)
-    }
-
     pub const fn value(self) -> u64 {
         self.0
     }
