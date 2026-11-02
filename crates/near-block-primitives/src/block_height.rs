@@ -29,11 +29,11 @@ use serde::{Deserialize, Serialize};
 pub struct BlockHeight(u64);
 
 impl BlockHeight {
-    pub fn saturating_add(self, delta: BlockCount) -> Self {
+    pub const fn saturating_add(self, delta: BlockCount) -> Self {
         Self(self.0.saturating_add(delta.0))
     }
 
-    pub fn saturating_sub(self, delta: BlockCount) -> Self {
+    pub const fn saturating_sub(self, delta: BlockCount) -> Self {
         Self(self.0.saturating_sub(delta.0))
     }
 
