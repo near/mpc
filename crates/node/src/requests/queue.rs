@@ -772,8 +772,8 @@ where
 
         // Any request strictly older than `cutoff_block` is considered expired. This is measured
         // against our own indexer height to prevent spurious timeouts for old requests
-        let cutoff_block =
-            BlockHeight::new(my_indexer_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1);
+        let cutoff_block: BlockHeight =
+            (my_indexer_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1).into();
 
         for (id, request) in &mut self.requests {
             let _span = tracing::debug_span!(
@@ -850,7 +850,7 @@ where
                 };
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
-                        indexed_block_height: u64::from(request.block_height),
+                        indexed_block_height: request.block_height.into(),
                         request: request.request,
                         progress: request.computation_progress,
                         completion_delay,
@@ -882,9 +882,7 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{
-        BlockHeight, NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height,
-    };
+    use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height};
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
         CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL,
@@ -1099,7 +1097,7 @@ mod tests {
             let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
-                block_height: BlockHeight::new(new_height),
+                block_height: new_height.into(),
                 block_status,
             };
             self.requests_to_submit = Vec::new();
@@ -1126,7 +1124,7 @@ mod tests {
             let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
-                block_height: BlockHeight::new(new_height),
+                block_height: new_height.into(),
                 block_status,
             };
             self.requests_to_submit = Vec::new();

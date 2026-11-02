@@ -79,7 +79,6 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::BlockHeight;
     use near_account_id::AccountId;
     use std::assert_matches;
 
@@ -97,7 +96,7 @@ mod tests {
     async fn view_call_json__should_return_deserialized_value_and_height() {
         // Given
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(7),
+            observed_at: 7.into(),
             value: serde_json::to_vec(&"hello").unwrap(),
         }));
 
@@ -109,14 +108,14 @@ mod tests {
 
         // Then
         assert_eq!(observed.value, "hello");
-        assert_eq!(observed.observed_at, BlockHeight::new(7));
+        assert_eq!(observed.observed_at, 7.into());
     }
 
     #[tokio::test]
     async fn view_call_json__should_query_requested_contract_and_method() {
         // Given
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(1),
+            observed_at: 1.into(),
             value: serde_json::to_vec(&"x").unwrap(),
         }));
         let args = ViewArgs::new("get_value".to_string(), vec![0xAA]);
@@ -159,7 +158,7 @@ mod tests {
     async fn view_call_json__should_return_deserialization_error_on_invalid_bytes() {
         // Given
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(1),
+            observed_at: 1.into(),
             value: b"not json".to_vec(),
         }));
 
@@ -180,7 +179,7 @@ mod tests {
     async fn view_call_borsh__should_return_deserialized_value_and_height() {
         // Given
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(3),
+            observed_at: 3.into(),
             value: borsh::to_vec(&42u64).unwrap(),
         }));
 
@@ -192,6 +191,6 @@ mod tests {
 
         // Then
         assert_eq!(observed.value, 42);
-        assert_eq!(observed.observed_at, BlockHeight::new(3));
+        assert_eq!(observed.observed_at, 3.into());
     }
 }

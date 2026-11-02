@@ -1,4 +1,3 @@
-use near_contract_transport::BlockHeight;
 use near_indexer::IndexerExecutionOutcomeWithReceipt;
 use near_indexer_primitives::{
     CryptoHash,
@@ -75,7 +74,7 @@ pub(super) async fn listen_blocks(
 fn make_context(streamer_message: &near_indexer_primitives::StreamerMessage) -> BlockContext {
     BlockContext {
         hash: streamer_message.block.header.hash,
-        height: BlockHeight::new(streamer_message.block.header.height),
+        height: streamer_message.block.header.height.into(),
         prev_hash: streamer_message.block.header.prev_hash,
         entropy: streamer_message.block.header.random_value.into(),
         timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,

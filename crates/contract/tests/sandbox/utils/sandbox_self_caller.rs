@@ -1,5 +1,4 @@
 use crate::sandbox::utils::transactions::SandboxCaller;
-use near_contract_transport::BlockHeight;
 use near_contract_transport::{
     CallContract, FunctionCallArgs, HasPollInterval, ObservedState, PollInterval,
     SerializedObservation, ViewArgs, ViewContract,
@@ -90,7 +89,7 @@ impl ViewContract for SandboxSelfCaller {
             ));
         };
         Ok(ObservedState {
-            observed_at: BlockHeight::new(response.block_height),
+            observed_at: response.block_height.into(),
             value: result.result,
         })
     }

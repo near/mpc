@@ -70,7 +70,6 @@ mod tests {
         transaction_sender::{SubmitFunctionCall, TransactionSigner},
         types::LatestFinalBlockInfo,
     };
-    use near_contract_transport::BlockHeight;
 
     use near_account_id::AccountId;
     use near_contract_transport::{FunctionCallArgs, NearGas, NearToken};
@@ -140,7 +139,7 @@ mod tests {
         let signer_clone = TransactionSigner::from_rng(&mut rng);
 
         let info = LatestFinalBlockInfo {
-            observed_at: BlockHeight::new(13290),
+            observed_at: 13290.into(),
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
         };
         let mock_chain_state = MockChainStateBuilder::new()
@@ -172,7 +171,7 @@ mod tests {
         let signer = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
 
         let info = LatestFinalBlockInfo {
-            observed_at: BlockHeight::new(13290),
+            observed_at: 13290.into(),
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
         };
         let expected_source = MockError::RpcError;

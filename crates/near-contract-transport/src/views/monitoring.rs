@@ -166,7 +166,6 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::BlockHeight;
     use crate::{
         HasPollInterval, Json, ObservedState, SerializedObservation, ViewArgs,
         mock::{Call, MockViewContract, MockViewError},
@@ -215,11 +214,11 @@ mod tests {
     ) {
         let mut to_modify: Result<SerializedObservation, MockViewError> =
             existing_spec.map(|(at, b)| ObservedState {
-                observed_at: BlockHeight::new(at),
+                observed_at: at.into(),
                 value: vec![b],
             });
         let update_value = update_spec.map(|(at, b)| ObservedState {
-            observed_at: BlockHeight::new(at),
+            observed_at: at.into(),
             value: vec![b],
         });
         let expected = if expected_changed {
@@ -244,7 +243,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn monitor__should_query_the_requested_contract_and_method() {
         let init_mock = Ok(ObservedState {
-            observed_at: BlockHeight::new(0),
+            observed_at: 0.into(),
             value: vec![0],
         });
 
@@ -319,7 +318,7 @@ mod tests {
     #[tokio::test]
     async fn monitor__should_drop_the_sender_on_cancellation() {
         let init_mock = Ok(ObservedState {
-            observed_at: BlockHeight::new(0),
+            observed_at: 0.into(),
             value: vec![0],
         });
         let (_viewer, mut receiver, cancel) = setup(expected_call(), init_mock);
@@ -420,7 +419,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn monitoring_task__should_query_the_requested_contract_and_method() {
         let init_mock = Ok(ObservedState {
-            observed_at: BlockHeight::new(0),
+            observed_at: 0.into(),
             value: vec![0],
         });
 
@@ -438,7 +437,7 @@ mod tests {
     #[tokio::test]
     async fn monitoring_task__should_close_the_receiver_on_drop() {
         let init_mock = Ok(ObservedState {
-            observed_at: BlockHeight::new(0),
+            observed_at: 0.into(),
             value: vec![0],
         });
 
@@ -506,7 +505,7 @@ mod tests {
         spec: Result<(u64, u8), MockViewError>,
     ) -> Result<SerializedObservation, MockViewError> {
         spec.map(|(at, b)| ObservedState {
-            observed_at: BlockHeight::new(at),
+            observed_at: at.into(),
             value: vec![b],
         })
     }

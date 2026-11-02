@@ -34,7 +34,6 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::BlockHeight;
     use near_account_id::AccountId;
 
     use crate::{
@@ -55,14 +54,14 @@ mod tests {
         value: &str,
     ) -> Result<ObservedState<Vec<u8>>, MockViewError> {
         Ok(ObservedState {
-            observed_at: BlockHeight::new(observed_at),
+            observed_at: observed_at.into(),
             value: serde_json::to_vec(value).unwrap(),
         })
     }
     #[tokio::test]
     async fn subscription__should_deserialize_the_initial_value() {
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(42),
+            observed_at: 42.into(),
             value: serde_json::to_vec(&"hello").unwrap(),
         }));
         let view_call = ViewCall::new::<Json>(viewer, contract_id(), view_args());
@@ -70,7 +69,7 @@ mod tests {
 
         let state = sub.latest().unwrap();
         assert_eq!(state.value, "hello");
-        assert_eq!(state.observed_at, BlockHeight::new(42));
+        assert_eq!(state.observed_at, 42.into());
     }
 
     #[tokio::test]
@@ -92,7 +91,7 @@ mod tests {
     #[tokio::test]
     async fn subscription__should_return_a_deserialization_error_on_bad_json() {
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(1),
+            observed_at: 1.into(),
             value: b"not json".to_vec(),
         }));
 
@@ -106,7 +105,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn subscription_latest__should_update_on_value_change() {
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(1),
+            observed_at: 1.into(),
             value: serde_json::to_vec(&"initial").unwrap(),
         }));
         let call = ViewCall::new::<Json>(viewer.clone(), contract_id(), view_args());
@@ -114,7 +113,7 @@ mod tests {
         assert_eq!(sub.latest().unwrap().value, "initial");
 
         viewer.set_response(Ok(ObservedState {
-            observed_at: BlockHeight::new(2),
+            observed_at: 2.into(),
             value: serde_json::to_vec(&"updated").unwrap(),
         }));
 
@@ -123,17 +122,17 @@ mod tests {
 
         let found = sub.latest().unwrap();
         assert_eq!(found.value, "updated");
-        assert_eq!(found.observed_at, BlockHeight::new(2));
+        assert_eq!(found.observed_at, 2.into());
 
         let cached = sub.cached.unwrap();
         assert_eq!(cached.value, "updated");
-        assert_eq!(cached.observed_at, BlockHeight::new(2));
+        assert_eq!(cached.observed_at, 2.into());
     }
 
     #[tokio::test(start_paused = true)]
     async fn subscription_changed__should_resolve_and_update_the_cache() {
         let viewer = MockViewContract::new(Ok(ObservedState {
-            observed_at: BlockHeight::new(1),
+            observed_at: 1.into(),
             value: serde_json::to_vec(&"before").unwrap(),
         }));
 
@@ -142,7 +141,7 @@ mod tests {
         assert_eq!(sub.latest().unwrap().value, "before");
 
         viewer.set_response(Ok(ObservedState {
-            observed_at: BlockHeight::new(5),
+            observed_at: 5.into(),
             value: serde_json::to_vec(&"after").unwrap(),
         }));
 
@@ -153,7 +152,7 @@ mod tests {
 
         let found = sub.cached.unwrap();
         assert_eq!(found.value, "after");
-        assert_eq!(found.observed_at, BlockHeight::new(5));
+        assert_eq!(found.observed_at, 5.into());
     }
 
     #[tokio::test(start_paused = true)]

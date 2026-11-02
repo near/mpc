@@ -62,7 +62,7 @@ impl TransactionSigner {
         let transaction = Transaction::V0(TransactionV0 {
             signer_id: to_near_internal(&self.account_id),
             public_key: near_core_public_key,
-            nonce: self.make_nonce(u64::from(info.observed_at)),
+            nonce: self.make_nonce(info.observed_at.into()),
             receiver_id: to_near_internal(&receiver_id),
             block_hash: info.value,
             actions: vec![action.into()],
@@ -90,7 +90,6 @@ impl TransactionSigner {
 mod tests {
     use ed25519_dalek::SigningKey;
     use near_account_id::AccountId;
-    use near_contract_transport::BlockHeight;
     use near_contract_transport::{FunctionCallArgs, NearGas, NearToken};
     use near_indexer::near_primitives::{account::AccessKey, transaction::Transaction};
     use near_indexer_primitives::types::Gas;
@@ -163,7 +162,7 @@ mod tests {
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
         let args = test_function_call();
         let info = LatestFinalBlockInfo {
-            observed_at: BlockHeight::new(100),
+            observed_at: 100.into(),
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
         };
 
@@ -180,10 +179,7 @@ mod tests {
             _ => panic!("expected Transaction::V0"),
         };
 
-        assert_eq!(
-            tx.nonce,
-            signer_clone.make_nonce(u64::from(info.observed_at))
-        );
+        assert_eq!(tx.nonce, signer_clone.make_nonce(info.observed_at.into()));
         assert_eq!(tx.signer_id, to_near_internal(&signer.account_id));
         assert_eq!(tx.receiver_id, to_near_internal(&receiver_id));
         assert_eq!(tx.block_hash, info.value);
@@ -219,7 +215,7 @@ mod tests {
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
         let args = test_function_call();
         let info = LatestFinalBlockInfo {
-            observed_at: BlockHeight::new(100),
+            observed_at: 100.into(),
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
         };
 

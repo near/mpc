@@ -294,7 +294,6 @@ impl BackedUpKeyset {
 #[expect(non_snake_case)]
 mod tests {
     use super::{BackedUpKeyset, BackupOutcome, Service, SkipReason, VERIFICATION_INTERVAL};
-    use near_contract_transport::BlockHeight;
 
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
@@ -518,7 +517,7 @@ mod tests {
             }
             observed
                 .map(|value| ObservedState {
-                    observed_at: BlockHeight::new(0),
+                    observed_at: 0.into(),
                     value,
                 })
                 .map_err(TransportError::View)

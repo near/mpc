@@ -110,7 +110,6 @@ pub trait WatchContractState {
 #[expect(non_snake_case)]
 mod tests {
     use super::{PollInterval, WatchContractState};
-    use crate::BlockHeight;
     use crate::{ObservedState, TransportError, WaitError};
     use std::{collections::VecDeque, time::Duration};
 
@@ -146,7 +145,7 @@ mod tests {
 
     fn observed(observed_at: u64, value: &'static str) -> Observation {
         Ok(ObservedState {
-            observed_at: BlockHeight::new(observed_at),
+            observed_at: observed_at.into(),
             value,
         })
     }
