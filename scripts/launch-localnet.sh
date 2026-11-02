@@ -201,11 +201,9 @@ EOF
     node_name="mpc-node-$i.test.near"
 
     NODE_PUBKEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_signer_public_key")
-    NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
     # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" &
     pids_adding_keys+=($!)
   done
 

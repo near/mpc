@@ -13,6 +13,8 @@ If interested only in the advanced benchmarking technique, please skip to sectio
 
 *Note: the triple generation for OT based ECDSA generates two triples, enough for the secure computation of one single presignature and thus one single signature.*
 
+*Note: the OT based ECDSA Presign and Sign numbers below were measured with the separate presigning and signing protocols, which have since been replaced by `presign_and_sign` (see [Signing without presignatures](#signing-without-presignatures)). The current benches measure triple generation and `presign_and_sign`.*
+
 ## Naive Technique
 
 A quick solution to benchmark our schemes is to run the entire protocol for all the participants (side-by-side) and analyze the results.
@@ -210,7 +212,7 @@ MAX_MALICIOUS=7 SAMPLE_SIZE=10 cargo bench -p threshold-signatures --features te
 ## Signing without presignatures
 
 `presign_and_sign` folds the two presigning rounds into the online phase, consuming a triple pair
-directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol)).
+directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md)).
 The numbers below were measured in September 2026 on a different machine than the tables above,
 so they are comparable with each other but not with the other tables.
 
@@ -231,6 +233,9 @@ rounds instead of one, with the presign computation (about a millisecond) on top
 online are the presign bytes plus the signature shares. Nothing is precomputed per signature any
 more, so the offline phase reduces to triple generation and no presignature store has to be kept
 consistent across nodes. The trade is two extra round trips on the signing path.
+
+The Presign and Sign rows were measured with the separate presigning and signing protocols, which
+the benches no longer cover; the commands below reproduce only the Presign+sign online rows.
 
 Reproduce with:
 
