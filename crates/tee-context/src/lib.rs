@@ -192,6 +192,7 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use mpc_primitives::hash::LauncherDockerComposeHash;
     use near_account_id::AccountId;
+    use near_contract_transport::BlockHeight;
     use near_contract_transport::mock::MockViewError;
     use near_contract_transport::{HasPollInterval, ObservedState};
     use near_mpc_contract_interface::client::MpcContractHandleError;
@@ -235,14 +236,14 @@ mod tests {
     fn mock_chain() -> MockChainState {
         let mock = MockChainStateBuilder::new()
             .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
             .build();
         mock.set_view_response_for_method(
             ALLOWED_LAUNCHER_COMPOSE_HASHES,
             Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT),
                 value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
             }),
         );
@@ -256,7 +257,7 @@ mod tests {
 
     fn default_block_info() -> LatestFinalBlockInfo {
         LatestFinalBlockInfo {
-            observed_at: MOCK_BLOCK_HEIGHT.into(),
+            observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT),
             value: Default::default(),
         }
     }
@@ -267,7 +268,7 @@ mod tests {
     ) -> TeeContext<MockChainState> {
         let mock = MockChainStateBuilder::new()
             .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
             .with_latest_block(latest_block)
@@ -276,7 +277,7 @@ mod tests {
         mock.set_view_response_for_method(
             ALLOWED_LAUNCHER_COMPOSE_HASHES,
             Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT),
                 value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
             }),
         );
@@ -288,7 +289,7 @@ mod tests {
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
         let mock = MockChainStateBuilder::new()
             .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
             .with_latest_block(Ok(default_block_info()))
@@ -297,7 +298,7 @@ mod tests {
         mock.set_view_response_for_method(
             ALLOWED_LAUNCHER_COMPOSE_HASHES,
             Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT),
                 value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
             }),
         );
@@ -487,13 +488,13 @@ mod tests {
                 // Confirm initial value differs from the update we're about to make.
                 assert_ne!(rx.borrow().allowed_docker_image_hashes, expected_image);
                 mock_clone.set_view_response(Ok(ObservedState {
-                    observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
+                    observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT + 1),
                     value: serde_json::to_vec(&updated_image).unwrap(),
                 }));
                 mock_clone.set_view_response_for_method(
                     ALLOWED_LAUNCHER_COMPOSE_HASHES,
                     Ok(ObservedState {
-                        observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
+                        observed_at: BlockHeight::new(MOCK_BLOCK_HEIGHT + 1),
                         value: serde_json::to_vec(&updated_launcher).unwrap(),
                     }),
                 );
