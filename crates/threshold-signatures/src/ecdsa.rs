@@ -3,7 +3,6 @@
 pub mod ot_based_ecdsa;
 pub mod robust_ecdsa;
 
-mod rerandomization;
 mod signature;
 
 pub(crate) use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField};
@@ -20,7 +19,6 @@ pub type CoefficientCommitment = frost_core::keys::CoefficientCommitment<Secp256
 pub type Polynomial = crate::crypto::polynomials::Polynomial<Secp256K1Sha256>;
 pub type PolynomialCommitment = crate::crypto::polynomials::PolynomialCommitment<Secp256K1Sha256>;
 
-pub use rerandomization::RerandomizationArguments;
 pub(crate) use signature::x_coordinate;
 pub use signature::{Signature, SignatureOption};
 
