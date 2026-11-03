@@ -48,7 +48,7 @@ impl InitializingContractState {
     /// Upon success (a return of Ok(...)), the effect of this method is one of the following:
     ///  - A vote has been collected but we don't have enough votes yet.
     ///  - This vote is for a public key that disagrees from an earlier voted public key, causing
-    ///    the attempt to abort; another call to `start` is then necessary.
+    ///    the attempt to abort; another call to [`KeyEvent::start`] is then necessary.
     ///  - Everyone has now voted for the same public key; the state transitions into generating a
     ///    key for the next domain. (This returns Ok(None) still).
     ///  - Same as the last case, except that all domains have a generated key now, and we return

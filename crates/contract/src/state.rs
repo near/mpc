@@ -301,3 +301,106 @@ impl ProtocolContractState {
 
 #[derive(Debug, Clone)]
 pub(super) struct ContractNotInitialized;
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
+    use super::*;
+    use rstest::rstest;
+
+    fn not_initialized() -> ProtocolContractState {
+        ProtocolContractState::NotInitialized
+    }
+
+    fn initializing() -> ProtocolContractState {
+        ProtocolContractState::Initializing(gen_initializing_state(1, 0).1)
+    }
+
+    fn running() -> ProtocolContractState {
+        ProtocolContractState::Running(gen_running_state(1))
+    }
+
+    fn resharing() -> ProtocolContractState {
+        ProtocolContractState::Resharing(gen_resharing_state(1).1)
+    }
+
+    #[test]
+    fn initializing_mut__should_return_the_state_when_initializing() {
+        // Given
+        let mut state = initializing();
+
+        // When
+        let result = state.initializing_mut();
+
+        // Then
+        result.unwrap();
+    }
+
+    #[rstest]
+    #[case::not_initialized(not_initialized())]
+    #[case::running(running())]
+    #[case::resharing(resharing())]
+    fn initializing_mut__should_fail_when_not_initializing(
+        #[case] mut state: ProtocolContractState,
+    ) {
+        // When
+        let err = state.initializing_mut().unwrap_err();
+
+        // Then
+        assert_eq!(err, InvalidState::ProtocolStateNotInitializing.into());
+    }
+
+    #[test]
+    fn resharing_mut__should_return_the_state_when_resharing() {
+        // Given
+        let mut state = resharing();
+
+        // When
+        let result = state.resharing_mut();
+
+        // Then
+        result.unwrap();
+    }
+
+    #[rstest]
+    #[case::not_initialized(not_initialized())]
+    #[case::initializing(initializing())]
+    #[case::running(running())]
+    fn resharing_mut__should_fail_when_not_resharing(#[case] mut state: ProtocolContractState) {
+        // When
+        let err = state.resharing_mut().unwrap_err();
+
+        // Then
+        assert_eq!(err, InvalidState::ProtocolStateNotResharing.into());
+    }
+
+    #[rstest]
+    #[case::initializing(initializing())]
+    #[case::resharing(resharing())]
+    fn key_event_mut__should_return_the_key_event_when_a_key_event_is_in_progress(
+        #[case] mut state: ProtocolContractState,
+    ) {
+        // When
+        let result = state.key_event_mut();
+
+        // Then
+        result.unwrap();
+    }
+
+    #[rstest]
+    #[case::not_initialized(not_initialized())]
+    #[case::running(running())]
+    fn key_event_mut__should_fail_when_no_key_event_is_in_progress(
+        #[case] mut state: ProtocolContractState,
+    ) {
+        // When
+        let err = state.key_event_mut().unwrap_err();
+
+        // Then
+        assert_eq!(
+            err,
+            InvalidState::ProtocolStateNotRunningNorResharing.into()
+        );
+    }
+}

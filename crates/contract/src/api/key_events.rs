@@ -35,7 +35,8 @@ impl MpcContract {
     ///  - Returns Ok(()), with one of the following changes:
     ///    - A vote has been collected but we don't have enough votes yet.
     ///    - This vote is for a public key that disagrees from an earlier voted public key, causing
-    ///      the attempt to abort; another call to `start` is then necessary.
+    ///      the attempt to abort; another call to [`Self::start_keygen_instance`] is then
+    ///      necessary.
     ///    - Everyone has now voted for the same public key; the state transitions into generating a
     ///      key for the next domain.
     ///    - Same as the last case, except that all domains have a generated key now, and the state
