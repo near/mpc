@@ -33,7 +33,7 @@ use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
 /// Holds no local `rpc_url` and no token, because it is logged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Diagnostic {
+struct Diagnostic {
     chain: dtos::ForeignChain,
     local_name: Option<RpcProviderName>,
     kind: DiagnosticKind,
@@ -60,10 +60,7 @@ enum DiagnosticKind {
     },
 }
 
-pub(super) fn compare(
-    local: &ForeignChainsConfig,
-    whitelist: &ForeignChainWhitelist,
-) -> Vec<Diagnostic> {
+fn compare(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) -> Vec<Diagnostic> {
     local
         .iter_chains()
         .flat_map(|(chain, local_config)| match whitelist.get(&chain) {
@@ -142,7 +139,11 @@ fn compare_chain(
     diagnostics
 }
 
-pub(super) fn log(diagnostics: &[Diagnostic]) {
+pub(super) fn log_differences(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) {
+    log(&compare(local, whitelist));
+}
+
+fn log(diagnostics: &[Diagnostic]) {
     if diagnostics.is_empty() {
         tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
     }
@@ -150,12 +151,12 @@ pub(super) fn log(diagnostics: &[Diagnostic]) {
 }
 
 fn log_diagnostic(diagnostic: &Diagnostic) {
-    let chain = diagnostic.chain;
+    let chain = diagnostic.chain.label();
     let local_provider = diagnostic.local_name.as_deref();
     match &diagnostic.kind {
         DiagnosticKind::ChainNotInWhitelist => {
             tracing::info!(
-                ?chain,
+                %chain,
                 "foreign chain whitelist: chain is not whitelisted yet"
             );
         }
@@ -165,7 +166,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             reason,
         } => {
             tracing::error!(
-                ?chain,
+                %chain,
                 %whitelist_id,
                 whitelist_base_url,
                 %reason,
@@ -174,7 +175,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
         }
         DiagnosticKind::ProviderNotInWhitelist => {
             tracing::info!(
-                ?chain,
+                %chain,
                 local_provider,
                 "foreign chain whitelist: extra provider (its host matches no whitelist entry)"
             );
@@ -185,7 +186,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             mismatch: Mismatch::UnknownContractVariant,
         } => {
             tracing::error!(
-                ?chain,
+                %chain,
                 local_provider,
                 %whitelist_id,
                 ?whitelist_provider,
@@ -198,7 +199,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             mismatch,
         } => {
             tracing::warn!(
-                ?chain,
+                %chain,
                 local_provider,
                 %whitelist_id,
                 ?whitelist_provider,
@@ -211,7 +212,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             first_local_name,
         } => {
             tracing::warn!(
-                ?chain,
+                %chain,
                 local_provider,
                 first_local_provider = first_local_name.as_str(),
                 %whitelist_id,
@@ -225,8 +226,8 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::foreign_chain_probe::test_utils::{chain_config, chain_entry, foreign_chains};
     use mpc_node_config::{AuthConfig, ForeignChainProviderConfig, TokenConfig};
-    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
     use rstest::rstest;
     use tracing_test::traced_test;
@@ -253,20 +254,7 @@ mod tests {
     }
 
     fn local_ethereum(providers: &[(&str, ForeignChainProviderConfig)]) -> ForeignChainsConfig {
-        let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> = providers
-            .iter()
-            .map(|(name, config)| (RpcProviderName::from(name.to_string()), config.clone()))
-            .collect();
-        ForeignChainsConfig {
-            ethereum: Some(ForeignChainConfig {
-                timeout_sec: std::num::NonZeroU64::new(30).unwrap(),
-                max_retries: std::num::NonZeroU64::new(3).unwrap(),
-                expected_network_fingerprint: None,
-                providers: NonEmptyBTreeMap::try_from(providers)
-                    .expect("a test chain has a provider"),
-            }),
-            ..Default::default()
-        }
+        foreign_chains([(dtos::ForeignChain::Ethereum, chain_config(providers))])
     }
 
     fn whitelist_provider(base_url: &str, auth_scheme: AuthScheme) -> ProviderConfig {
@@ -277,19 +265,8 @@ mod tests {
         }
     }
 
-    fn ethereum_whitelist(
-        providers: &[(&str, ProviderConfig)],
-    ) -> BTreeMap<dtos::ForeignChain, ChainEntry> {
-        let providers: BTreeMap<ProviderId, ProviderConfig> = providers
-            .iter()
-            .map(|(id, config)| (ProviderId(id.to_string()), config.clone()))
-            .collect();
-        let entry = ChainEntry {
-            providers: NonEmptyBTreeMap::try_from(providers)
-                .expect("a test whitelist has a provider"),
-            quorum: 1,
-        };
-        BTreeMap::from([(dtos::ForeignChain::Ethereum, entry)])
+    fn ethereum_whitelist(providers: &[(&str, ProviderConfig)]) -> ForeignChainWhitelist {
+        BTreeMap::from([(dtos::ForeignChain::Ethereum, chain_entry(providers, 1))])
     }
 
     fn alchemy() -> ProviderConfig {
@@ -328,7 +305,7 @@ mod tests {
     )]
     fn compare__should_be_silent_when_every_provider_conforms_to_an_entry_with_its_host(
         #[case] local: ForeignChainsConfig,
-        #[case] whitelist: BTreeMap<dtos::ForeignChain, ChainEntry>,
+        #[case] whitelist: ForeignChainWhitelist,
     ) {
         // When
         let diagnostics = compare(&local, &whitelist);
@@ -507,7 +484,7 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn log__should_keep_configured_urls_and_tokens_out_of_logs() {
+    fn log_differences__should_keep_configured_urls_and_tokens_out_of_logs() {
         // Given
         let header = AuthConfig::Header {
             name: "x-token".parse().expect("a test header name parses"),
@@ -553,7 +530,7 @@ mod tests {
         ]);
 
         // When
-        log(&compare(&local, &whitelist));
+        log_differences(&local, &whitelist);
 
         // Then
         assert!(logs_contain("provider differs from its whitelist entry"));
