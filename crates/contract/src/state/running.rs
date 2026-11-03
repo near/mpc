@@ -283,9 +283,7 @@ pub mod running_tests {
         governance_threshold: GovernanceThreshold,
     }
 
-    /// Signs as the first participant. `opts: None` randomizes n and the GovernanceThreshold.
-    /// The VM context outlives the returned [`Environment`], so dropping it is safe.
-    fn setup(num_domains: usize, opts: Option<SetupOpts>) -> (RunningContractState, Environment) {
+    fn setup(num_domains: usize, opts: Option<SetupOpts>) -> RunningContractState {
         let state = match opts {
             Some(opts) => gen_running_state_with_params(RunningStateParams {
                 num_domains,
@@ -294,9 +292,9 @@ pub mod running_tests {
             }),
             None => gen_running_state(num_domains),
         };
-        let mut env = Environment::new(None, None, None);
-        env.set_signer(&state.parameters.participants().participants()[0].0);
-        (state, env)
+        let first_participant = state.parameters.participants().participants()[0].0.clone();
+        Environment::new(None, Some(first_participant), None);
+        state
     }
 
     /// Returns a participant present in both the current and proposed sets.
@@ -474,7 +472,7 @@ pub mod running_tests {
         #[case] purpose: DomainPurpose,
     ) {
         // Given
-        let (mut state, _) = setup(1, None);
+        let mut state = setup(1, None);
         let invalid_domain =
             single_domain_proposal(&state, protocol, purpose, ReconstructionThreshold::new(2));
 
@@ -492,7 +490,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_threshold_below_two() {
         // Given
-        let (mut state, _) = setup(1, None);
+        let mut state = setup(1, None);
         let proposal = single_domain_proposal(
             &state,
             Protocol::CaitSith,
@@ -514,7 +512,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_threshold_exceeding_participants() {
         // Given
-        let (mut state, _) = setup(1, None);
+        let mut state = setup(1, None);
         let n = state.parameters.participants().count().value();
         let proposal = single_domain_proposal(
             &state,
@@ -537,7 +535,7 @@ pub mod running_tests {
     fn vote_add_domains__should_reject_reconstruction_threshold_above_governance() {
         // Given governance 4 < n = 5, so `governance + 1 <= n`: the rejection
         // comes from the threshold relation, not the n ceiling.
-        let (mut state, _) = setup(
+        let mut state = setup(
             1,
             Some(SetupOpts {
                 num_participants: 5,
@@ -568,7 +566,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_robust_ecdsa_threshold_violating_honest_majority() {
         // Given a RobustEcdsa proposal with t = n, so `2t - 1 > n` for any n >= 2.
-        let (mut state, _) = setup(1, None);
+        let mut state = setup(1, None);
         let n = state.parameters.participants().count().value();
         let proposal = single_domain_proposal(
             &state,
@@ -590,9 +588,9 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_accept_empty_per_domain_threshold_updates() {
         // Given
-        let (mut state, mut env) = setup(1, None);
+        let mut state = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
-        env.set_signer(&overlapping_signer(&state, &proposal));
+        Environment::new(None, Some(overlapping_signer(&state, &proposal)), None);
 
         // When voting with an empty per_domain_thresholds map (legacy shape)
         let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
@@ -607,7 +605,7 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_reject_threshold_update_with_unknown_domain_id() {
         // Given
-        let (mut state, _) = setup(1, None);
+        let mut state = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
         // When voting with a threshold update for a non-existent domain ID
@@ -812,7 +810,7 @@ pub mod running_tests {
             num_participants,
             governance_threshold: GovernanceThreshold::new(governance_threshold),
         });
-        let (mut state, _) = setup(num_domains, opts);
+        let mut state = setup(num_domains, opts);
         let reconstruction_threshold = reconstruction_threshold
             .map(ReconstructionThreshold::new)
             .unwrap_or_else(|| ReconstructionThreshold::from(state.parameters.threshold()));
@@ -833,7 +831,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_accept_two_new_caitsith_with_differing_thresholds() {
         // Given a proposal adding two CaitSith domains at different thresholds
-        let (mut state, _) = setup(
+        let mut state = setup(
             0,
             Some(SetupOpts {
                 num_participants: 5,
@@ -866,7 +864,7 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_apply_threshold_update_to_validation() {
         // Given
-        let (mut state, _) = setup(1, None);
+        let mut state = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
         // When a threshold update swaps a valid stored value for a too-low one
@@ -890,7 +888,7 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_accept_valid_per_domain_threshold_update() {
         // Given governance 4 so a ReconstructionThreshold of 3 fits
-        let (mut state, mut env) = setup(
+        let mut state = setup(
             1,
             Some(SetupOpts {
                 num_participants: 5,
@@ -898,7 +896,7 @@ pub mod running_tests {
             }),
         );
         let proposal = gen_valid_params_proposal(&state.parameters);
-        env.set_signer(&overlapping_signer(&state, &proposal));
+        Environment::new(None, Some(overlapping_signer(&state, &proposal)), None);
 
         // When voting with an update raising t from the fixture default 2 to 3
         let domain_id = state.domains.domains()[0].id;
@@ -919,7 +917,7 @@ pub mod running_tests {
     fn process_new_parameters_proposal__should_reject_threshold_update_exceeding_participant_count()
     {
         // Given
-        let (mut state, _) = setup(1, None);
+        let mut state = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
         // When the update sets t above the proposed participant count
@@ -944,7 +942,7 @@ pub mod running_tests {
     fn process_new_parameters_proposal__should_accept_threshold_update_diverging_caitsith() {
         // Given two CaitSith domains at the fixture default t = 2 (the
         // protocols cycle, so 5 domains yields two CaitSith)
-        let (mut state, mut env) = setup(
+        let mut state = setup(
             5,
             Some(SetupOpts {
                 num_participants: 5,
@@ -962,7 +960,7 @@ pub mod running_tests {
             "fixture must contain at least two CaitSith domains"
         );
         let proposal = gen_valid_params_proposal(&state.parameters);
-        env.set_signer(&overlapping_signer(&state, &proposal));
+        Environment::new(None, Some(overlapping_signer(&state, &proposal)), None);
 
         // When an update raises only one CaitSith domain's threshold
         let caitsith_id = state
