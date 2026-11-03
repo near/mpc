@@ -558,7 +558,12 @@ async fn run_echo_liveness(
     liveness_failed: CancellationToken,
     round_trip_time: Histogram,
 ) {
-    let mut echo_interval = interval_at(Instant::now() + ECHO_INTERVAL, ECHO_INTERVAL);
+    let mut echo_interval = interval_at(
+        Instant::now()
+            .checked_add(ECHO_INTERVAL)
+            .unwrap_or_else(Instant::now),
+        ECHO_INTERVAL,
+    );
     echo_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         let next_timeout = echo_tracker.deadline();
@@ -997,7 +1002,7 @@ async fn incoming_connection_handler(
 
     let result: anyhow::Result<()> = async {
         let mut outgoing_check = interval_at(
-            Instant::now() + OUTGOING_CHECK_INTERVAL,
+            Instant::now().checked_add(OUTGOING_CHECK_INTERVAL).unwrap_or_else(Instant::now),
             OUTGOING_CHECK_INTERVAL,
         );
         outgoing_check.set_missed_tick_behavior(MissedTickBehavior::Delay);
