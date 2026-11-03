@@ -107,8 +107,8 @@ mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
-        ALCHEMY_URL, ProbedConfig, ProbedProvider, capped_probe, empty_report, gauges,
-        logged_times, no_whitelist, polygon_with_report, row, whitelist_of,
+        ALCHEMY_URL, ProbedConfig, ProbedProvider, empty_report, gauges, logged_times, mock_probe,
+        no_whitelist, polygon_with_report, row, whitelist_of,
     };
     use crate::tick::MockTicker;
 
@@ -121,7 +121,7 @@ mod tests {
 
         // When
         run_future_once(probe_periodically(
-            capped_probe(&probe_count, 3, empty_report()),
+            mock_probe(&probe_count, 3, empty_report()),
             &ForeignChainsConfig::default(),
             no_whitelist(),
             MockTicker::new(3),
@@ -271,7 +271,7 @@ mod tests {
         let (whitelist_tx, whitelist_rx) = watch::channel(None);
         let local = ForeignChainsConfig::default();
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
-            capped_probe(&probe_count, 2, empty_report()),
+            mock_probe(&probe_count, 2, empty_report()),
             &local,
             whitelist_rx,
             MockTicker::new(1),
@@ -312,7 +312,7 @@ mod tests {
 
             // When
             run_future_once(probe_periodically(
-                capped_probe(&probe_count, 1, empty_report()),
+                mock_probe(&probe_count, 1, empty_report()),
                 &ForeignChainsConfig::default(),
                 whitelist_rx,
                 MockTicker::new(1),
@@ -336,7 +336,7 @@ mod tests {
         let with_alchemy = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
         let (whitelist_tx, whitelist_rx) = watch::channel(Some(without_alchemy));
         let probe_count = Cell::new(0);
-        let counted_probe = capped_probe(&probe_count, 1, report);
+        let counted_probe = mock_probe(&probe_count, 1, report);
         let probe = || {
             whitelist_tx.send_replace(Some(with_alchemy.clone()));
             counted_probe()
@@ -400,7 +400,7 @@ mod tests {
         drop(whitelist_tx);
         let ticker = MockTicker::new(1);
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
-            capped_probe(&probe_count, 2, empty_report()),
+            mock_probe(&probe_count, 2, empty_report()),
             &local,
             whitelist_rx,
             ticker.clone(),
