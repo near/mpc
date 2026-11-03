@@ -140,7 +140,7 @@ pub async fn init_contract(
 pub async fn init_contract_running(
     contract: &SandboxMpcContract,
     domains: Vec<DomainConfig>,
-    next_domain_id: u64,
+    next_domain_id: DomainId,
     keyset: dtos::Keyset,
     params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
@@ -304,7 +304,7 @@ impl SandboxTestSetupBuilder {
         }
 
         if !domain_configs.is_empty() {
-            let next_domain_id = domain_configs.len() as u64;
+            let next_domain_id = DomainId(domain_configs.len() as u64);
             let keyset = dtos::Keyset::new(EpochId::new(5), key_for_domains);
             init_contract_running(
                 &contract,

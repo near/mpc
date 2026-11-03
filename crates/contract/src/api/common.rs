@@ -1,6 +1,9 @@
 //! Plumbing shared by more than one feature
 
 use crate::errors::{InvalidParameters, RequestError, TeeError};
+use crate::node_migrations::NodeMigrations;
+use crate::primitives::participants::Participants;
+use crate::tee::tee_state::TeeState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{
@@ -150,6 +153,21 @@ pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
         log!("refund {amount} to {account_id}");
         Promise::new(account_id.clone()).transfer(amount).detach();
     }
+}
+
+pub(crate) fn tls_key_claimant_other_than(
+    account_id: &AccountId,
+    participant_sets: &[&Participants],
+    node_migrations: &NodeMigrations,
+    tee_state: &TeeState,
+    tls_public_key: &dtos::Ed25519PublicKey,
+) -> Option<AccountId> {
+    participant_sets
+        .iter()
+        .filter_map(|participants| participants.account_with_tls_key(tls_public_key).cloned())
+        .chain(node_migrations.accounts_migrating_to(tls_public_key))
+        .chain(tee_state.attestation_owner(tls_public_key))
+        .find(|claimant| claimant != account_id)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

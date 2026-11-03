@@ -18,17 +18,16 @@ use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
-use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
+use foreign_chain_inspector::{EthereumFinality, RpcQuorum};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
+use crate::foreign_chain_rpc_policy::{self, RpcQuorumError};
 use crate::metrics;
 use crate::primitives::ParticipantId;
 use crate::providers::ecdsa::triple::participants_from_triples;
-use crate::providers::verify_foreign_tx::{
-    MeasuredFanOut, VERIFY_FOREIGN_TX_ONLINE_PRESIGN_MIN_PROTOCOL_VERSION,
-};
+use crate::providers::verify_foreign_tx::MeasuredFanOut;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
@@ -40,7 +39,7 @@ use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
 pub(crate) const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
-const PRESIGNATURE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
+const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -121,80 +120,44 @@ impl VerifyForeignTxProvider {
             )
             .await?;
 
-        // Build and validate the request before a triple pair or presignature is popped, so
-        // invalid/malicious requests don't cost one.
+        // Build and validate the request before a triple pair is popped, so invalid/malicious
+        // requests don't cost one.
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        if self.config.signature.online_presign
-            && let Some((paired_triple_id, triples)) = self
-                .ecdsa_signature_provider
-                .try_take_triples_among_supporters(
-                    &keyshare,
-                    VERIFY_FOREIGN_TX_ONLINE_PRESIGN_MIN_PROTOCOL_VERSION,
-                    |participant| chain_supporters.contains(participant),
-                )?
-        {
-            let channel = self.ecdsa_signature_provider.new_channel_for_task(
-                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
-                    id,
-                    paired_triple_id,
-                },
-                participants_from_triples(&triples.0, &triples.1),
-            )?;
-            let (signature, public_key) = self
-                .ecdsa_signature_provider
-                .make_online_presign_signature_leader_given_parameters(
-                    sign_request,
-                    keyshare,
-                    triples,
-                    channel,
-                )
-                .await?;
-            return Ok(((response_payload, signature), public_key));
-        }
-        let (presignature_id, presignature) = await_with_slow_hook(
-            PRESIGNATURE_TAKE_GRACE_PERIOD,
-            keyshare
-                .presignature_store
+        let (paired_triple_id, triples) = await_with_slow_hook(
+            TRIPLE_TAKE_GRACE_PERIOD,
+            self.ecdsa_signature_provider
+                .triple_store_for_t(keyshare.reconstruction_threshold)?
                 .take_owned_matching(chain_supporters.iter().copied().collect()),
             || {
-                metrics::MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS.inc();
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_TRIPLE_WAITS.inc();
                 tracing::warn!(
                     ?requested_chain,
-                    "no chain-compatible presignatures available, waiting"
+                    "no chain-compatible triple pairs available, waiting"
                 )
             },
         )
         .await;
-        let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
-            VerifyForeignTxTaskId::VerifyForeignTx {
+            VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
                 id,
-                presignature_id,
+                paired_triple_id,
             },
-            participants,
+            participants_from_triples(&triples.0, &triples.1),
         )?;
-
-        let response = self
+        let (signature, public_key) = self
             .ecdsa_signature_provider
-            .make_signature_leader_given_parameters(sign_request, presignature, channel)
+            .make_online_presign_signature_leader_given_parameters(
+                sign_request,
+                keyshare,
+                triples,
+                channel,
+            )
             .await?;
-        Ok(((response_payload, response.0), response.1))
-    }
-
-    pub(super) async fn make_verify_foreign_tx_follower(
-        &self,
-        channel: NetworkTaskChannel,
-        id: SignatureId,
-        presignature_id: UniqueId,
-    ) -> anyhow::Result<()> {
-        let sign_request = self.verified_follower_sign_request(id).await?;
-        self.ecdsa_signature_provider
-            .make_signature_follower_given_request(channel, presignature_id, sign_request)
-            .await
+        Ok(((response_payload, signature), public_key))
     }
 
     pub(super) async fn make_verify_foreign_tx_online_presign_follower(
@@ -235,6 +198,21 @@ impl VerifyForeignTxProvider {
         build_signature_request(&foreign_tx_request, &response_payload)
     }
 
+    fn rpc_quorum(&self, chain: dtos::ForeignChain) -> Result<RpcQuorum, NoRpcQuorumError> {
+        let (_, local_chain) = self
+            .config
+            .foreign_chains
+            .iter_chains()
+            .find(|(configured, _)| *configured == chain)
+            .ok_or(NoRpcQuorumError::NotConfigured { chain })?;
+        let whitelist = self.foreign_chain_whitelist.borrow();
+        let entry = whitelist
+            .get(&chain)
+            .ok_or(NoRpcQuorumError::NotWhitelisted { chain })?;
+        foreign_chain_rpc_policy::rpc_quorum(local_chain, entry)
+            .map_err(|source| NoRpcQuorumError::Unreachable { chain, source })
+    }
+
     // TODO(#2677): Any negative verdict or errors here only makes this node abstain from
     // responding and lets the request time out. We should produce a response for unhappy
     // paths as well.
@@ -249,6 +227,9 @@ impl VerifyForeignTxProvider {
             .inspect_err(|_| {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
+        let quorum = self
+            .rpc_quorum(request.chain())
+            .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc())?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(request) => {
@@ -268,7 +249,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -281,7 +262,7 @@ impl VerifyForeignTxProvider {
                     .solana
                     .as_ref()
                     .context("no inspector configured for Solana")?;
-                execute_svm_request(inspector, request).await?
+                execute_svm_request(inspector, &quorum, request).await?
             }
             dtos::ForeignChainRpcRequest::Fogo(request) => {
                 let inspector = self
@@ -289,7 +270,7 @@ impl VerifyForeignTxProvider {
                     .fogo
                     .as_ref()
                     .context("no inspector configured for Fogo")?;
-                execute_svm_request(inspector, request).await?
+                execute_svm_request(inspector, &quorum, request).await?
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
                 let inspector = self
@@ -307,7 +288,12 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(transaction_id, block_confirmations, extractors)
+                        .extract_with_quorum(
+                            &quorum,
+                            transaction_id,
+                            block_confirmations,
+                            extractors,
+                        )
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -331,7 +317,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -355,7 +341,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -379,7 +365,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -403,7 +389,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -427,7 +413,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -451,7 +437,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -475,7 +461,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -499,7 +485,7 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -524,7 +510,7 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(transaction_id, finality, extractors)
+                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -553,7 +539,7 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(tx_id, finality, extractors)
+                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -579,7 +565,7 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract(tx_id, finality, extractors)
+                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
                         .context("timed out during execution of foreign chain request")??,
@@ -604,6 +590,7 @@ impl VerifyForeignTxProvider {
 
 async fn execute_svm_request<Chain>(
     inspector: &MeasuredFanOut<SvmInspector<HttpClient, Chain>>,
+    quorum: &RpcQuorum,
     request: &dtos::SvmRpcRequest,
 ) -> anyhow::Result<Vec<dtos::ExtractedValue>>
 where
@@ -620,7 +607,7 @@ where
 
     let values = require_extracted(
         inspector
-            .extract(tx_id, finality, extractors)
+            .extract_with_quorum(quorum, tx_id, finality, extractors)
             .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
             .await
             .context("timed out during execution of foreign chain request")??,
@@ -635,6 +622,20 @@ where
 )]
 struct ChainNotAvailableError {
     requested: dtos::ForeignChain,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum NoRpcQuorumError {
+    #[error("{chain:?} is not configured on this node")]
+    NotConfigured { chain: dtos::ForeignChain },
+    #[error("{chain:?} is not whitelisted")]
+    NotWhitelisted { chain: dtos::ForeignChain },
+    #[error("this node cannot reach the RPC quorum for {chain:?}: {source}")]
+    Unreachable {
+        chain: dtos::ForeignChain,
+        #[source]
+        source: RpcQuorumError,
+    },
 }
 
 /// A chain counts as available when the supporters map has an entry for it:

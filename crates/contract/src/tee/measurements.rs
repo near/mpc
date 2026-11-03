@@ -13,9 +13,7 @@ impl ToProposalHash for MeasurementVoteAction {
 
 /// Collection of allowed OS measurements. Managed via voting (add requires threshold,
 /// remove requires unanimity). Starts empty on fresh contracts (consistent with docker
-/// image hashes and launcher hashes); seeded from
-/// [`default_measurements()`](mpc_attestation::attestation::default_measurements) on migration.
-/// Once populated, at least one measurement must remain.
+/// image hashes and launcher hashes). Once populated, at least one measurement must remain.
 #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

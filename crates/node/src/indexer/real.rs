@@ -1,20 +1,17 @@
-use super::foreign_chain::{
-    ForeignChainProviderWhitelist, monitor_foreign_chain_supporters,
-    monitor_foreign_chain_whitelist,
-};
+use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
-use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_my_attestation,
+    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes,
+    monitor_allowed_os_measurements, monitor_my_attestation,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
@@ -64,11 +61,9 @@ pub fn spawn_real_indexer(
     mpc_indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SigningKey,
-    respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
-    foreign_chain_whitelist_sender: watch::Sender<Option<ForeignChainProviderWhitelist>>,
     tls_public_key: VerifyingKey,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
@@ -77,15 +72,17 @@ pub fn spawn_real_indexer(
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
         oneshot::channel();
+    let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
+        oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
+    let (allowed_os_measurements_sender, allowed_os_measurements_receiver) = watch::channel(vec![]);
     let (my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
     let my_near_account_id_clone = my_near_account_id.clone();
-    let respond_config_clone = respond_config.clone();
 
     let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
 
@@ -168,19 +165,12 @@ pub fn spawn_real_indexer(
             // to the chain tip rather than genesis.
             let stream = indexer.streamer();
 
-            let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
+            let txn_sender = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
                 account_secret_key.clone(),
-                respond_config_clone,
                 Arc::clone(&indexer_state),
                 tx_logger,
             );
-
-            let Ok(txn_sender) = txn_sender_result else {
-                tracing::error!("Failed to start transaction processor. Exiting indexer.");
-                let _ = indexer_exit_sender.send(txn_sender_result.map(|_| ()));
-                return;
-            };
 
             if txn_sender_sender.send(txn_sender).is_err() {
                 tracing::error!("Failed to send txn_sender back to main thread.")
@@ -205,6 +195,11 @@ pub fn spawn_real_indexer(
                 indexer_state.contract.clone(),
             ));
 
+            tokio::spawn(monitor_allowed_os_measurements(
+                allowed_os_measurements_sender,
+                indexer_state.contract.clone(),
+            ));
+
             tokio::spawn(monitor_my_attestation(
                 my_attestation_sender,
                 indexer_state.contract.clone(),
@@ -222,10 +217,16 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            tokio::spawn(monitor_foreign_chain_whitelist(
-                foreign_chain_whitelist_sender,
-                indexer_state.contract.clone(),
-            ));
+            let foreign_chain_whitelist_receiver =
+                monitor_foreign_chain_whitelist(indexer_state.contract.clone()).await;
+            if foreign_chain_whitelist_sender_oneshot
+                .send(foreign_chain_whitelist_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain whitelist receiver back to main driver."
+                )
+            };
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
@@ -323,15 +324,21 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain supporters receiver must be returned by indexer");
 
+    let foreign_chain_whitelist_receiver = foreign_chain_whitelist_receiver_oneshot
+        .blocking_recv()
+        .expect("foreign chain whitelist receiver must be returned by indexer");
+
     IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
         allowed_docker_images_receiver,
         allowed_launcher_compose_receiver,
+        allowed_os_measurements_receiver,
         my_migration_info_receiver,
         my_attestation_receiver,
         foreign_chain_supporters_receiver,
+        foreign_chain_whitelist_receiver,
     }
 }
 

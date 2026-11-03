@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo};
+use near_mpc_contract_interface::types::{
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
+};
 use near_sdk::{near, store::IterableMap};
 
 use crate::storage_keys::StorageKey;
@@ -50,6 +52,18 @@ impl NodeMigrations {
 
     pub fn remove_migration(&mut self, account_id: &AccountId) -> Option<DestinationNodeInfo> {
         self.ongoing_migrations.remove(account_id)
+    }
+
+    pub(crate) fn accounts_migrating_to(
+        &self,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> impl Iterator<Item = AccountId> {
+        self.ongoing_migrations
+            .iter()
+            .filter(|(_, destination)| {
+                destination.destination_node_info.tls_public_key == *tls_public_key
+            })
+            .map(|(account_id, _)| account_id.clone())
     }
 
     pub fn get_for_account(

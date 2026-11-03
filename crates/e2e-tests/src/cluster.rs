@@ -31,6 +31,7 @@ use tokio::sync::OnceCell;
 
 use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::CallMpc;
+use crate::conversions::ToNearKey;
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts, localhost_with_port};
 use crate::near_sandbox::NearSandbox;
 use crate::test_dir::TestDir;
@@ -40,10 +41,9 @@ const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
-pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
-// Concurrent e2e tests on a shared CI runner can stretch
-// triple/presignature generation past 120 s; the most pressure-sensitive
-// consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
+// Concurrent e2e tests on a shared CI runner can stretch triple generation
+// past 120 s; the most pressure-sensitive consumer is `wait_for_triples` (see
+// `parallel_sign_calls` test).
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_mins(4);
 pub const VOTE_KEY_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
 pub const PARTICIPANT_ATTESTATIONS_TIMEOUT: Duration = Duration::from_mins(2);
@@ -58,13 +58,10 @@ fn tee_verifier_account() -> String {
     format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}")
 }
 
-// The contract's default `key_event_timeout_blocks = 30` is ~18 s on
-// mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
-// same 30 collapses to ~3.7 s — too tight for the resharing
-// round-trip (start_reshare → indexer × N → MPC compute →
-// vote_reshared) once concurrent e2e tests put the runner under
-// load. Override to 240 blocks (~30 s in sandbox) as a comfortable
-// budget over mainnet's effective headroom.
+// The default `key_event_timeout_blocks` is sized for mainnet (~600 ms
+// blocks). The e2e sandbox runs ~8 blocks/s, so override it to 240 blocks
+// (~30 s) to leave room for resharing when concurrent e2e tests load the
+// runner.
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
@@ -95,8 +92,6 @@ pub struct MpcClusterConfig {
     pub port_seed: u16,
     /// Triple buffer size per node.
     pub triples_to_buffer: usize,
-    /// Presignature buffer size per node.
-    pub presignatures_to_buffer: usize,
     /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
     pub sandbox_version: String,
     /// Parent of the directory holding all test artifacts (logs, configs, DB).
@@ -126,24 +121,42 @@ pub struct ForeignChainsClusterConfig {
     pub whitelist: BTreeMap<ForeignChain, ChainEntry>,
 }
 
-pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
-    let chain = format!("{chain:?}").to_lowercase();
-    let provider = |name: &str| ProviderConfig {
-        base_url: format!("{name}.{chain}.example.com"),
-        auth_scheme: AuthScheme::None,
-        chain_routing: ChainRouting::Embedded,
-    };
-    let mut providers =
-        NonEmptyBTreeMap::new(ProviderId(format!("alchemy-{chain}")), provider("alchemy"));
-    providers.insert(
-        ProviderId(format!("quicknode-{chain}")),
-        provider("quicknode"),
-    );
-    providers.insert(ProviderId(format!("public-{chain}")), provider("public"));
-    ChainEntry {
-        providers,
-        quorum: 1,
-    }
+/// One whitelist provider per local provider; providers that share a host match only the first.
+pub fn chain_entry_matching(
+    config: &mpc_node_config::ForeignChainConfig,
+    quorum: u64,
+) -> ChainEntry {
+    let providers = config.providers.clone().map(|name, provider| {
+        let (base_url, auth_scheme) = match provider.auth {
+            mpc_node_config::AuthConfig::None => (provider.rpc_url, AuthScheme::None),
+            mpc_node_config::AuthConfig::Path { placeholder, .. } => {
+                let (base_url, _) = provider
+                    .rpc_url
+                    .split_once(placeholder.as_str())
+                    .unwrap_or((&provider.rpc_url, ""));
+                (base_url.to_string(), AuthScheme::Path { placeholder })
+            }
+            mpc_node_config::AuthConfig::Header { name, scheme, .. } => (
+                provider.rpc_url,
+                AuthScheme::Header {
+                    name: name.to_string(),
+                    scheme,
+                },
+            ),
+            mpc_node_config::AuthConfig::Query { name, .. } => {
+                (provider.rpc_url, AuthScheme::Query { name })
+            }
+        };
+        (
+            ProviderId(name.to_string()),
+            ProviderConfig {
+                base_url,
+                auth_scheme,
+                chain_routing: ChainRouting::Embedded,
+            },
+        )
+    });
+    ChainEntry { providers, quorum }
 }
 
 /// JSON wire format used for the contract's `init` call.
@@ -166,7 +179,7 @@ impl MpcClusterConfig {
     ///
     /// - 3 nodes, 2-of-3 threshold
     /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
-    /// - 10 triples, 10 presignatures per node
+    /// - 20 triples per node
     pub fn default_for_test(
         port_seed: u16,
         contract_wasm: Vec<u8>,
@@ -200,7 +213,6 @@ impl MpcClusterConfig {
             tee_verifier_wasm,
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
-            presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
             sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
@@ -609,7 +621,7 @@ impl MpcCluster {
     pub async fn vote_cancel_keygen_from(
         &self,
         node_index: usize,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
             .call_mpc(self.contract_id())
@@ -779,12 +791,31 @@ impl MpcCluster {
         predicate: impl Fn(i64) -> bool,
         timeout: Duration,
     ) -> anyhow::Result<()> {
+        let all: Vec<usize> = (0..self.nodes.len()).collect();
+        self.wait_for_metric_on_nodes(&all, name, predicate, timeout)
+            .await
+    }
+
+    /// Polls until `predicate` holds for the metric on every node in `node_indices`.
+    pub async fn wait_for_metric_on_nodes(
+        &self,
+        node_indices: &[usize],
+        name: &str,
+        predicate: impl Fn(i64) -> bool,
+        timeout: Duration,
+    ) -> anyhow::Result<()> {
         let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
         (|| async {
             let values = self.get_metric_all_nodes(name).await?;
             anyhow::ensure!(
-                values.iter().all(|v| v.is_some_and(&predicate)),
-                "metric {name} predicate not satisfied on all nodes (values: {values:?})"
+                node_indices.iter().all(|&index| {
+                    values
+                        .get(index)
+                        .copied()
+                        .flatten()
+                        .is_some_and(&predicate)
+                }),
+                "metric {name} predicate not satisfied on nodes {node_indices:?} (values: {values:?})"
             );
             Ok(())
         })
@@ -898,6 +929,19 @@ impl MpcCluster {
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
     }
 
+    /// The node keeps running — indexing, participating in computations,
+    /// leading requests — but every transaction it submits from now on is
+    /// rejected on chain.
+    pub async fn delete_node_signer_key(&self, node_index: usize) -> anyhow::Result<()> {
+        self.blockchain
+            .delete_access_key(
+                self.nodes[node_index].account_id().as_ref(),
+                &self.operator_keys[node_index],
+                self.node_keys[node_index].to_near_public_key(),
+            )
+            .await
+    }
+
     /// Register backup service info for a node.
     pub async fn register_backup_service(
         &self,
@@ -917,6 +961,14 @@ impl MpcCluster {
         Ok(self
             .mpc_contract_handle
             .allowed_foreign_chain_providers()
+            .await?
+            .value)
+    }
+
+    pub async fn foreign_chains_registrations(&self) -> anyhow::Result<ForeignChainsConfigs> {
+        Ok(self
+            .mpc_contract_handle
+            .get_foreign_chains_configs()
             .await?
             .value)
     }
@@ -978,6 +1030,21 @@ impl MpcCluster {
                 })?;
         }
         Ok(())
+    }
+
+    /// Submit an attestation for a TLS key from a specific node's account, signed with its
+    /// operator key.
+    pub async fn submit_participant_info(
+        &self,
+        node_index: usize,
+        attestation: Attestation,
+        tls_public_key: Ed25519PublicKey,
+    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
+        self.operator_client_for(node_index)?
+            .call_mpc(self.contract_id())
+            .submit_participant_info(attestation, tls_public_key)
+            .await
+            .context("failed to submit participant info")
     }
 
     /// Start node migration for a specific node.
@@ -1462,7 +1529,6 @@ fn start_mpc_nodes(
             ports: NodePorts::from_allocator(ports, i),
             mpc_contract_id: contract_account.clone(),
             triples_to_buffer: config.triples_to_buffer,
-            presignatures_to_buffer: config.presignatures_to_buffer,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
@@ -1490,7 +1556,6 @@ fn start_mpc_nodes(
             ports: NodePorts::from_allocator(ports, target_idx),
             mpc_contract_id: contract_account.clone(),
             triples_to_buffer: 10,
-            presignatures_to_buffer: 10,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
@@ -1612,4 +1677,100 @@ async fn wait_for_contract_state(
         .wait_for(timeout, predicate)
         .await?;
     Ok(observed.value)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use std::num::NonZeroU64;
+
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use mpc_node_config::foreign_chains::provider_identity::{
+        ProviderWhitelistMatch, ProviderWhitelistMatches,
+    };
+    use mpc_node_config::{
+        AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, TokenConfig,
+    };
+    use rstest::rstest;
+
+    use super::chain_entry_matching;
+
+    fn token() -> TokenConfig {
+        TokenConfig::Val {
+            val: "secret".to_string(),
+        }
+    }
+
+    fn config(providers: Vec<(&str, &str, AuthConfig)>) -> ForeignChainConfig {
+        let providers: std::collections::BTreeMap<_, _> = providers
+            .into_iter()
+            .map(|(name, rpc_url, auth)| {
+                (
+                    RpcProviderName::from(name.to_string()),
+                    ForeignChainProviderConfig {
+                        rpc_url: rpc_url.to_string(),
+                        auth,
+                    },
+                )
+            })
+            .collect();
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: providers.try_into().unwrap(),
+            expected_network_fingerprint: None,
+        }
+    }
+
+    #[rstest]
+    #[case::none("http://127.0.0.1:1/", AuthConfig::None)]
+    #[case::path("http://127.0.0.1:1/{api_key}", AuthConfig::Path { placeholder: "{api_key}".to_string(), token: token() })]
+    #[case::path_followed_by_a_segment("http://127.0.0.1:1/v2/{api_key}/v1", AuthConfig::Path { placeholder: "{api_key}".to_string(), token: token() })]
+    #[case::header("http://127.0.0.1:1/", AuthConfig::Header { name: "authorization".parse().unwrap(), scheme: Some("Bearer".to_string()), token: token() })]
+    #[case::query("http://127.0.0.1:1/", AuthConfig::Query { name: "apikey".to_string(), token: token() })]
+    fn chain_entry_matching__should_yield_an_entry_the_provider_conforms_to(
+        #[case] rpc_url: &str,
+        #[case] auth: AuthConfig,
+    ) {
+        // Given
+        let config = config(vec![("mock", rpc_url, auth)]);
+
+        // When
+        let entry = chain_entry_matching(&config, 1);
+
+        // Then
+        let matches = ProviderWhitelistMatches::for_chain(&config, &entry);
+        assert!(
+            matches.iter().all(|(_, provider_match)| matches!(
+                provider_match,
+                ProviderWhitelistMatch::Conforming { .. }
+            )),
+            "{matches:?}"
+        );
+    }
+
+    #[test]
+    fn chain_entry_matching__should_match_only_the_first_of_two_providers_on_one_host() {
+        // Given
+        let config = config(vec![
+            ("mock-0", "http://127.0.0.1:1/", AuthConfig::None),
+            ("mock-1", "http://127.0.0.1:2/", AuthConfig::None),
+        ]);
+
+        // When
+        let entry = chain_entry_matching(&config, 1);
+
+        // Then
+        let matches = ProviderWhitelistMatches::for_chain(&config, &entry);
+        let kinds: Vec<(&str, bool)> = matches
+            .iter()
+            .map(|(name, provider_match)| {
+                (
+                    name.as_str(),
+                    matches!(provider_match, ProviderWhitelistMatch::Conforming { .. }),
+                )
+            })
+            .collect();
+        assert_eq!(kinds, [("mock-0", true), ("mock-1", false)], "{matches:?}");
+    }
 }

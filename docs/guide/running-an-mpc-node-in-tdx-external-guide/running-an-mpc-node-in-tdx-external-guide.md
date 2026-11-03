@@ -923,7 +923,7 @@ backup_encryption_key_hex = "$BACKUP_ENCRYPTION_KEY"
 
 [mpc_node_config.node]
 my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
-near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"  # ignored by newer versions; required by 3.17.x and older
 migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
 
 [mpc_node_config.node.indexer]
@@ -939,7 +939,9 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, see [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `web_ui`, and the `triple` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template. Always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, see [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+
+> **Note:** `near_responder_account_id` and `number_of_responder_keys` are ignored by newer versions but required by 3.17.x and older. Keep them until all your rollback targets are newer.
 
 > **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
@@ -985,7 +987,7 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider, and a node that cannot cover a chain is treated as down for it.
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider: the participants vote which providers count and how many must agree, and a node serves a chain only while it meets that vote (see [Whitelist and quorum](#whitelist-and-quorum)).
 
 You need your own API keys:
 
@@ -998,7 +1000,7 @@ You need your own API keys:
 
 > **Important:**
 >
-> * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
+> * The `placeholder` value must be exactly one full path segment of `rpc_url` (case-sensitive), e.g. `/v2/{api_key}`. The node rejects a placeholder that is missing, repeated, only part of a segment, or outside the path. Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
 > * Before deploying, verify your config with the [foreign chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml`. It runs the same provider probe the node runs after startup and reports the same verdicts.
 
 #### Credentials only (Recommended)
@@ -1651,6 +1653,40 @@ numeric. A chain configured without it has all of its providers reported unhealt
 
 The SVM chains write their genesis hash in base58, so a hex hash from a block explorer is not accepted for them.
 
+#### Whitelist and quorum
+
+The participants vote, per chain, the RPC providers a node may use and a quorum: how many of them
+must agree before the node accepts a verdict. Read the current whitelist with:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer allowed_foreign_chain_providers json-args '{}' network-config mainnet now
+```
+
+On testnet use `v1.signer-prod.testnet` and `network-config testnet`.
+
+The node checks its providers against the whitelist at startup and on every change, and it registers
+and serves a chain only while enough of them conform to reach the quorum:
+
+* A local provider matches a voted provider by the host of its URL. The name you give it in the
+  config has no effect. A `{}` label in a voted host, such as `{}.quiknode.pro`, stands for your
+  slug.
+* A matched provider conforms when its URL, chain routing, auth kind, header name and scheme or
+  query name, and the position of the token placeholder in the URL are the ones voted. The token
+  itself is not compared. A matched provider that differs is reported in the log and does not
+  count.
+* Two local providers behind one voted host count once.
+* A provider whose host is not voted is still queried and can veto a verdict, but never counts
+  toward the quorum.
+
+The presets use the voted URLs. With a full `foreign_chains` block, keep every `rpc_url` as given
+in the examples and add providers only when the vote lists them: an extra provider can only fail a
+verdict, never help reach the quorum.
+
+The gauges `mpc_foreign_chain_rpc_quorum_required` and `mpc_foreign_chain_rpc_providers_whitelisted`
+show, per chain, the quorum and how many of your providers count, see
+[Whitelist and quorum](../node-operator-metrics.md#whitelist-and-quorum) in the metrics guide.
+
 ### Preparing a Docker Compose File
 
 The launcher Docker Compose file is **rendered** at deploy time from the
@@ -1886,8 +1922,10 @@ curl -sS 'http://localhost:<dstack_agent_port>/logs/mpc-node?text&timestamps&bar
 There are 2 keys that should be retrieved from node.
 
 * P2P (`near_p2p_public_key`) - this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract (see details below).
-* Node Account Key (`near_signer_public_key`) - this key is used by the node to issue operations such as `vote_reshared`.
+* Node Account Key (`near_signer_public_key`) - this key is used by the node for all its contract calls, including signature responses and operations such as `vote_reshared`.
   This key needs to be added to the NEAR account that was created in the step above.
+
+On 3.17.x and older, `/public_data` also has a `near_responder_public_keys` field. It is not used; do not add these keys. If your account still has responder keys from an older setup, you can delete them, but keep the key that matches `near_signer_public_key`.
 
 ### Retrieve the Node Account Key and P2P Key
 
@@ -2134,8 +2172,7 @@ near account add-key $ACCOUNT_ID \
   send
 ```
 
-> **Note:** Delete and re-add each affected key (e.g. both the node key and the
-> responder key). Verify with `near account list-keys $ACCOUNT_ID` that each key
+> **Note:** Verify with `near account list-keys $ACCOUNT_ID` that the node key
 > now shows an empty `method_names` list.
 
 After the key is fixed, **restart the node** so foreign-chain registration runs again.
@@ -2220,7 +2257,7 @@ Example `Dstack` response from `v1.signer-prod.testnet` for an existing particip
         "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
         "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
         "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
-        "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
+        "rtmr2": "9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf"
       },
       "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
     }
@@ -2825,7 +2862,7 @@ wipe_near_data_token = 1
 On the next startup — before the store is opened, so it runs in an instant and *before* sync —
 the node deletes the nearcore data dir (`data/data`), records the token in
 `data/.near_data_wipe_token`, and re-syncs the chain from scratch. The MPC secrets in
-`data/assets` (keyshares, triples, presignatures) are **not** touched, so the node keeps its
+`data/assets` (keyshares, triples) are **not** touched, so the node keeps its
 identity and key material.
 
 Semantics:
@@ -2927,18 +2964,21 @@ This line **doesn't tell you why**: `cause` is `attestation submission was not e
 
 #### 1. Client-side pre-flight WARN — in the node logs
 
-Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
+Before submitting, the node runs a pre-flight check against the contract's allowed-image, allowed-launcher-compose and allowed-OS-measurement lists. Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
 
 ```
 WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
   Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
 ```
 
+Right after a restart the node may not have read these lists from the contract yet, so a warning on the first submission can be a false alarm: if `get_attestation` returns your attestation, the contract accepted it and the warning can be ignored.
+
 Common messages:
 
 - ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
 - ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
+- **`wrong expected_measurements hash (found none matched expected one of the allowed measurement sets)`**: your boot measurements (MRTD, RTMR0-2, key-provider event digest) are not in the contract's allowed set, for example because the CVM runs a dev OS image. Deploy the production OS image and check that its measurements are voted in (see [OS measurement voting](#os-measurement-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
 - **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](../tdx-tcb-status.md), which also explains how to see it coming.
 
@@ -2966,7 +3006,7 @@ If the transaction reaches execution and the contract panics, the node logs only
 Smart contract panicked: the submitted attestation failed verification, reason: custom error: `...`
 ```
 
-The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list or the contract's caller assertion):
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they come from the contract re-verifying stored attestations, or from its caller assertion):
 
 - **`the attestation's measurements are not in the allowed set`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
 - **`the allowed measurements list is empty`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.

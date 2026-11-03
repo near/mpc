@@ -33,7 +33,7 @@ pub mod types {
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, GovernanceThreshold,
         GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
         InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
+        ParticipantCount, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
         ReconstructionThreshold, ResharingContractState, RunningContractState,
         protocol_state_to_string,
     };

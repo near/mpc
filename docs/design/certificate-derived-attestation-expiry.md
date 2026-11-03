@@ -133,8 +133,8 @@ future work this design only has to keep possible. Each is listed as the problem
 the submission was accepted. That stops working when the value is a calendar date that repeats for
 weeks.
 
-Fix: store `accepted_at_seconds` on
-[`NodeAttestation`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
+Fix: store `attestation_accepted_at_seconds` on
+[`Node`](../../crates/contract/src/tee/tee_state.rs). It wraps both the Dstack and Mock
 variants, so one field covers both. The node then reads the acceptance time directly, and operators
 get a better health signal than expiry. Costs 8 bytes per entry (599 → 607, so `WORST_CASE_ENTRY_BYTES`
 moves 604 → 612 and the fee floor needs re-checking) and a state migration.

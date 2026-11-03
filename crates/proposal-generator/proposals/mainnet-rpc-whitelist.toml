@@ -1,17 +1,7 @@
 # Mainnet RPC provider whitelist
 
-# TODO(near/mpc-private#720): Drop Bitcoin on the next whitelist announcement. Needs a contract
-# change first: `vote_update_foreign_chain_providers` can replace a chain's entry but not remove it.
-[chains.Bitcoin]
-quorum = 1
-
-[chains.Bitcoin.providers.public]
-base_url = "https://bitcoin-rpc.publicnode.com"
-auth_scheme = "None"
-chain_routing = "Embedded"
-
 [chains.Abstract]
-quorum = 3
+quorum = 2
 
 [chains.Abstract.providers.alchemy]
 base_url = "https://abstract-mainnet.g.alchemy.com/v2/"
@@ -29,7 +19,7 @@ auth_scheme = { Path = { placeholder = "{api_key}" } }
 chain_routing = "Embedded"
 
 [chains.Starknet]
-quorum = 3
+quorum = 2
 
 [chains.Starknet.providers.alchemy]
 base_url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/"
@@ -47,7 +37,7 @@ auth_scheme = { Path = { placeholder = "{api_key}" } }
 chain_routing = "Embedded"
 
 [chains.Aptos]
-quorum = 3
+quorum = 2
 
 [chains.Aptos.providers.alchemy]
 base_url = "https://aptos-mainnet.g.alchemy.com/v2/"
@@ -70,7 +60,7 @@ auth_scheme = { Path = { placeholder = "{api_key}" } }
 chain_routing = "Embedded"
 
 [chains.Sui]
-quorum = 3
+quorum = 2
 
 [chains.Sui.providers.alchemy]
 base_url = "https://sui-mainnet.g.alchemy.com"
@@ -88,7 +78,7 @@ auth_scheme = { Header = { name = "x-token" } }
 chain_routing = "Embedded"
 
 [chains.Solana]
-quorum = 3
+quorum = 2
 
 [chains.Solana.providers.alchemy]
 base_url = "https://solana-mainnet.g.alchemy.com/v2/"
@@ -111,7 +101,7 @@ auth_scheme = { Header = { name = "x-api-key" } }
 chain_routing = "Embedded"
 
 [chains.Bnb]
-quorum = 3
+quorum = 2
 
 [chains.Bnb.providers.alchemy]
 base_url = "https://bnb-mainnet.g.alchemy.com/v2/"
@@ -129,7 +119,7 @@ auth_scheme = { Header = { name = "x-api-key" } }
 chain_routing = "Embedded"
 
 [chains.Base]
-quorum = 3
+quorum = 2
 
 [chains.Base.providers.alchemy]
 base_url = "https://base-mainnet.g.alchemy.com/v2/"
@@ -147,7 +137,7 @@ auth_scheme = { Header = { name = "x-api-key" } }
 chain_routing = "Embedded"
 
 [chains.Arbitrum]
-quorum = 3
+quorum = 2
 
 [chains.Arbitrum.providers.alchemy]
 base_url = "https://arb-mainnet.g.alchemy.com/v2/"
@@ -165,7 +155,7 @@ auth_scheme = { Header = { name = "x-api-key" } }
 chain_routing = "Embedded"
 
 [chains.Polygon]
-quorum = 3
+quorum = 2
 
 [chains.Polygon.providers.alchemy]
 base_url = "https://polygon-mainnet.g.alchemy.com/v2/"
@@ -183,7 +173,7 @@ auth_scheme = { Header = { name = "x-api-key" } }
 chain_routing = "Embedded"
 
 [chains.Avalanche]
-quorum = 3
+quorum = 2
 
 [chains.Avalanche.providers.public]
 base_url = "https://api.avax.network/ext/bc/C/rpc"
@@ -201,7 +191,7 @@ auth_scheme = { Header = { name = "x-api-key" } }
 chain_routing = "Embedded"
 
 [chains.HyperEvm]
-quorum = 3
+quorum = 2
 
 [chains.HyperEvm.providers.chainstack]
 base_url = "https://hyperliquid-mainnet.core.chainstack.com/"
@@ -219,7 +209,7 @@ auth_scheme = { Path = { placeholder = "{api_key}" } }
 chain_routing = "Embedded"
 
 [chains.Fogo]
-quorum = 2
+quorum = 1
 
 [chains.Fogo.providers.fluxrpc]
 base_url = "https://eu.fogo.fluxrpc.com"

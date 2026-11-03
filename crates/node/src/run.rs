@@ -1,13 +1,15 @@
 use crate::{
     config::{
-        PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk,
+        PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
         start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
     home_paths::assets_dir,
-    indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
+    indexer::{
+        IndexerAPI, foreign_chain::ForeignChainWhitelist, real::spawn_real_indexer,
+        tx_sender::TransactionSender,
+    },
     keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
@@ -122,16 +124,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
-    let persistent_secrets = PersistentSecrets::generate_or_get_existing(
-        &config.home_dir,
-        node_config.number_of_responder_keys,
-    )?;
+    let persistent_secrets = PersistentSecrets::generate_or_get_existing(&config.home_dir)?;
 
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
-
-    // TODO(#2102): Decide if the MPC responder account is actually needed
-    let respond_config = RespondConfig::from_parts(&node_config, &persistent_secrets);
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
         Some(key) => key.clone(),
@@ -241,15 +237,18 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
         persistent_secrets.near_signer_key.clone(),
-        respond_config,
         indexer_exit_sender,
         protocol_state_sender,
         migration_state_sender,
-        foreign_chain_whitelist_sender,
         *tls_public_key,
         RecentTransactionsLogger::new(recent_tx_sender),
         indexer_shutdown_token.clone(),
     );
+
+    root_runtime.spawn(forward_foreign_chain_whitelist(
+        indexer_api.foreign_chain_whitelist_receiver.clone(),
+        foreign_chain_whitelist_sender,
+    ));
 
     let cancellation_token = CancellationToken::new();
 
@@ -340,6 +339,20 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     exit_reason
 }
 
+/// The probe starts before the indexer has read the whitelist, so it takes an `Option` that this
+/// fills once the indexer hands the whitelist over.
+async fn forward_foreign_chain_whitelist(
+    mut from_indexer: watch::Receiver<ForeignChainWhitelist>,
+    to_probe: watch::Sender<Option<ForeignChainWhitelist>>,
+) {
+    loop {
+        let whitelist = from_indexer.borrow_and_update().clone();
+        if to_probe.send(Some(whitelist)).is_err() || from_indexer.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
 async fn create_root_future<TransactionSenderImpl>(
     home_dir: PathBuf,
     config: ConfigFile,
@@ -379,6 +392,7 @@ where
         account_public_key,
         allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
+        allowed_os_measurements: indexer_api.allowed_os_measurements_receiver.clone(),
         stored_attestation: indexer_api.my_attestation_receiver.clone(),
     };
     tokio::spawn(run_periodic_attestation_submission(submitter));

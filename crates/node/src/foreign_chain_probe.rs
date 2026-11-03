@@ -19,7 +19,7 @@ use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
-use crate::indexer::foreign_chain::ForeignChainProviderWhitelist;
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
 use crate::tick::Tick;
 
@@ -37,7 +37,7 @@ mod whitelist_diagnostics;
 /// the whitelist is first read from the contract, chain health is logged as unknown.
 pub async fn run_periodic_probe(
     foreign_chains: ForeignChainsConfig,
-    whitelist_rx: watch::Receiver<Option<ForeignChainProviderWhitelist>>,
+    whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     ticker: impl Tick,
 ) {
     if foreign_chains.is_empty() {
@@ -57,7 +57,7 @@ pub async fn run_periodic_probe(
 async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
     probe: impl Fn() -> Probe,
     local: &ForeignChainsConfig,
-    mut whitelist_rx: watch::Receiver<Option<ForeignChainProviderWhitelist>>,
+    mut whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     mut ticker: impl Tick,
 ) {
     loop {
@@ -103,7 +103,7 @@ enum ChainHealth {
 fn judge(
     report: &ProbeReport,
     local: &ForeignChainsConfig,
-    whitelist: &ForeignChainProviderWhitelist,
+    whitelist: &ForeignChainWhitelist,
 ) -> BTreeMap<dtos::ForeignChain, ChainHealth> {
     local
         .iter_chains()
@@ -316,7 +316,7 @@ mod tests {
         chain: dtos::ForeignChain,
         providers: &[&str],
         quorum: u64,
-    ) -> ForeignChainProviderWhitelist {
+    ) -> ForeignChainWhitelist {
         let providers: BTreeMap<dtos::ProviderId, dtos::ProviderConfig> = providers
             .iter()
             .map(|provider| {
@@ -335,7 +335,7 @@ mod tests {
         BTreeMap::from([(chain, entry)])
     }
 
-    fn no_whitelist() -> watch::Receiver<Option<ForeignChainProviderWhitelist>> {
+    fn no_whitelist() -> watch::Receiver<Option<ForeignChainWhitelist>> {
         watch::channel(None).1
     }
 

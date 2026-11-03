@@ -8,12 +8,15 @@ use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 
 const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
-const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_mins(5);
+const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
+
+/// The contract's voted RPC providers and quorum per chain.
+pub type ForeignChainWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
 
 /// Returns once the first supporters snapshot is read, then keeps it updated in
 /// the background. Mirrors `monitor_contract_state`: the receiver always holds a
@@ -90,13 +93,10 @@ pub(crate) fn supporters_by_available_chain(
     supporters
 }
 
-/// The contract's RPC provider whitelist, keyed by chain.
-pub type ForeignChainProviderWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
-
 /// Fetches the allowed foreign-chain providers whitelist from the contract with retry logic.
 async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send + 'static>(
     contract: &MpcContractHandle<C>,
-) -> ForeignChainProviderWhitelist {
+) -> ForeignChainWhitelist {
     let mut backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
         .with_max_delay(MAX_BACKOFF_DURATION)
@@ -116,24 +116,28 @@ async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send
     }
 }
 
-/// Publishes the foreign chain whitelist stored in the contract on `sender` once it is first read,
-/// then on every change. Consumed by [`crate::foreign_chain_probe::run_periodic_probe`].
+/// Returns once the first whitelist is read, then keeps it updated in the background, like
+/// [`monitor_foreign_chain_supporters`].
 pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sync + 'static>(
-    sender: watch::Sender<Option<ForeignChainProviderWhitelist>>,
     contract: MpcContractHandle<V>,
-) {
-    loop {
-        let whitelist = fetch_foreign_chain_whitelist_with_retry(&contract).await;
-        sender.send_if_modified(|previous| {
-            if previous.as_ref() != Some(&whitelist) {
-                *previous = Some(whitelist);
-                true
-            } else {
-                false
-            }
-        });
-        tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
-    }
+) -> watch::Receiver<ForeignChainWhitelist> {
+    let initial = fetch_foreign_chain_whitelist_with_retry(&contract).await;
+    let (sender, receiver) = watch::channel(initial);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
+            let whitelist = fetch_foreign_chain_whitelist_with_retry(&contract).await;
+            sender.send_if_modified(|previous| {
+                if *previous != whitelist {
+                    *previous = whitelist;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    });
+    receiver
 }
 
 #[cfg(test)]

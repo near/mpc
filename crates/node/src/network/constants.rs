@@ -9,3 +9,5 @@ pub const MAX_MESSAGE_SIZE_BYTES: usize = 100 * 1024 * 1024;
 pub const MESSAGE_READ_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
 pub const CONNECTED_PEERS_BROADCAST_INTERVAL: Duration = Duration::from_secs(1);
+
+pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);

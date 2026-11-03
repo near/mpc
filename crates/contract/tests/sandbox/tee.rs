@@ -324,7 +324,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 }
 
 /// **`clean_tee_status` when called by the contract itself** — the call succeeds and the
-/// endpoint leaves `stored_attestations` untouched. Attestation pruning is handled by the
+/// endpoint leaves the stored attestations untouched. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
 #[tokio::test]
 async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_attestations_alone()
@@ -374,7 +374,7 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
 }
 
 /// **`clean_invalid_attestations` end-to-end** — an attestation whose expiry has passed
-/// is evicted from `stored_attestations` when the endpoint is invoked. Restores the
+/// is evicted from storage when the endpoint is invoked. Restores the
 /// functional cleanup-path coverage previously asserted via `clean_tee_status`.
 #[tokio::test]
 async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<()> {

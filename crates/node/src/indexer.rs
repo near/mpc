@@ -190,6 +190,8 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
+    /// Watcher that keeps track of the allowed OS [`dtos::ExpectedMeasurements`] on the contract.
+    pub allowed_os_measurements_receiver: watch::Receiver<Vec<dtos::ExpectedMeasurements>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
@@ -199,6 +201,8 @@ pub struct IndexerAPI<TransactionSender> {
     /// registered supporters (by TLS key). Seeded with the first successful read
     /// before the indexer hands it back, so it always holds a real value.
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
+    /// The contract's RPC provider whitelist, seeded with the first successful read.
+    pub foreign_chain_whitelist_receiver: watch::Receiver<foreign_chain::ForeignChainWhitelist>,
 }
 
 #[cfg(test)]

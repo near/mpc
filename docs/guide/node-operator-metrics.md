@@ -50,8 +50,9 @@ participant set. These gauges tell you how much runway is left:
 ## Foreign chain RPC providers
 
 The node verifies user transactions on other chains through RPC providers you
-configure. Two metric families describe them: what happens during real
-verification traffic, and an hourly probe that needs no traffic.
+configure. Three metric families describe them: what happens during real
+verification traffic, an hourly probe that needs no traffic, and the on-chain
+whitelist and quorum the node must meet to serve a chain.
 
 ### During traffic
 
@@ -154,6 +155,24 @@ whitelisted provider count once. Providers missing from the whitelist are
 probed and counted in the gauges, but not toward the quorum. A chain missing
 from the whitelist is probed but not judged.
 
+### Whitelist and quorum
+
+The participants vote, per chain, the RPC providers a node may use and how many
+of them must agree on a verdict. The node registers and serves a chain only
+while its own providers can reach that quorum. Both gauges are labeled with the
+`chain` and updated on every whitelist change while the node is a running
+participant:
+
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum |
+| `mpc_foreign_chain_rpc_providers_whitelisted` | distinct whitelisted providers this node's config conforms to |
+
+`whitelisted` must reach `required`. Anything less means the chain is
+configured but neither registered nor served: a provider's URL or auth differs
+from the voted entry, or you run fewer of the voted providers than the quorum
+asks. The probe logs the differing provider each round, as described above.
+
 ## Recommended alerts
 
 ```promql
@@ -179,9 +198,9 @@ sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count{
   for 15m
 
 # Warn: computations are running out of headroom against the deadline that ends
-# them. Signature, presignature, CKD and foreign-tx verification run under a
-# configured 60s by default, and 45s is three quarters of it. Key generation and
-# resharing are left out: a handful per epoch cannot support a percentile.
+# them. Signature, CKD and foreign-tx verification run under a configured 60s
+# by default, and 45s is three quarters of it. Key generation and resharing are
+# left out: a handful per epoch cannot support a percentile.
 histogram_quantile(0.99, sum by (protocol_scheme, task, le) (
   rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task!~"triple_generation|key_generation|key_resharing"}[15m])
 )) > 45  for 15m
@@ -210,6 +229,10 @@ increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  f
 # expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
 # 2h hold waits for two rounds to agree.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
+
+# Warn: a configured chain is whitelisted but this node cannot reach the voted
+# quorum, so it neither registers nor serves the chain.
+mpc_foreign_chain_rpc_providers_whitelisted < mpc_foreign_chain_rpc_quorum_required  for 10m
 
 # Warn: no backup for over a day. Only meaningful once backups are being taken
 # against this node. Both backup gauges read 0 after a node restart until the

@@ -2,7 +2,7 @@ use near_sdk::near;
 
 // --- Timeouts & Deadlines ---
 /// Default for `key_event_timeout_blocks`.
-const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 30;
+pub(crate) const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 150;
 /// Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 7 Days
 

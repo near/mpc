@@ -4,9 +4,9 @@ mod sign;
 pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
-use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use foreign_chain_inspector::FanOut;
@@ -62,11 +62,6 @@ pub(crate) struct ForeignChainInspectors<Client> {
 
 /// A [`FanOut`] whose provider calls are reported to the node's Prometheus metrics.
 pub(crate) type MeasuredFanOut<Inspector> = FanOut<Inspector, ProviderCallMetrics>;
-
-/// Handshake protocol version that introduced
-/// [`VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign`].
-pub const VERIFY_FOREIGN_TX_ONLINE_PRESIGN_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
-    NetworkProtocolVersion::Oct2026;
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
@@ -202,6 +197,7 @@ pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
     supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+    foreign_chain_whitelist: watch::Receiver<ForeignChainWhitelist>,
     /// [`foreign_tx_required_active_signers`](crate::foreign_chain_policy::foreign_tx_required_active_signers)
     /// of the running domains; `None` when there is no ForeignTx domain.
     foreign_tx_required_active_signers: Option<u64>,
@@ -213,6 +209,7 @@ impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+        foreign_chain_whitelist: watch::Receiver<ForeignChainWhitelist>,
         foreign_tx_required_active_signers: Option<u64>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
@@ -222,6 +219,7 @@ impl VerifyForeignTxProvider {
             config,
             inspectors,
             supporters_by_foreign_chain,
+            foreign_chain_whitelist,
             foreign_tx_required_active_signers,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
@@ -237,26 +235,18 @@ impl VerifyForeignTxProvider {
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
-            MpcTaskId::VerifyForeignTxTaskId(task) => match task {
-                VerifyForeignTxTaskId::VerifyForeignTx {
-                    id,
-                    presignature_id,
-                } => {
-                    self.make_verify_foreign_tx_follower(channel, id, presignature_id)
-                        .await?;
-                }
+            MpcTaskId::VerifyForeignTxTaskId(
                 VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
                     id,
                     paired_triple_id,
-                } => {
-                    self.make_verify_foreign_tx_online_presign_follower(
-                        channel,
-                        id,
-                        paired_triple_id,
-                    )
+                },
+            ) => {
+                self.make_verify_foreign_tx_online_presign_follower(channel, id, paired_triple_id)
                     .await?;
-                }
-            },
+            }
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
+                anyhow::bail!("Retired stored-presignature task rejected");
+            }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",
                 channel.task_id()

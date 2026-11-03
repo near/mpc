@@ -1,6 +1,7 @@
 //! Compares the local foreign chain RPC config with the on chain whitelist
-//! (`allowed_foreign_chain_providers`) and logs each difference, once per probe round. The result
-//! does not change node behavior.
+//! (`allowed_foreign_chain_providers`) and logs each difference, once per probe round. It only
+//! logs: [`crate::foreign_chain_rpc_policy`] applies the same match to decide which providers count
+//! towards the RPC quorum.
 //!
 //! A local provider matches a whitelist provider by its URL host, as [`provider_identity`]
 //! describes.
@@ -28,7 +29,7 @@ use mpc_node_config::{
 };
 use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderConfig, ProviderId};
 
-use crate::indexer::foreign_chain::ForeignChainProviderWhitelist;
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
 /// Holds no local `rpc_url` and no token, because it is logged.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +62,7 @@ enum DiagnosticKind {
 
 pub(super) fn compare(
     local: &ForeignChainsConfig,
-    whitelist: &ForeignChainProviderWhitelist,
+    whitelist: &ForeignChainWhitelist,
 ) -> Vec<Diagnostic> {
     local
         .iter_chains()

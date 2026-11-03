@@ -288,7 +288,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         };
         let keyset = Keyset::new(EpochId::new(1), vec![key]);
         let domains = vec![domain];
-        let next_domain_id = domains.len() as u64 + 1;
+        let next_domain_id = DomainId(domains.len() as u64 + 1);
         init_contract_running(
             &contract,
             domains,

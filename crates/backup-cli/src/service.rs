@@ -5,13 +5,14 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use mpc_node::keyshare::Keyshare;
-use near_contract_transport::WatchContractState;
 use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolContractState};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::keyset::keyset_to_backup;
-use crate::ports::{GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
+use crate::ports::{
+    GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus, WatchContractState,
+};
 
 /// How often a keyset that storage already covers is fetched again. Each fetch shows the node
 /// still serves the stored keyshares, and refreshes the node's backup metrics after it restarts.
@@ -33,8 +34,7 @@ impl<Keyshares, Storage, Contract, Status, Clock>
 where
     Keyshares: P2PClient,
     Storage: KeyShareRepository,
-    Contract: WatchContractState<Value = ProtocolContractState>,
-    Contract::ViewError: Debug,
+    Contract: WatchContractState,
     Status: ReportBackupStatus,
     Clock: GetCurrentTime,
 {
@@ -310,7 +310,7 @@ mod tests {
     use tokio::time::timeout;
     use tokio_util::sync::CancellationToken;
 
-    use crate::ports::{GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
+    use crate::ports::{self, GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
     use crate::test_utils::{
         fixture_epoch_id, initializing_state, resharing_state, running_state_with_epoch,
         running_state_without_domains,
@@ -530,6 +530,8 @@ mod tests {
                 .map_err(|_| TransportError::MonitoringClosed)
         }
     }
+
+    impl ports::WatchContractState for FakeWatchContractState {}
 
     fn keyshares_for(epoch_id: u64, domain_ids: &[u64]) -> Vec<Keyshare> {
         let mut rng = StdRng::seed_from_u64(42);

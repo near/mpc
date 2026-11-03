@@ -10,12 +10,12 @@ use crate::sandbox::{
         contract_build::current_contract,
         mpc_contract::{
             get_config, get_participant_attestation, get_participants, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, vote_add_launcher_hash, vote_add_os_measurement,
+            prepay_and_submit_participant_info, vote_add_launcher_hash,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
-        transactions::CallMpcContract,
+        transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
 use mpc_contract::primitives::{
@@ -25,17 +25,19 @@ use mpc_contract::primitives::{
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+    AuthScheme, CKDResponse, ChainEntry, ChainRouting, DomainConfig, DomainPurpose, ForeignChain,
+    Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
 use rand_core::OsRng;
 use rstest::rstest;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -155,7 +157,7 @@ async fn back_compatibility_without_state(
     )
 }
 
-/// `stored_attestations` keeps entries for non-participants too, so the upgrade under test
+/// The contract stores attestations of non-participants too, so the upgrade under test
 /// carries more entries than [`PARTICIPANT_LEN`], and more than the 17 that mainnet and testnet
 /// each stored on 2026-10-23.
 const STORED_ATTESTATION_ENTRIES: usize = 25;
@@ -195,6 +197,65 @@ async fn fill_stored_attestations(
     assert_eq!(stored.len(), total, "stored attestation count");
 
     tls_keys
+}
+
+/// Chains whitelisted on mainnet on 2026-10-28, without the Bitcoin entry that 3.18.0 drops.
+const PRODUCTION_WHITELISTED_CHAINS: [ForeignChain; 12] = [
+    ForeignChain::Abstract,
+    ForeignChain::Aptos,
+    ForeignChain::Arbitrum,
+    ForeignChain::Avalanche,
+    ForeignChain::Base,
+    ForeignChain::Bnb,
+    ForeignChain::Fogo,
+    ForeignChain::HyperEvm,
+    ForeignChain::Polygon,
+    ForeignChain::Solana,
+    ForeignChain::Starknet,
+    ForeignChain::Sui,
+];
+
+fn chain_entry(provider_count: usize, quorum: u64) -> ChainEntry {
+    let providers: BTreeMap<_, _> = (0..provider_count)
+        .map(|i| {
+            (
+                ProviderId(format!("provider{i}")),
+                ProviderConfig {
+                    base_url: format!("https://provider{i}.example.com/v2/"),
+                    auth_scheme: AuthScheme::None,
+                    chain_routing: ChainRouting::Embedded,
+                },
+            )
+        })
+        .collect();
+    ChainEntry {
+        providers: providers.try_into().unwrap(),
+        quorum,
+    }
+}
+
+async fn vote_in_whitelist(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+    whitelist: BTreeMap<ForeignChain, ChainEntry>,
+) {
+    let batch: NonEmptyBTreeMap<_, _> = whitelist.clone().try_into().unwrap();
+    let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
+    execute_async_handle_calls(&accounts[..threshold], contract, |handle| {
+        let batch = batch.clone();
+        async move { handle.vote_update_foreign_chain_providers(batch).await }
+    })
+    .await
+    .expect("whitelist vote should succeed");
+    assert_eq!(
+        contract
+            .allowed_foreign_chain_providers()
+            .await
+            .unwrap()
+            .value,
+        whitelist,
+        "whitelist should be voted in before the upgrade"
+    );
 }
 
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
@@ -242,25 +303,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         "launcher hash should be voted in before the upgrade"
     );
 
-    // Leave a launcher vote pending so migration decodes a non-empty vote map off the
-    // production layout.
-    let pending_launcher_hash = mpc_primitives::hash::LauncherImageHash::from([0xBB; 32]);
-    vote_add_launcher_hash(&accounts[0], &contract, &pending_launcher_hash)
-        .await
-        .unwrap();
-
-    // Same for the OS measurement vote map.
-    let pending_measurement = dtos::ExpectedMeasurements {
-        mrtd: mpc_primitives::hash::MrtdHash::from([0xCD; 48]),
-        rtmr0: mpc_primitives::hash::Rtmr0Hash::from([0xCD; 48]),
-        rtmr1: mpc_primitives::hash::Rtmr1Hash::from([0xCD; 48]),
-        rtmr2: mpc_primitives::hash::Rtmr2Hash::from([0xCD; 48]),
-        key_provider_event_digest: mpc_primitives::hash::KeyProviderEventDigest::from([0xCD; 48]),
-    };
-    vote_add_os_measurement(&accounts[0], &contract, &pending_measurement)
-        .await
-        .unwrap();
-
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
@@ -291,55 +333,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         .await
         .unwrap()
         .expect("a migrated attestation should still be readable");
-
-    assert!(
-        contract
-            .launcher_hash_votes()
-            .await
-            .unwrap()
-            .value
-            .is_empty(),
-        "pending launcher votes should be dropped by the migration"
-    );
-    assert!(
-        contract
-            .os_measurement_votes()
-            .await
-            .unwrap()
-            .value
-            .is_empty(),
-        "pending OS measurement votes should be dropped by the migration"
-    );
-
-    let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
-    for account in &accounts[..threshold] {
-        vote_add_launcher_hash(account, &contract, &pending_launcher_hash)
-            .await
-            .unwrap();
-    }
-    assert!(
-        contract
-            .allowed_launcher_image_hashes()
-            .await
-            .unwrap()
-            .value
-            .contains(&pending_launcher_hash),
-        "a fresh launcher threshold vote should succeed after the upgrade"
-    );
-    for account in &accounts[..threshold] {
-        vote_add_os_measurement(account, &contract, &pending_measurement)
-            .await
-            .unwrap();
-    }
-    assert!(
-        contract
-            .allowed_os_measurements()
-            .await
-            .unwrap()
-            .value
-            .contains(&pending_measurement),
-        "a fresh OS measurement threshold vote should succeed after the upgrade"
-    );
 }
 
 #[rstest]
@@ -356,6 +349,11 @@ async fn migrate__should_run_within_contract_update_gas_budget(
         .unwrap();
     submit_attestations(&contract, &accounts, &participants).await;
     fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
+    let whitelist = PRODUCTION_WHITELISTED_CHAINS
+        .into_iter()
+        .map(|chain| (chain, chain_entry(4, 3)))
+        .collect();
+    vote_in_whitelist(&contract, &accounts, whitelist).await;
     upgrade_to_new(&contract).await.unwrap();
 
     // When
@@ -636,7 +634,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         .call_mpc(contract.id())
         .init_running(
             vec![],
-            0,
+            dtos::DomainId(0),
             dtos::Keyset::new(EpochId::new(2), vec![]),
             threshold_parameters,
             bogus_tee_verifier_account_id(),
