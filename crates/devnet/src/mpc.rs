@@ -18,14 +18,15 @@ use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConf
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
+use near_contract_transport::NearToken;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, ParticipantId,
-    ParticipantInfo, Participants, ProposedGovernanceThresholdParameters, Protocol,
+    Config, DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters,
+    ParticipantId, ParticipantInfo, Participants, ProposedGovernanceThresholdParameters, Protocol,
     ProtocolContractState, ReconstructionThreshold, Update, protocol_state_to_string,
 };
 use near_mpc_sdk::update::hash;
@@ -346,6 +347,27 @@ impl MpcInitContractCmd {
             .await
             .into_return_value()
             .unwrap();
+
+        let contract_config: Config = serde_json::from_slice(
+            &setup
+                .accounts
+                .account(&contract)
+                .query_contract(method_names::CONFIG, b"{}".to_vec())
+                .await
+                .expect("config() call failed")
+                .result,
+        )
+        .expect("failed to parse config()");
+        let fee = NearToken::from_millinear(u128::from(
+            contract_config.attestation_storage_fee_millinear,
+        ));
+        for account_id in &mpc_setup.participants {
+            mpc_contract_handle
+                .prepay_attestation_storage(account_id.clone(), 1, fee)
+                .await
+                .into_return_value()
+                .unwrap();
+        }
     }
 }
 
