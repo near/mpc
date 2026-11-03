@@ -77,18 +77,37 @@ async fn keep_foreign_chains_registration_up_to_date(
             let is_new = pending
                 .as_ref()
                 .is_none_or(|pending| pending.chains != eligible);
-            let is_resend_due = pending
-                .as_ref()
-                .is_some_and(|pending| pending.resend_timer.is_elapsed());
+            let is_resend_due = pending.as_ref().is_some_and(|pending| {
+                pending.resend_timer.deadline() <= tokio::time::Instant::now()
+            });
             if is_new {
                 resend_delays = resend_backoff().build();
             }
             if is_new || is_resend_due {
+                let resends = match &pending {
+                    Some(pending) if !is_new => pending.resends.saturating_add(1),
+                    _ => 0,
+                };
+                let delay = resend_delays.next().unwrap_or(MAX_RESEND_DELAY);
+                if is_new {
+                    tracing::info!(
+                        chains = ?eligible,
+                        "registering the foreign chains this node can serve"
+                    );
+                } else {
+                    tracing::warn!(
+                        chains = ?eligible,
+                        resends,
+                        next_resend_in = ?delay,
+                        "foreign chains registration has not landed, resending; check that the \
+                         node's access key allows register_foreign_chains_config"
+                    );
+                }
                 match register_foreign_chains(&txn_sender, &eligible).await {
                     Ok(()) => {
-                        let delay = resend_delays.next().unwrap_or(MAX_RESEND_DELAY);
                         pending = Some(PendingRegistration {
                             chains: eligible,
+                            resends,
                             resend_timer: Box::pin(tokio::time::sleep(delay)),
                         });
                     }
@@ -114,6 +133,7 @@ async fn keep_foreign_chains_registration_up_to_date(
 
 struct PendingRegistration {
     chains: BTreeSet<dtos::ForeignChain>,
+    resends: u32,
     resend_timer: Pin<Box<Sleep>>,
 }
 
@@ -130,10 +150,6 @@ async fn register_foreign_chains(
     txn_sender: &impl TransactionSender,
     chains: &BTreeSet<dtos::ForeignChain>,
 ) -> Result<(), TransactionProcessorError> {
-    tracing::info!(
-        ?chains,
-        "registering the foreign chains this node can serve"
-    );
     txn_sender
         .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
             contract_args::RegisterForeignChainsConfigArgs::new(chains.clone().into()),
