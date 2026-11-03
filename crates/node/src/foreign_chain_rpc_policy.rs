@@ -20,8 +20,7 @@ pub(crate) fn rpc_quorum_statuses(
     local
         .iter_chains()
         .filter_map(|(chain, local_chain)| {
-            let entry = whitelist.get(&chain)?;
-            let status = RpcQuorumStatus::new(entry, &conforming_providers(local_chain, entry))?;
+            let (_, status) = chain_quorum(local_chain, whitelist.get(&chain)?)?;
             Some((chain, status))
         })
         .collect()
@@ -61,11 +60,16 @@ impl RpcQuorumStatus {
     }
 }
 
-fn conforming_providers(
+/// The local providers that conform to `entry`, and the quorum status they reach. [`None`] when
+/// [`RpcQuorumStatus::new`] rejects the voted quorum.
+fn chain_quorum(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,
-) -> WhitelistConformingProviders {
-    ProviderWhitelistMatches::for_chain(local_chain, entry).whitelist_conforming_providers()
+) -> Option<(WhitelistConformingProviders, RpcQuorumStatus)> {
+    let conforming =
+        ProviderWhitelistMatches::for_chain(local_chain, entry).whitelist_conforming_providers();
+    let status = RpcQuorumStatus::new(entry, &conforming)?;
+    Some((conforming, status))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -87,9 +91,8 @@ pub(crate) fn rpc_quorum(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,
 ) -> Result<RpcQuorum, RpcQuorumError> {
-    let conforming = conforming_providers(local_chain, entry);
-    let status = RpcQuorumStatus::new(entry, &conforming)
-        .ok_or(RpcQuorumError::InvalidQuorum(entry.quorum))?;
+    let (conforming, status) =
+        chain_quorum(local_chain, entry).ok_or(RpcQuorumError::InvalidQuorum(entry.quorum))?;
     if !status.reaches_quorum() {
         return Err(RpcQuorumError::BelowQuorum {
             required: status.required_whitelisted_providers,
