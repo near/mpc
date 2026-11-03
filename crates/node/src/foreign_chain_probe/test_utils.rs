@@ -102,21 +102,33 @@ pub(super) fn whitelist_of(
     BTreeMap::from([(chain, chain_entry(&providers, quorum))])
 }
 
-/// A config with a provider without auth per `(chain, local name, rpc_url, status)`, and the probe
-/// report of that config.
+/// A provider without auth, and the status its probe reports.
+#[derive(Clone)]
+pub(super) struct ProbedProvider<'a> {
+    pub(super) name: &'a str,
+    pub(super) rpc_url: &'a str,
+    pub(super) status: ProviderStatus,
+}
+
+/// A local config and the probe report of that config.
+pub(super) struct ProbedConfig {
+    pub(super) local: ForeignChainsConfig,
+    pub(super) report: ProbeReport,
+}
+
 pub(super) fn config_with_report(
-    providers: &[(dtos::ForeignChain, &str, &str, ProviderStatus)],
-) -> (ForeignChainsConfig, ProbeReport) {
+    providers: &[(dtos::ForeignChain, ProbedProvider)],
+) -> ProbedConfig {
     let mut providers_per_chain: BTreeMap<_, Vec<_>> = BTreeMap::new();
-    for (chain, name, rpc_url, _) in providers {
-        let provider = ForeignChainProviderConfig {
-            rpc_url: rpc_url.to_string(),
+    for (chain, provider) in providers {
+        let config = ForeignChainProviderConfig {
+            rpc_url: provider.rpc_url.to_string(),
             auth: AuthConfig::None,
         };
         providers_per_chain
             .entry(*chain)
             .or_default()
-            .push((*name, provider));
+            .push((provider.name, config));
     }
     let local = foreign_chains(
         providers_per_chain
@@ -125,19 +137,18 @@ pub(super) fn config_with_report(
     );
     let rows: Vec<ProviderHealth> = providers
         .iter()
-        .map(|(chain, name, _, status)| row(*chain, name, status.clone()))
+        .map(|(chain, provider)| row(*chain, provider.name, provider.status.clone()))
         .collect();
-    (local, ProbeReport::from(rows))
+    ProbedConfig {
+        local,
+        report: ProbeReport::from(rows),
+    }
 }
 
-pub(super) fn polygon_with_report(
-    providers: &[(&str, &str, ProviderStatus)],
-) -> (ForeignChainsConfig, ProbeReport) {
+pub(super) fn polygon_with_report(providers: &[ProbedProvider]) -> ProbedConfig {
     let providers: Vec<_> = providers
         .iter()
-        .map(|(name, rpc_url, status)| {
-            (dtos::ForeignChain::Polygon, *name, *rpc_url, status.clone())
-        })
+        .map(|provider| (dtos::ForeignChain::Polygon, provider.clone()))
         .collect();
     config_with_report(&providers)
 }

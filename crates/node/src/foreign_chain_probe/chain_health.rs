@@ -5,11 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use foreign_chain_health_check::probe::{ProbeReport, ProviderHealth, ProviderStatus};
 use mpc_node_config::ForeignChainsConfig;
 use mpc_node_config::foreign_chains::RpcProviderName;
-use mpc_node_config::foreign_chains::provider_identity::WhitelistConformingProviders;
 use near_mpc_contract_interface::types as dtos;
 use tracing::{info, warn};
 
-use crate::foreign_chain_rpc_policy::{RpcQuorumStatus, chain_quorum};
+use crate::foreign_chain_rpc_policy::{ChainQuorum, RpcQuorumStatus};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
 /// A probed chain judged against the provider whitelist.
@@ -23,7 +22,7 @@ pub(super) enum ChainHealth {
     WrongNetwork {
         providers: usize,
     },
-    /// `unhealthy` counts whitelist providers, see [`WhitelistConformingProviders`].
+    /// `unhealthy` counts whitelist providers, see [`ChainQuorum`].
     UnhealthyProviders {
         unhealthy: usize,
         quorum: RpcQuorumStatus,
@@ -48,8 +47,8 @@ pub(super) fn judge(
             if probed_rows.is_empty() {
                 return None;
             }
-            let (conforming, quorum) = chain_quorum(local_chain, whitelist_entry)?;
-            Some((chain, judge_chain(&probed_rows, &conforming, quorum)))
+            let quorum = ChainQuorum::new(local_chain, whitelist_entry)?;
+            Some((chain, judge_chain(&probed_rows, quorum)))
         })
         .collect()
 }
@@ -59,8 +58,10 @@ pub(super) fn judge(
 /// network.
 fn judge_chain(
     probed_rows: &[&ProviderHealth],
-    conforming: &WhitelistConformingProviders,
-    quorum: RpcQuorumStatus,
+    ChainQuorum {
+        conforming,
+        status: quorum,
+    }: ChainQuorum,
 ) -> ChainHealth {
     if !quorum.reaches_quorum() {
         return ChainHealth::BelowQuorum(quorum);
@@ -132,8 +133,8 @@ mod tests {
 
     use super::*;
     use crate::foreign_chain_probe::test_utils::{
-        ALCHEMY_URL, OWN_NODE_URL, QUICKNODE_URL, config_with_report, logged_times,
-        polygon_with_report, whitelist_of,
+        ALCHEMY_URL, OWN_NODE_URL, ProbedConfig, ProbedProvider, QUICKNODE_URL, config_with_report,
+        logged_times, polygon_with_report, whitelist_of,
     };
 
     fn quorum(required: usize, configured: usize) -> RpcQuorumStatus {
@@ -153,8 +154,8 @@ mod tests {
     #[rstest]
     #[case::healthy_when_quorum_whitelisted_providers_pass(
         &[
-            ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
-            ("quicknode", QUICKNODE_URL, ProviderStatus::Healthy),
+            ProbedProvider { name: "alchemy", rpc_url: ALCHEMY_URL, status: ProviderStatus::Healthy },
+            ProbedProvider { name: "quicknode", rpc_url: QUICKNODE_URL, status: ProviderStatus::Healthy },
         ],
         &["alchemy", "quicknode"],
         2,
@@ -162,8 +163,8 @@ mod tests {
     )]
     #[case::matched_by_url_not_by_name(
         &[
-            ("my_alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
-            ("my_quicknode", QUICKNODE_URL, ProviderStatus::Healthy),
+            ProbedProvider { name: "my_alchemy", rpc_url: ALCHEMY_URL, status: ProviderStatus::Healthy },
+            ProbedProvider { name: "my_quicknode", rpc_url: QUICKNODE_URL, status: ProviderStatus::Healthy },
         ],
         &["alchemy", "quicknode"],
         2,
@@ -171,8 +172,8 @@ mod tests {
     )]
     #[case::unhealthy_when_any_whitelisted_provider_fails(
         &[
-            ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
-            ("quicknode", QUICKNODE_URL, ProviderStatus::Unreachable),
+            ProbedProvider { name: "alchemy", rpc_url: ALCHEMY_URL, status: ProviderStatus::Healthy },
+            ProbedProvider { name: "quicknode", rpc_url: QUICKNODE_URL, status: ProviderStatus::Unreachable },
         ],
         &["alchemy", "quicknode"],
         1,
@@ -180,8 +181,8 @@ mod tests {
     )]
     #[case::below_quorum_wins_over_a_failing_provider(
         &[
-            ("alchemy", ALCHEMY_URL, ProviderStatus::Unreachable),
-            ("own_node", OWN_NODE_URL, ProviderStatus::Healthy),
+            ProbedProvider { name: "alchemy", rpc_url: ALCHEMY_URL, status: ProviderStatus::Unreachable },
+            ProbedProvider { name: "own_node", rpc_url: OWN_NODE_URL, status: ProviderStatus::Healthy },
         ],
         &["alchemy", "quicknode"],
         2,
@@ -189,8 +190,8 @@ mod tests {
     )]
     #[case::unreachable_provider_missing_from_the_whitelist_ignored(
         &[
-            ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
-            ("own_node", OWN_NODE_URL, ProviderStatus::Unreachable),
+            ProbedProvider { name: "alchemy", rpc_url: ALCHEMY_URL, status: ProviderStatus::Healthy },
+            ProbedProvider { name: "own_node", rpc_url: OWN_NODE_URL, status: ProviderStatus::Unreachable },
         ],
         &["alchemy"],
         1,
@@ -198,8 +199,8 @@ mod tests {
     )]
     #[case::provider_missing_from_the_whitelist_on_another_network_fails_the_chain(
         &[
-            ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
-            ("own_node", OWN_NODE_URL, wrong_network()),
+            ProbedProvider { name: "alchemy", rpc_url: ALCHEMY_URL, status: ProviderStatus::Healthy },
+            ProbedProvider { name: "own_node", rpc_url: OWN_NODE_URL, status: wrong_network() },
         ],
         &["alchemy"],
         1,
@@ -207,23 +208,23 @@ mod tests {
     )]
     #[case::whitelisted_provider_on_another_network_fails_the_chain(
         &[
-            ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
-            ("quicknode", QUICKNODE_URL, wrong_network()),
+            ProbedProvider { name: "alchemy", rpc_url: ALCHEMY_URL, status: ProviderStatus::Healthy },
+            ProbedProvider { name: "quicknode", rpc_url: QUICKNODE_URL, status: wrong_network() },
         ],
         &["alchemy", "quicknode"],
         1,
         ChainHealth::WrongNetwork { providers: 1 }
     )]
     #[case::provider_that_differs_from_its_whitelist_provider_not_counted(
-        &[("alchemy", "http://alchemy.example.com", ProviderStatus::Healthy)],
+        &[ProbedProvider { name: "alchemy", rpc_url: "http://alchemy.example.com", status: ProviderStatus::Healthy }],
         &["alchemy"],
         1,
         ChainHealth::BelowQuorum(quorum(1, 0))
     )]
     #[case::whitelist_provider_counted_once_and_healthy_only_when_all_its_local_providers_are(
         &[
-            ("alchemy_a", "https://alchemy.example.com/a", ProviderStatus::Healthy),
-            ("alchemy_b", "https://alchemy.example.com/b", ProviderStatus::Unreachable),
+            ProbedProvider { name: "alchemy_a", rpc_url: "https://alchemy.example.com/a", status: ProviderStatus::Healthy },
+            ProbedProvider { name: "alchemy_b", rpc_url: "https://alchemy.example.com/b", status: ProviderStatus::Unreachable },
         ],
         &["alchemy"],
         1,
@@ -231,27 +232,27 @@ mod tests {
     )]
     #[case::whitelist_provider_unhealthy_once_however_many_of_its_local_providers_fail(
         &[
-            ("alchemy_a", "https://alchemy.example.com/a", ProviderStatus::Unreachable),
-            ("alchemy_b", "https://alchemy.example.com/b", ProviderStatus::Unreachable),
+            ProbedProvider { name: "alchemy_a", rpc_url: "https://alchemy.example.com/a", status: ProviderStatus::Unreachable },
+            ProbedProvider { name: "alchemy_b", rpc_url: "https://alchemy.example.com/b", status: ProviderStatus::Unreachable },
         ],
         &["alchemy"],
         1,
         ChainHealth::UnhealthyProviders { unhealthy: 1, quorum: quorum(1, 1) }
     )]
     #[case::below_quorum_wins_over_a_provider_on_another_network(
-        &[("alchemy", ALCHEMY_URL, wrong_network())],
+        &[ProbedProvider { name: "alchemy", rpc_url: ALCHEMY_URL, status: wrong_network() }],
         &["alchemy", "quicknode"],
         2,
         ChainHealth::BelowQuorum(quorum(2, 1))
     )]
     fn judge__should_judge_a_chain_by_its_counted_whitelist_providers(
-        #[case] local_providers: &[(&str, &str, ProviderStatus)],
+        #[case] local_providers: &[ProbedProvider],
         #[case] whitelist_providers: &[&str],
         #[case] whitelist_quorum: u64,
         #[case] expected: ChainHealth,
     ) {
         // Given
-        let (local, report) = polygon_with_report(local_providers);
+        let ProbedConfig { local, report } = polygon_with_report(local_providers);
         let whitelist = whitelist_of(
             dtos::ForeignChain::Polygon,
             whitelist_providers,
@@ -272,30 +273,21 @@ mod tests {
     fn judge__should_judge_each_chain_by_its_own_providers_and_leave_out_the_ones_it_cannot_judge()
     {
         // Given
-        let (local, report) = config_with_report(&[
+        let alchemy = |status| ProbedProvider {
+            name: "alchemy",
+            rpc_url: ALCHEMY_URL,
+            status,
+        };
+        let ProbedConfig { local, report } = config_with_report(&[
             (
                 dtos::ForeignChain::Polygon,
-                "alchemy",
-                ALCHEMY_URL,
-                ProviderStatus::Healthy,
+                alchemy(ProviderStatus::Healthy),
             ),
-            (
-                dtos::ForeignChain::Ethereum,
-                "alchemy",
-                ALCHEMY_URL,
-                wrong_network(),
-            ),
-            (
-                dtos::ForeignChain::Base,
-                "alchemy",
-                ALCHEMY_URL,
-                ProviderStatus::Healthy,
-            ),
+            (dtos::ForeignChain::Ethereum, alchemy(wrong_network())),
+            (dtos::ForeignChain::Base, alchemy(ProviderStatus::Healthy)),
             (
                 dtos::ForeignChain::Bnb,
-                "alchemy",
-                ALCHEMY_URL,
-                ProviderStatus::ProbeNotImplemented,
+                alchemy(ProviderStatus::ProbeNotImplemented),
             ),
         ]);
         let whitelist: ForeignChainWhitelist = [
