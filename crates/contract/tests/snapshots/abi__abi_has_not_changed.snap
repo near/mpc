@@ -582,7 +582,7 @@ expression: abi
       },
       {
         "name": "migrate",
-        "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error. It also fails if a participant of the\n 3.18.0 state uses a TLS key that does not hold a node the participant owns, which reverts\n the whole upgrade.",
+        "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
         "kind": "call",
         "modifiers": [
           "init",

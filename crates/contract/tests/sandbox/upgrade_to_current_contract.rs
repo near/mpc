@@ -496,7 +496,6 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     Ok(())
 }
 
-// TODO(#5045): remove once no network runs 3.18.0
 async fn old_contract_with_a_participant_missing_its_node(
     worker: &Worker<Sandbox>,
 ) -> anyhow::Result<(SandboxMpcContract, Vec<Account>, dtos::Ed25519PublicKey)> {
