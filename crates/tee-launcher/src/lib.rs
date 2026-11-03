@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::path::Path;
+use std::process::Command;
 
 use clap::Parser;
 use launcher_interface::types::{
@@ -10,7 +11,8 @@ use mpc_primitives::hash::MPC_IMAGE_HASH_EVENT;
 use compose::launch_mpc_container;
 use config::{intercept_node_config, validate_image_reference};
 use constants::{
-    DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, IMAGE_DIGEST_FILE, MPC_CONFIG_SHARED_PATH,
+    DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, DSTACK_UTIL_PATH, IMAGE_DIGEST_FILE,
+    MPC_CONFIG_SHARED_PATH,
 };
 use error::LauncherError;
 use selection::select_image_hash;
@@ -123,6 +125,12 @@ fn load_approved_hashes(
 }
 
 async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(), LauncherError> {
+    if Path::new(DSTACK_UTIL_PATH).exists() {
+        return extend_rtmr3_with_dstack_util(manifest_digest);
+    }
+
+    // dstack < 0.6 guests: no `dstack-util` is mounted, but `EmitEvent` is still served.
+    tracing::info!("measuring MPC image into RTMR3 via dstack EmitEvent");
     let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
     dstack_client
@@ -132,6 +140,29 @@ async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(
         )
         .await
         .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))
+}
+
+fn extend_rtmr3_with_dstack_util(
+    manifest_digest: &DockerSha256Digest,
+) -> Result<(), LauncherError> {
+    tracing::info!("measuring MPC image into RTMR3 via dstack-util extend");
+    let output = Command::new(DSTACK_UTIL_PATH)
+        .args([
+            "extend",
+            "--event",
+            MPC_IMAGE_HASH_EVENT,
+            "--payload",
+            &manifest_digest.as_hex(),
+        ])
+        .output()
+        .map_err(LauncherError::DstackUtilSpawn)?;
+
+    if !output.status.success() {
+        return Err(LauncherError::DstackUtilExtendFailed(
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeConfig {
