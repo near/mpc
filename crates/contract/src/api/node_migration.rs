@@ -69,8 +69,8 @@ impl MpcContract {
     /// # Errors
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
-    /// - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed) if another participant uses the
-    ///   destination TLS public key.
+    /// - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed) if the destination node's TLS
+    ///   public key belongs to another account.
     /// - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged) if the destination node reuses the
     ///   signer's current TLS public key. Use [`Self::update_participant_url`] to change only the url.
     /// - [`NodeMigrationError::DestinationNodeNotFound`](crate::errors::NodeMigrationError::DestinationNodeNotFound) if the signer has no node stored under
@@ -187,8 +187,8 @@ impl MpcContract {
     ///   the destination TLS public key
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if the destination node's attestation is
     ///   not valid
-    /// - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed): if another participant uses the
-    ///   destination TLS public key
+    /// - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed): if the destination node's TLS
+    ///   public key belongs to another account
     /// - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged): if the destination node reuses the
     ///   caller's current TLS public key
     /// - [`NodeMigrationError::DestinationSignerKeyMismatch`](crate::errors::NodeMigrationError::DestinationSignerKeyMismatch): if the destination signer key
@@ -355,8 +355,15 @@ fn assert_destination_matches_attested_node(
     destination_signer_key: &dtos::Ed25519PublicKey,
     tee_upgrade_deadline_duration: Duration,
 ) -> Result<(), Error> {
-    match tee_state.node_of(account_id, destination_tls_key) {
+    match tee_state.nodes.get(destination_tls_key) {
         None => Err(errors::NodeMigrationError::DestinationNodeNotFound.into()),
+        Some(node) if node.owner != *account_id => {
+            Err(errors::NodeMigrationError::TlsKeyAlreadyClaimed {
+                tls_public_key: destination_tls_key.clone(),
+                account_id: node.owner.clone(),
+            }
+            .into())
+        }
         Some(node) if node.signer_public_key != *destination_signer_key => {
             Err(errors::NodeMigrationError::DestinationSignerKeyMismatch {
                 found: destination_signer_key.clone(),
@@ -1146,7 +1153,7 @@ mod tests {
         // Then
         assert_matches!(
             result.unwrap_err(),
-            Error::NodeMigrationError(NodeMigrationError::DestinationNodeNotFound)
+            Error::NodeMigrationError(NodeMigrationError::TlsKeyAlreadyClaimed { .. })
         );
         assert_eq!(
             migration_info(&contract, &account_id),
@@ -1298,7 +1305,7 @@ mod tests {
         // Then
         assert_matches!(
             result.unwrap_err(),
-            Error::NodeMigrationError(NodeMigrationError::DestinationNodeNotFound)
+            Error::NodeMigrationError(NodeMigrationError::TlsKeyAlreadyClaimed { .. })
         );
         let ProtocolContractState::Running(running) = &contract.protocol_state else {
             panic!("expected running state");
