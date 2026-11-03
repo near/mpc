@@ -6,10 +6,7 @@ use crate::{
     coordinator::Coordinator,
     db::SecretDB,
     home_paths::assets_dir,
-    indexer::{
-        IndexerAPI, foreign_chain::ForeignChainWhitelist, real::spawn_real_indexer,
-        tx_sender::TransactionSender,
-    },
+    indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
     keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
@@ -245,7 +242,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         indexer_shutdown_token.clone(),
     );
 
-    root_runtime.spawn(forward_foreign_chain_whitelist(
+    root_runtime.spawn(crate::foreign_chain_probe::forward_foreign_chain_whitelist(
         indexer_api.foreign_chain_whitelist_receiver.clone(),
         foreign_chain_whitelist_sender,
     ));
@@ -337,20 +334,6 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     info!("RocksDB shutdown complete.");
 
     exit_reason
-}
-
-/// The probe starts before the indexer has read the whitelist, so it takes an `Option` that this
-/// fills once the indexer hands the whitelist over.
-async fn forward_foreign_chain_whitelist(
-    mut from_indexer: watch::Receiver<ForeignChainWhitelist>,
-    to_probe: watch::Sender<Option<ForeignChainWhitelist>>,
-) {
-    loop {
-        let whitelist = from_indexer.borrow_and_update().clone();
-        if to_probe.send(Some(whitelist)).is_err() || from_indexer.changed().await.is_err() {
-            return;
-        }
-    }
 }
 
 async fn create_root_future<TransactionSenderImpl>(

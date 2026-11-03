@@ -29,10 +29,11 @@ mod whitelist_diagnostics;
 ///
 /// Once the whitelist is read, each round also logs every difference between the local config and
 /// the whitelist, see [`whitelist_diagnostics`], and judges each probed chain. A local provider
-/// counts for the whitelist provider it matches by URL only when no part of it differs, as
-/// [`provider_identity`](mpc_node_config::foreign_chains::provider_identity) describes. A chain is
-/// healthy when at least its quorum of whitelist providers count and all of them are healthy. Until
-/// the whitelist is first read from the contract, chain health is logged as unknown.
+/// is matched with the whitelist provider using [`provider_identity`](mpc_node_config::foreign_chains::provider_identity).
+/// A chain is healthy when at least its quorum of whitelist providers are configured and all of them are healthy,
+/// and no configured provider serves another network.
+///
+/// Until the whitelist is first read from the contract, chain health is logged as unknown.
 pub async fn run_periodic_probe(
     foreign_chains: ForeignChainsConfig,
     whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
@@ -50,6 +51,20 @@ pub async fn run_periodic_probe(
         ticker,
     )
     .await;
+}
+
+/// [`run_periodic_probe`] starts before the indexer has read the whitelist, so it takes an `Option`
+/// that this fills once the indexer hands the whitelist over.
+pub(crate) async fn forward_foreign_chain_whitelist(
+    mut from_indexer: watch::Receiver<ForeignChainWhitelist>,
+    to_probe: watch::Sender<Option<ForeignChainWhitelist>>,
+) {
+    loop {
+        let whitelist = from_indexer.borrow_and_update().clone();
+        if to_probe.send(Some(whitelist)).is_err() || from_indexer.changed().await.is_err() {
+            return;
+        }
+    }
 }
 
 async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
@@ -83,16 +98,21 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
     }
 }
 
-/// A probed chain judged against the provider whitelist. `whitelisted` is the number of whitelist
-/// providers that a local provider counts for, see [`WhitelistConformingProviders`].
+/// A probed chain judged against the provider whitelist.
 #[derive(Debug, PartialEq, Eq)]
 enum ChainHealth {
     Healthy,
     /// The same verdict that keeps the chain from being registered.
     BelowQuorum(RpcQuorumStatus),
+    /// Every configured provider joins the verify fan-out, whitelisted or not, and their verdicts
+    /// must all agree. So one provider that serves another network fails every verify request.
+    WrongNetwork {
+        providers: usize,
+    },
+    /// `unhealthy` counts whitelist providers, see [`WhitelistConformingProviders`].
     UnhealthyProviders {
         unhealthy: usize,
-        whitelisted: usize,
+        quorum: RpcQuorumStatus,
     },
 }
 
@@ -121,7 +141,8 @@ fn judge(
 }
 
 /// A whitelist provider counts once, however many local providers match it. It is healthy only
-/// when all of them are.
+/// when all of them are. Providers missing from the whitelist only count when they serve another
+/// network.
 fn judge_chain(
     probed_rows: &[&ProviderHealth],
     conforming: &WhitelistConformingProviders,
@@ -129,6 +150,16 @@ fn judge_chain(
 ) -> ChainHealth {
     if !quorum.reaches_quorum() {
         return ChainHealth::BelowQuorum(quorum);
+    }
+
+    let wrong_network = probed_rows
+        .iter()
+        .filter(|row| matches!(row.status, ProviderStatus::WrongNetwork { .. }))
+        .count();
+    if wrong_network > 0 {
+        return ChainHealth::WrongNetwork {
+            providers: wrong_network,
+        };
     }
 
     // Probe rows name a provider by its local config name.
@@ -144,7 +175,7 @@ fn judge_chain(
     } else {
         ChainHealth::UnhealthyProviders {
             unhealthy: unhealthy.len(),
-            whitelisted: quorum.configured_whitelisted_providers,
+            quorum,
         }
     }
 }
@@ -211,13 +242,15 @@ fn log_chain_health(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>
                 quorum = required_whitelisted_providers.get(),
                 "foreign chain is below quorum: configure more whitelisted RPC providers",
             ),
-            ChainHealth::UnhealthyProviders {
-                unhealthy,
-                whitelisted,
-            } => warn!(
+            ChainHealth::WrongNetwork { providers } => warn!(
+                %chain,
+                providers,
+                "foreign chain is unhealthy: an RPC provider serves another network, so every verify request fails",
+            ),
+            ChainHealth::UnhealthyProviders { unhealthy, quorum } => warn!(
                 %chain,
                 unhealthy,
-                whitelisted,
+                whitelisted = quorum.configured_whitelisted_providers,
                 "foreign chain is unhealthy: a whitelisted RPC provider did not pass the probe",
             ),
         }
@@ -252,6 +285,8 @@ mod tests {
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::tick::MockTicker;
     use foreign_chain_health_check::probe::ProviderCounts;
+    use foreign_chain_inspector::NetworkFingerprint;
+    use futures::FutureExt as _;
     use mpc_node_config::{AuthConfig, ForeignChainConfig, ForeignChainProviderConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use prometheus::core::Collector as _;
@@ -294,11 +329,29 @@ mod tests {
         }
     }
 
-    fn below_quorum(required: usize, configured: usize) -> ChainHealth {
-        ChainHealth::BelowQuorum(RpcQuorumStatus {
+    fn quorum_status(required: usize, configured: usize) -> RpcQuorumStatus {
+        RpcQuorumStatus {
             required_whitelisted_providers: NonZeroUsize::new(required).unwrap(),
             configured_whitelisted_providers: configured,
-        })
+        }
+    }
+
+    fn unhealthy(unhealthy: usize, required: usize, configured: usize) -> ChainHealth {
+        ChainHealth::UnhealthyProviders {
+            unhealthy,
+            quorum: quorum_status(required, configured),
+        }
+    }
+
+    fn wrong_network() -> ProviderStatus {
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new("137"),
+            observed: NetworkFingerprint::new("1"),
+        }
+    }
+
+    fn below_quorum(required: usize, configured: usize) -> ChainHealth {
+        ChainHealth::BelowQuorum(quorum_status(required, configured))
     }
 
     /// Gives provider `p` the base URL `https://p.example.com`, so [`ALCHEMY_URL`] and
@@ -599,7 +652,7 @@ mod tests {
         ],
         &["alchemy", "quicknode"],
         1,
-        ChainHealth::UnhealthyProviders { unhealthy: 1, whitelisted: 2 }
+        unhealthy(1, 1, 2)
     )]
     #[case::below_quorum_wins_over_a_failing_provider(
         &[
@@ -610,7 +663,7 @@ mod tests {
         2,
         below_quorum(2, 1)
     )]
-    #[case::health_of_a_provider_missing_from_the_whitelist_ignored(
+    #[case::unreachable_provider_missing_from_the_whitelist_ignored(
         &[
             ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
             ("own_node", OWN_NODE_URL, ProviderStatus::Unreachable),
@@ -618,6 +671,24 @@ mod tests {
         &["alchemy"],
         1,
         ChainHealth::Healthy
+    )]
+    #[case::provider_missing_from_the_whitelist_on_another_network_fails_the_chain(
+        &[
+            ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
+            ("own_node", OWN_NODE_URL, wrong_network()),
+        ],
+        &["alchemy"],
+        1,
+        ChainHealth::WrongNetwork { providers: 1 }
+    )]
+    #[case::whitelisted_provider_on_another_network_fails_the_chain(
+        &[
+            ("alchemy", ALCHEMY_URL, ProviderStatus::Healthy),
+            ("quicknode", QUICKNODE_URL, wrong_network()),
+        ],
+        &["alchemy", "quicknode"],
+        1,
+        ChainHealth::WrongNetwork { providers: 1 }
     )]
     #[case::provider_that_differs_from_its_whitelist_provider_not_counted(
         &[("alchemy", "http://alchemy.example.com", ProviderStatus::Healthy)],
@@ -632,7 +703,7 @@ mod tests {
         ],
         &["alchemy"],
         1,
-        ChainHealth::UnhealthyProviders { unhealthy: 1, whitelisted: 1 }
+        unhealthy(1, 1, 1)
     )]
     fn judge__should_judge_a_chain_by_its_counted_whitelist_providers(
         #[case] local_providers: &[(&str, &str, ProviderStatus)],
@@ -652,6 +723,50 @@ mod tests {
             health,
             BTreeMap::from([(dtos::ForeignChain::Polygon, expected)])
         );
+    }
+
+    #[test]
+    fn forward_foreign_chain_whitelist__should_forward_the_first_whitelist_and_each_change() {
+        // Given
+        let first = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+        let second = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy", "quicknode"], 2);
+        let (indexer_tx, indexer_rx) = watch::channel(first.clone());
+        let (probe_tx, probe_rx) = watch::channel(None);
+        let MaybeReady::Future(mut forwarder) =
+            run_future_once(forward_foreign_chain_whitelist(indexer_rx, probe_tx))
+        else {
+            panic!("the forwarder should wait for the next change");
+        };
+        let forwarded_first = probe_rx.borrow().clone();
+
+        // When
+        indexer_tx.send_replace(second.clone());
+        let outcome = forwarder.as_mut().now_or_never();
+
+        // Then
+        assert_eq!(forwarded_first, Some(first));
+        assert_eq!(*probe_rx.borrow(), Some(second));
+        assert!(outcome.is_none(), "the forwarder should keep waiting");
+    }
+
+    #[test]
+    fn forward_foreign_chain_whitelist__should_return_once_the_indexer_drops_its_sender() {
+        // Given
+        let (indexer_tx, indexer_rx) =
+            watch::channel(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1));
+        let (probe_tx, _probe_rx) = watch::channel(None);
+        let MaybeReady::Future(mut forwarder) =
+            run_future_once(forward_foreign_chain_whitelist(indexer_rx, probe_tx))
+        else {
+            panic!("the forwarder should wait for the next change");
+        };
+
+        // When
+        drop(indexer_tx);
+        let outcome = forwarder.as_mut().now_or_never();
+
+        // Then
+        assert!(outcome.is_some());
     }
 
     #[test]
@@ -689,12 +804,10 @@ mod tests {
         let health_per_chain = BTreeMap::from([
             (dtos::ForeignChain::Polygon, ChainHealth::Healthy),
             (dtos::ForeignChain::Base, below_quorum(2, 1)),
+            (dtos::ForeignChain::Bnb, unhealthy(1, 1, 2)),
             (
-                dtos::ForeignChain::Bnb,
-                ChainHealth::UnhealthyProviders {
-                    unhealthy: 1,
-                    whitelisted: 2,
-                },
+                dtos::ForeignChain::Arbitrum,
+                ChainHealth::WrongNetwork { providers: 1 },
             ),
         ]);
 
@@ -705,7 +818,14 @@ mod tests {
         let expected_levels = [
             ("INFO", "foreign chain is healthy"),
             ("WARN", "foreign chain is below quorum"),
-            ("WARN", "foreign chain is unhealthy"),
+            (
+                "WARN",
+                "foreign chain is unhealthy: a whitelisted RPC provider",
+            ),
+            (
+                "WARN",
+                "foreign chain is unhealthy: an RPC provider serves another network",
+            ),
         ];
         logs_assert(|lines: &[&str]| {
             expected_levels

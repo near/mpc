@@ -146,13 +146,17 @@ whitelist from the contract, it logs that chain health is unknown. It probes
 again as soon as the whitelist is read, and whenever the whitelist changes.
 
 A chain is healthy when at least its quorum of whitelisted providers is
-configured and all of them passed. Fewer than the quorum, or a whitelisted
-provider that failed, logs a warning. A configured provider counts for the
-whitelisted provider with the same URL host, and only when its scheme, port,
-path, chain routing and auth all match the voted entry. The name it is
-configured under has no effect. Two configured providers that match one
-whitelisted provider count once. Providers missing from the whitelist are
-probed and counted in the gauges, but not toward the quorum. A chain missing
+configured, all of them passed, and no configured provider serves another
+network. Fewer than the quorum, a whitelisted provider that failed, or any
+provider on another network logs a warning. A provider on another network
+fails every verify request on its chain, whether it is whitelisted or not,
+because the verdicts of all configured providers must agree. A configured
+provider counts for the whitelisted provider with the same URL host, and only
+when its scheme, port, path, chain routing and auth all match the voted entry.
+The name it is configured under has no effect. Two configured providers that
+match one whitelisted provider count once. Providers missing from the
+whitelist are probed and counted in the gauges, but not toward the quorum, and
+their health only matters when they serve another network. A chain missing
 from the whitelist is probed but not judged.
 
 ### Whitelist and quorum
