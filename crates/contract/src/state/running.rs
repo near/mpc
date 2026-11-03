@@ -269,7 +269,8 @@ pub mod running_tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
-        gen_running_state, gen_running_state_with_params, gen_valid_params_proposal,
+        RunningStateParams, gen_running_state, gen_running_state_with_params,
+        gen_valid_params_proposal,
     };
     use near_mpc_contract_interface::types::{
         DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -277,34 +278,28 @@ pub mod running_tests {
     use near_sdk::AccountId;
     use std::assert_matches;
 
-    fn setup(num_domains: usize) -> (RunningContractState, Environment) {
-        with_first_participant_signer(gen_running_state(num_domains))
-    }
-
-    /// Like [`setup`], but pins the participant count and GovernanceThreshold.
-    fn setup_with_params(
-        num_domains: usize,
+    struct SetupOpts {
         num_participants: usize,
-        governance_threshold: impl Into<GovernanceThreshold>,
-    ) -> (RunningContractState, Environment) {
-        with_first_participant_signer(gen_running_state_with_params(
-            num_domains,
-            num_participants,
-            governance_threshold,
-        ))
+        governance_threshold: GovernanceThreshold,
     }
 
-    fn with_first_participant_signer(
-        state: RunningContractState,
-    ) -> (RunningContractState, Environment) {
+    /// Signs as the first participant. `opts: None` randomizes n and the GovernanceThreshold.
+    /// The VM context outlives the returned [`Environment`], so dropping it is safe.
+    fn setup(num_domains: usize, opts: Option<SetupOpts>) -> (RunningContractState, Environment) {
+        let state = match opts {
+            Some(opts) => gen_running_state_with_params(RunningStateParams {
+                num_domains,
+                num_participants: opts.num_participants,
+                governance_threshold: opts.governance_threshold,
+            }),
+            None => gen_running_state(num_domains),
+        };
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         (state, env)
     }
 
     /// Returns a participant present in both the current and proposed sets.
-    /// [`gen_valid_params_proposal`] keeps only a random subset of the current ones.
-    /// A freshly added participant would be deferred as a pending newcomer.
     fn overlapping_signer(
         state: &RunningContractState,
         proposal: &ProposedGovernanceThresholdParameters,
@@ -479,7 +474,7 @@ pub mod running_tests {
         #[case] purpose: DomainPurpose,
     ) {
         // Given
-        let (mut state, _env) = setup(1);
+        let (mut state, _) = setup(1, None);
         let invalid_domain =
             single_domain_proposal(&state, protocol, purpose, ReconstructionThreshold::new(2));
 
@@ -497,7 +492,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_threshold_below_two() {
         // Given
-        let (mut state, _env) = setup(1);
+        let (mut state, _) = setup(1, None);
         let proposal = single_domain_proposal(
             &state,
             Protocol::CaitSith,
@@ -519,7 +514,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_threshold_exceeding_participants() {
         // Given
-        let (mut state, _env) = setup(1);
+        let (mut state, _) = setup(1, None);
         let n = state.parameters.participants().count().value();
         let proposal = single_domain_proposal(
             &state,
@@ -542,7 +537,13 @@ pub mod running_tests {
     fn vote_add_domains__should_reject_reconstruction_threshold_above_governance() {
         // Given governance 4 < n = 5, so `governance + 1 <= n`: the rejection
         // comes from the threshold relation, not the n ceiling.
-        let (mut state, _env) = setup_with_params(1, 5, 4);
+        let (mut state, _) = setup(
+            1,
+            Some(SetupOpts {
+                num_participants: 5,
+                governance_threshold: GovernanceThreshold::new(4),
+            }),
+        );
         let governance = state.parameters.threshold().value();
         let proposal = single_domain_proposal(
             &state,
@@ -567,7 +568,7 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_reject_robust_ecdsa_threshold_violating_honest_majority() {
         // Given a RobustEcdsa proposal with t = n, so `2t - 1 > n` for any n >= 2.
-        let (mut state, _env) = setup(1);
+        let (mut state, _) = setup(1, None);
         let n = state.parameters.participants().count().value();
         let proposal = single_domain_proposal(
             &state,
@@ -589,7 +590,7 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_accept_empty_per_domain_threshold_updates() {
         // Given
-        let (mut state, mut env) = setup(1);
+        let (mut state, mut env) = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
         env.set_signer(&overlapping_signer(&state, &proposal));
 
@@ -606,7 +607,7 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_reject_threshold_update_with_unknown_domain_id() {
         // Given
-        let (mut state, _env) = setup(1);
+        let (mut state, _) = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
         // When voting with a threshold update for a non-existent domain ID
@@ -648,7 +649,11 @@ pub mod running_tests {
         const NUM_REPLACED: usize = 2;
         const NUM_RETAINED: usize = NUM_PARTICIPANTS - NUM_REPLACED;
 
-        let state = gen_running_state_with_params(1, NUM_PARTICIPANTS, GOVERNANCE_THRESHOLD);
+        let state = gen_running_state_with_params(RunningStateParams {
+            num_domains: 1,
+            num_participants: NUM_PARTICIPANTS,
+            governance_threshold: GovernanceThreshold::new(GOVERNANCE_THRESHOLD),
+        });
         let mut proposed = state.parameters.participants().subset(0..NUM_RETAINED);
         proposed.add_random_participants_till_n(NUM_PARTICIPANTS);
 
@@ -803,10 +808,11 @@ pub mod running_tests {
         #[case] reconstruction_threshold: Option<u64>,
     ) {
         // Given
-        let (mut state, _env) = match pinned_params {
-            Some((n, k)) => setup_with_params(num_domains, n, k),
-            None => setup(num_domains),
-        };
+        let opts = pinned_params.map(|(num_participants, governance_threshold)| SetupOpts {
+            num_participants,
+            governance_threshold: GovernanceThreshold::new(governance_threshold),
+        });
+        let (mut state, _) = setup(num_domains, opts);
         let reconstruction_threshold = reconstruction_threshold
             .map(ReconstructionThreshold::new)
             .unwrap_or_else(|| ReconstructionThreshold::from(state.parameters.threshold()));
@@ -827,7 +833,13 @@ pub mod running_tests {
     #[test]
     fn vote_add_domains__should_accept_two_new_caitsith_with_differing_thresholds() {
         // Given a proposal adding two CaitSith domains at different thresholds
-        let (mut state, _env) = setup_with_params(0, 5, 5);
+        let (mut state, _) = setup(
+            0,
+            Some(SetupOpts {
+                num_participants: 5,
+                governance_threshold: GovernanceThreshold::new(5),
+            }),
+        );
         let next_id = state.domains.next_domain_id();
         let proposal = vec![
             DomainConfig {
@@ -854,7 +866,7 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_apply_threshold_update_to_validation() {
         // Given
-        let (mut state, _env) = setup(1);
+        let (mut state, _) = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
         // When a threshold update swaps a valid stored value for a too-low one
@@ -878,7 +890,13 @@ pub mod running_tests {
     #[test]
     fn process_new_parameters_proposal__should_accept_valid_per_domain_threshold_update() {
         // Given governance 4 so a ReconstructionThreshold of 3 fits
-        let (mut state, mut env) = setup_with_params(1, 5, 4);
+        let (mut state, mut env) = setup(
+            1,
+            Some(SetupOpts {
+                num_participants: 5,
+                governance_threshold: GovernanceThreshold::new(4),
+            }),
+        );
         let proposal = gen_valid_params_proposal(&state.parameters);
         env.set_signer(&overlapping_signer(&state, &proposal));
 
@@ -901,7 +919,7 @@ pub mod running_tests {
     fn process_new_parameters_proposal__should_reject_threshold_update_exceeding_participant_count()
     {
         // Given
-        let (mut state, _env) = setup(1);
+        let (mut state, _) = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
         // When the update sets t above the proposed participant count
@@ -926,7 +944,13 @@ pub mod running_tests {
     fn process_new_parameters_proposal__should_accept_threshold_update_diverging_caitsith() {
         // Given two CaitSith domains at the fixture default t = 2 (the
         // protocols cycle, so 5 domains yields two CaitSith)
-        let (mut state, mut env) = setup_with_params(5, 5, 4);
+        let (mut state, mut env) = setup(
+            5,
+            Some(SetupOpts {
+                num_participants: 5,
+                governance_threshold: GovernanceThreshold::new(4),
+            }),
+        );
         assert!(
             state
                 .domains
