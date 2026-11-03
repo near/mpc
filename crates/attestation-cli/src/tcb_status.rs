@@ -184,9 +184,15 @@ fn evaluate(
         Err(err) => return TcbVerdict::Rejected(err.to_string()),
     };
 
-    let shortfalls = match shortfalls(&tcb_info, &claims.platform.pck, report) {
-        Ok(shortfalls) => shortfalls,
-        Err(err) => return TcbVerdict::Rejected(err.to_string()),
+    // An `UpToDate` platform clears an accepted level, so nothing falls short,
+    // and a malformed level DCAP never reached must not overturn its verdict.
+    let shortfalls = if claims.tcb.status == TcbStatus::UpToDate {
+        Vec::new()
+    } else {
+        match shortfalls(&tcb_info, &claims.platform.pck, report) {
+            Ok(shortfalls) => shortfalls,
+            Err(err) => return TcbVerdict::Rejected(err.to_string()),
+        }
     };
     TcbVerdict::Verified {
         tcb_info,
@@ -198,9 +204,10 @@ fn evaluate(
 /// Every SVN that keeps the platform off Intel's nearest accepted TCB level.
 ///
 /// Explanatory only: the status already says whether the platform clears the
-/// bar, this says by how much it misses. Fails on TCB info that verification
-/// would reject too: no identity for the quote's module, or a level whose
-/// component counts do not match the platform's.
+/// bar, this says by how much it misses. Fails on TCB info with no identity for
+/// the quote's module, or with an accepted level whose component counts differ
+/// from the platform's. Intel's QVL rejects the latter at parse time, but
+/// `dcap-qvl` only checks the levels it reaches before a match.
 fn shortfalls(
     tcb_info: &TcbInfo,
     pck: &PckIdentity,
@@ -234,7 +241,7 @@ fn shortfalls(
                 short.len(),
                 short
                     .iter()
-                    .map(|s| u32::from(s.needs - s.have))
+                    .map(|s| u32::from(s.needs.saturating_sub(s.have)))
                     .sum::<u32>(),
             )
         })
