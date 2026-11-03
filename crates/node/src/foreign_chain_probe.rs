@@ -1,5 +1,6 @@
 //! Periodic probe of every configured foreign-chain RPC provider, via
-//! [`foreign_chain_health_check::probe`].
+//! [`foreign_chain_health_check::probe`], with the local config compared against the on chain
+//! provider whitelist.
 
 use std::future::Future;
 
@@ -15,12 +16,15 @@ use crate::tick::Tick;
 mod report;
 #[cfg(test)]
 mod test_utils;
+mod whitelist_diagnostics;
 
 /// Asks every configured RPC provider which network it serves, once per tick of `ticker` and
 /// whenever `whitelist_rx` changes, and reports the verdicts as logs and metrics. Diagnostic only:
 /// nothing gates on the result.
 ///
-/// Until the whitelist is first read from the contract, each round logs that it is not read yet.
+/// Once the whitelist is read, each round also logs every difference between the local config and
+/// the whitelist, see [`whitelist_diagnostics`]. Until then, each round logs that it is not read
+/// yet.
 pub async fn run_periodic_probe(
     foreign_chains: ForeignChainsConfig,
     whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
@@ -33,6 +37,7 @@ pub async fn run_periodic_probe(
 
     probe_periodically(
         || probe_all_providers(&foreign_chains, &InspectorFactory),
+        &foreign_chains,
         whitelist_rx,
         ticker,
     )
@@ -58,6 +63,7 @@ pub(crate) async fn forward_foreign_chain_whitelist(
 
 async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
     probe: impl Fn() -> Probe,
+    local: &ForeignChainsConfig,
     mut whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     mut ticker: impl Tick,
 ) {
@@ -74,8 +80,10 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
         let report = probe().await;
         report::publish_metrics(&report);
         report::log_report(&report);
-        if whitelist_rx.borrow_and_update().is_none() {
-            info!("foreign chain whitelist: not read from the contract yet");
+        let whitelist = whitelist_rx.borrow_and_update().clone();
+        match whitelist {
+            Some(whitelist) => whitelist_diagnostics::log_differences(local, &whitelist),
+            None => info!("foreign chain whitelist: not read from the contract yet"),
         }
     }
 }
@@ -94,7 +102,8 @@ mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
-        capped_probe, empty_report, gauges, logged_times, no_whitelist, row, whitelist_of,
+        ALCHEMY_URL, capped_probe, empty_report, gauges, logged_times, no_whitelist,
+        polygon_with_report, row, whitelist_of,
     };
     use crate::tick::MockTicker;
 
@@ -108,6 +117,7 @@ mod tests {
         // When
         run_future_once(probe_periodically(
             capped_probe(&probe_count, 3, empty_report()),
+            &ForeignChainsConfig::default(),
             no_whitelist(),
             MockTicker::new(3),
         ));
@@ -134,10 +144,12 @@ mod tests {
         let probe_dispatch =
             || std::future::ready(rounds.borrow_mut().pop_front().expect("a report per tick"));
         let ticker = MockTicker::new(1);
+        let local = ForeignChainsConfig::default();
 
         // When
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
             probe_dispatch,
+            &local,
             no_whitelist(),
             ticker.clone(),
         )) else {
@@ -251,8 +263,10 @@ mod tests {
         // Given
         let probe_count = Cell::new(0);
         let (whitelist_tx, whitelist_rx) = watch::channel(None);
+        let local = ForeignChainsConfig::default();
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
             capped_probe(&probe_count, 2, empty_report()),
+            &local,
             whitelist_rx,
             MockTicker::new(1),
         )) else {
@@ -269,7 +283,11 @@ mod tests {
 
         // Then
         assert_eq!(probe_count.get(), 2);
-        logs_assert(|lines: &[&str]| logged_times(lines, "INFO", NOT_READ, 1));
+        logs_assert(|lines: &[&str]| {
+            [NOT_READ, "local config matches the contract whitelist"]
+                .iter()
+                .try_for_each(|message| logged_times(lines, "INFO", message, 1))
+        });
     }
 
     #[test]
@@ -289,6 +307,7 @@ mod tests {
             // When
             run_future_once(probe_periodically(
                 capped_probe(&probe_count, 1, empty_report()),
+                &ForeignChainsConfig::default(),
                 whitelist_rx,
                 MockTicker::new(1),
             ));
@@ -300,34 +319,77 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn probe_periodically__should_use_a_whitelist_that_arrives_during_the_probe() {
+    fn probe_periodically__should_compare_with_a_whitelist_that_changes_during_the_probe() {
         // Given
-        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
-        let (whitelist_tx, whitelist_rx) = watch::channel(None);
+        let (local, report) =
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let without_alchemy = whitelist_of(dtos::ForeignChain::Polygon, &["quicknode"], 1);
+        let with_alchemy = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+        let (whitelist_tx, whitelist_rx) = watch::channel(Some(without_alchemy));
         let probe_count = Cell::new(0);
-        let counted_probe = capped_probe(&probe_count, 1, empty_report());
+        let counted_probe = capped_probe(&probe_count, 1, report);
         let probe = || {
-            whitelist_tx.send_replace(Some(whitelist.clone()));
+            whitelist_tx.send_replace(Some(with_alchemy.clone()));
             counted_probe()
         };
 
         // When
-        run_future_once(probe_periodically(probe, whitelist_rx, MockTicker::new(1)));
+        run_future_once(probe_periodically(
+            probe,
+            &local,
+            whitelist_rx,
+            MockTicker::new(1),
+        ));
 
         // Then
         assert_eq!(probe_count.get(), 1);
-        assert!(!logs_contain(NOT_READ));
+        assert!(logs_contain("local config matches the contract whitelist"));
+        assert!(!logs_contain("extra provider"));
+    }
+
+    #[test]
+    #[traced_test]
+    fn probe_periodically__should_log_whitelist_diagnostics_every_round() {
+        // Given
+        let (local, report) =
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let probe = || std::future::ready(report.clone());
+        let (_whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist_of(
+            dtos::ForeignChain::Polygon,
+            &["alchemy", "quicknode"],
+            2,
+        )));
+
+        // When
+        run_future_once(probe_periodically(
+            probe,
+            &local,
+            whitelist_rx,
+            MockTicker::new(2),
+        ));
+
+        // Then
+        logs_assert(|lines: &[&str]| {
+            logged_times(
+                lines,
+                "INFO",
+                "local config matches the contract whitelist",
+                2,
+            )
+        });
     }
 
     #[test]
     fn probe_periodically__should_keep_probing_on_ticks_once_the_whitelist_sender_is_gone() {
         // Given
         let probe_count = Cell::new(0);
+        let local = ForeignChainsConfig::default();
         let (whitelist_tx, whitelist_rx) = watch::channel(None);
         drop(whitelist_tx);
         let ticker = MockTicker::new(1);
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
             capped_probe(&probe_count, 2, empty_report()),
+            &local,
             whitelist_rx,
             ticker.clone(),
         )) else {

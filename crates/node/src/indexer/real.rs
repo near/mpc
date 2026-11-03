@@ -65,7 +65,6 @@ pub fn spawn_real_indexer(
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
-    foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
 ) -> IndexerAPI<impl TransactionSender> {
@@ -220,10 +219,6 @@ pub fn spawn_real_indexer(
 
             let foreign_chain_whitelist_receiver =
                 monitor_foreign_chain_whitelist(indexer_state.contract.clone()).await;
-            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver.clone(),
-                foreign_chains.clone(),
-            ));
             if foreign_chain_whitelist_sender_oneshot
                 .send(foreign_chain_whitelist_receiver)
                 .is_err()
