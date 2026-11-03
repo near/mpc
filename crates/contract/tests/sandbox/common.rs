@@ -383,6 +383,15 @@ pub async fn approve_contract_update(
     );
 }
 
+pub fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
+    MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+        expected_measurements: None,
+    }
+}
+
 /// The node the contract stores when the [`Account`] attests under the given TLS key.
 pub fn sandbox_node(account: &Account, tls_public_key: dtos::Ed25519PublicKey) -> dtos::Node {
     let signer_key: [u8; 32] = account

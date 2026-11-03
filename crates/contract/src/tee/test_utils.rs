@@ -15,6 +15,13 @@ use near_sdk::{BlockHeight, NearToken, PublicKey, test_utils::VMContextBuilder, 
 use rand::Rng;
 use std::time::Duration;
 
+#[cfg(test)]
+use mpc_attestation::attestation::MockAttestation;
+#[cfg(test)]
+use near_mpc_contract_interface::types as dtos;
+#[cfg(test)]
+use test_utils::attestation::{account_key, p2p_tls_key};
+
 /// Test environment for managing VM context state.
 ///
 /// Provides convenient methods for setting up and manipulating the NEAR VM testing
@@ -148,4 +155,23 @@ pub fn whitelist_dstack_in_state(
     let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
     whitelist_dstack_measurements(&mut contract.tee_state, image, launcher, compose_hash);
     borsh::to_vec(&contract).expect("STATE serializes")
+}
+
+#[cfg(test)]
+pub(crate) fn dstack_fixture_node() -> dtos::Node {
+    dtos::Node {
+        account_id: "alice.near".parse().unwrap(),
+        tls_public_key: p2p_tls_key().into(),
+        account_public_key: account_key().into(),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
+    MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+        expected_measurements: None,
+    }
 }

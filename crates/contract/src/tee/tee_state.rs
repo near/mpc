@@ -509,7 +509,10 @@ mod tests {
     };
     use crate::tee::{
         proposal::get_docker_compose_hash,
-        test_utils::{set_block_secs, set_block_timestamp, whitelist_dstack_measurements},
+        test_utils::{
+            dstack_fixture_node, mock_expiring_at, set_block_secs, set_block_timestamp,
+            whitelist_dstack_measurements,
+        },
     };
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{
@@ -524,8 +527,8 @@ mod tests {
         collections::{BTreeMap, BTreeSet},
     };
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, image_digest, launcher_compose_digest, launcher_image_hash,
+        mock_tcb_info, verified_report,
     };
 
     #[test]
@@ -592,8 +595,8 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: the previously uncleanable mock entry is removed.
-        assert_eq!(removed.len(), 1);
-        assert!(!tee_state.nodes.contains_key(&node.tls_public_key));
+        assert_eq!(removed, vec![node.account_id]);
+        assert!(tee_state.nodes.is_empty());
     }
 
     #[test]
@@ -613,8 +616,8 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: the entry is cleaned, so the submitted expiry was capped at the default.
-        assert_eq!(removed.len(), 1);
-        assert!(!tee_state.nodes.contains_key(&node.tls_public_key));
+        assert_eq!(removed, vec![node.account_id]);
+        assert!(tee_state.nodes.is_empty());
     }
 
     #[test]
@@ -671,7 +674,7 @@ mod tests {
 
         // Then: nothing is removed.
         assert!(removed.is_empty());
-        assert!(tee_state.nodes.contains_key(&node.tls_public_key));
+        assert_eq!(tee_state.get_tee_accounts(), vec![node]);
     }
 
     #[test]
@@ -749,7 +752,7 @@ mod tests {
     const TEST_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
     #[test]
-    fn reverify_and_cleanup_participants__should_accept_all_attested_participants() {
+    fn validate_tee_returns_full_when_all_participants_have_valid_attestations() {
         // Given
         let participants = gen_participants(3);
         let mut tee_state = TeeState::with_mocked_participant_attestations(&participants);
@@ -769,15 +772,6 @@ mod tests {
 
     fn after_retention(added_at_secs: u64) -> u64 {
         added_at_secs + LAUNCHER_TTL.as_secs() + 1
-    }
-
-    fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
-        MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
-            expected_measurements: None,
-        }
     }
 
     fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
@@ -939,7 +933,7 @@ mod tests {
     }
 
     #[test]
-    fn reverify_and_cleanup_participants__should_exclude_a_participant_without_attestation() {
+    fn validate_tee_returns_partial_when_participant_has_no_attestation() {
         // Given
         let participants = gen_participants(3);
         let attested = participants.subset(0..2);
@@ -958,7 +952,7 @@ mod tests {
     }
 
     #[test]
-    fn reverify_and_cleanup_participants__should_exclude_an_expired_attestation() {
+    fn validate_tee_returns_partial_when_attestation_is_expired() {
         // Given
         let current_time_secs = env::block_timestamp() / 1_000_000_000;
         let expiry_time_secs = current_time_secs + TEST_GRACE_PERIOD.as_secs();
@@ -1093,11 +1087,7 @@ mod tests {
             launcher_image_hash(),
             Some(launcher_compose_digest()),
         );
-        let node = dtos::Node {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
-            account_public_key: Ed25519PublicKey(account_key()),
-        };
+        let node = dstack_fixture_node();
 
         // When
         let result = tee_state.verify_and_store_dstack(

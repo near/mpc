@@ -227,6 +227,15 @@ impl TestSetup {
     }
 }
 
+fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
+    MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+        expected_measurements: None,
+    }
+}
+
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {
     testing_env!(
         VMContextBuilder::new()
@@ -409,12 +418,7 @@ fn clean_invalid_attestations__should_remove_expired_nodes_not_in_use() {
         .with_threshold(THRESHOLD)
         .build();
 
-    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
-        expected_measurements: None,
-    });
+    let expiring_attestation = Attestation::Mock(mock_expiring_at(EXPIRY_SECONDS));
 
     let participant_node = setup.get_participant_nodes()[0].clone();
     setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
@@ -841,12 +845,7 @@ fn clean_invalid_attestations__should_return_the_grant_and_let_it_be_reused() {
 
     let mut setup = TestSetupBuilder::new().build();
     let node = node_for(&"churn.near".parse().unwrap());
-    let expiring = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
-        expected_measurements: None,
-    });
+    let expiring = Attestation::Mock(mock_expiring_at(EXPIRY_SECONDS));
     setup.prepay_grants(&node.account_id, 1);
     setup.submit_attestation_for_node(&node, expiring);
     assert_eq!(

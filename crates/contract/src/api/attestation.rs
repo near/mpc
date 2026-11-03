@@ -481,7 +481,10 @@ mod tests {
     use crate::state::resharing::ResharingContractState;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
-    use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
+    use crate::tee::test_utils::{
+        NANOS_PER_SECOND, dstack_fixture_node, mock_expiring_at, set_block_secs,
+        whitelist_dstack_measurements,
+    };
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
         ReconstructionThreshold,
@@ -499,13 +502,13 @@ mod tests {
     use std::panic;
     use std::{assert_matches, collections::BTreeSet};
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, image_digest, launcher_compose_digest, launcher_image_hash,
+        mock_tcb_info, verified_report,
     };
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
-    fn submit_participant_info__should_panic_when_predecessor_differs_from_signer() {
+    fn test_submit_participant_info_panics_if_predecessor_differs() {
         // Given
         let mut contract = forwarded_participant_call_contract();
 
@@ -663,16 +666,11 @@ mod tests {
             Some(launcher_compose_digest()),
         );
 
+        let node = dstack_fixture_node();
         // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
         contract
             .available_attestation_grants
-            .insert("alice.near".parse().unwrap(), 1);
-
-        let node = dtos::Node {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
-            account_public_key: Ed25519PublicKey(account_key()),
-        };
+            .insert(node.account_id.clone(), 1);
         (
             contract,
             VerificationContext {
@@ -967,15 +965,13 @@ mod tests {
         let (target_account_id, _, target_participant_info) =
             &participant_list[participant_count - 1];
         let node = create_node(target_account_id, &target_participant_info.tls_public_key);
-        let expiring_attestation = MpcMockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
         contract
             .tee_state
-            .verify_and_store_mock(node, expiring_attestation, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(
+                node,
+                mock_expiring_at(ATTESTATION_EXPIRY_SECONDS),
+                TEE_UPGRADE_DURATION,
+            )
             .expect("mock attestation is not yet expired and valid");
 
         let (first_account_id, _, _) = &participant_list[0];
@@ -1143,7 +1139,7 @@ mod tests {
     /// Storage the contract pays for one stored attestation entry, measured the way the runtime
     /// charges it. NEAR caps an account id at 64 bytes; both of a node's keys are fixed-size,
     /// so this is the worst case for the given attestation variant.
-    fn measure_stored_entry_bytes(attestation: VerifiedAttestation) -> u64 {
+    fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());
         let tls_public_key = bogus_ed25519_public_key();
 
@@ -1155,7 +1151,7 @@ mod tests {
                 owner: "a".repeat(64).parse().unwrap(),
                 tls_public_key,
                 signer_public_key: bogus_ed25519_public_key(),
-                attestation,
+                attestation: verified_attestation,
                 attestation_accepted_at_seconds: u64::MAX,
             },
         );

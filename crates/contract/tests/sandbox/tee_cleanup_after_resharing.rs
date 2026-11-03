@@ -2,8 +2,8 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, build_sandbox_nodes, gen_accounts, prepay_and_submit_tee_attestations,
-        sandbox_node,
+        SandboxTestSetup, build_sandbox_nodes, gen_accounts, mock_expiring_at,
+        prepay_and_submit_tee_attestations, sandbox_node,
     },
     utils::{
         interface::IntoContractType,
@@ -161,12 +161,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
     let block_info = worker.view_block().await?;
     let expiry_timestamp_seconds =
         block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
-    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
-        expected_measurements: None,
-    });
+    let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp_seconds));
     let submit_result = prepay_and_submit_participant_info(
         stale_account,
         &contract,

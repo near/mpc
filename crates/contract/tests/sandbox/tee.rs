@@ -2,7 +2,8 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, build_sandbox_nodes, gen_accounts, prepay_and_submit_tee_attestations,
+        SandboxTestSetup, build_sandbox_nodes, gen_accounts, mock_expiring_at,
+        prepay_and_submit_tee_attestations,
     },
     utils::{
         consts::ALL_PROTOCOLS,
@@ -31,15 +32,6 @@ use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account};
 use rand::SeedableRng;
 use test_utils::attestation::{image_digest, p2p_tls_key};
-
-fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
-    MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
-        expected_measurements: None,
-    }
-}
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
