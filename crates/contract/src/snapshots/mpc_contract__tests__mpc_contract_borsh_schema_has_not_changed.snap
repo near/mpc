@@ -615,6 +615,10 @@ BorshSchemaContainer {
                         "available_attestation_grants",
                         "IterableMap",
                     ),
+                    (
+                        "parameters_votes",
+                        "GovernanceThresholdParametersVotes",
+                    ),
                 ],
             ),
         },
@@ -941,10 +945,6 @@ BorshSchemaContainer {
                     (
                         "parameters",
                         "GovernanceThresholdParameters",
-                    ),
-                    (
-                        "parameters_votes",
-                        "GovernanceThresholdParametersVotes",
                     ),
                     (
                         "add_domains_votes",
