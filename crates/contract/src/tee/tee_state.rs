@@ -190,11 +190,15 @@ impl TeeState {
         node_id: NodeId,
         verified_attestation: VerifiedAttestation,
     ) -> Result<bool, AttestationSubmissionError> {
-        self.assert_tls_key_claimable(&node_id.account_id, &node_id.tls_public_key)?;
+        let tls_pk = node_id.tls_public_key.clone();
+
+        self.assert_tls_key_claimable(&node_id.account_id, &tls_pk)?;
+
         let previous = self.nodes.insert(
-            node_id.tls_public_key.clone(),
+            tls_pk,
             Node::new(node_id, verified_attestation, Self::current_time_seconds()),
         );
+
         Ok(previous.is_none())
     }
 
