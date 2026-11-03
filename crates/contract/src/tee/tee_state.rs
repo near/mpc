@@ -57,6 +57,13 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
+    /// Invariant: each TLS key a participant uses (its current one and, during a node migration,
+    /// the destination one) maps to a node owned by that participant. Joining the participant set
+    /// and migrating require such a node, and [`crate::MpcContract::clean_invalid_attestations`]
+    /// never removes it. This lets [`Self::assert_tls_key_claimable`] decide whether an account
+    /// may store a node under a TLS key by looking only at this map, so code that changes how
+    /// participants get TLS keys or how nodes are removed must preserve the invariant.
+    ///
     /// Callers must not assume this map is small; use the key-indexed accessors rather than
     /// scanning the whole collection.
     pub(crate) nodes: IterableMap<Ed25519PublicKey, Node>,
@@ -416,9 +423,7 @@ impl TeeState {
     }
 
     /// Fails if another account's node is stored under the TLS key. Checking only the stored node
-    /// is enough because every key a participant uses, its current one and its migration
-    /// destination, holds that participant's own node: joining and migrating require it, and
-    /// [`crate::MpcContract::clean_invalid_attestations`] keeps it.
+    /// is enough because of the invariant on [`Self::nodes`].
     pub(crate) fn assert_tls_key_claimable(
         &self,
         account_id: &AccountId,
