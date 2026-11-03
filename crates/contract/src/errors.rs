@@ -188,6 +188,11 @@ pub enum InvalidState {
     ParticipantIndexOutOfRange,
     #[error("Not a participant: {account_id}")]
     NotParticipant { account_id: AccountId },
+    #[error("No node owned by {account_id} is stored under the TLS key {tls_public_key:?} it uses")]
+    ParticipantNodeMissing {
+        account_id: AccountId,
+        tls_public_key: dtos::Ed25519PublicKey,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

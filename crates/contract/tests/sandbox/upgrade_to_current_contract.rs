@@ -2,15 +2,16 @@
 
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_account,
-        gen_accounts, init, submit_attestations, vote_and_submit_contract_binary,
+        approve_contract_update, call_contract_key_generation,
+        execute_key_generation_and_add_random_state, gen_account, gen_accounts, init,
+        submit_attestations, vote_and_submit_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
             get_config, get_participant_attestation, get_participants, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, vote_add_launcher_hash,
+            prepay_and_submit_participant_info, submit_participant_info, vote_add_launcher_hash,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
@@ -30,10 +31,11 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    AuthScheme, CKDResponse, ChainEntry, ChainRouting, DomainConfig, DomainPurpose, ForeignChain,
-    Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
+    Attestation, AuthScheme, CKDResponse, ChainEntry, ChainRouting, DomainConfig, DomainPurpose,
+    ForeignChain, MockAttestation, Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
+    Update,
 };
-use near_mpc_sdk::sign::SignatureRequestResponse;
+use near_mpc_sdk::{sign::SignatureRequestResponse, update::hash};
 use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
 use rand_core::OsRng;
 use rstest::rstest;
@@ -491,6 +493,83 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
         accounts_with_tee_attestation_post_upgrade, participant_set,
         "All initial participants must have a valid attestation post upgrade."
     );
+    Ok(())
+}
+
+// TODO(#5045): remove once no network runs 3.18.0
+async fn old_contract_with_a_participant_missing_its_node(
+    worker: &Worker<Sandbox>,
+) -> anyhow::Result<(SandboxMpcContract, Vec<Account>, dtos::Ed25519PublicKey)> {
+    const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
+    let contract = deploy_old(worker, Network::Testnet).await?;
+    let (accounts, participants) = init_old_contract(worker, &contract, PARTICIPANT_LEN).await?;
+    let (_, _, participant_info) = &participants.participants()[0];
+    let tls_key = participant_info.tls_public_key.clone();
+
+    // Submission rejects an expired attestation, so the node expires only after it is stored
+    let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(now_seconds + ATTESTATION_EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
+    let submission =
+        submit_participant_info(&accounts[0], &contract, &expiring_attestation, &tls_key).await?;
+    assert!(submission.is_success(), "{submission:#?}");
+    worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
+
+    // Unlike later versions, 3.18.0's cleanup also deletes the expired node of a participant
+    let cleanup = contract.clean_invalid_attestations(u32::MAX).await?;
+    assert!(cleanup.is_success(), "{cleanup:#?}");
+    Ok((contract, accounts, tls_key))
+}
+
+#[tokio::test]
+async fn submit_contract_update__should_keep_the_old_contract_while_a_participant_misses_its_node()
+-> anyhow::Result<()> {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await?;
+    let (contract, accounts, _) = old_contract_with_a_participant_missing_its_node(&worker).await?;
+    let update = Update::Code(current_contract().to_vec());
+    approve_contract_update(&contract, &accounts, hash(&update)).await;
+
+    // When
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await?;
+
+    // Then
+    assert!(execution.is_success(), "{execution:#?}");
+    assert_eq!(contract.view_code().await?, contract_code(Network::Testnet));
+    Ok(())
+}
+
+#[tokio::test]
+async fn submit_contract_update__should_upgrade_once_the_participant_attests_again()
+-> anyhow::Result<()> {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await?;
+    let (contract, accounts, tls_key) =
+        old_contract_with_a_participant_missing_its_node(&worker).await?;
+    let attestation = Attestation::Mock(MockAttestation::Valid);
+    let submission =
+        prepay_and_submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    assert!(submission.is_success(), "{submission:#?}");
+    let update = Update::Code(current_contract().to_vec());
+    approve_contract_update(&contract, &accounts, hash(&update)).await;
+
+    // When
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await?;
+
+    // Then
+    assert!(execution.is_success(), "{execution:#?}");
+    assert_eq!(contract.view_code().await?, current_contract());
     Ok(())
 }
 

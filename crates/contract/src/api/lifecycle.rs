@@ -21,6 +21,7 @@ use crate::{MpcContract, MpcContractExt, v3_18_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
+use std::iter;
 
 #[near]
 impl MpcContract {
@@ -162,7 +163,9 @@ impl MpcContract {
     /// migrate flow.
     ///
     /// If nothing is changed, then this function will just return the current state. If it fails
-    /// to read the state, then it will return an error.
+    /// to read the state, then it will return an error. It also fails if a participant of the
+    /// 3.18.0 state uses a TLS key that does not hold a node the participant owns, which reverts
+    /// the whole upgrade.
     #[private]
     #[init(ignore_state)]
     #[handle_result]
@@ -170,7 +173,12 @@ impl MpcContract {
         log!("migrating contract");
 
         match try_state_read::<v3_18_0_state::MpcContract>() {
-            Ok(Some(state)) => return Ok(state.into()),
+            Ok(Some(state)) => {
+                let contract: Self = state.into();
+                // TODO(#5045): remove once no network runs 3.18.0
+                contract.assert_participants_own_their_tls_keys()?;
+                return Ok(contract);
+            }
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
                 log!("failed to deserialize state into 3.18.0 state: {:?}", err);
@@ -182,6 +190,31 @@ impl MpcContract {
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
+    }
+
+    fn assert_participants_own_their_tls_keys(&self) -> Result<(), Error> {
+        let participants = self
+            .protocol_state
+            .threshold_parameters_or_panic()
+            .participants();
+        for (account_id, _, participant_info) in participants.participants() {
+            let migration_destination = self
+                .node_migrations
+                .ongoing_migration(account_id)
+                .map(|migration| &migration.destination_node_info.tls_public_key);
+            for tls_public_key in
+                iter::once(&participant_info.tls_public_key).chain(migration_destination)
+            {
+                if self.tee_state.node_of(account_id, tls_public_key).is_none() {
+                    return Err(InvalidState::ParticipantNodeMissing {
+                        account_id: account_id.clone(),
+                        tls_public_key: tls_public_key.clone(),
+                    }
+                    .into());
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
@@ -202,4 +235,93 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
     env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::{
+        api::test_utils::{destination_of, initializing_state, resharing_state, running_state},
+        primitives::test_utils::node_id_for,
+    };
+    use rstest::rstest;
+    use std::assert_matches;
+
+    fn contract_with_participant_nodes(protocol_state: ProtocolContractState) -> MpcContract {
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
+        contract.tee_state = TeeState::with_mocked_participant_attestations(
+            contract
+                .protocol_state
+                .threshold_parameters_or_panic()
+                .participants(),
+        );
+        contract
+    }
+
+    #[rstest]
+    fn assert_participants_own_their_tls_keys__should_accept_participants_owning_their_nodes(
+        #[values(running_state(), initializing_state(), resharing_state())]
+        protocol_state: ProtocolContractState,
+    ) {
+        // Given
+        let contract = contract_with_participant_nodes(protocol_state);
+
+        // When
+        let result = contract.assert_participants_own_their_tls_keys();
+
+        // Then
+        assert_matches!(result, Ok(()));
+    }
+
+    #[test]
+    fn assert_participants_own_their_tls_keys__should_reject_a_participant_without_its_node() {
+        // Given
+        let mut contract = contract_with_participant_nodes(running_state());
+        let (account_id, _, participant_info) =
+            contract.protocol_state.active_participants().participants()[0].clone();
+        contract
+            .tee_state
+            .nodes
+            .remove(&participant_info.tls_public_key);
+
+        // When
+        let result = contract.assert_participants_own_their_tls_keys();
+
+        // Then
+        assert_eq!(
+            result,
+            Err(InvalidState::ParticipantNodeMissing {
+                account_id,
+                tls_public_key: participant_info.tls_public_key,
+            }
+            .into())
+        );
+    }
+
+    #[test]
+    fn assert_participants_own_their_tls_keys__should_reject_a_migration_destination_without_the_participants_node()
+     {
+        // Given
+        let mut contract = contract_with_participant_nodes(running_state());
+        let (account_id, _, _) =
+            contract.protocol_state.active_participants().participants()[0].clone();
+        let destination = destination_of(&node_id_for(&account_id));
+        contract
+            .node_migrations
+            .set_destination_node_info(account_id.clone(), destination.clone());
+
+        // When
+        let result = contract.assert_participants_own_their_tls_keys();
+
+        // Then
+        assert_eq!(
+            result,
+            Err(InvalidState::ParticipantNodeMissing {
+                account_id,
+                tls_public_key: destination.destination_node_info.tls_public_key,
+            }
+            .into())
+        );
+    }
 }
