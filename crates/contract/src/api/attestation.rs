@@ -474,8 +474,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, destination_of, make_public_key_for_curve, setup_tee_test_contract,
-        submit_valid_attestations,
+        basic_setup, destination_of, initializing_state, make_public_key_for_curve,
+        resharing_state, setup_tee_test_contract, submit_valid_attestations,
     };
     use crate::config::Config;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
@@ -648,6 +648,23 @@ mod tests {
 
         // Then
         assert_eq!(contract.get_tee_accounts().contains(&node_id), is_kept);
+    }
+
+    #[rstest]
+    fn clean_invalid_attestations__should_reject_when_not_running(
+        #[values(initializing_state(), resharing_state())] protocol_state: ProtocolContractState,
+    ) {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
+
+        // When
+        let result = contract.clean_invalid_attestations(u32::MAX);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::InvalidState(InvalidState::ProtocolStateNotRunning))
+        );
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
