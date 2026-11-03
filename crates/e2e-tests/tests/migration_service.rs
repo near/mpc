@@ -10,7 +10,7 @@ use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::{MpcNodeSetup, ProcessGuard};
-use e2e_tests::{MpcNodeState, PARTICIPANT_ATTESTATIONS_TIMEOUT};
+use e2e_tests::{IndexerBackend, MpcNodeState, PARTICIPANT_ATTESTATIONS_TIMEOUT};
 use near_contract_transport::WatchContractState;
 use near_mpc_contract_interface::types::{
     BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
@@ -749,6 +749,10 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     let (cluster, _running) = common::must_setup_cluster(port_seed, |c| {
         c.num_nodes = 2;
         c.threshold = 2;
+        if matches!(contract_state_source, ContractStateSource::EmbeddedNode) {
+            // backup-cli's embedded node bootstraps from node 0's NEAR home.
+            c.indexer = IndexerBackend::Embedded;
+        }
     })
     .await;
 

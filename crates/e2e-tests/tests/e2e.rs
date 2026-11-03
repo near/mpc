@@ -7,6 +7,7 @@ mod distinct_reconstruction_thresholds;
 mod foreign_chain_configuration;
 mod foreign_chain_probe;
 mod foreign_chain_tx_validation;
+mod http_indexer;
 mod key_resharing;
 mod leader_failover;
 mod lost_assets;
