@@ -1673,8 +1673,8 @@ and serves a chain only while enough of them conform to reach the quorum:
   slug.
 * A matched provider conforms when its URL, chain routing, auth kind, header name and scheme or
   query name, and the position of the token placeholder in the URL are the ones voted. The token
-  itself is not compared. A matched provider that differs is reported in the log and does not
-  count.
+  itself is not compared. A matched provider that differs does not count, and the log reports it
+  once per hour until it is fixed.
 * Two local providers behind one voted host count once.
 * A provider whose host is not voted is still queried and can veto a verdict, but never counts
   toward the quorum.

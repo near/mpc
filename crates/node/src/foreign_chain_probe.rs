@@ -218,7 +218,7 @@ fn log_chain_health(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>
                 %chain,
                 unhealthy,
                 whitelisted,
-                "foreign chain is unhealthy: a whitelisted RPC provider failed the probe",
+                "foreign chain is unhealthy: a whitelisted RPC provider did not pass the probe",
             ),
         }
     }
@@ -788,24 +788,36 @@ mod tests {
         assert_eq!(probe_count.get(), 2);
     }
 
+    /// Polygon with one healthy Alchemy provider is below quorum under the first whitelist and
+    /// healthy under the second.
+    fn polygon_and_whitelists() -> (ForeignChainsConfig, ProbeReport, [ForeignChainWhitelist; 2]) {
+        let (local, report) =
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let below_quorum = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy", "quicknode"], 2);
+        let healthy = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+        (local, report, [below_quorum, healthy])
+    }
+
     #[test]
-    fn probe_periodically__should_probe_once_when_a_whitelist_change_lands_with_a_tick() {
+    #[traced_test]
+    fn probe_periodically__should_probe_once_with_the_new_whitelist_when_a_change_lands_with_a_tick()
+     {
         // One run catches a lost `biased` half the time, because `select!` then polls a random
         // branch first.
         for _ in 0..64 {
             // Given
+            let (local, report, [old_whitelist, new_whitelist]) = polygon_and_whitelists();
             let probe_count = Cell::new(0);
-            let (whitelist_tx, whitelist_rx) = watch::channel(None);
-            whitelist_tx.send_replace(Some(whitelist_of(
-                dtos::ForeignChain::Polygon,
-                &["alchemy"],
-                1,
-            )));
-            let local = ForeignChainsConfig::default();
+            let probe = || {
+                probe_count.update(|count| count + 1);
+                std::future::ready(report.clone())
+            };
+            let (whitelist_tx, whitelist_rx) = watch::channel(Some(old_whitelist));
+            whitelist_tx.send_replace(Some(new_whitelist));
 
             // When
             let outcome = run_future_once(probe_periodically(
-                counting_probe(&probe_count),
+                probe,
                 &local,
                 whitelist_rx,
                 MockTicker::new(1),
@@ -818,6 +830,42 @@ mod tests {
                 "the loop should park on its ticker rather than probe again"
             );
         }
+        assert!(logs_contain("foreign chain is healthy"));
+        assert!(!logs_contain("foreign chain is below quorum"));
+    }
+
+    #[test]
+    #[traced_test]
+    fn probe_periodically__should_judge_with_a_whitelist_that_changes_during_the_probe() {
+        // Given
+        let (local, report, [old_whitelist, new_whitelist]) = polygon_and_whitelists();
+        let (whitelist_tx, whitelist_rx) = watch::channel(Some(old_whitelist));
+        let probe_count = Cell::new(0);
+        let probe = || {
+            // Only the first probe changes the whitelist: if every probe did, a regression would
+            // probe forever inside one poll instead of failing.
+            if probe_count.replace(probe_count.get() + 1) == 0 {
+                whitelist_tx.send_replace(Some(new_whitelist.clone()));
+            }
+            std::future::ready(report.clone())
+        };
+
+        // When
+        let outcome = run_future_once(probe_periodically(
+            probe,
+            &local,
+            whitelist_rx,
+            MockTicker::new(1),
+        ));
+
+        // Then
+        assert_eq!(probe_count.get(), 1);
+        assert!(
+            matches!(outcome, MaybeReady::Future(_)),
+            "the change was judged in the round, so the loop should park rather than probe again"
+        );
+        assert!(logs_contain("foreign chain is healthy"));
+        assert!(!logs_contain("foreign chain is below quorum"));
     }
 
     #[test]
