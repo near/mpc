@@ -16,6 +16,12 @@ services:
       - /var/run/dstack.sock:/var/run/dstack.sock
       - /tapp:/tapp:ro
       - shared-volume:/mnt/shared:rw
+      - /usr/bin/dstack-util:/usr/local/bin/dstack-util:ro
+      - /run/log/dstack:/run/log/dstack:rw
+      - /sys/devices/virtual/misc/tdx_guest:/sys/devices/virtual/misc/tdx_guest:rw
+
+    devices:
+      - /dev/tdx_guest:/dev/tdx_guest
 
     security_opt:
       - no-new-privileges:true
