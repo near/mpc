@@ -19,12 +19,19 @@ MPC nodes bind a fixed set of ports:
 | Port | Purpose |
 |---|---|
 | **80** | Node-to-node communication (port override convention) |
-| **24567** | Decentralized state sync |
 | **8080** | Debug and telemetry collection, plus the `/public_data` endpoint |
-| **3030** | nearcore RPC, including nearcore's own metrics |
 | **8079** | Migration port |
+| **24567** | Embedded-node builds only: decentralized state sync |
+| **3030** | Embedded-node builds only: nearcore RPC, including nearcore's own metrics |
 
-Firewall: allow ingress on ports 80 (MPC), 24567 (near), 8080 (web) and 8079 (migration).
+Firewall: allow ingress on ports 80 (MPC), 8080 (web) and 8079 (migration). Embedded-node
+builds also need 24567 (near).
+
+## NEAR RPC endpoint
+
+The node reads the chain from a NEAR node that serves `EXPERIMENTAL_indexer_block`; see
+[HTTP indexing](http-indexer.md) for the settings that node needs. Run it under your own
+operational control: the MPC node trusts it for chain state.
 
 ## Public IP
 

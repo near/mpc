@@ -23,7 +23,7 @@ flowchart LR
 
 ## How it works
 
-A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up, sign jointly over P2P, and respond on chain. Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
+A signature request is a call to the signer contract (`v1.signer` on mainnet); the nodes pick it up from a NEAR RPC node they index over HTTP (see [HTTP indexing](docs/guide/http-indexer.md)), sign jointly over P2P, and respond on chain. Nodes run inside trusted execution environments (TEEs) and attest what they run on chain; see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
 ## Where to go next
 

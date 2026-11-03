@@ -5,7 +5,6 @@ version = { workspace = true }
 license = { workspace = true }
 
 [features]
-default = ["embedded-node"]
 embedded-node = [
     "dep:near-async",
     "dep:near-client",

@@ -8,6 +8,12 @@ This guide walks you through deploying a self-hosted MPC node on a bare-metal se
 
 We use Dstack (from Phala) to orchestrate the environment and run the MPC container inside the CVM.
 
+The NEAR bootstrap, state-sync ports, and data-wipe instructions below apply to
+images built with the `embedded-node` feature. For the default HTTP build, set
+`mpc_node_config.node.indexer.rpc_url` as described in
+[HTTP indexing](../http-indexer.md). The external NEAR server owns those chain
+storage and synchronization settings.
+
 ## Limitations and Restrictions
 
  **Important:**
@@ -206,7 +212,7 @@ EOF
 **Configuration Notes:**
 
 * KMS and Gateway are not used in this MPC setup
-* The configuration includes port **24567** which is required for MPC nodes
+* Embedded-node builds require port **24567**
 * The `max_disk_size = 1000` setting is specifically required for MPC operations
 
 ##### VMM service persistence
@@ -507,7 +513,7 @@ RTMR2: 9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f690
 
 The `vmm.toml` configuration provided in the installation steps above already includes a few necessary MPC-specific settings:
 
-* Port **24567** is included in the `cvm.port_mapping.range` (1-30000)
+* Port **24567**, used only by embedded-node builds, is included in the `cvm.port_mapping.range` (1-30000)
 * port **80** is used by default for MPC node to node communication.
 
 To allow binding to port 80, run the following command:
@@ -892,8 +898,6 @@ port_mappings = [
   { host = 80, container = 80 },
   { host = 8080, container = 8080 },
   { host = 8079, container = 8079 },
-  { host = 3030, container = 3030 },
-  { host = 24567, container = 24567 },
 ]
 
 [mpc_node_config]
@@ -908,15 +912,6 @@ url = "https://pccs.phala.network/"
 [[mpc_node_config.pccs_endpoints]]
 url = "https://api.trustedservices.intel.com/"
 
-# NEAR node bootstrap. Applied on first init only — see the field notes below.
-[mpc_node_config.near_init]
-chain_id = "$CHAIN_ID"            # "testnet" or "mainnet"
-boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
-download_genesis = true
-download_config = "rpc"
-tier3_public_addr = "$IP:24567"   # required — your node's public IP; state sync needs a reachable advertised address
-external_storage_fallback_threshold = 100   # required for node versions before 3.12.0; ignored on 3.12.0+
-
 [mpc_node_config.secrets]
 secret_store_key_hex = "$SECRET_STORE_KEY"
 backup_encryption_key_hex = "$BACKUP_ENCRYPTION_KEY"
@@ -927,9 +922,10 @@ near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"  # ignored by newer versio
 migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
 
 [mpc_node_config.node.indexer]
+rpc_url = "$NEAR_RPC_URL"         # external node with EXPERIMENTAL_indexer_block
 mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for testnet, v1.signer for mainnet
 validate_genesis = false
-sync_mode = "Latest"
+sync_mode = "Latest"              # or "Interruption"; see HTTP indexing for the trade-off
 finality = "optimistic"
 concurrency = 1
 port_override = 80                # MPC P2P convention
@@ -943,20 +939,21 @@ The snippet above shows only the fields you are likely to change. Required field
 
 > **Note:** `near_responder_account_id` and `number_of_responder_keys` are ignored by newer versions but required by 3.17.x and older. Keep them until all your rollback targets are newer.
 
-> **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
+> **Embedded-node builds only: set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
 Adjust the variables as per your environment.
 
 * `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
 * `home_dir`: must be `/data` or a path under it. `/data` is the only persistent volume in the node container; anything outside it is lost when the container is recreated, and the node starts over with new keys.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
+* `rpc_url` — the externally managed NEAR endpoint described in [HTTP indexing](../http-indexer.md).
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](../node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
 * `secrets.backup_encryption_key_hex` — 64-hex-char AES key used to encrypt keyshares during a [node migration](../node-migration-guide.md). On a CVM this is the *only* way to supply the key: set it here in `user-config.toml`, not via `.env`. Leave it unset and the CVM generates a random key you can't read back, so set it explicitly before migrating. See the [migration guide](../node-migration-guide.md#step-3-generate-and-set-encryption-key) for details.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
-* `tier3_public_addr` *(under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for decentralized (Tier3) state-sync responses. **Required — the template ships this as a `REPLACE_WITH_…` placeholder and the node fails to start if it's left unset or left as the placeholder** (intentionally, so state sync never silently runs with an unreachable advertised address). It is especially critical on any host with more than one external IP, or when running [multiple nodes on one host](../running-multiple-mpc-nodes-on-one-host.md): otherwise the node auto-discovers its advertised address as the host's default-route outbound IP, which peers may not be able to reach, and state sync stalls. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](../node-migration-guide.md) flow.
-* `external_storage_fallback_threshold` *(under `[mpc_node_config.near_init]`)* — **required for node versions before 3.12.0; leave at `100`.** Number of decentralized (peer-to-peer) state-sync attempts per state part before falling back to the external storage bucket. Released 3.11.x nodes default this to `0` (bucket-only), which no longer works now that nearcore has stopped serving the centralized buckets — leaving it unset makes the node crash in a state-sync restart loop (last log line `running state sync shard_id=5`). Ignored on 3.12.0+, which always uses peer-to-peer state sync, so it is safe to keep set across the upgrade. Applied at first init only, like `tier3_public_addr`.
-* `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
+* **Embedded-node builds only:** `tier3_public_addr` *(under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for decentralized (Tier3) state-sync responses. **Required — the template ships this as a `REPLACE_WITH_…` placeholder and the node fails to start if it's left unset or left as the placeholder** (intentionally, so state sync never silently runs with an unreachable advertised address). It is especially critical on any host with more than one external IP, or when running [multiple nodes on one host](../running-multiple-mpc-nodes-on-one-host.md): otherwise the node auto-discovers its advertised address as the host's default-route outbound IP, which peers may not be able to reach, and state sync stalls. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](../node-migration-guide.md) flow.
+* **Embedded-node builds only:** `external_storage_fallback_threshold` *(under `[mpc_node_config.near_init]`)* — **required for node versions before 3.12.0; leave at `100`.** Number of decentralized (peer-to-peer) state-sync attempts per state part before falling back to the external storage bucket. Released 3.11.x nodes default this to `0` (bucket-only), which no longer works now that nearcore has stopped serving the centralized buckets — leaving it unset makes the node crash in a state-sync restart loop (last log line `running state sync shard_id=5`). Ignored on 3.12.0+, which always uses peer-to-peer state sync, so it is safe to keep set across the upgrade. Applied at first init only, like `tier3_public_addr`.
+* **Embedded-node builds only:** `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
@@ -1796,10 +1793,10 @@ Use the following custom settings for MPC:
    - pin NUMA = disabled
 6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
    - Public `0.0.0.0:80` → `80` (main node to node communication port)
-   - Public `0.0.0.0:24567` → `24567` (required for decentralized state sync)
+   - Public `0.0.0.0:24567` → `24567` (embedded-node builds only: decentralized state sync)
    - Public `0.0.0.0:8080` → `8080` (required for collecting debug and telemetry information)
    - Public `0.0.0.0:8079` → `8079` (required for the node-migration HTTP endpoint)
-   - Local `127.0.0.1:3030` → `3030` (use a public host address if you want the debug metrics available on the internet)
+   - Local `127.0.0.1:3030` → `3030` (embedded-node builds only; use a public host address if you want the NEAR debug metrics available on the internet)
    - Local `127.0.0.1:<dstack_agent_port>` → `8090` (required to access CVM information and container logs, see [Accessing MPC (or Launcher) Docker Logs](#accessing-mpc-or-launcher-docker-logs))
 
    The **host address** is the IP qemu binds each forward to. Single-node deployments use `0.0.0.0` to bind on every host interface. **Multi-node deployments** (mainnet + testnet on one host) use a specific public IP per CVM — see [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md).
@@ -2185,7 +2182,9 @@ Once these steps are complete, the operator should request all other operators t
 
 ### Wait for NEAR Indexer to Sync
 
-Wait until the NEAR Indexer has completed state sync. This process can take several hours. You can check the progress in the Docker container logs or via the metrics endpoint:
+The default HTTP node waits for the external endpoint to finish syncing and advance its head. Check the serving node's status and logs. The MPC process does not run state sync locally.
+
+For **embedded-node builds**, synchronization can take several hours. Check the local NEAR metrics endpoint:
 
 ```bash
 $ curl http://127.0.0.1:3030/metrics | grep near_sync_status

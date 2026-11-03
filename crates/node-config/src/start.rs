@@ -497,8 +497,7 @@ timeout_sec = 60
                 .unwrap()
                 .contains_key("near_responder_account_id")
         );
-        // Replace the operator placeholder, and inject `tee` like the launcher does.
-        mpc_node_config["near_init"]["tier3_public_addr"] = "203.0.113.1:24567".into();
+        // Inject `tee` like the launcher does.
         let tee: toml::Table = toml::from_str(&format!(
             r#"
             image_hash = "sha256:{}"
@@ -519,5 +518,7 @@ timeout_sec = 60
             config.node.my_near_account_id.as_str(),
             "your-mpc-account.testnet"
         );
+        assert!(config.node.indexer.rpc_url.is_some());
+        assert!(config.near_init.is_none());
     }
 }

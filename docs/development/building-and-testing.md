@@ -14,6 +14,10 @@ Build the MPC node:
 cargo build -p mpc-node --release
 ```
 
+The default build indexes the chain over HTTP from an external NEAR node (see
+[HTTP indexing](../guide/http-indexer.md)). Add `--features embedded-node` to run an embedded
+NEAR node instead, as localnet and the E2E tests do.
+
 Build the smart contract:
 
 ```bash

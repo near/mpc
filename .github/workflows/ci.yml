@@ -137,7 +137,8 @@ jobs:
       matrix:
         include:
           - group: "node"
-            nextest-args: "-p mpc-node"
+            # Covers the optional embedded NEAR node; the HTTP indexer is built either way.
+            nextest-args: "-p mpc-node --features embedded-node"
           - group: "contract"
             nextest-args: "--profile=ci-contract -p mpc-contract"
             extra-tools: true
