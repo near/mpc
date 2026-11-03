@@ -44,17 +44,6 @@ pub struct InitializingContractState {
 }
 
 impl InitializingContractState {
-    /// Starts a new attempt to generate a key for the current domain.
-    /// Returns an Error if the signer is not the leader (the participant with the lowest ID).
-    pub fn start(
-        &mut self,
-        key_event_id: KeyEventId,
-        key_event_timeout_blocks: u64,
-    ) -> Result<(), Error> {
-        self.generating_key
-            .start(key_event_id, key_event_timeout_blocks)
-    }
-
     /// Casts a vote for `public_key` for the attempt identified by `key_event_id`.
     /// Upon success (a return of Ok(...)), the effect of this method is one of the following:
     ///  - A vote has been collected but we don't have enough votes yet.
@@ -100,13 +89,6 @@ impl InitializingContractState {
             }
         }
         Ok(None)
-    }
-
-    /// Casts a vote to abort the current key generation attempt.
-    /// After aborting, another call to start() is necessary to start a new attempt.
-    /// Returns error if there is no active attempt, or if the signer is not a participant.
-    pub fn vote_abort(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
-        self.generating_key.vote_abort(key_event_id)
     }
 
     /// Casts a vote to cancel key generation. Any keys that have already been generated
@@ -191,19 +173,26 @@ pub mod tests {
                 let _ = state
                     .vote_pk(first_key_event_id, bogus_ed25519_public_key_extended())
                     .unwrap_err();
-                let _ = state.vote_abort(first_key_event_id).unwrap_err();
+                let _ = state
+                    .generating_key
+                    .vote_abort(first_key_event_id)
+                    .unwrap_err();
                 if *c != leader.0 {
-                    let _ = state.start(first_key_event_id, 1).unwrap_err();
+                    let _ = state
+                        .generating_key
+                        .start(first_key_event_id, 1)
+                        .unwrap_err();
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
                     let _ = state
+                        .generating_key
                         .start(first_key_event_id.next_attempt(), 1)
                         .unwrap_err();
                 }
             }
             // start the keygen; verify that the keygen is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            state.start(first_key_event_id, 0).unwrap();
+            state.generating_key.start(first_key_event_id, 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
@@ -213,7 +202,7 @@ pub mod tests {
                 let _ = state
                     .vote_pk(key_event, bogus_ed25519_public_key_extended())
                     .unwrap_err();
-                let _ = state.vote_abort(key_event).unwrap_err();
+                let _ = state.generating_key.vote_abort(key_event).unwrap_err();
             }
 
             // check that timing out will abort the instance
@@ -224,13 +213,16 @@ pub mod tests {
                 let _ = state
                     .vote_pk(key_event, bogus_ed25519_public_key_extended())
                     .unwrap_err();
-                let _ = state.vote_abort(key_event).unwrap_err();
+                let _ = state.generating_key.vote_abort(key_event).unwrap_err();
                 assert!(!state.generating_key.is_active());
             }
 
             // assert that votes for a different keygen do not count
             env.set_signer(&leader.0);
-            state.start(first_key_event_id.next_attempt(), 0).unwrap();
+            state
+                .generating_key
+                .start(first_key_event_id.next_attempt(), 0)
+                .unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -255,7 +247,7 @@ pub mod tests {
                     let _ = state
                         .vote_pk(bad_key_event, bogus_ed25519_public_key_extended())
                         .unwrap_err();
-                    let _ = state.vote_abort(bad_key_event).unwrap_err();
+                    let _ = state.generating_key.vote_abort(bad_key_event).unwrap_err();
                 }
             }
             assert_eq!(state.generating_key.num_completed(), 0);
@@ -275,15 +267,21 @@ pub mod tests {
 
             // check that vote_abort immediately causes failure.
             env.set_signer(&leader.0);
-            state.start(key_event.next_attempt(), 0).unwrap();
+            state
+                .generating_key
+                .start(key_event.next_attempt(), 0)
+                .unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
-            state.vote_abort(key_event).unwrap();
+            state.generating_key.vote_abort(key_event).unwrap();
             assert!(!state.generating_key.is_active());
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            state.start(key_event.next_attempt(), 0).unwrap();
+            state
+                .generating_key
+                .start(key_event.next_attempt(), 0)
+                .unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let pk = bogus_ed25519_public_key_extended();
             for (i, c) in candidates.clone().into_iter().enumerate() {
@@ -291,7 +289,7 @@ pub mod tests {
                 assert!(resulting_running_state.is_none());
                 assert_eq!(state.generating_key.num_completed(), i);
                 resulting_running_state = state.vote_pk(key_event, pk.clone()).unwrap();
-                let _ = state.vote_abort(key_event).unwrap_err();
+                let _ = state.generating_key.vote_abort(key_event).unwrap_err();
             }
         }
 
@@ -337,7 +335,7 @@ pub mod tests {
             domain_id: state.domains.get_domain_by_index(2).unwrap().id,
             epoch_id: state.epoch_id,
         };
-        state.start(first_key_event_id, 0).unwrap();
+        state.generating_key.start(first_key_event_id, 0).unwrap();
 
         let pk = bogus_ed25519_public_key_extended();
         let participants = state
