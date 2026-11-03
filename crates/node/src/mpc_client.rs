@@ -1,9 +1,9 @@
 use crate::assets::metrics::{ASSET_METRICS_REPORTING_INTERVAL, ClearOwnedAssetGaugesOnDrop};
-use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainSendTransactionRequest, SignatureRespondArgsExt, VerifyForeignTransactionRespondArgsExt,
 };
+use crate::indexer::updates::BlockUpdateReceiver;
 use crate::metrics;
 use crate::network::wire_format::{EcdsaTaskId, MpcTaskId, RobustEcdsaTaskId};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -146,9 +146,7 @@ impl MpcClient {
     pub async fn run(
         self: &Arc<Self>,
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<BlockUpdateReceiver>,
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
@@ -237,26 +235,29 @@ impl MpcClient {
             self.ckd_provider.clone().spawn_background_tasks(),
         );
 
-        let _ = monitor_passive_channels.await?;
-        asset_metrics_reporter.await?;
-        monitor_chain.await?;
-        let _ = robust_ecdsa_background_tasks.await?;
-        let _ = ecdsa_background_tasks.await?;
-        let _ = eddsa_background_tasks.await?;
-        let _ = ckd_background_tasks.await?;
-        tee_verification_handle.await?;
-
-        Ok(())
+        // The remaining tasks run until these end, and are aborted when dropped.
+        // A failed block update, e.g. a conflicting replayed request, ends the
+        // client rather than leaving it running without a chain view.
+        let _background_tasks = (
+            asset_metrics_reporter,
+            tee_verification_handle,
+            ecdsa_background_tasks,
+            robust_ecdsa_background_tasks,
+            eddsa_background_tasks,
+            ckd_background_tasks,
+        );
+        tokio::select! {
+            result = monitor_chain => result?,
+            result = monitor_passive_channels => result?,
+        }
     }
 
     async fn monitor_block_updates(
         self: Arc<Self>,
-        mut block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
+        mut block_update_receiver: tokio::sync::OwnedMutexGuard<BlockUpdateReceiver>,
         chain_txn_sender: impl TransactionSender + 'static,
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-    ) {
+    ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
@@ -287,60 +288,91 @@ impl MpcClient {
         );
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
+        block_update_receiver.restart()?;
         let start_time = Clock::real().now();
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
                 }
-                block_update = block_update_receiver.recv() => {
-                    let Some(block_update) = block_update else {
+                batch = block_update_receiver.recv() => {
+                    let Some(batch) = batch else {
                         // If this branch hits, it means the channel is closed, meaning the
                         // indexer is being shutdown. So just quit this task.
                         break;
                     };
-
-                    self.network_client.update_indexer_height(block_update.block.height.into());
-
-                    let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
-
-                    let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
-                        &block_update.block,
-                        block_status.clone(),
-                        block_update.signature_requests,
-                        block_update.completed_signatures,
-                    );
-
-                    // TODO(#3031): add batch request and unify stores
-                    for request in &signature_requests.requests {
-                        self.sign_request_store.add(request);
+                    // Replayed history may repeat requests, which must then match.
+                    let replayed = batch.head.is_some();
+                    if batch.discontinuous {
+                        recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
                     }
 
-                    // TODO(#3032): remove completed & finalized requests from store
-                    pending_signatures.notify_new_block(signature_requests);
+                    for block_update in batch.blocks {
+                        if !replayed {
+                            self.network_client.update_indexer_height(block_update.block.height.into());
+                        }
 
-                    let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
-                        &block_update.block,
-                        block_status.clone(),
-                        block_update.ckd_requests,
-                        block_update.completed_ckds
-                    );
-                    for request in &ckd_requests.requests {
-                        self.ckd_request_store.add(request);
+                        let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
+
+                        let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
+                            &block_update.block,
+                            block_status.clone(),
+                            block_update.signature_requests,
+                            block_update.completed_signatures,
+                        );
+
+                        // TODO(#3031): add batch request and unify stores
+                        for request in &signature_requests.requests {
+                            if replayed {
+                                self.sign_request_store.add_checked(request)?;
+                            } else {
+                                self.sign_request_store.add(request);
+                            }
+                        }
+
+                        // TODO(#3032): remove completed & finalized requests from store
+                        pending_signatures.notify_new_block(signature_requests);
+
+                        let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
+                            &block_update.block,
+                            block_status.clone(),
+                            block_update.ckd_requests,
+                            block_update.completed_ckds
+                        );
+                        for request in &ckd_requests.requests {
+                            if replayed {
+                                self.ckd_request_store.add_checked(request)?;
+                            } else {
+                                self.ckd_request_store.add(request);
+                            }
+                        }
+
+                        pending_ckds.notify_new_block(ckd_requests);
+
+                        let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
+                            &block_update.block,
+                            block_status,
+                            block_update.verify_foreign_tx_requests,
+                            block_update.completed_verify_foreign_txs
+                        );
+
+                        for request in &verify_foreign_tx_requests.requests {
+                            if replayed {
+                                self.verify_foreign_tx_request_store.add_checked(request)?;
+                            } else {
+                                self.verify_foreign_tx_request_store.add(request);
+                            }
+                        }
+                        pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                     }
 
-                    pending_ckds.notify_new_block(ckd_requests);
-
-                    let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
-                        &block_update.block,
-                        block_status,
-                        block_update.verify_foreign_tx_requests,
-                        block_update.completed_verify_foreign_txs
-                    );
-
-                    for request in &verify_foreign_tx_requests.requests {
-                        self.verify_foreign_tx_request_store.add(request);
+                    if let Some((head, height)) = batch.head {
+                        recent_blocks.select_head(head)?;
+                        self.network_client.update_indexer_height(height);
                     }
-                    pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
+                    if let Some(acknowledge) = batch.acknowledge {
+                        // The indexer may have stopped waiting, e.g. while shutting down.
+                        let _ = acknowledge.send(());
+                    }
                 }
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
@@ -524,6 +556,7 @@ impl MpcClient {
                 );
             }
         }
+        Ok(())
     }
 
     async fn compute_signature_response(

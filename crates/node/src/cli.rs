@@ -1,5 +1,7 @@
+#[cfg(feature = "embedded-node")]
+use crate::config::start::NearInitConfigExt;
 use crate::{
-    config::{load_config_file, start::NearInitConfigExt},
+    config::load_config_file,
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -10,10 +12,9 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
-use mpc_node_config::{
-    ChainId, ConfigFile, DownloadConfigType, LogConfig, LogFormat, NearInitConfig,
-    SecretsStartConfig, StartConfig,
-};
+#[cfg(feature = "embedded-node")]
+use mpc_node_config::{ChainId, DownloadConfigType, NearInitConfig};
+use mpc_node_config::{ConfigFile, LogConfig, LogFormat, SecretsStartConfig, StartConfig};
 use mpc_primitives::hash::NodeImageHash;
 use std::path::PathBuf;
 
@@ -40,7 +41,8 @@ pub enum CliCommand {
         config_path: PathBuf,
     },
     Start(StartCmd),
-    /// Generates/downloads required files for Near node to run
+    /// Generates/downloads required files for the embedded NEAR node to run
+    #[cfg(feature = "embedded-node")]
     Init(InitConfigArgs),
     /// Imports a keyshare from JSON and stores it in the local encrypted storage
     ImportKeyshare(ImportKeyshareCmd),
@@ -109,6 +111,7 @@ impl StartCmd {
         }
     }
 }
+#[cfg(feature = "embedded-node")]
 #[derive(Args, Debug)]
 pub struct InitConfigArgs {
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -136,6 +139,7 @@ pub struct InitConfigArgs {
     pub boot_nodes: Option<String>,
 }
 
+#[cfg(feature = "embedded-node")]
 impl InitConfigArgs {
     pub fn into_near_init_config(self) -> NearInitConfig {
         NearInitConfig {
@@ -210,6 +214,7 @@ impl Cli {
                 let node_configuration = start.into_start_config(config_file, self.log_format);
                 run_mpc_node(node_configuration).await
             }
+            #[cfg(feature = "embedded-node")]
             CliCommand::Init(config) => {
                 let dir = config.dir.clone();
                 let near_init = config.into_near_init_config();
