@@ -94,7 +94,7 @@ mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
-        capped_probe, empty_report, gauges, logged_times, no_whitelist, row, whitelist_of,
+        empty_report, gauges, logged_times, mock_probe, no_whitelist, row, whitelist_of,
     };
     use crate::tick::MockTicker;
 
@@ -107,7 +107,7 @@ mod tests {
 
         // When
         run_future_once(probe_periodically(
-            capped_probe(&probe_count, 3, empty_report()),
+            mock_probe(&probe_count, 3, empty_report()),
             no_whitelist(),
             MockTicker::new(3),
         ));
@@ -253,7 +253,7 @@ mod tests {
         let probe_count = Cell::new(0);
         let (whitelist_tx, whitelist_rx) = watch::channel(None);
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
-            capped_probe(&probe_count, 2, empty_report()),
+            mock_probe(&probe_count, 2, empty_report()),
             whitelist_rx,
             MockTicker::new(1),
         )) else {
@@ -289,7 +289,7 @@ mod tests {
 
             // When
             run_future_once(probe_periodically(
-                capped_probe(&probe_count, 1, empty_report()),
+                mock_probe(&probe_count, 1, empty_report()),
                 whitelist_rx,
                 MockTicker::new(1),
             ));
@@ -306,7 +306,7 @@ mod tests {
         let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
         let (whitelist_tx, whitelist_rx) = watch::channel(None);
         let probe_count = Cell::new(0);
-        let counted_probe = capped_probe(&probe_count, 1, empty_report());
+        let counted_probe = mock_probe(&probe_count, 1, empty_report());
         let probe = || {
             whitelist_tx.send_replace(Some(whitelist.clone()));
             counted_probe()
@@ -328,7 +328,7 @@ mod tests {
         drop(whitelist_tx);
         let ticker = MockTicker::new(1);
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
-            capped_probe(&probe_count, 2, empty_report()),
+            mock_probe(&probe_count, 2, empty_report()),
             whitelist_rx,
             ticker.clone(),
         )) else {
