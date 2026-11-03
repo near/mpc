@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 /// Capabilities:
 /// - Subscribes to changes in allowed image and launcher hashes.
 /// - Submits attestations.
-/// - Triggers on-chain re-validation of stored attestations.
+/// - Triggers on-chain re-validation of the participants' attestations.
 pub struct TeeContext<S> {
     /// Allowed TEE hashes from the governance contract.
     allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
