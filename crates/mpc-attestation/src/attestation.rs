@@ -320,14 +320,16 @@ impl VerifiedAttestation {
     }
 }
 
-/// Returns the default compiled-in TCB measurements (prod + dev).
-pub fn default_measurements() -> &'static [ExpectedMeasurements] {
-    static MEASUREMENTS: [ExpectedMeasurements; 2] = [
-        include_measurements!("assets/tcb_info.json"),
-        // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
-        include_measurements!("assets/tcb_info_dev.json"),
-    ];
-    &MEASUREMENTS
+/// Returns the compiled-in TCB measurements of the production OS image.
+pub fn default_measurements() -> ExpectedMeasurements {
+    include_measurements!("assets/tcb_info.json")
+}
+
+/// Returns the TCB measurements of the dev OS image that the `test-utils` fixture quote was taken
+/// on.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn dev_measurements() -> ExpectedMeasurements {
+    include_measurements!("assets/tcb_info_dev.json")
 }
 
 /// Post-DCAP verification of a dstack [`TcbInfo`] at the `mpc-attestation` layer.

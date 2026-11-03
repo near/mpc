@@ -319,7 +319,7 @@ These functions require the caller to be a participant or candidate.
 | `start_reshare_instance(key_event_id: KeyEventId)`                                | For Resharing state only. Starts a new attempt to reshare a key (key_event_id must be the expected one)                                                                                                                                 | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_pk(key_event_id: KeyEventId, public_key: PublicKey)`                          | For Initializing state only. Votes for the public key for the given generation attempt; if enough votes are collected, transitions to the next domain to generate a key for, or if all domains are completed, transitions into Running. | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_reshared(key_event_id: KeyEventId)`                                           | For Resharing state only. Votes for the success of the given resharing attempt; if enough votes are collected, transitions to the next domain to reshare for, or if all domains are completed, transitions into Running.                | `Result<(), Error>`       | TBD             | TBD                |
-| `vote_cancel_keygen(next_domain_id: u64)`                                           | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_cancel_keygen(next_domain_id: DomainId)`                                      | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_contract_update(update_hash: UpdateHash)`                                              | Votes for the hash of the next update. Returns whether the hash is now backed by a governance threshold of current participants. | `Result<bool, Error>`     | TBD             | TBD                |
 | `submit_contract_update(update: Update)`                                                     | Applies the update whose hash currently holds threshold votes (deploys the code and runs `migrate`, or calls `update_config`), clearing every update vote. Payable: requires at least 1 yoctoNEAR (full-access-key check); any surplus is refunded. The contract account must already hold the storage stake for the new code. | `Result<(), Error>`       | TBD             | TBD                |
 | `remove_contract_update_vote()`                                                              | Withdraws the caller's update vote. | `Result<(), Error>`       | TBD             | TBD                |
@@ -345,6 +345,7 @@ These functions require the caller to be a participant or candidate.
 | `allowed_os_measurements()`                                                | Returns all currently allowed OS measurement sets.                                                                                                                                                | `Vec<ExpectedMeasurements>` | TBD  | TBD                |
 | `os_measurement_votes()`                                                   | Returns pending OS measurement votes, keyed by the proposal hash of the action voted for, with the accounts backing each; may include former participants' votes.                                                                         | `MeasurementVotes`       | TBD             | TBD                |
 | `contract_update_votes()`                                                  | Returns current update votes, keyed by the hash voted for, with the accounts backing each.                                                                                                        | `BTreeMap<ProposalHash, BTreeSet<AccountId>>` | TBD | TBD |
+| `parameters_votes()`                                                   | Returns pending `vote_new_parameters` votes, keyed by the proposal hash of the `ProposedGovernanceThresholdParameters` voted for, with the accounts backing each.                                   | `GovernanceThresholdParametersVotes` | TBD | TBD |
 | `clean_tee_status()`                                                       | Private endpoint. Cleans up TEE information for non-participants after resharing. Only callable by the contract itself via a promise.                                                              | `Result<(), Error>`      | TBD             | TBD                |
 
 ## Building the contract
@@ -370,9 +371,9 @@ full workflow and the difference between the two.
 
 ## TEE Specific information
 
-The MPC nodes will eventually run inside a Trusted Execution Environments (TEE). The network is currently in a transitioning period, where both operation modes (TEE and non-TEE) are supported, however, the TEE support is at least as of June 2025, highly experimental and not stable.
+MPC nodes run inside a Trusted Execution Environment (TEE) and attest what they run to the contract; see the [TEE design doc](../../docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
 
-Participants that run their node inside a TEE will have to submit the following TEE related data to the contract:
+Participants submit the following TEE-related data to the contract:
 
 ```rust,ignore
 pub struct DstackAttestation {
@@ -396,5 +397,4 @@ The process of doing so is as follows:
 1. The prospective participants set up their MPC inside their TEE environment (see [running an MPC node in TDX](../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md)).
 2. The prospective participants fetch their TEE related information from their logs.
 3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
-4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.
-5. The participants submit their data to the contract via `submit_participant_info`.
+4. The participants submit their data to the contract via `submit_participant_info`.

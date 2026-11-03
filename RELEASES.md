@@ -13,9 +13,10 @@ The NEAR MPC project ships two artifacts together as one release bundle:
 
 The release also attaches the reproducibly-built TEE verifier WASM, and the
 release notes say whether it changed since the previous release. The verifier is
-not upgraded with the bundle: if it changed, it must be deployed and voted in
-separately, per [`deploy-tee-verifier.md`](docs/development/deploy-tee-verifier.md),
-before upgrading any contract that depends on it.
+not upgraded with the bundle: if a release needs a new verifier (for example, for a
+security fix), deploy and vote it in separately, per
+[`deploy-tee-verifier.md`](docs/development/deploy-tee-verifier.md), before upgrading
+the contract.
 
 A release is a [Release workflow](.github/workflows/release.yml) run that
 promotes already-built artifacts to a versioned release. The workflow:

@@ -71,10 +71,12 @@ near account create-account sponsor-by-faucet-service "$VERIFIER_ACCOUNT" autoge
 ```
 
 On `mainnet` there is no faucet; create and fund the account from an existing one. The
-balance must cover storage staking for the deployed WASM, 1 NEAR per 100,000 bytes of the
-size printed in [step 1](#1-reproducibly-build-the-verifier-and-record-its-hash), plus a
-little gas for the deploy and the lock. If the amount sent exceeds what is needed, the
-excess can be refunded before the account is locked (see [step 5](#5-lock-the-account)):
+balance must cover storage staking for the deployed WASM, at the protocol's
+[storage cost](https://github.com/near/nearcore/blob/master/core/parameters/res/runtime_configs/parameters.yaml#L34)
+(`storage_amount_per_byte`, 1 NEAR per 100,000 bytes today) for the size printed in
+[step 1](#1-reproducibly-build-the-verifier-and-record-its-hash), plus a little gas for the
+deploy and the lock. If the amount sent exceeds what is needed, the excess can be refunded
+before the account is locked (see [step 5](#5-lock-the-account)):
 
 ```shell
 # storage stake for the WASM size from step 1, plus 0.1 NEAR for gas; e.g. 420 KB -> 4.2 + 0.1

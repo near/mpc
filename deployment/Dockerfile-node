@@ -10,7 +10,7 @@ RUN \
     apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
     : "Clean up for improving reproducibility" && \
-    rm -rf /var/log/* /var/cache/ldconfig/aux-cache
+    rm -rf /var/log/* /var/cache/ldconfig/aux-cache /root/.cache
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app

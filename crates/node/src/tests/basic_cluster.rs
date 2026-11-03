@@ -1,39 +1,21 @@
 use crate::indexer::participants::ContractState;
-use crate::metrics::{
-    MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, ONLINE_PRESIGN_MODE_LABEL,
-    STORED_PRESIGNATURE_MODE_LABEL,
-};
 use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, every_node_owns_triples, request_ckd_and_await_response,
-    request_ckd_pv_and_await_response, request_signature_and_await_response, signatures_led,
-    wait_until,
+    request_ckd_pv_and_await_response, request_signature_and_await_response, wait_until,
 };
 use crate::tracking::AutoAbortTask;
+use mpc_node_config::TripleBatchSize;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_time::Clock;
-use prometheus::core::Collector;
 
 const NUM_PARTICIPANTS: usize = 4;
 const GOVERNANCE_THRESHOLD: usize = 3;
 const TXN_DELAY_BLOCKS: u64 = 1;
-
-fn gauge_total(gauge: &prometheus::IntGaugeVec) -> i64 {
-    gauge
-        .collect()
-        .iter()
-        .flat_map(|family| family.get_metric())
-        .map(|metric| metric.get_gauge().get_value() as i64)
-        .sum()
-}
-
-async fn wait_until_positive(gauge: &prometheus::IntGaugeVec, what: &str) {
-    wait_until(|| gauge_total(gauge) > 0, what).await;
-}
 
 #[tokio::test]
 #[test_log::test]
@@ -105,8 +87,6 @@ async fn cluster__should_serve_every_domain_after_keygen() {
         "every node to own triples",
     )
     .await;
-    wait_until_positive(&MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, "presignatures").await;
-    let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
     assert!(
         request_signature_and_await_response(
             &mut setup.indexer,
@@ -116,12 +96,6 @@ async fn cluster__should_serve_every_domain_after_keygen() {
         )
         .await
         .is_some()
-    );
-    // Every node runs the current version, so the default configuration presigns online.
-    assert!(signatures_led(ONLINE_PRESIGN_MODE_LABEL) > 0);
-    assert_eq!(
-        signatures_led(STORED_PRESIGNATURE_MODE_LABEL),
-        stored_presignature_before
     );
 
     assert!(
@@ -161,7 +135,7 @@ async fn cluster__should_serve_every_domain_after_keygen() {
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
-async fn cluster__should_sign_from_stored_presignatures_when_online_presign_is_disabled() {
+async fn cluster__should_generate_triples_with_a_non_legacy_batch_size() {
     // Given
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -172,11 +146,11 @@ async fn cluster__should_sign_from_stored_presignatures_when_online_presign_is_d
             .collect(),
         GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
-        port_seed::ONLINE_PRESIGN_DISABLED_TEST,
+        port_seed::TRIPLE_BATCH_SIZE_TEST,
         DEFAULT_BLOCK_TIME,
     );
     for node in &mut setup.configs {
-        node.config.signature.online_presign = false;
+        node.config.triple.batch_size = TripleBatchSize::new(8).unwrap();
     }
     let domain = DomainConfig {
         id: DomainId(0),
@@ -187,8 +161,10 @@ async fn cluster__should_sign_from_stored_presignatures_when_online_presign_is_d
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(vec![domain.clone()]);
+        contract.add_domains(vec![domain]);
     }
+
+    // When
     let _runs = std::mem::take(&mut setup.configs)
         .into_iter()
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
@@ -201,28 +177,12 @@ async fn cluster__should_sign_from_stored_presignatures_when_online_presign_is_d
         )
         .await
         .expect("timeout waiting for keygen to complete");
-    wait_until_positive(&MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE, "presignatures").await;
-    let stored_presignature_before = signatures_led(STORED_PRESIGNATURE_MODE_LABEL);
-    let online_presign_before = signatures_led(ONLINE_PRESIGN_MODE_LABEL);
-
-    // When
-    for user in ["user0", "user1", "user2"] {
-        assert!(
-            request_signature_and_await_response(
-                &mut setup.indexer,
-                user,
-                &domain,
-                DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-            )
-            .await
-            .is_some()
-        );
-    }
 
     // Then
-    assert!(signatures_led(STORED_PRESIGNATURE_MODE_LABEL) > stored_presignature_before);
-    assert_eq!(
-        signatures_led(ONLINE_PRESIGN_MODE_LABEL),
-        online_presign_before
-    );
+    // a batch only succeeds once every follower accepts its size
+    wait_until(
+        || every_node_owns_triples(NUM_PARTICIPANTS),
+        "led triple batches to succeed",
+    )
+    .await;
 }

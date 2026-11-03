@@ -1,5 +1,5 @@
 {
-  "protocol_version": 87,
+  "protocol_version": 88,
   "genesis_time": "2025-10-28T17:50:46.895503491Z",
   "chain_id": "mpc-localnet",
   "genesis_height": 0,

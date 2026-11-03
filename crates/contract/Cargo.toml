@@ -53,6 +53,7 @@ block-clock = []
 test-utils = [
     "rand",
     "threshold-signatures",
+    "mpc-attestation/test-utils",
     "near-mpc-contract-interface/blstrs",
     "near-sdk/unit-testing",
 ]

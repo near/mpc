@@ -217,8 +217,7 @@ pub(crate) struct AllowedLauncherImages {
 }
 
 #[expect(rustdoc::private_intra_doc_links)]
-/// Outcome of [`AllowedLauncherImages::add_or_refresh`], mirroring
-/// [`ParticipantInsertion`](crate::tee::tee_state::ParticipantInsertion).
+/// Outcome of [`AllowedLauncherImages::add_or_refresh`].
 #[derive(Debug, PartialEq, Eq)]
 pub enum AllowedLauncherImageInsertion {
     Added,

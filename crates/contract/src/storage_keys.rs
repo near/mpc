@@ -22,7 +22,7 @@ pub enum StorageKey {
     _DeprecatedPendingCKDRequestsV2,
     _SupportedForeignChainsVotes,
     _DeprecatedPendingSignatureRequestsV3,
-    StoredAttestations,
+    Nodes,
     _DeprecatedSupportedForeignChainsByNode,
     PendingSignatureRequestsV4,
     PendingCKDRequestsV3,
@@ -46,4 +46,6 @@ pub enum StorageKey {
     LauncherHashVotesByProposal,
     MeasurementVotesByVoter,
     MeasurementVotesByProposal,
+    ParametersVotesByVoter,
+    ParametersVotesByProposal,
 }

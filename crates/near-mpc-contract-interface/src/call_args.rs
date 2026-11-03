@@ -2,12 +2,12 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
-    Curve, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId,
-    ExpectedMeasurements, ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId,
-    Keyset, LauncherImageHash, NodeImageHash, ParticipantUrl,
-    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, TeeVerifierCodeHash, UpdateHash, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
+    DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements,
+    ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
+    NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ pub struct InitArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct InitRunningArgs {
     pub domains: Vec<DomainConfig>,
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
     pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
     pub tee_verifier_account_id: AccountId,
@@ -57,7 +57,7 @@ pub struct VoteNewParametersArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteCancelKeygenArgs {
-    pub next_domain_id: u64,
+    pub next_domain_id: DomainId,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -207,11 +207,6 @@ pub struct DerivedPublicKeyArgs {
     pub path: String,
     pub predecessor: Option<AccountId>,
     pub domain_id: Option<DomainId>,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct LatestKeyVersionArgs {
-    pub signature_scheme: Option<Curve>,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

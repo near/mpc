@@ -1,17 +1,18 @@
 use crate::p2p::testing::port_seed;
-use crate::tests::{DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup};
+use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup, wait_for_registrations};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, ForeignChain, Protocol, ReconstructionThreshold,
+    AuthScheme, ChainEntry, ChainRouting, DomainConfig, DomainId, DomainPurpose, ForeignChain,
+    Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
 };
 use near_time::Clock;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
-use std::time::Duration;
 
 #[tokio::test]
 #[test_log::test]
@@ -34,10 +35,10 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         DEFAULT_BLOCK_TIME,
     );
 
-    let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
-        RpcProviderName::from("public".to_string()),
+    let providers = NonEmptyBTreeMap::new(
+        RpcProviderName::from(PROVIDER.to_string()),
         ForeignChainProviderConfig {
-            rpc_url: "https://rpc.public.example.com".parse().unwrap(),
+            rpc_url: PROVIDER_URL.to_string(),
             auth: AuthConfig::None,
         },
     );
@@ -94,35 +95,39 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         .collect::<Vec<_>>();
 
     // When
-    let wait_result = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
-        loop {
-            {
-                let contract = setup.indexer.contract_mut().await;
-                if **contract.available_foreign_chains() == expected_foreign_chains {
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    })
-    .await;
+    let node_count = setup.participants.participants.len();
+    wait_for_registrations(&setup.indexer, node_count, &BTreeSet::new()).await;
 
     // Then
-    assert!(wait_result.is_ok(), "timed out waiting for policy update");
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        assert!(contract.available_foreign_chains().is_empty());
+        contract.whitelist_foreign_chain_providers(solana_whitelist());
+    }
+    wait_for_registrations(&setup.indexer, node_count, &expected_foreign_chains).await;
     let contract = setup.indexer.contract_mut().await;
-
     assert_eq!(
         **contract.available_foreign_chains(),
         expected_foreign_chains
     );
+}
 
-    let expected_node_config = BTreeSet::from([ForeignChain::Solana]);
+const PROVIDER: &str = "public";
+const PROVIDER_URL: &str = "https://rpc.public.example.com";
 
-    let configs = contract.foreign_chains_configs();
-    assert_eq!(configs.len(), setup.participants.participants.len());
-    assert!(
-        configs
-            .values()
-            .all(|node_config| **node_config == expected_node_config)
-    );
+fn solana_whitelist() -> BTreeMap<ForeignChain, ChainEntry> {
+    BTreeMap::from([(
+        ForeignChain::Solana,
+        ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                ProviderId(PROVIDER.to_string()),
+                ProviderConfig {
+                    base_url: PROVIDER_URL.to_string(),
+                    auth_scheme: AuthScheme::None,
+                    chain_routing: ChainRouting::Embedded,
+                },
+            ),
+            quorum: 1,
+        },
+    )])
 }

@@ -1,13 +1,12 @@
 use chain_gateway::{ChainGateway, NodeConfig};
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_contract_transport::{NearKitCaller, PollInterval, WatchContractState};
+use near_contract_transport::{NearKitCaller, PollInterval};
 use near_kit::Near;
 use near_kit::transaction::Final;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
-use std::fmt::Debug;
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
@@ -210,15 +209,13 @@ async fn run_backup_service_through_embedded_node(
 }
 
 /// Backs up keyshares whenever the observed contract state stops being covered by what is
-/// stored, until `shutdown` is cancelled. A failed backup is re-attempted after `retry_delay`,
-/// since the contract state it failed on may not change again for a long time.
+/// stored, until `shutdown` is cancelled. On startup and then hourly, a covered keyset is
+/// fetched again and compared with what is stored. A failed fetch is re-attempted after
+/// `retry_delay`, since the contract state it failed on may not change again for a long time.
 pub async fn run_backup_service(
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,
-    contract_state: impl WatchContractState<
-        Value = contract_types::ProtocolContractState,
-        ViewError: Debug,
-    >,
+    contract_state: impl ports::WatchContractState,
     status: impl ports::ReportBackupStatus,
     clock: impl ports::GetCurrentTime,
     retry_delay: Duration,

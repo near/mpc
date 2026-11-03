@@ -17,6 +17,10 @@ pub enum NetworkProtocolVersion {
     Sep2026 = 9,
     /// Adds [`Packet::ConnectedPeersInfo`](crate::network::wire_format::Packet::ConnectedPeersInfo)
     /// and [`VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign`](crate::network::wire_format::VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign).
+    /// Also honours the `count` of
+    /// [`EcdsaTaskId::ManyTriples`](crate::network::wire_format::EcdsaTaskId::ManyTriples)
+    /// instead of requiring it to equal
+    /// [`TripleBatchSize::LEGACY`](mpc_node_config::TripleBatchSize::LEGACY).
     Oct2026 = 10,
     #[num_enum(catch_all)]
     Unknown(u32),

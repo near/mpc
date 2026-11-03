@@ -10,8 +10,8 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, TripleConfig, foreign_chains::RpcPreset,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, SignatureConfig,
+    TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -87,14 +87,11 @@ struct WebServerState {
 #[derive(Clone, Serialize)]
 struct NodeConfigResponse {
     my_near_account_id: AccountId,
-    near_responder_account_id: AccountId,
-    number_of_responder_keys: usize,
     web_ui: SocketAddr,
     migration_web_ui: SocketAddr,
     pprof_bind_address: SocketAddr,
     indexer: IndexerConfig,
     triple: TripleConfig,
-    presignature: PresignatureConfig,
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
@@ -109,14 +106,11 @@ impl From<ConfigFile> for NodeConfigResponse {
     fn from(config: ConfigFile) -> Self {
         Self {
             my_near_account_id: config.my_near_account_id,
-            near_responder_account_id: config.near_responder_account_id,
-            number_of_responder_keys: config.number_of_responder_keys,
             web_ui: config.web_ui,
             migration_web_ui: config.migration_web_ui,
             pprof_bind_address: config.pprof_bind_address,
             indexer: config.indexer,
             triple: config.triple,
-            presignature: config.presignature,
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
@@ -280,7 +274,6 @@ async fn third_party_licenses() -> Html<&'static str> {
 struct PublicKeys {
     near_signer_public_key: Ed25519PublicKey,
     near_p2p_public_key: Ed25519PublicKey,
-    near_responder_public_keys: Vec<Ed25519PublicKey>,
 }
 
 fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
@@ -296,17 +289,9 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
             .p2p_private_key
             .verifying_key(),
     );
-    let near_responder_public_keys = secrets_config
-        .persistent_secrets
-        .near_responder_keys
-        .iter()
-        .map(|x| Ed25519PublicKey::from(&x.verifying_key()))
-        .collect();
-
     PublicKeys {
         near_signer_public_key,
         near_p2p_public_key,
-        near_responder_public_keys,
     }
 }
 
@@ -319,7 +304,6 @@ pub fn static_web_data(
     StaticWebData {
         near_signer_public_key: public_keys.near_signer_public_key,
         near_p2p_public_key: public_keys.near_p2p_public_key,
-        near_responder_public_keys: public_keys.near_responder_public_keys,
         tee_participant_info,
     }
 }
@@ -399,7 +383,9 @@ mod tests {
     use mpc_node_config::foreign_chains::{
         ForeignChainConfig, ForeignChainProviderConfig, ProviderCredentials, RpcProviderName,
     };
-    use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
+    use mpc_node_config::{
+        AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig, TripleBatchSize,
+    };
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::collections::BTreeMap;
@@ -458,8 +444,6 @@ mod tests {
     fn test_config() -> ConfigFile {
         ConfigFile {
             my_near_account_id: AccountId::from_str("test.near").unwrap(),
-            near_responder_account_id: AccountId::from_str("test.near").unwrap(),
-            number_of_responder_keys: 1,
             web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8080),
             migration_web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8081),
             pprof_bind_address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8082),
@@ -477,16 +461,9 @@ mod tests {
                 desired_triples_to_buffer: 10,
                 parallel_triple_generation_stagger_time_sec: 1,
                 timeout_sec: 120,
+                batch_size: TripleBatchSize::default(),
             },
-            presignature: PresignatureConfig {
-                concurrency: 1,
-                desired_presignatures_to_buffer: 5,
-                timeout_sec: 60,
-            },
-            signature: SignatureConfig {
-                timeout_sec: 60,
-                online_presign: true,
-            },
+            signature: SignatureConfig { timeout_sec: 60 },
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig {

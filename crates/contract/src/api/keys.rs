@@ -1,5 +1,4 @@
-//! Public-key views: the domain public key, per-account derived keys, and the
-//! latest key version.
+//! Public-key views: the domain public key and per-account derived keys.
 
 use crate::crypto_shared::derive_key_secp256k1;
 use crate::crypto_shared::kdf::derive_public_key_edwards_point_ed25519;
@@ -57,19 +56,6 @@ impl MpcContract {
         };
 
         Ok(derived_public_key)
-    }
-
-    /// Key versions refer new versions of the root key that we may choose to generate on cohort
-    /// changes. Older key versions will always work but newer key versions were never held by
-    /// older signers. Newer key versions may also add new security features, like only existing
-    /// within a secure enclave. The signature_scheme parameter specifies which protocol
-    /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
-    /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<dtos::Curve>) -> u32 {
-        self.protocol_state
-            .most_recent_domain_for_curve(signature_scheme.unwrap_or_default())
-            .unwrap()
-            .0 as u32
     }
 }
 
