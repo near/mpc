@@ -102,8 +102,8 @@ mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
-        ALCHEMY_URL, capped_probe, empty_report, gauges, logged_times, no_whitelist,
-        polygon_with_report, row, whitelist_of,
+        ALCHEMY_URL, ProbedConfig, ProbedProvider, capped_probe, empty_report, gauges,
+        logged_times, no_whitelist, polygon_with_report, row, whitelist_of,
     };
     use crate::tick::MockTicker;
 
@@ -322,8 +322,11 @@ mod tests {
     #[traced_test]
     fn probe_periodically__should_compare_with_a_whitelist_that_changes_during_the_probe() {
         // Given
-        let (local, report) =
-            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let ProbedConfig { local, report } = polygon_with_report(&[ProbedProvider {
+            name: "alchemy",
+            rpc_url: ALCHEMY_URL,
+            status: ProviderStatus::Healthy,
+        }]);
         let without_alchemy = whitelist_of(dtos::ForeignChain::Polygon, &["quicknode"], 1);
         let with_alchemy = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
         let (whitelist_tx, whitelist_rx) = watch::channel(Some(without_alchemy));
@@ -352,8 +355,11 @@ mod tests {
     #[traced_test]
     fn probe_periodically__should_log_whitelist_diagnostics_every_round() {
         // Given
-        let (local, report) =
-            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let ProbedConfig { local, report } = polygon_with_report(&[ProbedProvider {
+            name: "alchemy",
+            rpc_url: ALCHEMY_URL,
+            status: ProviderStatus::Healthy,
+        }]);
         let probe = || std::future::ready(report.clone());
         let (_whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist_of(
             dtos::ForeignChain::Polygon,
