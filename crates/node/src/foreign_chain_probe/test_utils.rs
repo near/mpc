@@ -41,6 +41,7 @@ pub(super) fn chain_entry(
     }
 }
 
+/// Gives provider `p` the base URL `https://p.example.com`.
 pub(super) fn whitelist_of(
     chain: dtos::ForeignChain,
     providers: &[&str],
@@ -68,6 +69,9 @@ pub(super) fn empty_report() -> ProbeReport {
     ProbeReport::from(vec![])
 }
 
+/// Counts its calls and answers `report` to the first `max_calls`. Later calls never answer, so a
+/// loop that probes too often parks there and fails its test on the count instead of spinning
+/// inside one poll.
 pub(super) fn capped_probe(
     calls: &Cell<usize>,
     max_calls: usize,
