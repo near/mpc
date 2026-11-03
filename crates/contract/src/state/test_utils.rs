@@ -11,6 +11,7 @@ use crate::primitives::{
     key_state::{EpochId, KeyForDomain, Keyset},
     participants::{ParticipantId, Participants},
     test_utils::{gen_participant, gen_participants, gen_threshold_params},
+    threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
         governance_threshold_lower_relative_bound,
@@ -78,12 +79,13 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
     let mut env = Environment::new(Some(100), None, None);
     let mut running = gen_running_state(num_domains);
     let proposal = gen_valid_params_proposal(&running.parameters);
+    let mut votes = GovernanceThresholdParametersVotes::default();
     let mut resharing_state = None;
     for (account, _, _) in proposal.participants().participants() {
         env.set_signer(account);
         assert!(resharing_state.is_none());
         resharing_state = running
-            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
+            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal, &mut votes)
             .unwrap();
     }
     (
@@ -96,23 +98,31 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
 pub fn gen_running_state(num_domains: usize) -> RunningContractState {
     let max_n = 30;
     let parameters = gen_threshold_params(max_n);
-    gen_running_state_with_params(
+    gen_running_state_with_params(RunningStateParams {
         num_domains,
-        parameters.participants().len(),
-        parameters.threshold().value(),
-    )
+        num_participants: parameters.participants().len(),
+        governance_threshold: parameters.threshold(),
+    })
 }
 
-/// Like [`gen_running_state`], but pins the participant count and
-/// GovernanceThreshold instead of randomizing them.
+#[derive(Clone, Copy, Debug)]
+pub struct RunningStateParams {
+    pub num_domains: usize,
+    pub num_participants: usize,
+    pub governance_threshold: GovernanceThreshold,
+}
+
+/// Like [`gen_running_state`], but with pinned parameters instead of random ones.
 pub fn gen_running_state_with_params(
-    num_domains: usize,
-    num_participants: usize,
-    governance_threshold: u64,
+    RunningStateParams {
+        num_domains,
+        num_participants,
+        governance_threshold,
+    }: RunningStateParams,
 ) -> RunningContractState {
     let threshold_parameters = GovernanceThresholdParameters::new(
         gen_participants(num_participants),
-        GovernanceThreshold::new(governance_threshold),
+        governance_threshold,
     )
     .expect("valid threshold parameters");
 
