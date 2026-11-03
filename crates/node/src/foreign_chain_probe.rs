@@ -25,7 +25,8 @@ mod whitelist_diagnostics;
 ///
 /// Once the whitelist is read, each round also logs every difference between the local config and
 /// the whitelist, see [`whitelist_diagnostics`], and judges each probed chain, see
-/// [`ChainHealth`](chain_health::ChainHealth). Until then, chain health is logged as unknown.
+/// [`ChainHealth`](chain_health::ChainHealth). Until then, each round logs that the whitelist is
+/// not read yet.
 pub async fn run_periodic_probe(
     foreign_chains: ForeignChainsConfig,
     whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
@@ -69,7 +70,7 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
     mut ticker: impl Tick,
 ) {
     loop {
-        // `biased`: a whitelist change that lands with a tick is judged in that round, not in an
+        // `biased`: a whitelist change that lands with a tick is handled in that round, not in an
         // extra one. `Ok(())` drops the branch once the sender is gone, so the loop never spins.
         tokio::select! {
             biased;
@@ -87,9 +88,7 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
                 whitelist_diagnostics::log_differences(local, &whitelist);
                 chain_health::log(&chain_health::judge(&report, local, &whitelist));
             }
-            None => info!(
-                "foreign chain health is unknown: the provider whitelist has not been read from the contract yet"
-            ),
+            None => info!("foreign chain whitelist: not read from the contract yet"),
         }
     }
 }
@@ -112,6 +111,8 @@ mod tests {
         polygon_with_report, row, whitelist_of,
     };
     use crate::tick::MockTicker;
+
+    const NOT_READ: &str = "foreign chain whitelist: not read from the contract yet";
 
     #[test]
     fn probe_periodically__should_probe_once_per_tick() {
@@ -262,39 +263,7 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn probe_periodically__should_log_whitelist_diagnostics_and_chain_health_every_round() {
-        // Given
-        let (local, report) =
-            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
-        let probe = || std::future::ready(report.clone());
-        let (_whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist_of(
-            dtos::ForeignChain::Polygon,
-            &["alchemy", "quicknode"],
-            2,
-        )));
-
-        // When
-        run_future_once(probe_periodically(
-            probe,
-            &local,
-            whitelist_rx,
-            MockTicker::new(2),
-        ));
-
-        // Then
-        logs_assert(|lines: &[&str]| {
-            [
-                ("INFO", "local config matches the contract whitelist"),
-                ("WARN", "foreign chain is below quorum"),
-            ]
-            .iter()
-            .try_for_each(|(level, message)| logged_times(lines, level, message, 2))
-        });
-    }
-
-    #[test]
-    #[traced_test]
-    fn probe_periodically__should_log_unknown_health_until_the_whitelist_is_read_then_probe_again()
+    fn probe_periodically__should_log_that_the_whitelist_is_not_read_until_it_is_then_probe_again()
     {
         // Given
         let probe_count = Cell::new(0);
@@ -320,12 +289,9 @@ mod tests {
         // Then
         assert_eq!(probe_count.get(), 2);
         logs_assert(|lines: &[&str]| {
-            [
-                ("INFO", "foreign chain health is unknown"),
-                ("INFO", "local config matches the contract whitelist"),
-            ]
-            .iter()
-            .try_for_each(|(level, message)| logged_times(lines, level, message, 1))
+            [NOT_READ, "local config matches the contract whitelist"]
+                .iter()
+                .try_for_each(|message| logged_times(lines, "INFO", message, 1))
         });
     }
 
@@ -358,17 +324,17 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn probe_periodically__should_judge_with_a_whitelist_that_changes_during_the_probe() {
+    fn probe_periodically__should_compare_with_a_whitelist_that_changes_during_the_probe() {
         // Given
         let (local, report) =
             polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
-        let below_quorum = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy", "quicknode"], 2);
-        let healthy = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
-        let (whitelist_tx, whitelist_rx) = watch::channel(Some(below_quorum));
+        let without_alchemy = whitelist_of(dtos::ForeignChain::Polygon, &["quicknode"], 1);
+        let with_alchemy = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+        let (whitelist_tx, whitelist_rx) = watch::channel(Some(without_alchemy));
         let probe_count = Cell::new(0);
         let counted_probe = capped_probe(&probe_count, 1, report);
         let probe = || {
-            whitelist_tx.send_replace(Some(healthy.clone()));
+            whitelist_tx.send_replace(Some(with_alchemy.clone()));
             counted_probe()
         };
 
@@ -382,8 +348,40 @@ mod tests {
 
         // Then
         assert_eq!(probe_count.get(), 1);
-        assert!(logs_contain("foreign chain is healthy"));
-        assert!(!logs_contain("foreign chain is below quorum"));
+        assert!(logs_contain("local config matches the contract whitelist"));
+        assert!(!logs_contain("extra provider"));
+    }
+
+    #[test]
+    #[traced_test]
+    fn probe_periodically__should_log_whitelist_diagnostics_and_chain_health_every_round() {
+        // Given
+        let (local, report) =
+            polygon_with_report(&[("alchemy", ALCHEMY_URL, ProviderStatus::Healthy)]);
+        let probe = || std::future::ready(report.clone());
+        let (_whitelist_tx, whitelist_rx) = watch::channel(Some(whitelist_of(
+            dtos::ForeignChain::Polygon,
+            &["alchemy", "quicknode"],
+            2,
+        )));
+
+        // When
+        run_future_once(probe_periodically(
+            probe,
+            &local,
+            whitelist_rx,
+            MockTicker::new(2),
+        ));
+
+        // Then
+        logs_assert(|lines: &[&str]| {
+            [
+                ("INFO", "local config matches the contract whitelist"),
+                ("WARN", "foreign chain is below quorum"),
+            ]
+            .iter()
+            .try_for_each(|(level, message)| logged_times(lines, level, message, 2))
+        });
     }
 
     #[test]

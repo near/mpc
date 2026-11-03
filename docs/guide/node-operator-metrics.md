@@ -142,8 +142,9 @@ After each round the node also compares the configured providers with the
 provider whitelist and logs each difference, so a wrong config is reported
 every hour until it is fixed. It then judges every probed chain against the
 whitelist and logs the verdict. Until the node has synced and read the
-whitelist from the contract, it logs that chain health is unknown. It probes
-again as soon as the whitelist is read, and whenever the whitelist changes.
+provider whitelist from the contract, each round logs that the whitelist is
+not read yet. The node probes again as soon as the whitelist is read, and
+whenever the whitelist changes.
 
 A chain is healthy when at least its quorum of whitelisted providers is
 configured, all of them passed, and no configured provider serves another
