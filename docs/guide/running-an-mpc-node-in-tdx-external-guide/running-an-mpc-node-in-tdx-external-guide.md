@@ -2175,7 +2175,8 @@ near account add-key $ACCOUNT_ID \
 > **Note:** Verify with `near account list-keys $ACCOUNT_ID` that the node key
 > now shows an empty `method_names` list.
 
-After the key is fixed, **restart the node** so foreign-chain registration runs again.
+After the key is fixed, the node retries its foreign-chain registration by itself within an
+hour. To register at once, restart the node.
 
 ## Joining the MPC Cluster
 

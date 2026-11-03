@@ -1,12 +1,16 @@
 //! Registers on the contract the foreign chains this node can serve, and keeps that registration
-//! in step with the whitelist.
+//! in step with the whitelist and with what the contract records.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::pin::Pin;
+use std::time::Duration;
 
+use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
+use tokio::time::Sleep;
 
 use crate::foreign_chain_rpc_policy::{RpcQuorumStatus, eligible_chains, rpc_quorum_statuses};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
@@ -15,30 +19,110 @@ use crate::indexer::types::ChainSendTransactionRequest;
 use crate::metrics;
 use crate::tracking::{self, AutoAbortTask};
 
-/// Registers the eligible chains now and again after every whitelist change that alters them.
+const MIN_RESEND_DELAY: Duration = Duration::from_secs(30);
+const MAX_RESEND_DELAY: Duration = Duration::from_hours(1);
+
+/// Registers the eligible chains until the contract records them for `my_tls_key`, and again
+/// whenever the eligible chains or the recorded ones change.
 /// Must be called from a tracked task. Dropping the returned task stops the registrar.
 pub(crate) fn spawn_foreign_chains_registrar(
     txn_sender: impl TransactionSender + 'static,
-    mut whitelist: watch::Receiver<ForeignChainWhitelist>,
+    whitelist: watch::Receiver<ForeignChainWhitelist>,
+    registered: watch::Receiver<dtos::ForeignChainsConfigs>,
+    my_tls_key: dtos::Ed25519PublicKey,
     local: ForeignChainsConfig,
 ) -> AutoAbortTask<()> {
-    tracking::spawn("foreign chains registrar", async move {
-        let mut registered: Option<BTreeSet<dtos::ForeignChain>> = None;
-        loop {
-            let statuses = rpc_quorum_statuses(&local, &whitelist.borrow_and_update());
+    tracking::spawn(
+        "foreign chains registrar",
+        keep_foreign_chains_registration_up_to_date(
+            txn_sender, whitelist, registered, my_tls_key, local,
+        ),
+    )
+}
+
+fn resend_backoff() -> ExponentialBuilder {
+    ExponentialBuilder::default()
+        .with_min_delay(MIN_RESEND_DELAY)
+        .with_max_delay(MAX_RESEND_DELAY)
+        .without_max_times()
+}
+
+/// Resends a registration that has not landed after each delay of [`resend_backoff`], which
+/// restarts when a registration lands or the eligible chains change. Returns once the transaction
+/// processor or a watched channel closes.
+async fn keep_foreign_chains_registration_up_to_date(
+    txn_sender: impl TransactionSender,
+    mut whitelist: watch::Receiver<ForeignChainWhitelist>,
+    mut registered: watch::Receiver<dtos::ForeignChainsConfigs>,
+    my_tls_key: dtos::Ed25519PublicKey,
+    local: ForeignChainsConfig,
+) {
+    let mut pending: Option<PendingRegistration> = None;
+    let mut resend_delays = resend_backoff().build();
+    let mut last_published: Option<BTreeMap<dtos::ForeignChain, RpcQuorumStatus>> = None;
+    loop {
+        let statuses = rpc_quorum_statuses(&local, &whitelist.borrow_and_update());
+        if last_published.as_ref() != Some(&statuses) {
             publish_rpc_quorum_metrics(&statuses);
-            let eligible = eligible_chains(&statuses);
-            if registered.as_ref() != Some(&eligible) {
+        }
+        let eligible = eligible_chains(&statuses);
+        last_published = Some(statuses);
+        let is_registered = registered
+            .borrow_and_update()
+            .get(&my_tls_key)
+            .is_some_and(|recorded| **recorded == eligible);
+        if is_registered {
+            pending = None;
+        } else {
+            let is_new = pending
+                .as_ref()
+                .is_none_or(|pending| pending.chains != eligible);
+            let is_resend_due = pending
+                .as_ref()
+                .is_some_and(|pending| pending.resend_timer.is_elapsed());
+            if is_new {
+                resend_delays = resend_backoff().build();
+            }
+            if is_new || is_resend_due {
                 match register_foreign_chains(&txn_sender, &eligible).await {
-                    Ok(()) => registered = Some(eligible),
+                    Ok(()) => {
+                        let delay = resend_delays.next().unwrap_or(MAX_RESEND_DELAY);
+                        pending = Some(PendingRegistration {
+                            chains: eligible,
+                            resend_timer: Box::pin(tokio::time::sleep(delay)),
+                        });
+                    }
                     Err(TransactionProcessorError::ProcessorIsClosed) => break,
                 }
             }
-            if whitelist.changed().await.is_err() {
-                break;
-            }
         }
-    })
+        tokio::select! {
+            changed = whitelist.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+            }
+            changed = registered.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+            }
+            () = wait_for_resend(&mut pending) => {}
+        }
+    }
+}
+
+struct PendingRegistration {
+    chains: BTreeSet<dtos::ForeignChain>,
+    resend_timer: Pin<Box<Sleep>>,
+}
+
+/// Never completes while nothing is pending.
+async fn wait_for_resend(pending: &mut Option<PendingRegistration>) {
+    match pending {
+        Some(pending) => pending.resend_timer.as_mut().await,
+        None => std::future::pending().await,
+    }
 }
 
 /// An empty set is still sent, so the contract drops this node as a supporter of every chain.
@@ -90,7 +174,6 @@ mod tests {
     use prometheus::core::Collector;
     use std::assert_matches;
     use tokio::sync::mpsc;
-    use tokio::sync::mpsc::error::TryRecvError;
 
     use super::*;
     use crate::tests::common::MockTransactionSender;
@@ -140,132 +223,441 @@ mod tests {
         chains.iter().copied().collect::<BTreeSet<_>>().into()
     }
 
-    async fn next_registration(
-        receiver: &mut mpsc::Receiver<ChainSendTransactionRequest>,
-    ) -> dtos::ForeignChainsConfig {
-        let request = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
-            .await
-            .expect("timed out waiting for a registration")
-            .expect("transaction sender dropped");
-        registered_chains(request)
+    fn my_tls_key() -> dtos::Ed25519PublicKey {
+        dtos::Ed25519PublicKey::from([1; 32])
     }
 
-    /// Ethereum is configured and whitelisted with a reachable quorum.
-    #[tokio::test]
-    async fn spawn_foreign_chains_registrar__should_register_the_eligible_chains_on_start() {
-        let (root, _root_handle) = start_root_task("test-root", async move {
-            // Given
+    fn recorded(my_chains: &[ForeignChain]) -> dtos::ForeignChainsConfigs {
+        BTreeMap::from([(my_tls_key(), chains(my_chains))]).into()
+    }
+
+    fn ethereum_whitelist(quorum: u64) -> ForeignChainWhitelist {
+        ForeignChainWhitelist::from([(ForeignChain::Ethereum, entry(quorum))])
+    }
+
+    fn ethereum() -> dtos::ForeignChainsConfig {
+        chains(&[ForeignChain::Ethereum])
+    }
+
+    const IMMEDIATELY: Duration = Duration::ZERO;
+
+    struct Registrar {
+        whitelist: watch::Sender<ForeignChainWhitelist>,
+        registered: watch::Sender<dtos::ForeignChainsConfigs>,
+        transactions: mpsc::Receiver<ChainSendTransactionRequest>,
+        _task: AutoAbortTask<()>,
+    }
+
+    /// Tests run in paused time, so a wait lasts exactly until the earliest timer.
+    impl Registrar {
+        /// Ethereum is configured locally.
+        fn start(whitelist: ForeignChainWhitelist, registered: dtos::ForeignChainsConfigs) -> Self {
             let local = ForeignChainsConfig {
                 ethereum: Some(local_chain()),
                 ..Default::default()
             };
-            let (_whitelist_sender, whitelist) = watch::channel(ForeignChainWhitelist::from([(
-                ForeignChain::Ethereum,
-                entry(1),
-            )]));
-            let (sender, mut receiver) = mpsc::channel(10);
+            let (whitelist, whitelist_receiver) = watch::channel(whitelist);
+            let (registered, registered_receiver) = watch::channel(registered);
+            let (sender, transactions) = mpsc::channel(10);
+            let task = tracking::spawn(
+                "registrar under test",
+                keep_foreign_chains_registration_up_to_date(
+                    MockTransactionSender {
+                        transaction_sender: sender,
+                    },
+                    whitelist_receiver,
+                    registered_receiver,
+                    my_tls_key(),
+                    local,
+                ),
+            );
+            Self {
+                whitelist,
+                registered,
+                transactions,
+                _task: task,
+            }
+        }
+
+        /// Returns the next registration and how long it took to come.
+        async fn next_registration(&mut self) -> (dtos::ForeignChainsConfig, Duration) {
+            let started = tokio::time::Instant::now();
+            let request = tokio::time::timeout(MAX_RESEND_DELAY * 2, self.transactions.recv())
+                .await
+                .expect("timed out waiting for a registration")
+                .expect("transaction sender dropped");
+            (registered_chains(request), started.elapsed())
+        }
+
+        async fn assert_no_registration_for(&mut self, duration: Duration) {
+            let received = tokio::time::timeout(duration, self.transactions.recv()).await;
+            assert_matches!(received, Err(_));
+        }
+    }
+
+    /// Ethereum is configured and whitelisted with a reachable quorum.
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_register_the_eligible_chains_on_start()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let whitelist = ethereum_whitelist(1);
 
             // When
-            let _registrar = spawn_foreign_chains_registrar(
-                MockTransactionSender {
-                    transaction_sender: sender,
-                },
-                whitelist,
-                local,
-            );
+            let mut registrar = Registrar::start(whitelist, dtos::ForeignChainsConfigs::default());
 
             // Then
             assert_eq!(
-                next_registration(&mut receiver).await,
-                chains(&[ForeignChain::Ethereum])
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
             );
+        });
+        root.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_not_register_chains_the_contract_already_records()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let whitelist = ethereum_whitelist(1);
+
+            // When
+            let mut registrar = Registrar::start(whitelist, recorded(&[ForeignChain::Ethereum]));
+
+            // Then
+            registrar
+                .assert_no_registration_for(MAX_RESEND_DELAY * 2)
+                .await;
         });
         root.await;
     }
 
     /// Ethereum is configured but not whitelisted at start. The whitelist then makes it eligible.
-    #[tokio::test]
-    async fn spawn_foreign_chains_registrar__should_reregister_when_the_eligible_chains_change() {
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_reregister_when_the_eligible_chains_change()
+     {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let local = ForeignChainsConfig {
-                ethereum: Some(local_chain()),
-                ..Default::default()
-            };
-            let (whitelist_sender, whitelist) = watch::channel(ForeignChainWhitelist::new());
-            let (sender, mut receiver) = mpsc::channel(10);
-            let _registrar = spawn_foreign_chains_registrar(
-                MockTransactionSender {
-                    transaction_sender: sender,
-                },
-                whitelist,
-                local,
+            let mut registrar = Registrar::start(
+                ForeignChainWhitelist::new(),
+                dtos::ForeignChainsConfigs::default(),
             );
-            assert_eq!(next_registration(&mut receiver).await, chains(&[]));
+            assert_eq!(
+                registrar.next_registration().await,
+                (chains(&[]), IMMEDIATELY)
+            );
 
             // When
-            whitelist_sender
-                .send(ForeignChainWhitelist::from([(
-                    ForeignChain::Ethereum,
-                    entry(1),
-                )]))
-                .unwrap();
+            registrar.whitelist.send(ethereum_whitelist(1)).unwrap();
 
             // Then
             assert_eq!(
-                next_registration(&mut receiver).await,
-                chains(&[ForeignChain::Ethereum])
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
             );
         });
         root.await;
     }
 
-    /// Ethereum is registered. Whitelisting a chain this node does not run changes nothing, so no
-    /// registration follows. Raising Ethereum's quorum out of reach then registers an empty set.
-    #[tokio::test]
-    async fn spawn_foreign_chains_registrar__should_skip_a_whitelist_change_that_keeps_the_eligible_chains()
+    /// Ethereum is sent but has not landed. Whitelisting a chain this node does not run
+    /// changes nothing, so no registration follows. Raising Ethereum's quorum out of reach then
+    /// registers an empty set.
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_skip_a_whitelist_change_that_keeps_the_eligible_chains()
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let local = ForeignChainsConfig {
-                ethereum: Some(local_chain()),
-                ..Default::default()
-            };
-            let (whitelist_sender, whitelist) = watch::channel(ForeignChainWhitelist::from([(
-                ForeignChain::Ethereum,
-                entry(1),
-            )]));
-            let (sender, mut receiver) = mpsc::channel(10);
-            let _registrar = spawn_foreign_chains_registrar(
-                MockTransactionSender {
-                    transaction_sender: sender,
-                },
-                whitelist,
-                local,
-            );
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
             assert_eq!(
-                next_registration(&mut receiver).await,
-                chains(&[ForeignChain::Ethereum])
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
             );
 
             // When
-            whitelist_sender
+            registrar
+                .whitelist
                 .send(ForeignChainWhitelist::from([
                     (ForeignChain::Ethereum, entry(1)),
                     (ForeignChain::Base, entry(1)),
                 ]))
                 .unwrap();
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            assert_matches!(receiver.try_recv(), Err(TryRecvError::Empty));
-            whitelist_sender
-                .send(ForeignChainWhitelist::from([(
-                    ForeignChain::Ethereum,
-                    entry(2),
-                )]))
+            registrar
+                .assert_no_registration_for(MIN_RESEND_DELAY / 2)
+                .await;
+            registrar.whitelist.send(ethereum_whitelist(2)).unwrap();
+
+            // Then
+            assert_eq!(
+                registrar.next_registration().await,
+                (chains(&[]), IMMEDIATELY)
+            );
+        });
+        root.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_resend_a_registration_that_has_not_landed()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+
+            // When
+            let resent = registrar.next_registration().await;
+
+            // Then
+            assert_eq!(resent, (ethereum(), MIN_RESEND_DELAY));
+        });
+        root.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_not_resend_before_the_resend_delay()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+
+            // When
+            let almost_due = MIN_RESEND_DELAY - Duration::from_millis(1);
+
+            // Then
+            registrar.assert_no_registration_for(almost_due).await;
+        });
+        root.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_stop_resending_once_the_registration_lands()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+
+            // When
+            registrar
+                .registered
+                .send(recorded(&[ForeignChain::Ethereum]))
                 .unwrap();
 
             // Then
-            assert_eq!(next_registration(&mut receiver).await, chains(&[]));
+            registrar
+                .assert_no_registration_for(MAX_RESEND_DELAY * 2)
+                .await;
+        });
+        root.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_wait_longer_after_a_resend_that_has_not_landed()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), MIN_RESEND_DELAY)
+            );
+
+            // When
+            let resent = registrar.next_registration().await;
+
+            // Then
+            assert_eq!(resent, (ethereum(), MIN_RESEND_DELAY * 2));
+        });
+        root.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_cap_the_resend_wait() {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+            let mut delay = MIN_RESEND_DELAY;
+            while delay < MAX_RESEND_DELAY {
+                assert_eq!(registrar.next_registration().await, (ethereum(), delay));
+                delay *= 2;
+            }
+
+            // When
+            let resent = registrar.next_registration().await;
+
+            // Then
+            assert_eq!(resent, (ethereum(), MAX_RESEND_DELAY));
+        });
+        root.await;
+    }
+
+    /// A resend doubles the wait. The registration then lands, and the contract later loses it.
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_reset_the_resend_wait_once_a_registration_lands()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), MIN_RESEND_DELAY)
+            );
+            registrar
+                .registered
+                .send(recorded(&[ForeignChain::Ethereum]))
+                .unwrap();
+            registrar
+                .assert_no_registration_for(MIN_RESEND_DELAY / 2)
+                .await;
+            registrar
+                .registered
+                .send(dtos::ForeignChainsConfigs::default())
+                .unwrap();
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+
+            // When
+            let resent = registrar.next_registration().await;
+
+            // Then
+            assert_eq!(resent, (ethereum(), MIN_RESEND_DELAY));
+        });
+        root.await;
+    }
+
+    /// A resend doubles the wait. Raising Ethereum's quorum out of reach then makes the empty set
+    /// eligible.
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_reset_the_resend_wait_when_the_eligible_chains_change()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), MIN_RESEND_DELAY)
+            );
+            registrar.whitelist.send(ethereum_whitelist(2)).unwrap();
+            assert_eq!(
+                registrar.next_registration().await,
+                (chains(&[]), IMMEDIATELY)
+            );
+
+            // When
+            let resent = registrar.next_registration().await;
+
+            // Then
+            assert_eq!(resent, (chains(&[]), MIN_RESEND_DELAY));
+        });
+        root.await;
+    }
+
+    /// Each round flips Ethereum's eligibility and drops the record in one go, before the
+    /// registrar runs. Which ready branch `select!` takes is random, so many rounds make a stale
+    /// registration show up.
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_register_the_new_eligible_chains_when_the_record_changes_with_the_whitelist()
+     {
+        const ROUNDS: usize = 100;
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), recorded(&[ForeignChain::Ethereum]));
+            registrar
+                .assert_no_registration_for(MIN_RESEND_DELAY / 2)
+                .await;
+
+            for round in 0..ROUNDS {
+                let (quorum, eligible): (u64, &[ForeignChain]) = if round % 2 == 0 {
+                    (2, &[])
+                } else {
+                    (1, &[ForeignChain::Ethereum])
+                };
+
+                // When
+                registrar
+                    .whitelist
+                    .send(ethereum_whitelist(quorum))
+                    .unwrap();
+                registrar
+                    .registered
+                    .send(dtos::ForeignChainsConfigs::default())
+                    .unwrap();
+
+                // Then
+                assert_eq!(
+                    registrar.next_registration().await,
+                    (chains(eligible), IMMEDIATELY),
+                    "round {round}"
+                );
+                registrar.registered.send(recorded(eligible)).unwrap();
+                registrar
+                    .assert_no_registration_for(MIN_RESEND_DELAY / 2)
+                    .await;
+            }
+        });
+        root.await;
+    }
+
+    /// The contract records Ethereum, then loses the record, as after a state migration.
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_reregister_at_once_when_the_contract_loses_the_registration()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), recorded(&[ForeignChain::Ethereum]));
+            registrar
+                .assert_no_registration_for(MIN_RESEND_DELAY / 2)
+                .await;
+
+            // When
+            registrar
+                .registered
+                .send(dtos::ForeignChainsConfigs::default())
+                .unwrap();
+
+            // Then
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
         });
         root.await;
     }
@@ -289,6 +681,39 @@ mod tests {
             series(&metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED, chain)?,
             series(&metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED, chain)?,
         ))
+    }
+
+    /// The gauges are cleared after the first publish. A recorded-config change then wakes the
+    /// registrar without changing the RPC quorum statuses. The gauges are global, so this test
+    /// needs its own process, as nextest gives it.
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_publish_rpc_quorum_metrics_only_when_they_change()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), recorded(&[ForeignChain::Ethereum]));
+            registrar
+                .assert_no_registration_for(MIN_RESEND_DELAY / 2)
+                .await;
+            assert_eq!(gauges(ForeignChain::Ethereum), Some((1, 1)));
+            metrics::MPC_FOREIGN_CHAIN_RPC_QUORUM_REQUIRED.reset();
+            metrics::MPC_FOREIGN_CHAIN_RPC_PROVIDERS_WHITELISTED.reset();
+
+            // When
+            registrar
+                .registered
+                .send(dtos::ForeignChainsConfigs::default())
+                .unwrap();
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+
+            // Then
+            assert_eq!(gauges(ForeignChain::Ethereum), None);
+        });
+        root.await;
     }
 
     /// Polygon is whitelisted with quorum 1, Base is configured but not whitelisted. The gauges are

@@ -1,4 +1,4 @@
-use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
+use super::foreign_chain::{monitor_foreign_chain_registrations, monitor_foreign_chain_whitelist};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
@@ -71,7 +71,7 @@ pub fn spawn_real_indexer(
 ) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
-    let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
+    let (foreign_chain_registrations_sender_oneshot, foreign_chain_registrations_receiver_oneshot) =
         oneshot::channel();
     let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
         oneshot::channel();
@@ -207,14 +207,14 @@ pub fn spawn_real_indexer(
                 Ed25519PublicKey::from(&tls_public_key),
             ));
 
-            let foreign_chain_supporters_receiver =
-                monitor_foreign_chain_supporters(indexer_state.contract.clone()).await;
-            if foreign_chain_supporters_sender_oneshot
-                .send(foreign_chain_supporters_receiver)
+            let foreign_chain_registrations =
+                monitor_foreign_chain_registrations(indexer_state.contract.clone()).await;
+            if foreign_chain_registrations_sender_oneshot
+                .send(foreign_chain_registrations)
                 .is_err()
             {
                 tracing::error!(
-                    "Indexer thread could not send foreign chain supporters receiver back to main driver."
+                    "Indexer thread could not send foreign chain registrations receivers back to main driver."
                 )
             };
 
@@ -325,9 +325,9 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("Migraration info receiver must be returned by indexer.");
 
-    let foreign_chain_supporters_receiver = foreign_chain_supporters_receiver_oneshot
+    let foreign_chain_registrations = foreign_chain_registrations_receiver_oneshot
         .blocking_recv()
-        .expect("foreign chain supporters receiver must be returned by indexer");
+        .expect("foreign chain registrations receivers must be returned by indexer");
 
     let foreign_chain_whitelist_receiver = foreign_chain_whitelist_receiver_oneshot
         .blocking_recv()
@@ -342,8 +342,9 @@ pub fn spawn_real_indexer(
         allowed_os_measurements_receiver,
         my_migration_info_receiver,
         my_attestation_receiver,
-        foreign_chain_supporters_receiver,
+        foreign_chain_supporters_receiver: foreign_chain_registrations.supporters,
         foreign_chain_whitelist_receiver,
+        foreign_chains_configs_receiver: foreign_chain_registrations.configs,
     }
 }
 
