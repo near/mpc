@@ -4,7 +4,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::num::NonZeroUsize;
 
 use foreign_chain_health_check::probe::{
     ProbeReport, ProviderHealth, ProviderStatus, probe_all_providers,
@@ -12,13 +11,12 @@ use foreign_chain_health_check::probe::{
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
 use mpc_node_config::foreign_chains::RpcProviderName;
-use mpc_node_config::foreign_chains::provider_identity::{
-    ProviderWhitelistMatches, WhitelistConformingProviders,
-};
+use mpc_node_config::foreign_chains::provider_identity::WhitelistConformingProviders;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
+use crate::foreign_chain_rpc_policy::{RpcQuorumStatus, conforming_providers};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
 use crate::tick::Tick;
@@ -90,10 +88,8 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
 #[derive(Debug, PartialEq, Eq)]
 enum ChainHealth {
     Healthy,
-    BelowQuorum {
-        whitelisted: usize,
-        quorum: u64,
-    },
+    /// The same verdict that keeps the chain from being registered.
+    BelowQuorum(RpcQuorumStatus),
     UnhealthyProviders {
         unhealthy: usize,
         whitelisted: usize,
@@ -117,13 +113,9 @@ fn judge(
                 return None;
             }
             let whitelist_entry = whitelist.get(&chain)?;
-            let health = judge_chain(
-                &probed_rows,
-                &ProviderWhitelistMatches::for_chain(local_chain, whitelist_entry)
-                    .whitelist_conforming_providers(),
-                whitelist_entry.quorum,
-            );
-            Some((chain, health))
+            let conforming = conforming_providers(local_chain, whitelist_entry);
+            let quorum = RpcQuorumStatus::new(whitelist_entry, &conforming)?;
+            Some((chain, judge_chain(&probed_rows, &conforming, quorum)))
         })
         .collect()
 }
@@ -133,18 +125,10 @@ fn judge(
 fn judge_chain(
     probed_rows: &[&ProviderHealth],
     conforming: &WhitelistConformingProviders,
-    quorum: u64,
+    quorum: RpcQuorumStatus,
 ) -> ChainHealth {
-    let whitelisted = conforming.whitelist_provider_count();
-    let quorum_met = usize::try_from(quorum)
-        .ok()
-        .and_then(NonZeroUsize::new)
-        .is_some_and(|quorum| conforming.meets_quorum(quorum));
-    if !quorum_met {
-        return ChainHealth::BelowQuorum {
-            whitelisted,
-            quorum,
-        };
+    if !quorum.reaches_quorum() {
+        return ChainHealth::BelowQuorum(quorum);
     }
 
     // Probe rows name a provider by its local config name.
@@ -160,7 +144,7 @@ fn judge_chain(
     } else {
         ChainHealth::UnhealthyProviders {
             unhealthy: unhealthy.len(),
-            whitelisted,
+            whitelisted: quorum.configured_whitelisted_providers,
         }
     }
 }
@@ -218,13 +202,13 @@ fn log_chain_health(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>
         let chain = chain.label();
         match health {
             ChainHealth::Healthy => info!(%chain, "foreign chain is healthy"),
-            ChainHealth::BelowQuorum {
-                whitelisted,
-                quorum,
-            } => warn!(
+            ChainHealth::BelowQuorum(RpcQuorumStatus {
+                required_whitelisted_providers,
+                configured_whitelisted_providers,
+            }) => warn!(
                 %chain,
-                whitelisted,
-                quorum,
+                whitelisted = configured_whitelisted_providers,
+                quorum = required_whitelisted_providers.get(),
                 "foreign chain is below quorum: configure more whitelisted RPC providers",
             ),
             ChainHealth::UnhealthyProviders {
@@ -274,7 +258,7 @@ mod tests {
     use rstest::rstest;
     use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
-    use std::num::NonZeroU64;
+    use std::num::{NonZeroU64, NonZeroUsize};
     use tracing_test::traced_test;
 
     const ALCHEMY_URL: &str = "https://alchemy.example.com";
@@ -308,6 +292,13 @@ mod tests {
             provider: dtos::ProviderId(provider.to_string()),
             status,
         }
+    }
+
+    fn below_quorum(required: usize, configured: usize) -> ChainHealth {
+        ChainHealth::BelowQuorum(RpcQuorumStatus {
+            required_whitelisted_providers: NonZeroUsize::new(required).unwrap(),
+            configured_whitelisted_providers: configured,
+        })
     }
 
     /// Gives provider `p` the base URL `https://p.example.com`, so [`ALCHEMY_URL`] and
@@ -617,7 +608,7 @@ mod tests {
         ],
         &["alchemy", "quicknode"],
         2,
-        ChainHealth::BelowQuorum { whitelisted: 1, quorum: 2 }
+        below_quorum(2, 1)
     )]
     #[case::health_of_a_provider_missing_from_the_whitelist_ignored(
         &[
@@ -632,7 +623,7 @@ mod tests {
         &[("alchemy", "http://alchemy.example.com", ProviderStatus::Healthy)],
         &["alchemy"],
         1,
-        ChainHealth::BelowQuorum { whitelisted: 0, quorum: 1 }
+        below_quorum(1, 0)
     )]
     #[case::whitelist_provider_counted_once_and_healthy_only_when_all_its_local_providers_are(
         &[
@@ -697,13 +688,7 @@ mod tests {
         // Given
         let health_per_chain = BTreeMap::from([
             (dtos::ForeignChain::Polygon, ChainHealth::Healthy),
-            (
-                dtos::ForeignChain::Base,
-                ChainHealth::BelowQuorum {
-                    whitelisted: 1,
-                    quorum: 2,
-                },
-            ),
+            (dtos::ForeignChain::Base, below_quorum(2, 1)),
             (
                 dtos::ForeignChain::Bnb,
                 ChainHealth::UnhealthyProviders {

@@ -47,7 +47,10 @@ pub(crate) struct RpcQuorumStatus {
 impl RpcQuorumStatus {
     /// `None` for a zero or too large quorum. The contract rejects such votes, so this should
     /// never happen.
-    fn new(entry: &ChainEntry, conforming: &WhitelistConformingProviders) -> Option<Self> {
+    pub(crate) fn new(
+        entry: &ChainEntry,
+        conforming: &WhitelistConformingProviders,
+    ) -> Option<Self> {
         Some(Self {
             required_whitelisted_providers: usize::try_from(entry.quorum)
                 .ok()
@@ -61,7 +64,7 @@ impl RpcQuorumStatus {
     }
 }
 
-fn conforming_providers(
+pub(crate) fn conforming_providers(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,
 ) -> WhitelistConformingProviders {
