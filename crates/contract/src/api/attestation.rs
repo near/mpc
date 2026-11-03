@@ -326,6 +326,7 @@ impl MpcContract {
                     BTreeMap::new(),
                 );
                 let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
+                self.parameters_votes.clear();
                 if let Some(resharing) = res {
                     self.protocol_state = ProtocolContractState::Resharing(resharing);
                 }
@@ -478,7 +479,9 @@ mod tests {
         resharing_state, setup_tee_test_contract, submit_valid_attestations,
     };
     use crate::config::Config;
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
+    use crate::primitives::key_state::{
+        AttemptId, AuthenticatedAccountId, EpochId, KeyForDomain, Keyset,
+    };
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
@@ -987,6 +990,12 @@ mod tests {
                 .block_timestamp((ATTESTATION_EXPIRY_SECONDS + 1) * 1_000_000_000) // nanoseconds
                 .build()
         );
+        // A pending parameter vote must not survive the kickout's transition to Resharing.
+        let voter = AuthenticatedAccountId::new(parameters.participants()).unwrap();
+        let pending_proposal =
+            ProposedGovernanceThresholdParameters::new(parameters.clone(), BTreeMap::new());
+        contract.parameters_votes.vote(&pending_proposal, voter);
+        assert!(!contract.parameters_votes.is_empty());
 
         // Call verify_tee - should trigger resharing
         let result = contract.verify_tee();
@@ -995,6 +1004,7 @@ mod tests {
             Ok(true),
             "verify_tee should return Ok(true) when threshold is met"
         );
+        assert!(contract.parameters_votes.is_empty());
 
         // Verify contract transitioned to Resharing state
         let ProtocolContractState::Resharing(resharing_state) = &contract.protocol_state else {

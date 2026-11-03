@@ -17,7 +17,6 @@ fn make_static_web_data(attestation: Attestation) -> StaticWebData {
     StaticWebData {
         near_signer_public_key: Ed25519PublicKey(account_key()),
         near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
-        near_responder_public_keys: vec![],
         tee_participant_info: Some(attestation),
     }
 }
@@ -125,7 +124,6 @@ fn run_verification_rejects_none_attestation() {
     let static_data = StaticWebData {
         near_signer_public_key: Ed25519PublicKey(account_key()),
         near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
-        near_responder_public_keys: vec![],
         tee_participant_info: None,
     };
 
@@ -153,7 +151,6 @@ fn run_verification_rejects_mock_attestation() {
     let static_data = StaticWebData {
         near_signer_public_key: Ed25519PublicKey(account_key()),
         near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
-        near_responder_public_keys: vec![],
         tee_participant_info: Some(Attestation::Mock(
             mpc_attestation::attestation::MockAttestation::Valid,
         )),

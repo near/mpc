@@ -1,13 +1,11 @@
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
-use super::tx_signer::{TransactionSigner, TransactionSigners};
-use crate::config::RespondConfig;
+use super::tx_signer::TransactionSigner;
 use crate::metrics;
 use crate::types::{
     LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
     SubmittedTxMetadata,
 };
-use anyhow::Context;
 use chain_gateway::primitives::FetchLatestFinalBlockInfo;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
@@ -47,19 +45,22 @@ impl TransactionProcessorHandle {
     pub(crate) fn start_transaction_processor(
         owner_account_id: AccountId,
         owner_secret_key: SigningKey,
-        config: RespondConfig,
         indexer_state: Arc<IndexerState>,
         tx_logger: impl LogTransaction,
-    ) -> anyhow::Result<impl TransactionSender> {
-        let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
-            .context("Failed to initialize transaction signers")?;
+    ) -> impl TransactionSender {
+        // All transactions must share one signer: its nonce counter is the only
+        // thing keeping nonces of the node's access key unique and increasing.
+        let signer = Arc::new(TransactionSigner::from_key(
+            owner_account_id,
+            owner_secret_key,
+        ));
 
         let (transaction_sender, mut transaction_receiver) =
             mpsc::channel::<ChainSendTransactionRequest>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
 
         tokio::spawn(async move {
             while let Some(tx_request) = transaction_receiver.recv().await {
-                let tx_signer = signers.signer_for(&tx_request);
+                let tx_signer = signer.clone();
                 let indexer_state = indexer_state.clone();
                 let tx_logger = tx_logger.clone();
                 tokio::spawn(async move {
@@ -81,7 +82,7 @@ impl TransactionProcessorHandle {
             }
         });
 
-        Ok(TransactionProcessorHandle { transaction_sender })
+        TransactionProcessorHandle { transaction_sender }
     }
 }
 
