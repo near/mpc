@@ -636,6 +636,24 @@ expression: abi
         }
       },
       {
+        "name": "parameters_votes",
+        "doc": " Returns the pending `vote_new_parameters` votes, keyed by proposal hash.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "prepay_attestation_storage",
         "doc": " Buys `grants` attestation-storage grants for `account_id`.\n\n Permissionless, which is what lets an operator fund a node whose function-call key\n cannot attach a deposit. Requires exactly the fee times `grants`; no refunds, no\n withdrawal.",
         "kind": "call",
@@ -3716,21 +3734,6 @@ expression: abi
             }
           }
         },
-        "GovernanceThresholdParametersVotes": {
-          "description": "Votes for threshold parameter changes. Always empty: the contract stores only proposal hashes and no longer reports pending votes. Kept for wire compatibility.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
-              }
-            }
-          }
-        },
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
@@ -4765,8 +4768,7 @@ expression: abi
             "add_domains_votes",
             "domains",
             "keyset",
-            "parameters",
-            "parameters_votes"
+            "parameters"
           ],
           "properties": {
             "add_domains_votes": {
@@ -4780,9 +4782,6 @@ expression: abi
             },
             "parameters": {
               "$ref": "#/definitions/GovernanceThresholdParameters"
-            },
-            "parameters_votes": {
-              "$ref": "#/definitions/GovernanceThresholdParametersVotes"
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [

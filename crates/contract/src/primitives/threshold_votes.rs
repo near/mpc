@@ -1,4 +1,4 @@
-use crate::primitives::proposal_hash::{Borsh, Sha256, ToProposalHash};
+use crate::primitives::proposal_hash::{Borsh, ProposalHash, Sha256, ToProposalHash};
 use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
 use crate::primitives::votes::Votes;
 use crate::primitives::{
@@ -7,6 +7,7 @@ use crate::primitives::{
 };
 use crate::storage_keys::StorageKey;
 use near_sdk::near;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl ToProposalHash for ProposedGovernanceThresholdParameters {
     type Serializer = Borsh;
@@ -58,6 +59,10 @@ impl GovernanceThresholdParametersVotes {
 
     pub fn clear(&mut self) {
         self.0.clear();
+    }
+
+    pub fn all(&self) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>> {
+        self.0.all()
     }
 
     #[cfg(test)]

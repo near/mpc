@@ -7,6 +7,7 @@ use crate::types::PublicKeyExtended;
 use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::ProposalHash;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -167,18 +168,28 @@ pub struct ProposedGovernanceThresholdParameters {
 // Voting Types
 // =============================================================================
 
-/// Votes for threshold parameter changes. Always empty: the contract stores only proposal
-/// hashes and no longer reports pending votes. Kept for wire compatibility.
-// TODO(#2825): report the hash-keyed tally instead, like `MeasurementVotes`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+/// Voters grouped by the [`ProposalHash`] of the [`ProposedGovernanceThresholdParameters`]
+/// they voted for.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct GovernanceThresholdParametersVotes {
-    pub proposal_by_account:
-        BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
-}
+pub struct GovernanceThresholdParametersVotes(
+    pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>>,
+);
 
 /// Votes for adding new domains.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -250,7 +261,6 @@ pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
-    pub parameters_votes: GovernanceThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
@@ -502,5 +512,59 @@ mod tests {
 
         // Then
         assert_eq!(parsed.per_domain_thresholds.len(), 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn governance_threshold_parameters_votes__should_serialize_as_a_transparent_map_keyed_by_proposal_hash()
+     {
+        // Given
+        let proposal = ProposalHash::new([0xCD; 32]);
+        let votes = GovernanceThresholdParametersVotes(BTreeMap::from([(
+            proposal,
+            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
+        )]));
+
+        // When
+        let json = serde_json::to_value(&votes).unwrap();
+
+        // Then
+        assert_eq!(json[proposal.as_hex()][0], "alice.near");
+    }
+
+    // TODO(#4984): drop once no deployed contract reports the pre-tally voter-keyed shape.
+    #[test]
+    #[expect(non_snake_case)]
+    fn running_contract_state__should_ignore_the_legacy_parameters_votes_report() {
+        // Given: the `state()` of a 3.18 contract while a vote is pending
+        let parameters = GovernanceThresholdParameters {
+            participants: sample_participants(),
+            threshold: GovernanceThreshold::new(1),
+        };
+        let state = RunningContractState {
+            domains: DomainRegistry {
+                domains: Vec::new(),
+                next_domain_id: DomainId(0),
+            },
+            keyset: Keyset::new(EpochId::new(0), Vec::new()),
+            parameters: parameters.clone(),
+            add_domains_votes: AddDomainsVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
+            previously_cancelled_resharing_epoch_id: None,
+        };
+        let mut json = serde_json::to_value(&state).unwrap();
+        json["parameters_votes"] = serde_json::json!({ "proposal_by_account": {
+            "alice.near": ProposedGovernanceThresholdParameters {
+                parameters,
+                per_domain_thresholds: BTreeMap::new(),
+            },
+        }});
+
+        // When
+        let parsed: RunningContractState = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(parsed, state);
     }
 }
