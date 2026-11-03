@@ -1,6 +1,6 @@
 //! Builders shared by the probe's test modules.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::future::{Pending, Ready};
 
@@ -86,19 +86,11 @@ pub(super) fn mock_probe(
     }
 }
 
-pub(super) fn logged_times(
-    lines: &[&str],
-    level: &str,
-    message: &str,
-    times: usize,
-) -> Result<(), String> {
-    let logged = lines
-        .iter()
-        .filter(|line| line.contains(level) && line.contains(message))
-        .count();
-    (logged == times)
-        .then_some(())
-        .ok_or_else(|| format!("{level} {message:?} logged {logged} times, expected {times}"))
+/// Records the whitelist each round finished with.
+pub(super) fn mock_finish_round(
+    whitelists_seen: &RefCell<Vec<Option<ForeignChainWhitelist>>>,
+) -> impl Fn(&ProbeReport, Option<&ForeignChainWhitelist>) + '_ {
+    move |_, whitelist| whitelists_seen.borrow_mut().push(whitelist.cloned())
 }
 
 pub(super) fn gauges(chain: &str) -> ProviderCounts {
