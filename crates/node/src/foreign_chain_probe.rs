@@ -253,6 +253,7 @@ mod tests {
         let outcome = run_future_once(forward_foreign_chain_whitelist(indexer_rx, probe_tx));
 
         // Then
+        // assert_matches! requires Debug, which MaybeReady doesn't implement
         assert!(matches!(outcome, MaybeReady::Ready(())));
     }
 
