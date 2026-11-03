@@ -20,6 +20,7 @@ members = [
     "crates/include-measurements",
     "crates/launcher-interface",
     "crates/mpc-attestation",
+    "crates/near-block-primitives",
     "crates/near-contract-transport",
     "crates/near-mpc-bounded-collections",
     "crates/near-mpc-contract-interface",
@@ -71,6 +72,7 @@ mpc-node = { path = "crates/node" }
 mpc-node-config = { path = "crates/node-config" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
+near-block-primitives = { path = "crates/near-block-primitives" }
 near-contract-transport = { path = "crates/near-contract-transport" }
 near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
 near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
