@@ -46,7 +46,7 @@ fn finish_round(report: &ProbeReport, whitelist: Option<&ForeignChainWhitelist>)
     report::publish_metrics(report);
     report::log_report(report);
     if whitelist.is_none() {
-        info!(WHITELIST_NOT_READ);
+        info!("{WHITELIST_NOT_READ}");
     }
 }
 
@@ -100,6 +100,7 @@ mod tests {
     use foreign_chain_health_check::probe::{ProviderCounts, ProviderStatus};
     use futures::FutureExt as _;
     use near_mpc_contract_interface::types as dtos;
+    use rstest::rstest;
     use tracing_test::traced_test;
 
     use super::*;
@@ -333,14 +334,19 @@ mod tests {
         assert_eq!(*whitelists_seen.borrow(), vec![Some(whitelist)]);
     }
 
-    #[test]
     #[traced_test]
-    fn finish_round__should_log_that_the_whitelist_is_not_read_without_one() {
+    #[rstest]
+    #[case::without_a_whitelist(None, true)]
+    #[case::with_a_whitelist(Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)), false)]
+    fn finish_round__should_log_that_the_whitelist_is_not_read_only_without_one(
+        #[case] whitelist: Option<ForeignChainWhitelist>,
+        #[case] expect_logged: bool,
+    ) {
         // When
-        finish_round(&empty_report(), None);
+        finish_round(&empty_report(), whitelist.as_ref());
 
         // Then
-        assert!(logs_contain(WHITELIST_NOT_READ));
+        assert_eq!(logs_contain(WHITELIST_NOT_READ), expect_logged);
     }
 
     #[test]
