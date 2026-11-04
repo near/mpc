@@ -11,6 +11,11 @@ The NEAR MPC project ships two artifacts together as one release bundle:
 - **Chain Signatures contract** — distributed as a reproducibly-built WASM
   attached to the GitHub release.
 
+The TEE verifier contract is not part of the release today. If a release needs a new
+verifier (for example, for a security fix), deploy and vote it in separately, per
+[`deploy-tee-verifier.md`](docs/development/deploy-tee-verifier.md), before upgrading
+the contract.
+
 A release is a [Release workflow](.github/workflows/release.yml) run that
 promotes already-built artifacts to a versioned release. The workflow:
 

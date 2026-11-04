@@ -1,6 +1,6 @@
 //! Governance votes over the participant set and the domain registry.
 
-use crate::dto_mapping::TryIntoContractType;
+use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters};
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
 use crate::tee::tee_state::TeeValidationResult;
@@ -52,10 +52,11 @@ impl MpcContract {
         let proposed_participants = proposal.participants();
         match validation_result {
             TeeValidationResult::Full => {
-                if let Some(new_state) = self
-                    .protocol_state
-                    .vote_new_parameters(prospective_epoch_id, &proposal)?
-                {
+                if let Some(new_state) = self.protocol_state.vote_new_parameters(
+                    prospective_epoch_id,
+                    &proposal,
+                    &mut self.parameters_votes,
+                )? {
                     self.protocol_state = new_state;
                 }
                 Ok(())
@@ -99,8 +100,14 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
             self.protocol_state = new_state;
+            self.parameters_votes.clear();
         }
         Ok(())
+    }
+
+    /// Returns the pending `vote_new_parameters` votes, keyed by proposal hash.
+    pub fn parameters_votes(&self) -> dtos::GovernanceThresholdParametersVotes {
+        (&self.parameters_votes).into_dto_type()
     }
 }
 
@@ -119,14 +126,17 @@ mod tests {
         attest_all_participants, forwarded_participant_call_contract, make_public_key_for_curve,
         setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
-    use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
-    use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
+    use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
     use crate::primitives::participants::Participants;
-    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
-    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
+    use crate::primitives::proposal_hash::ToProposalHash;
+    use crate::primitives::test_utils::{
+        authenticate_account_as, bogus_tee_verifier_account_id, gen_participants,
+    };
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
+    use crate::state::key_event::tests::find_leader;
+    use crate::tee::test_utils::Environment;
     use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
@@ -483,11 +493,196 @@ mod tests {
             Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == outsider
         );
         // Check that vote was not accepted.
+        assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
+        assert!(contract.parameters_votes.is_empty());
+    }
+
+    #[test]
+    fn vote_add_domains__should_clear_pending_parameter_votes_on_transition() {
+        // Given
+        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap(),
+            BTreeMap::new(),
+        );
+        vote_params(&mut contract, &signer, &proposal).unwrap();
+        assert!(!contract.parameters_votes.is_empty());
+        let new_domain = dtos::DomainConfig {
+            id: DomainId(domain_id.0 + 1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        };
+
+        // When
+        let mut env = Environment::new(Some(0), None, None);
+        for (account_id, _, _) in participants.participants() {
+            env.set_signer(account_id);
+            contract.vote_add_domains(vec![new_domain.clone()]).unwrap();
+        }
+
+        // Then
         assert_matches!(
             &contract.protocol_state,
-            ProtocolContractState::Running(state)
-                if state.parameters_votes == GovernanceThresholdParametersVotes::default()
+            ProtocolContractState::Initializing(_)
         );
+        assert!(contract.parameters_votes.is_empty());
+    }
+
+    /// Installs a context where `account_id` calls as an attested participant, signing with the
+    /// account key its stored attestation was made under.
+    fn attested_context(
+        contract: &MpcContract,
+        participants: &Participants,
+        account_id: &AccountId,
+    ) {
+        let info = participants.info(account_id).unwrap();
+        let node = contract
+            .tee_state
+            .nodes
+            .get(&info.tls_public_key)
+            .expect("an attestation must be stored under the TLS key");
+        Environment::new(Some(0), Some(account_id.clone()), None)
+            .set_pk(near_sdk::PublicKey::from(node.signer_public_key.clone()));
+    }
+
+    /// Drives a 3-participant Running contract with one domain into Resharing: every
+    /// participant votes `proposal`, a key refresh keeping participants and threshold.
+    fn resharing_contract_with_domain() -> (
+        MpcContract,
+        Participants,
+        DomainId,
+        ProposedGovernanceThresholdParameters,
+    ) {
+        let (mut contract, participants, _, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap(),
+            BTreeMap::new(),
+        );
+        for (account_id, _, _) in participants.participants() {
+            vote_params(&mut contract, account_id, &proposal).unwrap();
+        }
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Resharing(_)
+        );
+        (contract, participants, domain_id, proposal)
+    }
+
+    /// The tally for `voters` all voting `proposal`.
+    fn expected_tally(
+        proposal: &ProposedGovernanceThresholdParameters,
+        voters: &[&AccountId],
+    ) -> dtos::GovernanceThresholdParametersVotes {
+        dtos::GovernanceThresholdParametersVotes(BTreeMap::from([(
+            proposal.to_proposal_hash(),
+            voters
+                .iter()
+                .map(|voter| dtos::AuthenticatedAccountId((*voter).clone()))
+                .collect(),
+        )]))
+    }
+
+    #[test]
+    fn parameters_votes__should_report_pending_votes_by_proposal_hash() {
+        // Given
+        let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        vote_params(&mut contract, &signer, &proposal).unwrap();
+
+        // Then
+        assert_eq!(
+            contract.parameters_votes(),
+            expected_tally(&proposal, &[&signer])
+        );
+    }
+
+    #[test]
+    fn parameters_votes__should_report_re_proposal_votes_while_resharing() {
+        // Given
+        let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
+        let (voter, _, _) = &participants.participants()[0];
+        Environment::new(Some(0), Some(voter.clone()), None);
+
+        // When
+        contract
+            .vote_new_parameters(dtos::EpochId::new(2), (&proposal).into_dto_type())
+            .unwrap();
+
+        // Then
+        assert_eq!(
+            contract.parameters_votes(),
+            expected_tally(&proposal, &[voter])
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_record_a_re_proposal_vote_while_resharing() {
+        // Given
+        let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
+        let (voter, _, _) = &participants.participants()[0];
+        Environment::new(Some(0), Some(voter.clone()), None);
+
+        // When: a participant re-proposes at the next prospective epoch
+        let result =
+            contract.vote_new_parameters(dtos::EpochId::new(2), (&proposal).into_dto_type());
+
+        // Then
+        assert_matches!(result, Ok(()));
+        assert_matches!(
+            &contract.protocol_state,
+            ProtocolContractState::Resharing(_)
+        );
+        assert!(!contract.parameters_votes.is_empty());
+    }
+
+    #[test]
+    fn vote_reshared__should_clear_pending_parameter_votes_on_transition() {
+        // Given: a Resharing contract holding a pending re-proposal vote
+        let (mut contract, participants, domain_id, proposal) = resharing_contract_with_domain();
+        let voter = authenticate_account_as(&participants.participants()[0].0, &participants);
+        contract.parameters_votes.vote(&proposal, voter);
+        assert!(!contract.parameters_votes.is_empty());
+
+        // When: the resharing completes
+        let ProtocolContractState::Resharing(resharing) = &contract.protocol_state else {
+            panic!("expected Resharing state");
+        };
+        let (leader, _) = find_leader(&resharing.resharing_key);
+        let key_event_id = KeyEventId {
+            attempt_id: AttemptId::new(),
+            domain_id,
+            epoch_id: EpochId::new(1),
+        };
+        attested_context(&contract, &participants, &leader);
+        contract.start_reshare_instance(key_event_id).unwrap();
+        for (account_id, _, _) in participants.participants() {
+            attested_context(&contract, &participants, account_id);
+            contract.vote_reshared(key_event_id).unwrap();
+        }
+
+        // Then
+        assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
+        assert!(contract.parameters_votes.is_empty());
     }
 
     #[test]
