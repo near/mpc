@@ -2,10 +2,13 @@ use attestation::attestation::VerificationError;
 use node_types::http_server::StaticWebData;
 use time::OffsetDateTime;
 
-use dcap_qvl::{TcbStatus, policy::PckIdentity, quote::TDReport10};
+use dcap_qvl::{SvnComponent, TcbStatus, policy::PckIdentity, quote::TDReport10};
 
 use crate::tcb_status::{self, EarlyDemotion, Report, TcbVerdict};
 use crate::verify::VerificationResult;
+
+const UPDATE_TDX_MODULE: &str = "update the TDX module (SEAM loader)";
+const UPDATE_BIOS: &str = "update BIOS/microcode";
 
 pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
     print_header(static_data);
@@ -117,12 +120,14 @@ pub fn print_tcb_status(report: &Report) {
     };
     print_platform(&report.td_report, pck);
 
-    print_verdict("served by the node", &report.served);
+    let (module, _) = tcb_status::tdx_module(&report.td_report.tee_tcb_svn);
+    let module = module.as_deref().unwrap_or("unnamed");
+    print_verdict("served by the node", &report.served, module);
     if let Some(standard) = &report.standard {
-        print_verdict("Intel `standard`", standard);
+        print_verdict("Intel `standard`", standard, module);
     }
     if let Some(early) = &report.early {
-        print_verdict("Intel `early`", early);
+        print_verdict("Intel `early`", early, module);
     }
 
     if let Some(EarlyDemotion { cleared, demoted }) = report.early_demotion() {
@@ -134,7 +139,7 @@ pub fn print_tcb_status(report: &Report) {
     }
 }
 
-fn print_verdict(label: &str, verdict: &TcbVerdict) {
+fn print_verdict(label: &str, verdict: &TcbVerdict, module: &str) {
     println!();
     match verdict {
         TcbVerdict::Verified {
@@ -154,9 +159,10 @@ fn print_verdict(label: &str, verdict: &TcbVerdict) {
                 );
             }
             for shortfall in shortfalls {
+                let (component, remedy) = describe(shortfall.component, module);
                 println!(
-                    "  {} is {}, needs {} -> {}",
-                    shortfall.component, shortfall.have, shortfall.needs, shortfall.remedy
+                    "  {component} is {}, needs {} -> {remedy}",
+                    shortfall.have, shortfall.needs
                 );
             }
             // Demoted with nothing to raise: either Intel accepts no level for
@@ -182,6 +188,24 @@ fn print_verdict(label: &str, verdict: &TcbVerdict) {
             println!("--- {label} ---");
             println!("Rejected:               {reason}");
         }
+    }
+}
+
+/// How a shortfall line names `component`, and the update that raises it.
+/// `module` names the TDX module identity the quote selects.
+fn describe(component: SvnComponent, module: &str) -> (String, &'static str) {
+    match component {
+        SvnComponent::TdxModuleIsvSvn => {
+            (format!("TDX module {module} ISV SVN"), UPDATE_TDX_MODULE)
+        }
+        // The module's own SVNs, judged by the platform level only when the
+        // quote selects no module identity.
+        SvnComponent::Tdx(index @ (0 | 1)) => {
+            (format!("TDX TCB component {index}"), UPDATE_TDX_MODULE)
+        }
+        SvnComponent::Tdx(index) => (format!("TDX TCB component {index}"), UPDATE_BIOS),
+        SvnComponent::Sgx(index) => (format!("SGX TCB component {index}"), UPDATE_BIOS),
+        SvnComponent::PceSvn => ("PCESVN".to_owned(), UPDATE_BIOS),
     }
 }
 
@@ -214,5 +238,36 @@ fn print_platform(report: &TDReport10, pck: Option<&PckIdentity>) {
             println!("FMSPC, SGX components and PCESVN come from the PCK certificate,");
             println!("which neither evaluation could read.");
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(
+        SvnComponent::TdxModuleIsvSvn,
+        "TDX module TDX_03 ISV SVN",
+        UPDATE_TDX_MODULE
+    )]
+    #[case(SvnComponent::Tdx(0), "TDX TCB component 0", UPDATE_TDX_MODULE)]
+    #[case(SvnComponent::Tdx(1), "TDX TCB component 1", UPDATE_TDX_MODULE)]
+    #[case(SvnComponent::Tdx(2), "TDX TCB component 2", UPDATE_BIOS)]
+    #[case(SvnComponent::Sgx(0), "SGX TCB component 0", UPDATE_BIOS)]
+    #[case(SvnComponent::PceSvn, "PCESVN", UPDATE_BIOS)]
+    fn describe__should_name_the_component_and_the_update_that_raises_it(
+        #[case] component: SvnComponent,
+        #[case] expected_label: &str,
+        #[case] expected_remedy: &str,
+    ) {
+        // When
+        let (label, remedy) = describe(component, "TDX_03");
+
+        // Then
+        assert_eq!(label, expected_label);
+        assert_eq!(remedy, expected_remedy);
     }
 }

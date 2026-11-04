@@ -143,9 +143,12 @@ pub(super) fn log_differences(local: &ForeignChainsConfig, whitelist: &ForeignCh
     log(&compare(local, whitelist));
 }
 
+pub(super) const CONFIG_MATCHES_WHITELIST: &str =
+    "foreign chain whitelist: local config matches the contract whitelist";
+
 fn log(diagnostics: &[Diagnostic]) {
     if diagnostics.is_empty() {
-        tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
+        tracing::info!("{CONFIG_MATCHES_WHITELIST}");
     }
     diagnostics.iter().for_each(log_diagnostic);
 }

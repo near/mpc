@@ -1,6 +1,6 @@
 //! Builders shared by the probe's test modules.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::future::{Pending, Ready};
 use std::num::NonZeroU64;
@@ -8,6 +8,7 @@ use std::num::NonZeroU64;
 use foreign_chain_health_check::probe::{
     ProbeReport, ProviderCounts, ProviderHealth, ProviderStatus,
 };
+use futures::Stream;
 use futures::future::Either;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
@@ -15,7 +16,6 @@ use mpc_node_config::{
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
-use tokio::sync::watch;
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
@@ -153,8 +153,8 @@ pub(super) fn polygon_with_report(providers: &[ProbedProvider]) -> ProbedConfig 
     config_with_report(&providers)
 }
 
-pub(super) fn no_whitelist() -> watch::Receiver<Option<ForeignChainWhitelist>> {
-    watch::channel(None).1
+pub(super) fn no_whitelist() -> impl Stream<Item = ForeignChainWhitelist> {
+    futures::stream::pending()
 }
 
 pub(super) fn empty_report() -> ProbeReport {
@@ -176,6 +176,13 @@ pub(super) fn mock_probe(
             Either::Right(std::future::pending())
         }
     }
+}
+
+/// Records the whitelist each round finished with.
+pub(super) fn mock_finish_round(
+    whitelists_seen: &RefCell<Vec<Option<ForeignChainWhitelist>>>,
+) -> impl Fn(&ProbeReport, Option<&ForeignChainWhitelist>) + '_ {
+    move |_, whitelist| whitelists_seen.borrow_mut().push(whitelist.cloned())
 }
 
 pub(super) fn logged_times(

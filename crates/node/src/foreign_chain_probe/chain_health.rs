@@ -95,11 +95,13 @@ fn judge_chain(
     }
 }
 
+pub(super) const CHAIN_HEALTHY: &str = "foreign chain is healthy";
+
 pub(super) fn log(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>) {
     for (chain, health) in health_per_chain {
         let chain = chain.label();
         match health {
-            ChainHealth::Healthy => info!(%chain, "foreign chain is healthy"),
+            ChainHealth::Healthy => info!(%chain, "{CHAIN_HEALTHY}"),
             ChainHealth::BelowQuorum(quorum) => warn!(
                 %chain,
                 whitelisted = quorum.configured_whitelisted_providers,
@@ -343,7 +345,7 @@ mod tests {
 
         // Then
         let expected_levels = [
-            ("INFO", "foreign chain is healthy"),
+            ("INFO", CHAIN_HEALTHY),
             ("WARN", "foreign chain is below quorum"),
             (
                 "WARN",
