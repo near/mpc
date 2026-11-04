@@ -138,7 +138,7 @@ main() {
   NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | grep -oE "ed25519:\w+")
 
   echo "Creating mpc-contract account"
-  run_quiet_on_success "near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+  run_quiet_on_success "near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
   run_quiet_on_success_with_retries "near account view-account-summary mpc-contract.test.near network-config mpc-localnet now"
 
   echo "Deploying mpc-contract"
@@ -150,7 +150,7 @@ main() {
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
-    run_quiet_on_success "near account create-account fund-myself ${node_name} '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send"
+    run_quiet_on_success "near account create-account fund-myself ${node_name} '100 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send"
 
   done
 
@@ -256,7 +256,7 @@ main() {
   wait_for_success "$(mpc_view state) 2>&1 | grep Running"
 
   echo "Creating tee-verifier account"
-  run_quiet_on_success "near account create-account fund-myself $TEE_VERIFIER_ACCOUNT '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+  run_quiet_on_success "near account create-account fund-myself $TEE_VERIFIER_ACCOUNT '5 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
 
   echo "Deploying tee-verifier"
   # The verifier is stateless, so it has no initializer to call on deploy.

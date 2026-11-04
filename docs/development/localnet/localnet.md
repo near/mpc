@@ -104,7 +104,7 @@ Otherwise, add the `[network_connection.mpc-localnet]` table to the CLI config f
 Now, create an account for the contract with the following command.
 
 ```shell
-near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 We can verify that the account exists and has 1000 NEAR with this command.
@@ -135,11 +135,11 @@ In this guide we'll run two MPC nodes. We'll call the nodes `Frodo` and `Sam`, a
 Before we're ready to initialize the nodes, we should create the accounts.
 
 ```shell
-near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 ```shell
-near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 Next, we need to know the public key of our NEAR validator.
@@ -298,7 +298,7 @@ Create and deploy the verifier account. Like the MPC contract, it has no
 initializer, so we deploy without an init call:
 
 ```shell
-near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 
 near contract deploy tee-verifier.test.near use-file "$TEE_VERIFIER_PATH" without-init-call network-config mpc-localnet sign-with-keychain send
 ```
