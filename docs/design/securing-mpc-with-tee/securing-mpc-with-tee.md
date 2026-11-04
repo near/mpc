@@ -422,8 +422,6 @@ We grant access to all contract methods rather than an explicit allow-list becau
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
 
-In addition - The node will generate multiple responder account keys as well. These are used to increase throughout when posting generated MPC signatures to the chain.
-
 Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`) reject the operator key: the contract requires the signer key to be the attested node account key.
 
 ## Remote Attestation
@@ -547,7 +545,7 @@ services:
     container_name: launcher
     environment:
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d # nearone/mpc-node-gcp:testnet-release
+      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
 
 volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -566,7 +564,7 @@ Given this Docker compose file, the resulting `app-compose.json` might look like
   "manifest_version": 2,
   "name": "launcher-mpc-node-0",
   "runner": "docker-compose",
-  "docker_compose_file": "version: '3.8'\n\nservices:\n  web:\n    image: barakeinavnear/launcher:latest\n    container_name: launcher\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d # nearone/mpc-node-gcp:testnet-release\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\nvolumes:\n  shared-volume:\n    name: shared-volume",
+  "docker_compose_file": "version: '3.8'\n\nservices:\n  web:\n    image: barakeinavnear/launcher:latest\n    container_name: launcher\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\nvolumes:\n  shared-volume:\n    name: shared-volume",
   "docker_config": {},
   "kms_enabled": false,
   "gateway_enabled": false,
@@ -869,5 +867,5 @@ There are two distinct Near Account Keys with different responsibilities:
 ## Identified Risks
 
 - **Rollback & asset reuse**
-  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples, presignatures).
+  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples).
   - Currently, these assets are persisted on disk — mitigation will be required in future iterations.

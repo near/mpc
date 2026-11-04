@@ -29,7 +29,7 @@ pub type ParticipantUrl = BoundedString<MAX_PARTICIPANT_URL_BYTES>;
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ParticipantInfo {
-    pub url: String,
+    pub url: ParticipantUrl,
     pub tls_public_key: Ed25519PublicKey,
 }
 
@@ -68,7 +68,7 @@ mod tests {
                 "alice.near".parse().unwrap(),
                 ParticipantId(0),
                 ParticipantInfo {
-                    url: "https://alice.com".to_string(),
+                    url: "https://alice.com".try_into().unwrap(),
                     tls_public_key: test_key(),
                 },
             )],
@@ -95,7 +95,7 @@ mod tests {
                     "alice.near".parse().unwrap(),
                     ParticipantId(0),
                     ParticipantInfo {
-                        url: "https://alice.com".to_string(),
+                        url: "https://alice.com".try_into().unwrap(),
                         tls_public_key: test_key(),
                     },
                 )],

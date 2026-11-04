@@ -219,7 +219,7 @@ In the shell where you ran the local near node, you should see the peer count ch
 2025-08-03T14:20:12.183398Z  INFO stats: #  100579 98DQh3yG987rY1pNWKbM4jYjJ5xuFixP4g3MJuVvpiWY Validator | 1 validator 2 peers ⬇ 1.10 kB/s ⬆ 37.4 kB/s 1.60 bps 0 gas/s CPU: 3%, Mem: 2.17 GB
 ```
 
-### Assign the signer and responder keys as subkeys
+### Assign the signer keys as subkeys
 
 We must delegate the generate signing keys Sam and Frodo generated as access keys to their near accounts such that they
 can sign transaction that require authorization on the contract.
@@ -229,9 +229,6 @@ First we can get the keys from the `public_data` endpoint:
 ```shell
 export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r ".near_signer_public_key")
 export SAM_PUBKEY=$(curl -s localhost:8082/public_data | jq -r ".near_signer_public_key")
-
-export FRODO_RESPONDER_KEY=$(curl -s localhost:8081/public_data | jq -r ".near_responder_public_keys[0]")
-export SAM_RESPONDER_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_responder_public_keys[0]")
 ```
 
 Now we can add these keys to the appropriate NEAR accounts with the NEAR CLI.
@@ -241,10 +238,8 @@ break when a release adds a method the node must call.
 
 ```shell
 near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
 near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 4. Initialize the MPC contract
@@ -410,46 +405,6 @@ machine ready to produce signatures.
 
 These use domain 3 (Secp256k1 with purpose `ForeignTx`). The `verify_foreign_transaction()` method
 only accepts domains with purpose `ForeignTx`.
-
-#### Bitcoin
-
-```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
-```
-
-```log
-Function execution return value (printed to stdout):
-{
-  "payload": {
-    "V1": {
-      "request": {
-        "Bitcoin": {
-          "confirmations": 1,
-          "extractors": [
-            "BlockHash"
-          ],
-          "tx_id": "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c"
-        }
-      },
-      "values": [
-        {
-          "Hash256": "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab"
-        }
-      ]
-    }
-  },
-  "signature": {
-    "big_r": {
-      "affine_point": "03c412f5f99dde160ac10db0cced4e89789e10ce2bde863ad272d7261e509aa8fa"
-    },
-    "recovery_id": 0,
-    "s": {
-      "scalar": "07fde0f9fdb55c1bfc3029e11ef617283deb3c394b9068003f4e9785e1a4b434"
-    },
-    "scheme": "Secp256k1"
-  }
-}
-```
 
 #### Abstract
 

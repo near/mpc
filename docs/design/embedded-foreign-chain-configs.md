@@ -103,7 +103,7 @@ by field. The config from the file takes precedence.
 1. `validate()` runs on the resolved config, a failure aborts startup.
 
 The resolved config lives only in memory and is never written back to disk. All consumers
-(inspectors, probe, `register_foreign_chains`, whitelist verifier, web UI) receive the resolved
+(inspectors, probe, the foreign chains registrar, whitelist verifier, web UI) receive the resolved
 config instead of the file's `foreign_chains`. Since it is the same type, their code doesn't change.
 
 Resolution returns each outcome as a diagnostic. The node logs every pair with its source and
@@ -127,5 +127,5 @@ Presets and networks are many-to-many: more presets per network can be added lat
 
 ## Related
 
-- [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md)
+- [Calculating the whitelisted and available foreign-chain sets](../archive/design/calculating-supported-foreign-chains.md)
 - [Allowing per-node foreign chain RPC configuration](../archive/design/allowing-per-node-foreign-chain-rpc-configuration.md) (archived)

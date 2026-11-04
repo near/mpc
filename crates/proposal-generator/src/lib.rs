@@ -124,7 +124,6 @@ mod tests {
         include_str!("../proposals/testnet-rpc-whitelist.toml"),
         &[
             ForeignChain::Solana,
-            ForeignChain::Bitcoin,
             ForeignChain::Base,
             ForeignChain::Bnb,
             ForeignChain::Arbitrum,
@@ -167,7 +166,6 @@ mod tests {
         include_str!("../proposals/mainnet-rpc-whitelist.toml"),
         &[
             ForeignChain::Solana,
-            ForeignChain::Bitcoin,
             ForeignChain::Base,
             ForeignChain::Bnb,
             ForeignChain::Arbitrum,

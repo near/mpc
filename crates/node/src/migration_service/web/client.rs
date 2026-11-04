@@ -58,6 +58,7 @@ pub async fn connect_to_web_server(
 
 /// server matches on path only
 const BOGUS_URL: &str = "http://example";
+#[cfg(test)]
 pub async fn make_hello_request(
     request_sender: &mut SendRequest<Full<Bytes>>,
 ) -> anyhow::Result<String> {

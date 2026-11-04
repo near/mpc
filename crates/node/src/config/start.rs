@@ -1,3 +1,4 @@
+use crate::durable_fs::write_file_durably;
 use crate::home_paths::near_config_file;
 use anyhow::Context;
 use launcher_interface::types::{PccsEndpointConfig, TeeAuthorityConfig, TeeConfig};
@@ -166,18 +167,13 @@ fn patch_near_config(
     Ok(())
 }
 
-/// Writes `config` to `config_path` atomically: serialize to a sibling temp file,
-/// then rename over the target, so a crash mid-write cannot leave a truncated
-/// `config.json` that the next start fails to parse.
+/// Writes `config` to `config_path` atomically and durably, so a crash mid-write
+/// cannot leave a truncated `config.json` that the next start fails to parse.
 fn write_near_config_atomic(config_path: &Path, config: &serde_json::Value) -> anyhow::Result<()> {
     let serialized =
         serde_json::to_string_pretty(config).context("failed to re-serialize NEAR config.json")?;
-    let tmp_path = config_path.with_added_extension("tmp");
-    std::fs::write(&tmp_path, serialized)
-        .with_context(|| format!("failed to write {}", tmp_path.display()))?;
-    std::fs::rename(&tmp_path, config_path)
-        .with_context(|| format!("failed to replace {}", config_path.display()))?;
-    Ok(())
+    write_file_durably(config_path, serialized.as_bytes())
+        .with_context(|| format!("failed to replace {}", config_path.display()))
 }
 
 /// Navigates to the nested object at `path`, creating any missing (or `null`)

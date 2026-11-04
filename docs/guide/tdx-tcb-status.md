@@ -28,7 +28,7 @@ dates, so treat the row as the notice.
 **A microcode update can make the CVM's encrypted disk unreadable.** The disk key
 derives from the SGX sealing key, which `EGETKEY` derives from CPUSVN among other
 inputs. A TCB recovery fix moves CPUSVN, so the existing disk no longer unseals,
-and key shares, triples, presignatures and the P2P identity key all live on it.
+and key shares, triples and the P2P identity key all live on it.
 
 So before touching firmware: take a fresh backup with the `backup-cli`
 following
@@ -81,11 +81,7 @@ with no need to wait for it to sync. Then:
   `--evaluation-data-set early` for a plain pass or fail: an update that clears
   only the current set leaves you doing this again at the next promotion.
 - Within the hour, `get_attestation` should show an `accepted_at_seconds` later
-  than the reboot, meaning the contract accepted a submission. During the
-  rollout only (nodes upgrade before the contract, see
-  [#4498](https://github.com/near/mpc/issues/4498)): the response carries no
-  such field until the contract is upgraded, and reads `null` right afterwards
-  until the node's next accepted submission. Neither is a failure.
+  than the reboot, meaning the contract accepted a submission.
 
 If collateral fetches start failing instead, your PCCS may not have a PCK
 certificate for the platform's new TCB level yet. The node then starts with no

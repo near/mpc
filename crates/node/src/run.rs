@@ -1,16 +1,13 @@
 use crate::{
     config::{
-        PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk,
+        PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
         start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
     home_paths::assets_dir,
-    indexer::{
-        IndexerAPI, ReadSubmissionBaseline, real::spawn_real_indexer, tx_sender::TransactionSender,
-    },
-    keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
+    indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
+    keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
     tracing::init_logging,
@@ -124,16 +121,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
-    let persistent_secrets = PersistentSecrets::generate_or_get_existing(
-        &config.home_dir,
-        node_config.number_of_responder_keys,
-    )?;
+    let persistent_secrets = PersistentSecrets::generate_or_get_existing(&config.home_dir)?;
 
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
-
-    // TODO(#2102): Decide if the MPC responder account is actually needed
-    let respond_config = RespondConfig::from_parts(&node_config, &persistent_secrets);
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
         Some(key) => key.clone(),
@@ -236,12 +227,11 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     // held by its spawned monitor tasks are released — enabling
     // `RocksDB::block_until_all_instances_are_dropped()` to return.
     let indexer_shutdown_token = CancellationToken::new();
-    let (indexer_api, baseline_reader) = spawn_real_indexer(
+    let indexer_api = spawn_real_indexer(
         config.home_dir.clone(),
         node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
         persistent_secrets.near_signer_key.clone(),
-        respond_config,
         indexer_exit_sender,
         protocol_state_sender,
         migration_state_sender,
@@ -271,14 +261,11 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         image_hash_shutdown_sender,
     ));
 
-    let home_dir = config.home_dir.clone();
     let root_future = create_root_future(
-        config,
-        home_dir.clone(),
+        config.home_dir,
         node_config.clone(),
         secrets.clone(),
         indexer_api,
-        baseline_reader,
         debug_request_sender,
         root_task_handle,
         tee_authority,
@@ -327,8 +314,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Cancel the indexer's terminal `listen_blocks` race; that lets the
     // indexer thread's `block_on` return, its tokio runtime drop, and every
-    // spawned monitor task (each holding `Arc<IndexerState>` →
-    // `Arc<RocksDB>`) be aborted with the runtime.
+    // spawned monitor task (each holding handles into neard) be aborted
+    // with the runtime.
     info!("Cancelling indexer shutdown token.");
     indexer_shutdown_token.cancel();
 
@@ -343,14 +330,11 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     exit_reason
 }
 
-#[expect(clippy::too_many_arguments)]
-async fn create_root_future<TransactionSenderImpl, BaselineReader>(
-    start_config: StartConfig,
+async fn create_root_future<TransactionSenderImpl>(
     home_dir: PathBuf,
     config: ConfigFile,
     secrets: SecretsConfig,
     indexer_api: IndexerAPI<TransactionSenderImpl>,
-    baseline_reader: BaselineReader,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
     // Otherwise we would not write to the same cell/lock.
@@ -359,7 +343,6 @@ async fn create_root_future<TransactionSenderImpl, BaselineReader>(
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
-    BaselineReader: ReadSubmissionBaseline + 'static,
 {
     let root_task_handle = tracking::current_task();
 
@@ -377,10 +360,6 @@ where
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
         local_encryption_key: secrets.local_storage_aes_key,
-        gcp: start_config.gcp.map(|gcp| GcpPermanentKeyStorageConfig {
-            project_id: gcp.project_id,
-            secret_id: gcp.keyshare_secret_id,
-        }),
     };
 
     let submitter = AttestationSubmitter {
@@ -390,7 +369,8 @@ where
         account_public_key,
         allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        baseline_reader,
+        allowed_os_measurements: indexer_api.allowed_os_measurements_receiver.clone(),
+        stored_attestation: indexer_api.my_attestation_receiver.clone(),
     };
     tokio::spawn(run_periodic_attestation_submission(submitter));
 

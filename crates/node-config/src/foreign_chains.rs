@@ -6,13 +6,15 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
-pub use auth::{AuthConfig, TokenConfig};
+pub use auth::{AuthConfig, PathAuthError, TokenConfig, substitute_path_token};
 pub use embedded::RpcPreset;
 use embedded::embedded_foreign_chains;
 pub use resolve::{
     PairSource, ResolutionDiagnostic, ResolveError, ResolvedForeignChains, SkipReason,
     resolve_with_embedded,
 };
+
+pub mod provider_identity;
 
 mod auth;
 mod embedded;
@@ -241,7 +243,7 @@ impl ForeignChainsConfig {
     }
 }
 
-/// A slug fills exactly one host label, the same span the whitelist verifier matches `{}` against.
+/// A slug fills exactly one host label, the same span [`provider_identity`] matches `{}` against.
 fn validate_slug(slug: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
         !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
@@ -261,8 +263,6 @@ mod tests {
     /// Every section a [`ConfigFile`] requires except `foreign_chains`.
     const CONFIG_WITHOUT_FOREIGN_CHAINS: &str = r#"
 my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
 web_ui:
   host: localhost
   port: 8080
@@ -281,10 +281,6 @@ triple:
   desired_triples_to_buffer: 1
   timeout_sec: 60
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 ckd:

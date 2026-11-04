@@ -21,9 +21,10 @@ pub use traits::CallContract;
 pub use views::{
     Borsh, DeserializationError, DeserializeAs, Deserializer, HasPollInterval, Json, ObservedState,
     PollInterval, SerializedObservation, Subscription, TransportError, ViewArgs, ViewCall,
-    ViewContract, WatchContractState,
+    ViewContract, WaitError, WatchContractState,
 };
 
+pub use near_block_primitives::BlockHeight;
 #[cfg(feature = "near-kit")]
 pub use near_kit_backend::{NearKitCallError, NearKitCaller, NearKitViewError};
-pub use types::{BlockHeight, FunctionCallArgs, NearGas, NearToken};
+pub use types::{FunctionCallArgs, NearGas, NearToken};

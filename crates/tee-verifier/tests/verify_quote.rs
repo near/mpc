@@ -176,21 +176,24 @@ fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fix
     let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral());
 
     // Then
-    let expected_dates = CollateralDates {
+    assert_eq!(
+        result,
+        VerificationResultWithCollateralDates::Verified {
+            report: expected_report,
+            collateral_dates: fixture_collateral_dates(),
+        }
+    );
+}
+
+fn fixture_collateral_dates() -> CollateralDates {
+    CollateralDates {
         earliest_issue_date: 1_526_899_510,
         latest_issue_date: 1_786_617_938,
         earliest_expiration_date: 1_789_171_031,
         qe_iden_earliest_issue_date: 1_526_899_510,
         qe_iden_latest_issue_date: 1_786_579_063,
         qe_iden_earliest_expiration_date: 1_789_171_063,
-    };
-    assert_eq!(
-        result,
-        VerificationResultWithCollateralDates::Verified {
-            report: expected_report,
-            collateral_dates: expected_dates,
-        }
-    );
+    }
 }
 
 const DAY: Duration = Duration::from_hours(24);
@@ -208,6 +211,26 @@ fn invalid_quote() -> QuoteBytes {
 fn mismatched_collateral() -> Collateral {
     let mut collateral = collateral();
     collateral.tcb_info_signature[0] ^= 1;
+    collateral
+}
+
+/// The fixture collateral with a PCK CRL issuer chain that is not valid base64.
+fn collateral_with_unparsable_pck_crl_issuer_chain() -> Collateral {
+    Collateral {
+        pck_crl_issuer_chain: String::from(
+            "-----BEGIN CERTIFICATE-----\n!!!\n-----END CERTIFICATE-----\n",
+        ),
+        ..collateral()
+    }
+}
+
+/// The fixture collateral with a certificate that is not valid DER appended to
+/// the TCB Info issuer chain.
+fn collateral_with_garbage_certificate_in_tcb_info_issuer_chain() -> Collateral {
+    let mut collateral = collateral();
+    collateral
+        .tcb_info_issuer_chain
+        .push_str("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
     collateral
 }
 
@@ -247,35 +270,33 @@ fn verify_quote_with_collateral_dates__should_reject_with_the_same_error_as_veri
     );
 }
 
-// TODO(#4659): flip to "both accept" once dcap-qvl#240 stops reading this field.
-#[test]
-fn verify_quote_with_collateral_dates__should_reject_unparsable_pck_crl_issuer_chain_that_verify_quote_accepts()
- {
-    // Given: `verify_quote` never reads this field; the dates method parses it.
+#[rstest]
+#[case::unparsable_pck_crl_issuer_chain(collateral_with_unparsable_pck_crl_issuer_chain())]
+#[case::garbage_certificate_in_tcb_info_issuer_chain(
+    collateral_with_garbage_certificate_in_tcb_info_issuer_chain()
+)]
+fn verify_quote_with_collateral_dates__should_ignore_unverified_certificates(
+    #[case] collateral: Collateral,
+) {
+    // Given
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
-    let collateral = Collateral {
-        pck_crl_issuer_chain: String::from(
-            "-----BEGIN CERTIFICATE-----\n!!!\n-----END CERTIFICATE-----\n",
-        ),
-        ..collateral()
+    let VerificationResult::Verified(expected_report) =
+        contract.verify_quote(make_quote_bytes(), collateral.clone())
+    else {
+        panic!("verify_quote must accept this collateral");
     };
-    let verify_quote_result = contract.verify_quote(make_quote_bytes(), collateral.clone());
 
     // When
     let result = contract.verify_quote_with_collateral_dates(make_quote_bytes(), collateral);
 
     // Then
-    assert!(
-        matches!(verify_quote_result, VerificationResult::Verified(_)),
-        "expected verify_quote to accept, got {verify_quote_result:?}"
-    );
-    assert!(
-        matches!(
-            result,
-            VerificationResultWithCollateralDates::Rejected(VerifierError::DcapVerification(_))
-        ),
-        "expected Rejected(DcapVerification(_)), got {result:?}"
+    assert_eq!(
+        result,
+        VerificationResultWithCollateralDates::Verified {
+            report: expected_report,
+            collateral_dates: fixture_collateral_dates(),
+        }
     );
 }
 

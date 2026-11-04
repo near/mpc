@@ -15,24 +15,6 @@ BorshSchemaContainer {
                 "ParticipantInfo",
             ],
         },
-        "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)": Tuple {
-            elements: [
-                "AuthenticatedAccountId",
-                "ProposedGovernanceThresholdParameters",
-            ],
-        },
-        "(AuthenticatedParticipantId, LauncherVoteAction)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "LauncherVoteAction",
-            ],
-        },
-        "(AuthenticatedParticipantId, MeasurementVoteAction)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "MeasurementVoteAction",
-            ],
-        },
         "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -120,21 +102,6 @@ BorshSchemaContainer {
                     "ParticipantId",
                 ],
             ),
-        },
-        "BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)",
-        },
-        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, LauncherVoteAction)",
-        },
-        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, MeasurementVoteAction)",
         },
         "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
             length_width: 4,
@@ -331,7 +298,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "next_domain_id",
-                        "u64",
+                        "DomainId",
                     ),
                 ],
             ),
@@ -398,12 +365,9 @@ BorshSchemaContainer {
             ),
         },
         "GovernanceThresholdParametersVotes": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>",
-                    ),
+                    "Votes<AuthenticatedAccountId>",
                 ],
             ),
         },
@@ -555,49 +519,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "LauncherHashVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>",
-                    ),
-                ],
-            ),
-        },
         "LauncherImageHash": Struct {
             fields: UnnamedFields(
                 [
                     "[u8; 32]",
-                ],
-            ),
-        },
-        "LauncherVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "LauncherVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "LauncherVoteAction__Remove",
-                ),
-            ],
-        },
-        "LauncherVoteAction__Add": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
-                ],
-            ),
-        },
-        "LauncherVoteAction__Remove": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
                 ],
             ),
         },
@@ -617,45 +542,6 @@ BorshSchemaContainer {
                     (
                         "prefix",
                         "Vec<u8>",
-                    ),
-                ],
-            ),
-        },
-        "MeasurementVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "MeasurementVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "MeasurementVoteAction__Remove",
-                ),
-            ],
-        },
-        "MeasurementVoteAction__Add": Struct {
-            fields: UnnamedFields(
-                [
-                    "ExpectedMeasurements",
-                ],
-            ),
-        },
-        "MeasurementVoteAction__Remove": Struct {
-            fields: UnnamedFields(
-                [
-                    "ExpectedMeasurements",
-                ],
-            ),
-        },
-        "MeasurementVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>",
                     ),
                 ],
             ),
@@ -714,6 +600,10 @@ BorshSchemaContainer {
                     (
                         "available_attestation_grants",
                         "IterableMap",
+                    ),
+                    (
+                        "parameters_votes",
+                        "GovernanceThresholdParametersVotes",
                     ),
                 ],
             ),
@@ -815,20 +705,6 @@ BorshSchemaContainer {
                     (
                         "participants",
                         "Vec<(AccountId, ParticipantId, ParticipantInfo)>",
-                    ),
-                ],
-            ),
-        },
-        "ProposedGovernanceThresholdParameters": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "parameters",
-                        "GovernanceThresholdParameters",
-                    ),
-                    (
-                        "per_domain_thresholds",
-                        "BTreeMap<DomainId, ReconstructionThreshold>",
                     ),
                 ],
             ),
@@ -1043,10 +919,6 @@ BorshSchemaContainer {
                         "GovernanceThresholdParameters",
                     ),
                     (
-                        "parameters_votes",
-                        "GovernanceThresholdParametersVotes",
-                    ),
-                    (
                         "add_domains_votes",
                         "AddDomainsVotes",
                     ),
@@ -1103,10 +975,10 @@ BorshSchemaContainer {
                     ),
                     (
                         "launcher_votes",
-                        "LauncherHashVotes",
+                        "Votes<AuthenticatedAccountId>",
                     ),
                     (
-                        "stored_attestations",
+                        "nodes",
                         "IterableMap",
                     ),
                     (
@@ -1115,7 +987,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "measurement_votes",
-                        "MeasurementVotes",
+                        "Votes<AuthenticatedAccountId>",
                     ),
                 ],
             ),

@@ -1,11 +1,12 @@
 use crate::sandbox::utils::{
-    consts::{GAS_FOR_INIT, PARTICIPANT_LEN},
+    consts::PARTICIPANT_LEN,
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{
         assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
         submit_participant_info,
     },
+    sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
     transactions::{CallMpcContract, execute_async_handle_calls},
@@ -29,35 +30,29 @@ use mpc_contract::{
     tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
+use near_contract_transport::WatchContractState;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
-    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
-    ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
-    SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
-    SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
-    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, Update, UpdateHash, UpdateId,
-};
-use near_mpc_contract_interface::{
-    method_names,
-    types::{
-        self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
-        BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
-        EvmRpcRequest, EvmTxId, ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation,
-        StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
-        StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
-    },
+    self as dtos, AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality,
+    AptosRpcRequest, AptosTxId, Attestation, BitcoinExtractedValue, BitcoinExtractor,
+    BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig, DomainId,
+    DomainPurpose, EvmExtractedValue, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId,
+    ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation, Protocol,
+    ReconstructionThreshold, StarknetExtractedValue, StarknetExtractor, StarknetFelt,
+    StarknetFinality, StarknetRpcRequest, StarknetTxId, SuiAddress, SuiEvent, SuiExtractedValue,
+    SuiExtractor, SuiFinality, SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor,
+    SvmFinality, SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody,
+    TonExtractedValue, TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, Update,
+    UpdateHash, VerifyForeignTransactionResponse,
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
 use near_workspaces::{Account, Worker, result::Execution};
 use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
-use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 use test_utils::sandbox::SandboxWorker;
-use tokio_util::time::FutureExt as _;
 
 use super::utils::contract_build;
 
@@ -129,13 +124,11 @@ pub fn make_threshold_params(participants: &Participants) -> GovernanceThreshold
 
 /// Initialize the contract with the given parameters.
 pub async fn init_contract(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .as_account()
-        .call_mpc(contract.id())
         .init(params.into(), bogus_tee_verifier_account_id(), init_config)
         .await
         .unwrap();
@@ -145,25 +138,22 @@ pub async fn init_contract(
 
 /// Initialize contract in Running state with domains and keyset.
 pub async fn init_contract_running(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     domains: Vec<DomainConfig>,
-    next_domain_id: u64,
+    next_domain_id: DomainId,
     keyset: dtos::Keyset,
     params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call(method_names::INIT_RUNNING)
-        .args_json(json!({
-            "domains": domains,
-            "next_domain_id": next_domain_id,
-            "keyset": keyset,
-            "parameters": dtos::GovernanceThresholdParameters::from(params),
-            "tee_verifier_account_id": bogus_tee_verifier_account_id(),
-            "init_config": init_config,
-        }))
-        .gas(GAS_FOR_INIT)
-        .transact()
+        .init_running(
+            domains,
+            next_domain_id,
+            keyset,
+            dtos::GovernanceThresholdParameters::from(params),
+            bogus_tee_verifier_account_id(),
+            init_config,
+        )
         .await
         .unwrap();
     assert!(result.is_success(), "init_running failed: {:?}", result);
@@ -172,7 +162,7 @@ pub async fn init_contract_running(
 
 pub struct SandboxTestSetup {
     pub worker: SandboxWorker,
-    pub contract: Contract,
+    pub contract: SandboxMpcContract,
     pub mpc_signer_accounts: Vec<Account>,
     pub keys: Vec<DomainKey>,
 }
@@ -242,6 +232,7 @@ impl SandboxTestSetupBuilder {
 
     pub async fn build(self) -> SandboxTestSetup {
         let (worker, contract) = init_with_wasm((self.contract_wasm)()).await;
+        let contract = SandboxMpcContract::from_deployed(&worker, contract);
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 
@@ -313,7 +304,7 @@ impl SandboxTestSetupBuilder {
         }
 
         if !domain_configs.is_empty() {
-            let next_domain_id = domain_configs.len() as u64;
+            let next_domain_id = DomainId(domain_configs.len() as u64);
             let keyset = dtos::Keyset::new(EpochId::new(5), key_for_domains);
             init_contract_running(
                 &contract,
@@ -339,91 +330,9 @@ impl SandboxTestSetupBuilder {
     }
 }
 
-// TODO(#4513): drop once production runs the vote-then-submit API.
-/// Upgrades the given contract to the [`current_contract`] binary.
-///
-/// This function:
-/// 1. Submits a proposal to upgrade the contract.
-/// 2. Casts votes until the proposal is executed.
-/// 3. Verifies the contract was upgraded by checking the contract's binary.
-///
-/// Panics if:
-/// - The proposal transaction fails,
-/// - The state call is not deserializable,
-/// - Or the post-upgrade code does not match the expected binary.
-///
-/// Only contracts running the production binary take this flow.
-#[expect(deprecated)]
-pub async fn propose_and_vote_contract_binary(
-    accounts: &[Account],
-    contract: &Contract,
-    new_contract_binary: &[u8],
-) {
-    let propose_update_execution = accounts[0]
-        .call_mpc(contract.id())
-        .propose_update(ProposeUpdateArgs {
-            code: Some(new_contract_binary.to_vec()),
-            config: None,
-        })
-        .await
-        .expect("propose update call succeeds");
-
-    assert!(
-        propose_update_execution.is_success(),
-        "propose update call failed"
-    );
-
-    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
-
-    // Try calling into state and see if it works.
-    let state_request_execution = accounts[0]
-        .call(contract.id(), method_names::STATE)
-        .transact()
-        .await
-        .expect("state request succeeds");
-
-    let _state: ProtocolContractState = state_request_execution
-        .json()
-        .expect("state is deserializable.");
-
-    vote_update_till_completion(contract, accounts, proposal_id).await;
-
-    let contract_binary_post_upgrade = contract.view_code().await.unwrap();
-    assert_eq!(
-        hash(new_contract_binary),
-        hash(&contract_binary_post_upgrade),
-        "Code hash post upgrade is not matching the proposed binary."
-    );
-}
-
-// TODO(#4513): drop once production runs the vote-then-submit API.
-#[expect(deprecated)]
-pub async fn vote_update_till_completion(
-    contract: &Contract,
-    accounts: &[Account],
-    proposal_id: UpdateId,
-) {
-    for voter in accounts {
-        let execution = voter
-            .call_mpc(contract.id())
-            .vote_update(proposal_id)
-            .await
-            .unwrap();
-
-        dbg!(&execution);
-
-        let update_occurred: bool = execution.json().expect("Vote cast was unsuccessful");
-
-        if update_occurred {
-            return;
-        }
-    }
-    panic!("Update didn't occurred")
-}
-
 pub async fn vote_and_submit_contract_binary(
     accounts: &[Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     new_contract_binary: &[u8],
 ) {
     let update = Update::Code(new_contract_binary.to_vec());
@@ -448,7 +357,7 @@ pub async fn vote_and_submit_contract_binary(
 }
 
 pub async fn approve_contract_update(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     update_hash: UpdateHash,
 ) {
@@ -517,7 +426,7 @@ pub fn build_sandbox_node_ids(
 }
 
 pub async fn submit_tee_attestations(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
     node_ids: &BTreeSet<NodeId>,
 ) -> anyhow::Result<()> {
@@ -536,7 +445,7 @@ pub async fn submit_tee_attestations(
 /// Like [`submit_tee_attestations`], for accounts whose entry does not exist yet: each
 /// submission stores a new entry, so each needs a grant.
 pub async fn prepay_and_submit_tee_attestations(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
     node_ids: &BTreeSet<NodeId>,
 ) -> anyhow::Result<()> {
@@ -558,7 +467,7 @@ pub async fn prepay_and_submit_tee_attestations(
 
 /// Submit mock attestations for all participants in parallel.
 pub async fn submit_attestations(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     participants: &Participants,
 ) {
@@ -590,7 +499,7 @@ pub async fn submit_attestations(
 pub async fn call_contract_key_generation<const N: usize>(
     domains_to_add: &[DomainConfig; N],
     accounts: &[Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     expected_epoch_id: u64,
 ) -> [DomainKey; N] {
     let mut domain_keys = vec![];
@@ -667,7 +576,7 @@ pub struct InjectedContractState {
 pub async fn execute_key_generation_and_add_random_state(
     accounts: &[Account],
     participants: Participants,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     worker: &Worker<Sandbox>,
     rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
@@ -730,7 +639,7 @@ fn hash(code: &[u8]) -> [u8; 32] {
 /// Whitelists `chain` and registers it as covered by every node, making it available.
 pub async fn make_foreign_chain_available(
     chain: dtos::ForeignChain,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
 ) {
     let batch = NonEmptyBTreeMap::new(chain, test_utils::contract_types::dummy_chain_entry());
@@ -762,33 +671,18 @@ pub async fn make_foreign_chain_available(
 
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).
 pub async fn await_pending_foreign_tx_request_observed_on_contract(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     request: &dtos::VerifyForeignTransactionRequest,
 ) {
     const TIMEOUT: Duration = Duration::from_secs(10);
-    const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-    async {
-        let args = json!({ "request": request });
-
-        loop {
-            let result = contract
-                .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
-                .args_json(&args)
-                .await;
-            if let Ok(view) = result {
-                // The view returns Option<YieldIndex>; non-null means the request is pending.
-                let value: serde_json::Value = view.json().unwrap();
-                if !value.is_null() {
-                    return;
-                }
-            }
-            tokio::time::sleep(POLL_INTERVAL).await;
-        }
-    }
-    .timeout(TIMEOUT)
-    .await
-    .expect("Timed out waiting for pending foreign-tx request on-chain");
+    contract
+        .get_pending_verify_foreign_tx_request(request.clone())
+        .subscribe()
+        .await
+        .wait_for(TIMEOUT, Option::is_some)
+        .await
+        .expect("Timed out waiting for pending foreign-tx request on-chain");
 }
 
 /// Sign a foreign-tx payload hash with the root secret key and return the
@@ -825,7 +719,7 @@ pub fn sign_foreign_tx_response(
 
 pub async fn generate_participant_and_submit_attestation(
     worker: &Worker<Sandbox>,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
 ) -> (Account, AccountId, ParticipantInfo) {
     let (new_account, account_id) = gen_account(worker).await;
     let new_participant = gen_participant_info();

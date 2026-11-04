@@ -73,8 +73,6 @@ async fn vote_contract_update__should_reject_a_non_participant() {
 
     // When
     let execution = contract
-        .as_account()
-        .call_mpc(contract.id())
         .vote_contract_update(hash(&dummy_contract_update()))
         .await
         .unwrap();
@@ -119,12 +117,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
     };
 
     let update = Update::Config(new_config.clone());
-    let old_config: near_mpc_contract_interface::types::Config = contract
-        .view(method_names::CONFIG)
-        .await
-        .unwrap()
-        .json()
-        .unwrap();
+    let old_config = contract.config().await.unwrap().value;
     approve_contract_update(&contract, &mpc_signer_accounts, hash(&update)).await;
 
     // When
@@ -139,12 +132,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
         execution.failures().is_empty(),
         "failed to apply the approved config: {execution:#?}"
     );
-    let config: near_mpc_contract_interface::types::Config = contract
-        .view(method_names::CONFIG)
-        .await
-        .unwrap()
-        .json()
-        .unwrap();
+    let config = contract.config().await.unwrap().value;
 
     assert_ne!(config, old_config);
     assert_eq!(config, new_config);
@@ -354,9 +342,8 @@ async fn migration_function_rejects_external_callers() {
         .await;
 
     let execution_error = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::MIGRATE)
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .migrate()
         .await
         .unwrap()
         .into_result()

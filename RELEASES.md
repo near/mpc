@@ -7,16 +7,21 @@ This document describes the release process for the NEAR MPC project.
 The NEAR MPC project ships two artifacts together as one release bundle:
 
 - **MPC Node binary** — distributed as Docker images
-  (`nearone/mpc-node`, `nearone/mpc-node-gcp`, `nearone/mpc-launcher`).
+  (`nearone/mpc-node`, `nearone/mpc-launcher`).
 - **Chain Signatures contract** — distributed as a reproducibly-built WASM
   attached to the GitHub release.
+
+The TEE verifier contract is not part of the release today. If a release needs a new
+verifier (for example, for a security fix), deploy and vote it in separately, per
+[`deploy-tee-verifier.md`](docs/development/deploy-tee-verifier.md), before upgrading
+the contract.
 
 A release is a [Release workflow](.github/workflows/release.yml) run that
 promotes already-built artifacts to a versioned release. The workflow:
 
 1. Reads the version from `Cargo.toml` on the dispatched branch.
 2. Retags the Docker images that were built for the branch HEAD
-   (`nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`) to the
+   (`nearone/mpc-{node,launcher}:<branch>-<short-sha>`) to the
    release version (`:X.Y.Z`).
 3. Downloads the reproducibly-built contract WASM from the matching
    [Build Contract](.github/workflows/build_contract.yml) run.
@@ -81,15 +86,14 @@ Once it merges:
 
 ### 2. Wait for the build workflows
 
-The four workflows the release needs fire on every push to `main` and
+The three workflows the release needs fire on every push to `main` and
 `release/v*`:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
-- [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
 - [Build Docker Rust Launcher Image](.github/workflows/docker_build_rust_launcher.yml)
 - [Build Contract](.github/workflows/build_contract.yml)
 
-The image workflows push `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`.
+The image workflows push `nearone/mpc-{node,launcher}:<branch>-<short-sha>`.
 The contract workflow uploads the reproducible WASM as a GitHub Actions
 artifact named `contract`.
 
@@ -101,7 +105,7 @@ on, so wait for the runs on `release/vX.Y`:
   The `main` builds from the prep PR merge are not used.
 
 The contract artifact is looked up by commit SHA, so either run's artifact
-works. Wait for all four to finish successfully. The Release workflow refuses
+works. Wait for all three to finish successfully. The Release workflow refuses
 to run if any artifact is missing.
 
 <!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
@@ -112,7 +116,7 @@ not use yet.
 
 > **Tip:** The pre-release images are deployable. If you want to
 > smoke-test on testnet before promoting, deploy
-> `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
+> `nearone/mpc-node:release-v3.11-<short-sha>` directly.
 
 ### 3. Verify the build is reproducible
 
@@ -127,8 +131,8 @@ exactly what the source produces:
   cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
   ```
 - **Docker images** — compare the digests in the draft release to the ones
-  produced locally (with no flags the script builds and prints digests for all
-  three images):
+  produced locally (with no flags the script builds and prints digests for both
+  images):
   ```sh
   ./deployment/build-images.sh
   ```
@@ -168,17 +172,21 @@ includes the changelog section, Docker image manifest digests, and the
 contract `.tar.gz`. **The git tag does not yet exist** — it is created
 by GitHub when the draft is published.
 
-Review the draft and click "Publish release." Publishing creates the
-`3.11.0` git tag at the released commit.
+Review the draft, rename it to `3.11.0`, add a one-sentence summary at the
+top of the notes (what the release is for, which networks it targets, and
+whether it needs a contract upgrade or launcher vote), and click "Publish
+release."
+
+Publishing creates the `3.11.0` git tag at the released commit.
 
 > ⚠️ **Point of no return.** Publishing creates the tag, and once the tag is published it cannot be modified as we are using [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
 
 ### 6. Promote to operator floating tags (optional)
 
-Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
+Some operators consume floating tags like `nearone/mpc-node:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
 
-- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run once with `repository: mpc-node` and once with `repository: mpc-node-gcp`.
+- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — single run for `mpc-node`.
 - [Release Launcher Docker Image](.github/workflows/docker_launcher_release.yml) — single run for `mpc-launcher`.
 
 Use `source-tag = 3.11.0` and `release-tag = testnet-release` or

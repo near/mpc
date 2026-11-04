@@ -28,6 +28,9 @@ time = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 
+[build-dependencies]
+built = { workspace = true }
+
 [dev-dependencies]
 near-mpc-crypto-types = { workspace = true }
 rstest = { workspace = true }

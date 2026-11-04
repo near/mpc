@@ -14,8 +14,8 @@
 
 We keep the module's type surface, participant-count rules and threshold arithmetic
 (`N = 2t + 1` signers for `t = MaxMalicious`) so that reintroducing a robust scheme
-means rewriting one function rather than rebuilding the node's presignature storage,
-task routing, resharing and contract-side threshold validation around it.
+means rewriting one function rather than rebuilding the node's task routing,
+resharing and contract-side threshold validation around it.
 
 ### Note: We denote $\mathcal{P}$ the set of participants included in the DKG and the threshold $t = \mathsf{MaxMalicious}$
 
@@ -42,8 +42,7 @@ scaled by the party's real key share, so $\sum_i \lambda_i \beta_i = k^{-1} x$.
 
 **Why this leaks the key.** Every presigner learns $k$ in the clear, so given any
 signature $(R, s)$ derived from this presignature the signing key follows from
-$x = (s \cdot k - h) \cdot R_\mathsf{x}^{-1}$. The nonce $\delta$-rerandomization
-below does not help: $\delta$ is derived from public inputs.
+$x = (s \cdot k - h) \cdot R_\mathsf{x}^{-1}$.
 
 # Signing
 
@@ -55,19 +54,11 @@ generates an ECDSA signature. The inputs to this phase are:
 
 1) The presignature $(R, \alpha_i, \beta_i, c_i, e_i)$,
 2) The public key $X$,
-3) A "fresh" public source of entropy $\rho$,
-4) A tweak $\epsilon$ used during key derivation,
-5) The message hash $h = H(m)$,
-6) The derived public key $Y = X + \epsilon \cdot G$.
+3) A tweak $\epsilon$ used during key derivation,
+4) The message hash $h = H(m)$,
+5) The derived public key $Y = X + \epsilon \cdot G$.
 
-**Rerandomization & Key Derivation:**
-
-1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(Y, \epsilon, h, R, \rho)$
-2. Each $P_i$ rerandomizes the following elements:
-
-    * $R  \gets R^\delta$
-    * $\alpha_i \gets \alpha_i \cdot \delta^{-1}$
-    * $\beta_i \gets (\beta_i + c_i \cdot \epsilon) \cdot \delta^{-1}$
+**Key Derivation:** each $P_i$ sets $\beta_i \gets \beta_i + c_i \cdot \epsilon$.
 
 **Round 1:**
 
@@ -86,5 +77,22 @@ generates an ECDSA signature. The inputs to this phase are:
 **Output:** the signature $(R, s)$.
 
 *Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
+
+# Presigning and signing in one protocol
+
+`presign_and_sign` runs the presigning round and the signing round as a single protocol
+over one channel, for a set of parties $\mathcal{P}_1$ of size exactly $N_1 = 2t + 1$ that
+already know the message. The inputs are those of presigning plus the tweak $\epsilon$ and
+the message hash $h$; there is no entropy input.
+
+**Round 1:** as in [Presigning](#presigning), producing $(R, \alpha_i, \beta_i, c_i, e_i)$.
+
+**Key derivation (local):** as in [Signing](#signing). The presignature is consumed by the
+run that produced it and never stored, so nothing has to bind a stored $R$ to the message.
+
+**Round 2:** as in [Signing](#signing) Round 1, with the coordinator verifying $(R, s)$ against
+the derived key $X + \epsilon \cdot G$.
+
+**Output:** the signature $(R, s)$, known only to the coordinator.
 
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).

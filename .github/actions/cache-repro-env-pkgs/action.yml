@@ -16,7 +16,9 @@ runs:
     - name: Compute repro-env cache key
       id: compute-key
       shell: bash
-      run: echo "key=repro-env-pkgs-${{ runner.os }}-${{ hashFiles('repro-env.lock') }}" >> "$GITHUB_OUTPUT"
+      env:
+        LOCK_HASH: ${{ hashFiles('repro-env.lock') }}
+      run: echo "key=repro-env-pkgs-$RUNNER_OS-$LOCK_HASH" >> "$GITHUB_OUTPUT"
 
     - name: Restore and save repro-env packages
       if: inputs.save == 'true'

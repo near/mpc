@@ -1,6 +1,4 @@
 use ed25519_dalek::SigningKey;
-use near_mpc_contract_interface::types::ProtocolContractState;
-use serde::de::DeserializeOwned;
 use std::time::Duration;
 
 use near_contract_transport::{
@@ -90,6 +88,20 @@ impl NearBlockchain {
         })
     }
 
+    pub async fn delete_access_key(
+        &self,
+        account_id: &str,
+        signer_key: &SigningKey,
+        key_to_delete: near_kit::signer::PublicKey,
+    ) -> anyhow::Result<()> {
+        self.make_client(account_id, signer_key)?
+            .delete_key(key_to_delete)
+            .wait_until::<Final>()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to delete access key on {account_id}: {e}"))?;
+        Ok(())
+    }
+
     pub fn client_for(
         &self,
         account_id: &str,
@@ -141,20 +153,6 @@ impl DeployedContract {
             .call_contract(&self.contract_id, call_args)
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
-    pub async fn view<T: DeserializeOwned + Send + 'static>(
-        &self,
-        method: &str,
-    ) -> anyhow::Result<T> {
-        self.client
-            .view::<T>(&self.contract_id, method)
-            .await
-            .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
-    }
-
-    pub async fn state(&self) -> anyhow::Result<ProtocolContractState> {
-        self.view("state").await
     }
 
     /// SHA-256 hash of the contract code currently deployed at this account.

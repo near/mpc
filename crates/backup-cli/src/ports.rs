@@ -6,6 +6,7 @@ use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState}
 use crate::types;
 
 pub trait ReportBackupStatus {
+    /// Reported for a new backup and for a fetch that confirms the stored one.
     /// `timestamp_seconds` is `None` when the backup time is unknown, e.g. for a backup
     /// found already on disk.
     fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>);
@@ -58,4 +59,12 @@ pub trait ReadContractState {
     fn get_contract_state(
         &self,
     ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
+}
+
+pub trait WatchContractState:
+    near_contract_transport::WatchContractState<
+        Value = ProtocolContractState,
+        ViewError: std::fmt::Debug,
+    >
+{
 }
