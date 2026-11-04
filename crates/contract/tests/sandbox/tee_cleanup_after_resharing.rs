@@ -2,8 +2,8 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, build_sandbox_nodes, gen_accounts, mock_expiring_at,
-        prepay_and_submit_tee_attestations, sandbox_node,
+        SandboxTestSetup, build_sandbox_nodes, gen_accounts, prepay_and_submit_tee_attestations,
+        sandbox_node,
     },
     utils::{
         interface::IntoContractType,
@@ -20,7 +20,7 @@ use mpc_contract::primitives::{
     thresholds::GovernanceThresholdParameters,
 };
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation, Protocol};
-use test_utils::attestation::p2p_tls_key;
+use test_utils::attestation::{mock_expiring_at, p2p_tls_key};
 
 /// Integration test that validates the end-to-end behavior of the TEE attestation store
 /// through a full resharing cycle.

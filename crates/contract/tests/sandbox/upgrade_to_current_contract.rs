@@ -40,6 +40,7 @@ use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::{BTreeMap, HashSet};
+use test_utils::attestation::mock_expiring_at;
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -508,12 +509,8 @@ async fn old_contract_with_a_participant_missing_its_node(
 
     // Submission rejects an expired attestation, so the node expires only after it is stored
     let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
-    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(now_seconds + ATTESTATION_EXPIRY_SECONDS),
-        expected_measurements: None,
-    });
+    let expiring_attestation =
+        Attestation::Mock(mock_expiring_at(now_seconds + ATTESTATION_EXPIRY_SECONDS));
     let submission =
         submit_participant_info(&accounts[0], &contract, &expiring_attestation, &tls_key).await?;
     assert!(submission.is_success(), "{submission:#?}");

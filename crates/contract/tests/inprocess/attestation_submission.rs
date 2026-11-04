@@ -27,6 +27,7 @@ use near_account_id::AccountId;
 use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
+use test_utils::attestation::mock_expiring_at;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -224,15 +225,6 @@ impl TestSetup {
             expiry_timestamp_seconds: None,
             expected_measurements: None,
         })
-    }
-}
-
-fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
-    MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
-        expected_measurements: None,
     }
 }
 
