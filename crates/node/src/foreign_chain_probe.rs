@@ -61,7 +61,7 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
 ) {
     loop {
         // `biased`: a whitelist change that lands with a tick is handled in that round, not in an
-        // extra one. `Ok(())` drops the branch once the sender is gone, so the loop never spins.
+        // extra one. `Ok(())` disables the branch once the sender is gone, so the loop never spins.
         tokio::select! {
             biased;
             () = ticker.tick() => {}
