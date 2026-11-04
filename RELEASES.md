@@ -251,21 +251,32 @@ further commits.
 
 ## SemVer compatibility guarantees
 
-We follow [Semantic Versioning](https://semver.org/) with these compatibility rules:
+We follow [Semantic Versioning](https://semver.org/) with these compatibility rules.
+
+Upgrades roll out **nodes first, then the contract** (see the
+[operator guide](docs/guide/operating-an-mpc-node.md#upgrades)). So a new node
+must keep working with the previous contract until the contract is upgraded.
 
 ### Major version bumps (X.Y.Z → X+1.0.0)
-- **Contract compatibility**: the new contract must remain compatible
-  with nodes from the previous major version.
+- **Node compatibility**: the new node must remain compatible with the
+  contract from the previous major version.
 - **Breaking changes**: node-to-node protocol may change, requiring
   coordinated upgrades.
+- Example: 3.x → 4.0.0. 4.0.0 nodes must run against the 3.x contract.
 
 ### Minor version bumps (X.Y.Z → X.Y+1.0)
-- **Backward compatibility**: both contract and node must remain
-  compatible with previous node binaries.
+- **Node compatibility**: the new node must remain compatible with the
+  previous contract, as for major bumps.
+- **No protocol breaks**: new nodes must work alongside previous-release
+  nodes, since operators don't all upgrade at once.
+- Example: 3.18.0 → 3.19.0. 3.19.0 nodes must run against the 3.18.0
+  contract and next to 3.18.0 nodes.
 
 ### Patch version bumps (X.Y.Z → X.Y.Z+1)
 - **Full backward compatibility**: no breaking changes.
 - **Bug fixes only**: bug fixes and security patches.
+- Example: 3.17.1 → 3.17.2. Any mix of 3.17.1 and 3.17.2 nodes and
+  contracts works.
 
 ## Changelog conventions
 
