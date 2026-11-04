@@ -17,16 +17,18 @@ use near_sdk::{
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
-use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifiedReport};
+use tee_verifier_interface::{
+    Collateral, CollateralDates, QuoteBytes, VerificationResultWithCollateralDates, VerifiedReport,
+};
 
 #[ext_contract(ext_tee_verifier)]
 pub trait TeeVerifier {
     #[result_serializer(borsh)]
-    fn verify_quote(
+    fn verify_quote_with_collateral_dates(
         &self,
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
-    ) -> VerificationResult;
+    ) -> VerificationResultWithCollateralDates;
 }
 
 #[near]
@@ -93,8 +95,8 @@ impl MpcContract {
     ///   for local testing, CI integration, and network bootstrapping/transition
     ///   phases (KD-F015).
     /// - [`Attestation::Dstack`] is verified asynchronously via a cross-contract
-    ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
-    ///   callback to run the post-DCAP checks and store the attestation.
+    ///   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]
+    ///   chained as its callback to run the post-DCAP checks and store the attestation.
     ///
     /// A node submits with no deposit via its function-call access key. Storing a *new* entry
     /// consumes one attestation-storage grant, prepaid for the node's account by whoever
@@ -209,7 +211,7 @@ impl MpcContract {
     }
 
     /// Async [`Attestation::Dstack`] submission: spawns a promise calling
-    /// `verify_quote` on the trusted verifier contract, with
+    /// `verify_quote_with_collateral_dates` on the trusted verifier contract, with
     /// [`Self::resolve_verification`] chained as its callback.
     fn submit_dstack_attestation(
         &mut self,
@@ -219,7 +221,7 @@ impl MpcContract {
         ext_tee_verifier::ext(self.tee_verifier_account_id.clone())
             .with_static_gas(Gas::from_tgas(self.config.verifier_tera_gas))
             .with_unused_gas_weight(0)
-            .verify_quote(attestation.quote, attestation.collateral)
+            .verify_quote_with_collateral_dates(attestation.quote, attestation.collateral)
             .then(
                 Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
@@ -393,16 +395,17 @@ impl MpcContract {
         #[serializer(borsh)] context: VerificationContext,
         #[serializer(borsh)]
         #[callback_result]
-        result: Result<VerificationResult, PromiseError>,
+        result: Result<VerificationResultWithCollateralDates, PromiseError>,
     ) -> PromiseOrValue<()> {
         let account_id = context.node_id.account_id.clone();
         log!("resolve_verification: account_id={account_id}");
 
         let attestation_result = match result {
-            Ok(VerificationResult::Verified(report)) => {
-                self.verify_post_dcap_and_store(&context, &report)
-            }
-            Ok(VerificationResult::Rejected(reason)) => {
+            Ok(VerificationResultWithCollateralDates::Verified {
+                report,
+                collateral_dates,
+            }) => self.verify_post_dcap_and_store(&context, &report, &collateral_dates),
+            Ok(VerificationResultWithCollateralDates::Rejected(reason)) => {
                 log!("verifier rejected quote for {account_id}: {reason}");
                 Err(TeeError::QuoteRejected {
                     reason: reason.to_string(),
@@ -432,13 +435,14 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. Re-checks the submission before storing, since
-    /// this runs a receipt later than the submission: meanwhile another account may have claimed
-    /// the TLS key, or the grant may have been spent.
+    /// [`VerificationResultWithCollateralDates::Verified`] response. Re-checks the submission
+    /// before storing, since this runs a receipt later than the submission: meanwhile another
+    /// account may have claimed the TLS key, or the grant may have been spent.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
         report: &VerifiedReport,
+        collateral_dates: &CollateralDates,
     ) -> Result<(), Error> {
         let account_id = context.node_id.account_id.clone();
         let tee_upgrade_deadline_duration =
@@ -450,6 +454,7 @@ impl MpcContract {
             context.node_id.clone(),
             &context.tcb_info,
             report,
+            collateral_dates,
             tee_upgrade_deadline_duration,
         ) {
             Ok(is_new_node) => is_new_node,
@@ -501,7 +506,7 @@ mod tests {
         ReconstructionThreshold,
     };
     use mpc_attestation::attestation::{
-        DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation as MpcMockAttestation,
+        MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation as MpcMockAttestation,
         ValidatedDstackAttestation, VerifiedAttestation, default_measurements,
     };
     use mpc_primitives::hash::LauncherImageHash;
@@ -513,8 +518,8 @@ mod tests {
     use std::panic;
     use std::{assert_matches, collections::BTreeSet};
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, account_key, collateral_dates, image_digest,
+        launcher_compose_digest, launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
     };
 
     #[test]
@@ -544,6 +549,13 @@ mod tests {
             .expect("Expected panic if predecessor != signer");
     }
 
+    fn verified_verdict() -> VerificationResultWithCollateralDates {
+        VerificationResultWithCollateralDates::Verified {
+            report: verified_report(),
+            collateral_dates: collateral_dates(),
+        }
+    }
+
     fn prepay_and_submit_mock_attestation(
         contract: &mut MpcContract,
         account_id: &AccountId,
@@ -570,7 +582,7 @@ mod tests {
             .tee_state
             .verify_and_store_mock(node_id, MpcMockAttestation::Valid, Duration::MAX)
             .unwrap();
-        set_block_secs(DEFAULT_EXPIRATION_DURATION_SECONDS + 1);
+        set_block_secs(MOCK_EXPIRATION_DURATION_SECONDS + 1);
     }
 
     fn participant_setup() -> (MpcContract, AccountId, Ed25519PublicKey) {
@@ -779,8 +791,7 @@ mod tests {
         assert_eq!(contract.available_attestation_grants(account_id.clone()), 1);
 
         // When
-        let result = contract
-            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+        let result = contract.resolve_verification(context, Ok(verified_verdict()));
 
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
@@ -803,8 +814,7 @@ mod tests {
         contract.available_attestation_grants.remove(&account_id);
 
         // When
-        let result = contract
-            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+        let result = contract.resolve_verification(context, Ok(verified_verdict()));
 
         // Then: the submitter's transaction is failed from its own receipt, and nothing is stored.
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
@@ -819,8 +829,7 @@ mod tests {
         let node_id = context.node_id.clone();
 
         // When
-        let result = contract
-            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+        let result = contract.resolve_verification(context, Ok(verified_verdict()));
 
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
