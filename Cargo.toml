@@ -238,7 +238,7 @@ time = "0.3.45"
 tokio = { version = "1.52.2", features = ["full"] }
 tokio-metrics = { version = "0.5.0" }
 tokio-rustls = { version = "0.26.4", default-features = false }
-tokio-stream = { version = "0.1" }
+tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7.12", features = ["time"] }
 toml = "1.1.2"
 tonic = { version = "0.14.2", default-features = false }
