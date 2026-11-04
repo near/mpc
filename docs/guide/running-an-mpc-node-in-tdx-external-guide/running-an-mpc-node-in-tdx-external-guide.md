@@ -923,7 +923,7 @@ backup_encryption_key_hex = "$BACKUP_ENCRYPTION_KEY"
 
 [mpc_node_config.node]
 my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
-near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"  # ignored by newer versions; required by 3.17.x and older
 migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
 
 [mpc_node_config.node.indexer]
@@ -938,7 +938,9 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, see [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `web_ui`, and the `triple` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template. Always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, see [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+
+> **Note:** `near_responder_account_id` and `number_of_responder_keys` are ignored by newer versions but required by 3.17.x and older. Keep them until all your rollback targets are newer.
 
 > **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
@@ -996,7 +998,7 @@ You need your own API keys:
 
 > **Important:**
 >
-> * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
+> * The `placeholder` value must be exactly one full path segment of `rpc_url` (case-sensitive), e.g. `/v2/{api_key}`. The node rejects a placeholder that is missing, repeated, only part of a segment, or outside the path. Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
 > * Before deploying, verify your config with the [foreign chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml`. It runs the same provider probe the node runs after startup and reports the same verdicts.
 
 #### Credentials only (Recommended)
@@ -1922,8 +1924,10 @@ curl -sS 'http://localhost:<dstack_agent_port>/logs/mpc-node?text&timestamps&bar
 There are 2 keys that should be retrieved from node.
 
 * P2P (`near_p2p_public_key`) - this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract (see details below).
-* Node Account Key (`near_signer_public_key`) - this key is used by the node to issue operations such as `vote_reshared`.
+* Node Account Key (`near_signer_public_key`) - this key is used by the node for all its contract calls, including signature responses and operations such as `vote_reshared`.
   This key needs to be added to the NEAR account that was created in the step above.
+
+On 3.17.x and older, `/public_data` also has a `near_responder_public_keys` field. It is not used; do not add these keys. If your account still has responder keys from an older setup, you can delete them, but keep the key that matches `near_signer_public_key`.
 
 ### Retrieve the Node Account Key and P2P Key
 
@@ -2170,8 +2174,7 @@ near account add-key $ACCOUNT_ID \
   send
 ```
 
-> **Note:** Delete and re-add each affected key (e.g. both the node key and the
-> responder key). Verify with `near account list-keys $ACCOUNT_ID` that each key
+> **Note:** Verify with `near account list-keys $ACCOUNT_ID` that the node key
 > now shows an empty `method_names` list.
 
 After the key is fixed, **restart the node** so foreign-chain registration runs again.
@@ -2456,6 +2459,19 @@ ERROR mpc_node::key_events: Key resharing attempt KeyEventId { ... } failed: <er
 ```
 
 The contract will retry with a fresh attempt; repeated failures need investigation.
+
+#### Query parameter votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  parameters_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+Shows the voters grouped by the proposal hash of the parameters they voted for: the SHA-256 of the borsh-encoded `ProposedGovernanceThresholdParameters`.
 
 ## Upgrades
 
@@ -2861,7 +2877,7 @@ wipe_near_data_token = 1
 On the next startup — before the store is opened, so it runs in an instant and *before* sync —
 the node deletes the nearcore data dir (`data/data`), records the token in
 `data/.near_data_wipe_token`, and re-syncs the chain from scratch. The MPC secrets in
-`data/assets` (keyshares, triples, presignatures) are **not** touched, so the node keeps its
+`data/assets` (keyshares, triples) are **not** touched, so the node keeps its
 identity and key material.
 
 Semantics:

@@ -8,112 +8,70 @@ use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
 
 use threshold_signatures::{
-    MaxMalicious,
-    ecdsa::{self, robust_ecdsa},
+    ecdsa::{
+        self,
+        robust_ecdsa::{PresignArguments, presign_and_sign},
+    },
     participants::Participant,
     protocol::Protocol,
-    test_utils::{
-        MockCryptoRng, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
-        run_keygen,
-    },
+    test_utils::{MockCryptoRng, generate_participants_with_random_ids, run_keygen},
 };
 
-use super::{MAX_MALICIOUS, PreparedPresig, PreparedSig};
+use super::MAX_MALICIOUS;
 
-/// Used to prepare robust ecdsa presignatures for benchmarking
-pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+/// Used to prepare robust ecdsa signatures for benchmarking
+pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     num_participants: usize,
     rng: &mut R,
-) -> RobustECDSAPreparedPresig {
+) -> RobustECDSAPreparedSig {
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
+    let coordinator = participants[rng.gen_range(0..participants.len())];
+    let tweak = ecdsa::Tweak::new(frost_core::random_nonzero::<ecdsa::Secp256K1Sha256, _>(rng));
+    let msg_hash = frost_core::random_nonzero::<ecdsa::Secp256K1Sha256, _>(rng);
+
     let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
     let mut seeds = HashMap::with_capacity(participants.len());
-
     for (p, keygen_out) in &key_packages {
         let seed = rng.next_u64();
-        let rng_p = MockCryptoRng::seed_from_u64(seed);
-        let protocol = robust_ecdsa::presign::presign(
+        let protocol = presign_and_sign(
             &participants,
+            coordinator,
             *p,
-            robust_ecdsa::PresignArguments {
+            PresignArguments {
                 keygen_out: keygen_out.clone(),
                 max_malicious: (*MAX_MALICIOUS).into(),
             },
-            rng_p,
+            tweak,
+            msg_hash,
+            MockCryptoRng::seed_from_u64(seed),
         )
-        .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>)
-        .expect("Presignature should succeed");
+        .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = ecdsa::SignatureOption>>)
+        .expect("Signing should succeed");
         protocols.push((*p, protocol));
         seeds.insert(*p, seed);
     }
-    RobustECDSAPreparedPresig {
+    RobustECDSAPreparedSig {
         protocols,
         key_packages,
         participants,
+        coordinator,
+        tweak,
+        msg_hash,
         seeds,
     }
 }
 
-/// Used to prepare robust ecdsa signatures for benchmarking
-pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
-    result: &[(Participant, robust_ecdsa::PresignOutput)],
-    max_malicious: MaxMalicious,
-    pk: frost_secp256k1::VerifyingKey,
-    rng: &mut R,
-) -> RobustECDSASig {
-    // collect all participants
-    let participants: Vec<Participant> =
-        result.iter().map(|(participant, _)| *participant).collect();
-
-    // choose a coordinator at random
-    let coordinator_index = rng.gen_range(0..result.len());
-    let coordinator = result[coordinator_index].0;
-
-    let (args, msg_hash) =
-        ecdsa_generate_rerandpresig_args(rng, &participants, pk, result[0].1.big_r);
-    let derived_pk = args
-        .tweak
-        .derive_verifying_key(&pk)
-        .to_element()
-        .to_affine();
-
-    let result = result
-        .iter()
-        .map(|(p, presig)| {
-            (
-                *p,
-                robust_ecdsa::RerandomizedPresignOutput::rerandomize_presign(presig, &args)
-                    .expect("Rerandomizing presignature should succeed"),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let mut protocols = Vec::with_capacity(result.len());
-
-    for (p, presignature) in result.clone() {
-        let protocol = robust_ecdsa::sign::sign(
-            &participants,
-            coordinator,
-            max_malicious,
-            p,
-            derived_pk,
-            presignature,
-            msg_hash,
-        )
-        .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = ecdsa::SignatureOption>>)
-        .expect("Signing should succeed");
-        protocols.push((p, protocol));
-    }
-    RobustECDSASig {
-        protocols,
-        index: coordinator_index,
-        presig: result[coordinator_index].1.clone(),
-        derived_pk,
-        msg_hash,
-    }
+pub struct RobustECDSAPreparedSig {
+    pub protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
+    )>,
+    pub key_packages: Vec<(Participant, ecdsa::KeygenOutput)>,
+    pub participants: Vec<Participant>,
+    pub coordinator: Participant,
+    pub tweak: ecdsa::Tweak,
+    pub msg_hash: ecdsa::Scalar,
+    /// Per-participant RNG seed used to build each sign protocol.
+    pub seeds: HashMap<Participant, u64>,
 }
-
-pub type RobustECDSAPreparedPresig =
-    PreparedPresig<robust_ecdsa::PresignOutput, ecdsa::KeygenOutput>;
-pub type RobustECDSASig = PreparedSig<robust_ecdsa::RerandomizedPresignOutput>;

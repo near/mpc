@@ -422,8 +422,6 @@ We grant access to all contract methods rather than an explicit allow-list becau
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
 
-In addition - The node will generate multiple responder account keys as well. These are used to increase throughout when posting generated MPC signatures to the chain.
-
 Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`) reject the operator key: the contract requires the signer key to be the attested node account key.
 
 ## Remote Attestation
@@ -869,5 +867,5 @@ There are two distinct Near Account Keys with different responsibilities:
 ## Identified Risks
 
 - **Rollback & asset reuse**
-  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples, presignatures).
+  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples).
   - Currently, these assets are persisted on disk — mitigation will be required in future iterations.

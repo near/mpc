@@ -2,15 +2,16 @@
 
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_account,
-        gen_accounts, init, submit_attestations, vote_and_submit_contract_binary,
+        approve_contract_update, call_contract_key_generation,
+        execute_key_generation_and_add_random_state, gen_account, gen_accounts, init,
+        submit_attestations, vote_and_submit_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
         mpc_contract::{
             get_config, get_participant_attestation, get_participants, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, vote_add_launcher_hash, vote_add_os_measurement,
+            prepay_and_submit_participant_info, submit_participant_info, vote_add_launcher_hash,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
@@ -30,10 +31,11 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    AuthScheme, CKDResponse, ChainEntry, ChainRouting, DomainConfig, DomainPurpose, ForeignChain,
-    Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
+    Attestation, AuthScheme, CKDResponse, ChainEntry, ChainRouting, DomainConfig, DomainPurpose,
+    ForeignChain, MockAttestation, Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
+    Update,
 };
-use near_mpc_sdk::sign::SignatureRequestResponse;
+use near_mpc_sdk::{sign::SignatureRequestResponse, update::hash};
 use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
 use rand_core::OsRng;
 use rstest::rstest;
@@ -199,7 +201,7 @@ async fn fill_stored_attestations(
     tls_keys
 }
 
-/// Chains whitelisted on mainnet on 2026-10-28 besides Bitcoin.
+/// Chains whitelisted on mainnet on 2026-10-28, without the Bitcoin entry that 3.18.0 drops.
 const PRODUCTION_WHITELISTED_CHAINS: [ForeignChain; 12] = [
     ForeignChain::Abstract,
     ForeignChain::Aptos,
@@ -303,35 +305,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         "launcher hash should be voted in before the upgrade"
     );
 
-    // Leave a launcher vote pending so migration decodes a non-empty vote map off the
-    // production layout.
-    let pending_launcher_hash = mpc_primitives::hash::LauncherImageHash::from([0xBB; 32]);
-    vote_add_launcher_hash(&accounts[0], &contract, &pending_launcher_hash)
-        .await
-        .unwrap();
-
-    // Same for the OS measurement vote map.
-    let pending_measurement = dtos::ExpectedMeasurements {
-        mrtd: mpc_primitives::hash::MrtdHash::from([0xCD; 48]),
-        rtmr0: mpc_primitives::hash::Rtmr0Hash::from([0xCD; 48]),
-        rtmr1: mpc_primitives::hash::Rtmr1Hash::from([0xCD; 48]),
-        rtmr2: mpc_primitives::hash::Rtmr2Hash::from([0xCD; 48]),
-        key_provider_event_digest: mpc_primitives::hash::KeyProviderEventDigest::from([0xCD; 48]),
-    };
-    vote_add_os_measurement(&accounts[0], &contract, &pending_measurement)
-        .await
-        .unwrap();
-
-    vote_in_whitelist(
-        &contract,
-        &accounts,
-        BTreeMap::from([
-            (ForeignChain::Bitcoin, chain_entry(1, 1)),
-            (ForeignChain::Base, chain_entry(3, 3)),
-        ]),
-    )
-    .await;
-
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
@@ -354,16 +327,6 @@ async fn propose_upgrade_from_production_to_current_binary(
     );
 
     assert_eq!(
-        contract
-            .allowed_foreign_chain_providers()
-            .await
-            .unwrap()
-            .value,
-        BTreeMap::from([(ForeignChain::Base, chain_entry(3, 2))]),
-        "migration should drop Bitcoin and lower the Base quorum by one"
-    );
-
-    assert_eq!(
         get_tee_accounts(&contract).await.unwrap().len(),
         STORED_ATTESTATION_ENTRIES,
         "every stored attestation should survive migration"
@@ -372,55 +335,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         .await
         .unwrap()
         .expect("a migrated attestation should still be readable");
-
-    assert!(
-        contract
-            .launcher_hash_votes()
-            .await
-            .unwrap()
-            .value
-            .is_empty(),
-        "pending launcher votes should be dropped by the migration"
-    );
-    assert!(
-        contract
-            .os_measurement_votes()
-            .await
-            .unwrap()
-            .value
-            .is_empty(),
-        "pending OS measurement votes should be dropped by the migration"
-    );
-
-    let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
-    for account in &accounts[..threshold] {
-        vote_add_launcher_hash(account, &contract, &pending_launcher_hash)
-            .await
-            .unwrap();
-    }
-    assert!(
-        contract
-            .allowed_launcher_image_hashes()
-            .await
-            .unwrap()
-            .value
-            .contains(&pending_launcher_hash),
-        "a fresh launcher threshold vote should succeed after the upgrade"
-    );
-    for account in &accounts[..threshold] {
-        vote_add_os_measurement(account, &contract, &pending_measurement)
-            .await
-            .unwrap();
-    }
-    assert!(
-        contract
-            .allowed_os_measurements()
-            .await
-            .unwrap()
-            .value
-            .contains(&pending_measurement),
-        "a fresh OS measurement threshold vote should succeed after the upgrade"
-    );
 }
 
 #[rstest]
@@ -440,7 +354,6 @@ async fn migrate__should_run_within_contract_update_gas_budget(
     let whitelist = PRODUCTION_WHITELISTED_CHAINS
         .into_iter()
         .map(|chain| (chain, chain_entry(4, 3)))
-        .chain([(ForeignChain::Bitcoin, chain_entry(1, 1))])
         .collect();
     vote_in_whitelist(&contract, &accounts, whitelist).await;
     upgrade_to_new(&contract).await.unwrap();
@@ -580,6 +493,82 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
         accounts_with_tee_attestation_post_upgrade, participant_set,
         "All initial participants must have a valid attestation post upgrade."
     );
+    Ok(())
+}
+
+async fn old_contract_with_a_participant_missing_its_node(
+    worker: &Worker<Sandbox>,
+) -> anyhow::Result<(SandboxMpcContract, Vec<Account>, dtos::Ed25519PublicKey)> {
+    const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
+    let contract = deploy_old(worker, Network::Testnet).await?;
+    let (accounts, participants) = init_old_contract(worker, &contract, PARTICIPANT_LEN).await?;
+    let (_, _, participant_info) = &participants.participants()[0];
+    let tls_key = participant_info.tls_public_key.clone();
+
+    // Submission rejects an expired attestation, so the node expires only after it is stored
+    let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(now_seconds + ATTESTATION_EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
+    let submission =
+        submit_participant_info(&accounts[0], &contract, &expiring_attestation, &tls_key).await?;
+    assert!(submission.is_success(), "{submission:#?}");
+    worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
+
+    // Unlike later versions, 3.18.0's cleanup also deletes the expired node of a participant
+    let cleanup = contract.clean_invalid_attestations(u32::MAX).await?;
+    assert!(cleanup.is_success(), "{cleanup:#?}");
+    Ok((contract, accounts, tls_key))
+}
+
+#[tokio::test]
+async fn submit_contract_update__should_keep_the_old_contract_while_a_participant_misses_its_node()
+-> anyhow::Result<()> {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await?;
+    let (contract, accounts, _) = old_contract_with_a_participant_missing_its_node(&worker).await?;
+    let update = Update::Code(current_contract().to_vec());
+    approve_contract_update(&contract, &accounts, hash(&update)).await;
+
+    // When
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await?;
+
+    // Then
+    assert!(execution.is_success(), "{execution:#?}");
+    assert_eq!(contract.view_code().await?, contract_code(Network::Testnet));
+    Ok(())
+}
+
+#[tokio::test]
+async fn submit_contract_update__should_upgrade_once_the_participant_attests_again()
+-> anyhow::Result<()> {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await?;
+    let (contract, accounts, tls_key) =
+        old_contract_with_a_participant_missing_its_node(&worker).await?;
+    let attestation = Attestation::Mock(MockAttestation::Valid);
+    let submission =
+        prepay_and_submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    assert!(submission.is_success(), "{submission:#?}");
+    let update = Update::Code(current_contract().to_vec());
+    approve_contract_update(&contract, &accounts, hash(&update)).await;
+
+    // When
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .submit_contract_update(update)
+        .await?;
+
+    // Then
+    assert!(execution.is_success(), "{execution:#?}");
+    assert_eq!(contract.view_code().await?, current_contract());
     Ok(())
 }
 

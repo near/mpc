@@ -150,10 +150,10 @@ participant:
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum; `0` while the chain is not whitelisted |
+| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum |
 | `mpc_foreign_chain_rpc_providers_whitelisted` | distinct whitelisted providers this node's config conforms to |
 
-`whitelisted` must reach a non-zero `required`. Anything less means the chain is
+`whitelisted` must reach `required`. Anything less means the chain is
 configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
 asks. The node logs the differing provider at startup and on every whitelist change.
@@ -183,9 +183,9 @@ sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count{
   for 15m
 
 # Warn: computations are running out of headroom against the deadline that ends
-# them. Signature, presignature, CKD and foreign-tx verification run under a
-# configured 60s by default, and 45s is three quarters of it. Key generation and
-# resharing are left out: a handful per epoch cannot support a percentile.
+# them. Signature, CKD and foreign-tx verification run under a configured 60s
+# by default, and 45s is three quarters of it. Key generation and resharing are
+# left out: a handful per epoch cannot support a percentile.
 histogram_quantile(0.99, sum by (protocol_scheme, task, le) (
   rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task!~"triple_generation|key_generation|key_resharing"}[15m])
 )) > 45  for 15m
@@ -229,12 +229,13 @@ time() - mpc_last_backup_served_timestamp_seconds > 86400  for 2h
 mpc_last_backup_served_epoch < mpc_current_epoch_id  for 2h
 
 # Warn: no attestation has landed in three resubmission intervals. This fires
-# within hours; the expiry alerts below only fire days later.
+# within hours; the expiry alerts below can fire weeks later.
 mpc_indexer_latest_block_timestamp_seconds - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
 
-# Page: under three days of attestation runway left. Backstop for the alert
-# above; reached about four days after submissions stop landing. `> 0` keeps
-# the sentinel values out.
+# Page: under three days of attestation runway left. The attestation expires
+# with the collateral it was submitted with, so this is a backstop for the alert
+# above, and also fires for a node that keeps submitting nearly stale
+# collateral. `> 0` keeps the sentinel values out.
 mpc_attestation_expiry_timestamp_seconds > 0
   and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
       < 3 * 86400  for 15m

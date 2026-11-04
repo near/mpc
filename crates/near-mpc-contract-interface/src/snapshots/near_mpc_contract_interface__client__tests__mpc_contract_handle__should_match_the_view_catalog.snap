@@ -27,6 +27,10 @@ method:   launcher_hash_votes
 args:     {}
 
 contract: mpc.near
+method:   parameters_votes
+args:     {}
+
+contract: mpc.near
 method:   os_measurement_votes
 args:     {}
 

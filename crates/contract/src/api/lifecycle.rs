@@ -10,6 +10,7 @@ use crate::primitives::domain::{
     AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
 };
 use crate::primitives::key_state::{EpochId, Keyset};
+use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
 use crate::state::running::RunningContractState;
@@ -17,7 +18,7 @@ use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ContractUpdateVotes;
-use crate::{MpcContract, MpcContractExt, v3_17_0_state};
+use crate::{MpcContract, MpcContractExt, v3_18_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
@@ -75,6 +76,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 
@@ -154,6 +156,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 
@@ -169,11 +172,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_17_0_state::MpcContract>() {
+        match try_state_read::<v3_18_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.17.0 state: {:?}", err);
+                log!("failed to deserialize state into 3.18.0 state: {:?}", err);
             }
         };
 

@@ -238,10 +238,9 @@ const DSTACK_MAX_RETRIES: usize = 3;
 /// 31 days accepts collateral for its full Intel-declared validity plus a
 /// day of headroom, so operators refreshing on Intel's own schedule are
 /// never rejected for age. This is the freshness bound on the
-/// collateral's Intel signature and is independent of the contract's
-/// attestation expiry
-/// (`DEFAULT_EXPIRATION_DURATION_SECONDS`); the two windows serve
-/// different purposes and are not required to match.
+/// collateral's Intel signature. The attestation expiry is the collateral's
+/// own earliest expiration date, so an older collateral gets a shorter
+/// attestation.
 ///
 /// Applies uniformly to the three periodically re-signed pieces of
 /// collateral that share Intel's 30-day window: `tcb_info.issueDate`,

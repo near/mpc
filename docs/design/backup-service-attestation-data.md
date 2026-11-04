@@ -123,7 +123,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 ### Recovery Flow
 
-**Precondition**: Backup service has keyshares in memory. The operator wants to migrate to a new MPC node (e.g., hardware failure, or moving to a different TEE).
+**Precondition**: Backup service has keyshares in memory. The operator wants to migrate to a new MPC node (e.g., hardware failure, or moving to a different TEE), which is running and has its attestation stored on the contract.
 
 1. **Operator trigger (manual)**: Operator calls `start_node_migration(destination_node_info)`.
 2. **Detection (automated)**: Backup service detects the migration event on-chain.
@@ -145,7 +145,7 @@ The [migration service `impl` block][migration-service-impl] needs:
   - `allowed_backup_service_launcher_compose_hashes()`
   - `reverify_backup_services()`
 - **Resharing cleanup**: [`clean_non_participants()`][clean-non-participants] should also clean `backup_service_tee_state` when operators leave the participant set.
-- **`start_node_migration()`** and **`conclude_node_migration()`**: No attestation-related changes.
+- **`start_node_migration()`** and **`conclude_node_migration()`**: No changes for backup-service attestation.
 
 ### Attestation Verification
 

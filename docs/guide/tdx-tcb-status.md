@@ -28,7 +28,7 @@ dates, so treat the row as the notice.
 **A microcode update can make the CVM's encrypted disk unreadable.** The disk key
 derives from the SGX sealing key, which `EGETKEY` derives from CPUSVN among other
 inputs. A TCB recovery fix moves CPUSVN, so the existing disk no longer unseals,
-and key shares, triples, presignatures and the P2P identity key all live on it.
+and key shares, triples and the P2P identity key all live on it.
 
 So before touching firmware: take a fresh backup with the `backup-cli`
 following
@@ -103,9 +103,9 @@ side.
 Nothing reaches out to warn you: the `Intel early` row is the advance notice,
 and only when someone runs the check. Once the promotion lands, the node logs
 the rejection every attempt (see [Symptoms](#symptoms)) and keeps submitting
-hourly, the contract rejects every submission, the stored attestation expires 7
-days after the last accepted one (`DEFAULT_EXPIRATION_DURATION_SECONDS`), and
-`verify_tee` then drops the node from the participant set and reshares without
+hourly, the contract rejects every submission, the stored attestation expires
+with the collateral of the last accepted one (Intel's earliest `nextUpdate`, at
+most 30 days after that collateral was issued), and `verify_tee` then drops the node from the participant set and reshares without
 it. For several nodes at once, it becomes a network problem rather than only
 yours.
 
