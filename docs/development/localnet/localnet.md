@@ -31,6 +31,8 @@ You should install `neard` from the same nearcore tag this workspace pins (see t
 cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard --locked
 ```
 
+The nix devshell already provides a matching `neard` (the prebuilt sandbox build of that tag), so skip this step there.
+
 ```shell
 cargo install --path crates/node --locked
 ```

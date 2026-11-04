@@ -64,6 +64,7 @@
           mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
             cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           };
+          near-sandbox = pkgs.callPackage ./nix/near-sandbox.nix { };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
         }
         // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
@@ -104,6 +105,7 @@
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
+          near-sandbox = pkgs.callPackage ./nix/near-sandbox.nix { };
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix {
@@ -149,6 +151,10 @@
 
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
+
+            # The near-sandbox crate otherwise downloads a prebuilt neard, which
+            # cannot run on NixOS: it expects an FHS dynamic loader.
+            NEAR_SANDBOX_BIN_PATH = "${near-sandbox}/bin/near-sandbox";
           };
 
           envDarwin = lib.optionalAttrs stdenv.hostPlatform.isDarwin {
@@ -173,13 +179,16 @@
             rustPlatform.bindgenHook
           ];
 
-          nearTools = with pkgs; [
+          nearTools = [
             near-cli-rs
             cargo-near
+            near-sandbox
           ];
 
           miscTools = with pkgs; [
             git
+            curl  # scripts/launch-localnet.sh
+            gettext  # envsubst, used by scripts/launch-localnet.sh
             binaryen
             ast-grep  # structural lints, e.g. lints/rules/*
             editorconfig-checker
