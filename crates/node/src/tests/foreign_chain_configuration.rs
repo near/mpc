@@ -1,5 +1,5 @@
 use crate::p2p::testing::port_seed;
-use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup, wait_for_registrations};
+use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup, wait_and_assert_registrations};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
@@ -65,7 +65,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
 
     // When
     let node_count = setup.participants.participants.len();
-    wait_for_registrations(&setup.indexer, node_count, &BTreeSet::new()).await;
+    wait_and_assert_registrations(&setup.indexer, node_count, &BTreeSet::new()).await;
 
     // Then
     {
@@ -73,7 +73,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         assert!(contract.available_foreign_chains().is_empty());
         contract.whitelist_foreign_chain_providers(solana_whitelist());
     }
-    wait_for_registrations(&setup.indexer, node_count, &expected_foreign_chains).await;
+    wait_and_assert_registrations(&setup.indexer, node_count, &expected_foreign_chains).await;
     let contract = setup.indexer.contract_mut().await;
     assert_eq!(
         **contract.available_foreign_chains(),
@@ -123,7 +123,7 @@ async fn foreign_chains_registrar__should_reregister_after_the_contract_loses_th
         .collect::<Vec<_>>();
     let node_count = setup.participants.participants.len();
     let solana = BTreeSet::from([ForeignChain::Solana]);
-    wait_for_registrations(&setup.indexer, node_count, &solana).await;
+    wait_and_assert_registrations(&setup.indexer, node_count, &solana).await;
 
     // When
     setup
@@ -133,7 +133,7 @@ async fn foreign_chains_registrar__should_reregister_after_the_contract_loses_th
         .wipe_foreign_chains_configs();
 
     // Then
-    wait_for_registrations(&setup.indexer, node_count, &solana).await;
+    wait_and_assert_registrations(&setup.indexer, node_count, &solana).await;
 }
 
 const PROVIDER: &str = "public";

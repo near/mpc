@@ -23,7 +23,7 @@ const MIN_RESEND_DELAY: Duration = Duration::from_secs(30);
 const MAX_RESEND_DELAY: Duration = Duration::from_hours(1);
 
 /// Registers the eligible chains until the contract records them for `my_tls_key`, and again
-/// whenever the eligible chains or the recorded ones change.
+/// whenever the recorded chains stop matching the eligible ones.
 /// Must be called from a tracked task. Dropping the returned task stops the registrar.
 pub(crate) fn spawn_foreign_chains_registrar(
     txn_sender: impl TransactionSender + 'static,

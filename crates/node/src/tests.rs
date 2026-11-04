@@ -636,8 +636,9 @@ fn test_build_info_metric_values() {
     assert_eq!(value, 1);
 }
 
-/// Waits until `node_count` nodes have registered exactly `chains`.
-pub async fn wait_for_registrations(
+/// Panics if `node_count` nodes have not registered exactly `chains` within
+/// [`DEFAULT_MAX_PROTOCOL_WAIT_TIME`].
+pub async fn wait_and_assert_registrations(
     indexer: &FakeIndexerManager,
     node_count: usize,
     chains: &std::collections::BTreeSet<near_mpc_contract_interface::types::ForeignChain>,

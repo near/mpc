@@ -4,7 +4,7 @@ use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, every_node_owns_triples, request_verify_foreign_tx_and_await_response,
-    wait_for_registrations, wait_until,
+    wait_and_assert_registrations, wait_until,
 };
 use crate::tracking::AutoAbortTask;
 use httpmock::prelude::*;
@@ -347,7 +347,8 @@ async fn must_start_foreign_tx_cluster(
 async fn verify_foreign_tx__should_not_be_served_when_local_providers_are_below_the_rpc_quorum() {
     // Given
     let mut cluster = must_start_foreign_tx_cluster(ethereum_whitelist_out_of_reach).await;
-    wait_for_registrations(&cluster.indexer, FOREIGN_TX_CLUSTER_SIZE, &BTreeSet::new()).await;
+    wait_and_assert_registrations(&cluster.indexer, FOREIGN_TX_CLUSTER_SIZE, &BTreeSet::new())
+        .await;
     {
         let mut contract = cluster.indexer.contract_mut().await;
         for account in ["test0", "test1", "test2"] {
