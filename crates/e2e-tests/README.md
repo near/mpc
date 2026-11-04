@@ -40,10 +40,12 @@ graph TD
 1. **Real `neard` sandbox, real `mpc-node` binaries.** Each test starts a
    `near-sandbox` process (via the `near-sandbox` crate, which downloads a real
    neard binary) and spawns `N` real `mpc-node` processes built from this repo.
-   The mpc-node binary uses its built-in NEAR indexer, which in turn runs its
-   own small `neard` peered with the sandbox over P2P — i.e. we exercise the
-   production code path end-to-end, including config parsing, P2P networking,
-   the indexer, and Prometheus metrics.
+   By default the mpc-node binary uses its built-in NEAR indexer, which in turn
+   runs its own small `neard` peered with the sandbox over P2P — i.e. we
+   exercise the production code path end-to-end, including config parsing, P2P
+   networking, the indexer, and Prometheus metrics. See
+   [Indexer backend](#indexer-backend) for running the nodes against the
+   sandbox's RPC endpoint instead.
 
 2. **RPC-only contract interaction.** Tests never touch the sandbox process
    directly; everything happens through a `near-kit` RPC client. The
@@ -87,6 +89,9 @@ graph TD
 Starts a `near-sandbox` binary at a configurable version, on ports assigned by
 `TestPorts`. Exposes everything an `mpc-node` indexer needs to peer with
 it: genesis path, boot-node string (`<pubkey>@127.0.0.1:<port>`), and chain ID.
+The sandbox also serves `EXPERIMENTAL_indexer_block` for nodes using the HTTP
+indexer, which requires tracking all shards and keeping transaction outcomes,
+state changes and trie changes.
 
 ```rust
 pub struct NearSandbox { /* wraps near_sandbox::Sandbox */ }
@@ -218,6 +223,7 @@ pub struct MpcClusterConfig {
     pub threshold: usize,
     pub domains: Vec<DomainConfig>,
     pub binary_paths: Vec<PathBuf>,             // one or num_nodes
+    pub indexer: IndexerBackend,                // Embedded or Http; see below
     pub contract_wasm: Vec<u8>,                 // pre-compiled by the test
     pub tee_verifier_wasm: Vec<u8>,             // pre-compiled by the test
     pub port_seed: u16,
@@ -344,7 +350,7 @@ runs with the `ci-e2e` profile. Do not put flags after a `--` separator: it is
 forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 
 The task runner builds five things before tests run: the mpc-node binary with
-the `network-hardship-simulation` feature, the MPC contract WASM, the
+the `embedded-node` and `network-hardship-simulation` features, the MPC contract WASM, the
 tee-verifier WASM, the test parallel contract WASM, and the backup CLI. WASM
 paths are passed to tests via the `MPC_CONTRACT_WASM`,
 `MPC_TEE_VERIFIER_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment
@@ -354,6 +360,31 @@ env var is unset and no pre-built WASM is found,
 local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
+
+### Indexer backend
+
+`MpcClusterConfig::indexer` selects how every node reads the chain:
+
+- `IndexerBackend::Embedded` runs an embedded NEAR node per mpc-node, synced
+  from the sandbox over P2P from genesis (`SyncMode::Block(0)`).
+- `IndexerBackend::Http` points each node's `indexer.rpc_url` at the sandbox
+  RPC endpoint. Nodes start at the chain head and, after a restart, replay
+  from their `http-indexer-checkpoint.json` (`SyncMode::Interruption`).
+
+Clusters that don't pin a backend read `MPC_E2E_INDEXER` (`embedded`, the
+default, or `http`), so the suite can run against either backend, for example
+to compare them:
+
+```bash
+MPC_E2E_INDEXER=http cargo make e2e-tests-skip-build
+```
+
+The tests in `tests/http_indexer.rs` always use the HTTP backend.
+`test_web_endpoints` (nearcore metrics) and the `embedded_node` case of
+`backup_service_run__should_back_up_keyshares_on_startup_and_after_resharing`
+(backup-cli bootstraps from node 0's NEAR home) always use the embedded one.
+Spawned nodes never inherit `MPC_NEAR_RPC_URL`, which would override the
+configured backend.
 
 ---
 

@@ -7,6 +7,8 @@ use test_port_allocator::{E2eTestPorts, TestPorts};
 
 const GENESIS_FILE: &str = "genesis.json";
 const NODE_KEY_FILE: &str = "node_key.json";
+/// Comfortably above the largest cluster the e2e tests start, including migration targets.
+const SANDBOX_INDEXER_MAX_CONCURRENT_REQUESTS: usize = 16;
 
 /// Wraps a NEAR sandbox node for E2E tests.
 ///
@@ -50,7 +52,19 @@ impl NearSandbox {
                         },
                     }
                 }
-            }
+            },
+            // Serves `EXPERIMENTAL_indexer_block` to MPC nodes using the HTTP indexer.
+            // Production operators run one serving node per MPC node, but here every
+            // node shares this sandbox. nearcore's default of one concurrent indexer
+            // request makes the others fail with `BUSY`, so allow one per node.
+            "rpc": {
+                "enable_indexer_rpc": true,
+                "indexer_max_concurrent_requests": SANDBOX_INDEXER_MAX_CONCURRENT_REQUESTS,
+            },
+            "tracked_shards_config": "AllShards",
+            "save_tx_outcomes": true,
+            "save_state_changes": true,
+            "store": { "save_trie_changes": true },
         });
 
         // Set chain_id to "sandbox" so MPC nodes recognize this as a local

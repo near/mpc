@@ -56,7 +56,7 @@ repository = "https://github.com/near/mpc"
 #workspace members
 attestation = { path = "crates/attestation" }
 attestation-types = { path = "crates/attestation-types" }
-chain-gateway = { path = "crates/chain-gateway" }
+chain-gateway = { path = "crates/chain-gateway", default-features = false }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-health-check = { path = "crates/foreign-chain-health-check" }
@@ -180,6 +180,7 @@ near-account-id = "3.0.0"
 # near-primitives' transaction API but are not re-exported there.
 near-crypto-public = { version = "0.38.0", package = "near-crypto" }
 near-gas = "0.3.6"
+near-indexer-client = "0.2.0"
 near-jsonrpc-client = "0.23.0"
 near-jsonrpc-primitives = "0.38.0"
 near-kit = { version = "0.20.0", default-features = false, features = ["rpc"] }

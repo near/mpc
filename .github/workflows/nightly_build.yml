@@ -38,7 +38,7 @@ jobs:
 
       - name: Build MPC
         id: build-mpc
-        run: cargo build -p mpc-node
+        run: cargo build -p mpc-node --features embedded-node
 
       - name: Failure Slack Notification
         if: failure()

@@ -6,6 +6,7 @@ use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
 use super::types::ChainSendTransactionRequest;
+use super::updates::{BlockUpdateReceiver, ChainBatch};
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::migration_service::types::MigrationInfo;
@@ -891,7 +892,7 @@ struct FakeIndexerOneNode {
     // The following are counterparts of the API channels.
     api_state_sender: watch::Sender<ContractState>,
     api_migration_info_sender: watch::Sender<MigrationInfo>,
-    api_block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    api_block_update_sender: mpsc::UnboundedSender<ChainBatch>,
     api_txn_receiver: mpsc::Receiver<ChainSendTransactionRequest>,
 }
 
@@ -962,7 +963,7 @@ impl FakeIndexerOneNode {
                     .wait_for(|suspended| !suspended)
                     .await
                     .unwrap();
-                api_block_update_sender.send(request).unwrap();
+                api_block_update_sender.send(request.into()).unwrap();
             }
         }));
         let forward_txn_requests: AutoAbortTask<()> =
@@ -1121,7 +1122,7 @@ impl FakeIndexerManager {
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
-                api_signature_request_receiver,
+                BlockUpdateReceiver::buffered(api_signature_request_receiver),
             )),
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,

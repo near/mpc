@@ -143,6 +143,12 @@ cp deployment/localnet/tee/frodo.toml "/tmp/$USER/frodo.toml"
 cp deployment/localnet/tee/sam.toml   "/tmp/$USER/sam.toml"
 ```
 
+The `boot_nodes` settings apply to MPC images built with the `embedded-node`
+feature. Images using [HTTP indexing](../../guide/http-indexer.md) instead need
+`mpc_node_config.node.indexer.rpc_url` pointing at a NEAR node that serves
+`EXPERIMENTAL_indexer_block`, such as `http://10.0.2.2:3030` for a host `neard`
+configured as that guide describes.
+
 The TOML files already contain a working `boot_nodes` entry pointing at `10.0.2.2:24566` — the QEMU slirp gateway inside the CVM, which routes to the host's loopback and works regardless of whether `neard` binds to `0.0.0.0` or `127.0.0.1` on the host (see #2949). `MACHINE_IP` is still needed for externally-reachable endpoints (public-data, telemetry) and should remain set.
 
 #### 2. Move into the `deployment/cvm-deployment` Directory

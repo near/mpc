@@ -17,6 +17,10 @@ counters tell you whether that is working:
 | `mpc_block_updates_dropped_total` | block updates the node dropped, including signature requests it will never process | should stay flat. Every increase is user requests the cluster may never answer. |
 | `mpc_num_fail_on_timeout_indexed` | requests the MPC contract marked as failed because no answer arrived in time | should be near zero. A sustained rate means this node, or the whole cluster, is too slow to answer. May overcount when NEAR has many forks. |
 | `mpc_failover_leader_attempts_total` | attempts this node started as a failover leader because no response landed within the leader failover slot. Labelled by `request_type` and `rank` (1-3, how many leaders before it are presumed broken) | should stay at zero. A sustained rate means some node accepts requests as leader but fails to answer them; high ranks mean several such nodes at once. |
+| `mpc_http_indexer_read_failures_total` | HTTP indexing only: failed reads from the RPC node, labelled by `request` (`status`, `head`, `parent`, `block`, `plan`) and `error` (`busy`, `timeout`, `unavailable`, `data_unavailable`, `incomplete_data`, `limit_exceeded`, `unsupported`, `rpc`, `invalid_data`, `ancestry_limit`, `finality_violation`, `type_mismatch`). The node retries every failed read and never skips a block | occasional `busy`, `timeout` and `unavailable` failures are normal. A steady rate for `request="block"` with any other error means the node is stuck on that block until the RPC node is fixed; the error log names the block and the fix. |
+| `mpc_http_indexer_reanchors_total` | HTTP indexing only: times the node fell so far behind the RPC node's head that it skipped to the blocks whose requests are still live | any increase means the RPC node was unreachable or stalled for minutes. The skipped requests had already expired. |
+| `mpc_http_indexer_checkpoint_write_failures_total` | HTTP indexing only: failed writes of the checkpoint file in the node's home directory. The node keeps indexing and retries with the latest checkpoint, backing off up to 10s | should stay flat. A sustained rate means the home directory's disk is failing or full; until a write succeeds, a restart replays from an older checkpoint. |
+| `mpc_coordinator_job_failures_total` | MPC jobs that ended in an error and were restarted, labelled by `job` (`Initializing`, `Running`, `Resharing`). Restarts back off from 1s, doubling up to 60s while jobs keep failing early | should stay flat. A sustained rate means the node keeps restarting its MPC work; the error log says why. |
 
 ## Computation times
 
@@ -172,6 +176,13 @@ increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 
 # Warn: requests fail for lack of an answer in time. Cross check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Warn: an HTTP-indexing node is stuck on a block its RPC node cannot serve. The
+# error log names the block and the server-side fix.
+increase(mpc_http_indexer_read_failures_total{request="block", error!~"busy|timeout|unavailable"}[5m]) > 0  for 10m
+
+# Warn: MPC jobs keep failing and restarting.
+increase(mpc_coordinator_job_failures_total[15m]) > 3
 
 # Warn: more than one computation in ten ends without a result: failed, past its
 # deadline, or dropped by the caller. The last clause skips tasks with under ten

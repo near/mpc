@@ -41,10 +41,26 @@ if $USE_RUST_LAUNCHER; then
   fi
   CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
 else
+  # The fixture endpoint never finishes syncing: this check covers HTTP
+  # startup, while the `http_indexer` E2E tests cover signing and recovery.
+  RPC_NAME="mpc-http-smoke-rpc-$$"
+  RPC_NETWORK="mpc-http-smoke-$$"
+  CONTAINER_ID=""
+  cleanup_http_smoke() {
+    if [ -n "$CONTAINER_ID" ]; then docker rm -f -v "$CONTAINER_ID" >/dev/null 2>&1 || true; fi
+    docker rm -f "$RPC_NAME" >/dev/null 2>&1 || true
+    docker network rm "$RPC_NETWORK" >/dev/null 2>&1 || true
+  }
+  trap cleanup_http_smoke EXIT
+  docker network create "$RPC_NETWORK" >/dev/null
+  docker run -d --name "$RPC_NAME" --network "$RPC_NETWORK" \
+    -v "$SCRIPT_DIR/fixtures/syncing-rpc.py:/fixture.py:ro" \
+    --entrypoint python3 "$NODE_IMAGE_NAME" -u /fixture.py >/dev/null
   # Test container startup - fail if container can't start
   # Start container in background and check status after 60 seconds.
   # The data dir is a volume of its own, so checks of several images can run at once
-  CONTAINER_ID=$(docker run -d \
+  CONTAINER_ID=$(docker run -d --network "$RPC_NETWORK" \
+    -e MPC_NEAR_RPC_URL="http://$RPC_NAME:3030" \
     -v /data \
     -e MPC_HOME_DIR="/data" \
     -e MPC_ACCOUNT_ID=test_image.near \
@@ -76,6 +92,14 @@ if [ -z "$(docker ps --filter "id=$CONTAINER_ID" --format "{{.ID}}")" ]; then
   docker logs --tail 100 "$CONTAINER_ID" 2>&1
   echo "❌ Container cannot initialize/start properly"
   exit 1
+fi
+
+if ! $USE_RUST_LAUNCHER; then
+  if ! docker logs "$RPC_NAME" 2>&1 | grep -q "RPC status request"; then
+    docker logs --tail 100 "$CONTAINER_ID" 2>&1
+    echo "❌ MPC node did not contact the HTTP endpoint"
+    exit 1
+  fi
 fi
 
 echo "✅ Container started successfully"

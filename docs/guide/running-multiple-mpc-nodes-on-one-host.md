@@ -27,6 +27,10 @@ Two reasons operators consider this:
   patch, and monitor instead of two — same upgrade cadence, half the
   host-side overhead.
 
+Port `:24567` and `tier3_public_addr` below apply to images built with the
+`embedded-node` feature. Nodes using [HTTP indexing](./http-indexer.md) don't
+forward `:24567`.
+
 If you're new to running a TDX MPC node, start with the
 [TDX operator guide](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md)
 and a single node. Come back here once you have one node working.

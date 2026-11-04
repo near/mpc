@@ -1,33 +1,50 @@
+#[cfg(feature = "embedded-node")]
+use super::chain::EmbeddedChain;
+use super::chain::{HttpChain, IndexerBackend, NearChain};
 use super::foreign_chain::{monitor_foreign_chain_supporters, monitor_foreign_chain_whitelist};
+#[cfg(feature = "embedded-node")]
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
+#[cfg(feature = "embedded-node")]
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
+#[cfg(feature = "embedded-node")]
+use super::updates::ChainBatch;
+use super::updates::{BlockUpdateReceiver, ConsumerStarts};
 use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
+#[cfg(feature = "embedded-node")]
 use crate::home_paths::near_data_dir;
+#[cfg(feature = "embedded-node")]
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes,
     monitor_allowed_os_measurements, monitor_my_attestation,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use crate::tracking::AutoAbortTask;
 use crate::types::LogTransaction;
+#[cfg(feature = "embedded-node")]
 use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
+#[cfg(feature = "embedded-node")]
 use near_async::ActorSystem;
+#[cfg(feature = "embedded-node")]
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::{Ed25519PublicKey, ProtocolContractState};
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+#[cfg(feature = "embedded-node")]
+use tokio::sync::mpsc;
+use tokio::sync::{Mutex, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -59,6 +76,7 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 pub fn spawn_real_indexer(
     home_dir: PathBuf,
     mpc_indexer_config: IndexerConfig,
+    backend: IndexerBackend,
     my_near_account_id: AccountId,
     account_secret_key: SigningKey,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
@@ -76,7 +94,7 @@ pub fn spawn_real_indexer(
     let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
         oneshot::channel();
 
-    let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
+    let (block_update_receiver, feed) = FeedSetup::new(backend);
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
@@ -99,48 +117,9 @@ pub fn spawn_real_indexer(
         // as we can't block the main thread for waiting on the `txn_sender`.
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
-            let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
-
-            let near_config = near_indexer_config
-                .load_near_config()
-                .expect("near config is present");
-
-            // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
-            // and differs from the last applied value, wipe the data dir. Must run
-            // here, after the config is loaded but before `start_near_node` below
-            // opens the store, because the dir can't be removed while nearcore holds
-            // it open. Runs once per process start, so a changed token takes effect on
-            // the next restart.
-            let hot_store_path = match near_config.config.store.path.as_deref() {
-                Some(path) => home_dir.join(path),
-                None => near_data_dir(&home_dir),
-            };
-            wipe_near_data_if_requested(
-                &home_dir,
-                &hot_store_path,
-                mpc_indexer_config.wipe_near_data_token,
-                near_config.client_config.archive,
-            )
-            .expect(
-                "wipe_near_data_token is set but wiping the nearcore data dir failed, \
-                 fix the cause and set wipe_near_data_token to a new value to retry",
-            );
-
-            let near_node = Indexer::start_near_node(
-                &near_indexer_config,
-                near_config.clone(),
-                ActorSystem::new(),
-            )
-            .await
-            .expect("near node has started");
-
-            let gateway = ChainGateway::from_near_node(&near_node, &near_config);
-            let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
-
+            let (chain, source) = feed.connect(&home_dir, &mpc_indexer_config).await;
             let indexer_state = Arc::new(IndexerState::new(
-                gateway,
-                near_node.client,
-                near_node.rpc_handler,
+                chain,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
 
@@ -150,7 +129,7 @@ pub fn spawn_real_indexer(
             // at genesis, below the block tail it can never reach. Raced against
             // shutdown so a SIGTERM during state sync still tears down cleanly.
             if !await_sync_or_shutdown(
-                indexer_state.client.ensure_head_follows_tip(),
+                indexer_state.ensure_head_follows_tip(),
                 &shutdown_token,
             )
             .await
@@ -162,9 +141,23 @@ pub fn spawn_real_indexer(
                 return;
             }
 
+            #[cfg(feature = "network-hardship-simulation")]
+            let process_blocks_receiver = {
+                let (process_blocks_sender, process_blocks_receiver) = watch::channel(true);
+                tokio::spawn(check_block_processing(process_blocks_sender, home_dir.clone()));
+                process_blocks_receiver
+            };
+
             // The node is fully synced by this point, so `LatestSynced` resolves
             // to the chain tip rather than genesis.
-            let stream = indexer.streamer();
+            let listen_blocks = source.listen(
+                home_dir,
+                mpc_indexer_config.clone(),
+                Arc::clone(&indexer_state),
+                shutdown_token.clone(),
+                #[cfg(feature = "network-hardship-simulation")]
+                process_blocks_receiver,
+            );
 
             let txn_sender = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
@@ -175,13 +168,6 @@ pub fn spawn_real_indexer(
 
             if txn_sender_sender.send(txn_sender).is_err() {
                 tracing::error!("Failed to send txn_sender back to main thread.")
-            };
-
-            #[cfg(feature = "network-hardship-simulation")]
-            let process_blocks_receiver = {
-                let (process_blocks_sender, process_blocks_receiver) = watch::channel(true);
-                tokio::spawn(check_block_processing(process_blocks_sender, home_dir));
-                process_blocks_receiver
             };
 
             tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
@@ -267,45 +253,17 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            // `listen_blocks` runs indefinitely and only returns in case of an
-            // error. To shut the indexer thread down cleanly on SIGTERM we
-            // race it against `shutdown_token.cancelled()`: when the parent
-            // cancels the token, the select! arm completes, `block_on`
-            // returns, the indexer's tokio runtime drops, and every
-            // `tokio::spawn`'d monitor task (each holding handles into
-            // neard) is aborted as the runtime is dropped. That's what lets
-            // `RocksDB::block_until_all_instances_are_dropped()` in `run.rs`
-            // actually return on the SIGTERM path.
-            #[cfg(feature = "network-hardship-simulation")]
-            let indexer_result = tokio::select! {
-                res = listen_blocks(
-                    stream,
-                    mpc_indexer_config.concurrency,
-                    Arc::clone(&indexer_state.stats),
-                    mpc_indexer_config.mpc_contract_id,
-                    block_update_sender,
-                    process_blocks_receiver,
-                ) => res,
-                _ = shutdown_token.cancelled() => {
-                    tracing::info!("Indexer thread received shutdown signal; exiting listen_blocks.");
-                    Ok(())
-                }
-            };
-
-            #[cfg(not(feature = "network-hardship-simulation"))]
-            let indexer_result = tokio::select! {
-                res = listen_blocks(
-                    stream,
-                    mpc_indexer_config.concurrency,
-                    Arc::clone(&indexer_state.stats),
-                    mpc_indexer_config.mpc_contract_id,
-                    block_update_sender,
-                ) => res,
-                _ = shutdown_token.cancelled() => {
-                    tracing::info!("Indexer thread received shutdown signal; exiting listen_blocks.");
-                    Ok(())
-                }
-            };
+            // `listen_blocks` returns on an error or once `shutdown_token` is
+            // cancelled; the HTTP feed first persists its latest checkpoint.
+            // On SIGTERM, `block_on` then returns, the indexer's tokio runtime
+            // drops, and every `tokio::spawn`'d monitor task (each holding
+            // handles into neard) is aborted as the runtime is dropped. That's
+            // what lets `RocksDB::block_until_all_instances_are_dropped()` in
+            // `run.rs` actually return on the SIGTERM path.
+            let indexer_result = listen_blocks.await;
+            if shutdown_token.is_cancelled() {
+                tracing::info!("Indexer thread received shutdown signal; exited listen_blocks.");
+            }
 
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
@@ -345,6 +303,174 @@ pub fn spawn_real_indexer(
         foreign_chain_supporters_receiver,
         foreign_chain_whitelist_receiver,
     }
+}
+
+/// The block feed chosen for an [`IndexerBackend`], before its NEAR node is reachable.
+enum FeedSetup {
+    #[cfg(feature = "embedded-node")]
+    Embedded(mpsc::UnboundedSender<ChainBatch>),
+    Http {
+        rpc_url: url::Url,
+        starts: ConsumerStarts,
+    },
+}
+
+/// A connected block feed that has not started streaming yet.
+enum BlockSource {
+    #[cfg(feature = "embedded-node")]
+    Embedded {
+        indexer: Box<Indexer>,
+        sender: mpsc::UnboundedSender<ChainBatch>,
+    },
+    Http {
+        rpc_url: url::Url,
+        starts: ConsumerStarts,
+    },
+}
+
+type ListenBlocks = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
+
+impl FeedSetup {
+    fn new(backend: IndexerBackend) -> (BlockUpdateReceiver, Self) {
+        match backend {
+            #[cfg(feature = "embedded-node")]
+            IndexerBackend::Embedded => {
+                let (sender, receiver) = mpsc::unbounded_channel();
+                (
+                    BlockUpdateReceiver::buffered(receiver),
+                    Self::Embedded(sender),
+                )
+            }
+            IndexerBackend::Http { rpc_url } => {
+                let (receiver, starts) = BlockUpdateReceiver::replayed();
+                (receiver, Self::Http { rpc_url, starts })
+            }
+        }
+    }
+
+    #[cfg_attr(not(feature = "embedded-node"), expect(unused_variables))]
+    async fn connect(self, home_dir: &Path, config: &IndexerConfig) -> (NearChain, BlockSource) {
+        match self {
+            #[cfg(feature = "embedded-node")]
+            Self::Embedded(sender) => {
+                let (chain, indexer) = start_embedded_node(home_dir, config).await;
+                (
+                    NearChain::Embedded(chain),
+                    BlockSource::Embedded {
+                        indexer: Box::new(indexer),
+                        sender,
+                    },
+                )
+            }
+            Self::Http { rpc_url, starts } => (
+                NearChain::Http(HttpChain::connect(&rpc_url)),
+                BlockSource::Http { rpc_url, starts },
+            ),
+        }
+    }
+}
+
+impl BlockSource {
+    /// Starts following the chain now, so blocks from this point on reach the
+    /// first consumer even if it starts later. The returned future only
+    /// returns on an error, once nothing consumes the blocks, or once
+    /// `shutdown` is cancelled.
+    fn listen(
+        self,
+        home_dir: PathBuf,
+        config: IndexerConfig,
+        state: Arc<IndexerState>,
+        shutdown: CancellationToken,
+        #[cfg(feature = "network-hardship-simulation")] process_blocks_receiver: watch::Receiver<
+            bool,
+        >,
+    ) -> ListenBlocks {
+        match self {
+            #[cfg(feature = "embedded-node")]
+            Self::Embedded { indexer, sender } => {
+                let stream = indexer.streamer();
+                Box::pin(async move {
+                    shutdown
+                        .run_until_cancelled(listen_blocks(
+                            stream,
+                            config.concurrency,
+                            Arc::clone(&state.stats),
+                            config.mpc_contract_id,
+                            sender,
+                            #[cfg(feature = "network-hardship-simulation")]
+                            process_blocks_receiver,
+                        ))
+                        .await
+                        .unwrap_or(Ok(()))
+                })
+            }
+            Self::Http { rpc_url, starts } => {
+                let feed: AutoAbortTask<_> = tokio::spawn(super::http::listen_http_blocks(
+                    rpc_url,
+                    home_dir,
+                    config,
+                    state,
+                    starts,
+                    shutdown,
+                    #[cfg(feature = "network-hardship-simulation")]
+                    process_blocks_receiver,
+                ))
+                .into();
+                Box::pin(async move { feed.await? })
+            }
+        }
+    }
+}
+
+#[cfg(feature = "embedded-node")]
+async fn start_embedded_node(
+    home_dir: &Path,
+    mpc_indexer_config: &IndexerConfig,
+) -> (EmbeddedChain, Indexer) {
+    let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.to_path_buf());
+
+    let near_config = near_indexer_config
+        .load_near_config()
+        .expect("near config is present");
+
+    // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
+    // and differs from the last applied value, wipe the data dir. Must run
+    // here, after the config is loaded but before `start_near_node` below
+    // opens the store, because the dir can't be removed while nearcore holds
+    // it open. Runs once per process start, so a changed token takes effect on
+    // the next restart.
+    let hot_store_path = match near_config.config.store.path.as_deref() {
+        Some(path) => home_dir.join(path),
+        None => near_data_dir(home_dir),
+    };
+    wipe_near_data_if_requested(
+        home_dir,
+        &hot_store_path,
+        mpc_indexer_config.wipe_near_data_token,
+        near_config.client_config.archive,
+    )
+    .expect(
+        "wipe_near_data_token is set but wiping the nearcore data dir failed, \
+         fix the cause and set wipe_near_data_token to a new value to retry",
+    );
+
+    let near_node = Indexer::start_near_node(
+        &near_indexer_config,
+        near_config.clone(),
+        ActorSystem::new(),
+    )
+    .await
+    .expect("near node has started");
+
+    let gateway = ChainGateway::from_near_node(&near_node, &near_config);
+    let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
+
+    let chain = EmbeddedChain {
+        gateway,
+        client: near_node.client,
+        rpc_handler: near_node.rpc_handler,
+    };
+    (chain, indexer)
 }
 
 async fn await_sync_or_shutdown(
