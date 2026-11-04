@@ -52,7 +52,7 @@ to keep in sync, it does not help the fleet convergence described in item 4, and
 
 ## The expiry value
 
-`dcap-qvl` (0.7.0, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
+`dcap-qvl` (0.7.1, our pin) computes it as `QuoteClaims::earliest_expiration_date`: the earliest of
 the dates below, taking certificate dates only from the chains it verified. The claims are built by
 `QuoteVerificationResult::claims()`, reached through `verify_with_policy`. The rest of this document
 calls that `claims()`.

@@ -422,8 +422,6 @@ We grant access to all contract methods rather than an explicit allow-list becau
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
 
-In addition - The node will generate multiple responder account keys as well. These are used to increase throughout when posting generated MPC signatures to the chain.
-
 Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`) reject the operator key: the contract requires the signer key to be the attested node account key.
 
 ## Remote Attestation

@@ -62,6 +62,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 | `near-mpc-contract-interface` | DTOs for contract communication and typed contract calls; plain data carriers |
 | `near-mpc-sdk` | Client SDK: request builders, response verification; owns validation shared between consumers of the contract-interface crate |
 | `mpc-primitives` | Core domain types (domain IDs, signature schemes) |
+| `near-block-primitives` | NEAR block height newtypes, free of MPC concepts |
 | `mpc-tls` | TLS transport for secure P2P communication |
 | `test-utils` | Testing utilities for integration tests |
 
@@ -119,6 +120,9 @@ See `docs/development/engineering-standards.md` for the full rationale and addit
 
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
+
+### Numeric Conversions
+Do not convert numbers with `as`: it silently truncates, wraps or loses precision. Use `From` for lossless conversions and `TryFrom` otherwise, handling a failed conversion as `docs/development/engineering-standards.md` §Don't panic describes.
 
 ### Test-Only Code
 Code that only unit tests use must be `#[cfg(test)]`, whether it is a function, method, type, constant or import. Production builds then skip it, and the dead-code lint keeps catching code nothing uses. Do not keep such code compiled in with `#[allow(dead_code)]`.

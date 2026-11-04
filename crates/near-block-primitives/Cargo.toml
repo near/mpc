@@ -1,0 +1,23 @@
+[package]
+name = "near-block-primitives"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+description = "NEAR block height newtypes shared by the MPC contract, node and transport crates"
+
+[features]
+abi = ["borsh/unstable__schema", "schemars"]
+
+[dependencies]
+borsh = { workspace = true }
+derive_more = { workspace = true }
+serde = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

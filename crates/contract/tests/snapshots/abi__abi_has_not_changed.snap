@@ -137,7 +137,7 @@ expression: abi
       },
       {
         "name": "clean_invalid_attestations",
-        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists), returning one attestation-storage grant to the owner of\n each entry removed. Returns the number of entries removed. Callable by anyone while the\n protocol is in [`Running`](ProtocolContractState::Running).",
+        "doc": " Scans up to the given number of stored nodes and removes those whose attestation fails\n re-verification (expired or referencing stale whitelists), except the nodes in use: each\n participant's current node and the node it is migrating to. Gives one attestation-storage\n grant back to the owner of each node removed and returns the number of nodes removed.\n Callable by anyone while the protocol is in [`Running`](ProtocolContractState::Running).",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -620,6 +620,24 @@ expression: abi
       {
         "name": "os_measurement_votes",
         "doc": " Returns pending OS measurement votes, may include former participants' votes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
+        "name": "parameters_votes",
+        "doc": " Returns the pending `vote_new_parameters` votes, keyed by proposal hash.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -2006,7 +2024,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account\n holds the TLS key: as a current or proposed participant, as a migration destination, or\n through an attestation stored under it.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`](crate::tee::tee_state::AttestationSubmissionError::TlsKeyOwnedByOtherAccount)\n if the node stored under the TLS key belongs to another account.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -3754,21 +3772,6 @@ expression: abi
             }
           }
         },
-        "GovernanceThresholdParametersVotes": {
-          "description": "Votes for threshold parameter changes.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
-              }
-            }
-          }
-        },
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
@@ -4803,8 +4806,7 @@ expression: abi
             "add_domains_votes",
             "domains",
             "keyset",
-            "parameters",
-            "parameters_votes"
+            "parameters"
           ],
           "properties": {
             "add_domains_votes": {
@@ -4818,9 +4820,6 @@ expression: abi
             },
             "parameters": {
               "$ref": "#/definitions/GovernanceThresholdParameters"
-            },
-            "parameters_votes": {
-              "$ref": "#/definitions/GovernanceThresholdParametersVotes"
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [

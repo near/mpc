@@ -2,25 +2,21 @@
 #![allow(clippy::indexing_slicing)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use frost_secp256k1::VerifyingKey;
-use rand::{Rng, seq::SliceRandom as _};
+use rand::seq::SliceRandom as _;
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
     MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
-    analyze_received_sizes, ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign,
-    ot_ecdsa_prepare_triples, participant_rng,
+    analyze_received_sizes, ot_ecdsa_prepare_presign_and_sign, ot_ecdsa_prepare_triples,
+    participant_rng,
 };
 
 use threshold_signatures::{
-    ReconstructionThreshold,
     ecdsa::{
-        KeygenOutput, SignatureOption,
+        KeygenOutput, Scalar, SignatureOption, Tweak,
         ot_based_ecdsa::{
-            PresignArguments, PresignOutput, RerandomizedPresignOutput,
-            presign::presign,
-            sign::sign,
+            PresignArguments, presign_and_sign,
             triples::{TriplePub, TripleShare, generate_triple_many},
         },
     },
@@ -32,11 +28,7 @@ use threshold_signatures::{
     },
 };
 
-use k256::AffinePoint;
-use threshold_signatures::ecdsa::Scalar;
-
 type PreparedSimulatedTriples = PreparedOutputs<Vec<(TripleShare, TriplePub)>>;
-type PreparedSimulatedPresig = PreparedOutputs<PresignOutput>;
 type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 
 fn participants_num() -> usize {
@@ -69,8 +61,8 @@ fn bench_triples(c: &mut Criterion) {
     analyze_received_sizes(&[size], true);
 }
 
-/// Benches the presigning protocol
-fn bench_presign(c: &mut Criterion) {
+/// Benches the presign and sign protocol
+fn bench_presign_and_sign(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
 
@@ -79,16 +71,18 @@ fn bench_presign(c: &mut Criterion) {
     let two_triples =
         run_protocol(preps.protocols).expect("Running triple preparations should succeed");
 
-    let setup = setup_presign_snapshot(&two_triples);
+    let setup = setup_presign_and_sign_snapshot(&two_triples);
     let size = setup.cached_simulator.get_view_size();
 
-    let mut group = c.benchmark_group("presign");
+    let mut group = c.benchmark_group("presign_and_sign");
     group.sample_size(*SAMPLE_SIZE);
     group.bench_function(
-        format!("ot_ecdsa_presign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
+        format!(
+            "ot_ecdsa_presign_and_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"
+        ),
         |b| {
             b.iter_batched(
-                || prepare_simulated_presign(&setup),
+                || prepare_simulated_presign_and_sign(&setup),
                 |preps| {
                     run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
                         .expect("simulated replay should complete")
@@ -100,41 +94,7 @@ fn bench_presign(c: &mut Criterion) {
     analyze_received_sizes(&[size], true);
 }
 
-/// Benches the signing protocol
-fn bench_sign(c: &mut Criterion) {
-    let num = participants_num();
-    let max_malicious = *MAX_MALICIOUS;
-    let mut rng = MockCryptoRng::seed_from_u64(42);
-    let preps = ot_ecdsa_prepare_triples(num, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
-    let two_triples =
-        run_protocol(preps.protocols).expect("Running triples preparation should succeed");
-
-    let preps = ot_ecdsa_prepare_presign(&two_triples, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
-    let result = run_protocol(preps.protocols).expect("Running presign preparation should succeed");
-    let pk = preps.key_packages[0].1.public_key;
-
-    let setup = setup_sign_snapshot(&result, *RECONSTRUCTION_LOWER_BOUND, pk);
-    let size = setup.cached_simulator.get_view_size();
-
-    let mut group = c.benchmark_group("sign");
-    group.sample_size(*SAMPLE_SIZE);
-    group.bench_function(
-        format!("ot_ecdsa_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
-        |b| {
-            b.iter_batched(
-                || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
-                |preps| {
-                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
-                        .expect("simulated replay should complete")
-                },
-                criterion::BatchSize::SmallInput,
-            );
-        },
-    );
-    analyze_received_sizes(&[size], true);
-}
-
-criterion_group!(benches, bench_triples, bench_presign, bench_sign);
+criterion_group!(benches, bench_triples, bench_presign_and_sign);
 criterion_main!(benches);
 
 struct TriplesSetup {
@@ -191,7 +151,7 @@ fn prepare_simulated_triples(setup: &TriplesSetup) -> PreparedSimulatedTriples {
     }
 }
 
-struct PresignSetup {
+struct PresignAndSignSetup {
     participants: Vec<Participant>,
     real_participant: Participant,
     keygen_out: KeygenOutput,
@@ -199,31 +159,40 @@ struct PresignSetup {
     pub0: TriplePub,
     share1: TripleShare,
     pub1: TriplePub,
+    tweak: Tweak,
+    msg_hash: Scalar,
     cached_simulator: Simulator,
 }
 
-/// Expensive one-time setup for presign: runs the full N-party protocol to capture snapshots
-fn setup_presign_snapshot(
+/// Expensive one-time setup for presign and sign: runs the full N-party protocol to capture
+/// snapshots
+fn setup_presign_and_sign_snapshot(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
-) -> PresignSetup {
+) -> PresignAndSignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(40);
-    let preps = ot_ecdsa_prepare_presign(two_triples, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
+    let preps =
+        ot_ecdsa_prepare_presign_and_sign(two_triples, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
-    let mut rng = MockCryptoRng::seed_from_u64(41);
-    // choose the real_participant at random
-    let index_real_participant = rng.gen_range(0..participants_num());
-    let (real_participant, keygen_out) = preps.key_packages[index_real_participant].clone();
-    let (p, shares) = &two_triples[index_real_participant];
-    assert_eq!(*p, real_participant);
+    // choose the real_participant being the coordinator
+    let real_participant = preps.coordinator;
+    let (_, keygen_out) = preps
+        .key_packages
+        .into_iter()
+        .find(|(p, _)| *p == real_participant)
+        .expect("the coordinator has a key package");
+    let (_, shares) = two_triples
+        .iter()
+        .find(|(p, _)| *p == real_participant)
+        .expect("the coordinator has triple shares");
     let (share0, pub0) = shares[0].clone();
     let (share1, pub1) = shares[1].clone();
 
     let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
         .expect("Simulator should not be empty");
 
-    PresignSetup {
+    PresignAndSignSetup {
         participants: preps.participants,
         real_participant,
         keygen_out,
@@ -231,14 +200,17 @@ fn setup_presign_snapshot(
         pub0,
         share1,
         pub1,
+        tweak: preps.tweak,
+        msg_hash: preps.msg_hash,
         cached_simulator,
     }
 }
 
-/// Cheap per-sample setup: creates fresh presign protocol and clones the cached simulator
-fn prepare_simulated_presign(setup: &PresignSetup) -> PreparedSimulatedPresig {
-    let real_protocol = presign(
+/// Cheap per-sample setup: creates fresh presign and sign protocol and clones the cached simulator
+fn prepare_simulated_presign_and_sign(setup: &PresignAndSignSetup) -> PreparedSimulatedSig {
+    let real_protocol = presign_and_sign(
         &setup.participants,
+        setup.real_participant,
         setup.real_participant,
         PresignArguments {
             triple0: (setup.share0.clone(), setup.pub0.clone()),
@@ -246,75 +218,12 @@ fn prepare_simulated_presign(setup: &PresignSetup) -> PreparedSimulatedPresig {
             keygen_out: setup.keygen_out.clone(),
             threshold: *RECONSTRUCTION_LOWER_BOUND,
         },
-    )
-    .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = PresignOutput>>)
-    .expect("Presigning should succeed");
-
-    PreparedSimulatedPresig {
-        participant: setup.real_participant,
-        protocol: real_protocol,
-        simulator: setup.cached_simulator.clone(),
-    }
-}
-
-struct SignSetup {
-    participants: Vec<Participant>,
-    real_participant: Participant,
-    derived_pk: AffinePoint,
-    presig: RerandomizedPresignOutput,
-    msg_hash: Scalar,
-    cached_simulator: Simulator,
-}
-
-/// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
-fn setup_sign_snapshot(
-    result: &[(Participant, PresignOutput)],
-    threshold: ReconstructionThreshold,
-    pk: VerifyingKey,
-) -> SignSetup {
-    let mut rng = MockCryptoRng::seed_from_u64(40);
-    let preps = ot_ecdsa_prepare_sign(result, threshold, pk, &mut rng);
-    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
-        .expect("Running protocol with snapshot should not have issues");
-
-    // choose the real_participant at random
-    let (real_participant, _) = result[preps.index];
-
-    // collect all participants
-    let participants: Vec<Participant> =
-        result.iter().map(|(participant, _)| *participant).collect();
-
-    let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
-        .expect("Simulator should not be empty");
-
-    SignSetup {
-        participants,
-        real_participant,
-        derived_pk: preps.derived_pk,
-        presig: preps.presig,
-        msg_hash: preps.msg_hash,
-        cached_simulator,
-    }
-}
-
-/// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
-fn prepare_simulated_sign(
-    setup: &SignSetup,
-    threshold: ReconstructionThreshold,
-) -> PreparedSimulatedSig {
-    let real_protocol = sign(
-        &setup.participants,
-        setup.real_participant,
-        threshold,
-        setup.real_participant,
-        setup.derived_pk,
-        setup.presig.clone(),
+        setup.tweak,
         setup.msg_hash,
     )
     .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
-    .expect("Simulated signing should succeed");
+    .expect("Presigning and signing should succeed");
 
-    // now preparing the being the coordinator
     PreparedSimulatedSig {
         participant: setup.real_participant,
         protocol: real_protocol,
