@@ -758,7 +758,7 @@ mod test {
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
             let coordinator = participants[0];
-            // This internally verifies with the rerandomized public key
+            // This internally verifies with the public key
             let data = run_sign_v1(
                 &key_packages,
                 participants.len(),
@@ -821,7 +821,7 @@ mod test {
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
             let coordinator = participants[0];
-            // This internally verifies with the rerandomized public key
+            // This internally verifies with the public key
             let data = run_sign_v2(
                 &key_packages,
                 participants.len(),
@@ -884,7 +884,6 @@ mod test {
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
             let coordinator = participants[0];
-            // This internally verifies with the rerandomized public key
             // This internally verifies with the public key
             let data = run_sign_v1(
                 &key_packages,
@@ -1038,7 +1037,6 @@ mod test {
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
             let coordinator = participants[0];
-            // This internally verifies with the rerandomized public key
             // This internally verifies with the public key
             let data = run_sign_v2(
                 &key_packages,
