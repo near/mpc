@@ -2,8 +2,8 @@
 #
 # prepare-github-release.sh — Apply the local file changes for a release.
 #
-# Run this on a working branch off the release-source branch (e.g. off
-# `main` for a minor release, off `release/vX.Y` for a patch). The script
+# Run this on a working branch off the prep target (`main` for a major/minor
+# release, `release/vX.Y` for a patch); see RELEASES.md. The script
 # only touches files and commits — branch creation, push, and PR opening
 # are the operator's responsibility.
 #
@@ -139,4 +139,4 @@ cd "$REPO_ROOT"
 
 git add -A
 git commit -m "release: v${VERSION}"
-echo "==> Done. Review the commit, push your branch, and open a PR against the release-source branch."
+echo "==> Done. Review the commit, push your branch, and open a PR against the branch you started from (see RELEASES.md)."
