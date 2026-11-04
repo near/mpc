@@ -12,7 +12,7 @@ MPC repositoy is cloned, and you are in the MPC root folder.
 
 Older versions of near CLI return from `send` before the transaction is final, which races with the immediately-following view queries used throughout this guide and `scripts/launch-localnet.sh`.
 
-To get all the pinned tooling (matching `near-cli`, `cargo-near`, and wasm toolchain versions) without installing it on your host, run the commands in this guide inside the repo's nix devshell: start it with `nix develop`, or prefix a single command with `nix develop --command`.
+To get all the pinned tooling (matching `near-cli`, `cargo-near`, and wasm toolchain versions) without installing it on your host, run the commands in this guide inside the repo's nix devshell: start it with `nix develop .#localnet`, or prefix a single command with `nix develop .#localnet --command`.
 
 ## Install neard and MPC node binary
 
@@ -31,7 +31,7 @@ You should install `neard` from the same nearcore tag this workspace pins (see t
 cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard --locked
 ```
 
-The nix devshell already provides a matching `neard` (the prebuilt sandbox build of that tag), so skip this step there.
+`nix develop .#localnet` already provides a matching `neard`, built from that tag with the `sandbox` feature, so skip this step there.
 
 ```shell
 cargo install --path crates/node --locked

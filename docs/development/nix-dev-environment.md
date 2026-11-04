@@ -97,12 +97,16 @@ Add the following to your project settings in `.vscode/settings.json`:
 ## NEAR sandbox and localnet
 
 The prebuilt `neard` that the `near-sandbox` crate downloads for sandbox and E2E
-tests cannot run on NixOS, as it expects an FHS dynamic loader. The devshell
-instead provides a patched copy of the same artifact,
-[nix/near-sandbox.nix](../../nix/near-sandbox.nix), exports it as
-`NEAR_SANDBOX_BIN_PATH`, and puts it on `PATH` as `neard` for the
-[localnet guide](localnet/localnet.md). `scripts/check-sandbox-image-version.sh`
-keeps its version in sync with `DEFAULT_SANDBOX_VERSION`.
+tests cannot run on NixOS, as it expects an FHS dynamic loader. `nix develop
+.#localnet` extends the default shell with a `neard` built from source with the
+`sandbox` feature ([nix/near-sandbox.nix](../../nix/near-sandbox.nix)), exports
+it as `NEAR_SANDBOX_BIN_PATH`, and adds the remaining tools of the
+[localnet guide](localnet/localnet.md). The first entry compiles neard, which
+takes a while; the result is cached in the Nix store.
+
+The nearcore source is the `nearcore` flake input, whose tag
+`scripts/check-sandbox-image-version.sh` keeps in sync with
+`DEFAULT_SANDBOX_VERSION`.
 
 ## Verifying the Nix shell is complete
 

@@ -1,59 +1,75 @@
 {
   lib,
+  pkgs,
   stdenv,
-  fetchurl,
-  autoPatchelfHook,
+  rustPlatform,
+  rust-bin,
+  llvmPackages_19,
+  pkg-config,
+  openssl,
+  zlib,
+  apple-sdk_14 ? null,
+  crane,
+  # The `nearcore` flake input. Its tag must match `DEFAULT_SANDBOX_VERSION`
+  # in crates/test-utils; scripts/check-sandbox-image-version.sh enforces it.
+  nearcore,
 }:
 
 let
-  # Must match `DEFAULT_SANDBOX_VERSION` in crates/test-utils/src/lib.rs (and
-  # thereby the nearcore tag in Cargo.toml); scripts/check-sandbox-image-version.sh
-  # enforces the pairing.
-  version = "2.14.0";
+  nearcoreToml = lib.importTOML "${nearcore}/Cargo.toml";
 
-  # Slugs are the `platform()` strings of the near-sandbox crate, which
-  # downloads the same artifacts at test time on non-Nix hosts.
-  platforms = {
-    x86_64-linux = {
-      slug = "Linux-x86_64";
-      hash = "sha256-oLoAQhiyGL10NReV584u2koravXNPiUr1ei/48jy5pE=";
-    };
-    aarch64-linux = {
-      slug = "Linux-aarch64";
-      hash = "sha256-1rH/dziVlyzS+gmBk8XWy8BGkS/0C/6GDmx6voB97ts=";
-    };
-    aarch64-darwin = {
-      slug = "Darwin-arm64";
-      hash = "sha256-6lNEjvl1QMAS5cPZZ8dNeCkrBGWpjPcCeBGpNnGP4jI=";
-    };
-  };
+  # nearcore pins an older Rust than this workspace, and its tags do not
+  # necessarily compile under ours.
+  rustToolchain =
+    rust-bin.stable.${(lib.importTOML "${nearcore}/rust-toolchain.toml").toolchain.channel}.minimal;
 
-  platform =
-    platforms.${stdenv.hostPlatform.system}
-      or (throw "near-sandbox: unsupported system ${stdenv.hostPlatform.system}");
+  craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 in
-stdenv.mkDerivation {
+craneLib.buildPackage {
   pname = "near-sandbox";
-  inherit version;
+  inherit (nearcoreToml.workspace.package) version;
+  src = nearcore;
 
-  src = fetchurl {
-    url = "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${platform.slug}/${version}/near-sandbox.tar.gz";
-    inherit (platform) hash;
-  };
+  strictDeps = true;
+  # nearcore's `make sandbox-release`, which produces the artifact the
+  # near-sandbox crate downloads on non-Nix hosts, minus the default
+  # `dump-test-contract` feature: its build script compiles wasm contracts in
+  # a nested cargo build with its own lockfiles, which cannot run offline.
+  CARGO_PROFILE = "release";
+  cargoExtraArgs = "-p neard --no-default-features --features json_rpc,rosetta_rpc,sandbox --locked";
+  # A pinned tag is rebuilt only on bumps, so a separate dependency
+  # derivation would buy nothing.
+  cargoArtifacts = null;
+  doCheck = false;
 
-  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
-  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
+  # The `tcp` import is gated behind `dump-test-contract`, so neard does not
+  # compile without that feature.
+  postPatch = ''
+    substituteInPlace neard/src/cli.rs \
+      --replace-fail ' tcp::ListenerAddr::new(rpc_addr' ' near_network::tcp::ListenerAddr::new(rpc_addr'
+  '';
 
-  installPhase = ''
-    runHook preInstall
-    install -Dm755 near-sandbox $out/bin/near-sandbox
-    ln -s near-sandbox $out/bin/neard
-    runHook postInstall
+  nativeBuildInputs = [
+    pkg-config
+    rustPlatform.bindgenHook
+    llvmPackages_19.clang
+  ];
+
+  buildInputs = [
+    openssl
+    zlib
+  ]
+  ++ lib.optionals stdenv.hostPlatform.isDarwin [ apple-sdk_14 ];
+
+  env.OPENSSL_NO_VENDOR = "1";
+
+  postInstall = ''
+    ln -s neard $out/bin/near-sandbox
   '';
 
   meta = {
-    description = "Prebuilt neard with the sandbox feature, as used by sandbox tests and scripts/launch-localnet.sh";
-    mainProgram = "near-sandbox";
-    platforms = lib.attrNames platforms;
+    description = "neard built with the sandbox feature, for sandbox tests and scripts/launch-localnet.sh";
+    mainProgram = "neard";
+    platforms = lib.platforms.unix;
   };
 }
