@@ -7004,9 +7004,9 @@ dependencies = [
 
 [[package]]
 name = "near-kit"
-version = "0.30.0-rc.3"
+version = "0.30.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6309e0b276a9502eabbc1049dc647059b1560789551b6e77cda243b1df22dc0d"
+checksum = "acb7a2e639ec0e47a464d2e7a2ab44ed82f64f3c3f46feed8377f037807fdbf1"
 dependencies = [
  "base64 0.23.1",
  "borsh",
@@ -7022,9 +7022,9 @@ dependencies = [
 
 [[package]]
 name = "near-kit-primitives"
-version = "0.30.0-rc.3"
+version = "0.30.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1fc43add43b43d1aac47b86f3c1b9d7814806412fab1095e45d7d44e580660b"
+checksum = "0eed3accd7c6b62c88772e69cd85d315e984352178991eed33c0af3365796f46"
 dependencies = [
  "base64 0.23.1",
  "borsh",
