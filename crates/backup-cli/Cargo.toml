@@ -7,7 +7,7 @@ edition = { workspace = true }
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
-chain-gateway = { workspace = true }
+chain-gateway = { workspace = true, features = ["embedded-node"] }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }

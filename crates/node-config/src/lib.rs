@@ -113,22 +113,29 @@ pub struct WebUIConfig {
     pub port: u16,
 }
 
-/// Configures behavior of the near indexer.
+/// Configures how the node indexes NEAR: over HTTP from an external RPC node, or
+/// through an embedded NEAR node.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexerConfig {
-    /// Tells whether to validate the genesis file before starting
+    /// RPC endpoint serving `EXPERIMENTAL_indexer_block`. Selects HTTP indexing; the
+    /// `MPC_NEAR_RPC_URL` environment variable takes precedence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rpc_url: Option<String>,
+    /// Whether the embedded NEAR node validates its genesis file before starting.
     pub validate_genesis: bool,
     /// Sets the starting point for indexing
     pub sync_mode: SyncMode,
     /// Sets the finality level at which blocks are streamed
     pub finality: Finality,
-    /// Sets the concurrency for indexing
+    /// Block processing concurrency of the embedded indexer. HTTP indexing applies one
+    /// acknowledged batch at a time.
     pub concurrency: std::num::NonZeroU16,
     /// MPC contract id
     pub mpc_contract_id: AccountId,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
-    /// Wipe token for the nearcore data dir (`home_dir/data`). On startup, whenever
+    /// Wipe token for the embedded nearcore data dir (`home_dir/data`); HTTP indexing
+    /// ignores it. On startup, whenever
     /// this value is non-zero and differs from the last value the node acted on
     /// (persisted across restarts), the node records the new value and then wipes the data.
     /// Change it and restart the node to force a wipe (the wipe runs once at startup, before the store is
@@ -145,7 +152,8 @@ pub enum SyncMode {
     Interruption,
     /// start from the newest block after node finishes syncing
     Latest,
-    /// start from specified block height
+    /// start from specified block height. HTTP indexing starts no further back
+    /// than the blocks whose requests have not expired yet.
     Block(BlockArgs),
 }
 
@@ -230,8 +238,45 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{TripleBatchSize, TripleConfig};
+    use super::{IndexerConfig, TripleBatchSize, TripleConfig};
     use rstest::rstest;
+
+    const INDEXER_CONFIG_YAML: &str = "\
+validate_genesis: false
+sync_mode: Latest
+finality: optimistic
+concurrency: 1
+mpc_contract_id: v1.signer
+port_override: null
+";
+
+    #[test]
+    fn indexer_config__should_omit_an_unset_rpc_url() {
+        // Given
+        // a config written before HTTP indexing existed
+
+        // When
+        let config: IndexerConfig = serde_yaml::from_str(INDEXER_CONFIG_YAML).unwrap();
+
+        // Then
+        assert_eq!(config.rpc_url, None);
+        assert!(!serde_yaml::to_string(&config).unwrap().contains("rpc_url"));
+    }
+
+    #[test]
+    fn indexer_config__should_round_trip_an_rpc_url() {
+        // Given
+        let yaml = format!("{INDEXER_CONFIG_YAML}rpc_url: http://127.0.0.1:3030\n");
+        let config: IndexerConfig = serde_yaml::from_str(&yaml).unwrap();
+
+        // When
+        let reparsed: IndexerConfig =
+            serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
+
+        // Then
+        assert_eq!(reparsed.rpc_url.as_deref(), Some("http://127.0.0.1:3030"));
+        assert_eq!(reparsed, config);
+    }
 
     const TRIPLE_CONFIG_YAML: &str = "\
 concurrency: 2

@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 
 /// nearcore's chain store. This is the default location, `store.path` in the
 /// near config can override where the store actually lives.
+#[cfg(any(feature = "embedded-node", test))]
 pub fn near_data_dir(home_dir: &Path) -> PathBuf {
     home_dir.join("data")
 }
 
 /// nearcore's node `config.json`.
+#[cfg(feature = "embedded-node")]
 pub fn near_config_file(home_dir: &Path) -> PathBuf {
     home_dir.join("config.json")
 }
@@ -38,6 +40,7 @@ pub fn backup_encryption_key_file(home_dir: &Path) -> PathBuf {
 }
 
 /// Records the last `wipe_near_data_token` the node acted on.
+#[cfg(any(feature = "embedded-node", test))]
 pub fn wipe_token_file(home_dir: &Path) -> PathBuf {
     home_dir.join(".near_data_wipe_token")
 }
@@ -45,8 +48,15 @@ pub fn wipe_token_file(home_dir: &Path) -> PathBuf {
 /// Holds the data dir mid-wipe: the wipe renames the store here in one atomic
 /// step, then deletes it. Leftovers from an interrupted delete are cleaned on
 /// the next startup.
+#[cfg(any(feature = "embedded-node", test))]
 pub fn near_data_trash_dir(home_dir: &Path) -> PathBuf {
     home_dir.join(".near_data_trash")
+}
+
+/// The HTTP indexer's last persisted checkpoint, which may trail the last
+/// block its consumer acknowledged.
+pub fn http_indexer_checkpoint_file(home_dir: &Path) -> PathBuf {
+    home_dir.join("http-indexer-checkpoint.json")
 }
 
 #[cfg(test)]
@@ -69,6 +79,7 @@ mod tests {
             secrets_file(home),
             backup_encryption_key_file(home),
             wipe_token_file(home),
+            http_indexer_checkpoint_file(home),
         ];
 
         // Then
