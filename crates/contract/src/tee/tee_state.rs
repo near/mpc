@@ -57,6 +57,13 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
+    /// Invariant: each TLS key a participant uses (its current one and, during a node migration,
+    /// the destination one) maps to a node owned by that participant. Joining the participant set
+    /// and migrating require such a node, and [`crate::MpcContract::clean_invalid_attestations`]
+    /// never removes it. This lets [`Self::assert_tls_key_claimable`] decide whether an account
+    /// may store a node under a TLS key by looking only at this map, so code that changes how
+    /// participants get TLS keys or how nodes are removed must preserve the invariant.
+    ///
     /// Callers must not assume this map is small; use the key-indexed accessors rather than
     /// scanning the whole collection.
     pub(crate) nodes: IterableMap<Ed25519PublicKey, Node>,
@@ -185,15 +192,7 @@ impl TeeState {
     ) -> Result<bool, AttestationSubmissionError> {
         let tls_pk = node_id.tls_public_key.clone();
 
-        // Authorization: a TLS key registered to one account must not be
-        // overwritten by a submission from a different account. Without this,
-        // any caller could replace any participant's stored attestation, since
-        // the entry is keyed only by `tls_public_key`.
-        if let Some(existing) = self.nodes.get(&tls_pk)
-            && existing.owner != node_id.account_id
-        {
-            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
-        }
+        self.assert_tls_key_claimable(&node_id.account_id, &tls_pk)?;
 
         let previous = self.nodes.insert(
             tls_pk,
@@ -427,13 +426,21 @@ impl TeeState {
             .collect()
     }
 
-    /// Account that owns the entry stored under `tls_public_key`, if any. Read-only,
-    /// so [`crate::MpcContract::submit_participant_info`] can classify a submission before doing any
-    /// verification work.
-    pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
-        self.nodes
+    /// Fails if another account's node is stored under the TLS key. Checking only the stored node
+    /// is enough because of the invariant on [`Self::nodes`].
+    pub(crate) fn assert_tls_key_claimable(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Result<(), AttestationSubmissionError> {
+        if self
+            .nodes
             .get(tls_public_key)
-            .map(|node| node.owner.clone())
+            .is_some_and(|node| node.owner != *account_id)
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+        }
+        Ok(())
     }
 
     /// Returns the id of every stored node, including nodes of accounts that are not participants.
