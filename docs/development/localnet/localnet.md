@@ -33,8 +33,11 @@ cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard 
 
 `nix develop .#localnet` already provides a matching `neard`, built from that tag with the `sandbox` feature, so skip this step there.
 
+Build the MPC node and put it on `PATH`:
+
 ```shell
-cargo install --path crates/node --locked
+cargo build -p mpc-node --release --locked
+export PATH="$(pwd)/target/release:$PATH"
 ```
 
 ## Compile the signer contract
