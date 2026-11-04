@@ -27,6 +27,9 @@ jobs:
           ref: main
           persist-credentials: false
 
+      - name: Install Nix
+        uses: $/.github/actions/install-nix
+
       - name: Bump nearcore
         env:
           GH_TOKEN: ${{ github.token }}

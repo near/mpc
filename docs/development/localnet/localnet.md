@@ -33,11 +33,10 @@ cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard 
 
 `nix develop .#localnet` already provides a matching `neard`, built from that tag with the `sandbox` feature, so skip this step there.
 
-Build the MPC node and put it on `PATH`:
+Build the MPC node:
 
 ```shell
 cargo build -p mpc-node --release --locked
-export PATH="$(pwd)/target/release:$PATH"
 ```
 
 ## Compile the signer contract
@@ -184,11 +183,11 @@ data directory using the `[near_init]` settings in the TOML config.
 In two separate shells run the MPC binary for Frodo and Sam:
 
 ```shell
-RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.toml
+RUST_LOG=info ./target/release/mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.toml
 ```
 
 ```shell
-RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.toml
+RUST_LOG=info ./target/release/mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.toml
 ```
 
 Notes:
