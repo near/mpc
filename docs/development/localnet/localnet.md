@@ -57,6 +57,7 @@ export MPC_CONTRACT_PATH="$(pwd)/target/near/mpc_contract/mpc_contract.wasm"
 To run a local NEAR network, first create the configuration with the following command.
 
 ```shell
+rm -rf ~/.near/mpc-localnet ~/.near/mpc-frodo ~/.near/mpc-sam
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 ```
 
