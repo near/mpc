@@ -1,0 +1,9 @@
+version = "5"
+credentials_home_dir = "@CREDENTIALS_HOME_DIR@"
+
+[network_connection.mpc-localnet]
+network_name = "mpc-localnet"
+rpc_url = "http://localhost:3030/"
+wallet_url = "http://localhost:3030/"
+explorer_transaction_url = "http://localhost:3030/"
+linkdrop_account_id = "test.near"

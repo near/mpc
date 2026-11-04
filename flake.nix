@@ -264,6 +264,26 @@
             '';
           };
 
+          # The repo's localnet CLI config, kept apart from the user's own. The
+          # CLI takes no config path, and only reads `XDG_CONFIG_HOME` on Linux.
+          nearLocalnet = pkgs.writeShellApplication {
+            name = "near";
+            runtimeInputs = [
+              pkgs.coreutils
+              pkgs.gnused
+            ];
+            text = ''
+              config_home="$HOME/.near/mpc-localnet-near-cli"
+              mkdir -p "$config_home/near-cli"
+              # Rendered atomically: launch-localnet.sh runs several `near`s at once.
+              tmp=$(mktemp "$config_home/near-cli/config.toml.XXXXXX")
+              sed "s|@CREDENTIALS_HOME_DIR@|$config_home/credentials|" \
+                ${./docs/development/localnet/near-cli-config.template.toml} >"$tmp"
+              mv "$tmp" "$config_home/near-cli/config.toml"
+              XDG_CONFIG_HOME="$config_home" exec ${near-cli-rs}/bin/near "$@"
+            '';
+          };
+
         in
         {
           default = pkgs.mkShell defaultShell;
@@ -272,7 +292,7 @@
           localnet = pkgs.mkShell (
             defaultShell
             // {
-              packages = defaultShell.packages ++ [
+              packages = [ nearLocalnet ] ++ defaultShell.packages ++ [
                 near-sandbox
                 pkgs.curl
                 pkgs.gettext # envsubst

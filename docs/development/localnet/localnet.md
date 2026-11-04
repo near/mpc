@@ -97,24 +97,9 @@ export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq ".secret
 ## 2. Deploy the MPC contract to the network
 
 Now we can deploy the MPC contract with NEAR CLI (that you can install from <https://docs.near.org/tools/near-cli>).
-First, add the mpc-localnet as a network connection in the CLI.
-
-To view existing connections and the location of your CLI config file use;
-
-```shell
-near config show-connections
-```
-
-In the CLI config file, add the following.
-
-```toml
-[network_connection.mpc-localnet]
-network_name = "mpc-localnet"
-rpc_url = "http://localhost:3030/"
-wallet_url = "http://localhost:3030/"
-explorer_transaction_url = "http://localhost:3030/"
-linkdrop_account_id = "test.near"
-```
+It needs the mpc-localnet network connection from [near-cli-config.template.toml](near-cli-config.template.toml).
+On Linux, `nix develop .#localnet` provides a `near` that uses this config in place of your own.
+Otherwise, add the `[network_connection.mpc-localnet]` table to the CLI config file that `near config show-connections` points to.
 
 Now, create an account for the contract with the following command.
 

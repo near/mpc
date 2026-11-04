@@ -128,17 +128,9 @@ main() {
   neard_alive_cmd="curl -s localhost:3030/status | jq"
   wait_for_success "${neard_alive_cmd}"
 
-  if ! grep -q "mpc-localnet" ~/.config/near-cli/config.toml; then
-    echo "Not found. You need to add mpc-localnet config (shown below) to ~/.config/near-cli/config.toml"
-    cat <<EOF
-[network_connection.mpc-localnet]
-network_name = "mpc-localnet"
-rpc_url = "http://localhost:3030/"
-wallet_url = "http://localhost:3030/"
-explorer_transaction_url = "http://localhost:3030/"
-linkdrop_account_id = "test.near"
-EOF
-    echo "For more details, see localnet guide"
+  if ! near config show-connections 2>/dev/null | grep -q 'network_name = "mpc-localnet"'; then
+    echo "near CLI has no mpc-localnet connection. Run inside \`nix develop .#localnet\`, or add" >&2
+    echo "docs/development/localnet/near-cli-config.template.toml's connection to your near CLI config." >&2
     exit 1
   fi
 
