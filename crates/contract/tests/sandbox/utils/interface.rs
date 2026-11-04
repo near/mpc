@@ -10,17 +10,7 @@ pub(crate) trait IntoContractType<ContractType> {
 
 impl IntoContractType<Participants> for &dtos::Participants {
     fn into_contract_type(self) -> Participants {
-        let mut participants = Participants::new();
-        for (account_id, participant_id, info) in &self.participants {
-            participants
-                .insert_with_id(
-                    account_id.clone(),
-                    info.clone(),
-                    mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-                )
-                .unwrap();
-        }
-        participants
+        Participants::init(self.next_id, self.participants.clone())
     }
 }
 

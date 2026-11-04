@@ -1,6 +1,7 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
+        interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
@@ -10,7 +11,8 @@ use crate::sandbox::{
 };
 use anyhow::Result;
 use mpc_contract::primitives::{
-    participants::Participants, thresholds::GovernanceThresholdParameters,
+    participants::Participants,
+    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use mpc_primitives::hash::ProposalHash;
 use near_account_id::AccountId;
@@ -38,7 +40,8 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
         .build()
         .await;
 
-    let initial_participants = assert_running_return_participants(&contract).await?;
+    let initial_participants: Participants =
+        (&assert_running_return_participants(&contract).await?).into_contract_type();
     let threshold = assert_running_return_threshold(&contract).await;
 
     let update_hash = hash(&Update::Code(vec![1u8; 1000]));
@@ -57,27 +60,11 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
     );
 
     // When
-    let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants
-        .iter()
-        .skip(1)
-        .take(threshold.0 as usize)
-    {
-        new_participants
-            .insert_with_id(
-                account_id.clone(),
-                participant_info.clone(),
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
-    }
+    let new_participants = initial_participants.subset(1..threshold.0 as usize + 1);
 
-    let new_threshold_parameters = GovernanceThresholdParameters::new(
-        new_participants,
-        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
-    )
-    .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let new_threshold_parameters =
+        GovernanceThresholdParameters::new(new_participants, GovernanceThreshold::new(threshold.0))
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
@@ -126,7 +113,8 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         .build()
         .await;
 
-    let initial_participants = assert_running_return_participants(&contract).await?;
+    let initial_participants: Participants =
+        (&assert_running_return_participants(&contract).await?).into_contract_type();
     let threshold = assert_running_return_threshold(&contract).await;
 
     let next_domain_id = {
@@ -155,27 +143,11 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     assert_eq!(running.add_domains_votes.proposal_by_account.len(), 2);
 
     // When
-    let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants
-        .iter()
-        .skip(1)
-        .take(threshold.0 as usize)
-    {
-        new_participants
-            .insert_with_id(
-                account_id.clone(),
-                participant_info.clone(),
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
-    }
+    let new_participants = initial_participants.subset(1..threshold.0 as usize + 1);
 
-    let new_threshold_parameters = GovernanceThresholdParameters::new(
-        new_participants,
-        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
-    )
-    .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let new_threshold_parameters =
+        GovernanceThresholdParameters::new(new_participants, GovernanceThreshold::new(threshold.0))
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
@@ -194,7 +166,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
 
     assert_eq!(final_running.add_domains_votes.proposal_by_account.len(), 1);
 
-    let expected_remaining_voter_id = &initial_participants.participants[1].1;
+    let expected_remaining_voter_id = &initial_participants.participants()[1].1;
     let remaining_voter_id = &final_running
         .add_domains_votes
         .proposal_by_account

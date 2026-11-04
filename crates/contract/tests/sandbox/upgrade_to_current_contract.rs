@@ -554,18 +554,9 @@ async fn submit_contract_update__should_upgrade_once_the_participant_attests_aga
     let submission =
         prepay_and_submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
     assert!(submission.is_success(), "{submission:#?}");
-    let update = Update::Code(current_contract().to_vec());
-    approve_contract_update(&contract, &accounts, hash(&update)).await;
 
-    // When
-    let execution = accounts[0]
-        .call_mpc(contract.id())
-        .submit_contract_update(update)
-        .await?;
-
-    // Then
-    assert!(execution.is_success(), "{execution:#?}");
-    assert_eq!(contract.view_code().await?, current_contract());
+    // When, Then
+    vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
     Ok(())
 }
 

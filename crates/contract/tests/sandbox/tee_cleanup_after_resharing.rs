@@ -16,8 +16,9 @@ use crate::sandbox::{
 };
 use anyhow::Result;
 use mpc_contract::primitives::{
-    participants::Participants, test_utils::bogus_ed25519_public_key,
-    thresholds::GovernanceThresholdParameters,
+    participants::Participants,
+    test_utils::bogus_ed25519_public_key,
+    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation, Protocol};
 use test_utils::attestation::{mock_expiring_at, p2p_tls_key};
@@ -87,24 +88,11 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     assert_eq!(initial_and_non_participants, expected_nodes);
 
     // Now, we do a resharing. We only retain `threshold` of the initial participants
-    let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants
-        .iter()
-        .take(threshold.0 as usize)
-    {
-        new_participants
-            .insert_with_id(
-                account_id.clone(),
-                participant_info.clone(),
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-            )
-            .expect("Failed to insert participant");
-    }
+    let new_participants = internal_initial_participants.subset(0..threshold.0 as usize);
 
     let new_threshold_parameters = GovernanceThresholdParameters::new(
         new_participants.clone(),
-        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
+        GovernanceThreshold::new(threshold.0),
     )
     .unwrap();
 
@@ -150,9 +138,10 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
         .build()
         .await;
 
-    let initial_participants = assert_running_return_participants(&contract).await?;
+    let initial_participants: Participants =
+        (&assert_running_return_participants(&contract).await?).into_contract_type();
     let threshold = assert_running_return_threshold(&contract).await;
-    let initial_participants_count = initial_participants.participants.len();
+    let initial_participants_count = initial_participants.len();
 
     // Insert an attestation from an outsider whose expiry is a few seconds away.
     let (stale_accounts, _) = gen_accounts(&worker, 1).await;
@@ -180,25 +169,10 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
     worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
 
     // Reshare to the threshold subset; this triggers the post-reshare cleanup promise.
-    let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants
-        .iter()
-        .take(threshold.0 as usize)
-    {
-        new_participants
-            .insert_with_id(
-                account_id.clone(),
-                participant_info.clone(),
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-            )
-            .expect("Failed to insert participant");
-    }
-    let new_threshold_parameters = GovernanceThresholdParameters::new(
-        new_participants,
-        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
-    )
-    .unwrap();
+    let new_participants = initial_participants.subset(0..threshold.0 as usize);
+    let new_threshold_parameters =
+        GovernanceThresholdParameters::new(new_participants, GovernanceThreshold::new(threshold.0))
+            .unwrap();
     do_resharing(
         &mpc_signer_accounts[..threshold.0 as usize],
         &contract,
