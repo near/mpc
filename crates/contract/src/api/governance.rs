@@ -123,8 +123,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        forwarded_participant_call_contract, make_public_key_for_curve, setup_tee_test_contract,
-        submit_attestation, submit_valid_attestations,
+        attest_all_participants, forwarded_participant_call_contract, make_public_key_for_curve,
+        setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
@@ -289,7 +289,7 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let contract = MpcContract::init_running(
+        let mut contract = MpcContract::init_running(
             domains,
             DomainId(1),
             (&keyset).into_dto_type(),
@@ -298,6 +298,7 @@ mod tests {
             None,
         )
         .unwrap();
+        attest_all_participants(&mut contract);
         (contract, participants, first_participant_id, domain_id)
     }
 
@@ -533,12 +534,21 @@ mod tests {
         assert!(contract.parameters_votes.is_empty());
     }
 
-    /// Installs a context where `account_id` calls as an attested participant: `init_running`
-    /// mocks each participant's attestation with its TLS key as the account key.
-    fn attested_context(participants: &Participants, account_id: &AccountId) {
+    /// Installs a context where `account_id` calls as an attested participant, signing with the
+    /// account key its stored attestation was made under.
+    fn attested_context(
+        contract: &MpcContract,
+        participants: &Participants,
+        account_id: &AccountId,
+    ) {
         let info = participants.info(account_id).unwrap();
+        let node = contract
+            .tee_state
+            .nodes
+            .get(&info.tls_public_key)
+            .expect("an attestation must be stored under the TLS key");
         Environment::new(Some(0), Some(account_id.clone()), None)
-            .set_pk(near_sdk::PublicKey::from(info.tls_public_key.clone()));
+            .set_pk(near_sdk::PublicKey::from(node.signer_public_key.clone()));
     }
 
     /// Drives a 3-participant Running contract with one domain into Resharing: every
@@ -663,10 +673,10 @@ mod tests {
             domain_id,
             epoch_id: EpochId::new(1),
         };
-        attested_context(&participants, &leader);
+        attested_context(&contract, &participants, &leader);
         contract.start_reshare_instance(key_event_id).unwrap();
         for (account_id, _, _) in participants.participants() {
-            attested_context(&participants, account_id);
+            attested_context(&contract, &participants, account_id);
             contract.vote_reshared(key_event_id).unwrap();
         }
 

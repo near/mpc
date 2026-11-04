@@ -381,7 +381,10 @@ pub struct Contract {
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
     /// TEE state.
     /// Returns `false` and stops the contract from accepting new signature requests or responses,
-    /// in case less than `threshold` participants run in an accepted Tee State.
+    /// in case the participants running in an accepted TEE State are too few for the
+    /// GovernanceThreshold or for any domain's signing protocol.
+    /// While the contract is not accepting requests, as after `init` and `init_running`, it
+    /// kicks out no one and returns `false` until every participant has an accepted TEE state.
     pub fn verify_tee(&mut self) -> Result<bool, Error>
 }
 ```
@@ -612,7 +615,7 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 _Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
-Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
+Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out; instead the contract stops accepting signing requests until every participant is valid again or a vote replaces the participant set.
 
 # CVM Upgrades
 

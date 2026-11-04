@@ -167,6 +167,10 @@ Finally, initialize the contract
 mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2 --tee-verifier-account-id <tee-verifier-account>
 ```
 
+`init-contract` also prepays one attestation-storage grant for every participant, so each node can
+store its first attestation. The contract refuses requests until every initial participant has
+attested.
+
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
 `--tee-verifier-account-id` names the TEE verifier contract the MPC contract calls to
