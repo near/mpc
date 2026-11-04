@@ -27,7 +27,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_sdk::{log, near, store::IterableMap};
 use std::time::Duration;
-use tee_verifier_interface::VerifiedReport;
+use tee_verifier_interface::{CollateralDates, VerifiedReport};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AttestationSubmissionError {
@@ -146,12 +146,13 @@ impl TeeState {
         node: dtos::Node,
         tcb_info: &TcbInfo,
         report: &VerifiedReport,
+        collateral_dates: &CollateralDates,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<bool, AttestationSubmissionError> {
         let accepted = tcb_info.verify(
             report,
+            collateral_dates,
             Self::expected_report_data(&node),
-            Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
             &self.get_accepted_measurements(),
@@ -527,8 +528,8 @@ mod tests {
         collections::{BTreeMap, BTreeSet},
     };
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, image_digest, launcher_compose_digest, launcher_image_hash,
-        mock_tcb_info, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
+        launcher_image_hash, mock_tcb_info, verified_report,
     };
 
     #[test]
@@ -591,7 +592,7 @@ mod tests {
         );
 
         // When: the clock advances past the stamped expiry window and cleanup runs.
-        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: the previously uncleanable mock entry is removed.
@@ -607,12 +608,12 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let node = node_for(&"alice.near".parse().unwrap());
-        let oversized = mock_expiring_at(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS * 10);
+        let oversized = mock_expiring_at(attestation::MOCK_EXPIRATION_DURATION_SECONDS * 10);
         submit_mock(&mut tee_state, &node, oversized).unwrap();
 
         // When: the clock advances just past the contract's default window, well before the
         // submitter's requested expiry.
-        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: the entry is cleaned, so the submitted expiry was capped at the default.
@@ -687,7 +688,7 @@ mod tests {
         for node in [&in_use, &unused] {
             submit_mock(&mut tee_state, node, MockAttestation::Valid).unwrap();
         }
-        set_block_secs(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1);
+        set_block_secs(attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1);
 
         // When
         let removed = tee_state.clean_invalid_attestations(Duration::ZERO, 100, |node| {
@@ -728,8 +729,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::before_expiry(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS - 1, true)]
-    #[case::after_expiry(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1, false)]
+    #[case::before_expiry(attestation::MOCK_EXPIRATION_DURATION_SECONDS - 1, true)]
+    #[case::after_expiry(attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1, false)]
     fn has_valid_attestation__should_hold_until_the_attestation_expires(
         #[case] now_seconds: u64,
         #[case] expected: bool,
@@ -1065,6 +1066,7 @@ mod tests {
             node,
             &mock_tcb_info(),
             &verified_report(),
+            &collateral_dates(),
             Duration::MAX,
         );
 
@@ -1076,9 +1078,8 @@ mod tests {
         assert!(tee_state.nodes.is_empty());
     }
 
-    #[test]
-    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
-        // Given
+    /// A [`TeeState`] that accepts the fixture attestation, and the node it attests.
+    fn tee_state_accepting_the_fixture() -> (TeeState, dtos::Node) {
         set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
         let mut tee_state = TeeState::default();
         whitelist_dstack_measurements(
@@ -1087,23 +1088,80 @@ mod tests {
             launcher_image_hash(),
             Some(launcher_compose_digest()),
         );
-        let node = dstack_fixture_node();
+        (tee_state, dstack_fixture_node())
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
+        // Given
+        let (mut tee_state, node) = tee_state_accepting_the_fixture();
 
         // When
         let result = tee_state.verify_and_store_dstack(
             node.clone(),
             &mock_tcb_info(),
             &verified_report(),
+            &collateral_dates(),
             Duration::MAX,
         );
 
         // Then
         assert_eq!(result, Ok(true));
+        let stored = tee_state
+            .nodes
+            .get(&node.tls_public_key)
+            .expect("attestation must be stored");
         assert_eq!(
-            stamped_accepted_at(&tee_state, &node),
+            stored.attestation_accepted_at_seconds,
             VALID_ATTESTATION_TIMESTAMP
         );
+        assert_matches!(
+            &stored.attestation,
+            VerifiedAttestation::Dstack(attestation)
+                if attestation.expiry_timestamp_seconds == collateral_dates().earliest_expiration_date
+        );
         assert_eq!(tee_state.get_tee_accounts(), vec![node]);
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_overwrite_the_expiry_with_an_earlier_one() {
+        // Given
+        let (mut tee_state, node) = tee_state_accepting_the_fixture();
+        tee_state
+            .verify_and_store_dstack(
+                node.clone(),
+                &mock_tcb_info(),
+                &verified_report(),
+                &collateral_dates(),
+                Duration::MAX,
+            )
+            .unwrap();
+        let earlier_expiry = collateral_dates().earliest_expiration_date - 1;
+        let older_collateral_dates = CollateralDates {
+            earliest_expiration_date: earlier_expiry,
+            ..collateral_dates()
+        };
+
+        // When
+        let result = tee_state.verify_and_store_dstack(
+            node.clone(),
+            &mock_tcb_info(),
+            &verified_report(),
+            &older_collateral_dates,
+            Duration::MAX,
+        );
+
+        // Then
+        assert_eq!(result, Ok(false));
+        let stored = tee_state
+            .nodes
+            .get(&node.tls_public_key)
+            .expect("attestation must be stored");
+        assert_matches!(
+            &stored.attestation,
+            VerifiedAttestation::Dstack(attestation)
+                if attestation.expiry_timestamp_seconds == earlier_expiry
+        );
     }
 
     /// Stale code-hash votes from removed participants must not count toward
