@@ -9,10 +9,8 @@ abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/borsh-schema
 dstack-conversions = ["attestation/dstack-conversions"]
 test-utils = ["attestation/test-utils"]
 # Enables full local DCAP + post-DCAP verification, forwarding to
-# `attestation/local-verify` which pulls in `dcap-qvl`. Used off-chain (node,
-# tee-authority, attestation-cli) and, for now, by the contract's synchronous
-# attestation path.
-# TODO(#3264): contract drops this once DCAP moves to the verifier contract.
+# `attestation/local-verify` which pulls in `dcap-qvl`. Off-chain only (node,
+# tee-authority, attestation-cli).
 local-verify = ["attestation/local-verify"]
 
 [dependencies]

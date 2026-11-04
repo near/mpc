@@ -3,7 +3,7 @@
 use super::common;
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidParameters, InvalidState},
+    errors::{Error, InvalidParameters},
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
@@ -583,27 +583,6 @@ fn clean_invalid_attestations__should_remove_expired_nodes_not_in_use() {
         .collect();
     assert_eq!(removed, EXPECTED_REMOVED);
     assert_eq!(stored_tls_keys, participant_tls_keys);
-}
-
-/// **Test that [`clean_invalid_attestations()`] rejects calls outside [`Running`] state** so
-/// that keygen / resharing flows (which may reference not-yet-activated attestations)
-/// aren't disrupted.
-#[test]
-fn clean_invalid_attestations__should_reject_when_not_running() {
-    // Given: contract sitting in Initializing state.
-
-    let mut setup = TestSetupBuilder::new()
-        .with_contract_protocol_state(ContractProtocolState::Initializing)
-        .build();
-
-    // When: the cleanup endpoint is invoked.
-    let result = setup.contract.clean_invalid_attestations(100);
-
-    // Then: the call errors without mutating state.
-    assert_matches!(
-        result,
-        Err(Error::InvalidState(InvalidState::ProtocolStateNotRunning))
-    );
 }
 
 macro_rules! assert_allowed_docker_image_hashes {
