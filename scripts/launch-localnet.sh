@@ -128,9 +128,10 @@ main() {
   neard_alive_cmd="curl -s localhost:3030/status | jq"
   wait_for_success "${neard_alive_cmd}"
 
-  if ! near config show-connections 2>/dev/null | grep -q 'network_name = "mpc-localnet"'; then
-    echo "near CLI has no mpc-localnet connection. Run inside \`nix develop .#localnet\`, or add" >&2
-    echo "docs/development/localnet/near-cli-config.template.toml's connection to your near CLI config." >&2
+  connections=$(near config show-connections 2>/dev/null) || true
+  if ! grep -q 'network_name = "mpc-localnet"' <<<"$connections"; then
+    echo "near CLI has no mpc-localnet connection. Add the one from" >&2
+    echo "docs/development/localnet/near-cli-config.template.toml to your near CLI config, or on Linux run inside \`nix develop .#localnet\`." >&2
     exit 1
   fi
 

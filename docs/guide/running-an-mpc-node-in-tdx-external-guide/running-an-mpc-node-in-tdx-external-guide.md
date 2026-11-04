@@ -818,7 +818,7 @@ Including
 A named mainnet account is required. To create one, you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app), or fund it yourself:
 
 ```bash
-near account create-account fund-myself <ACCOUNT_NAME> '<AMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
+near account create-account fund-myself <ACCOUNT_NAME> '<AMOUNT TO FUND> NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
 ```
 
 #### **Testnet**
@@ -828,7 +828,7 @@ If you're using testnet, the easiest way to get started is to create an account 
 Using auto-generated keypair:
 
 ```bash
-near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> autogenerate-new-keypair save-to-keychain network-config testnet create
+near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain network-config testnet create
 ```
 
 Using a manually provided public key:

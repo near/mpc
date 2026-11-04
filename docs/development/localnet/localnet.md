@@ -7,7 +7,7 @@ have been automated in `scripts/launch-localnet.sh` for faster deployment.
 
 ## Prerequisites
 
-neard, near CLI (>= 0.25.0), cargo, grep, envsubst, python3-keyring
+neard, near CLI (>= 0.30.1), cargo, grep, envsubst, python3-keyring
 MPC repositoy is cloned, and you are in the MPC root folder.
 
 Older versions of near CLI return from `send` before the transaction is final, which races with the immediately-following view queries used throughout this guide and `scripts/launch-localnet.sh`.

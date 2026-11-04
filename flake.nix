@@ -292,7 +292,8 @@
           localnet = pkgs.mkShell (
             defaultShell
             // {
-              packages = [ nearLocalnet ] ++ defaultShell.packages ++ [
+              # The wrapper relies on `XDG_CONFIG_HOME`, which the CLI ignores on macOS.
+              packages = lib.optional stdenv.hostPlatform.isLinux nearLocalnet ++ defaultShell.packages ++ [
                 near-sandbox
                 pkgs.curl
                 pkgs.gettext # envsubst
