@@ -1,12 +1,12 @@
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
+use super::chain::SubmissionAck;
 use super::tx_signer::TransactionSigner;
 use crate::metrics;
 use crate::types::{
     LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
     SubmittedTxMetadata,
 };
-use chain_gateway::primitives::FetchLatestFinalBlockInfo;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use near_contract_transport::ViewContract;
@@ -98,7 +98,7 @@ impl TransactionSender for TransactionProcessorHandle {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum TransactionStatus {
     Executed,
     NotExecuted,
@@ -113,11 +113,8 @@ async fn submit_tx(
     method: String,
     params_ser: String,
     gas: Gas,
-) -> anyhow::Result<SubmittedTxMetadata> {
-    let block = indexer_state
-        .gateway
-        .fetch_latest_final_block_info()
-        .await?;
+) -> anyhow::Result<(SubmittedTxMetadata, SubmissionAck)> {
+    let block = indexer_state.chain.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
@@ -139,14 +136,17 @@ async fn submit_tx(
         nonce,
     );
 
-    indexer_state.rpc_handler.submit_tx(transaction).await?;
+    let ack = indexer_state.chain.submit_tx(transaction).await?;
 
-    Ok(SubmittedTxMetadata {
-        tx_hash,
-        nonce,
-        signature,
-        block_height: block.observed_at.into(),
-    })
+    Ok((
+        SubmittedTxMetadata {
+            tx_hash,
+            nonce,
+            signature,
+            block_height: block.observed_at.into(),
+        },
+        ack,
+    ))
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -245,8 +245,8 @@ async fn ensure_send_transaction(
     // debug page reflects when the transaction was actually routed.
     let submitted_at = Clock::real().now_utc();
 
-    let metadata = match submitted_metadata {
-        Ok(metadata) => metadata,
+    let (metadata, ack) = match submitted_metadata {
+        Ok(submission) => submission,
         Err(err) => {
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                 .with_label_values(&[method, "local_error"])
@@ -260,7 +260,9 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status = observe_tx_result(&indexer_state.contract, &request).await;
+    let transaction_status = observe_tx_result(&indexer_state.contract, &request)
+        .await
+        .map(|observed| after_submission(ack, observed));
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),
@@ -278,4 +280,35 @@ async fn ensure_send_transaction(
         .inc();
 
     SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at)
+}
+
+/// An effect unobserved after an accepted submission timed out, under either
+/// backend. Without an acknowledgement the transaction may never have reached a
+/// node, so the outcome stays unknown.
+fn after_submission(ack: SubmissionAck, observed: TransactionStatus) -> TransactionStatus {
+    match observed {
+        TransactionStatus::NotExecuted if !ack.was_accepted() => TransactionStatus::Unknown,
+        observed => observed,
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{SubmissionAck, TransactionStatus, after_submission};
+
+    #[test]
+    fn after_submission__should_report_an_unobserved_accepted_transaction_as_not_executed() {
+        // When
+        let queued = after_submission(SubmissionAck::Queued, TransactionStatus::NotExecuted);
+        let routed = after_submission(SubmissionAck::Routed, TransactionStatus::NotExecuted);
+        let unknown = after_submission(SubmissionAck::Unknown, TransactionStatus::NotExecuted);
+        let executed = after_submission(SubmissionAck::Unknown, TransactionStatus::Executed);
+
+        // Then
+        assert_eq!(queued, TransactionStatus::NotExecuted);
+        assert_eq!(routed, TransactionStatus::NotExecuted);
+        assert_eq!(unknown, TransactionStatus::Unknown);
+        assert_eq!(executed, TransactionStatus::Executed);
+    }
 }

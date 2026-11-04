@@ -177,7 +177,7 @@ args = [
   "mpc-node",
   "--release",
   "--features",
-  "network-hardship-simulation,test-utils",
+  "embedded-node,network-hardship-simulation,test-utils",
   "--locked",
 ]
 

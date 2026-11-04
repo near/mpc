@@ -6,10 +6,10 @@ use crate::foreign_chain_policy::{
 };
 use crate::foreign_chain_registrar::spawn_foreign_chains_registrar;
 use crate::indexer::foreign_chain::{ForeignChainSupporters, ForeignChainWhitelist};
-use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
+use crate::indexer::updates::BlockUpdateReceiver;
 use crate::indexer::{IndexerAPI, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
@@ -45,6 +45,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -79,6 +80,39 @@ pub struct Coordinator<TransactionSender> {
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
 
+const MIN_JOB_RESTART_DELAY: Duration = Duration::from_secs(1);
+const MAX_JOB_RESTART_DELAY: Duration = Duration::from_mins(1);
+
+/// Delays restarting a failed job, so a job that fails right after starting,
+/// e.g. on the same replayed block, does not restart in a tight loop.
+struct JobRestartBackoff {
+    delay: Duration,
+}
+
+impl JobRestartBackoff {
+    fn new() -> Self {
+        Self {
+            delay: MIN_JOB_RESTART_DELAY,
+        }
+    }
+
+    /// The delay before restarting a job that failed after running for
+    /// `ran_for`. It doubles with each consecutive early failure and starts
+    /// over once a job outlives [`MAX_JOB_RESTART_DELAY`].
+    fn after_failure(&mut self, ran_for: Duration) -> Duration {
+        if ran_for >= MAX_JOB_RESTART_DELAY {
+            self.delay = MIN_JOB_RESTART_DELAY;
+        }
+        let delay = self.delay;
+        self.delay = self.delay.saturating_mul(2).min(MAX_JOB_RESTART_DELAY);
+        delay
+    }
+
+    fn reset(&mut self) {
+        self.delay = MIN_JOB_RESTART_DELAY;
+    }
+}
+
 /// Represents a top-level task that we run for the current contract state.
 /// There is a different one of these for each contract state.
 struct MpcJob {
@@ -109,6 +143,7 @@ where
     TransactionSender: tx_sender::TransactionSender + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
+        let mut restart_backoff = JobRestartBackoff::new();
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             if let Some(epoch_id) = current_epoch_id(&state) {
@@ -197,17 +232,25 @@ where
             tracing::info!("[{}] Starting", job.name);
             let _report_guard =
                 ReportCurrentJobGuard::new(job.name, self.currently_running_job_name.clone());
+            let started = Instant::now();
+            let mut restart_delay = None;
 
             loop {
                 tokio::select! {
                     res = &mut job.fut => {
                         match res {
                             Err(e) => {
-                                tracing::error!("[{}] failed: {:?}", job.name, e);
+                                metrics::MPC_COORDINATOR_JOB_FAILURES_TOTAL
+                                    .with_label_values(&[job.name])
+                                    .inc();
+                                let delay = restart_backoff.after_failure(started.elapsed());
+                                tracing::error!("[{}] failed, restarting in {:?}: {:?}", job.name, delay, e);
+                                restart_delay = Some(delay);
                                 break;
                             }
                             Ok(MpcJobResult::Done) => {
                                 tracing::info!("[{}] finished successfully", job.name);
+                                restart_backoff.reset();
                                 break;
                             }
                             Ok(MpcJobResult::HaltUntilInterrupted) => {
@@ -229,6 +272,17 @@ where
                                 job.name
                             );
                             break;
+                        }
+                    }
+                }
+            }
+            if let Some(delay) = restart_delay {
+                // A contract state change needs a new job anyway, so it ends the wait early.
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {}
+                    res = self.indexer.contract_state_receiver.changed() => {
+                        if res.is_err() {
+                            anyhow::bail!("contract state receiver closed");
                         }
                     }
                 }
@@ -378,9 +432,7 @@ where
         chain_txn_sender: TransactionSender,
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         foreign_chain_whitelist_receiver: watch::Receiver<ForeignChainWhitelist>,
-        block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<BlockUpdateReceiver>,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
         contract_state_receiver: watch::Receiver<ContractState>,
@@ -1094,8 +1146,8 @@ fn make_initializing_stop_fn(
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        current_epoch_id, participants_change_requires_restart, peer_address_from_state,
-        stop_running,
+        JobRestartBackoff, MAX_JOB_RESTART_DELAY, current_epoch_id,
+        participants_change_requires_restart, peer_address_from_state, stop_running,
     };
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
@@ -1107,7 +1159,41 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
+    use std::time::Duration;
     use tokio::sync::watch;
+
+    #[test]
+    fn after_failure__should_grow_on_early_failures_and_start_over_after_a_long_run() {
+        // Given
+        let mut backoff = JobRestartBackoff::new();
+
+        // When
+        let early: Vec<_> = (0..8)
+            .map(|_| backoff.after_failure(Duration::ZERO))
+            .collect();
+        let after_long_run = backoff.after_failure(MAX_JOB_RESTART_DELAY);
+
+        // Then
+        assert_eq!(early, [1, 2, 4, 8, 16, 32, 60, 60].map(Duration::from_secs));
+        assert_eq!(after_long_run, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn reset__should_restart_the_backoff_after_a_successful_job() {
+        // Given
+        let mut backoff = JobRestartBackoff::new();
+        backoff.after_failure(Duration::ZERO);
+        backoff.after_failure(Duration::ZERO);
+
+        // When
+        backoff.reset();
+
+        // Then
+        assert_eq!(
+            backoff.after_failure(Duration::ZERO),
+            Duration::from_secs(1)
+        );
+    }
 
     #[test]
     fn participants_change_requires_restart__should_be_false_for_peer_address_change() {

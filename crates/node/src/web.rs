@@ -90,6 +90,8 @@ struct NodeConfigResponse {
     web_ui: SocketAddr,
     migration_web_ui: SocketAddr,
     pprof_bind_address: SocketAddr,
+    /// [`IndexerConfig::rpc_url`] only shows whether it is set, as the URL may
+    /// carry an API key.
     indexer: IndexerConfig,
     triple: TripleConfig,
     signature: SignatureConfig,
@@ -102,6 +104,8 @@ struct NodeConfigResponse {
     separate_asset_generation_runtime: bool,
 }
 
+const REDACTED_RPC_URL: &str = "<redacted>";
+
 impl From<ConfigFile> for NodeConfigResponse {
     fn from(config: ConfigFile) -> Self {
         Self {
@@ -109,7 +113,14 @@ impl From<ConfigFile> for NodeConfigResponse {
             web_ui: config.web_ui,
             migration_web_ui: config.migration_web_ui,
             pprof_bind_address: config.pprof_bind_address,
-            indexer: config.indexer,
+            indexer: IndexerConfig {
+                rpc_url: config
+                    .indexer
+                    .rpc_url
+                    .as_ref()
+                    .map(|_| REDACTED_RPC_URL.to_owned()),
+                ..config.indexer
+            },
             triple: config.triple,
             signature: config.signature,
             ckd: config.ckd,
@@ -448,6 +459,7 @@ mod tests {
             migration_web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8081),
             pprof_bind_address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8082),
             indexer: IndexerConfig {
+                rpc_url: None,
                 concurrency: 1.try_into().unwrap(),
                 finality: Finality::Final,
                 mpc_contract_id: "mpc.test.near".parse().unwrap(),
@@ -553,6 +565,36 @@ mod tests {
             cores: Some(4),
             separate_asset_generation_runtime: true,
         }
+    }
+
+    #[test]
+    fn node_config_response_json__should_redact_the_indexer_rpc_url() {
+        // Given
+        let mut config = test_config();
+        config.indexer.rpc_url =
+            Some("https://user:pass@rpc.example.com/v1/path-key?apikey=hunter2".to_owned());
+
+        // When
+        let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // Then
+        assert_eq!(value["indexer"]["rpc_url"], "<redacted>");
+        for needle in ["rpc.example.com", "path-key", "hunter2", "user:pass"] {
+            assert!(!json.contains(needle), "`{needle}` leaked: {json}");
+        }
+    }
+
+    #[test]
+    fn node_config_response_json__should_omit_an_unset_indexer_rpc_url() {
+        // Given
+        let config = test_config();
+
+        // When
+        let value = serde_json::to_value(NodeConfigResponse::from(config)).unwrap();
+
+        // Then
+        assert!(value["indexer"].get("rpc_url").is_none(), "{value}");
     }
 
     #[test]

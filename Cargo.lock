@@ -6146,7 +6146,9 @@ dependencies = [
  "near-contract-transport",
  "near-crypto 2.14.0",
  "near-indexer",
+ "near-indexer-client",
  "near-indexer-primitives 2.14.0",
+ "near-kit",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
@@ -6851,6 +6853,19 @@ dependencies = [
  "rocksdb",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "near-indexer-client"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb8307dd70bae2d102ac632dc19d83b854f549f2d4dde45495a55117f507a22f"
+dependencies = [
+ "near-indexer-primitives 0.38.0",
+ "near-kit",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

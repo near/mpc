@@ -23,6 +23,10 @@ const DUMMY_IMAGE_HASH: &str =
 const LISTEN_BLOCKS_FILE: &str = "listen_blocks.flag";
 
 const TEMP_KEYS_FILE: &str = "temporary_keys";
+/// Overrides the node's configured indexer; see `mpc-node`'s `IndexerBackend`.
+const NEAR_RPC_URL_ENV: &str = "MPC_NEAR_RPC_URL";
+/// Where the HTTP indexer persists the last block every consumer applied.
+pub const HTTP_INDEXER_CHECKPOINT_FILE: &str = "http-indexer-checkpoint.json";
 
 /// Handle to a running `mpc-node` OS process. Always represents a live process.
 /// Obtained by calling [`MpcNodeSetup::start()`].
@@ -182,6 +186,7 @@ pub struct MpcNodeSetup {
     node_index: usize,
     home_dir: PathBuf,
     binary_path: PathBuf,
+    near_rpc_url: Option<String>,
     signer_account_id: AccountId,
     p2p_signing_key: SigningKey,
     /// Key used by the node to sign NEAR transactions (must have access key on account).
@@ -231,6 +236,7 @@ impl MpcNodeSetup {
             node_index: args.node_index,
             home_dir: args.home_dir,
             binary_path: args.binary_path,
+            near_rpc_url: args.near_rpc_url,
             signer_account_id: args.signer_account_id,
             p2p_signing_key: args.p2p_signing_key,
             near_signer_key: args.near_signer_key,
@@ -373,6 +379,8 @@ impl MpcNodeSetup {
 
         let mut command = Command::new(&self.binary_path);
         command
+            // An inherited endpoint would override the configured indexer.
+            .env_remove(NEAR_RPC_URL_ENV)
             .arg("start-with-config-file")
             .arg(&self.config_path)
             .env(
@@ -446,7 +454,7 @@ impl MpcNodeSetup {
                 format: LogFormat::Plain,
                 filter: Some("debug".to_string()),
             },
-            near_init: Some(NearInitConfig {
+            near_init: self.near_rpc_url.is_none().then(|| NearInitConfig {
                 chain_id: ChainId::Custom(self.chain_id.clone()),
                 boot_nodes: Some(self.near_boot_nodes.clone()),
                 genesis_path: Some(self.near_genesis_path.clone()),
@@ -467,11 +475,17 @@ impl MpcNodeSetup {
                 cores: Some(4),
                 separate_asset_generation_runtime: true,
                 indexer: IndexerConfig {
+                    rpc_url: self.near_rpc_url.clone(),
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),
                     mpc_contract_id: mpc_contract,
                     finality: Finality::None,
-                    sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
+                    // The embedded node syncs from genesis anyway. The HTTP indexer
+                    // starts at the head and resumes from its checkpoint on restart.
+                    sync_mode: match self.near_rpc_url {
+                        None => SyncMode::Block(BlockArgs { height: 0 }),
+                        Some(_) => SyncMode::Interruption,
+                    },
                     port_override: None,
                     wipe_near_data_token: 0,
                 },
@@ -505,6 +519,9 @@ pub struct MpcNodeSetupArgs {
     pub node_index: usize,
     pub home_dir: PathBuf,
     pub binary_path: PathBuf,
+    /// NEAR RPC endpoint the node indexes over HTTP. `None` runs the node's
+    /// embedded NEAR node, synced from the sandbox over P2P.
+    pub near_rpc_url: Option<String>,
     pub signer_account_id: AccountId,
     pub p2p_signing_key: SigningKey,
     pub near_signer_key: SigningKey,

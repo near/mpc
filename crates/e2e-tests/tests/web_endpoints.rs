@@ -3,7 +3,7 @@ use crate::common;
 use std::time::Duration;
 
 use anyhow::Context;
-use e2e_tests::MpcNodeState;
+use e2e_tests::{IndexerBackend, MpcNodeState};
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -96,8 +96,11 @@ fn vote_pk_row_regex(signer_account_id: &str, signer_key: &str) -> regex::Regex 
 
 #[tokio::test]
 async fn test_web_endpoints() {
-    let (cluster, running) =
-        common::must_setup_cluster(common::WEB_ENDPOINTS_PORT_SEED, |_| {}).await;
+    let (cluster, running) = common::must_setup_cluster(common::WEB_ENDPOINTS_PORT_SEED, |c| {
+        // Only the embedded node exports nearcore's metrics.
+        c.indexer = IndexerBackend::Embedded;
+    })
+    .await;
 
     // Send one request per domain.
     assert!(!running.domains.domains.is_empty(), "no domains found");

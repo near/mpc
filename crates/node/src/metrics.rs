@@ -309,6 +309,45 @@ pub static MPC_OUTGOING_TRANSACTION_OUTCOMES: LazyLock<prometheus::IntCounterVec
         .unwrap()
     });
 
+pub static MPC_HTTP_INDEXER_READ_FAILURES_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_http_indexer_read_failures_total",
+            "Failed reads from the HTTP indexer's RPC node, by request and error. Every failed read is retried",
+            &["request", "error"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_HTTP_INDEXER_REANCHORS_TOTAL: LazyLock<prometheus::IntCounter> = LazyLock::new(
+    || {
+        prometheus::register_int_counter!(
+            "mpc_http_indexer_reanchors_total",
+            "Times the HTTP indexer fell so far behind that it skipped to the blocks whose requests are still live"
+        )
+        .unwrap()
+    },
+);
+
+pub static MPC_HTTP_INDEXER_CHECKPOINT_WRITE_FAILURES_TOTAL: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_http_indexer_checkpoint_write_failures_total",
+            "Failed writes of the HTTP indexer's checkpoint. Each is retried with the latest checkpoint"
+        )
+        .unwrap()
+    });
+
+pub static MPC_COORDINATOR_JOB_FAILURES_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_coordinator_job_failures_total",
+            "Coordinator jobs that ended in an error and were restarted after a backoff, by job",
+            &["job"],
+        )
+        .unwrap()
+    });
+
 pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_indexer_latest_block_height",

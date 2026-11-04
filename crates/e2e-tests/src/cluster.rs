@@ -84,6 +84,8 @@ pub struct MpcClusterConfig {
     pub domains: Vec<DomainConfig>,
     /// Path to the mpc-node binary. If multiple paths, each node gets the corresponding one.
     pub binary_paths: Vec<PathBuf>,
+    /// How every node reads the chain. Defaults to [`IndexerBackend::from_env`].
+    pub indexer: IndexerBackend,
     /// Compiled contract WASM bytes (pre-compiled by the test).
     pub contract_wasm: Vec<u8>,
     /// Compiled tee-verifier WASM bytes (pre-compiled by the test).
@@ -111,6 +113,35 @@ pub struct MpcClusterConfig {
     pub init_format: ContractInitFormat,
     pub foreign_chains: ForeignChainsClusterConfig,
     pub tls_trust_roots: Option<PathBuf>,
+}
+
+/// How MPC nodes read the NEAR chain.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum IndexerBackend {
+    /// Each node runs an embedded NEAR node that syncs from the sandbox over P2P.
+    #[default]
+    Embedded,
+    /// Each node indexes the sandbox's RPC endpoint over HTTP.
+    Http,
+}
+
+impl IndexerBackend {
+    /// Selects the backend for clusters that do not pin one: `embedded` (the
+    /// default) or `http`.
+    pub const ENV: &str = "MPC_E2E_INDEXER";
+
+    /// Reads [`Self::ENV`].
+    pub fn from_env() -> anyhow::Result<Self> {
+        match std::env::var(Self::ENV) {
+            Err(std::env::VarError::NotPresent) => Ok(Self::Embedded),
+            Ok(value) => match value.as_str() {
+                "embedded" => Ok(Self::Embedded),
+                "http" => Ok(Self::Http),
+                _ => anyhow::bail!("{} must be `embedded` or `http`, got {value:?}", Self::ENV),
+            },
+            Err(error) => Err(error).context(Self::ENV),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -209,6 +240,7 @@ impl MpcClusterConfig {
                 },
             ],
             binary_paths: vec![default_mpc_binary_path()],
+            indexer: IndexerBackend::from_env().expect("invalid indexer backend"),
             contract_wasm,
             tee_verifier_wasm,
             port_seed,
@@ -1499,6 +1531,11 @@ fn start_mpc_nodes(
     let genesis_path = sandbox.genesis_path();
     let boot_nodes = sandbox.boot_nodes()?;
 
+    let near_rpc_url = match config.indexer {
+        IndexerBackend::Embedded => None,
+        IndexerBackend::Http => Some(sandbox.rpc_url()),
+    };
+
     let total_nodes = config.num_nodes + config.migration_targets.len();
     tracing::info!(
         count = total_nodes,
@@ -1523,6 +1560,7 @@ fn start_mpc_nodes(
             node_index: i,
             home_dir: test_dir.join(format!("node{i}")),
             binary_path,
+            near_rpc_url: near_rpc_url.clone(),
             signer_account_id: node_account(i).parse()?,
             p2p_signing_key: p2p_keys[i].clone(),
             near_signer_key: near_keys[i].clone(),
@@ -1550,6 +1588,7 @@ fn start_mpc_nodes(
             node_index: target_idx,
             home_dir: test_dir.join(format!("node{target_idx}")),
             binary_path: source.binary_path().to_path_buf(),
+            near_rpc_url: near_rpc_url.clone(),
             signer_account_id: source.account_id().clone(),
             p2p_signing_key: generate_deterministic_key(KEY_SEED_MIGRATION_P2P + target_idx as u64),
             near_signer_key: source.near_signer_key().clone(),

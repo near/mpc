@@ -1,12 +1,16 @@
+#[cfg(feature = "embedded-node")]
+use crate::config::start::{StartConfigExt, read_near_config_json};
 use crate::{
     config::{
         PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
-        start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
+        start::TeeAuthorityImpl as _,
     },
     coordinator::Coordinator,
     db::SecretDB,
     home_paths::assets_dir,
-    indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
+    indexer::{
+        IndexerAPI, chain::IndexerBackend, real::spawn_real_indexer, tx_sender::TransactionSender,
+    },
     keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
@@ -48,6 +52,8 @@ use crate::tee::{
 };
 
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
+/// Longer than the HTTP indexer's own 5 s wait for its checkpoint write.
+const INDEXER_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn resolve_foreign_chains(config: &StartConfig) -> anyhow::Result<ForeignChainsConfig> {
     let resolved = resolve_with_embedded(&config.node.foreign_chains)
@@ -66,9 +72,14 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
     config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
+    let indexer_backend = IndexerBackend::from_env_and_config(&config.node.indexer)?;
+
     // Must run before `spawn_real_indexer` loads/validates the config, and
     // after `init_logging` so its logs are emitted. No-op for the `start` path.
-    config.ensure_near_initialized()?;
+    #[cfg(feature = "embedded-node")]
+    if indexer_backend.is_embedded() {
+        config.ensure_near_initialized()?;
+    }
 
     // Log startup info
     tracing::info!("{}", *crate::MPC_VERSION_STRING);
@@ -77,6 +88,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         contract_id = %config.node.indexer.mpc_contract_id,
         home_dir = %config.home_dir.display(),
         web_ui = %config.node.web_ui,
+        embedded_near_node = indexer_backend.is_embedded(),
         "starting MPC node"
     );
     tracing::info!(
@@ -206,7 +218,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
-            read_near_config_json(&config.home_dir),
+            near_config_json(&indexer_backend, &config.home_dir),
             recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
@@ -220,7 +232,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     ));
 
     // Create Indexer and wait for indexer to be synced.
-    let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
+    let (indexer_exit_sender, mut indexer_exit_receiver) = oneshot::channel();
     // Dedicated cancellation token for the indexer thread. Cancelled after
     // `shutdown_all_actors()` below so the indexer's terminal `listen_blocks`
     // race exits, its tokio runtime drops, and the Arc<RocksDB> references
@@ -230,6 +242,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     let indexer_api = spawn_real_indexer(
         config.home_dir.clone(),
         node_config.indexer.clone(),
+        indexer_backend.clone(),
         node_config.my_near_account_id.clone(),
         persistent_secrets.near_signer_key.clone(),
         indexer_exit_sender,
@@ -273,11 +286,13 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
 
+    let mut indexer_exited = false;
     let exit_reason: anyhow::Result<()> = tokio::select! {
         root_task_result = root_task => {
             root_task_result?
         }
-        indexer_exit_response = indexer_exit_receiver => {
+        indexer_exit_response = &mut indexer_exit_receiver => {
+            indexer_exited = true;
             indexer_exit_response.context("Indexer thread dropped response channel.")?
         }
         // Race SIGTERM directly. If install above failed, `sigterm_handle`
@@ -309,8 +324,11 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Stop nearcore's actor system so its tasks have a chance to commit any
     // in-flight RocksDB batches before the process exits.
-    info!("Stopping nearcore actor system.");
-    near_async::shutdown_all_actors();
+    #[cfg(feature = "embedded-node")]
+    if indexer_backend.is_embedded() {
+        info!("Stopping nearcore actor system.");
+        near_async::shutdown_all_actors();
+    }
 
     // Cancel the indexer's terminal `listen_blocks` race; that lets the
     // indexer thread's `block_on` return, its tokio runtime drop, and every
@@ -319,15 +337,44 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     info!("Cancelling indexer shutdown token.");
     indexer_shutdown_token.cancel();
 
+    // The HTTP indexer persists its latest checkpoint before its thread
+    // reports the exit. Bounded, because a shutdown that arrives before the
+    // indexer thread starts its block feed is only observed once it does.
+    if !indexer_exited && !indexer_backend.is_embedded() {
+        info!("Waiting for the indexer thread to exit.");
+        if tokio::time::timeout(INDEXER_EXIT_TIMEOUT, indexer_exit_receiver)
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                timeout = ?INDEXER_EXIT_TIMEOUT,
+                "the indexer thread did not exit in time"
+            );
+        }
+    }
+
     // Now block until every RocksDB instance has actually been dropped —
     // mirroring what neard's standalone binary does on its SIGTERM path.
     // Without the cancellation above this call would hang forever because
     // the indexer thread's monitor tasks keep their Arc<RocksDB> alive.
-    info!("Waiting for RocksDB instances to gracefully shut down.");
-    near_store::db::RocksDB::block_until_all_instances_are_dropped();
-    info!("RocksDB shutdown complete.");
+    #[cfg(feature = "embedded-node")]
+    if indexer_backend.is_embedded() {
+        info!("Waiting for RocksDB instances to gracefully shut down.");
+        near_store::db::RocksDB::block_until_all_instances_are_dropped();
+        info!("RocksDB shutdown complete.");
+    }
 
     exit_reason
+}
+
+/// The embedded node's `config.json`, shown on the debug page.
+#[cfg_attr(not(feature = "embedded-node"), expect(unused_variables))]
+fn near_config_json(backend: &IndexerBackend, home_dir: &std::path::Path) -> serde_json::Value {
+    match backend {
+        #[cfg(feature = "embedded-node")]
+        IndexerBackend::Embedded => read_near_config_json(home_dir),
+        IndexerBackend::Http { .. } => serde_json::Value::Null,
+    }
 }
 
 async fn create_root_future<TransactionSenderImpl>(

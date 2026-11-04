@@ -18,8 +18,9 @@ pub struct StartConfig {
     pub secrets: SecretsStartConfig,
     /// TEE authority and image hash monitoring settings.
     pub tee: launcher_interface::types::TeeConfig,
-    /// NEAR node initialization settings. Required for `start-with-config-file`
-    /// so the node can self-initialize when `config.json` is absent.
+    /// Embedded NEAR node initialization settings, ignored by HTTP indexing.
+    /// The embedded node needs them for `start-with-config-file` when
+    /// `config.json` is absent.
     /// When using the legacy `start` command (behind `start.sh`), this is
     /// `None` because `start.sh` already ran `mpc-node init`.
     pub near_init: Option<NearInitConfig>,
