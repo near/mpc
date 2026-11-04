@@ -86,6 +86,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 main() {
+  export PATH="$PWD/target/release:$PATH"
   require_cmds jq envsubst near neard mpc-node
 
   if [[ ! -f "$MPC_CONTRACT_PATH" ]]; then
