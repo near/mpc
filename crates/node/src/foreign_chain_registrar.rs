@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::pin::Pin;
 use std::time::Duration;
 
-use backon::{BackoffBuilder, ExponentialBuilder};
+use backon::{BackoffBuilder, ExponentialBackoff, ExponentialBuilder};
 use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types as dtos;
@@ -58,7 +58,6 @@ async fn keep_foreign_chains_registration_up_to_date(
     local: ForeignChainsConfig,
 ) {
     let mut pending: Option<PendingRegistration> = None;
-    let mut resend_delays = resend_backoff().build();
     let mut last_published: Option<BTreeMap<dtos::ForeignChain, RpcQuorumStatus>> = None;
     loop {
         let statuses = rpc_quorum_statuses(&local, &whitelist.borrow_and_update());
@@ -71,49 +70,9 @@ async fn keep_foreign_chains_registration_up_to_date(
             .borrow_and_update()
             .get(&my_tls_key)
             .is_some_and(|recorded| **recorded == eligible);
-        if is_registered {
-            pending = None;
-        } else {
-            let is_new = pending
-                .as_ref()
-                .is_none_or(|pending| pending.chains != eligible);
-            let is_resend_due = pending.as_ref().is_some_and(|pending| {
-                pending.resend_timer.deadline() <= tokio::time::Instant::now()
-            });
-            if is_new {
-                resend_delays = resend_backoff().build();
-            }
-            if is_new || is_resend_due {
-                let resends = match &pending {
-                    Some(pending) if !is_new => pending.resends.saturating_add(1),
-                    _ => 0,
-                };
-                let delay = resend_delays.next().unwrap_or(MAX_RESEND_DELAY);
-                if is_new {
-                    tracing::info!(
-                        chains = ?eligible,
-                        "registering the foreign chains this node can serve"
-                    );
-                } else {
-                    tracing::warn!(
-                        chains = ?eligible,
-                        resends,
-                        next_resend_in = ?delay,
-                        "foreign chains registration has not landed, resending; check that the \
-                         node's access key allows register_foreign_chains_config"
-                    );
-                }
-                match register_foreign_chains(&txn_sender, &eligible).await {
-                    Ok(()) => {
-                        pending = Some(PendingRegistration {
-                            chains: eligible,
-                            resends,
-                            resend_timer: Box::pin(tokio::time::sleep(delay)),
-                        });
-                    }
-                    Err(TransactionProcessorError::ProcessorIsClosed) => break,
-                }
-            }
+        match update_registration(&mut pending, is_registered, eligible, &txn_sender).await {
+            Ok(()) => {}
+            Err(TransactionProcessorError::ProcessorIsClosed) => break,
         }
         tokio::select! {
             changed = whitelist.changed() => {
@@ -131,10 +90,71 @@ async fn keep_foreign_chains_registration_up_to_date(
     }
 }
 
+async fn update_registration(
+    pending: &mut Option<PendingRegistration>,
+    is_registered: bool,
+    eligible: BTreeSet<dtos::ForeignChain>,
+    txn_sender: &impl TransactionSender,
+) -> Result<(), TransactionProcessorError> {
+    if is_registered {
+        *pending = None;
+    } else if let Some(registration) = pending
+        && registration.chains == eligible
+    {
+        registration.resend_if_due(txn_sender).await?;
+    } else {
+        *pending = Some(PendingRegistration::send(txn_sender, eligible).await?);
+    }
+    Ok(())
+}
+
 struct PendingRegistration {
     chains: BTreeSet<dtos::ForeignChain>,
     resends: u32,
+    resend_delays: ExponentialBackoff,
     resend_timer: Pin<Box<Sleep>>,
+}
+
+impl PendingRegistration {
+    async fn send(
+        txn_sender: &impl TransactionSender,
+        chains: BTreeSet<dtos::ForeignChain>,
+    ) -> Result<Self, TransactionProcessorError> {
+        tracing::info!(
+            ?chains,
+            "registering the foreign chains this node can serve"
+        );
+        register_foreign_chains(txn_sender, &chains).await?;
+        let mut resend_delays = resend_backoff().build();
+        let delay = resend_delays.next().unwrap_or(MAX_RESEND_DELAY);
+        Ok(Self {
+            chains,
+            resends: 0,
+            resend_delays,
+            resend_timer: Box::pin(tokio::time::sleep(delay)),
+        })
+    }
+
+    async fn resend_if_due(
+        &mut self,
+        txn_sender: &impl TransactionSender,
+    ) -> Result<(), TransactionProcessorError> {
+        if self.resend_timer.deadline() > tokio::time::Instant::now() {
+            return Ok(());
+        }
+        self.resends = self.resends.saturating_add(1);
+        let delay = self.resend_delays.next().unwrap_or(MAX_RESEND_DELAY);
+        tracing::warn!(
+            chains = ?self.chains,
+            resends = self.resends,
+            next_resend_in = ?delay,
+            "foreign chains registration has not landed, resending; check that the node's access \
+             key allows register_foreign_chains_config"
+        );
+        register_foreign_chains(txn_sender, &self.chains).await?;
+        self.resend_timer = Box::pin(tokio::time::sleep(delay));
+        Ok(())
+    }
 }
 
 /// Never completes while nothing is pending.
@@ -477,6 +497,29 @@ mod tests {
             registrar
                 .assert_no_registration_for(MAX_RESEND_DELAY * 2)
                 .await;
+        });
+        root.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keep_foreign_chains_registration_up_to_date__should_stop_once_the_transaction_processor_closes()
+     {
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given
+            let mut registrar =
+                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+
+            // When
+            drop(registrar.transactions);
+
+            // Then
+            let stopped =
+                tokio::time::timeout(MIN_RESEND_DELAY * 2, registrar.whitelist.closed()).await;
+            assert_matches!(stopped, Ok(()));
         });
         root.await;
     }
