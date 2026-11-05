@@ -257,11 +257,8 @@ impl CKDRequestTest {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct CKDResponseArgs {
-    pub request: CKDRequest,
-    pub response: CKDResponse,
-}
+pub use near_mpc_contract_interface::call_args::CKDRespondArgs;
+pub type CKDResponseArgs = CKDRespondArgs;
 
 async fn submit_response(
     contract: &Contract,
@@ -289,7 +286,7 @@ pub async fn submit_signature_response(
 }
 
 pub async fn submit_ckd_response(
-    response: &CKDResponseArgs,
+    response: &CKDRespondArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
@@ -297,7 +294,7 @@ pub async fn submit_ckd_response(
 }
 
 pub async fn submit_ckd_response_measure_gas(
-    response: &CKDResponseArgs,
+    response: &CKDRespondArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<near_workspaces::types::Gas> {

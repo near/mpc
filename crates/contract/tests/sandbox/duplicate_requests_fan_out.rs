@@ -408,12 +408,13 @@ async fn pending_signature_queue_len(
     contract: &near_workspaces::Contract,
     request: &near_mpc_contract_interface::types::SignatureRequest,
 ) -> anyhow::Result<u32> {
-    contract
-        .view("pending_signature_queue_len")
+    let len: u32 = contract
+        .as_account()
+        .view(contract.id(), "pending_signature_queue_len")
         .args_json(serde_json::json!({ "request": request }))
         .await?
-        .json()
-        .map_err(Into::into)
+        .json()?;
+    Ok(len)
 }
 
 /// CKD counterpart to [`run_sign_fan_out`].
@@ -585,12 +586,13 @@ async fn pending_ckd_queue_len(
     contract: &near_workspaces::Contract,
     request: &CKDRequest,
 ) -> anyhow::Result<u32> {
-    contract
-        .view("pending_ckd_queue_len")
+    let len: u32 = contract
+        .as_account()
+        .view(contract.id(), "pending_ckd_queue_len")
         .args_json(serde_json::json!({ "request": request }))
         .await?
-        .json()
-        .map_err(Into::into)
+        .json()?;
+    Ok(len)
 }
 
 /// Generates a Bls12-381 G1 app public key from an arbitrary scalar so the test can
