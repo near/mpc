@@ -141,12 +141,14 @@ which the probe cannot check.
 After each round the node also compares the configured providers with the
 provider whitelist. It logs a warning for each unhealthy provider and a line
 for each difference from the whitelist, so a wrong config is reported every
-hour until it is fixed. Each round ends with one
-`foreign chain probe round complete` line with the healthy, probed and
-unchecked provider counts and the whitelist state: `not read yet` until the
-node has synced and read the whitelist from the contract, then
-`matches the local config` or the number of differences. The node probes again
-as soon as the whitelist is read, and whenever the whitelist changes.
+hour until it is fixed. Some differences are normal, such as a chain that is
+not whitelisted yet or an extra provider, and are logged as info. Each round
+ends with one `foreign chain probe round complete` line with the healthy,
+probed and unchecked provider counts, the chains the probe cannot check, and
+the whitelist state: `not read yet` until the node has synced and read the
+whitelist from the contract, then `matches the local config` or the number of
+differences logged above it. The node probes again as soon as the whitelist is
+read, and whenever the whitelist changes.
 
 ### Whitelist and quorum
 

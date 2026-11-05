@@ -64,6 +64,7 @@ fn finish_round(
         probed,
         healthy,
         unchecked,
+        unchecked_chains,
     } = report::summarize(rows);
     if probed == 0 {
         report::log_nothing_checked(rows);
@@ -85,6 +86,7 @@ fn finish_round(
         healthy,
         probed,
         unchecked,
+        ?unchecked_chains,
         whitelist = whitelist_state,
         "{ROUND_COMPLETE}"
     );
@@ -341,6 +343,64 @@ mod tests {
                 _ => Err(format!(
                     "expected one round line with {whitelist_state:?}, got {round_lines:?}"
                 )),
+            }
+        });
+    }
+
+    #[test]
+    #[traced_test]
+    fn finish_round__should_log_each_problem_then_one_summary_line() {
+        // Given
+        let report = ProbeReport::from(vec![
+            row(
+                dtos::ForeignChain::Polygon,
+                "alchemy",
+                ProviderStatus::Healthy,
+            ),
+            row(
+                dtos::ForeignChain::Polygon,
+                "quicknode",
+                ProviderStatus::Unreachable,
+            ),
+            row(
+                dtos::ForeignChain::Ton,
+                "toncenter",
+                ProviderStatus::ProbeNotImplemented,
+            ),
+        ]);
+        let whitelist = ForeignChainWhitelist::new();
+
+        // When
+        finish_round(&report, &polygon_config(), Some(&whitelist));
+
+        // Then
+        logs_assert(|lines: &[&str]| {
+            let matching = |text: &str| -> Vec<&&str> {
+                lines.iter().filter(|line| line.contains(text)).collect()
+            };
+            let unhealthy = matching("provider is unhealthy");
+            let not_whitelisted = matching("chain is not whitelisted yet");
+            let round = matching(ROUND_COMPLETE);
+            let checks = [
+                (
+                    "one unhealthy line, for quicknode",
+                    matches!(unhealthy.as_slice(), [line] if line.contains("quicknode")),
+                ),
+                ("one whitelist difference line", not_whitelisted.len() == 1),
+                (
+                    "no line for the healthy or the unchecked provider",
+                    matching("alchemy").is_empty() && matching("toncenter").is_empty(),
+                ),
+                (
+                    "one summary line with the counts and the whitelist state",
+                    matches!(round.as_slice(), [line] if line.contains(
+                        r#"healthy=1 probed=2 unchecked=1 unchecked_chains={"ton"} whitelist="1 difference from the local config""#
+                    )),
+                ),
+            ];
+            match checks.iter().find(|(_, passed)| !passed) {
+                Some((check, _)) => Err(format!("expected {check}, got {lines:#?}")),
+                None => Ok(()),
             }
         });
     }

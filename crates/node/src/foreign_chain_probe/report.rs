@@ -14,14 +14,16 @@ pub(super) struct Summary {
     pub(super) healthy: usize,
     /// Providers of a chain the probe cannot check.
     pub(super) unchecked: usize,
+    pub(super) unchecked_chains: BTreeSet<&'static str>,
 }
 
 pub(super) fn summarize(rows: &[ProviderHealth]) -> Summary {
-    let probed = rows.iter().filter(|row| row.status.was_probed()).count();
+    let unchecked = || rows.iter().filter(|row| !row.status.was_probed());
     Summary {
-        probed,
+        probed: rows.iter().filter(|row| row.status.was_probed()).count(),
         healthy: rows.iter().filter(|row| row.status.is_healthy()).count(),
-        unchecked: rows.len() - probed,
+        unchecked: unchecked().count(),
+        unchecked_chains: unchecked().map(|row| row.chain.label()).collect(),
     }
 }
 
@@ -110,6 +112,7 @@ mod tests {
                 probed: 2,
                 healthy: 1,
                 unchecked: 1,
+                unchecked_chains: BTreeSet::from(["ton"]),
             }
         );
     }
@@ -133,6 +136,7 @@ mod tests {
                 probed: 0,
                 healthy: 0,
                 unchecked: 1,
+                unchecked_chains: BTreeSet::from(["ton"]),
             }
         );
     }
