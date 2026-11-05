@@ -219,7 +219,7 @@ In the shell where you ran the local near node, you should see the peer count ch
 2025-08-03T14:20:12.183398Z  INFO stats: #  100579 98DQh3yG987rY1pNWKbM4jYjJ5xuFixP4g3MJuVvpiWY Validator | 1 validator 2 peers ⬇ 1.10 kB/s ⬆ 37.4 kB/s 1.60 bps 0 gas/s CPU: 3%, Mem: 2.17 GB
 ```
 
-### Assign the signer and responder keys as subkeys
+### Assign the signer keys as subkeys
 
 We must delegate the generate signing keys Sam and Frodo generated as access keys to their near accounts such that they
 can sign transaction that require authorization on the contract.
@@ -229,9 +229,6 @@ First we can get the keys from the `public_data` endpoint:
 ```shell
 export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r ".near_signer_public_key")
 export SAM_PUBKEY=$(curl -s localhost:8082/public_data | jq -r ".near_signer_public_key")
-
-export FRODO_RESPONDER_KEY=$(curl -s localhost:8081/public_data | jq -r ".near_responder_public_keys[0]")
-export SAM_RESPONDER_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_responder_public_keys[0]")
 ```
 
 Now we can add these keys to the appropriate NEAR accounts with the NEAR CLI.
@@ -241,10 +238,8 @@ break when a release adds a method the node must call.
 
 ```shell
 near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
 near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 4. Initialize the MPC contract
@@ -258,7 +253,11 @@ export SAM_P2P_KEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_publi
 export MPC_HOST=localhost
 ```
 
-With these set, we can prepare the arguments for the init call.
+With these set, we can prepare the arguments for the init call. Besides the
+participants, they name `tee-verifier.test.near` as the trusted TEE verifier.
+The nodes here submit mock attestations, which the contract verifies itself, so
+that account only has to exist once real Dstack attestations are in play. Step 6
+deploys it.
 
 ```shell
 envsubst < docs/development/localnet/args/init.json > /tmp/init_args.json
@@ -295,10 +294,10 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/development/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-## 6. (Optional) Deploy and vote in the TEE verifier
+## 6. (Optional) Deploy the TEE verifier
 
-The stateless `tee-verifier` contract exposes `verify_quote`, which the MPC
-contract calls to attest node quotes. Build it with `--no-abi` (its types don't
+The stateless `tee-verifier` contract exposes `verify_quote_with_collateral_dates`,
+which the MPC contract calls to attest node quotes, and the older `verify_quote`. Build it with `--no-abi` (its types don't
 derive `BorshSchema`, so the default ABI-embedding build fails; the plain WASM is
 all we need):
 
@@ -316,20 +315,9 @@ near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogene
 near contract deploy tee-verifier.test.near use-file "$TEE_VERIFIER_PATH" without-init-call network-config mpc-localnet sign-with-keychain send
 ```
 
-Now have Frodo and Sam vote it in. `expected_code_hash` commits every voter to
-the same audited WASM; the contract only compares voters' hashes against each
-other, not against the deployed bytes:
-
-```shell
-export TEE_VERIFIER_HASH=$(sha256sum "$TEE_VERIFIER_PATH" | cut -d' ' -f1)
-
-near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
-
-near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
-```
-
-Once both votes agree, the change is applied. Read the resolved verifier; it
-returns `tee-verifier.test.near`:
+The MPC contract already trusts this account since the init call named it; a
+different verifier can later be voted in via `vote_tee_verifier_change`. Read the
+trusted verifier; it returns `tee-verifier.test.near`:
 
 ```shell
 near contract call-function as-read-only mpc-contract.test.near tee_verifier_account_id json-args {} network-config mpc-localnet now
@@ -418,46 +406,6 @@ machine ready to produce signatures.
 These use domain 3 (Secp256k1 with purpose `ForeignTx`). The `verify_foreign_transaction()` method
 only accepts domains with purpose `ForeignTx`.
 
-#### Bitcoin
-
-```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
-```
-
-```log
-Function execution return value (printed to stdout):
-{
-  "payload": {
-    "V1": {
-      "request": {
-        "Bitcoin": {
-          "confirmations": 1,
-          "extractors": [
-            "BlockHash"
-          ],
-          "tx_id": "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c"
-        }
-      },
-      "values": [
-        {
-          "Hash256": "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab"
-        }
-      ]
-    }
-  },
-  "signature": {
-    "big_r": {
-      "affine_point": "03c412f5f99dde160ac10db0cced4e89789e10ce2bde863ad272d7261e509aa8fa"
-    },
-    "recovery_id": 0,
-    "s": {
-      "scalar": "07fde0f9fdb55c1bfc3029e11ef617283deb3c394b9068003f4e9785e1a4b434"
-    },
-    "scheme": "Secp256k1"
-  }
-}
-```
-
 #### Abstract
 
 ```shell
@@ -480,6 +428,36 @@ near contract call-function as-transaction mpc-contract.test.near verify_foreign
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_sui.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+#### Solana
+
+Solana providers prune historical transactions, so `verify_foreign_tx_solana.json` carries a
+placeholder `tx_id` instead of a pinned one (this is also why the launch script's smoke loop skips
+Solana). Patch in a fresh finalized signature first — the extractor reads an account, not the
+transaction's contents, so any recent successful transaction works as the anchor.
+
+The account it reads is the rent sysvar, chosen because its data never changes. `AccountState`
+observes an account at query time, so every node must see the same bytes: point it at an account
+that mutates and the nodes derive different payload hashes and the request simply times out.
+
+```shell
+# The mint sees a steady stream of *failing* transactions, so filter on `err` rather than
+# taking the most recent signature: a failed anchor makes the node answer TransactionFailed.
+SIG=$(curl -s https://api.mainnet-beta.solana.com -X POST -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getSignaturesForAddress","params":["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",{"limit":50,"commitment":"finalized"}]}' \
+  | jq -r 'first(.result[] | select(.err == null) | .signature)')
+TX_HEX=$(python3 -c 'import sys
+alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+n = 0
+for c in sys.argv[1]:
+    n = n * 58 + alphabet.index(c)
+print(n.to_bytes(64, "big").hex())' "$SIG")
+jq --arg tx "$TX_HEX" '.request.request.Solana.tx_id = $tx' docs/development/localnet/args/verify_foreign_tx_solana.json > /tmp/verify_foreign_tx_solana.json
+```
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args /tmp/verify_foreign_tx_solana.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 8. Clean Up

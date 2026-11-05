@@ -147,20 +147,10 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
         .subscribe()
         .await;
 
-    loop {
-        if watch_value
-            .latest()
-            .expect("we don't expect an error")
-            .value
-            == end_marker
-        {
-            break;
-        }
-        tokio::time::timeout(EVENT_TIMEOUT, watch_value.changed())
-            .await
-            .unwrap()
-            .unwrap();
-    }
+    watch_value
+        .wait_for(EVENT_TIMEOUT, |value| value == end_marker)
+        .await
+        .unwrap();
 
     drop(watch_value);
     // close the localnet, such that we no longer get events
@@ -336,20 +326,10 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
             .submit_function_call_tx(&contract_signer, contract_id.clone(), call)
             .await
             .unwrap();
-        loop {
-            if watch_value
-                .latest()
-                .expect("we don't expect an error")
-                .value
-                == target
-            {
-                break;
-            }
-            tokio::time::timeout(EVENT_TIMEOUT, watch_value.changed())
-                .await
-                .unwrap()
-                .unwrap();
-        }
+        watch_value
+            .wait_for(EVENT_TIMEOUT, |value| value == target)
+            .await
+            .unwrap();
     }
     drop(watch_value);
 
@@ -394,20 +374,10 @@ async fn test_block_status_handle_becomes_final() {
         .view::<String, Json>(contract_id, ViewArgs::no_args(VIEW_VALUE))
         .subscribe()
         .await;
-    loop {
-        if watch_value
-            .latest()
-            .expect("we don't expect an error")
-            .value
-            == target_value
-        {
-            break;
-        }
-        tokio::time::timeout(EVENT_TIMEOUT, watch_value.changed())
-            .await
-            .expect("we expect value to change due to our function call")
-            .unwrap();
-    }
+    watch_value
+        .wait_for(EVENT_TIMEOUT, |value| value == target_value)
+        .await
+        .expect("we expect value to change due to our function call");
     drop(watch_value);
 
     // Then: the handle reports its block as final. The state viewer can see

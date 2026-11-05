@@ -47,7 +47,7 @@ pub(crate) async fn view_when_synced<T, F: Future<Output = T>>(
     view().await
 }
 
-pub(crate) trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
+pub trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     fn fetch_latest_final_block_info(
         &self,

@@ -20,9 +20,10 @@ use near_mpc_sdk::foreign_chain::validation::{
 use near_sdk::near;
 use near_sdk::store::IterableMap;
 
-use crate::errors::{ConversionError, Error, InvalidParameters};
+use crate::errors::{Error, InvalidParameters};
+use crate::primitives::proposal_hash::{Borsh, ProposalHash, Sha256, ToProposalHash};
 use crate::primitives::thresholds::GovernanceThresholdParameters;
-use crate::primitives::votes::{ProposalHash, ProposalHashEncoding, Votes};
+use crate::primitives::votes::Votes;
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 use crate::storage_keys::StorageKey;
 
@@ -75,10 +76,9 @@ impl From<ChainEntry> for dtos::ChainEntry {
     }
 }
 
-impl ProposalHashEncoding for ChainEntry {
-    fn bytes_for_hash(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("borsh serialization of ChainEntry must succeed")
-    }
+impl ToProposalHash for ChainEntry {
+    type Serializer = Borsh;
+    type Hasher = Sha256;
 }
 
 #[near(serializers=[borsh])]
@@ -96,7 +96,7 @@ impl Default for AllowedProviders {
 }
 
 impl AllowedProviders {
-    fn replace(&mut self, chain: ForeignChain, entry: ChainEntry) {
+    pub(crate) fn replace(&mut self, chain: ForeignChain, entry: ChainEntry) {
         self.entries.insert(chain, entry);
     }
 
@@ -135,7 +135,7 @@ impl Default for ProviderVotes {
 impl ProviderVotes {
     pub fn retain(&mut self, current: &Participants) {
         self.pending
-            .retain_votes(|(p, _)| current.is_participant_given_participant_id(&p.get()));
+            .retain_votes(|(p, _)| current.is_participant(p));
     }
 
     /// Records `participant`'s vote for `(chain, hash)`. Returns `true` when `chain`
@@ -148,27 +148,21 @@ impl ProviderVotes {
         hash: ProposalHash,
         participant: AuthenticatedParticipantId,
         threshold_parameters: &GovernanceThresholdParameters,
-    ) -> Result<bool, Error> {
-        let protocol_threshold = threshold_parameters.threshold().value();
+    ) -> bool {
+        let protocol_threshold = threshold_parameters.threshold();
         let participants = threshold_parameters.participants();
-        // Scope the borrow on `self.pending.vote` so we can mutate `self.pending`
-        // after `count_for`.
-        let count_usize = {
-            let voter_set = self.pending.vote((participant, chain), hash);
-            voter_set.count_for(|(p, c)| {
-                *c == chain && participants.is_participant_given_participant_id(&p.get())
-            })
-        };
-        let count = u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count_usize} does not fit in u64: {e}"),
-        })?;
-        if count >= protocol_threshold {
+        let count = dtos::ParticipantCount::from_len(
+            self.pending
+                .vote((participant, chain), hash)
+                .count_for(|(p, c)| *c == chain && participants.is_participant(p)),
+        );
+        if protocol_threshold.is_met_by(count) {
             // Drop ALL pending rows for this chain regardless of which proposal
             // they held — matches the previous `clear_chain` semantics.
             self.pending.retain_votes(|(_, c)| *c != chain);
-            Ok(true)
+            true
         } else {
-            Ok(false)
+            false
         }
     }
 }
@@ -202,10 +196,10 @@ impl ForeignChainRpcWhitelist {
         let votes: BTreeMap<ForeignChain, dtos::ChainEntry> = votes.into();
         for (chain, entry) in votes {
             let entry: ChainEntry = entry.try_into()?;
-            let hash = ProposalHash::from(entry.clone());
+            let hash = entry.to_proposal_hash();
             if self
                 .votes
-                .vote(chain, hash, participant.clone(), threshold_parameters)?
+                .vote(chain, hash, participant.clone(), threshold_parameters)
             {
                 self.entries.replace(chain, entry);
                 applied.push(chain);
@@ -222,9 +216,9 @@ mod tests {
     use crate::primitives::{
         key_state::AuthenticatedParticipantId, test_utils::gen_authenticated_participants,
     };
-    use assert_matches::assert_matches;
     use mpc_primitives::GovernanceThreshold;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
+    use std::assert_matches;
 
     /// Build a [`GovernanceThresholdParameters`] for tests, bypassing the relative-threshold
     /// validation so tests can express edge-case combinations (e.g. the stale-votes
@@ -493,7 +487,7 @@ mod tests {
         assert_eq!(voters_for_p0_polygon, 1);
 
         let expected_entry: ChainEntry = chain_entry(&["ankr", "drpc"], 2).try_into().unwrap();
-        let expected_hash = ProposalHash::from(expected_entry);
+        let expected_hash = expected_entry.to_proposal_hash();
         let actual_hash = pending_proposal_hash_for(&wl, &(p0, ForeignChain::Polygon))
             .expect("expected pending row for (p0, Polygon)");
         assert_eq!(actual_hash, expected_hash);

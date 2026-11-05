@@ -166,7 +166,7 @@ async fn retry_conclude_onboarding(
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 ) -> anyhow::Result<()> {
     const MIN_DELAY: Duration = Duration::from_secs(2);
-    const MAX_TIMEOUT: Duration = Duration::from_secs(60);
+    const MAX_TIMEOUT: Duration = Duration::from_mins(1);
     const POST_TX_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(10);
 
     let builder = ExponentialBuilder::new()

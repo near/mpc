@@ -1,9 +1,9 @@
 use crate::indexer::participants::KeyEventIdComparisonResult;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::network::MeshNetworkClient;
-use crate::primitives::{MpcTaskId, ParticipantId};
-use crate::providers::EcdsaTaskId;
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::network::wire_format::{EcdsaTaskId, EddsaTaskId, MpcTaskId};
+use crate::primitives::ParticipantId;
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
@@ -51,7 +51,7 @@ pub async fn keygen_computation_inner(
     // every protocol (including robust-ECDSA, whose reconstruction lower bound
     // equals `t`) the keygen runs with lower bound `t`.
     let reconstruction_threshold =
-        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
+        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.value())?);
     let keyshare_handle = keyshare_storage
         .write()
         .await
@@ -74,7 +74,7 @@ pub async fn keygen_computation_inner(
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        Protocol::DamgardEtAl => {
+        Protocol::RobustEcdsa => {
             let keyshare = RobustEcdsaSignatureProvider::run_key_generation_client(
                 reconstruction_threshold,
                 channel,
@@ -206,7 +206,7 @@ async fn resharing_computation_inner(
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
 
     let new_reconstruction_threshold =
-        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
+        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.value())?);
     let old_reconstruction_threshold = TSReconstructionThreshold::from(usize::try_from(
         args.old_reconstruction_thresholds
             .get(&key_id.domain_id)
@@ -216,7 +216,7 @@ async fn resharing_computation_inner(
                     key_id.domain_id
                 )
             })?
-            .inner(),
+            .value(),
     )?);
 
     let keyshare_handle = keyshare_storage
@@ -274,7 +274,7 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Protocol::DamgardEtAl,
+            Protocol::RobustEcdsa,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
@@ -582,12 +582,12 @@ pub async fn keygen_follower(
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel receiver closed unexpectedly; exiting."))?;
         let key_event_id = match channel.task_id() {
-            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event }) => {
-                key_event
-            }
-            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyGeneration { key_event }) => {
-                key_event
-            }
+            crate::network::wire_format::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration {
+                key_event,
+            }) => key_event,
+            crate::network::wire_format::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyGeneration {
+                key_event,
+            }) => key_event,
             _ => {
                 tracing::info!("Ignoring non-keygen task {:?}", channel.task_id());
                 continue;
@@ -724,12 +724,12 @@ pub async fn resharing_follower(
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel receiver closed unexpectedly; exiting."))?;
         let key_event_id = match channel.task_id() {
-            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event }) => {
-                key_event
-            }
-            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing { key_event }) => {
-                key_event
-            }
+            crate::network::wire_format::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
+                key_event,
+            }) => key_event,
+            crate::network::wire_format::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing {
+                key_event,
+            }) => key_event,
             _ => {
                 tracing::info!("Ignoring non-resharing task {:?}", channel.task_id());
                 continue;
@@ -794,17 +794,16 @@ impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
 mod tests {
     use super::*;
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
-    use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
+    use crate::indexer::tx_sender::TransactionProcessorError;
     use crate::keyshare::KeyStorageConfig;
     use crate::network::testing::new_task_channel_for_test;
-    use assert_matches::assert_matches;
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_mpc_contract_interface::types::{
         DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
     };
-    use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{assert_matches, collections::BTreeSet};
 
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
@@ -903,10 +902,9 @@ mod tests {
             validate_key_event_participants(&channel_participants, &expected_participant_ids);
 
         // Then
-        assert_matches!(result, Err(err) => {
-            assert_eq!(err.missing, make_participant_ids(&[4]));
-            assert!(err.unexpected.is_empty());
-        });
+        let err = result.unwrap_err();
+        assert_eq!(err.missing, make_participant_ids(&[4]));
+        assert!(err.unexpected.is_empty());
     }
 
     #[test]
@@ -921,10 +919,9 @@ mod tests {
             validate_key_event_participants(&channel_participants, &expected_participant_ids);
 
         // Then
-        assert_matches!(result, Err(err) => {
-            assert!(err.missing.is_empty());
-            assert_eq!(err.unexpected, make_participant_ids(&[5]));
-        });
+        let err = result.unwrap_err();
+        assert!(err.missing.is_empty());
+        assert_eq!(err.unexpected, make_participant_ids(&[5]));
     }
 
     /// A leader-chosen subset must be refused without any contract interaction, in particular
@@ -1053,13 +1050,6 @@ mod tests {
             self.count.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
-
-        async fn send_and_wait(
-            &self,
-            _transaction: ChainSendTransactionRequest,
-        ) -> Result<TransactionStatus, TransactionProcessorError> {
-            unimplemented!()
-        }
     }
 
     fn make_key_event_id(epoch: u64, domain: u64, attempt: u64) -> KeyEventId {
@@ -1110,7 +1100,6 @@ mod tests {
         let keyshare_storage = KeyStorageConfig {
             home_dir: tempfile::tempdir().unwrap().keep(),
             local_encryption_key: [0u8; 16],
-            gcp: None,
         }
         .create()
         .await

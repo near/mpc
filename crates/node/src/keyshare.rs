@@ -4,7 +4,6 @@ pub mod permanent;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
-mod gcp;
 mod temporary;
 
 use anyhow::Context;
@@ -13,7 +12,7 @@ use near_mpc_contract_interface::types::{
     Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
 };
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
-use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
+use permanent::{PermanentKeyStorage, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
@@ -72,7 +71,7 @@ impl Keyshare {
 /// Abstracts away the storage of the keyshares.
 ///
 /// The keyshares are stored in "permanent key storage" and "temporary key storage":
-///  - Permanent key storage is a single object that lives either on GCP or locally.
+///  - Permanent key storage is a single object that lives locally.
 ///  - Temporary key storage is a collection of keyshares that are persisted as individual files.
 ///    Each keyshare is identified by (epoch ID, domain ID, attempt ID).
 ///
@@ -453,36 +452,20 @@ impl KeyshareStorage {
     }
 }
 
-pub struct GcpPermanentKeyStorageConfig {
-    pub project_id: String,
-    pub secret_id: String,
-}
-
 /// Config for how to construct a KeyshareStorage.
 pub struct KeyStorageConfig {
     pub home_dir: std::path::PathBuf,
     pub local_encryption_key: [u8; 16],
-    pub gcp: Option<GcpPermanentKeyStorageConfig>,
 }
 
 impl KeyStorageConfig {
     pub async fn create(&self) -> anyhow::Result<KeyshareStorage> {
-        let permanent_backend: Box<dyn PermanentKeyStorageBackend> = if let Some(gcp) = &self.gcp {
-            let backend = gcp::GcpPermanentKeyStorageBackend::new(
-                gcp.project_id.clone(),
-                gcp.secret_id.clone(),
-            )
-            .await?;
-            Box::new(backend)
-        } else {
-            let backend = local::LocalPermanentKeyStorageBackend::new(
-                self.home_dir.clone(),
-                self.local_encryption_key,
-            )
-            .await?;
-            Box::new(backend)
-        };
-        let permanent = PermanentKeyStorage::new(permanent_backend).await?;
+        let backend = local::LocalPermanentKeyStorageBackend::new(
+            self.home_dir.clone(),
+            self.local_encryption_key,
+        )
+        .await?;
+        let permanent = PermanentKeyStorage::new(Box::new(backend)).await?;
         let temporary = TemporaryKeyStorage::new(self.home_dir.clone(), self.local_encryption_key)?;
         Ok(KeyshareStorage {
             temporary,
@@ -500,7 +483,6 @@ pub fn generate_key_storage_config() -> (KeyStorageConfig, tempfile::TempDir) {
         KeyStorageConfig {
             home_dir,
             local_encryption_key,
-            gcp: None,
         },
         tempdir,
     )

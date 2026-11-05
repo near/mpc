@@ -7,12 +7,14 @@ pub mod account_id;
 pub mod domain;
 pub mod hash;
 pub mod key_state;
+pub mod participant_count;
 pub mod participant_id;
 pub mod threshold;
 pub mod yield_index;
 
 pub use account_id::AccountId;
 pub use key_state::{AttemptId, EpochId, KeyEventId};
+pub use participant_count::ParticipantCount;
 pub use participant_id::ParticipantId;
 pub use threshold::{GovernanceThreshold, ReconstructionThreshold};
 pub use yield_index::YieldIndex;

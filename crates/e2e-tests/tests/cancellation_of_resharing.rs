@@ -17,7 +17,6 @@ async fn test_cancellation_of_resharing() {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..3).collect();
             c.triples_to_buffer = 2;
-            c.presignatures_to_buffer = 2;
         })
         .await;
     let mut rng = StdRng::seed_from_u64(0);
@@ -73,22 +72,16 @@ async fn test_cancellation_of_resharing() {
     }
 
     // Wait for Running state after cancellation.
-    cluster
-        .wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
+    let state = cluster
+        .wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
         .await
         .expect("contract did not return to Running after cancellation");
 
     // Verify previously_cancelled_resharing_epoch_id is set.
-    let state = cluster
-        .get_contract_state()
-        .await
-        .expect("failed to get state");
-    let running = match &state {
-        ProtocolContractState::Running(r) => r,
-        other => panic!("expected Running, got: {other:?}"),
+    let ProtocolContractState::Running(running) = &state else {
+        unreachable!("wait_for_state returned a non-Running state");
     };
     assert_eq!(
         running.previously_cancelled_resharing_epoch_id,

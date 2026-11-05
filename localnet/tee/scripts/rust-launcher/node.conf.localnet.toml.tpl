@@ -25,8 +25,6 @@ backup_encryption_key_hex = "000000000000000000000000000000000000000000000000000
 
 [mpc_node_config.node]
 my_near_account_id = "${MPC_ACCOUNT_ID}"
-near_responder_account_id = "${MPC_ACCOUNT_ID}"
-number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
 migration_web_ui = "0.0.0.0:8079"
 cores = 4
@@ -48,11 +46,6 @@ concurrency = 2
 desired_triples_to_buffer = 128
 timeout_sec = 120
 parallel_triple_generation_stagger_time_sec = 1
-
-[mpc_node_config.node.presignature]
-concurrency = 4
-desired_presignatures_to_buffer = 64
-timeout_sec = 60
 
 [mpc_node_config.node.signature]
 timeout_sec = 60

@@ -1,9 +1,9 @@
-use assert_matches::assert_matches;
 use chain_gateway::errors::NearViewClientError;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 use near_contract_transport::{
     Json, ObservedState, TransportError, ViewArgs, ViewContract, WatchContractState,
 };
+use std::assert_matches;
 
 use crate::common::localnet::Localnet;
 

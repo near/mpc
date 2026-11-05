@@ -76,7 +76,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     Protocol::CaitSith => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    Protocol::DamgardEtAl => {
+                    Protocol::RobustEcdsa => {
                         robust_ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                     Protocol::Frost => {
@@ -190,7 +190,7 @@ struct ParallelSignArgsV2 {
 
 fn make_payload(protocol: Protocol) -> Payload {
     match protocol {
-        Protocol::CaitSith | Protocol::DamgardEtAl => {
+        Protocol::CaitSith | Protocol::RobustEcdsa => {
             Payload::Ecdsa(rand::random::<[u8; 32]>().into())
         }
         Protocol::Frost => {

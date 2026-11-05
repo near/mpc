@@ -4,7 +4,7 @@
 
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
-use crate::primitives::key_state::AuthenticatedParticipantId;
+use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
@@ -14,27 +14,34 @@ use std::time::Duration;
 #[near]
 impl MpcContract {
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: dtos::NodeImageHash) -> Result<(), Error> {
+    pub fn vote_mpc_node_manifest_digest(
+        &mut self,
+        mpc_node_manifest_digest: dtos::NodeImageHash,
+    ) -> Result<(), Error> {
         log!(
-            "vote_code_hash: signer={}, code_hash={:?}",
+            "vote_mpc_node_manifest_digest: signer={}, mpc_node_manifest_digest={:?}",
             env::signer_account_id(),
-            code_hash,
+            mpc_node_manifest_digest,
         );
         self.voter_or_panic();
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash, &participant);
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
+        let votes = self
+            .tee_state
+            .vote_mpc_node_manifest_digest(mpc_node_manifest_digest, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total votes for proposal: {}", votes);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             self.tee_state
-                .whitelist_tee_proposal(code_hash, tee_upgrade_deadline_duration);
+                .whitelist_tee_proposal(mpc_node_manifest_digest, tee_upgrade_deadline_duration);
         }
 
         Ok(())
@@ -57,15 +64,19 @@ impl MpcContract {
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let action = dtos::LauncherVoteAction::Add(launcher_hash);
-        let votes = self.tee_state.vote_launcher(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_launcher(action, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total launcher votes for action: {}", votes);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             let outcome = self.tee_state.add_launcher_image(
                 launcher_hash,
                 tee_upgrade_deadline_duration,
@@ -93,12 +104,16 @@ impl MpcContract {
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let action = dtos::LauncherVoteAction::Remove(launcher_hash);
-        let votes = self.tee_state.vote_launcher(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_launcher(action, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total launcher votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
+        let total_participants = threshold_parameters.participants().count();
         if votes >= total_participants {
             let removed = self.tee_state.remove_launcher_image(&launcher_hash);
             log!("launcher hash remove result: {}", removed);
@@ -122,11 +137,15 @@ impl MpcContract {
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Add(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_measurement(action, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total measurement votes for action: {}", votes);
 
-        if votes >= self.threshold()?.value() {
+        if self.threshold()?.is_met_by(votes) {
             let added = self.tee_state.add_measurement(measurement);
             log!("OS measurement add result: {}", added);
         }
@@ -150,12 +169,16 @@ impl MpcContract {
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Remove(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_measurement(action, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total measurement votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
+        let total_participants = threshold_parameters.participants().count();
         if votes >= total_participants {
             let removed = self.tee_state.remove_measurement(&measurement);
             log!("OS measurement remove result: {}", removed);
@@ -164,7 +187,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Returns the current OS measurement votes, showing each participant's vote.
+    /// Returns pending OS measurement votes, may include former participants' votes
     pub fn os_measurement_votes(&self) -> dtos::MeasurementVotes {
         log!("os_measurement_votes");
         (&self.tee_state.measurement_votes).into_dto_type()
@@ -198,13 +221,13 @@ impl MpcContract {
         self.tee_state.get_allowed_launcher_hashes()
     }
 
-    /// Returns the current launcher hash votes, showing each participant's vote.
+    /// Returns pending launcher hash votes, may include former participants' votes
     pub fn launcher_hash_votes(&self) -> dtos::LauncherHashVotes {
         (&self.tee_state.launcher_votes).into_dto_type()
     }
 
-    /// Returns the current code hash votes, showing each participant's vote.
-    pub fn code_hash_votes(&self) -> dtos::CodeHashesVotes {
+    /// Returns pending MPC node manifest digest votes, may include former participants' votes
+    pub fn mpc_node_manifest_digest_votes(&self) -> dtos::CodeHashesVotes {
         (&self.tee_state.votes).into_dto_type()
     }
 
@@ -229,17 +252,21 @@ impl MpcContract {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use super::*;
+    use super::{Duration, MpcContract, ProtocolContractState};
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
+    use crate::primitives::proposal_hash::ToProposalHash;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::proposal::get_docker_compose_hash;
     use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+    use std::collections::BTreeSet;
 
     #[rstest]
     #[case(ProtocolContractState::Running(gen_running_state(NUM_DOMAINS)))]
@@ -270,7 +297,7 @@ mod tests {
             );
 
             contract
-                .vote_code_hash(code_hash.into())
+                .vote_mpc_node_manifest_digest(code_hash.into())
                 .expect("vote succeeds");
         }
 
@@ -478,7 +505,7 @@ mod tests {
                     .build()
             );
             contract
-                .vote_code_hash(mpc_hash)
+                .vote_mpc_node_manifest_digest(mpc_hash)
                 .expect("mpc vote should succeed");
         }
 
@@ -553,18 +580,20 @@ mod tests {
 
     /// Tests the [`launcher_hash_votes()`] view method:
     /// 1. Starts empty
-    /// 2. After each vote, reflects the correct count and action (Add)
+    /// 2. After each vote, reflects the votes cast so far
     /// 3. After threshold is reached, votes are cleared
     #[test]
     fn test_launcher_hash_votes_view() {
         let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
         let participant_list = participants.participants();
         let launcher_hash = make_launcher_hash(0xCC);
+        let expected_proposal = dtos::LauncherVoteAction::Add(launcher_hash).to_proposal_hash();
 
-        assert!(contract.launcher_hash_votes().vote_by_account.is_empty());
+        assert!(contract.launcher_hash_votes().is_empty());
 
         // First vote
         let (account_0, _, _) = &participant_list[0];
+        let voter_0 = dtos::AuthenticatedAccountId(account_0.clone());
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(account_0.clone())
@@ -575,13 +604,13 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
-        let votes = &contract.launcher_hash_votes().vote_by_account;
+        let votes = contract.launcher_hash_votes();
         assert_eq!(votes.len(), 1);
-        let expected_action = dtos::LauncherVoteAction::Add(launcher_hash);
-        assert!(votes.values().all(|v| *v == expected_action));
+        assert_eq!(votes[&expected_proposal], BTreeSet::from([voter_0.clone()]));
 
         // Second vote
         let (account_1, _, _) = &participant_list[1];
+        let voter_1 = dtos::AuthenticatedAccountId(account_1.clone());
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(account_1.clone())
@@ -592,9 +621,12 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
-        let votes = &contract.launcher_hash_votes().vote_by_account;
-        assert_eq!(votes.len(), 2);
-        assert!(votes.values().all(|v| *v == expected_action));
+        let votes = contract.launcher_hash_votes();
+        assert_eq!(votes.len(), 1);
+        assert_eq!(
+            votes[&expected_proposal],
+            BTreeSet::from([voter_0, voter_1])
+        );
 
         // Third vote reaches threshold — votes should be cleared
         let (account_2, _, _) = &participant_list[2];
@@ -609,25 +641,26 @@ mod tests {
             .expect("vote should succeed");
 
         assert!(
-            contract.launcher_hash_votes().vote_by_account.is_empty(),
+            contract.launcher_hash_votes().is_empty(),
             "votes should be cleared after threshold reached"
         );
     }
 
-    /// Tests the [`code_hash_votes()`] view method:
+    /// Tests the [`MpcContract::mpc_node_manifest_digest_votes`] view method:
     /// 1. Starts empty
-    /// 2. After each vote, reflects the correct participant and hash
+    /// 2. After each vote, asserts registered votes match expected values
     /// 3. After threshold is reached, votes are cleared
     #[test]
-    fn test_code_hash_votes_view() {
+    fn mpc_node_manifest_digest_votes__should_list_voters_until_the_threshold_clears_them() {
+        // Given
         let num_participants = 4;
         let threshold = 3;
         let (mut contract, participants, _) = setup_tee_test_contract(num_participants, threshold);
         let participant_list = participants.participants();
         let code_hash = dtos::NodeImageHash::from([0xAB; 32]);
+        assert!(contract.mpc_node_manifest_digest_votes().is_empty());
 
-        assert!(contract.code_hash_votes().proposal_by_account.is_empty());
-
+        let mut expected_voters = BTreeSet::new();
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
             testing_env!(
                 VMContextBuilder::new()
@@ -635,14 +668,18 @@ mod tests {
                     .predecessor_account_id(account.clone())
                     .build()
             );
+            expected_voters.insert(dtos::AuthenticatedAccountId(account.clone()));
+
+            // When
             contract
-                .vote_code_hash(code_hash)
+                .vote_mpc_node_manifest_digest(code_hash)
                 .expect("vote should succeed");
 
-            let votes = &contract.code_hash_votes().proposal_by_account;
+            // Then
+            let votes = contract.mpc_node_manifest_digest_votes();
             if i < (threshold - 1) as usize {
-                assert_eq!(votes.len(), i + 1);
-                assert!(votes.values().all(|v| *v == code_hash));
+                assert_eq!(votes.len(), 1);
+                assert_eq!(votes[&code_hash], expected_voters);
             } else {
                 assert!(
                     votes.is_empty(),
@@ -670,7 +707,7 @@ mod tests {
                     .build()
             );
             contract
-                .vote_code_hash(mpc_hash_1)
+                .vote_mpc_node_manifest_digest(mpc_hash_1)
                 .expect("mpc vote should succeed");
         }
 
@@ -700,7 +737,7 @@ mod tests {
                     .build()
             );
             contract
-                .vote_code_hash(mpc_hash_2)
+                .vote_mpc_node_manifest_digest(mpc_hash_2)
                 .expect("mpc vote 2 should succeed");
         }
 
@@ -741,7 +778,7 @@ mod tests {
                         .build()
                 );
                 contract
-                    .vote_code_hash(hash)
+                    .vote_mpc_node_manifest_digest(hash)
                     .expect("mpc vote should succeed");
             }
         };
@@ -986,7 +1023,7 @@ mod tests {
         let measurement = make_measurement(0xCC);
 
         // Initially empty
-        assert!(contract.os_measurement_votes().vote_by_account.is_empty());
+        assert!(contract.os_measurement_votes().is_empty());
 
         // Cast one vote
         let (account_id, _, _) = &participant_list[0];
@@ -1001,9 +1038,12 @@ mod tests {
             .expect("add vote should succeed");
 
         let votes = contract.os_measurement_votes();
-        assert_eq!(votes.vote_by_account.len(), 1);
-        let (_, action) = votes.vote_by_account.iter().next().unwrap();
-        assert_eq!(*action, dtos::MeasurementVoteAction::Add(measurement));
+        let expected_proposal = dtos::MeasurementVoteAction::Add(measurement).to_proposal_hash();
+        assert_eq!(votes.len(), 1);
+        assert_eq!(
+            votes[&expected_proposal],
+            BTreeSet::from([dtos::AuthenticatedAccountId(account_id.clone())])
+        );
     }
 
     /// Tests the allowed_os_measurements view method returns the full structs

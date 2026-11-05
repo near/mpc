@@ -15,7 +15,7 @@ impl EcdsaSignatureProvider {
         let key = KeyGenerationComputation {
             reconstruction_threshold,
         }
-        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
         .await?;
         tracing::info!("Ecdsa secp256k1 key generation completed");
 
@@ -61,9 +61,10 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
 mod tests {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
+    use crate::network::wire_format::EcdsaTaskId;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+    use crate::providers::ecdsa::KeygenOutput;
     use crate::providers::ecdsa::key_generation::KeyGenerationComputation;
-    use crate::providers::ecdsa::{EcdsaTaskId, KeygenOutput};
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_primitives::domain::DomainId;
@@ -114,7 +115,7 @@ mod tests {
         let key = KeyGenerationComputation {
             reconstruction_threshold: ReconstructionThreshold::from(3),
         }
-        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
         .await?;
 
         Ok(key)

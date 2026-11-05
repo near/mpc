@@ -1,96 +1,37 @@
 use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
 
-use super::RerandomizedPresignOutput;
-use crate::ReconstructionThreshold;
-use crate::errors::{InitializationError, ProtocolError};
+use super::presign::PresignOutput;
+use crate::errors::ProtocolError;
 use crate::participants::{Participant, ParticipantList};
 use crate::{
     ecdsa::{AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption, x_coordinate},
-    protocol::{
-        Protocol,
-        helpers::recv_from_others,
-        internal::{Comms, SharedChannel, make_protocol},
-    },
+    protocol::{helpers::recv_from_others, internal::SharedChannel},
 };
 
-/// Maximum incoming buffer entries for the coordinator in the OT-based ECDSA sign protocol.
-pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 1;
-/// Maximum incoming buffer entries for non-coordinator participants in the OT-based ECDSA sign protocol.
-#[cfg(test)]
-pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
-
-/// The signature protocol, allowing us to use a presignature to sign a message.
-///
-/// **WARNING** You must absolutely hash an actual message before passing it to
-/// this function. Allowing the signing of arbitrary scalars *is* a security risk,
-/// and this function only tolerates this risk to allow for genericity.
-pub fn sign<T>(
-    participants: &[Participant],
+pub async fn sign_round(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
     coordinator: Participant,
-    threshold: T,
     me: Participant,
     public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
-) -> Result<impl Protocol<Output = SignatureOption> + use<T>, InitializationError>
-where
-    T: Into<ReconstructionThreshold>,
-{
-    let threshold = usize::from(threshold.into());
-    if participants.len() < 2 {
-        return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len(),
-        });
+) -> Result<SignatureOption, ProtocolError> {
+    if me == coordinator {
+        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
+    } else {
+        do_sign_participant(chan, participants, coordinator, me, presignature, msg_hash)
     }
-
-    let participants =
-        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
-
-    // ensure my presence in the participant list
-    if !participants.contains(me) {
-        return Err(InitializationError::MissingParticipant {
-            role: "self",
-            participant: me,
-        });
-    }
-
-    // ensure the coordinator is a participant
-    if !participants.contains(coordinator) {
-        return Err(InitializationError::MissingParticipant {
-            role: "coordinator",
-            participant: coordinator,
-        });
-    }
-
-    // ensure number of participants during the signing phase is >= threshold
-    if participants.len() < threshold {
-        return Err(InitializationError::NotEnoughParticipantsForThreshold {
-            threshold,
-            participants: participants.len(),
-        });
-    }
-
-    let ctx = Comms::with_buffer_capacity(OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
-    let fut = fut_wrapper(
-        ctx.shared_channel(),
-        participants,
-        coordinator,
-        me,
-        public_key,
-        presignature,
-        msg_hash,
-    );
-    Ok(make_protocol(ctx, fut))
 }
 
 /// Performs signing from any participant's perspective (except the coordinator)
 fn do_sign_participant(
-    mut chan: SharedChannel,
+    chan: &mut SharedChannel,
     participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
-    presignature: &RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     // Round 1
@@ -105,22 +46,22 @@ fn do_sign_participant(
 
 /// Performs signing from only the coordinator's perspective
 async fn do_sign_coordinator(
-    mut chan: SharedChannel,
-    participants: ParticipantList,
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
     me: Participant,
     public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     // Round 1
-    let s_i = compute_signature_share(&participants, me, &presignature, msg_hash)?;
+    let s_i = compute_signature_share(participants, me, presignature, msg_hash)?;
     // Spec 1.4 is non-existent for a coordinator
 
     let wait0 = chan.next_waitpoint();
     // Receive sj
     // Spec 1.5
     let mut s = s_i;
-    for (_, s_j) in recv_from_others::<Scalar>(&chan, wait0, &participants, me).await? {
+    for (_, s_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
         // Spec 1.6
         s += s_j;
     }
@@ -148,7 +89,7 @@ async fn do_sign_coordinator(
 fn compute_signature_share(
     participants: &ParticipantList,
     me: Participant,
-    presignature: &RerandomizedPresignOutput,
+    presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<Scalar, ProtocolError> {
     // Round 1
@@ -167,52 +108,23 @@ fn compute_signature_share(
     Ok(msg_hash * k_i + r * sigma_i)
 }
 
-/// Wraps the coordinator and the participant into a single functions to be called
-async fn fut_wrapper(
-    chan: SharedChannel,
-    participants: ParticipantList,
-    coordinator: Participant,
-    me: Participant,
-    public_key: AffinePoint,
-    presignature: RerandomizedPresignOutput,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    if me == coordinator {
-        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
-    } else {
-        do_sign_participant(
-            chan,
-            &participants,
-            coordinator,
-            me,
-            &presignature,
-            msg_hash,
-        )
-    }
-}
-
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
-    use super::{
-        OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
-        OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES, fut_wrapper, x_coordinate,
+    use super::*;
+    use crate::crypto::hash::test::scalar_hash_secp256k1;
+    use crate::ecdsa::Polynomial;
+    use crate::ecdsa::ot_based_ecdsa::presign_and_sign::OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES;
+    use crate::errors::InitializationError;
+    use crate::protocol::{
+        Protocol,
+        internal::{Comms, make_protocol},
     };
-    use crate::{
-        ecdsa::{
-            Polynomial,
-            ot_based_ecdsa::{
-                PresignOutput,
-                test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
-            },
-        },
-        participants::Participant,
-        test_utils::{
-            MockCryptoRng, assert_buffer_capacity, expected_buffer_by_role, generate_participants,
-        },
+    use crate::test_utils::{
+        MockCryptoRng, check_one_coordinator_output, generate_participants, run_sign,
     };
     use k256::{ProjectivePoint, PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
     use rand::SeedableRng;
-    use rstest::rstest;
 
     fn simulate_presignatures(
         participants: &[Participant],
@@ -245,95 +157,53 @@ mod test {
     }
 
     #[test]
-    fn test_sign_without_rerandomization() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let threshold: usize = 2;
-        let msg = b"Hello? Is it me you're looking for?";
-
-        let participants = generate_participants(2);
-        let (public_key, participants_presign) =
-            simulate_presignatures(&participants, threshold, &mut rng);
-
-        let (_, sig) = run_sign_without_rerandomization(
-            &participants_presign,
-            threshold.into(),
-            public_key,
-            msg,
-            &mut rng,
-        );
-        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
-        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
-            .verify(msg, &sig)
-            .unwrap();
-    }
-
-    #[test]
-    fn test_sign_with_rerandomization() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let threshold: usize = 2;
-        let msg = b"Hello? Is it me you're looking for?";
-
-        let participants = generate_participants(2);
-        let (public_key, participants_presign) =
-            simulate_presignatures(&participants, threshold, &mut rng);
-        let public_key_vk = frost_core::VerifyingKey::new(public_key);
-
-        let (tweak, _, sig) = run_sign_with_rerandomization(
-            &participants_presign,
-            threshold.into(),
-            public_key,
-            msg,
-            &mut rng,
-        )
-        .unwrap();
-        let signature = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
-
-        let public_key = tweak.derive_verifying_key(&public_key_vk).to_element();
-        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
-            .verify(msg, &signature)
-            .unwrap();
-
-        insta::assert_json_snapshot!(signature);
-    }
-
-    #[rstest]
-    #[case(3, 2)]
-    #[case(5, 3)]
-    #[case(10, 4)]
-    fn test_sign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+    fn sign_round__should_produce_signature_verifiable_under_public_key() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = crate::test_utils::generate_participants(num_participants);
+        let threshold: usize = 2;
+        let msg = b"Hello? Is it me you're looking for?";
+        let participants = generate_participants(2);
         let (public_key, presignatures) =
             simulate_presignatures(&participants, threshold, &mut rng);
         let coordinator = participants[0];
-        let msg_scalar = crate::crypto::hash::test::scalar_hash_secp256k1(b"test msg");
 
-        // When + Then
-        assert_buffer_capacity(
-            &participants,
-            &mut rng,
-            |comms, p_list, p, _rng_p| {
-                let presignature = &presignatures.iter().find(|(pp, _)| *pp == p).unwrap().1;
-                let rerandomized =
-                    crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput::new_without_rerandomization(
-                        presignature,
-                    );
-                fut_wrapper(
-                    comms.shared_channel(),
-                    p_list,
-                    coordinator,
-                    p,
-                    public_key.to_affine(),
-                    rerandomized,
-                    msg_scalar,
-                )
+        // When
+        let result = run_sign::<Secp256K1Sha256, _, _, _>(
+            presignatures,
+            coordinator,
+            public_key,
+            scalar_hash_secp256k1(msg),
+            |participants, coordinator, me, public_key, presignature, msg_hash| {
+                let participants = ParticipantList::new(participants)
+                    .ok_or(InitializationError::DuplicateParticipants)?;
+                let ctx = Comms::with_buffer_capacity(
+                    OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                );
+                let mut chan = ctx.shared_channel();
+                let fut = async move {
+                    sign_round(
+                        &mut chan,
+                        &participants,
+                        coordinator,
+                        me,
+                        public_key.to_affine(),
+                        &presignature,
+                        msg_hash,
+                    )
+                    .await
+                };
+                Ok(Box::new(make_protocol(ctx, fut))
+                    as Box<dyn Protocol<Output = SignatureOption>>)
             },
-            expected_buffer_by_role(
-                coordinator,
-                OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
-                OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
-            ),
-        );
+        )
+        .unwrap();
+
+        // Then
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        let signature =
+            ecdsa::Signature::from_scalars(x_coordinate(&signature.big_r), signature.s).unwrap();
+        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
+            .verify(msg, &signature)
+            .unwrap();
     }
 }

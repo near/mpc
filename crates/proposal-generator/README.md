@@ -13,6 +13,10 @@ cargo run -p proposal-generator -- crates/proposal-generator/proposals/testnet-r
 Prints the `vote_update_foreign_chain_providers` call argument, so the transaction
 that lands can be read back against the proposal you generated.
 
+`proposals/<network>-rpc-whitelist.toml` is the cumulative whitelist state.
+`proposals/<network>-rpc-whitelist-<date>-<chains>.toml` is one vote: only the
+chains it lists for incremental whitelisting.
+
 ## Config format
 
 Keys and values use the contract's serde shapes verbatim: chain keys are

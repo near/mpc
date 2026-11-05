@@ -94,6 +94,31 @@ impl VerifiedAttestation {
     }
 }
 
+/// An attestation as the contract stores it.
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StoredAttestation {
+    pub attestation: VerifiedAttestation,
+    /// Block time at which the contract accepted this attestation. Every accepted submission
+    /// restamps it.
+    pub accepted_at_seconds: u64,
+}
+
 #[derive(
     Clone,
     Debug,
@@ -258,11 +283,8 @@ impl fmt::Debug for DstackAttestation {
             if debug_str.len() <= max_bytes {
                 debug_str
             } else {
-                format!(
-                    "{}... (truncated {} bytes)",
-                    &debug_str[..max_bytes],
-                    debug_str.len() - max_bytes
-                )
+                let (kept, dropped) = debug_str.split_at(debug_str.floor_char_boundary(max_bytes));
+                format!("{kept}... (truncated {} bytes)", dropped.len())
             }
         }
 

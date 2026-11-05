@@ -6,6 +6,7 @@ use near_contract_transport::{ObservedState, SerializedObservation, ViewArgs};
 
 use crate::types::LatestFinalBlockInfo;
 use crate::{
+    account_id_compat::to_near_internal,
     errors::{NearViewClientError, NearViewClientQuery},
     primitives::FetchLatestFinalBlockInfo,
 };
@@ -42,7 +43,7 @@ impl NearViewClientActorHandle {
                 near_indexer_primitives::types::Finality::Final,
             ),
             request: near_indexer_primitives::views::QueryRequest::CallFunction {
-                account_id: contract_id.clone(),
+                account_id: to_near_internal(contract_id),
                 method_name: method_name.clone(),
                 args: view_args.args.into(),
             },

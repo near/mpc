@@ -1,5 +1,6 @@
+use std::collections::BTreeSet;
 use std::hash::Hash;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
@@ -32,6 +33,7 @@ pub mod polygon;
 pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
+pub mod svm;
 
 pub trait ForeignChainInspector {
     type TransactionId;
@@ -72,6 +74,10 @@ pub enum Verdict<V> {
     },
     #[display("a requested log index is out of bounds")]
     LogIndexOutOfBounds,
+    /// Similar to [`Self::TransactionNotFound`], an absent account is the chain's answer, not a provider fault.
+    /// A mutable account may leave two honest providers with different answers.
+    #[display("a requested account was not found")]
+    AccountNotFound,
 }
 
 impl<V> Verdict<V> {
@@ -132,33 +138,92 @@ pub trait NetworkFingerprintInspector {
 ///
 /// All inner inspectors are queried concurrently. Every [`Verdict`] reached must be identical;
 /// any disagreement returns [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors
-/// are tolerated as long as any inspector reached a verdict, so a single unavailable or
-/// misbehaving RPC does not take the whole node out of signing. When no inspector reached a
-/// verdict, the first error is propagated.
-#[derive(Clone, derive_more::Constructor)]
-pub struct FanOut<Inspector> {
+/// are tolerated as long as the [`RpcQuorum`] is met, so a single unavailable RPC does not take
+/// the whole node out of signing. On the other hand, a provider that answers a different verdict
+/// or different values will cause a mismatch and fail the whole extraction. A hanging one still
+/// stalls the extraction: it waits for every inspector, up to the caller's deadline. When no
+/// inspector reached a verdict, the first error is propagated.
+///
+/// With a recorder set through [`FanOut::measuring`], every provider call is observed once the
+/// provider returns, or by dropping its timer if the future is dropped first.
+#[derive(Clone)]
+pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
+    recorder: Recorder,
 }
 
-impl<Inspector> ForeignChainInspector for FanOut<Inspector>
+/// How many whitelisted providers must reach a verdict before [`FanOut::extract_with_quorum`]
+/// accepts it. Providers outside [`Self::whitelisted`] still take part in the unanimity check
+/// but never count towards [`Self::required`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RpcQuorum {
+    pub required: NonZeroUsize,
+    pub whitelisted: BTreeSet<ProviderId>,
+}
+
+impl<Inspector> FanOut<Inspector> {
+    pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
+        Self {
+            inspectors,
+            recorder: (),
+        }
+    }
+
+    pub fn measuring<Recorder>(self, recorder: Recorder) -> FanOut<Inspector, Recorder> {
+        FanOut {
+            inspectors: self.inspectors,
+            recorder,
+        }
+    }
+}
+
+impl<Inspector, Recorder> FanOut<Inspector, Recorder> {
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn provider_ids(&self) -> impl Iterator<Item = &ProviderId> {
+        self.inspectors.iter().map(|(provider, _)| provider)
+    }
+}
+
+/// Times calls to foreign chain RPC providers.
+///
+/// [`Self::start_timer`] begins one call and [`Self::observe`] ends it with the outcome once the
+/// provider returns. Implementations must not block or panic in either, because both can run
+/// while the task is being aborted.
+pub trait TimeProviderCall: Send + Sync {
+    /// A timer dropped without being observed means the call was abandoned before the provider
+    /// returned. Implementations must record that in the timer's destructor.
+    type Timer: Send + 'static;
+
+    fn start_timer(&self, provider: &ProviderId) -> Self::Timer;
+
+    fn observe(&self, timer: Self::Timer, provider: &ProviderId, failure: Option<ProviderFailure>);
+}
+
+/// Satisfies [`FanOut`]'s recorder bounds for the unmeasured default.
+impl TimeProviderCall for () {
+    type Timer = ();
+
+    fn start_timer(&self, _: &ProviderId) {}
+
+    fn observe(&self, _: (), _: &ProviderId, _: Option<ProviderFailure>) {}
+}
+
+impl<Inspector, Recorder> FanOut<Inspector, Recorder>
 where
     Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
-    Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
+    Inspector::ExtractedValue: Send + 'static + Clone + PartialEq + Eq + Hash + std::fmt::Debug,
+    Recorder: TimeProviderCall + Clone + 'static,
 {
-    type TransactionId = Inspector::TransactionId;
-    type Finality = Inspector::Finality;
-    type Extractor = Inspector::Extractor;
-    type ExtractedValue = Inspector::ExtractedValue;
-
-    async fn extract(
+    pub async fn extract_with_quorum(
         &self,
-        tx_id: Self::TransactionId,
-        finality: Self::Finality,
-        extractors: Vec<Self::Extractor>,
-    ) -> Result<Verdict<Self::ExtractedValue>, ForeignChainInspectionError> {
+        quorum: &RpcQuorum,
+        tx_id: Inspector::TransactionId,
+        finality: Inspector::Finality,
+        extractors: Vec<Inspector::Extractor>,
+    ) -> Result<Verdict<Inspector::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
         for (provider, inspector) in self.inspectors.iter() {
             let tx_id = tx_id.clone();
@@ -166,15 +231,19 @@ where
             let extractors = extractors.clone();
             let inspector = inspector.clone();
             let provider = provider.clone();
+            let recorder = self.recorder.clone();
             join_set.spawn(async move {
-                (
-                    provider,
-                    inspector.extract(tx_id, finality, extractors).await,
-                )
+                // Started inside the task so the clock excludes scheduling delay. A task aborted
+                // before its first poll makes no call and reports nothing.
+                let timer = recorder.start_timer(&provider);
+                let result = inspector.extract(tx_id, finality, extractors).await;
+                let failure = result.as_ref().err().and_then(|err| err.provider_failure());
+                recorder.observe(timer, &provider, failure);
+                (provider, result)
             });
         }
 
-        let mut verdicts: Vec<(ProviderId, Verdict<Self::ExtractedValue>)> = Vec::new();
+        let mut verdicts: Vec<(ProviderId, Verdict<Inspector::ExtractedValue>)> = Vec::new();
         let mut first_error: Option<ForeignChainInspectionError> = None;
 
         for (provider, result) in join_set.join_all().await {
@@ -199,28 +268,45 @@ where
             }
         }
 
-        let mut verdicts = verdicts.into_iter();
-        let Some((first_provider, first_verdict)) = verdicts.next() else {
+        let Some(verdict) = verdicts.first().map(|(_, verdict)| verdict.clone()) else {
             return Err(first_error.expect(
                 "inspectors is a `NonEmptyVec`, so with no verdicts at least one error must \
                  have been recorded",
             ));
         };
 
-        let disagreeing: Vec<_> = verdicts
-            .filter(|(_, verdict)| *verdict != first_verdict)
-            .collect();
+        let (agreeing, disagreeing): (Vec<_>, Vec<_>) = verdicts
+            .into_iter()
+            .partition(|(_, candidate)| *candidate == verdict);
         if !disagreeing.is_empty() {
             tracing::error!(
-                %first_provider,
-                ?first_verdict,
+                ?agreeing,
                 ?disagreeing,
                 "fan-out: inspectors returned mismatching verdicts",
             );
             return Err(ForeignChainInspectionError::InspectorResponseMismatch);
         }
 
-        Ok(first_verdict)
+        let whitelisted_agreeing: BTreeSet<&ProviderId> = agreeing
+            .iter()
+            .map(|(provider, _)| provider)
+            .filter(|provider| quorum.whitelisted.contains(provider))
+            .collect();
+        let whitelisted_agreeing = whitelisted_agreeing.len();
+        if whitelisted_agreeing < quorum.required.get() {
+            tracing::warn!(
+                whitelisted_agreeing,
+                required = quorum.required,
+                ?verdict,
+                "fan-out: fewer whitelisted providers reached the verdict than the quorum requires",
+            );
+            return Err(ForeignChainInspectionError::SubQuorum {
+                agreeing: whitelisted_agreeing,
+                required: quorum.required,
+            });
+        }
+
+        Ok(verdict)
     }
 }
 
@@ -247,9 +333,9 @@ where
     Inspector: ChainInspector,
 {
     /// Ask every provider for the network it serves concurrently, one result each.
-    /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
-    /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try plus
-    /// [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
+    /// Unlike [`FanOut::extract_with_quorum`], disagreement is not an error: a diagnostic caller
+    /// needs the individual answers. Each provider gets up to `attempts` tries, `timeout` per try
+    /// plus [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
     pub async fn network_fingerprints(
         &self,
         timeout: Duration,
@@ -359,6 +445,14 @@ pub enum ForeignChainInspectionError {
     },
     #[error("inspector clients returned mismatching verdicts")]
     InspectorResponseMismatch,
+    /// The verdict was unanimous but too few whitelisted providers reached it.
+    #[error(
+        "quorum not met: {agreeing} whitelisted providers reached the verdict, {required} required"
+    )]
+    SubQuorum {
+        agreeing: usize,
+        required: NonZeroUsize,
+    },
 }
 
 impl ForeignChainInspectionError {
@@ -369,6 +463,7 @@ impl ForeignChainInspectionError {
                 | Self::Timeout
                 | Self::NotFinalized
                 | Self::NotEnoughBlockConfirmations { .. }
+                | Self::SubQuorum { .. }
         )
     }
 
@@ -415,7 +510,7 @@ impl ForeignChainInspectionError {
 
     /// How the provider failed, or [`None`] when the provider did not: the remaining variants
     /// report a transaction state the chain has not settled yet, which is an answer rather than
-    /// a fault.
+    /// a fault, or a quorum shortfall that no single provider owns.
     pub fn provider_failure(&self) -> Option<ProviderFailure> {
         match self {
             Self::RpcRequestFailed(_) => Some(ProviderFailure::Unreachable),
@@ -425,13 +520,18 @@ impl ForeignChainInspectionError {
             | Self::InconsistentRpcResponse { .. }
             | Self::LogNotBoundToReceipt { .. }
             | Self::InspectorResponseMismatch => Some(ProviderFailure::Malformed),
-            Self::NotFinalized | Self::NotEnoughBlockConfirmations { .. } => None,
+            Self::NotFinalized
+            | Self::NotEnoughBlockConfirmations { .. }
+            | Self::SubQuorum { .. } => None,
         }
     }
 }
 
 /// Some providers report throttling as a JSON-RPC error object over HTTP 200 rather than a 429, and
-/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`.
+/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`. SVM
+/// nodes reuse `-32005` for `NodeUnhealthy`, which is a different condition but equally worth a
+/// retry; codes that mean something else per chain are intercepted by that chain's inspector before
+/// they reach here.
 fn is_rate_limit_error_code(code: i32) -> bool {
     const LIMIT_EXCEEDED: i32 = -32005;
     const TOO_MANY_REQUESTS: i32 = -32029;
@@ -474,15 +574,25 @@ pub enum ProviderFailure {
     Rejected,
     /// The provider answered with something the caller could not use.
     Malformed,
+    /// The RPC client gave up waiting for an answer.
     TimedOut,
+}
+
+impl ProviderFailure {
+    pub const ALL: [Self; 4] = [
+        Self::Unreachable,
+        Self::Rejected,
+        Self::Malformed,
+        Self::TimedOut,
+    ];
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     fn transport(error: HttpTransportError) -> RpcClientError {
         RpcClientError::Transport(Box::new(error))
@@ -669,6 +779,7 @@ mod tests {
         expected: BlockConfirmations::from(6),
         got: BlockConfirmations::from(1),
     }, None)]
+    #[case(ForeignChainInspectionError::SubQuorum { agreeing: 1, required: NonZeroUsize::new(2).unwrap() }, None)]
     fn provider_failure__should_name_only_the_failures_the_provider_owns(
         #[case] error: ForeignChainInspectionError,
         #[case] expected: Option<ProviderFailure>,
@@ -678,6 +789,18 @@ mod tests {
 
         // Then
         assert_eq!(failure, expected);
+    }
+
+    #[test]
+    fn is_transient__should_hold_for_a_quorum_shortfall() {
+        // Given
+        let error = ForeignChainInspectionError::SubQuorum {
+            agreeing: 1,
+            required: NonZeroUsize::new(2).unwrap(),
+        };
+
+        // When, then
+        assert!(error.is_transient());
     }
 
     #[rstest]

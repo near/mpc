@@ -13,6 +13,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
+pub const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
@@ -26,24 +27,27 @@ pub const CKD_VERIFICATION_PORT_SEED: u16 = 9;
 pub const LOST_ASSETS_PORT_SEED: u16 = 10;
 pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 11;
 pub const CLEANUP_LAGGING_NODE_PORT_SEED: u16 = 12;
-pub const FOREIGN_CHAIN_POLICY_PORT_SEED: u16 = 13;
-pub const MIGRATION_ENDPOINT_PORT_SEED: u16 = 14;
-pub const MIGRATION_SERVICE_PORT_SEED: u16 = 15;
-pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 16;
-pub const MULTI_DOMAIN_PORT_SEED: u16 = 17;
-pub const CONTRACT_UPGRADE_COMPATIBILITY_MAINNET_PORT_SEED: u16 = 18;
-pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 19;
-pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
-pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
-pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
-pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 23;
-pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 24;
-pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 25;
-pub const BACKUP_SERVICE_RUN_PORT_SEED: u16 = 26;
-pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 27;
-pub const FOREIGN_CHAIN_PROBE_PORT_SEED: u16 = 28;
+pub const MIGRATION_ENDPOINT_PORT_SEED: u16 = 13;
+pub const MIGRATION_SERVICE_PORT_SEED: u16 = 14;
+pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 15;
+pub const MULTI_DOMAIN_PORT_SEED: u16 = 16;
+pub const CONTRACT_UPGRADE_COMPATIBILITY_MAINNET_PORT_SEED: u16 = 17;
+pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 18;
+pub const TIMEOUT_METRIC_PORT_SEED: u16 = 19;
+pub const MIGRATION_BACK_PORT_SEED: u16 = 20;
+pub const SIGTERM_HANDLER_PORT_SEED: u16 = 21;
+pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 22;
+pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 23;
+pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 24;
+pub const BACKUP_SERVICE_RUN_PORT_SEED: u16 = 25;
+pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 26;
+pub const FOREIGN_CHAIN_PROBE_PORT_SEED: u16 = 27;
+pub const RPC_PRESET_REGISTRATION_PORT_SEED: u16 = 28;
+pub const BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED: u16 = 29;
+pub const LEADER_FAILOVER_PORT_SEED: u16 = 30;
 
-/// Start a cluster, wait for Running state and presignatures to buffer.
+/// Start a cluster, wait for Running state and, if a domain uses [`Protocol::CaitSith`], for
+/// triples to buffer.
 ///
 /// Uses `configure` to override defaults (3 nodes, threshold 2, 3 domains).
 /// Pass `|_| {}` for defaults.
@@ -80,7 +84,11 @@ pub async fn must_setup_cluster(
     configure(&mut config);
 
     let initial_participant_indices = config.participant_indices();
-    let presignatures_to_buffer = config.presignatures_to_buffer;
+    let triples_to_buffer = config.triples_to_buffer;
+    let buffers_triples = config
+        .domains
+        .iter()
+        .any(|domain| domain.protocol == Protocol::CaitSith);
     let whitelist = config.foreign_chains.whitelist.clone();
     let threshold = config.threshold;
     let cluster = MpcCluster::start(config)
@@ -88,10 +96,9 @@ pub async fn must_setup_cluster(
         .expect("failed to start cluster");
 
     let protocol_state = cluster
-        .wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
+        .wait_for_state(CLUSTER_WAIT_TIMEOUT, |s| {
+            matches!(s, ProtocolContractState::Running(_))
+        })
         .await
         .expect("cluster did not reach Running state");
     let ProtocolContractState::Running(running) = protocol_state else {
@@ -103,31 +110,28 @@ pub async fn must_setup_cluster(
         .await
         .expect("failed to whitelist foreign chains");
 
-    wait_for_presignatures(
-        &cluster,
-        &initial_participant_indices,
-        presignatures_to_buffer,
-    )
-    .await
-    .expect("presignature buffering failed");
+    if buffers_triples {
+        wait_for_triples(&cluster, &initial_participant_indices, triples_to_buffer)
+            .await
+            .expect("triple buffering failed");
+    }
 
     (cluster, running)
 }
 
-/// Wait until the first `participant_count` nodes each have at least
-/// `presignatures_to_buffer` presignatures available.
-/// Non-participant nodes are excluded because they don't generate presignatures.
-pub async fn wait_for_presignatures(
+/// Wait until every node in `participant_indices` has at least
+/// `triples_to_buffer` triples available.
+/// Non-participant nodes are excluded because they don't generate triples.
+pub async fn wait_for_triples(
     cluster: &MpcCluster,
     participant_indices: &[usize],
-    presignatures_to_buffer: usize,
+    triples_to_buffer: usize,
 ) -> anyhow::Result<()> {
-    let expected =
-        i64::try_from(presignatures_to_buffer).context("presignatures exceeds i64::MAX")?;
+    let expected = i64::try_from(triples_to_buffer).context("triples exceeds i64::MAX")?;
     let deadline = tokio::time::Instant::now() + CLUSTER_WAIT_TIMEOUT;
     loop {
         let values = cluster
-            .get_metric_all_nodes(metrics::OWNED_PRESIGNATURES_AVAILABLE)
+            .get_metric_all_nodes(metrics::OWNED_TRIPLES_AVAILABLE)
             .await
             .context("failed to get metrics")?;
         let participant_values: Vec<_> = participant_indices.iter().map(|&i| values[i]).collect();
@@ -139,7 +143,7 @@ pub async fn wait_for_presignatures(
         }
         anyhow::ensure!(
             tokio::time::Instant::now() < deadline,
-            "participant nodes did not generate presignatures in time (values: {participant_values:?})"
+            "participant nodes did not generate triples in time (values: {participant_values:?})"
         );
         tokio::time::sleep(POLL_INTERVAL).await;
     }
@@ -373,11 +377,11 @@ pub fn must_get_bls_public_key(
     }
 }
 
-/// Builds a [`DamgardEtAl`] signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
-pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
+/// Builds a [`RobustEcdsa`] signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
+pub fn robust_ecdsa_domain(id: u64, t: u64) -> DomainConfig {
     DomainConfig {
         id: DomainId(id),
-        protocol: Protocol::DamgardEtAl,
+        protocol: Protocol::RobustEcdsa,
         reconstruction_threshold: ReconstructionThreshold::new(t),
         purpose: DomainPurpose::Sign,
     }

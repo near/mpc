@@ -14,9 +14,9 @@ use anyhow::anyhow;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_primitives::domain::{DomainId, Protocol};
-use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
 use near_jsonrpc_client::methods::send_tx;
 use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
+use near_jsonrpc_client::methods::tx_status::RpcTransactionStatusRequest;
 use near_mpc_contract_interface::types::{DomainConfig, ProtocolContractState};
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
@@ -297,7 +297,7 @@ impl RunLoadtestCmd {
                         domain_config,
                     })
                 }
-                Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => {
+                Protocol::CaitSith | Protocol::RobustEcdsa | Protocol::Frost => {
                     ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,

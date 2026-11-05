@@ -1,30 +1,33 @@
-pub mod presign;
+//! Provider for [`Protocol::RobustEcdsa`]
+//! domains.
+//!
+//! # Do not enable this in production
+//!
+//! The underlying scheme in
+//! [`threshold_signatures::ecdsa::robust_ecdsa`] is an insecure stub that leaks the
+//! signing key, kept so this plumbing stays exercised until a real robust scheme
+//! replaces it. Read that module's docs before enabling a domain for this protocol
+//! anywhere. Everything in this module is scheme-agnostic and is expected to survive
+//! that replacement unchanged.
+
 mod sign;
 
-use near_mpc_contract_interface::types::KeyEventId;
-pub use presign::PresignatureStorage;
+use crate::network::wire_format::{MpcTaskId, RobustEcdsaTaskId};
 use std::collections::HashMap;
 
 use crate::config::{MpcConfig, ParticipantsConfig};
-use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, UniqueId};
-use crate::providers::ecdsa_common;
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
-use crate::tracking;
 use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
-use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::ReconstructionThreshold;
-use mpc_primitives::domain::DomainId;
-use near_time::Clock;
+use mpc_primitives::domain::{DomainId, Protocol};
 use std::sync::Arc;
 use threshold_signatures::MaxMalicious;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::ecdsa::robust_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
@@ -37,7 +40,7 @@ pub struct RobustEcdsaSignatureProvider {
     keyshares: HashMap<DomainId, EcdsaKeyshare>,
 }
 
-pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
+pub(super) type EcdsaKeyshare = DomainKeyshare<Secp256K1Sha256>;
 
 #[derive(
     Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
@@ -55,48 +58,23 @@ impl RobustEcdsaSignatureProvider {
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
-        clock: Clock,
-        db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
-    ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
-
-        Ok(Self {
+        keyshares: HashMap<DomainId, EcdsaKeyshare>,
+    ) -> Self {
+        Self {
             config,
             mpc_config,
             client,
             sign_request_store,
             keyshares,
-        })
+        }
     }
 
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
-        ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum RobustEcdsaTaskId {
-    KeyGeneration {
-        key_event: KeyEventId,
-    },
-    KeyResharing {
-        key_event: KeyEventId,
-    },
-    Presignature {
-        id: UniqueId,
-        domain_id: DomainId,
-    },
-    Signature {
-        id: SignatureId,
-        presignature_id: UniqueId,
-    },
-}
-
-impl From<RobustEcdsaTaskId> for MpcTaskId {
-    fn from(val: RobustEcdsaTaskId) -> Self {
-        MpcTaskId::RobustEcdsaTaskId(val)
+        self.keyshares
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
@@ -156,27 +134,16 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                 RobustEcdsaTaskId::KeyResharing { .. } => {
                     anyhow::bail!("Key resharing rejected in normal node operation");
                 }
-                RobustEcdsaTaskId::Presignature { id, domain_id } => {
-                    ROBUST_ECDSA_TASK_MONITORS
-                        .presignature_generation_follower
-                        .instrument(
-                            self.run_presignature_generation_follower(channel, id, domain_id),
-                        )
-                        .await?;
-                }
-                RobustEcdsaTaskId::Signature {
-                    id,
-                    presignature_id,
-                } => {
+                RobustEcdsaTaskId::Signature { id } => {
                     ROBUST_ECDSA_TASK_MONITORS
                         .make_signature_follower
-                        .instrument(self.make_signature_follower(channel, id, presignature_id))
+                        .instrument(self.make_signature_follower(channel, id))
                         .await?;
                 }
             },
 
             _ => anyhow::bail!(
-                "eddsa task handler: received unexpected task id: {:?}",
+                "robust ecdsa task handler: received unexpected task id: {:?}",
                 channel.task_id()
             ),
         }
@@ -184,40 +151,19 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        let generate_presignatures = self
-            .keyshares
-            .iter()
-            .map(|(domain_id, data)| {
-                tracking::spawn(
-                    &format!("generate presignatures for domain {}", domain_id.0),
-                    presign::run_background_presignature_generation(
-                        self.client.clone(),
-                        self.mpc_config.clone(),
-                        self.config.presignature.clone().into(),
-                        *domain_id,
-                        data.clone(),
-                    ),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
-            tracing::error!(
-                "Damgard et al background presignature task ended unexpectedly: {join_error}"
-            );
-        }
-
         Ok(())
     }
 }
 
 /// Derives `(num_signers, max_malicious)` for robust-ECDSA from the domain's
-/// reconstruction threshold `t`. Returns an error if `t < 2`,
-/// which the contract's threshold validation already rejects.
+/// reconstruction threshold `t`, with `num_signers` taken from
+/// [`Protocol::required_active_signers`] so node and contract agree on it.
+/// Returns an error if `t < 2`, which the contract's threshold validation
+/// already rejects.
 pub(super) fn compute_thresholds(
     reconstruction_threshold: ReconstructionThreshold,
 ) -> anyhow::Result<(usize, MaxMalicious)> {
-    let t: usize = reconstruction_threshold.inner().try_into()?;
+    let t: usize = reconstruction_threshold.value().try_into()?;
     anyhow::ensure!(
         t >= 2,
         "robust-ECDSA requires a reconstruction threshold of at least 2, got {t}"
@@ -225,10 +171,9 @@ pub(super) fn compute_thresholds(
     let max_malicious = t
         .checked_sub(1)
         .ok_or_else(|| anyhow::anyhow!("robust-ECDSA max_malicious underflow for t={t}"))?;
-    let num_signers = t
-        .checked_mul(2)
-        .and_then(|two_t| two_t.checked_sub(1))
-        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA signer count overflow for t={t}"))?;
+    let num_signers: usize = Protocol::RobustEcdsa
+        .required_active_signers(reconstruction_threshold)
+        .try_into()?;
     Ok((num_signers, MaxMalicious::from(max_malicious)))
 }
 

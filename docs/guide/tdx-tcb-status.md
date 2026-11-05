@@ -28,7 +28,7 @@ dates, so treat the row as the notice.
 **A microcode update can make the CVM's encrypted disk unreadable.** The disk key
 derives from the SGX sealing key, which `EGETKEY` derives from CPUSVN among other
 inputs. A TCB recovery fix moves CPUSVN, so the existing disk no longer unseals,
-and key shares, triples, presignatures and the P2P identity key all live on it.
+and key shares, triples and the P2P identity key all live on it.
 
 So before touching firmware: take a fresh backup with the `backup-cli`
 following
@@ -80,8 +80,8 @@ with no need to wait for it to sync. Then:
   changed. Check the `Intel early` row while you are there, or re-run with
   `--evaluation-data-set early` for a plain pass or fail: an update that clears
   only the current set leaves you doing this again at the next promotion.
-- Within the hour, `get_attestation` should show `expiry_timestamp_seconds` about
-  7 days out, meaning the contract accepted a submission.
+- Within the hour, `get_attestation` should show an `accepted_at_seconds` later
+  than the reboot, meaning the contract accepted a submission.
 
 If collateral fetches start failing instead, your PCCS may not have a PCK
 certificate for the platform's new TCB level yet. The node then starts with no
@@ -103,9 +103,9 @@ side.
 Nothing reaches out to warn you: the `Intel early` row is the advance notice,
 and only when someone runs the check. Once the promotion lands, the node logs
 the rejection every attempt (see [Symptoms](#symptoms)) and keeps submitting
-hourly, the contract rejects every submission, the stored attestation expires 7
-days after the last accepted one (`DEFAULT_EXPIRATION_DURATION_SECONDS`), and
-`verify_tee` then drops the node from the participant set and reshares without
+hourly, the contract rejects every submission, the stored attestation expires
+with the collateral of the last accepted one (Intel's earliest `nextUpdate`, at
+most 30 days after that collateral was issued), and `verify_tee` then drops the node from the participant set and reshares without
 it. For several nodes at once, it becomes a network problem rather than only
 yours.
 
@@ -119,8 +119,8 @@ WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
   (QE: UpToDate, platform: OutOfDate, advisories: ["INTEL-SA-01192", "INTEL-SA-01245"])
 ```
 
-On chain, `expiry_timestamp_seconds` on the stored attestation stops advancing.
-A healthy node's is always about 7 days out and moves forward every hour, which
+On chain, `accepted_at_seconds` on the stored attestation stops advancing. A
+healthy node re-attests hourly and each accepted submission restamps it, which
 makes it the cheapest health signal available:
 
 ```bash

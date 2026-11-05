@@ -1,15 +1,11 @@
-// allow deprecation for module, since macro decorators don't work
-// when applied directly on struct.
-#![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
-
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet, UpperBoundedVec};
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, UpperBoundedVec};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::types::primitives::{AccountId, DomainId};
+use crate::types::primitives::DomainId;
 use crate::types::{Ed25519PublicKey, SignatureResponse};
 
 /// Maximum number of significant data bits a TON Cell may hold.
@@ -1416,54 +1412,6 @@ impl ForeignChain {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::Deref,
-    derive_more::DerefMut,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-#[deprecated(note = "https://github.com/near/mpc/issues/3079")]
-pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
-
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Deref,
-    derive_more::DerefMut,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
-
 /// Set of foreign chains a node reports it can serve; aggregated into [`AvailableForeignChains`] by the contract.
 #[derive(
     Debug,
@@ -1533,51 +1481,6 @@ pub struct ForeignChainsConfigs(BTreeMap<Ed25519PublicKey, ForeignChainsConfig>)
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct RpcProvider {
-    pub rpc_url: String,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Deref,
-    derive_more::From,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct ForeignChainSupportByNode {
-    pub foreign_chain_support_by_node: BTreeMap<AccountId, SupportedForeignChains>,
-}
 
 #[derive(
     Debug,
@@ -1970,9 +1873,7 @@ pub struct ProviderConfig {
 )]
 pub struct ChainEntry {
     pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
-    /// Voted RPC response quorum. Stored for a deferred quorum policy and not yet
-    /// consumed: nodes currently require every provider that reaches a verdict to
-    /// agree on it.
+    /// How many whitelisted providers must agree before a node accepts a verdict.
     pub quorum: u64,
 }
 
@@ -1980,9 +1881,9 @@ pub struct ChainEntry {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
     use serde_json::json;
+    use std::assert_matches;
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {

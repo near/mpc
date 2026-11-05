@@ -53,7 +53,7 @@ pub fn parse_hash<const N: usize>(s: &str) -> Result<[u8; N], HashParseError> {
 /// [`BorshSchema`](borsh::BorshSchema) / [`JsonSchema`](schemars::JsonSchema).
 #[macro_export]
 macro_rules! define_hash {
-    ($(#[$meta:meta])* $name:ident, $n:literal) => {
+    ($(#[$meta:meta])* $name:ident, $n:expr) => {
         $(#[$meta])*
         #[derive(
             Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
@@ -84,7 +84,7 @@ macro_rules! define_hash {
 
         impl<'de> $crate::_macro_deps::serde::Deserialize<'de> for $name {
             fn deserialize<D: $crate::_macro_deps::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                $crate::hash::deserialize_hash::<$n, D>(deserializer).map(Self::new)
+                $crate::hash::deserialize_hash::<{ $n }, D>(deserializer).map(Self::new)
             }
         }
 
@@ -158,7 +158,7 @@ macro_rules! define_hash {
             type Err = $crate::hash::HashParseError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                $crate::hash::parse_hash::<$n>(s).map(Self::new)
+                $crate::hash::parse_hash::<{ $n }>(s).map(Self::new)
             }
         }
 
@@ -184,6 +184,9 @@ define_hash!(
 
 /// Hash of the MPC node's Docker image.
 pub type NodeImageHash = DockerImageHash;
+
+/// Name of the event through which the launcher reports the [`NodeImageHash`]
+pub const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
 define_hash!(
     /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment.
@@ -239,13 +242,21 @@ define_hash!(
     48
 );
 
+pub const PROPOSAL_HASH_BYTES: usize = 32;
+
+define_hash!(
+    /// SHA-256 digest identifying a governance proposal by its encoded content.
+    ProposalHash,
+    PROPOSAL_HASH_BYTES
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use alloc::format;
-    use assert_matches::assert_matches;
     use borsh::BorshDeserialize;
+    use core::assert_matches;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     define_hash!(TestHash, 32);

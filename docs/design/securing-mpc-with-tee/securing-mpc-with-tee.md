@@ -282,7 +282,7 @@ sequenceDiagram
 4. **Operator**: Restarts the CVM (see _Node Boot Flow_ for details).
 5. **MPC Node → Contract**:
    - If the node sends an updated remote attestation **within the required time period**, the contract validates and updates the node's attestation info.
-   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node — but only if doing so does not drop the total participants below the required threshold.
+   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node, but only if the remaining participants still meet the threshold and every domain's signing protocol (robust ECDSA needs `2t - 1` participants).
 
 ## Adding a New Participant
 
@@ -371,7 +371,7 @@ pub struct Contract {
     ///If the vote threshold is reached and the new Docker image hash
     ///   is allowed by the TEE's RTMR3 measurement, the proposed hash is added
     ///   to the whitelist of approved MPC Docker images.
-    pub fn vote_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error>
+    pub fn vote_mpc_node_manifest_digest(&mut self, mpc_node_manifest_digest: NodeImageHash) -> Result<(), Error>
 
     ///Returns all whitelisted Docker image hashes that have been approved
     ///     by the DAO and verified by the TEE.
@@ -413,16 +413,14 @@ The private key never leaves the CVM. While the public key can be exported from 
 
 The Operator will then register the node's account key as an additional **function-call access key** on the node's NEAR account, scoped to the MPC signer contract (`--contract-account-id`) with an `unlimited` allowance and an **empty method-names list**. An empty list grants the key access to **all** methods on the MPC contract, while keeping it unable to transfer funds or call any other contract.
 
-We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chain_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
+We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chains_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
 
 > **⚠️ Security tradeoff:** Allowing all methods widens the *in-contract* blast
-> radius — a compromised node key can now call **any** contract method (e.g.
-> `propose_update`, `vote_*`), not just the previously allow-listed set. It still
+> radius — a compromised node key can now call **any** contract method,
+> not just the previously allow-listed set. It still
 > cannot transfer funds or call any other contract. We accept this because the
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
-
-In addition - The node will generate multiple responder account keys as well. These are used to increase throughout when posting generated MPC signatures to the chain.
 
 Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`) reject the operator key: the contract requires the signer key to be the attested node account key.
 
@@ -535,7 +533,7 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with two placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash and `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash.
 
-Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_code_hash`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
+Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_mpc_node_manifest_digest`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
 A valid Docker compose file to start the MPC node might look like the following
 
 ```yaml
@@ -547,7 +545,7 @@ services:
     container_name: launcher
     environment:
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d # nearone/mpc-node-gcp:testnet-release
+      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
 
 volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -566,7 +564,7 @@ Given this Docker compose file, the resulting `app-compose.json` might look like
   "manifest_version": 2,
   "name": "launcher-mpc-node-0",
   "runner": "docker-compose",
-  "docker_compose_file": "version: '3.8'\n\nservices:\n  web:\n    image: barakeinavnear/launcher:latest\n    container_name: launcher\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d # nearone/mpc-node-gcp:testnet-release\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\nvolumes:\n  shared-volume:\n    name: shared-volume",
+  "docker_compose_file": "version: '3.8'\n\nservices:\n  web:\n    image: barakeinavnear/launcher:latest\n    container_name: launcher\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\nvolumes:\n  shared-volume:\n    name: shared-volume",
   "docker_config": {},
   "kms_enabled": false,
   "gateway_enabled": false,
@@ -614,7 +612,7 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 _Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
-Note - In case the number of remaining participants is less that the threshold. The node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
+Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
 
 # CVM Upgrades
 
@@ -699,8 +697,8 @@ Once the voting threshold is reached:
     new Launcher measurement.
 -   Multiple Launcher versions may temporarily coexist during migration.
 
-> Launcher hashes left unused past a TTL are now auto-removed without a unanimous
-> vote — see [auto-removal of unused launcher hashes](../../archive/design/auto-remove-launcher-hashes-design.md).
+> Launcher hashes no current participant uses are removed automatically after a TTL, without a
+> unanimous vote — see [launcher-image eviction](../../archive/design/auto-remove-launcher-hashes-design.md).
 
 ### OS Measurement Upgrade
 
@@ -869,5 +867,5 @@ There are two distinct Near Account Keys with different responsibilities:
 ## Identified Risks
 
 - **Rollback & asset reuse**
-  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples, presignatures).
+  - An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples).
   - Currently, these assets are persisted on disk — mitigation will be required in future iterations.

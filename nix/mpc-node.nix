@@ -21,6 +21,8 @@
   # passed in from flake.nix so the dev shell, the reproducible build, and
   # bindgen-parsed headers all agree on the same feature-test macros.
   prodCFlags,
+  pname ? "mpc-node",
+  gitRev ? null,
 }:
 
 let
@@ -44,7 +46,6 @@ let
   # Take the version from [workspace.package.version] so this file stays in
   # sync on every release bump.
   workspaceCargoToml = lib.importTOML ../Cargo.toml;
-  pname = "mpc-node";
   version = workspaceCargoToml.workspace.package.version;
 
   # Source filter. `filterCargoSources` keeps `.rs`, `Cargo.toml`, `Cargo.lock`
@@ -151,8 +152,8 @@ let
       ;
 
     strictDeps = true;
-    cargoProfile = "reproducible";
-    cargoExtraArgs = "-p mpc-node --bin mpc-node --locked";
+    CARGO_PROFILE = "reproducible";
+    cargoExtraArgs = "-p ${pname} --bin ${pname} --locked";
 
     nativeBuildInputs = [
       pkg-config
@@ -173,11 +174,11 @@ let
       zstd
       bzip2
     ]
-    ++ lib.optionals stdenv.isLinux [
+    ++ lib.optionals stdenv.hostPlatform.isLinux [
       udev
       dbus
     ]
-    ++ lib.optionals stdenv.isDarwin [
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [
       # Modern apple-sdk_14 bundles Security / SystemConfiguration /
       # CoreFoundation and friends; no need to list them separately.
       apple-sdk_14
@@ -217,12 +218,9 @@ let
       # https://github.com/torvalds/linux/blob/v6.7/arch/x86/include/asm/pgtable_64_types.h#L91
       JEMALLOC_SYS_WITH_LG_HUGEPAGE = "21";
 
-      # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
-      # zstd, ...) and Rust itself. Without this, the cc crate defaults to
-      # the build host's CPU and output bytes vary by machine.
-      CFLAGS = marchFlag;
-      CXXFLAGS = "-include cstdint ${marchFlag}";
-
+      # The C/C++ ISA pin for cc-crate deps comes from `.cargo/config.toml`.
+      # Rust's half is below; without it the build host's CPU would leak into
+      # the output bytes.
       RUSTFLAGS = lib.concatStringsSep " " (
         lib.optionals isX86 [ "-C target-cpu=x86-64-v3" ]
         ++ [
@@ -237,7 +235,7 @@ let
       # Extra bindgen flags — paths are already provided by bindgenHook.
       BINDGEN_EXTRA_CLANG_ARGS = marchFlag;
     }
-    // lib.optionalAttrs stdenv.isDarwin {
+    // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
       # Deployment target is independent of the SDK version; pin it so the
       # Mach-O LC_BUILD_VERSION load command is identical across builders.
       MACOSX_DEPLOYMENT_TARGET = "14.0";
@@ -266,16 +264,35 @@ let
     # builds on other machines. This hook normalises `$NIX_BUILD_TOP` to
     # `/build` for everyone so the output is bit-identical regardless of
     # how Nix is installed on the builder.
+    #
+    # Then drop the per-derivation seed from bindgen's clang arguments.
+    #
+    # `bindgenHook` copies `NIX_CFLAGS_COMPILE` into
+    # `BINDGEN_EXTRA_CLANG_ARGS`, including the `-frandom-seed` that stdenv
+    # derives from each derivation's output path. bindgen's build script
+    # tracks that variable, so with the seed left in, the final build sees a
+    # value that differs from the one `cargoArtifacts` was built with and
+    # recompiles bindgen and everything above it (rocksdb, nearcore). The seed
+    # has no effect on the generated bindings.
     preBuild = ''
       export RUSTFLAGS="$RUSTFLAGS --remap-path-prefix=$NIX_BUILD_TOP/source=/build/source --remap-path-prefix=$NIX_BUILD_TOP=/build"
+      export BINDGEN_EXTRA_CLANG_ARGS="$(sed -E 's/(^| )-frandom-seed=[^ ]*//' <<< "$BINDGEN_EXTRA_CLANG_ARGS")"
     '';
 
     doCheck = false;
   };
 
   # Build deps in a separate derivation so that they're cached across
-  # mpc-node source changes.
-  cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+  # source changes.
+  cargoArtifacts = craneLib.buildDepsOnly (
+    commonArgs
+    // {
+      # Skip the `cargo check` pass crane runs before `cargo build` by
+      # default: it only caches artifacts for a later `cargo check` or
+      # clippy, which nothing runs on these artifacts.
+      cargoCheckCommand = "true";
+    }
+  );
 
 in
 craneLib.buildPackage (
@@ -284,10 +301,13 @@ craneLib.buildPackage (
     inherit cargoArtifacts;
 
     meta = with lib; {
-      description = "MPC node binary for NEAR threshold signer";
       license = licenses.mit;
       platforms = platforms.unix;
-      mainProgram = "mpc-node";
+      mainProgram = pname;
     };
+  }
+  # Set only on the final build so a new commit does not rebuild the dependencies
+  // lib.optionalAttrs (gitRev != null) {
+    "BUILT_OVERRIDE_${lib.replaceStrings [ "-" ] [ "_" ] pname}_GIT_COMMIT_HASH_SHORT" = gitRev;
   }
 )

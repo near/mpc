@@ -79,26 +79,15 @@ impl OnboardingJob {
     ) -> Self {
         match contract.node_status(my_near_account_id, tls_public_key) {
             ParticipantStatus::Inactive => OnboardingJob::WaitForStateChange,
-            ParticipantStatus::Active(node_status) => match node_status {
-                NodeStatus::Active => OnboardingJob::Done,
-                NodeStatus::Idle => {
-                    if my_migration_info.active_migration {
-                        match contract {
-                            ContractState::Invalid => OnboardingJob::WaitForStateChange,
-                            ContractState::Initializing(_) => OnboardingJob::WaitForStateChange,
-                            ContractState::Running(running_state) => {
-                                if running_state.resharing_state.is_none() {
-                                    OnboardingJob::Onboard(running_state.keyset)
-                                } else {
-                                    OnboardingJob::WaitForStateChange
-                                }
-                            }
-                        }
-                    } else {
-                        OnboardingJob::WaitForStateChange
-                    }
-                }
-            },
+            ParticipantStatus::Active(NodeStatus::Active) => OnboardingJob::Done,
+            ParticipantStatus::Active(NodeStatus::Idle)
+                if my_migration_info.active_migration
+                    && let ContractState::Running(running_state) = contract
+                    && running_state.resharing_state.is_none() =>
+            {
+                OnboardingJob::Onboard(running_state.keyset)
+            }
+            ParticipantStatus::Active(NodeStatus::Idle) => OnboardingJob::WaitForStateChange,
         }
     }
 }
@@ -192,7 +181,7 @@ pub mod tests {
 
     #[test]
     fn test_migration_status_constructor_empty() {
-        let state = ContractMigrationInfo::new();
+        let state = ContractMigrationInfo::default();
         let (account_id, _) = gen_participant(0);
         let p2p_public_key =
             ed25519_dalek::VerifyingKey::try_from(&bogus_ed25519_public_key()).unwrap();
@@ -204,7 +193,7 @@ pub mod tests {
 
     #[test]
     fn test_migration_status_constructor_populated() {
-        let mut state = ContractMigrationInfo::new();
+        let mut state = ContractMigrationInfo::default();
         let (account_id_0, participant_info_0) = gen_participant(0);
         let (account_id_1, _) = gen_participant(1);
         let signer_account_pk = bogus_ed25519_public_key();

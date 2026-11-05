@@ -3,7 +3,8 @@
 pub mod common;
 
 use crate::common::{
-    FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, any_single_provider, fan_out_of,
+    mock_client_from_fixed_response,
 };
 use foreign_chain_inspector::Verdict;
 
@@ -19,7 +20,6 @@ use foreign_chain_inspector::{
 use foreign_chain_rpc_factory::build_http_client;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::bitcoin::{
     GetBlockHeaderVerboseResponse, GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
 };
@@ -27,6 +27,7 @@ use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
+use std::assert_matches;
 
 const TEST_BLOCK_HEIGHT: u64 = 800_000;
 const TEST_SUFFICIENT_CONFIRMATIONS: u64 = 10;
@@ -102,11 +103,10 @@ async fn extract_returns_error_when_confirmations_insufficient() {
 
     // then
     assert_matches!(
-    response,
-    Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { expected, got }) => {
-        assert_eq!(expected,  threshold);
-        assert_eq!(got,  confirmations);
-    });
+        response,
+        Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { expected, got })
+            if expected == threshold && got == confirmations
+    );
 }
 
 #[tokio::test]
@@ -172,6 +172,58 @@ async fn extract__should_return_the_not_found_verdict_for_an_unknown_transaction
 
     // then
     assert_matches!(response, Ok(Verdict::TransactionNotFound));
+}
+
+#[tokio::test]
+async fn fan_out__should_return_mismatch_when_one_provider_fabricates_a_transaction() {
+    // given
+    let tx_id = BitcoinTransactionHash::from([3; 32]);
+    let transport_block_hash = TransportBitcoinBlockHash::from(*BitcoinBlockHash::from([4; 32]));
+    let tx_response = GetRawTransactionVerboseResponse {
+        blockhash: transport_block_hash,
+        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
+    };
+    let block_response = GetBlockHeaderVerboseResponse {
+        hash: transport_block_hash,
+        height: TEST_BLOCK_HEIGHT,
+    };
+    let malicious = BitcoinInspector::new(
+        SequentialResponseMockClientBuilder::new()
+            .with_response(tx_response)
+            .with_response(block_response)
+            .with_response(transport_block_hash)
+            .build(),
+    );
+    let honest = || {
+        BitcoinInspector::new(
+            SequentialResponseMockClientBuilder::new()
+                .with_error(|| {
+                    RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+                        -5,
+                        "No such mempool or blockchain transaction",
+                        None::<()>,
+                    ))
+                })
+                .build(),
+        )
+    };
+    let fan_out = fan_out_of(vec![honest(), malicious, honest()]);
+
+    // when
+    let response = fan_out
+        .extract_with_quorum(
+            &any_single_provider(&fan_out),
+            tx_id,
+            BlockConfirmations::from(1u64),
+            vec![BitcoinExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::InspectorResponseMismatch)
+    );
 }
 
 #[tokio::test]

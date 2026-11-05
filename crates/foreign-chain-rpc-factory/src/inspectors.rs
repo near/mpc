@@ -7,6 +7,7 @@ use foreign_chain_inspector::evm::inspector::EvmInspector;
 use foreign_chain_inspector::rpc_inspector::RpcInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
+use foreign_chain_inspector::svm::inspector::SvmInspector;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::ForeignChainProviderConfig;
@@ -55,11 +56,17 @@ impl BuildInspectors for InspectorFactory {
             ForeignChain::Ethereum => {
                 RpcInspector::Ethereum(EvmInspector::new(build_http_client(provider)?))
             }
+            ForeignChain::Fogo => {
+                RpcInspector::Fogo(SvmInspector::new(build_http_client(provider)?))
+            }
             ForeignChain::HyperEvm => {
                 RpcInspector::HyperEvm(EvmInspector::new(build_http_client(provider)?))
             }
             ForeignChain::Polygon => {
                 RpcInspector::Polygon(EvmInspector::new(build_http_client(provider)?))
+            }
+            ForeignChain::Solana => {
+                RpcInspector::Solana(SvmInspector::new(build_http_client(provider)?))
             }
             ForeignChain::Starknet => {
                 RpcInspector::Starknet(StarknetInspector::new(build_http_client(provider)?))

@@ -3,7 +3,7 @@
 use super::common;
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidParameters, InvalidState, TeeError},
+    errors::{Error, InvalidParameters},
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
@@ -18,14 +18,15 @@ use mpc_contract::{
 use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
-use std::collections::BTreeMap;
+use std::{
+    assert_matches,
+    collections::{BTreeMap, BTreeSet},
+};
 
-use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
-use test_utils::attestation::mock_dto_dstack_attestation;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -205,7 +206,9 @@ impl TestSetup {
     fn vote_with_all_participants(&mut self, hash: [u8; 32], timestamp: u64) {
         for (account_id, _, _) in &self.participants_list.clone() {
             self.with_env(account_id, timestamp);
-            self.contract.vote_code_hash(hash.into()).unwrap();
+            self.contract
+                .vote_mpc_node_manifest_digest(hash.into())
+                .unwrap();
         }
     }
     /// Returns the list of NodeIds for all participants. The
@@ -448,42 +451,33 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
         .unwrap()
         .expect("participant attestation should be stored");
 
-    // When: the same participant re-attests with no attached deposit.
-    testing_env!(common::participant_context(&node.account_id));
+    // When: the same participant re-attests with no attached deposit, an hour later.
+    const ONE_HOUR_SECONDS: u64 = 3600;
+    testing_env!(VMContext {
+        block_timestamp: near_sdk::env::block_timestamp() + ONE_HOUR_SECONDS * NANOS_IN_SECOND,
+        ..common::participant_context(&node.account_id)
+    });
     let result = setup
         .contract
         .submit_participant_info(attestation, node.tls_public_key.clone())
         .map(|_| ());
 
-    // Then: the submission succeeds and the stored entry is unchanged.
+    // Then: the submission succeeds and restamps the entry, so it was stored rather than
+    // silently dropped.
     assert_matches!(&result, Ok(()));
     let stored_after = setup
         .contract
         .get_attestation(node.tls_public_key)
         .unwrap()
         .expect("participant attestation should still be stored");
-    assert_eq!(stored_before, stored_after);
-}
-
-/// Test that a [`Dstack`] submission is rejected when no verifier is configured.
-#[test]
-fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
-    // Given
-    let mut setup = TestSetupBuilder::new().build();
-    let node = setup.get_participant_node_ids()[0].clone();
-
-    // When
-    let result = setup.try_submit_attestation_for_node(&node, mock_dto_dstack_attestation());
-
-    // Then
-    assert_matches!(
-        &result,
-        Err(Error::TeeError(TeeError::VerifierNotConfigured))
+    assert_eq!(
+        stored_after.accepted_at_seconds,
+        stored_before.accepted_at_seconds + ONE_HOUR_SECONDS
     );
 }
 
 /// **Test that [`clean_tee_status()`] is vote-only** — attestations for non-participants
-/// remain in `stored_attestations` after the call. Attestation pruning is handled by the
+/// remain stored after the call. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
 #[test]
 fn clean_tee_status__should_not_touch_attestations() {
@@ -539,10 +533,10 @@ fn clean_tee_status__should_not_touch_attestations() {
 }
 
 /// **Test that [`clean_invalid_attestations()`] prunes expired attestations end-to-end via
-/// the public endpoint**, including attestations that belong to current participants.
+/// the public endpoint**, except those of the nodes current participants use.
 /// Restores the cleanup-path coverage that lived in the old `clean_tee_status` test.
 #[test]
-fn clean_invalid_attestations__should_remove_expired_entries() {
+fn clean_invalid_attestations__should_remove_expired_nodes_not_in_use() {
     // Given
     const PARTICIPANT_COUNT: usize = 2;
     const THRESHOLD: u64 = 2;
@@ -561,9 +555,6 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
         expected_measurements: None,
     });
 
-    // init_running seeds one mock `Valid` attestation per participant. Overwrite the
-    // first participant's entry with an expiring one, and add a brand-new entry for an
-    // outsider account.
     let participant_node = setup.get_participant_node_ids()[0].clone();
     setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
 
@@ -573,39 +564,25 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     const EXPECTED_STORED: usize = PARTICIPANT_COUNT + 1; // original mocks + outsider entry
     assert_eq!(setup.contract.get_tee_accounts().len(), EXPECTED_STORED);
 
-    // When: time advances past the expiry and cleanup runs with a generous max_scan.
+    // When
     set_system_time(NOW_NS);
     let removed = setup.contract.clean_invalid_attestations(100).unwrap();
 
-    // Then: both entries with `expiry_timestamp_seconds` in the past are evicted; the
-    // second participant's un-overwritten `Valid` mock remains.
-    const EXPECTED_REMOVED: u32 = 2;
+    // Then
+    const EXPECTED_REMOVED: u32 = 1;
+    let stored_tls_keys: BTreeSet<_> = setup
+        .contract
+        .get_tee_accounts()
+        .into_iter()
+        .map(|node| node.tls_public_key)
+        .collect();
+    let participant_tls_keys: BTreeSet<_> = setup
+        .get_participant_node_ids()
+        .into_iter()
+        .map(|node| node.tls_public_key)
+        .collect();
     assert_eq!(removed, EXPECTED_REMOVED);
-    assert_eq!(
-        setup.contract.get_tee_accounts().len(),
-        EXPECTED_STORED - EXPECTED_REMOVED as usize
-    );
-}
-
-/// **Test that [`clean_invalid_attestations()`] rejects calls outside [`Running`] state** so
-/// that keygen / resharing flows (which may reference not-yet-activated attestations)
-/// aren't disrupted.
-#[test]
-fn clean_invalid_attestations__should_reject_when_not_running() {
-    // Given: contract sitting in Initializing state.
-
-    let mut setup = TestSetupBuilder::new()
-        .with_contract_protocol_state(ContractProtocolState::Initializing)
-        .build();
-
-    // When: the cleanup endpoint is invoked.
-    let result = setup.contract.clean_invalid_attestations(100);
-
-    // Then: the call errors without mutating state.
-    assert_matches!(
-        result,
-        Err(Error::InvalidState(InvalidState::ProtocolStateNotRunning))
-    );
+    assert_eq!(stored_tls_keys, participant_tls_keys);
 }
 
 macro_rules! assert_allowed_docker_image_hashes {
@@ -629,8 +606,8 @@ macro_rules! assert_allowed_docker_image_hashes {
 ///
 /// Verifies that when participants vote for a new image hash, the older
 /// hash remains allowed only until the successor’s grace period deadline.
-/// At the exact deadline both old and new hashes are valid, but immediately
-/// after, only the latest remains.
+/// Throughout the deadline second both old and new hashes are valid, but from
+/// the next second on, only the latest remains.
 #[test]
 fn only_latest_hash_after_grace_period() {
     const FIRST_ENTRY_TIME_NS: u64 = NANOS_IN_SECOND; // 1s
@@ -662,7 +639,7 @@ fn only_latest_hash_after_grace_period() {
     );
     assert_allowed_docker_image_hashes!(
         &setup,
-        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + 1,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + NANOS_IN_SECOND,
         &[(successor_hash, None)]
     );
 }
@@ -757,7 +734,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + 1,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + NANOS_IN_SECOND,
         &[
             (second_code_hash, second_hash_expiry),
             (third_code_hash, None),
@@ -776,7 +753,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        expiration_second_hash + 1,
+        expiration_second_hash + NANOS_IN_SECOND,
         &[(third_code_hash, None)]
     );
 }
@@ -896,7 +873,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     let expected_after_v1_expiry = [hash_v2, hash_v3];
     assert_allowed_docker_image_hashes!(
         &test_setup,
-        v1_expiry_time + 1,
+        v1_expiry_time + NANOS_IN_SECOND,
         &[(hash_v2, v2_expiry), (hash_v3, None)]
     );
 
@@ -918,7 +895,11 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
     let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
-    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[(hash_v3, None)]);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        v2_expiry_time + NANOS_IN_SECOND,
+        &[(hash_v3, None)]
+    );
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation
@@ -931,7 +912,9 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 #[case(ContractProtocolState::Running)]
 #[case(ContractProtocolState::Initializing)]
 #[case(ContractProtocolState::Resharing)]
-fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProtocolState) {
+fn vote_mpc_node_manifest_digest_works_in_contract_protocol_states(
+    #[case] state: ContractProtocolState,
+) {
     let mut setup = TestSetupBuilder::new()
         .with_contract_protocol_state(state)
         .build();

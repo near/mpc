@@ -35,50 +35,35 @@ For a full architecture review of the TEE-based MPC, see: [design doc](../../des
 
 ## Prerequisites and Requirements
 
+Ensure your node meets the [MPC node requirements](../node-requirements.md). In addition, the node must meet the requirements outlined below.
+
 ### Hardware Requirements
 
-* Have a TDX enabled, bare metal, server.
+* A TDX enabled, bare metal, server.
 
 Note - we currently only support bare metal and do not support virtualized TDX solutions (such as GCP).
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
 
-The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
+The memory, cores and disk in [MPC node requirements](../node-requirements.md#resources)
+are what a single MPC CVM consumes. Because you may need to run two CVMs concurrently while
+migrating to a new launcher version, size your TDX host for at least **2x** those values.
 
-* Memory - 64GB per CVM
-* (v)Cores - 8 per CVM
-* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
-
-For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../../archive/guide/cloud-providers-tdx.md).
+For a non-exhaustive list of cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../cloud-providers-tdx.md).
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
-
-### Software Requirements
-
-* [`near-cli-rs`](https://github.com/near/near-cli-rs) — install per the upstream README; the `near` binary must be on your `$PATH`.
-
-### General
-
-* Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
-* Assign a static public IP for access towards machine from outside
-
-### Create DNS A record (optional)
-
-Although a node can be accessed using a public IP address, it is recommended to use a domain name instead. Using a domain name allows some flexibility in case of public IP address change/repurpose or failover scenarios. To use a domain name, one must register a DNS A record. Some recommended providers:
-
-* [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)
-* [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 
 ### TDX and Dstack Setup
 
 This section describes how to enable TDX on your machine (BIOS, operating system, and software configurations), and how to install and configure Dstack.
 
-Follow the three steps below to ensure you have a working TDX machine with Dstack configured:
+Follow the four steps below to ensure you have a working TDX machine with Dstack configured, and that routine host upgrades leave it that way:
 
 1. [Set up a bare-metal TDX server](#1-tdx-bare-metal-server-setup)
 2. [Dstack Setup and Configuration](#2-dstack-setup-and-configuration)
 3. [Set up a Local Gramine-Sealing-Key-Provider](#3-local-gramine-sealing-key-provider-setup)
+4. [Configure host package upgrades](#4-host-package-upgrades)
 
 ---
 
@@ -117,7 +102,9 @@ sudo apt install build-essential qemu-system-x86=1:8.2.2* docker.io docker-compo
 
 > **Note:** The QEMU version is pinned to **8.2.2** because TDX attestation measurements
 > (MRTD/RTMR0) depend on the QEMU version. Using a different version will produce different
-> measurements and attestation might fail.
+> measurements and attestation might fail. The `=` pin only applies to this install, so also
+> hold the package against later upgrades, as described in
+> [Host Package Upgrades](#4-host-package-upgrades).
 
 * Create `mpc` user and installation folder
 
@@ -244,6 +231,10 @@ WorkingDirectory=/opt/mpc/dstack/vmm-data/
 ExecStart=/opt/mpc/dstack/vmm-data/dstack-vmm -c vmm.toml
 Restart=on-failure
 RestartSec=5
+# The qemu CVMs are children of this unit. Without KillMode=process, systemd's
+# default (control-group) sends SIGTERM to every CVM whenever the daemon is
+# stopped or restarted.
+KillMode=process
 User=mpc
 Group=mpc
 
@@ -265,6 +256,24 @@ systemctl status dstack-vmm
 
 Notice that some of the commands require `sudo`, so they cannot be run using the
 `mpc` user which has no such permissions by default.
+
+Once a CVM is running, the first time you restart the daemon is worth verifying:
+the CVMs should survive it, and the restarted daemon should re-adopt them rather
+than leave orphans.
+
+```bash
+pgrep -a supervisor            # holds the CVM handles; same PID as before the restart
+pgrep -af qemu-system-x86_64   # one per CVM, same PIDs as before
+```
+
+Then confirm the daemon sees them, in the web UI or via `lsvm` (see
+[CVM management](#cvm-management) for the CLI setup). If QEMU is still running
+but the daemon lists no CVM, re-adoption failed: do **not** start the CVM from
+the UI, as that launches a second QEMU against the same disk image. Stop the
+orphaned QEMU process first, then start the CVM normally.
+
+Nothing else should stop this unit on its own; see
+[Host Package Upgrades](#4-host-package-upgrades).
 
 ---
 
@@ -631,6 +640,154 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    [`gramine-sealing-key-provider` failures](#gramine-sealing-key-provider-failures)
    in the Troubleshooting section.
 
+---
+
+#### 4. Host Package Upgrades
+
+Leave unattended security upgrades enabled: a patched host is part of what keeps
+the node trustworthy, and it is the standard for servers of this kind. What has
+to be prevented is an upgrade disturbing the CVMs underneath it, in one of three
+ways: rebooting the host, restarting `dstack-vmm`, or changing a package the
+CVM's identity or its attestation depends on.
+
+The settings below cover those three routes. Because dstack CVMs are
+near-independent of the host, they are enough on their own; there is no need to
+stagger upgrade windows across operators.
+
+##### Keep automatic reboots off
+
+A reboot stops every CVM, and TCB SVNs latch at platform reset, so rebooting is
+always a planned operation, never a side effect of a package upgrade. Ubuntu
+defaults to no automatic reboot, but confirm it rather than assume it:
+
+```bash
+apt-config dump | grep -i 'Unattended-Upgrade::Automatic-Reboot'
+```
+
+No output means unset, which is off. Any line that does print must read
+`Unattended-Upgrade::Automatic-Reboot "false";`. Query the effective value like
+this rather than grepping the files: the stock `50unattended-upgrades` ships
+these options `//`-commented, so a grep shows inactive lines that read like live
+config. A pending reboot then only shows up as `/var/run/reboot-required`, which
+you act on during a maintenance window.
+
+##### Keep upgrades from restarting `dstack-vmm`
+
+`needrestart` runs from a `DPkg::Post-Invoke` hook on every apt transaction, and
+in the non-interactive unattended-upgrades context it restarts affected services
+without asking. `dstack-vmm` maps the host's libc and OpenSSL, so an ordinary
+security upgrade is enough to bounce it, and with it every CVM in its cgroup.
+Exclude the unit:
+
+```bash
+sudo mkdir -p /etc/needrestart/conf.d
+sudo tee /etc/needrestart/conf.d/dstack-vmm.conf <<'EOF'
+# The MPC CVMs run under dstack-vmm; never bounce it from an apt transaction.
+$nrconf{override_rc}{qr(^dstack-vmm\.service$)} = 0;
+EOF
+```
+
+This is defense in depth on top of `KillMode=process` in the unit: the drop-in
+keeps the restart from being triggered, `KillMode=process` keeps a restart that
+does happen from taking the CVMs with it. If your `dstack-vmm.service` predates
+this guide it will not have that line, so add it under `[Service]` now (see
+[VMM service persistence](#vmm-service-persistence)) and reload:
+
+```bash
+sudo systemctl daemon-reload   # applies at the next stop; does not bounce the daemon
+```
+
+##### Freeze the TDX stack
+
+The CVM's disk-sealing key derives from the CPU microcode (via CPUSVN), and its
+attestation measurements from the QEMU version (via MRTD/RTMR0). An unattended
+upgrade of either can leave the CVM unable to unseal its disk, or produce
+measurements the contract does not allow. The rest of what the `canonical/tdx`
+PPAs provide is less sharp but no more welcome as an unobserved change: the
+quote path (`sgx-dcap-pccs`, `tdx-qgs`, `libsgx-*`, `libtdx-attest*`) and the
+host kernel (`linux-image-intel`), which installs silently and becomes the
+kernel you boot at the next maintenance window. Those PPAs publish every few
+months, so freezing the whole set costs nothing:
+
+```bash
+PPA_PKGS=$(comm -12 \
+  <(awk '/^Package: /{print $2}' /var/lib/apt/lists/ppa.launchpadcontent.net_kobuk-team_*_Packages | sort -u) \
+  <(dpkg-query -W -f='${Package}\n' | sort -u))
+
+sudo apt-mark hold intel-microcode $PPA_PKGS
+apt-mark showhold
+```
+
+`intel-microcode` comes from the Ubuntu archive rather than a PPA, hence the
+separate mention. Holds are origin-agnostic, so they stop both the PPA and the
+archive from moving these packages.
+
+The measurements have no other host-package inputs: the guest firmware, kernel
+and rootfs come from the dstack image directory. `pgrep -af qemu-system-x86_64`
+shows the CVM started with `-bios .../images/dstack-0.5.8/ovmf.fd`,
+`-kernel .../bzImage` and `-drive file=.../rootfs.img.verity`. The host's own
+`ovmf` and `qemu-efi-*` are held above as PPA members, but nothing measured
+comes from them.
+
+Updating any of it is then explicit:
+
+```bash
+sudo apt-mark unhold $PPA_PKGS
+sudo apt-get install $PPA_PKGS
+sudo apt-mark hold $PPA_PKGS
+```
+
+A QEMU change needs its new measurements approved on-chain first (see
+[OS Measurement Voting](#os-measurement-voting)). A microcode change means
+redeploying the CVM, so back up the key shares and follow
+[TDX platform TCB status](../tdx-tcb-status.md).
+
+##### Leave the TDX PPAs' apt priority intact
+
+`setup-tdx-common` installs two pieces per PPA that only work together: a
+`Pin-Priority: 4000` file in `/etc/apt/preferences.d/`, and a
+`99unattended-upgrades-kobuk-*` file in `/etc/apt/apt.conf.d/` adding the PPA to
+`Unattended-Upgrade::Allowed-Origins` with `Allow-downgrade "true"`. Keep both:
+
+```bash
+apt-config dump | grep -c kobuk            # expect 2
+ls /etc/apt/preferences.d/ | grep -c kobuk # expect 2
+```
+
+Removing a PPA from `Allowed-Origins` does not make unattended-upgrades ignore
+it. It stamps that repository with a never-install pin (-32768), overriding the
+4000, after which the Ubuntu archive at priority 500 wins and any archive
+version sorting above the installed `+tdx` one silently replaces it. Together
+with the holds above, the archive cannot take a package off the PPA and the PPA
+cannot move one on its own.
+
+Audit for drift after any work on the TDX stack, such as re-running
+`setup-tdx-host.sh`:
+
+```bash
+apt-get -s install --allow-downgrades $PPA_PKGS | grep -c '^Inst'   # 0 = in sync
+```
+
+A non-zero count means something pulled a TDX package onto an archive build.
+Dropping `-s` puts it back, since the 4000 pin already makes the PPA build the
+candidate.
+
+##### Watch which kernel you boot
+
+A TDX host usually has `linux-image-generic` installed next to the PPA's
+`linux-image-intel`, and `canonical/tdx` leaves GRUB on `GRUB_DEFAULT=saved`
+with `GRUB_SAVEDEFAULT=true` (`/etc/default/grub.d/99-tdx-kernel.cfg`), so the
+default is whichever entry booted last. One manual boot of another entry becomes
+permanent, and the host can come back up without TDX host support:
+
+```bash
+uname -r   # expect the -intel kernel
+```
+
+Check it after every reboot. How to make it deterministic (a pinned
+`saved_entry`, an explicit `GRUB_DEFAULT`, or dropping the generic kernel) is
+left to your setup.
+
 ## MPC Node Setup and Deployment
 
 This section will describe how to configure and deploy your MPC node inside a CVM.
@@ -766,7 +923,7 @@ backup_encryption_key_hex = "$BACKUP_ENCRYPTION_KEY"
 
 [mpc_node_config.node]
 my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
-near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"  # ignored by newer versions; required by 3.17.x and older
 migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
 
 [mpc_node_config.node.indexer]
@@ -782,13 +939,16 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, use the full per-network provider set in [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `web_ui`, and the `triple` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template. Always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, see [Foreign chain RPC providers](#foreign-chain-rpc-providers).
+
+> **Note:** `near_responder_account_id` and `number_of_responder_keys` are ignored by newer versions but required by 3.17.x and older. Keep them until all your rollback targets are newer.
 
 > **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
 Adjust the variables as per your environment.
 
 * `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
+* `home_dir`: must be `/data` or a path under it. `/data` is the only persistent volume in the node container; anything outside it is lost when the container is recreated, and the node starts over with new keys.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](../node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
@@ -827,34 +987,54 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider: the participants vote which providers count and how many must agree, and a node serves a chain only while it meets that vote (see [Whitelist and quorum](#whitelist-and-quorum)).
 
 You need your own API keys:
 
 * **Alchemy** — https://www.alchemy.com → create an App, copy the API key
 * **QuickNode** — https://www.quicknode.com → create a Multi-chain Endpoint, copy the endpoint URL (your slug and API key are embedded in it)
 * **Geomi** (Aptos only) — https://geomi.dev/login → create a project, generate a Server API key (`aptoslabs_…`)
+* **Tatum** — https://dashboard.tatum.io → generate an API key for the right network. Make sure you have "Starter" plan.
+* **Chainstack** (HyperEVM only) — https://console.chainstack.com → deploy a Hyperliquid node, copy the key from its endpoint URL. Make sure you have "Growth" plan.
+* **FluxRPC** (Fogo, mainnet only) — https://fluxrpc.com → get an API key.
 
 > **Important:**
 >
-> * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
-> * Before deploying, verify your config with the [foreign-chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet` (or `--network mainnet`). It checks every provider with the same client code the node uses.
+> * The `placeholder` value must be exactly one full path segment of `rpc_url` (case-sensitive), e.g. `/v2/{api_key}`. The node rejects a placeholder that is missing, repeated, only part of a segment, or outside the path. Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
+> * Before deploying, verify your config with the [foreign chain config tester](../../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml`. It runs the same provider probe the node runs after startup and reports the same verdicts.
+
+#### Credentials only (Recommended)
+
+Requires node release 3.17 or later. Earlier releases ignore `rpc_preset` and `credentials` and run without foreign chains.
+
+The node ships testnet and mainnet provider presets. Instead of the full `foreign_chains` block, select a preset and give one credentials entry per provider, the node enables every preset (chain, provider) pair whose provider has credentials, plus the providers that need none, including chains added in later releases:
+
+```toml
+[mpc_node_config.node.foreign_chains]
+rpc_preset = "testnet"  # or "mainnet"
+
+[mpc_node_config.node.foreign_chains.credentials]
+alchemy    = { val = "YOUR_ALCHEMY_API_KEY" }
+quicknode  = { val = "YOUR_QUICKNODE_API_KEY", slug = "YOUR-SLUG" }
+geomi      = { val = "YOUR_GEOMI_API_KEY" }
+tatum      = { val = "YOUR_TATUM_API_KEY" }
+chainstack = { val = "YOUR_CHAINSTACK_API_KEY" }
+fluxrpc    = { val = "YOUR_FLUXRPC_API_KEY" }  # mainnet only
+```
+
+A mainnet or testnet node must use its own network's preset. A (chain, provider) pair you also configure in full takes precedence, as do the chain-level fields of a chain you configure. At startup the node logs where each pair came from and warns about preset providers it skipped.
+
+#### Full config
 
 Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
 
 **Testnet:**
 
 ```toml
-[mpc_node_config.node.foreign_chains.bitcoin]
-timeout_sec = 30
-max_retries = 3
-
-[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
-rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
-
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "11124"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.testnet.abs.xyz"
@@ -876,6 +1056,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "0x534e5f5345504f4c4941" # SN_SEPOLIA
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
@@ -897,6 +1078,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "2" # Aptos ledger chain id
 
 [mpc_node_config.node.foreign_chains.aptos.providers.public]
 rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
@@ -927,6 +1109,8 @@ token = { val = "YOUR_GEOMI_API_KEY" }
 [mpc_node_config.node.foreign_chains.sui]
 timeout_sec = 30
 max_retries = 3
+# Genesis checkpoint digest.
+expected_network_fingerprint = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"
 
 [mpc_node_config.node.foreign_chains.sui.providers.public]
 rpc_url = "https://archive.testnet.sui.io"
@@ -947,23 +1131,206 @@ rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro"
 kind = "header"
 name = "x-token"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+# Testnet deployments verify against Solana devnet.
+[mpc_node_config.node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy]
+rpc_url = "https://solana-devnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.solana-devnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.tatum]
+rpc_url = "https://solana-devnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.solana.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# BSC testnet (Chapel).
+[mpc_node_config.node.foreign_chains.bnb]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "97"
+
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy]
+rpc_url = "https://bnb-testnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.bsc-testnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum]
+rpc_url = "https://bsc-testnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Base Sepolia.
+[mpc_node_config.node.foreign_chains.base]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "84532"
+
+[mpc_node_config.node.foreign_chains.base.providers.alchemy]
+rpc_url = "https://base-sepolia.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.base.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.base-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.base.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.tatum]
+rpc_url = "https://base-sepolia.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.base.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Arbitrum Sepolia.
+[mpc_node_config.node.foreign_chains.arbitrum]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "421614"
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy]
+rpc_url = "https://arb-sepolia.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.arbitrum-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum]
+rpc_url = "https://arbitrum-one-sepolia.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Polygon Amoy.
+[mpc_node_config.node.foreign_chains.polygon]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "80002"
+
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy]
+rpc_url = "https://polygon-amoy.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.matic-amoy.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum]
+rpc_url = "https://polygon-amoy.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Avalanche Fuji. The C-chain path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.avalanche]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "43113"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.public]
+rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.avalanche-testnet.quiknode.pro/{api_key}/ext/bc/C/rpc"
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum]
+rpc_url = "https://avax-testnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# HyperEVM testnet. The `/evm` path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.hyper_evm]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "998"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.public]
+rpc_url = "https://rpc.hyperliquid-testnet.xyz/evm"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.hype-testnet.quiknode.pro/{api_key}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack]
+rpc_url = "https://hyperliquid-testnet.core.chainstack.com/{API_KEY}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_CHAINSTACK_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.fogo]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"
+
+[mpc_node_config.node.foreign_chains.fogo.providers.public]
+rpc_url = "https://testnet.fogo.io"
 ```
 
 **Mainnet:**
 
 ```toml
-[mpc_node_config.node.foreign_chains.bitcoin]
-timeout_sec = 30
-max_retries = 3
-
-[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
-rpc_url = "https://bitcoin-rpc.publicnode.com"
-
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "2741"
 
-[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-mainnet]
 rpc_url = "https://api.mainnet.abs.xyz"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
@@ -983,6 +1350,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "0x534e5f4d41494e" # SN_MAIN
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-rpc.publicnode.com"
@@ -1004,6 +1372,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
+expected_network_fingerprint = "1" # Aptos ledger chain id
 
 [mpc_node_config.node.foreign_chains.aptos.providers.public]
 rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
@@ -1034,6 +1403,8 @@ token = { val = "YOUR_GEOMI_API_KEY" }
 [mpc_node_config.node.foreign_chains.sui]
 timeout_sec = 30
 max_retries = 3
+# Genesis checkpoint digest.
+expected_network_fingerprint = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"
 
 [mpc_node_config.node.foreign_chains.sui.providers.public]
 rpc_url = "https://archive.mainnet.sui.io"
@@ -1054,7 +1425,267 @@ rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
 kind = "header"
 name = "x-token"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+
+[mpc_node_config.node.foreign_chains.solana.providers.public]
+rpc_url = "https://api.mainnet-beta.solana.com"
+
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy]
+rpc_url = "https://solana-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.solana-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.tatum]
+rpc_url = "https://solana-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.solana.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# BNB Smart Chain.
+[mpc_node_config.node.foreign_chains.bnb]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "56"
+
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy]
+rpc_url = "https://bnb-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.bnb.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.bsc.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.bnb.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum]
+rpc_url = "https://bsc-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.bnb.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "8453"
+
+[mpc_node_config.node.foreign_chains.base.providers.alchemy]
+rpc_url = "https://base-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.base.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.base-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.base.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.base.providers.tatum]
+rpc_url = "https://base-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.base.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Arbitrum One.
+[mpc_node_config.node.foreign_chains.arbitrum]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "42161"
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy]
+rpc_url = "https://arb-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.arbitrum-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum]
+rpc_url = "https://arbitrum-one-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.arbitrum.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "137"
+
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy]
+rpc_url = "https://polygon-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.polygon.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.matic.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.polygon.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum]
+rpc_url = "https://polygon-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.polygon.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# Avalanche C-chain. The C-chain path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.avalanche]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "43114"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.public]
+rpc_url = "https://api.avax.network/ext/bc/C/rpc"
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.avalanche-mainnet.quiknode.pro/{api_key}/ext/bc/C/rpc"
+[mpc_node_config.node.foreign_chains.avalanche.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum]
+rpc_url = "https://avax-mainnet.gateway.tatum.io"
+[mpc_node_config.node.foreign_chains.avalanche.providers.tatum.auth]
+kind = "header"
+name = "x-api-key"
+token = { val = "YOUR_TATUM_API_KEY" }
+
+# HyperEVM. The `/evm` path suffix stays after the key.
+[mpc_node_config.node.foreign_chains.hyper_evm]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "999"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.public]
+rpc_url = "https://rpc.hyperliquid.xyz/evm"
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.hype-mainnet.quiknode.pro/{api_key}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack]
+rpc_url = "https://hyperliquid-mainnet.core.chainstack.com/{API_KEY}/evm"
+[mpc_node_config.node.foreign_chains.hyper_evm.providers.chainstack.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_CHAINSTACK_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.fogo]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"
+
+[mpc_node_config.node.foreign_chains.fogo.providers.public]
+rpc_url = "https://mainnet.fogo.io"
+
+# FluxRPC takes the key as a query parameter.
+[mpc_node_config.node.foreign_chains.fogo.providers.fluxrpc]
+rpc_url = "https://eu.fogo.fluxrpc.com"
+[mpc_node_config.node.foreign_chains.fogo.providers.fluxrpc.auth]
+kind = "query"
+name = "key"
+token = { val = "YOUR_FLUXRPC_API_KEY" }
 ```
+
+#### Expected network fingerprints
+
+`expected_network_fingerprint` is the value every provider of a chain must report when asked which
+network it serves. Only some chains call it a chain id: for SVM chains it is their
+genesis block hash, and Sui's is its genesis checkpoint digest. The node compares it with each
+provider's answer after startup and then hourly, and the config tester does the same, so a provider
+pointed at the wrong network is reported before it can fail a real request. The value is set per
+chain, so a config can mix networks, and it is always a quoted string, including the ones that look
+numeric. A chain configured without it has all of its providers reported unhealthy.
+
+| chain | fingerprint | mainnet | testnet |
+|---|---|---|---|
+| ethereum | EIP-155 chain id, decimal | `"1"` | `"11155111"` (Sepolia) |
+| base | EIP-155 chain id, decimal | `"8453"` | `"84532"` (Sepolia) |
+| bnb | EIP-155 chain id, decimal | `"56"` | `"97"` |
+| arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
+| polygon | EIP-155 chain id, decimal | `"137"` | `"80002"` (Amoy) |
+| hyper_evm | EIP-155 chain id, decimal | `"999"` | `"998"` |
+| avalanche | EIP-155 chain id, decimal | `"43114"` | `"43113"` (Fuji) |
+| adi | EIP-155 chain id, decimal | `"36900"` | `"99999"` (AB testnet) |
+| abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
+| starknet | chain id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
+| aptos | ledger chain id, decimal | `"1"` | `"2"` |
+| sui | genesis checkpoint digest, base58 | `"4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"` | `"69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"` |
+| solana | genesis block hash, base58 | `"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"` | `"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"` (devnet) |
+| fogo | genesis block hash, base58 | `"CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"` | `"9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"` |
+
+The SVM chains write their genesis hash in base58, so a hex hash from a block explorer is not accepted for them.
+
+#### Whitelist and quorum
+
+The participants vote, per chain, the RPC providers a node may use and a quorum: how many of them
+must agree before the node accepts a verdict. Read the current whitelist with:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer allowed_foreign_chain_providers json-args '{}' network-config mainnet now
+```
+
+On testnet use `v1.signer-prod.testnet` and `network-config testnet`.
+
+The node checks its providers against the whitelist at startup and on every change, and it registers
+and serves a chain only while enough of them conform to reach the quorum:
+
+* A local provider matches a voted provider by the host of its URL. The name you give it in the
+  config has no effect. A `{}` label in a voted host, such as `{}.quiknode.pro`, stands for your
+  slug.
+* A matched provider conforms when its URL, chain routing, auth kind, header name and scheme or
+  query name, and the position of the token placeholder in the URL are the ones voted. The token
+  itself is not compared. A matched provider that differs is reported in the log and does not
+  count.
+* Two local providers behind one voted host count once.
+* A provider whose host is not voted is still queried and can veto a verdict, but never counts
+  toward the quorum.
+
+The presets use the voted URLs. With a full `foreign_chains` block, keep every `rpc_url` as given
+in the examples and add providers only when the vote lists them: an extra provider can only fail a
+verdict, never help reach the quorum.
+
+The gauges `mpc_foreign_chain_rpc_quorum_required` and `mpc_foreign_chain_rpc_providers_whitelisted`
+show, per chain, the quorum and how many of your providers count, see
+[Whitelist and quorum](../node-operator-metrics.md#whitelist-and-quorum) in the metrics guide.
 
 ### Preparing a Docker Compose File
 
@@ -1134,15 +1765,7 @@ deployment shapes:
 
 ---
 
-#### Required Ports
-
-| Port   | Purpose                                                                 |
-|--------|-------------------------------------------------------------------------|
-| **80** | Node-to-node communication (port override convention)                   |
-| **24567** | Decentralized state sync                                             |
-| **8080** | Debug and telemetry collection, plus the `/public_data` endpoint       |
-| **3030** | Debug and telemetry collection                                         |
-| **8079** | Migration port                    |
+See [Required ports](../node-requirements.md#ports).
 
 ### Configuring and Starting the MPC Binary in a CVM
 
@@ -1172,12 +1795,12 @@ Use the following custom settings for MPC:
    - public sysinfo = enabled
    - pin NUMA = disabled
 6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
-   Public 0.0.0.0:80 → 80 (main node to node communication port)
-   Public 0.0.0.0:24567 → 24567 (required for decentralized state sync)
-   Public 0.0.0.0:8080 → 8080 (required for collecting debug and telemetry information)
-   Public 0.0.0.0:8079 → 8079 (required for the node-migration HTTP endpoint)
-   Local 127.0.0.1:3030 → 3030 (use a public host address if you want the debug metrics available on the internet)
-   Local 127.0.0.1:<dstack_agent_port> → 8090 (required for access CVM information and container logs)
+   - Public `0.0.0.0:80` → `80` (main node to node communication port)
+   - Public `0.0.0.0:24567` → `24567` (required for decentralized state sync)
+   - Public `0.0.0.0:8080` → `8080` (required for collecting debug and telemetry information)
+   - Public `0.0.0.0:8079` → `8079` (required for the node-migration HTTP endpoint)
+   - Local `127.0.0.1:3030` → `3030` (use a public host address if you want the debug metrics available on the internet)
+   - Local `127.0.0.1:<dstack_agent_port>` → `8090` (required to access CVM information and container logs, see [Accessing MPC (or Launcher) Docker Logs](#accessing-mpc-or-launcher-docker-logs))
 
    The **host address** is the IP qemu binds each forward to. Single-node deployments use `0.0.0.0` to bind on every host interface. **Multi-node deployments** (mainnet + testnet on one host) use a specific public IP per CVM — see [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md).
 
@@ -1240,15 +1863,17 @@ Full flag reference and `.env` field-by-field documentation:
 Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.
 More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).
 
-> **Log retention:** the MPC container is reused across **restarts**, so its
-> logs are preserved and remain viewable here after a restart. An **upgrade**
-> (new image) recreates the container, which clears its logs.
+> **Log retention:** from launcher 3.14.0, the MPC container is reused across
+> **restarts**, so its logs are preserved and remain viewable here after a
+> restart. An **upgrade** (new image) recreates the container, which clears its
+> logs. Launchers before 3.14.0 recreate the container on every restart, so they
+> clear its logs each time.
 
 ---
 
 #### Local Access
 
-The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface).
+The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface). If you deployed with `deploy-launcher.sh`, it is the host port set in `EXTERNAL_DSTACK_AGENT_PORT` in your env file (default `127.0.0.1:9208`).
 
 Open in your browser:
 
@@ -1262,10 +1887,10 @@ http://localhost:<dstack_agent_port>
 
 If you need to access the web page from another machine, set up SSH port forwarding.
 
-For example, if `dstack_agent_port = 8090`:
+For example, if `dstack_agent_port = 9208`:
 
 ```bash
-ssh -NL 17190:localhost:8090 USER_NAME@TDX_SERVER
+ssh -NL 17190:localhost:9208 USER_NAME@TDX_SERVER
 ```
 
 Then open:
@@ -1280,13 +1905,27 @@ http://localhost:17190
 
 ![CVM Web Page](attachments/CVM_web_page.png)
 
+---
+
+#### Command-Line Access
+
+The same port serves each container's logs as plain text at `/logs/<container>` (`mpc-node` or `launcher`):
+
+```bash
+curl -sS 'http://localhost:<dstack_agent_port>/logs/mpc-node?text&timestamps&bare&tail=1000'
+```
+
+`tail` is the number of lines read from the end of the log (default `1000`, or `all`). Add `&follow` to keep streaming new lines.
+
 ### Retrieve Public Keys from the MPC Node
 
 There are 2 keys that should be retrieved from node.
 
 * P2P (`near_p2p_public_key`) - this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract (see details below).
-* Node Account Key (`near_signer_public_key`) - this key is used by the node to issue operations such as `vote_reshared`.
+* Node Account Key (`near_signer_public_key`) - this key is used by the node for all its contract calls, including signature responses and operations such as `vote_reshared`.
   This key needs to be added to the NEAR account that was created in the step above.
+
+On 3.17.x and older, `/public_data` also has a `near_responder_public_keys` field. It is not used; do not add these keys. If your account still has responder keys from an older setup, you can delete them, but keep the key that matches `near_signer_public_key`.
 
 ### Retrieve the Node Account Key and P2P Key
 
@@ -1428,7 +2067,7 @@ This section shows how to add the MPC node's public key (from the previous secti
   it cannot transfer funds or call other contracts.
 
   > **Why allow all methods instead of an explicit list?** The set of methods an
-  > MPC node must call changes across releases (e.g. `register_foreign_chain_config`
+  > MPC node must call changes across releases (e.g. `register_foreign_chains_config`
   > was added for foreign-chain support). A hand-maintained method list silently
   > drifts out of date, and the node then fails — with no obvious error — on any
   > new method the key was never granted. Allowing all methods on the contract
@@ -1506,7 +2145,7 @@ key may call **all** methods on that contract.
 If your node's key was previously added with a restricted `method_names` list
 (e.g. an older guide granted an explicit list), the node will fail — with no
 obvious error — on any contract method that was not in that list. A symptom of
-this is the node being unable to call `register_foreign_chain_config`, so the
+this is the node being unable to call `register_foreign_chains_config`, so the
 contract reports no foreign chains supported by your node.
 
 Access-key permissions are **immutable** in NEAR: you cannot edit an existing
@@ -1533,8 +2172,7 @@ near account add-key $ACCOUNT_ID \
   send
 ```
 
-> **Note:** Delete and re-add each affected key (e.g. both the node key and the
-> responder key). Verify with `near account list-keys $ACCOUNT_ID` that each key
+> **Note:** Verify with `near account list-keys $ACCOUNT_ID` that the node key
 > now shows an empty `method_names` list.
 
 After the key is fixed, **restart the node** so foreign-chain registration runs again.
@@ -1567,7 +2205,7 @@ If the node’s key has not been added to the account, this operation will fail.
 
 #### Verifying the attestation was accepted
 
-The MPC node emits no explicit "submitted" log line. Once the verification poll observes the attestation on-chain it logs `INFO mpc_node::indexer::tx_sender: node found dstack attestation on chain attestation_age=... attestation_is_fresh=true`, but the authoritative check is on-chain.
+The MPC node does not log whether the contract accepted its attestation; the authoritative check is on-chain.
 
 First, list every TEE-attested node by calling `get_tee_accounts` (no args) and confirm your `account_id` and `tls_public_key` are present:
 
@@ -1590,7 +2228,7 @@ Example response (truncated):
 ]
 ```
 
-To inspect the stored `VerifiedAttestation` for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the Node Account Key and P2P Key](#retrieve-the-node-account-key-and-p2p-key)):
+To inspect the stored attestation for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the Node Account Key and P2P Key](#retrieve-the-node-account-key-and-p2p-key)):
 
 ```bash
 near contract call-function as-read-only \
@@ -1599,27 +2237,30 @@ near contract call-function as-read-only \
   network-config testnet now
 ```
 
-The response shape tells you what the contract accepted:
+The response wraps the stored attestation with `accepted_at_seconds`, the block time at which the contract accepted it. The `attestation` shape tells you what it accepted:
 
 - `{ "Dstack": { ... } }` — a real TEE attestation. This is what a production operator should see.
 - `{ "Mock": "Valid" }` — a mock attestation. Acceptable on testnet during the [transition phase](#transition-phase), but means the node is **not** running in a TEE. Many existing testnet entries are in this state.
-- `null` — the node has not yet submitted, or the submission is failing — see [`submit_participant_info` failures](#submit_participant_info-failures) below.
+- `null` response — the node has not yet submitted, or the submission is failing — see [`submit_participant_info` failures](#submit_participant_info-failures) below.
 
 Example `Dstack` response from `v1.signer-prod.testnet` for an existing participant:
 
 ```json
 {
-  "Dstack": {
-    "expiry_timestamp_seconds": 1779618069,
-    "launcher_compose_hash": "efb095f3e9adfeb04d637813a838fa666778b9915d752cfd796ae2a254fe705f",
-    "measurements": {
-      "key_provider_event_digest": "61ce56b6be756a9e45af7715b13c15040a4e6090cc740be24e2cc02e33b4fb53ae4e3c945c9af83e2a26c6d5efa414a8",
-      "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
-      "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
-      "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
-      "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
-    },
-    "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
+  "accepted_at_seconds": 1779013269,
+  "attestation": {
+    "Dstack": {
+      "expiry_timestamp_seconds": 1779618069,
+      "launcher_compose_hash": "efb095f3e9adfeb04d637813a838fa666778b9915d752cfd796ae2a254fe705f",
+      "measurements": {
+        "key_provider_event_digest": "61ce56b6be756a9e45af7715b13c15040a4e6090cc740be24e2cc02e33b4fb53ae4e3c945c9af83e2a26c6d5efa414a8",
+        "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+        "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
+        "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
+        "rtmr2": "9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf"
+      },
+      "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
+    }
   }
 }
 ```
@@ -1817,19 +2458,35 @@ ERROR mpc_node::key_events: Key resharing attempt KeyEventId { ... } failed: <er
 
 The contract will retry with a fresh attempt; repeated failures need investigation.
 
+#### Query parameter votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  parameters_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+Shows the voters grouped by the proposal hash of the parameters they voted for: the SHA-256 of the borsh-encoded `ProposedGovernanceThresholdParameters`.
+
 ## Upgrades
 
-There are three types of upgrades, with different frequencies and operator effort:
+There are four types of upgrades, with different frequencies and operator effort:
 
 | Upgrade Type | Frequency | Operator Effort | Sealing Key Changes |
 | :--- | :--- | :--- | :--- |
 | MPC node image | High (~monthly) | Vote + restart CVM | No |
 | Launcher / CVM | Low | Vote + deploy new CVM + migrate key shares | Yes |
 | Host BIOS / microcode / TDX module | Whenever Intel publishes a TCB recovery | Vendor firmware update + reboot + deploy a new CVM and move the key shares into it | Yes (microcode moves CPUSVN) |
+| Host OS packages | Continuous (unattended security upgrades) | None, once configured | No, the packages that would move it are held |
 
 When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
 The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](../tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
+
+The fourth type is the routine patching of the host itself, which should stay automatic and should never touch a running CVM. Configure it once as described in [Host Package Upgrades](#4-host-package-upgrades); after that it needs no coordination with the rest of the network.
 
 ## MPC Node Image Upgrade
 
@@ -1874,7 +2531,7 @@ node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721
 node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
-The `node manifest digest` is what you vote for. When submitting the `code_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
+The `node manifest digest` is what you vote for. When submitting the `mpc_node_manifest_digest` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 
@@ -1885,15 +2542,15 @@ The `node manifest digest` is what you vote for. When submitting the `code_hash`
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
-Set `MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
+Set `MPC_NODE_MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
 
 ```bash
-MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+MPC_NODE_MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
-  vote_code_hash \
-  json-args "{\"code_hash\": \"$MANIFEST_DIGEST\"}" \
+  vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1922,13 +2579,13 @@ Returns the list of currently-accepted image hashes, most recent first.
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet \
-  code_hash_votes \
+  mpc_node_manifest_digest_votes \
   json-args '{}' \
   network-config testnet \
   now
 ```
 
-Shows per-participant votes so you can see how many more are needed to reach threshold.
+Shows the voters grouped by the image hash they voted for. May include former participants' votes, which don't count toward the threshold.
 
 ### Update the MPC Node
 
@@ -1950,7 +2607,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 2. Participants vote to approve the new launcher manifest digest and/or OS measurements.
 3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](../node-migration-guide.md).
-5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
+5. The old launcher manifest digest is retired at the first TEE verification after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once no current participant uses it; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
 
 ### Launcher Image Voting
 
@@ -2019,7 +2676,7 @@ near contract call-function as-transaction \
 
 #### Query allowed launcher manifest digests
 
-The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests. The query returns only non-expired digests; digests that have aged out past their TTL are hidden from this view (and physically removed later, during routine `verify_tee` housekeeping).
+The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests. The query returns the exact allowed set: a digest stays in it, and is accepted, until a unanimous vote removes it or a routine `verify_tee` retires it (see [Remove Old Launcher Manifest Digest / OS Measurements](#remove-old-launcher-manifest-digest--os-measurements)).
 
 ```bash
 near contract call-function as-read-only \
@@ -2040,6 +2697,8 @@ near contract call-function as-read-only \
   network-config testnet \
   now
 ```
+
+Shows the voters grouped by the proposal hash of the action they voted for: the SHA-256 of the borsh-encoded `LauncherVoteAction`. May include former participants' votes, which don't count toward the threshold.
 
 ### OS Measurement Voting
 
@@ -2101,6 +2760,8 @@ near contract call-function as-read-only \
   now
 ```
 
+Shows the voters grouped by the proposal hash of the action they voted for: the SHA-256 of the borsh-encoded `MeasurementVoteAction`. May include former participants' votes, which don't count toward the threshold.
+
 ### Deploy New CVM and Migrate Key Shares
 
 After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
@@ -2109,7 +2770,7 @@ For the migration procedure, see the [node migration guide](../node-migration-gu
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
-An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
+An unused launcher manifest digest is removed automatically at the first `verify_tee` (each node calls it at start and every 2 days) once `launcher_hash_unused_ttl_seconds` (default 14 days) has passed since its last vote or the last `verify_tee` that saw a current participant using it. A digest in use is never removed automatically, so no vote is needed for routine rotation.
 
 After all operators have migrated to the new CVM, participants may vote to remove the old launcher manifest digest immediately using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration. (Old OS measurements do not auto-expire and still require this vote.)
 
@@ -2214,7 +2875,7 @@ wipe_near_data_token = 1
 On the next startup — before the store is opened, so it runs in an instant and *before* sync —
 the node deletes the nearcore data dir (`data/data`), records the token in
 `data/.near_data_wipe_token`, and re-syncs the chain from scratch. The MPC secrets in
-`data/assets` (keyshares, triples, presignatures) are **not** touched, so the node keeps its
+`data/assets` (keyshares, triples) are **not** touched, so the node keeps its
 identity and key material.
 
 Semantics:
@@ -2304,7 +2965,7 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
 
 ### `submit_participant_info` failures
 
-When the contract rejects a submission the node retries on a backoff and logs a generic line every attempt:
+When the contract rejects a submission while no TEE attestation is stored for the node's TLS key, the node retries on a backoff and logs a generic line every attempt:
 
 ```
 ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
@@ -2312,22 +2973,25 @@ ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
   cause=attestation submission was not executed backoff_duration=60s
 ```
 
-This line **doesn't tell you why** — `cause` is one of `attestation submission was not executed` (most common), `attestation submission has unknown response`, or `failed to submit transaction` (lower-level RPC send failure). None of these carry the underlying reason. The actual failure shows up in one of three places.
+This line **doesn't tell you why**: `cause` is `attestation submission was not executed` (most common) or `failed to submit transaction` (the node's transaction processor has stopped). Neither carries the underlying reason. Once a TEE attestation is stored for the key, a rejected resubmission logs no such line: an hour later, at the start of the next round, the node logs `WARN ... no attestation from this node accepted recently` and submits again. The actual failure shows up in one of three places.
 
 #### 1. Client-side pre-flight WARN — in the node logs
 
-Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
+Before submitting, the node runs a pre-flight check against the contract's allowed-image, allowed-launcher-compose and allowed-OS-measurement lists. Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
 
 ```
 WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
   Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
 ```
 
+Right after a restart the node may not have read these lists from the contract yet, so a warning on the first submission can be a false alarm: if `get_attestation` returns your attestation, the contract accepted it and the warning can be ignored.
+
 Common messages:
 
 - ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
 - ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
+- **`wrong expected_measurements hash (found none matched expected one of the allowed measurement sets)`**: your boot measurements (MRTD, RTMR0-2, key-provider event digest) are not in the contract's allowed set, for example because the CVM runs a dev OS image. Deploy the production OS image and check that its measurements are voted in (see [OS measurement voting](#os-measurement-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
 - **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](../tdx-tcb-status.md), which also explains how to see it coming.
 
@@ -2349,13 +3013,13 @@ The error after `err=` is the NEAR runtime error. Common ones:
 
 #### 3. Contract-rejection errors — only visible on the explorer / RPC
 
-If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
+If the transaction reaches execution and the contract panics, the node logs only the generic retry line above, or, once a TEE attestation is stored for its key, the transaction hash (`sending tx …`) and, at the start of the next round, the warning above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call. The error appears under the action's status / logs. The contract wraps the attestation-side error like this:
 
 ```
 Smart contract panicked: the submitted attestation failed verification, reason: custom error: `...`
 ```
 
-The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list or the contract's caller assertion):
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example ``custom error: `the allowed mpc image hashes list is empty` ``. Errors that **only** surface on-chain (because they come from the contract re-verifying stored attestations, or from its caller assertion):
 
 - **`the attestation's measurements are not in the allowed set`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
 - **`the allowed measurements list is empty`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.

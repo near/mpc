@@ -226,7 +226,7 @@ The following attestation methods must be uniform across all governance contract
 | `verify_tee()` | Call | Re-validate all stored attestations |
 | `allowed_docker_image_hashes()` | View | Query approved image hashes |
 | `allowed_launcher_compose_hashes()` | View | Query approved launcher hashes |
-| `get_tee_accounts()` | View | Query participants with valid attestations |
+| `get_tee_accounts()` | View | Query all stored nodes, including those of non-participants |
 | `get_available_foreign_chains()` | View | Query foreign chains accepted by `verify_foreign_transaction` |
 
 > **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
@@ -239,9 +239,9 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 
 | Method | Contract | Description |
 |--------|----------|-------------|
-| `vote_code_hash(code_hash)` | All | Vote for a new Docker image hash |
+| `vote_mpc_node_manifest_digest(mpc_node_manifest_digest)` | All | Vote for a new Docker image hash |
 | `vote_add_launcher_hash(launcher_hash)` | All | Vote for a new launcher image hash (threshold) |
-| `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes also auto-expire — see [auto-removal of unused launcher hashes](../archive/design/auto-remove-launcher-hashes-design.md) |
+| `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes are also removed automatically — see [launcher-image eviction](../archive/design/auto-remove-launcher-hashes-design.md) |
 | `vote_foreign_chain_policy(policy)` | MPC, HOT | Vote on trusted RPC providers per chain |
 | `vote_new_parameters(...)` | MPC only | Vote for threshold and participant changes |
 | `vote_update_governors(...)` | HOT only | Vote to change the governor set |
@@ -252,7 +252,7 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 2. Both placeholders are replaced with the approved launcher and MPC image hashes respectively.
 3. The filled YAML is SHA256-hashed to produce the [`LauncherDockerComposeHash`][launcher-compose-hash].
 
-When `vote_code_hash()` reaches threshold, compose hashes are derived for the new MPC hash against all existing allowed launcher hashes. When `vote_add_launcher_hash()` reaches threshold, compose hashes are derived for the new launcher hash against all existing allowed MPC hashes.
+When `vote_mpc_node_manifest_digest()` reaches threshold, compose hashes are derived for the new MPC hash against all existing allowed launcher hashes. When `vote_add_launcher_hash()` reaches threshold, compose hashes are derived for the new launcher hash against all existing allowed MPC hashes.
 
 Each service has its own launcher compose template.
 
@@ -272,7 +272,7 @@ sequenceDiagram
     participant LA as Launcher
     participant NEW as New Application
 
-    GOV ->> SC: vote_code_hash(new_hash)
+    GOV ->> SC: vote_mpc_node_manifest_digest(new_hash)
     SC ->> SC: Threshold reached → add to allowed list
 
     APP ->> SC: Contract State Subscriber detects new hash
@@ -288,7 +288,7 @@ sequenceDiagram
     SC ->> SC: verify_tee() removes nodes with expired image hashes
 ```
 
-1. Governors vote for a new Docker image hash on-chain via `vote_code_hash()`.
+1. Governors vote for a new Docker image hash on-chain via `vote_mpc_node_manifest_digest()`.
 2. When `vote_threshold` is reached, the new hash is added to the allowed list.
 3. The running app's Contract State Subscriber detects the new allowed hash.
 4. The app stores the new hash to an encrypted file on disk.

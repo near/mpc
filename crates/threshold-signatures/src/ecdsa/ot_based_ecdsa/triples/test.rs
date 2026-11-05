@@ -1,62 +1,13 @@
 use rand::SeedableRng;
-use rand_core::CryptoRngCore;
 
-use super::{
-    TriplePub, TripleShare,
-    batch_random_ot::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender},
-};
+use super::batch_random_ot::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender};
 
-use crate::{
-    ReconstructionThreshold,
-    ecdsa::{Field, Polynomial, ProjectivePoint, Secp256K1ScalarField},
-    test_utils::MockCryptoRng,
-};
+use crate::test_utils::MockCryptoRng;
 
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 use crate::protocol::internal::{Comms, make_protocol};
 use crate::test_utils::run_two_party_protocol;
-
-/// Create a new triple from scratch.
-///
-/// This can be used to generate a triple if you then trust the person running
-/// this code to forget about the values they generated.
-/// We prevent users from using it in non-testing env and attribute it to #[cfg(test)]
-pub fn deal(
-    rng: &mut impl CryptoRngCore,
-    participants: &[Participant],
-    threshold: ReconstructionThreshold,
-) -> Result<(TriplePub, Vec<TripleShare>), ProtocolError> {
-    let a = Secp256K1ScalarField::random(&mut *rng);
-    let b = Secp256K1ScalarField::random(&mut *rng);
-    let c = a * b;
-
-    let degree = threshold.value().checked_sub(1).unwrap();
-    let f_a = Polynomial::generate_polynomial(Some(a), degree, rng)?;
-    let f_b = Polynomial::generate_polynomial(Some(b), degree, rng)?;
-    let f_c = Polynomial::generate_polynomial(Some(c), degree, rng)?;
-
-    let mut shares = Vec::with_capacity(participants.len());
-    let mut participants_owned = Vec::with_capacity(participants.len());
-
-    for p in participants {
-        participants_owned.push(*p);
-        shares.push(TripleShare {
-            a: f_a.eval_at_participant(*p)?.0,
-            b: f_b.eval_at_participant(*p)?.0,
-            c: f_c.eval_at_participant(*p)?.0,
-        });
-    }
-
-    let triple_pub = TriplePub {
-        big_a: (ProjectivePoint::GENERATOR * a).into(),
-        big_b: (ProjectivePoint::GENERATOR * b).into(),
-        big_c: (ProjectivePoint::GENERATOR * c).into(),
-        participants: participants_owned,
-        threshold,
-    };
-    Ok((triple_pub, shares))
-}
 
 /// Run the batch random OT protocol between two parties.
 pub fn run_batch_random_ot()

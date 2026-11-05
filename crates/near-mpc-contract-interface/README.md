@@ -26,7 +26,8 @@ Two feature flags provide typed helpers for constructing contract calls:
 - `client` (implies `call-args`) — `MpcContractHandle`, a typed client
   generic over the transport traits of `near-contract-transport`. It is the
   single source of each method's wire format: method name, argument struct,
-  gas, and deposit.
+  gas, and deposit. Backends implementing `ViewContract` also get typed view
+  methods.
 
 ```rust
 # #[cfg(feature = "client")] mod example {

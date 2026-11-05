@@ -7,16 +7,19 @@
 //! factory below sets the same `expect_extract` behaviour on every clone.
 
 #![expect(non_snake_case)]
+pub mod common;
 
-use std::sync::Arc;
+use std::{assert_matches, pin::Pin, sync::Arc, time::Duration};
 
-use assert_matches::assert_matches;
+use crate::common::{any_single_provider, fan_out_of};
 use foreign_chain_inspector::{
-    FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, Verdict,
+    FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ProviderFailure,
+    RpcQuorum, TimeProviderCall, Verdict,
 };
-use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
 use rstest::rstest;
+use std::num::NonZeroUsize;
+use tokio::sync::mpsc;
 
 mockall::mock! {
     Inspector {}
@@ -43,23 +46,42 @@ mockall::mock! {
 type ResponseFn =
     Arc<dyn Fn() -> Result<Verdict<u32>, ForeignChainInspectionError> + Send + Sync + 'static>;
 
-/// Builds a mock that returns [`response()`] whenever `extract` is called, and
-/// whose [`clone()`] produces another mock with the same behaviour.
+/// Builds a mock whose `extract` answers with `response()` at once.
+fn mock_returning(response: ResponseFn) -> MockInspector {
+    mock_awaiting(Arc::new(move || Box::pin(std::future::ready(response()))))
+}
+
+type Response =
+    Pin<Box<dyn Future<Output = Result<Verdict<u32>, ForeignChainInspectionError>> + Send>>;
+type ResponseFutureFn = Arc<dyn Fn() -> Response + Send + Sync>;
+
+/// Builds a mock whose `extract` awaits the future `respond()` produces, and whose
+/// `clone()` produces another mock with the same behaviour.
 ///
-/// [`FanOut::extract`] calls [`clone()`] on the inspector and only `extract` on the
+/// [`FanOut::extract_with_quorum`] calls `clone()` on the inspector and only `extract` on the
 /// resulting clone; the inverse never happens. We allow `times(0..)` on both
 /// expectations so a single helper covers both "original" and "cloned" roles
 /// without surprising the test author with expectation failures on drop.
-fn mock_returning(response: ResponseFn) -> MockInspector {
+fn mock_awaiting(respond: ResponseFutureFn) -> MockInspector {
     let mut m = MockInspector::new();
-    let for_extract = Arc::clone(&response);
+    let for_extract = Arc::clone(&respond);
     m.expect_extract()
-        .returning(move |_, _, _| Box::pin(std::future::ready(for_extract())))
+        .returning(move |_, _, _| for_extract())
         .times(0..);
     m.expect_clone()
-        .returning(move || mock_returning(Arc::clone(&response)))
+        .returning(move || mock_awaiting(Arc::clone(&respond)))
         .times(0..);
     m
+}
+
+fn mock_never_answering(asked: mpsc::UnboundedSender<()>) -> MockInspector {
+    mock_awaiting(Arc::new(move || {
+        let asked = asked.clone();
+        Box::pin(async move {
+            let _ = asked.send(());
+            std::future::pending().await
+        })
+    }))
 }
 
 /// Strict variant of [`mock_returning`]: the original is cloned exactly once,
@@ -94,16 +116,134 @@ fn err(make: impl Fn() -> ForeignChainInspectionError + Send + Sync + 'static) -
     Arc::new(move || Err(make()))
 }
 
-fn fan_out_of(inspectors: Vec<MockInspector>) -> FanOut<MockInspector> {
-    let named: Vec<(ProviderId, MockInspector)> = inspectors
-        .into_iter()
-        .enumerate()
-        .map(|(index, inspector)| (ProviderId(format!("provider-{index}")), inspector))
-        .collect();
-    let inspectors: NonEmptyVec<(ProviderId, MockInspector)> = named
-        .try_into()
-        .expect("test must provide at least one inspector");
-    FanOut::new(inspectors)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CallEnd {
+    Observed(Option<ProviderFailure>),
+    Dropped,
+}
+
+type ReportedCall = (ProviderId, CallEnd);
+
+#[derive(Clone)]
+struct ReportedCalls(mpsc::UnboundedSender<ReportedCall>);
+
+impl TimeProviderCall for ReportedCalls {
+    type Timer = RecordingTimer;
+
+    fn start_timer(&self, provider: &ProviderId) -> RecordingTimer {
+        RecordingTimer {
+            calls: self.0.clone(),
+            provider: provider.clone(),
+            observed: false,
+        }
+    }
+
+    fn observe(
+        &self,
+        mut timer: RecordingTimer,
+        provider: &ProviderId,
+        failure: Option<ProviderFailure>,
+    ) {
+        timer.observed = true;
+        let _ = self.0.send((provider.clone(), CallEnd::Observed(failure)));
+    }
+}
+
+/// Reports the call as dropped unless it was observed first.
+struct RecordingTimer {
+    calls: mpsc::UnboundedSender<ReportedCall>,
+    provider: ProviderId,
+    observed: bool,
+}
+
+impl Drop for RecordingTimer {
+    fn drop(&mut self) {
+        if !self.observed {
+            let _ = self.calls.send((self.provider.clone(), CallEnd::Dropped));
+        }
+    }
+}
+
+fn measured_fan_out_of(
+    inspectors: Vec<MockInspector>,
+) -> (
+    FanOut<MockInspector, ReportedCalls>,
+    mpsc::UnboundedReceiver<ReportedCall>,
+) {
+    let (calls, observed) = mpsc::unbounded_channel();
+    let fan_out = fan_out_of(inspectors).measuring(ReportedCalls(calls));
+    (fan_out, observed)
+}
+
+fn reported_by_provider(observed: &mut mpsc::UnboundedReceiver<ReportedCall>) -> Vec<ReportedCall> {
+    let mut calls = Vec::new();
+    while let Ok(call) = observed.try_recv() {
+        calls.push(call);
+    }
+    calls.sort_by(|left, right| left.0.cmp(&right.0));
+    calls
+}
+
+mod measurement {
+    use super::*;
+
+    #[tokio::test]
+    async fn fan_out_extract__should_report_every_provider_and_only_the_faulty_one_as_failed() {
+        // Given
+        let answering = mock_returning(ok(vec![1]));
+        let unreachable = mock_returning(err(|| {
+            ForeignChainInspectionError::RpcRequestFailed("connection refused".to_string())
+        }));
+        let not_finalized = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
+        let (fan_out, mut observed) =
+            measured_fan_out_of(vec![answering, unreachable, not_finalized]);
+
+        // When
+        fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await
+            .unwrap();
+
+        // Then
+        let calls = reported_by_provider(&mut observed);
+        let calls: Vec<(&str, CallEnd)> = calls
+            .iter()
+            .map(|(provider, end)| (provider.0.as_str(), *end))
+            .collect();
+        assert_eq!(
+            calls,
+            [
+                ("provider-0", CallEnd::Observed(None)),
+                (
+                    "provider-1",
+                    CallEnd::Observed(Some(ProviderFailure::Unreachable))
+                ),
+                ("provider-2", CallEnd::Observed(None)),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out_extract__should_report_a_dropped_call_when_the_caller_gives_up() {
+        // Given
+        let (asked, mut was_asked) = mpsc::unbounded_channel();
+        let (fan_out, mut observed) = measured_fan_out_of(vec![mock_never_answering(asked)]);
+        let quorum = any_single_provider(&fan_out);
+        let mut extract = Box::pin(fan_out.extract_with_quorum(&quorum, (), (), vec![]));
+        tokio::select! {
+            _ = &mut extract => panic!("the provider never answers"),
+            _ = was_asked.recv() => {}
+        }
+
+        // When
+        drop(extract);
+
+        // Then
+        let call = tokio::time::timeout(Duration::from_secs(5), observed.recv())
+            .await
+            .expect("the abandoned call must be observed");
+        assert_matches!(call, Some((_, CallEnd::Dropped)));
+    }
 }
 
 mod all_extract {
@@ -116,7 +256,9 @@ mod all_extract {
         let fan_out = fan_out_of(vec![make(), make(), make()]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![1, 2, 3]));
@@ -129,7 +271,9 @@ mod all_extract {
         let fan_out = fan_out_of(vec![only]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![7]));
@@ -145,7 +289,9 @@ mod all_extract {
         ]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then: mockall verifies call counts on drop.
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![1, 2]));
@@ -164,7 +310,9 @@ mod extracted_values_disagree {
         let fan_out = fan_out_of(vec![agreeing(), disagreeing, agreeing()]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(
@@ -181,7 +329,9 @@ mod extracted_values_disagree {
         let fan_out = fan_out_of(vec![a, b]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(
@@ -198,7 +348,9 @@ mod extracted_values_disagree {
         let fan_out = fan_out_of(vec![a, b]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(
@@ -232,7 +384,9 @@ mod split_extracted_and_failing {
         let fan_out = fan_out_of(vec![extracting, failing, erring]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(
@@ -252,7 +406,9 @@ mod failing_verdicts_agree {
         let fan_out = fan_out_of(vec![make(), make(), make()]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(result, Ok(Verdict::TransactionFailed));
@@ -271,7 +427,9 @@ mod failing_verdicts_agree {
         let fan_out = fan_out_of(vec![non_canonical(), non_canonical()]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(result, Ok(Verdict::NonCanonicalBlock { .. }));
@@ -289,7 +447,9 @@ mod failing_verdicts_disagree {
         let fan_out = fan_out_of(vec![a, b]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(
@@ -312,7 +472,9 @@ mod failing_verdicts_disagree {
         let fan_out = fan_out_of(vec![non_canonical(vec![2]), non_canonical(vec![3])]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(
@@ -332,7 +494,9 @@ mod all_err {
         let fan_out = fan_out_of(vec![make(), make()]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
@@ -350,13 +514,15 @@ mod all_err {
         let fan_out = fan_out_of(vec![a, b]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         let err = result.expect_err("expected fan-out to return an error");
         assert!(
             !matches!(err, ForeignChainInspectionError::InspectorResponseMismatch),
-            "error disagreement must not be reported as mismatch, got: {err:?}",
+            "error disagreement must not be observed as mismatch, got: {err:?}",
         );
     }
 
@@ -371,7 +537,9 @@ mod all_err {
         let fan_out = fan_out_of(vec![make(), make()]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(
@@ -396,7 +564,9 @@ mod tolerate_errors {
         let fan_out = fan_out_of(vec![not_finalized, extracting, rejected]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![7]));
@@ -413,9 +583,157 @@ mod tolerate_errors {
         let fan_out = fan_out_of(vec![malformed, failing, not_finalized]);
 
         // When
-        let result = fan_out.extract((), (), vec![]).await;
+        let result = fan_out
+            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
+            .await;
 
         // Then
         assert_matches!(result, Ok(Verdict::TransactionFailed));
+    }
+}
+
+mod quorum {
+    use super::*;
+
+    /// `required` of the providers named by `whitelisted` (indices into the fan-out).
+    fn quorum(required: usize, whitelisted: &[usize]) -> RpcQuorum {
+        RpcQuorum {
+            required: NonZeroUsize::new(required).unwrap(),
+            whitelisted: whitelisted
+                .iter()
+                .map(|index| ProviderId(format!("provider-{index}")))
+                .collect(),
+        }
+    }
+
+    fn transient() -> ResponseFn {
+        err(|| ForeignChainInspectionError::RpcRequestFailed("connection refused".to_string()))
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_accept_the_verdict_when_exactly_the_quorum_of_whitelisted_providers_agree()
+     {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![1])),
+            mock_returning(transient()),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1, 2]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_eq!(result.unwrap(), Verdict::Extracted(vec![1]));
+    }
+
+    /// Providers 0 and 1 are whitelisted with a quorum of two; provider 1 fails. An extra
+    /// agreeing provider outside the whitelist must not make up for it.
+    #[rstest]
+    #[case::whitelisted_provider_fails(vec![ok(vec![1]), transient()])]
+    #[case::provider_outside_the_whitelist_agrees(vec![ok(vec![1]), transient(), ok(vec![1])])]
+    #[tokio::test]
+    async fn fan_out__should_return_sub_quorum_when_too_few_whitelisted_providers_agree(
+        #[case] responses: Vec<ResponseFn>,
+    ) {
+        // Given
+        let fan_out = fan_out_of(responses.into_iter().map(mock_returning).collect());
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::SubQuorum {
+                agreeing: 1,
+                required,
+            }) if required.get() == 2
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_never_accept_a_verdict_reached_only_outside_the_whitelist() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(transient()),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(1, &[1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::SubQuorum { agreeing: 0, .. })
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_let_a_provider_outside_the_whitelist_veto_the_verdict() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![9])),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_report_disagreement_rather_than_sub_quorum() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![9])),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_propagate_the_provider_error_when_nobody_reaches_a_verdict() {
+        // Given
+        let fan_out = fan_out_of(vec![
+            mock_returning(transient()),
+            mock_returning(transient()),
+        ]);
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(1, &[0, 1]), (), (), vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::RpcRequestFailed(_))
+        );
     }
 }

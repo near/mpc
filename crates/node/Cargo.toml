@@ -28,7 +28,6 @@ foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-factory = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
-gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
@@ -36,7 +35,7 @@ humantime = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
 itertools = { workspace = true }
-k256 = { workspace = true }
+k256 = { workspace = true, default-features = true }
 launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true, features = ["local-verify"] }
@@ -47,13 +46,14 @@ near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
-near-contract-transport = { workspace = true }
+near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "call-args",
+    "client",
     "k256",
     "ed25519-dalek",
     "blstrs",
@@ -112,7 +112,6 @@ pprof = { workspace = true, features = ["frame-pointer"] }
 built = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }

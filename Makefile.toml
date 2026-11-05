@@ -82,7 +82,7 @@ args = [
 
 [tasks.zizmor]
 command = "zizmor"
-args = [".github/"]
+args = ["--persona=auditor", "--strict-collection", ".github/"]
 
 [tasks.opengrep]
 command = "bash"

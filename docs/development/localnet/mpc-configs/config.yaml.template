@@ -1,6 +1,4 @@
 my_near_account_id: $NEAR_ACCOUNT_NAME
-near_responder_account_id: $NEAR_ACCOUNT_NAME
-number_of_responder_keys: 1
 web_ui:
   host: localhost
   port: $WEB_UI_PORT
@@ -13,10 +11,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -76,5 +70,16 @@ foreign_chains:
     providers:
       public:
         rpc_url: "https://archive.mainnet.sui.io"
+        auth:
+          kind: none
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    # Genesis hash, as `getGenesisHash` returns it. Devnet:
+    # "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG".
+    expected_network_fingerprint: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+    providers:
+      public:
+        rpc_url: "https://api.mainnet-beta.solana.com"
         auth:
           kind: none

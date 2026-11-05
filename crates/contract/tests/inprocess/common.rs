@@ -2,6 +2,7 @@ use mpc_contract::{
     MpcContract,
     primitives::{
         participants::{ParticipantId, ParticipantInfo},
+        test_utils::bogus_tee_verifier_account_id,
         thresholds::GovernanceThresholdParameters,
     },
 };
@@ -11,9 +12,7 @@ use near_mpc_contract_interface::types::{
     Protocol, ProtocolContractState, PublicKey, ReconstructionThreshold, Secp256k1PublicKey,
 };
 use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
-use std::str::FromStr;
-
-use assert_matches::assert_matches;
+use std::{assert_matches, str::FromStr};
 
 /// A VM context whose signer and predecessor are `account_id` — i.e. the call originates from
 /// that participant's own account — keeping the current block timestamp.
@@ -60,7 +59,15 @@ pub fn init_contract(
             .build()
     );
 
-    MpcContract::init_running(domains, 1, keyset, parameters.clone().into(), init_config).unwrap()
+    MpcContract::init_running(
+        domains,
+        DomainId(1),
+        keyset,
+        parameters.clone().into(),
+        bogus_tee_verifier_account_id(),
+        init_config,
+    )
+    .unwrap()
 }
 
 /// Drives `contract` out of [`Running`] into [`Initializing`] by having every participant vote to
