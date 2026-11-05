@@ -6,7 +6,6 @@ use foreign_chain_health_check::probe::{ProbeReport, ProviderHealth, ProviderSta
 use mpc_node_config::ForeignChainsConfig;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use near_mpc_contract_interface::types as dtos;
-use tracing::{info, warn};
 
 use crate::foreign_chain_rpc_policy::{ChainQuorum, RpcQuorumStatus};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
@@ -101,19 +100,19 @@ pub(super) fn log(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>) 
     for (chain, health) in health_per_chain {
         let chain = chain.label();
         match health {
-            ChainHealth::Healthy => info!(%chain, "{CHAIN_HEALTHY}"),
-            ChainHealth::BelowQuorum(quorum) => warn!(
+            ChainHealth::Healthy => tracing::info!(%chain, "{CHAIN_HEALTHY}"),
+            ChainHealth::BelowQuorum(quorum) => tracing::warn!(
                 %chain,
                 whitelisted = quorum.configured_whitelisted_providers,
                 quorum = quorum.required_whitelisted_providers.get(),
                 "foreign chain is below quorum: configure more whitelisted RPC providers",
             ),
-            ChainHealth::WrongNetwork { providers } => warn!(
+            ChainHealth::WrongNetwork { providers } => tracing::warn!(
                 %chain,
                 providers,
                 "foreign chain is unhealthy: an RPC provider serves another network, so every verify request fails",
             ),
-            ChainHealth::UnhealthyProviders { unhealthy, quorum } => warn!(
+            ChainHealth::UnhealthyProviders { unhealthy, quorum } => tracing::warn!(
                 %chain,
                 unhealthy,
                 whitelisted = quorum.configured_whitelisted_providers,
