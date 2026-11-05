@@ -496,7 +496,8 @@ timeout_sec = 60
                 .unwrap()
                 .contains_key("near_responder_account_id")
         );
-        // Replace the operator placeholder, and inject `tee` like the launcher does.
+        // Replace the operator placeholder, and inject `tee` and the contract id like the launcher
+        // does.
         mpc_node_config["near_init"]["tier3_public_addr"] = "203.0.113.1:24567".into();
         let tee: toml::Table = toml::from_str(&format!(
             r#"
@@ -508,6 +509,10 @@ timeout_sec = 60
         ))
         .unwrap();
         mpc_node_config.insert("tee".into(), tee.into());
+        mpc_node_config["node"]["indexer"]
+            .as_table_mut()
+            .unwrap()
+            .insert("mpc_contract_id".into(), "v1.signer-prod.testnet".into());
 
         // When
         let config: StartConfig = mpc_node_config.try_into().unwrap();
