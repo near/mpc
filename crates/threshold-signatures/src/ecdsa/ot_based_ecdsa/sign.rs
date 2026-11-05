@@ -34,10 +34,10 @@ fn do_sign_participant(
     presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    // Round 1
+    // Round 3
     let s_i = compute_signature_share(participants, me, presignature, msg_hash)?;
     // Send si
-    // Spec 1.4
+    // Spec 3.4
     let wait0 = chan.next_waitpoint();
     chan.send_private(wait0, coordinator, &s_i)?;
 
@@ -53,21 +53,21 @@ async fn do_sign_coordinator(
     presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    // Round 1
+    // Round 3
     let s_i = compute_signature_share(participants, me, presignature, msg_hash)?;
-    // Spec 1.4 is non-existent for a coordinator
+    // Spec 3.4 is non-existent for a coordinator
 
     let wait0 = chan.next_waitpoint();
     // Receive sj
-    // Spec 1.5
+    // Spec 3.5
     let mut s = s_i;
     for (_, s_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
-        // Spec 1.6
+        // Spec 3.6
         s += s_j;
     }
 
     // Normalize s
-    // Spec 1.7
+    // Spec 3.7
     s.conditional_assign(&(-s), s.is_high());
 
     let sig = Signature {
@@ -75,7 +75,7 @@ async fn do_sign_coordinator(
         s,
     };
 
-    // Spec 1.8
+    // Spec 3.8
     if !sig.verify(&public_key, &msg_hash) {
         return Err(ProtocolError::AssertionFailed(
             "signature failed to verify".to_string(),
@@ -92,18 +92,18 @@ fn compute_signature_share(
     presignature: &PresignOutput,
     msg_hash: Scalar,
 ) -> Result<Scalar, ProtocolError> {
-    // Round 1
+    // Round 3
     // Linearize ki
-    // Spec 1.1
+    // Spec 3.1
     let lambda = participants.lagrange::<Secp256K1Sha256>(me)?;
     let k_i = lambda * presignature.k;
 
     // Linearize sigmai
-    // Spec 1.2
+    // Spec 3.2
     let sigma_i = lambda * presignature.sigma;
 
     // Compute si = h * ki + Rx * sigmai
-    // Spec 1.3
+    // Spec 3.3
     let r = x_coordinate(&presignature.big_r);
     Ok(msg_hash * k_i + r * sigma_i)
 }
