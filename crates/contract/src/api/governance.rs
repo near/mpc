@@ -123,26 +123,24 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        forwarded_participant_call_contract, make_public_key_for_curve, resharing_state,
-        running_state, setup_tee_test_contract, submit_attestation, submit_valid_attestations,
+        attested_account_public_key, forwarded_participant_call_contract, init_running_with_domain,
+        prepay_and_attest_all_participants, resharing_state, running_state,
+        setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
+    use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use crate::primitives::participants::Participants;
     use crate::primitives::proposal_hash::ToProposalHash;
-    use crate::primitives::test_utils::{
-        authenticate_account_as, bogus_tee_verifier_account_id, gen_participants,
-    };
+    use crate::primitives::test_utils::{authenticate_account_as, gen_participants};
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::find_leader;
     use crate::tee::tee_state::TeeState;
     use crate::tee::test_utils::Environment;
-    use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
+    use dtos::{DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
-    use rand::rngs::OsRng;
     use rstest::rstest;
     use std::{assert_matches, collections::BTreeMap};
 
@@ -168,8 +166,8 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
     }
 
-    /// Test that [`MpcContract::vote_new_parameters`] succeeds when no participant has submitted
-    /// attestation information, so all keep the mocked attestations stored at initialization.
+    /// Test that [`MpcContract::vote_new_parameters`] succeeds when every participant keeps the
+    /// attestation it submitted right after initialization.
     #[test]
     fn test_vote_new_parameters_succeeds_with_default_tee_status() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
@@ -183,7 +181,7 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed when all participants keep their initial mocked attestations"
+            "Should succeed when all participants keep their initial attestations"
         );
     }
 
@@ -216,8 +214,8 @@ mod tests {
     /// [`MpcContract::submit_participant_info`]. This test demonstrates that
     /// participants cannot have Invalid TEE status because the contract proactively rejects
     /// invalid attestations at submission time. The 4th participant tries to submit an invalid
-    /// attestation but is rejected, keeping the mocked attestation stored at initialization, which
-    /// combined with valid participants still allows successful voting.
+    /// attestation but is rejected, keeping the attestation it submitted right after
+    /// initialization, which combined with valid participants still allows successful voting.
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
@@ -251,7 +249,7 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed when the rejected submission leaves the initial mocked attestation in place"
+            "Should succeed when the rejected submission leaves the initial attestation in place"
         );
     }
 
@@ -299,6 +297,19 @@ mod tests {
     ) -> (MpcContract, Participants, AccountId, DomainId) {
         let participants = gen_participants(num_participants);
         let first_participant_id = participants.participants()[0].0.clone();
+        let parameters =
+            GovernanceThresholdParameters::new(participants.clone(), governance_threshold).unwrap();
+        let domain_id = DomainId::default();
+        let mut contract = init_running_with_domain(
+            &parameters,
+            dtos::DomainConfig {
+                id: domain_id,
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold,
+                purpose: DomainPurpose::Sign,
+            },
+        );
+        prepay_and_attest_all_participants(&mut contract);
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(first_participant_id.clone())
@@ -306,34 +317,6 @@ mod tests {
                 .attached_deposit(NearToken::from_near(1))
                 .build()
         );
-
-        let parameters =
-            GovernanceThresholdParameters::new(participants.clone(), governance_threshold).unwrap();
-        let domain_id = DomainId::default();
-        let domains = vec![dtos::DomainConfig {
-            id: domain_id,
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold,
-            purpose: DomainPurpose::Sign,
-        }];
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let keyset = Keyset::new(
-            dtos::EpochId::new(0),
-            vec![KeyForDomain {
-                domain_id,
-                key: pk.try_into().unwrap(),
-                attempt: AttemptId::new(),
-            }],
-        );
-        let contract = MpcContract::init_running(
-            domains,
-            DomainId(1),
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
         (contract, participants, first_participant_id, domain_id)
     }
 
@@ -569,12 +552,16 @@ mod tests {
         assert!(contract.parameters_votes.is_empty());
     }
 
-    /// Installs a context where `account_id` calls as an attested participant: `init_running`
-    /// mocks each participant's attestation with its TLS key as the account key.
-    fn attested_context(participants: &Participants, account_id: &AccountId) {
+    /// Installs a context where `account_id` calls as an attested participant, signing with the
+    /// account key of its attested node.
+    fn attested_context(
+        contract: &MpcContract,
+        participants: &Participants,
+        account_id: &AccountId,
+    ) {
         let info = participants.info(account_id).unwrap();
         Environment::new(Some(0), Some(account_id.clone()), None)
-            .set_pk(near_sdk::PublicKey::from(info.tls_public_key.clone()));
+            .set_pk(attested_account_public_key(contract, &info.tls_public_key));
     }
 
     /// Drives a 3-participant Running contract with one domain into Resharing: every
@@ -699,10 +686,10 @@ mod tests {
             domain_id,
             epoch_id: EpochId::new(1),
         };
-        attested_context(&participants, &leader);
+        attested_context(&contract, &participants, &leader);
         contract.start_reshare_instance(key_event_id).unwrap();
         for (account_id, _, _) in participants.participants() {
-            attested_context(&participants, account_id);
+            attested_context(&contract, &participants, account_id);
             contract.vote_reshared(key_event_id).unwrap();
         }
 

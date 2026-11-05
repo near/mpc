@@ -319,7 +319,7 @@ impl SandboxTestSetupBuilder {
             init_contract(&contract, threshold_parameters, self.init_config).await;
         }
 
-        submit_attestations(&contract, &accounts, &participants).await;
+        prepay_and_submit_attestations(&contract, &accounts, &participants).await;
 
         SandboxTestSetup {
             worker,
@@ -487,6 +487,40 @@ pub async fn submit_attestations(
                 success,
                 "submit_participant_info failed for participant {}",
                 i
+            );
+        })
+        .collect();
+    futures::future::join_all(futures).await;
+}
+
+/// Like [`submit_attestations`], prepaying a grant for each participant first.
+pub async fn prepay_and_submit_attestations(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+    participants: &Participants,
+) {
+    let futures: Vec<_> = participants
+        .participants()
+        .iter()
+        .zip(accounts)
+        .map(|((account_id, _, participant), account)| async move {
+            assert_eq!(
+                account.id(),
+                account_id,
+                "accounts must be in participant order"
+            );
+            let attestation = Attestation::Mock(MockAttestation::Valid);
+            let result = prepay_and_submit_participant_info(
+                account,
+                contract,
+                &attestation,
+                &participant.tls_public_key,
+            )
+            .await
+            .expect("prepay_and_submit_participant_info should not error");
+            assert!(
+                result.is_success(),
+                "attestation failed for participant {account_id}: {result:?}"
             );
         })
         .collect();

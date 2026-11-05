@@ -1,5 +1,5 @@
 use crate::MpcContract;
-use crate::api::test_utils::participant_account_ids;
+use crate::api::test_utils::{attested_account_public_key, participant_account_ids};
 use crate::tee::test_utils::Environment;
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -38,7 +38,6 @@ pub(super) fn register_foreign_chains_config_for(
 ) {
     let foreign_chains_config: dtos::ForeignChainsConfig =
         chains.into_iter().collect::<BTreeSet<_>>().into();
-    // In mock setup, account_public_key == tls_public_key.
     let tls_key = contract
         .protocol_state
         .threshold_parameters()
@@ -49,7 +48,7 @@ pub(super) fn register_foreign_chains_config_for(
         .tls_public_key
         .clone();
     let mut env = Environment::new(None, Some(account_id.clone()), None);
-    env.set_pk(near_sdk::PublicKey::from(tls_key));
+    env.set_pk(attested_account_public_key(contract, &tls_key));
     contract
         .register_foreign_chains_config(foreign_chains_config)
         .expect("register should succeed");
