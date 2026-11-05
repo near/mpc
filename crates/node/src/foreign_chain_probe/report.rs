@@ -12,7 +12,7 @@ use crate::metrics;
 pub(super) struct Summary {
     pub(super) probed: usize,
     pub(super) healthy: usize,
-    /// Providers of a chain the probe cannot check.
+    /// Providers of a chain that has no probe.
     pub(super) unchecked: usize,
     pub(super) unchecked_chains: BTreeSet<&'static str>,
 }

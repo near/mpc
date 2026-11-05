@@ -139,16 +139,27 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
 After each round the node also compares the configured providers with the
-provider whitelist. It logs a warning for each unhealthy provider and a line
-for each difference from the whitelist, so a wrong config is reported every
-hour until it is fixed. Some differences are normal, such as a chain that is
-not whitelisted yet or an extra provider, and are logged as info. Each round
-ends with one `foreign chain probe round complete` line with the healthy,
-probed and unchecked provider counts, the chains the probe cannot check, and
-the whitelist state: `not read yet` until the node has synced and read the
-whitelist from the contract, then `matches the local config` or the number of
-differences logged above it. The node probes again as soon as the whitelist is
-read, and whenever the whitelist changes.
+provider whitelist. A round runs at startup, every hour, and as soon as the
+whitelist is read or changes. So a wrong config is reported until it is fixed.
+
+Each round logs:
+
+* A warning for each unhealthy provider.
+* A line for each difference from the whitelist. A difference you must fix is
+  a warning or an error. Two differences are normal and are logged as info: a
+  chain that is not whitelisted yet, and an extra provider.
+* One `foreign chain probe round complete` line at the end, with these fields:
+
+| Field | What it tells you |
+| --- | --- |
+| `healthy` | providers that passed the probe |
+| `probed` | providers of a chain that has a probe |
+| `unchecked` | providers of a chain that has no probe |
+| `unchecked_chains` | the chains that have no probe |
+| `whitelist` | `not read yet`, `matches the local config`, or the number of differences logged above |
+
+The whitelist is `not read yet` until the node has synced and read it from the
+contract.
 
 Once the whitelist is read, each round also judges every probed chain, and the
 summary line counts the healthy and the judged chains. A chain is healthy when
