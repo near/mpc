@@ -223,6 +223,7 @@ pub struct MpcClusterConfig {
     pub port_seed: u16,
     pub triples_to_buffer: usize,
     pub sandbox_version: String,
+    pub sandbox_protocol_version: Option<u32>, // None = the binary's latest
     pub home_base: Option<PathBuf>,
     pub initial_participant_indices: Vec<usize>,
     pub migration_targets: Vec<usize>,          // source node indices
@@ -354,6 +355,10 @@ env var is unset and no pre-built WASM is found,
 local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
+
+The `ci-e2e` profile skips the `mainnet_protocol` test, which runs the cluster at
+`test_utils::MAINNET_PROTOCOL_VERSION`. CI runs it in the non-required
+`mainnet-protocol-tests` job; locally, pass `--ignore-default-filter -E 'test(/mainnet_protocol/)'`.
 
 ---
 

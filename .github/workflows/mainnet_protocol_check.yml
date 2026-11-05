@@ -1,0 +1,36 @@
+name: Check mainnet protocol version
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *" # Daily at 6:00 UTC
+
+permissions: {}
+
+jobs:
+  check-mainnet-protocol:
+    name: "MAINNET_PROTOCOL_VERSION matches mainnet"
+    runs-on: warp-ubuntu-2604-x64-2x
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare with mainnet
+        run: ./.github/scripts/check-mainnet-protocol-version.sh
+
+      - name: Failure Slack Notification
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+        uses: act10ns/slack@d96404edccc6d6467fc7f8134a420c851b1e9054 # v2.2.0
+        with:
+          status: failure
+          message: "Mainnet changed protocol version; update MAINNET_PROTOCOL_VERSION. Check the logs <https://github.com/near/mpc/actions/runs/${{ github.run_id }}|here> "
