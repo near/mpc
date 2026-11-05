@@ -174,8 +174,9 @@ is whitelisted. A chain is healthy when all of these hold:
   configured providers must agree.
 
 A configured provider counts for a whitelisted provider only when its URL host,
-scheme, port, path, chain routing and auth all match the voted entry. Two
-configured providers that match one whitelisted provider count once.
+scheme, port, path, chain routing and auth all match the voted entry. When two
+configured providers match one whitelisted provider, only the first by name
+counts. The second one cannot stand in when the first one fails.
 
 ### Whitelist and quorum
 

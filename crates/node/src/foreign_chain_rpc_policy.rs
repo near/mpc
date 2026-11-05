@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
 use foreign_chain_inspector::RpcQuorum;
+use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::foreign_chains::provider_identity::{
     ProviderWhitelistMatches, WhitelistConformingProviders,
 };
@@ -51,6 +52,18 @@ impl ChainQuorum {
         let status = RpcQuorumStatus::new(entry, &conforming)?;
         Some(Self { conforming, status })
     }
+
+    /// The local provider whose verdict counts for each whitelist provider: the first conforming
+    /// one by name. The others can still veto a verdict but never stand in for it.
+    ///
+    /// TODO(#5076): let another conforming provider stand in when the first one fails to answer.
+    pub(crate) fn counted_providers(&self) -> BTreeMap<&ProviderId, &RpcProviderName> {
+        let mut counted = BTreeMap::new();
+        for (local_name, whitelist_id) in self.conforming.iter() {
+            counted.entry(whitelist_id).or_insert(local_name);
+        }
+        counted
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,25 +102,25 @@ pub(crate) enum RpcQuorumError {
     },
 }
 
-/// Local providers that match the same whitelist provider count once: only the first conforming
-/// one by name is whitelisted, the others can still veto a verdict but never stand in for it.
+/// Local providers that match the same whitelist provider count once, see
+/// [`ChainQuorum::counted_providers`].
 pub(crate) fn rpc_quorum(
     local_chain: &ForeignChainConfig,
     entry: &ChainEntry,
 ) -> Result<RpcQuorum, RpcQuorumError> {
-    let ChainQuorum { conforming, status } =
+    let chain_quorum =
         ChainQuorum::new(local_chain, entry).ok_or(RpcQuorumError::InvalidQuorum(entry.quorum))?;
+    let status = chain_quorum.status;
     if !status.reaches_quorum() {
         return Err(RpcQuorumError::BelowQuorum {
             required: status.required_whitelisted_providers,
             conforming: status.configured_whitelisted_providers,
         });
     }
-    let mut seen_whitelist_ids = BTreeSet::new();
-    let whitelisted = conforming
-        .iter()
-        .filter(|(_, whitelist_id)| seen_whitelist_ids.insert(*whitelist_id))
-        .map(|(local_name, _)| ProviderId(local_name.as_str().to_owned()))
+    let whitelisted = chain_quorum
+        .counted_providers()
+        .into_values()
+        .map(|local_name| ProviderId(local_name.as_str().to_owned()))
         .collect();
     Ok(RpcQuorum {
         required: status.required_whitelisted_providers,

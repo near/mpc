@@ -1,34 +1,28 @@
 //! Judges each probed chain against the provider whitelist and its quorum.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use foreign_chain_health_check::probe::{ProbeReport, ProviderHealth, ProviderStatus};
 use mpc_node_config::ForeignChainsConfig;
-use mpc_node_config::foreign_chains::RpcProviderName;
 use near_mpc_contract_interface::types as dtos;
 
 use crate::foreign_chain_rpc_policy::{ChainQuorum, RpcQuorumStatus};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
-/// A probed chain judged against the provider whitelist.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum ChainHealth {
     Healthy,
-    /// The same verdict that keeps the chain from being registered.
     BelowQuorum(RpcQuorumStatus),
-    /// Every configured provider joins the verify fan-out, whitelisted or not, and their verdicts
-    /// must all agree. So one provider that serves another network fails every verify request.
     WrongNetwork {
         providers: usize,
     },
-    /// `unhealthy` counts whitelist providers, see [`ChainQuorum`].
     UnhealthyProviders {
         unhealthy: usize,
         quorum: RpcQuorumStatus,
     },
 }
 
-/// Leaves out a chain missing from the whitelist and a chain no probe covers.
+/// Leaves out a chain that is not whitelisted or has no probe.
 pub(super) fn judge(
     report: &ProbeReport,
     local: &ForeignChainsConfig,
@@ -52,16 +46,10 @@ pub(super) fn judge(
         .collect()
 }
 
-/// A whitelist provider counts once, however many local providers match it. It is healthy only
-/// when all of them are. Providers missing from the whitelist only count when they serve another
-/// network.
-fn judge_chain(
-    probed_rows: &[&ProviderHealth],
-    ChainQuorum {
-        conforming,
-        status: quorum,
-    }: ChainQuorum,
-) -> ChainHealth {
+/// Mirrors the verify path: a whitelist provider is healthy when the local provider that counts for
+/// it there passed the probe, see [`ChainQuorum::counted_providers`].
+fn judge_chain(probed_rows: &[&ProviderHealth], chain_quorum: ChainQuorum) -> ChainHealth {
+    let quorum = chain_quorum.status;
     if !quorum.reaches_quorum() {
         return ChainHealth::BelowQuorum(quorum);
     }
@@ -76,25 +64,22 @@ fn judge_chain(
         };
     }
 
-    // Probe rows name a provider by its local config name.
-    let unhealthy: BTreeSet<&dtos::ProviderId> = probed_rows
-        .iter()
-        .filter(|row| !row.status.is_healthy())
-        .filter_map(|row| {
-            conforming.whitelist_provider_id(&RpcProviderName::from(row.provider.0.clone()))
+    let unhealthy = chain_quorum
+        .counted_providers()
+        .into_values()
+        .filter(|local_name| {
+            probed_rows
+                .iter()
+                .any(|row| row.provider.0 == local_name.as_str() && !row.status.is_healthy())
         })
-        .collect();
-    if unhealthy.is_empty() {
+        .count();
+    if unhealthy == 0 {
         ChainHealth::Healthy
     } else {
-        ChainHealth::UnhealthyProviders {
-            unhealthy: unhealthy.len(),
-            quorum,
-        }
+        ChainHealth::UnhealthyProviders { unhealthy, quorum }
     }
 }
 
-/// A healthy chain logs nothing: the round summary counts it.
 pub(super) fn log_if_unhealthy(chain: dtos::ForeignChain, health: &ChainHealth) {
     let chain = chain.label();
     match health {
@@ -219,10 +204,19 @@ mod tests {
         1,
         ChainHealth::BelowQuorum(quorum(1, 0))
     )]
-    #[case::whitelist_provider_counted_once_and_healthy_only_when_all_its_local_providers_are(
+    #[case::failed_backup_provider_ignored(
         &[
             ProbedProvider { name: "alchemy_a", rpc_url: "https://alchemy.example.com/a", status: ProviderStatus::Healthy },
             ProbedProvider { name: "alchemy_b", rpc_url: "https://alchemy.example.com/b", status: ProviderStatus::Unreachable },
+        ],
+        &["alchemy"],
+        1,
+        ChainHealth::Healthy
+    )]
+    #[case::backup_provider_not_standing_in_for_the_failed_first_one(
+        &[
+            ProbedProvider { name: "alchemy_a", rpc_url: "https://alchemy.example.com/a", status: ProviderStatus::Unreachable },
+            ProbedProvider { name: "alchemy_b", rpc_url: "https://alchemy.example.com/b", status: ProviderStatus::Healthy },
         ],
         &["alchemy"],
         1,
