@@ -170,6 +170,9 @@ mod tests {
     use std::assert_matches;
 
     const CONTRACT_ID: &str = "mpc.test.near";
+    const VIEW_METHOD: &str = "config";
+    const VIEW_RESULT: [u8; 3] = [1, 2, 3];
+    const OBSERVED_AT: u64 = 7;
 
     async fn must_make_caller(server: &MockServer, wait_until: TxExecutionStatus) -> DevnetCaller {
         let client = Arc::new(
@@ -205,7 +208,7 @@ mod tests {
                             "request_type": "call_function",
                             "finality": finality,
                             "account_id": CONTRACT_ID,
-                            "method_name": "config",
+                            "method_name": VIEW_METHOD,
                             "args_base64": "e30=",
                         },
                     })
@@ -215,9 +218,9 @@ mod tests {
                     "jsonrpc": "2.0",
                     "id": "dontcare",
                     "result": {
-                        "result": [1, 2, 3],
+                        "result": VIEW_RESULT,
                         "logs": [],
-                        "block_height": 7,
+                        "block_height": OBSERVED_AT,
                         "block_hash": "11111111111111111111111111111111",
                     },
                 }));
@@ -234,15 +237,18 @@ mod tests {
 
         // When
         let observed = caller
-            .view_contract(&CONTRACT_ID.parse().unwrap(), ViewArgs::no_args("config"))
+            .view_contract(
+                &CONTRACT_ID.parse().unwrap(),
+                ViewArgs::no_args(VIEW_METHOD),
+            )
             .await;
 
         // Then
         assert_eq!(
             observed,
             Ok(ObservedState {
-                observed_at: 7.into(),
-                value: vec![1, 2, 3],
+                observed_at: OBSERVED_AT.into(),
+                value: VIEW_RESULT.to_vec(),
             })
         );
     }
@@ -256,15 +262,18 @@ mod tests {
 
         // When
         let observed = caller
-            .view_contract(&CONTRACT_ID.parse().unwrap(), ViewArgs::no_args("config"))
+            .view_contract(
+                &CONTRACT_ID.parse().unwrap(),
+                ViewArgs::no_args(VIEW_METHOD),
+            )
             .await;
 
         // Then
         assert_eq!(
             observed,
             Ok(ObservedState {
-                observed_at: 7.into(),
-                value: vec![1, 2, 3],
+                observed_at: OBSERVED_AT.into(),
+                value: VIEW_RESULT.to_vec(),
             })
         );
     }
@@ -283,7 +292,10 @@ mod tests {
 
         // When
         let observed = caller
-            .view_contract(&CONTRACT_ID.parse().unwrap(), ViewArgs::no_args("config"))
+            .view_contract(
+                &CONTRACT_ID.parse().unwrap(),
+                ViewArgs::no_args(VIEW_METHOD),
+            )
             .await;
 
         // Then
