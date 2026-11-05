@@ -114,7 +114,7 @@ pub fn validate_presign_arguments(
 ///
 /// One broadcast round, in which every participant contributes a random summand to
 /// the nonce `k`. All parties therefore learn `k` and agree on `R = k * G`. The
-/// output fields are chosen so that [`super::sign::sign_round`]'s Lagrange linearization
+/// output fields are chosen so that [`super::presign_and_sign::sign_round`]'s Lagrange linearization
 /// recombines them into a valid ECDSA signature:
 ///
 /// - `alpha = c = k^{-1}` are held identically by everybody, and Lagrange
