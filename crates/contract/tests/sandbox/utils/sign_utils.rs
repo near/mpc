@@ -297,7 +297,7 @@ pub async fn submit_signature_response(
 
 pub async fn submit_ckd_response(
     response: &CKDRespondArgs,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
     attested_account
@@ -310,7 +310,7 @@ pub async fn submit_ckd_response(
 
 pub async fn submit_ckd_response_measure_gas(
     response: &CKDRespondArgs,
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     attested_account: &Account,
 ) -> anyhow::Result<near_workspaces::types::Gas> {
     let respond = attested_account

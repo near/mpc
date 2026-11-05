@@ -16,7 +16,7 @@ use crate::sandbox::{
         shared_key_utils::SharedSecretKey,
         sign_utils::{
             create_response_ckd, create_response_ed25519, create_response_secp256k1,
-            submit_ckd_response, submit_signature_response,
+            submit_ckd_response, submit_signature_response, CKDResponseArgs,
         },
     },
 };
@@ -393,7 +393,7 @@ async fn wait_for_pending_signature_queue(
 }
 
 async fn assert_pending_signature_queue_len(
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     request: &near_mpc_contract_interface::types::SignatureRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
@@ -406,7 +406,7 @@ async fn assert_pending_signature_queue_len(
 }
 
 async fn pending_signature_queue_len(
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     request: &near_mpc_contract_interface::types::SignatureRequest,
 ) -> anyhow::Result<u32> {
     let len: u32 = contract
@@ -450,7 +450,7 @@ async fn run_ckd_fan_out(
 /// transaction result for the caller to assert on.
 async fn run_sign_overflow(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     parallel: &near_workspaces::Contract,
     response_args: &SignatureRespondArgs,
     sign_args: &SignRequestArgs,
@@ -483,7 +483,7 @@ async fn run_sign_overflow(
 /// CKD counterpart to [`run_sign_overflow`].
 async fn run_ckd_overflow(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     parallel: &near_workspaces::Contract,
     response_args: &CKDResponseArgs,
     ckd_args: &CKDRequestArgs,
@@ -571,7 +571,7 @@ async fn wait_for_pending_ckd_queue(
 }
 
 async fn assert_pending_ckd_queue_len(
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     request: &CKDRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
@@ -584,7 +584,7 @@ async fn assert_pending_ckd_queue_len(
 }
 
 async fn pending_ckd_queue_len(
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     request: &CKDRequest,
 ) -> anyhow::Result<u32> {
     let len: u32 = contract
