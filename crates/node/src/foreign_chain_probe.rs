@@ -6,17 +6,27 @@ use std::future::Future;
 use foreign_chain_health_check::probe::{ProbeReport, probe_all_providers};
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
+use tokio::sync::watch;
 use tracing::{info, warn};
 
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::tick::Tick;
 
 mod report;
 #[cfg(test)]
 mod test_utils;
 
-/// Asks every configured RPC provider which network it serves, once per tick of `ticker`, and
-/// reports the verdicts as logs and metrics. Diagnostic only: nothing gates on the result.
-pub async fn run_periodic_probe(foreign_chains: ForeignChainsConfig, ticker: impl Tick) {
+/// Asks every configured RPC provider which network it serves, once per tick of `ticker` and
+/// whenever `whitelist_rx` changes, and reports the verdicts as logs and metrics. Diagnostic only:
+/// nothing gates on the result.
+///
+/// The probe starts before the indexer has read the whitelist from the contract, so `whitelist_rx`
+/// holds `None` until then, and each round logs that the whitelist is not read yet.
+pub async fn run_periodic_probe(
+    foreign_chains: ForeignChainsConfig,
+    whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
+    ticker: impl Tick,
+) {
     if foreign_chains.is_empty() {
         warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
         return;
@@ -24,22 +34,44 @@ pub async fn run_periodic_probe(foreign_chains: ForeignChainsConfig, ticker: imp
 
     probe_periodically(
         || probe_all_providers(&foreign_chains, &InspectorFactory),
+        finish_round,
+        whitelist_rx,
         ticker,
     )
     .await;
 }
 
+const WHITELIST_NOT_READ: &str = "foreign chain whitelist: not read from the contract yet";
+
+fn finish_round(report: &ProbeReport, whitelist: Option<&ForeignChainWhitelist>) {
+    report::publish_metrics(report);
+    report::log_report(report);
+    if whitelist.is_none() {
+        info!("{WHITELIST_NOT_READ}");
+    }
+}
+
+/// Each round ends with `finish_round`, given the whitelist as read after the probe, so a change
+/// that lands during the probe is used in that round.
 async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
     probe: impl Fn() -> Probe,
+    finish_round: impl Fn(&ProbeReport, Option<&ForeignChainWhitelist>),
+    mut whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     mut ticker: impl Tick,
 ) {
     loop {
-        ticker.tick().await;
+        // `biased`: a whitelist change that lands with a tick is handled in that round, not in an
+        // extra one. `Ok(())` disables the branch once the sender is gone, so the loop never spins.
+        tokio::select! {
+            biased;
+            () = ticker.tick() => {}
+            Ok(()) = whitelist_rx.changed() => {}
+        }
 
         info!("probing foreign-chain RPC providers");
         let report = probe().await;
-        report::publish_metrics(&report);
-        report::log_report(&report);
+        let whitelist = whitelist_rx.borrow_and_update().clone();
+        finish_round(&report, whitelist.as_ref());
     }
 }
 
@@ -51,23 +83,28 @@ mod tests {
 
     use foreign_chain_health_check::probe::{ProviderCounts, ProviderStatus};
     use near_mpc_contract_interface::types as dtos;
+    use rstest::rstest;
+    use tracing_test::traced_test;
 
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
-    use crate::foreign_chain_probe::test_utils::{gauges, row};
+    use crate::foreign_chain_probe::test_utils::{
+        empty_report, gauges, mock_finish_round, mock_probe, no_whitelist, row, whitelist_of,
+    };
     use crate::tick::MockTicker;
 
     #[test]
     fn probe_periodically__should_probe_once_per_tick() {
         // Given
         let probe_count = Cell::new(0);
-        let probe = || {
-            probe_count.update(|count| count + 1);
-            std::future::ready(ProbeReport::from(vec![]))
-        };
 
         // When
-        run_future_once(probe_periodically(probe, MockTicker::new(3)));
+        run_future_once(probe_periodically(
+            mock_probe(&probe_count, 3, empty_report()),
+            |_, _| {},
+            no_whitelist(),
+            MockTicker::new(3),
+        ));
 
         // Then
         assert_eq!(probe_count.get(), 3);
@@ -93,9 +130,12 @@ mod tests {
         let ticker = MockTicker::new(1);
 
         // When
-        let MaybeReady::Future(parked_probe_loop) =
-            run_future_once(probe_periodically(probe_dispatch, ticker.clone()))
-        else {
+        let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
+            probe_dispatch,
+            finish_round,
+            no_whitelist(),
+            ticker.clone(),
+        )) else {
             panic!("the loop should park once its ticker runs out");
         };
         let metrics_after_the_first_round = gauges("starknet");
@@ -126,7 +166,11 @@ mod tests {
         let ticker = MockTicker::new(1);
 
         // When
-        let outcome = run_future_once(run_periodic_probe(foreign_chains, ticker.clone()));
+        let outcome = run_future_once(run_periodic_probe(
+            foreign_chains,
+            no_whitelist(),
+            ticker.clone(),
+        ));
 
         // Then
         assert_eq!(ticker.unspent(), 1, "no round should have run");
@@ -134,5 +178,121 @@ mod tests {
             matches!(outcome, MaybeReady::Ready(())),
             "the probe should return rather than park on its ticker"
         );
+    }
+
+    #[test]
+    fn probe_periodically__should_finish_rounds_without_a_whitelist_until_it_is_read_then_probe_again()
+     {
+        // Given
+        let probe_count = Cell::new(0);
+        let whitelists_seen = RefCell::new(Vec::new());
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+        let (whitelist_tx, whitelist_rx) = watch::channel(None);
+        let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
+            mock_probe(&probe_count, 2, empty_report()),
+            mock_finish_round(&whitelists_seen),
+            whitelist_rx,
+            MockTicker::new(1),
+        )) else {
+            panic!("the loop should park once its ticker runs out");
+        };
+
+        // When
+        whitelist_tx.send_replace(Some(whitelist.clone()));
+        run_future_once(parked_probe_loop);
+
+        // Then
+        assert_eq!(*whitelists_seen.borrow(), vec![None, Some(whitelist)]);
+    }
+
+    #[test]
+    fn probe_periodically__should_probe_once_when_a_whitelist_change_lands_with_a_tick() {
+        // Without `biased`, `select!` polls a random branch first, so a single run would catch
+        // that only half the time.
+        for _ in 0..64 {
+            // Given
+            let probe_count = Cell::new(0);
+            let (whitelist_tx, whitelist_rx) = watch::channel(None);
+            whitelist_tx.send_replace(Some(whitelist_of(
+                dtos::ForeignChain::Polygon,
+                &["alchemy"],
+                1,
+            )));
+
+            // When
+            run_future_once(probe_periodically(
+                mock_probe(&probe_count, 1, empty_report()),
+                |_, _| {},
+                whitelist_rx,
+                MockTicker::new(1),
+            ));
+
+            // Then
+            assert_eq!(probe_count.get(), 1);
+        }
+    }
+
+    #[test]
+    fn probe_periodically__should_use_a_whitelist_that_arrives_during_the_probe() {
+        // Given
+        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
+        let (whitelist_tx, whitelist_rx) = watch::channel(None);
+        let probe_count = Cell::new(0);
+        let counted_probe = mock_probe(&probe_count, 1, empty_report());
+        let probe = || {
+            whitelist_tx.send_replace(Some(whitelist.clone()));
+            counted_probe()
+        };
+        let whitelists_seen = RefCell::new(Vec::new());
+
+        // When
+        run_future_once(probe_periodically(
+            probe,
+            mock_finish_round(&whitelists_seen),
+            whitelist_rx,
+            MockTicker::new(1),
+        ));
+
+        // Then
+        assert_eq!(*whitelists_seen.borrow(), vec![Some(whitelist)]);
+    }
+
+    #[traced_test]
+    #[rstest]
+    #[case::without_a_whitelist(None, true)]
+    #[case::with_a_whitelist(Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)), false)]
+    fn finish_round__should_log_that_the_whitelist_is_not_read_only_without_one(
+        #[case] whitelist: Option<ForeignChainWhitelist>,
+        #[case] expect_logged: bool,
+    ) {
+        // When
+        finish_round(&empty_report(), whitelist.as_ref());
+
+        // Then
+        assert_eq!(logs_contain(WHITELIST_NOT_READ), expect_logged);
+    }
+
+    #[test]
+    fn probe_periodically__should_keep_probing_on_ticks_once_the_whitelist_sender_is_gone() {
+        // Given
+        let probe_count = Cell::new(0);
+        let (whitelist_tx, whitelist_rx) = watch::channel(None);
+        drop(whitelist_tx);
+        let ticker = MockTicker::new(1);
+        let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
+            mock_probe(&probe_count, 2, empty_report()),
+            |_, _| {},
+            whitelist_rx,
+            ticker.clone(),
+        )) else {
+            panic!("the loop should park once its ticker runs out");
+        };
+
+        // When
+        ticker.schedule(1);
+        run_future_once(parked_probe_loop);
+
+        // Then
+        assert_eq!(probe_count.get(), 2);
     }
 }
