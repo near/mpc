@@ -1,8 +1,9 @@
-//! Logs each probe round's unhealthy providers and publishes the verdicts as metrics.
+//! Summarizes each probe round's provider verdicts, logs the unhealthy ones, and publishes the
+//! verdicts as metrics.
 
 use std::collections::BTreeSet;
 
-use foreign_chain_health_check::probe::{ProbeReport, ProviderHealth, ProviderStatus};
+use foreign_chain_health_check::probe::{ProbeReport, ProviderHealth};
 use near_mpc_contract_interface::types as dtos;
 
 use crate::metrics;
@@ -15,7 +16,7 @@ pub(super) struct Summary {
     pub(super) unchecked: usize,
 }
 
-fn summarize(rows: &[ProviderHealth]) -> Summary {
+pub(super) fn summarize(rows: &[ProviderHealth]) -> Summary {
     let probed = rows.iter().filter(|row| row.status.was_probed()).count();
     Summary {
         probed,
@@ -24,30 +25,25 @@ fn summarize(rows: &[ProviderHealth]) -> Summary {
     }
 }
 
-/// Warns about each unhealthy provider, and about a round that checked no provider at all.
-pub(super) fn log_problems(report: &ProbeReport) -> Summary {
-    let rows = report.rows();
-    for row in rows {
-        match &row.status {
-            ProviderStatus::Healthy | ProviderStatus::ProbeNotImplemented => {}
-            unhealthy => tracing::warn!(
-                chain = %row.chain.label(),
-                provider = %row.provider,
-                status = ?unhealthy,
-                "foreign-chain RPC provider is unhealthy",
-            ),
-        }
-    }
+pub(super) fn provider_is_unhealthy(row: &ProviderHealth) -> bool {
+    row.status.was_probed() && !row.status.is_healthy()
+}
 
-    let summary = summarize(rows);
-    if summary.probed == 0 {
-        let chains: BTreeSet<&str> = rows.iter().map(|row| row.chain.label()).collect();
-        tracing::warn!(
-            ?chains,
-            "no RPC provider was checked: none of the configured foreign chains has a probe"
-        );
-    }
-    summary
+pub(super) fn log_unhealthy_provider(row: &ProviderHealth) {
+    tracing::warn!(
+        chain = %row.chain.label(),
+        provider = %row.provider,
+        status = ?row.status,
+        "foreign-chain RPC provider is unhealthy",
+    );
+}
+
+pub(super) fn log_nothing_checked(rows: &[ProviderHealth]) {
+    let chains: BTreeSet<&str> = rows.iter().map(|row| row.chain.label()).collect();
+    tracing::warn!(
+        ?chains,
+        "no RPC provider was checked: none of the configured foreign chains has a probe"
+    );
 }
 
 pub(super) fn publish_metrics(report: &ProbeReport) {
@@ -74,8 +70,9 @@ pub(super) fn publish_metrics(report: &ProbeReport) {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use foreign_chain_health_check::probe::ProviderCounts;
+    use foreign_chain_health_check::probe::{ProviderCounts, ProviderStatus};
     use prometheus::core::Collector as _;
+    use rstest::rstest;
 
     use super::*;
     use crate::foreign_chain_probe::test_utils::{gauges, row};
@@ -138,6 +135,25 @@ mod tests {
                 unchecked: 1,
             }
         );
+    }
+
+    #[rstest]
+    #[case::healthy(ProviderStatus::Healthy, false)]
+    #[case::not_checkable(ProviderStatus::ProbeNotImplemented, false)]
+    #[case::unreachable(ProviderStatus::Unreachable, true)]
+    #[case::missing_fingerprint(ProviderStatus::MissingExpectedFingerprint, true)]
+    fn provider_is_unhealthy__should_hold_only_for_a_probed_provider_that_failed(
+        #[case] status: ProviderStatus,
+        #[case] expected: bool,
+    ) {
+        // Given
+        let row = row(dtos::ForeignChain::Polygon, "only", status);
+
+        // When
+        let unhealthy = provider_is_unhealthy(&row);
+
+        // Then
+        assert_eq!(unhealthy, expected);
     }
 
     /// `HyperEvm` is labelled `hyper_evm`, so the series is keyed by the config key rather than the

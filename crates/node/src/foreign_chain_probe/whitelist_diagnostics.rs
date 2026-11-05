@@ -32,7 +32,7 @@ use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
 /// Holds no local `rpc_url` and no token, because it is logged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Diagnostic {
+pub(super) struct Diagnostic {
     chain: dtos::ForeignChain,
     local_name: Option<RpcProviderName>,
     kind: DiagnosticKind,
@@ -59,7 +59,10 @@ enum DiagnosticKind {
     },
 }
 
-fn compare(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) -> Vec<Diagnostic> {
+pub(super) fn compare(
+    local: &ForeignChainsConfig,
+    whitelist: &ForeignChainWhitelist,
+) -> Vec<Diagnostic> {
     local
         .iter_chains()
         .flat_map(|(chain, local_config)| match whitelist.get(&chain) {
@@ -138,17 +141,7 @@ fn compare_chain(
     diagnostics
 }
 
-/// Logs each difference between `local` and `whitelist`, and returns how many there are.
-pub(super) fn log_differences(
-    local: &ForeignChainsConfig,
-    whitelist: &ForeignChainWhitelist,
-) -> usize {
-    let diagnostics = compare(local, whitelist);
-    diagnostics.iter().for_each(log_diagnostic);
-    diagnostics.len()
-}
-
-fn log_diagnostic(diagnostic: &Diagnostic) {
+pub(super) fn log(diagnostic: &Diagnostic) {
     let chain = diagnostic.chain.label();
     let local_provider = diagnostic.local_name.as_deref();
     match &diagnostic.kind {
@@ -482,7 +475,7 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn log_differences__should_keep_configured_urls_and_tokens_out_of_logs() {
+    fn log__should_keep_configured_urls_and_tokens_out_of_logs() {
         // Given
         let header = AuthConfig::Header {
             name: "x-token".parse().expect("a test header name parses"),
@@ -528,7 +521,7 @@ mod tests {
         ]);
 
         // When
-        log_differences(&local, &whitelist);
+        compare(&local, &whitelist).iter().for_each(log);
 
         // Then
         assert!(logs_contain("provider differs from its whitelist entry"));

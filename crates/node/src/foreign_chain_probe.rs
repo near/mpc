@@ -56,19 +56,38 @@ fn finish_round(
     whitelist: Option<&ForeignChainWhitelist>,
 ) {
     report::publish_metrics(report);
+    let rows = report.rows();
+    rows.iter()
+        .filter(|row| report::provider_is_unhealthy(row))
+        .for_each(report::log_unhealthy_provider);
     let report::Summary {
         probed,
         healthy,
         unchecked,
-    } = report::log_problems(report);
-    let whitelist =
-        match whitelist.map(|whitelist| whitelist_diagnostics::log_differences(local, whitelist)) {
-            None => WHITELIST_NOT_READ.to_string(),
-            Some(0) => WHITELIST_MATCHES.to_string(),
-            Some(1) => "1 difference from the local config".to_string(),
-            Some(differences) => format!("{differences} differences from the local config"),
-        };
-    tracing::info!(healthy, probed, unchecked, whitelist, "{ROUND_COMPLETE}");
+    } = report::summarize(rows);
+    if probed == 0 {
+        report::log_nothing_checked(rows);
+    }
+
+    let whitelist_differences =
+        whitelist.map(|whitelist| whitelist_diagnostics::compare(local, whitelist));
+    whitelist_differences
+        .iter()
+        .flatten()
+        .for_each(whitelist_diagnostics::log);
+    let whitelist_state = match whitelist_differences.map(|differences| differences.len()) {
+        None => WHITELIST_NOT_READ.to_string(),
+        Some(0) => WHITELIST_MATCHES.to_string(),
+        Some(1) => "1 difference from the local config".to_string(),
+        Some(count) => format!("{count} differences from the local config"),
+    };
+    tracing::info!(
+        healthy,
+        probed,
+        unchecked,
+        whitelist = whitelist_state,
+        "{ROUND_COMPLETE}"
+    );
 }
 
 /// Each round ends with `finish_round`, given the whitelist as read after the probe, so a change
