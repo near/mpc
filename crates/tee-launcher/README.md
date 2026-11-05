@@ -38,10 +38,10 @@ port_mappings = [
   { host = 2200, container = 2200 },
 ]
 
-# Opaque MPC node configuration.
-# The launcher does not interpret these fields — they are re-serialized
-# to TOML and mounted into the container at /mnt/shared/mpc-config.toml
-# for the MPC binary to consume via `start-with-config-file`.
+# MPC node configuration. The launcher adds `tee` and
+# `node.indexer.mpc_contract_id`, then mounts it into the container at
+# /mnt/shared/mpc-config.toml for the MPC binary to consume via
+# `start-with-config-file`.
 [mpc_node_config]
 # ... any fields the MPC node expects
 ```
@@ -56,7 +56,7 @@ port_mappings = [
 
 ### `[mpc_node_config]`
 
-Arbitrary TOML table passed through to the MPC node. The launcher writes this verbatim to `/mnt/shared/mpc-config.toml`, which the container reads on startup.
+Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section and `node.indexer.mpc_contract_id`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that already sets either of them is rejected.
 
 ## Supported Registries
 

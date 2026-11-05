@@ -45,10 +45,10 @@ pub enum Platform {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub launcher_config: LauncherConfig,
-    /// Opaque MPC node configuration table.
-    /// The launcher does not interpret these fields — they are re-serialized
-    /// to a TOML string, written to a file on disk, and mounted into the
-    /// container for the MPC binary to consume via `start-with-config-file`.
+    /// MPC node configuration table. Apart from the reserved keys the launcher
+    /// injects, it is re-serialized to a TOML string, written to a file on disk,
+    /// and mounted into the container for the MPC binary to consume via
+    /// `start-with-config-file`.
     pub mpc_node_config: toml::Table,
 }
 

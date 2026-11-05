@@ -341,7 +341,7 @@ impl AllowedLauncherImages {
 }
 
 /// Given a launcher image hash and MPC docker image hash, compute the launcher docker compose hash
-/// by filling the template and taking SHA-256.
+/// by filling the template with them and this contract's account id, and taking SHA-256.
 pub fn get_docker_compose_hash(
     launcher_image_hash: &LauncherImageHash,
     mpc_docker_image_hash: &NodeImageHash,

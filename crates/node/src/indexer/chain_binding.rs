@@ -34,6 +34,7 @@ mod tests {
     #[case::mainnet_contract_on_mainnet("v1.signer", MAINNET_GENESIS_HASH, true)]
     #[case::testnet_contract_on_testnet("v1.signer-prod.testnet", TESTNET_GENESIS_HASH, true)]
     #[case::mainnet_contract_on_testnet("v1.signer", TESTNET_GENESIS_HASH, false)]
+    #[case::testnet_contract_on_mainnet("v1.signer-prod.testnet", MAINNET_GENESIS_HASH, false)]
     #[case::other_contract_on_any_chain("mpc.sandbox", TESTNET_GENESIS_HASH, true)]
     fn ensure_chain_matches_contract__should_pin_only_production_contracts_to_their_chain(
         #[case] contract_id: &str,

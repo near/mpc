@@ -798,7 +798,7 @@ Including
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Rendering the launcher docker compose template [launcher_docker_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
+* Rendering the launcher docker compose template [launcher_docker_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract, and with the contract account id.
 * Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
