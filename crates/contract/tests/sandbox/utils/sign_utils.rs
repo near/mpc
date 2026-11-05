@@ -262,25 +262,7 @@ impl CKDRequestTest {
     }
 }
 
-pub use near_mpc_contract_interface::call_args::CKDRespondArgs;
 pub type CKDResponseArgs = CKDRespondArgs;
-
-async fn submit_response(
-    contract: &Contract,
-    attested_account: &Account,
-    method: &str,
-    args: impl Serialize,
-) -> anyhow::Result<()> {
-    let respond = attested_account
-        .call(contract.id(), method)
-        .args_json(args)
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&respond);
-    respond.into_result()?;
-    Ok(())
-}
 
 pub async fn submit_signature_response(
     response: &SignatureRespondArgs,
