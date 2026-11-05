@@ -177,6 +177,11 @@ top of the notes (what the release is for, which networks it targets, and
 whether it needs a contract upgrade or launcher vote), and click "Publish
 release."
 
+Check the "Mainnet protocol compatibility" CI job on the released commit. It is
+red when the contract needs a newer protocol than mainnet runs. That can be
+intended (e.g. a testnet-only release); if so, say in the summary which protocol
+the contract needs and that it can't be deployed to mainnet before then.
+
 Publishing creates the `3.11.0` git tag at the released commit.
 
 > ⚠️ **Point of no return.** Publishing creates the tag, and once the tag is published it cannot be modified as we are using [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
