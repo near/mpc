@@ -198,28 +198,14 @@ async fn contract_request__should_reject_129th_duplicate_without_extra_pending_s
         response: signature_response,
     };
 
-    let sign_statuses = submit_duplicate_sign_batches(
+    let (sign_statuses, rejected_sign) = run_sign_overflow(
         &worker,
         &contract,
         &parallel,
+        &signature_response_args,
         &sign_args,
-        u64::from(MAX_PENDING_REQUEST_FAN_OUT),
     )
     .await?;
-    wait_for_pending_signature_queue(
-        &contract,
-        &signature_request,
-        u32::from(MAX_PENDING_REQUEST_FAN_OUT),
-    )
-    .await?;
-
-    // When: submitting the 129th duplicate sign request (overflow)
-    let rejected_sign = submit_duplicate_sign_batches(&worker, &contract, &parallel, &sign_args, 1)
-        .await?
-        .pop()
-        .expect("one overflow sign batch should be submitted")
-        .0
-        .await?;
 
     // Then: the overflow is rejected and the queue remains at the cap
     assert_queue_full_failure(&rejected_sign);
@@ -263,28 +249,14 @@ async fn contract_request__should_reject_129th_duplicate_without_extra_pending_s
         response: ckd_response,
     };
 
-    let ckd_statuses = submit_duplicate_ckd_batches(
+    let (ckd_statuses, rejected_ckd) = run_ckd_overflow(
         &worker,
         &contract,
         &parallel,
+        &ckd_response_args,
         &ckd_args,
-        u64::from(MAX_PENDING_REQUEST_FAN_OUT),
     )
     .await?;
-    wait_for_pending_ckd_queue(
-        &contract,
-        &ckd_request,
-        u32::from(MAX_PENDING_REQUEST_FAN_OUT),
-    )
-    .await?;
-
-    // When: submitting the 129th duplicate CKD request (overflow)
-    let rejected_ckd = submit_duplicate_ckd_batches(&worker, &contract, &parallel, &ckd_args, 1)
-        .await?
-        .pop()
-        .expect("one overflow CKD batch should be submitted")
-        .0
-        .await?;
 
     // Then: the overflow is rejected and the queue remains at the cap
     assert_queue_full_failure(&rejected_ckd);
@@ -474,6 +446,74 @@ async fn run_ckd_fan_out(
     .await?;
     submit_ckd_response(response_args, contract, attested).await?;
     Ok(statuses)
+}
+
+/// Runs the sign-flavored overflow exercise: fill the queue to the fan-out cap,
+/// submit one overflow request, and return the batch statuses + the overflow
+/// transaction result for the caller to assert on.
+async fn run_sign_overflow(
+    worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
+    contract: &near_workspaces::Contract,
+    parallel: &near_workspaces::Contract,
+    response_args: &SignatureRespondArgs,
+    sign_args: &SignRequestArgs,
+) -> anyhow::Result<(Vec<(TransactionStatus, u64)>, ExecutionFinalResult)> {
+    let statuses = submit_duplicate_sign_batches(
+        worker,
+        contract,
+        parallel,
+        sign_args,
+        u64::from(MAX_PENDING_REQUEST_FAN_OUT),
+    )
+    .await?;
+    wait_for_pending_signature_queue(
+        contract,
+        &response_args.request,
+        u32::from(MAX_PENDING_REQUEST_FAN_OUT),
+    )
+    .await?;
+
+    let rejected = submit_duplicate_sign_batches(worker, contract, parallel, sign_args, 1)
+        .await?
+        .pop()
+        .expect("one overflow sign batch should be submitted")
+        .0
+        .await?;
+
+    Ok((statuses, rejected))
+}
+
+/// CKD counterpart to [`run_sign_overflow`].
+async fn run_ckd_overflow(
+    worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
+    contract: &near_workspaces::Contract,
+    parallel: &near_workspaces::Contract,
+    response_args: &CKDResponseArgs,
+    ckd_args: &CKDRequestArgs,
+) -> anyhow::Result<(Vec<(TransactionStatus, u64)>, ExecutionFinalResult)> {
+    let statuses = submit_duplicate_ckd_batches(
+        worker,
+        contract,
+        parallel,
+        ckd_args,
+        u64::from(MAX_PENDING_REQUEST_FAN_OUT),
+    )
+    .await?;
+    wait_for_pending_ckd_queue(
+        contract,
+        &response_args.request,
+        u32::from(MAX_PENDING_REQUEST_FAN_OUT),
+    )
+    .await?;
+
+    let rejected = submit_duplicate_ckd_batches(worker, contract, parallel, ckd_args, 1)
+        .await?
+        .pop()
+        .expect("one overflow CKD batch should be submitted")
+        .0
+        .await?;
+
+    Ok((statuses, rejected))
 }
 
 /// CKD counterpart to [`submit_duplicate_sign_batches`]; the lower per-batch ceiling
