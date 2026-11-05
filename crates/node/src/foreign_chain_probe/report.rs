@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
 
 use foreign_chain_health_check::probe::{ProbeReport, ProviderHealth, ProviderStatus};
 use near_mpc_contract_interface::types as dtos;
-use tracing::{info, warn};
 
 use crate::metrics;
 
@@ -25,17 +24,17 @@ pub(super) fn log_report(report: &ProbeReport) {
     let rows = report.rows();
     for row in rows {
         match &row.status {
-            ProviderStatus::Healthy => info!(
+            ProviderStatus::Healthy => tracing::info!(
                 chain = %row.chain.label(),
                 provider = %row.provider,
                 "foreign-chain RPC provider serves the expected network",
             ),
-            ProviderStatus::ProbeNotImplemented => info!(
+            ProviderStatus::ProbeNotImplemented => tracing::info!(
                 chain = %row.chain.label(),
                 provider = %row.provider,
                 "foreign-chain RPC provider cannot be checked",
             ),
-            unhealthy => warn!(
+            unhealthy => tracing::warn!(
                 chain = %row.chain.label(),
                 provider = %row.provider,
                 status = ?unhealthy,
@@ -47,13 +46,15 @@ pub(super) fn log_report(report: &ProbeReport) {
     let Summary { probed, healthy } = summarize(rows);
     if probed == 0 {
         let chains: BTreeSet<&str> = rows.iter().map(|row| row.chain.label()).collect();
-        warn!(
+        tracing::warn!(
             ?chains,
             "no RPC provider was checked: none of the configured foreign chains has a probe"
         );
         return;
     }
-    info!("foreign-chain RPC provider probe complete: {healthy}/{probed} providers healthy");
+    tracing::info!(
+        "foreign-chain RPC provider probe complete: {healthy}/{probed} providers healthy"
+    );
 }
 
 pub(super) fn publish_metrics(report: &ProbeReport) {

@@ -8,7 +8,6 @@ use foreign_chain_health_check::probe::{ProbeReport, probe_all_providers};
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
 use tokio::sync::watch;
-use tracing::{info, warn};
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::tick::Tick;
@@ -32,7 +31,9 @@ pub async fn run_periodic_probe(
     ticker: impl Tick,
 ) {
     if foreign_chains.is_empty() {
-        warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
+        tracing::warn!(
+            "no foreign chain is configured: this node cannot verify foreign-chain transactions"
+        );
         return;
     }
 
@@ -56,7 +57,7 @@ fn finish_round(
     report::log_report(report);
     match whitelist {
         Some(whitelist) => whitelist_diagnostics::log_differences(local, whitelist),
-        None => info!("{WHITELIST_NOT_READ}"),
+        None => tracing::info!("{WHITELIST_NOT_READ}"),
     }
 }
 
@@ -77,7 +78,7 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
             Ok(()) = whitelist_rx.changed() => {}
         }
 
-        info!("probing foreign-chain RPC providers");
+        tracing::info!("probing foreign-chain RPC providers");
         let report = probe().await;
         let whitelist = whitelist_rx.borrow_and_update().clone();
         finish_round(&report, whitelist.as_ref());
