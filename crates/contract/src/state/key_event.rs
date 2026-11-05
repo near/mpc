@@ -195,7 +195,7 @@ impl KeyEvent {
     /// It returns None if there is no active attempt (including if the attempt has timed out).
     pub fn current_key_event_id(&self) -> Option<KeyEventId> {
         let instance = self.instance.as_ref()?;
-        if instance.expires_on <= current_block_height() {
+        if instance.expires_on <= env::block_height().into() {
             return None;
         }
         Some(KeyEventId::new(
@@ -239,10 +239,6 @@ enum VoteSuccessResult {
     PublicKeyDisagreement,
 }
 
-fn current_block_height() -> BlockHeight {
-    BlockHeight::new(env::block_height())
-}
-
 /// State for a single attempt at generating or resharing a key.
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -261,7 +257,7 @@ pub struct KeyEventInstance {
 
 impl KeyEventInstance {
     pub fn new(attempt_id: AttemptId, timeout_blocks: BlockCount) -> Self {
-        let started_in = current_block_height();
+        let started_in: BlockHeight = env::block_height().into();
         KeyEventInstance {
             attempt_id,
             started_in,
@@ -275,7 +271,7 @@ impl KeyEventInstance {
     }
 
     pub fn active(&self) -> bool {
-        current_block_height() < self.expires_on
+        self.expires_on > env::block_height().into()
     }
 
     pub fn attempt_id(&self) -> AttemptId {
