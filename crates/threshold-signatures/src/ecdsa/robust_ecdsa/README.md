@@ -11,33 +11,33 @@
 ## Pipeline
 
 ```
-Presigning  -->  Signing
-  1 round        1 round
+Nonce generation  -->  Signing
+     1 round           1 round
 ```
 
-`presign_and_sign` runs both rounds as one protocol once the message is known, so no
-presignature is ever stored or reused.
+`sign` runs both rounds as one protocol once the message is known, so the output of nonce
+generation is never stored or reused.
 
 ## Modules
 
-### `presign.rs`
+### `nonce_generation.rs`
 
-The one-round presigning step of `presign_and_sign`. Participants broadcast additive
+The one-round nonce generation step of `sign`. Participants broadcast additive
 contributions to the nonce `k`, so all of them learn `k` and agree on `R = k * G`, then
-fill the `PresignOutput` fields so the signing phase recombines them into a valid
-signature. **This is where the key leaks:** any presigner can recover `x` from a
+fill the `NonceGenerationOutput` fields so the signing phase recombines them into a valid
+signature. **This is where the key leaks:** any signer can recover `x` from a
 resulting signature via `x = (s * k - h) / R_x`. See the [protocol
 specification](../../../docs/ecdsa/robust_ecdsa/signing.md).
 
-### `presign_and_sign.rs`
+### `sign.rs`
 
-Presigning and signing as one two-round protocol over a single channel. The tweak is
+Nonce generation and signing as one two-round protocol over a single channel. The tweak is
 applied locally between the two rounds, and only the
 coordinator obtains the signature. The node signs with this protocol. See the
-[protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
+[protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md#nonce-generation-and-signing-in-one-protocol).
 
 Also holds the one-round signing step, with a designated coordinator. Takes
-the tweaked presignature and the message hash, produces a standard ECDSA signature
+the tweaked nonce generation output and the message hash, produces a standard ECDSA signature
 (low-S normalized). Unchanged from the removed scheme and scheme-agnostic: it sums
 Lagrange-linearized shares of `s` and provides no secrecy of its own. See the
 [protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md) for details.
@@ -46,12 +46,12 @@ Lagrange-linearized shares of `s` and provides no secrecy of its own. See the
 
 Preserved verbatim from the removed scheme, so a replacement can reuse them:
 
-- **`PresignArguments`** -- input to presigning: keygen output + maximum number of malicious parties
-- **`PresignOutput`** -- presignature: `(big_r, c, e, alpha, beta)`
+- **`SignArguments`** -- input to `sign`: keygen output + maximum number of malicious parties
+- **`NonceGenerationOutput`** -- output of nonce generation: `(big_r, c, e, alpha, beta)`
 
 ## Threshold
 
-The threshold parameter is `MaxMalicious`, denoted `t`. Both presigning and signing
+The threshold parameter is `MaxMalicious`, denoted `t`. Both nonce generation and signing
 require **exactly** `N = 2t + 1` participants, and `msg_hash == 0` is rejected. The
 stub does not need either restriction; both are retained because the removed scheme
 needed them to blunt split-view attacks, and a replacement scheme likely will too.

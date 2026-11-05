@@ -3,8 +3,8 @@ use frost_core::serialization::SerializableScalar;
 use rand_core::CryptoRngCore;
 use subtle::ConditionallySelectable;
 
-use crate::ecdsa::robust_ecdsa::presign::{
-    PresignArguments, PresignOutput, presign_round, validate_presign_arguments,
+use crate::ecdsa::robust_ecdsa::nonce_generation::{
+    NonceGenerationOutput, SignArguments, nonce_generation_round, validate_sign_arguments,
 };
 use crate::ecdsa::{
     AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
@@ -19,11 +19,11 @@ use crate::protocol::{
 
 type C = Secp256K1Sha256;
 
-pub(crate) const ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 2;
+pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 2;
 #[cfg(test)]
-pub(crate) const ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
+pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
 
-/// Presigning and signing as a single protocol, run once the message is known. Only the
+/// Nonce generation and signing as a single protocol, run once the message is known. Only the
 /// coordinator obtains the signature.
 ///
 /// **This is a stub and leaks the signing key.** See the [module docs](super) before
@@ -32,11 +32,11 @@ pub(crate) const ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES:
 /// The `N = 2 * max_malicious + 1` participant count and the `msg_hash != 0`
 /// rejection are retained from the removed scheme, which needed both to blunt
 /// split-view attacks.
-pub fn presign_and_sign<R>(
+pub fn sign<R>(
     participants: &[Participant],
     coordinator: Participant,
     me: Participant,
-    args: PresignArguments,
+    args: SignArguments,
     tweak: Tweak,
     msg_hash: Scalar,
     rng: R,
@@ -44,7 +44,7 @@ pub fn presign_and_sign<R>(
 where
     R: CryptoRngCore + Send + 'static,
 {
-    let participants = validate_presign_arguments(participants, me, &args)?;
+    let participants = validate_sign_arguments(participants, me, &args)?;
 
     if !participants.contains(coordinator) {
         return Err(InitializationError::MissingParticipant {
@@ -59,9 +59,8 @@ where
         ));
     }
 
-    let ctx =
-        Comms::with_buffer_capacity(ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
-    let fut = do_presign_and_sign(
+    let ctx = Comms::with_buffer_capacity(ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
+    let fut = do_sign(
         ctx.shared_channel(),
         participants,
         coordinator,
@@ -75,12 +74,12 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn do_presign_and_sign(
+async fn do_sign(
     mut chan: SharedChannel,
     participants: ParticipantList,
     coordinator: Participant,
     me: Participant,
-    args: PresignArguments,
+    args: SignArguments,
     tweak: Tweak,
     msg_hash: Scalar,
     rng: impl CryptoRngCore,
@@ -90,7 +89,7 @@ async fn do_presign_and_sign(
         .to_element()
         .to_affine();
 
-    let presignature = presign_round(&mut chan, &participants, me, args, rng)
+    let presignature = nonce_generation_round(&mut chan, &participants, me, args, rng)
         .await?
         .with_tweak(&tweak);
 
@@ -106,12 +105,12 @@ async fn do_presign_and_sign(
     .await
 }
 
-/// The signing round, run on a caller-owned channel so that it can follow presigning on the
-/// same channel.
+/// The signing round, run on a caller-owned channel so that it can follow nonce generation on
+/// the same channel.
 ///
 /// This phase is scheme-agnostic: it sums the participants' Lagrange-linearized
 /// shares of `s`, so it carries over unchanged to whichever scheme replaces the
-/// current presigning stub. It provides no secrecy of its own, and inherits the key
+/// current nonce generation stub. It provides no secrecy of its own, and inherits the key
 /// leak documented in the [module docs](super).
 pub(crate) async fn sign_round(
     chan: &mut SharedChannel,
@@ -119,7 +118,7 @@ pub(crate) async fn sign_round(
     coordinator: Participant,
     me: Participant,
     public_key: AffinePoint,
-    presignature: &PresignOutput,
+    presignature: &NonceGenerationOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     if me == coordinator {
@@ -135,7 +134,7 @@ fn do_sign_participant(
     participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
-    presignature: &PresignOutput,
+    presignature: &NonceGenerationOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     let s_me = compute_signature_share(presignature, msg_hash, participants, me)?;
@@ -151,7 +150,7 @@ async fn do_sign_coordinator(
     participants: &ParticipantList,
     me: Participant,
     public_key: AffinePoint,
-    presignature: &PresignOutput,
+    presignature: &NonceGenerationOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
     let mut s = compute_signature_share(presignature, msg_hash, participants, me)?.0;
@@ -189,7 +188,7 @@ async fn do_sign_coordinator(
 
 /// A common computation done by both the coordinator and the other participants
 fn compute_signature_share(
-    presignature: &PresignOutput,
+    presignature: &NonceGenerationOutput,
     msg_hash: Scalar,
     participants: &ParticipantList,
     me: Participant,
@@ -249,8 +248,8 @@ mod test {
             }
         }
 
-        fn args_for(&self, index: usize) -> PresignArguments {
-            PresignArguments {
+        fn args_for(&self, index: usize) -> SignArguments {
+            SignArguments {
                 keygen_out: self.key_packages[index].1.clone(),
                 max_malicious: self.max_malicious.into(),
             }
@@ -269,14 +268,11 @@ mod test {
             VerifyingKey::from(&PublicKey::from_affine(derived).unwrap())
         }
 
-        fn run_presign_and_sign(
-            &self,
-            coordinator: Participant,
-        ) -> Vec<(Participant, SignatureOption)> {
+        fn run_sign(&self, coordinator: Participant) -> Vec<(Participant, SignatureOption)> {
             let mut protocols: GenProtocol<SignatureOption> =
                 Vec::with_capacity(self.participants.len());
             for (i, p) in self.participants.iter().enumerate() {
-                let protocol = presign_and_sign(
+                let protocol = sign(
                     &self.participants,
                     coordinator,
                     *p,
@@ -300,16 +296,14 @@ mod test {
     #[case(1)]
     #[case(2)]
     #[case(3)]
-    fn presign_and_sign__should_produce_signature_verifiable_under_derived_key(
-        #[case] max_malicious: usize,
-    ) {
+    fn sign__should_produce_signature_verifiable_under_derived_key(#[case] max_malicious: usize) {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let setup = Setup::new(max_malicious, &mut rng);
         let coordinator = setup.participants[setup.participants.len() - 1];
 
         // When
-        let result = setup.run_presign_and_sign(coordinator);
+        let result = setup.run_sign(coordinator);
 
         // Then
         let signature = check_one_coordinator_output(result, coordinator).unwrap();
@@ -320,14 +314,14 @@ mod test {
     }
 
     #[test]
-    fn presign_and_sign__should_return_signature_only_to_coordinator() {
+    fn sign__should_return_signature_only_to_coordinator() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let setup = Setup::new(2, &mut rng);
         let coordinator = setup.participants[1];
 
         // When
-        let result = setup.run_presign_and_sign(coordinator);
+        let result = setup.run_sign(coordinator);
 
         // Then
         assert_eq!(result.len(), 5);
@@ -337,14 +331,14 @@ mod test {
     }
 
     #[test]
-    fn presign_and_sign__should_reject_coordinator_outside_participants() {
+    fn sign__should_reject_coordinator_outside_participants() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let setup = Setup::new(1, &mut rng);
         let outsider = Participant::from(999u32);
 
         // When
-        let result = presign_and_sign(
+        let result = sign(
             &setup.participants,
             outsider,
             setup.participants[0],
@@ -365,13 +359,13 @@ mod test {
     }
 
     #[test]
-    fn presign_and_sign__should_reject_zero_msg_hash() {
+    fn sign__should_reject_zero_msg_hash() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let setup = Setup::new(1, &mut rng);
 
         // When
-        let result = presign_and_sign(
+        let result = sign(
             &setup.participants,
             setup.participants[0],
             setup.participants[0],
@@ -388,7 +382,7 @@ mod test {
     #[rstest]
     #[case::fewer_than_two_max_malicious_plus_one(1, 2)]
     #[case::more_than_two_max_malicious_plus_one(2, 1)]
-    fn presign_and_sign__should_reject_participant_count_other_than_two_max_malicious_plus_one(
+    fn sign__should_reject_participant_count_other_than_two_max_malicious_plus_one(
         #[case] setup_max_malicious: usize,
         #[case] args_max_malicious: usize,
     ) {
@@ -399,7 +393,7 @@ mod test {
         args.max_malicious = args_max_malicious.into();
 
         // When
-        let result = presign_and_sign(
+        let result = sign(
             &setup.participants,
             setup.participants[0],
             setup.participants[0],
@@ -417,7 +411,7 @@ mod test {
     #[case(1)]
     #[case(2)]
     #[case(3)]
-    fn presign_and_sign__should_bound_message_buffer_by_role(#[case] max_malicious: usize) {
+    fn sign__should_bound_message_buffer_by_role(#[case] max_malicious: usize) {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let setup = Setup::new(max_malicious, &mut rng);
@@ -429,7 +423,7 @@ mod test {
             &mut rng,
             |comms, p_list, p, rng_p| {
                 let index = setup.participants.iter().position(|q| *q == p).unwrap();
-                do_presign_and_sign(
+                do_sign(
                     comms.shared_channel(),
                     p_list,
                     coordinator,
@@ -442,15 +436,15 @@ mod test {
             },
             expected_buffer_by_role(
                 coordinator,
-                ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
-                ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+                ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
             ),
         );
     }
 
     /// Runs only the signing round, on presignatures the caller provides.
     fn run_sign_round(
-        participants_presign: Vec<(Participant, PresignOutput)>,
+        participants_presign: Vec<(Participant, NonceGenerationOutput)>,
         public_key: ProjectivePoint,
         msg: &[u8],
         rng: &mut impl CryptoRngCore,
@@ -469,9 +463,8 @@ mod test {
             |participants, coordinator, me, public_key, presignature, msg_hash| {
                 let participants = ParticipantList::new(participants)
                     .ok_or(InitializationError::DuplicateParticipants)?;
-                let ctx = Comms::with_buffer_capacity(
-                    ROBUST_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
-                );
+                let ctx =
+                    Comms::with_buffer_capacity(ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
                 let mut chan = ctx.shared_channel();
                 let fut = async move {
                     sign_round(
@@ -528,7 +521,7 @@ mod test {
         participants: &[Participant],
         max_malicious: usize,
         rng: &mut impl CryptoRngCore,
-    ) -> (ProjectivePoint, Vec<(Participant, PresignOutput)>) {
+    ) -> (ProjectivePoint, Vec<(Participant, NonceGenerationOutput)>) {
         let fx = Polynomial::generate_polynomial(None, max_malicious, rng).unwrap();
         let x = fx.eval_at_zero().unwrap().0;
         let public_key = ProjectivePoint::GENERATOR * x;
@@ -542,7 +535,7 @@ mod test {
                 let e = fe.eval_at_participant(*p).unwrap().0;
                 (
                     *p,
-                    PresignOutput {
+                    NonceGenerationOutput {
                         big_r: big_r.to_affine(),
                         alpha,
                         beta,
@@ -585,7 +578,7 @@ mod test {
             .map(|p| {
                 (
                     *p,
-                    PresignOutput {
+                    NonceGenerationOutput {
                         big_r: ProjectivePoint::IDENTITY.to_affine(),
                         alpha: Secp256K1ScalarField::zero(),
                         beta: Secp256K1ScalarField::zero(),

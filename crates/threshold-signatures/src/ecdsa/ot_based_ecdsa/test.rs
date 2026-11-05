@@ -1,5 +1,5 @@
 use super::{
-    PresignArguments, presign_and_sign,
+    SignArguments, sign,
     triples::{TriplePub, TripleShare, generate_triple_many},
 };
 use crate::test_utils::{
@@ -50,11 +50,11 @@ fn run_sign_with_triples_and_verify(
 
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
     for (((p, keygen_out), share0), share1) in key_packages.iter().zip(shares0).zip(shares1) {
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &participants,
             coordinator,
             *p,
-            PresignArguments {
+            SignArguments {
                 triple0: (share0, pub0.clone()),
                 triple1: (share1, pub1.clone()),
                 keygen_out: keygen_out.clone(),
