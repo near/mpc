@@ -46,4 +46,10 @@ async fn mpc_cluster__should_serve_requests_at_mainnet_protocol_version() {
             outcome.failure_message()
         );
     }
+    let protocol_version = cluster
+        .blockchain
+        .protocol_version()
+        .await
+        .expect("failed to query sandbox protocol version");
+    assert_eq!(protocol_version, test_utils::MAINNET_PROTOCOL_VERSION);
 }
