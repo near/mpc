@@ -139,11 +139,14 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
 After each round the node also compares the configured providers with the
-provider whitelist and logs each difference, so a wrong config is reported
-every hour until it is fixed. Until the node has synced and read the provider
-whitelist from the contract, each round logs that the whitelist is not read
-yet. The node probes again as
-soon as the whitelist is read, and whenever the whitelist changes.
+provider whitelist. It logs a warning for each unhealthy provider and a line
+for each difference from the whitelist, so a wrong config is reported every
+hour until it is fixed. Each round ends with one
+`foreign chain probe round complete` line with the healthy, probed and
+unchecked provider counts and the whitelist state: `not read yet` until the
+node has synced and read the whitelist from the contract, then
+`matches the local config` or the number of differences. The node probes again
+as soon as the whitelist is read, and whenever the whitelist changes.
 
 ### Whitelist and quorum
 

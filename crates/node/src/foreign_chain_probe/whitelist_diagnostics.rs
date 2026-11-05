@@ -11,7 +11,6 @@
 //! - Error: a whitelist entry uses a variant this node version does not know (upgrade the node).
 //! - Warn: a local provider differs from its whitelist provider, or two local providers match a single whitelist entry.
 //! - Info: a local provider or chain is not in the whitelist. Both are normal.
-//! - Info: the local config matches the whitelist.
 //!
 //! Logs show the chain, the local provider name, local auth names and schemes, and public whitelist
 //! values. They never show the local `rpc_url` or a token.
@@ -139,18 +138,14 @@ fn compare_chain(
     diagnostics
 }
 
-pub(super) fn log_differences(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) {
-    log(&compare(local, whitelist));
-}
-
-pub(super) const CONFIG_MATCHES_WHITELIST: &str =
-    "foreign chain whitelist: local config matches the contract whitelist";
-
-fn log(diagnostics: &[Diagnostic]) {
-    if diagnostics.is_empty() {
-        tracing::info!("{CONFIG_MATCHES_WHITELIST}");
-    }
+/// Logs each difference between `local` and `whitelist`, and returns how many there are.
+pub(super) fn log_differences(
+    local: &ForeignChainsConfig,
+    whitelist: &ForeignChainWhitelist,
+) -> usize {
+    let diagnostics = compare(local, whitelist);
     diagnostics.iter().for_each(log_diagnostic);
+    diagnostics.len()
 }
 
 fn log_diagnostic(diagnostic: &Diagnostic) {

@@ -1,4 +1,4 @@
-//! Logs each probe round's provider verdicts and publishes them as metrics.
+//! Logs each probe round's unhealthy providers and publishes the verdicts as metrics.
 
 use std::collections::BTreeSet;
 
@@ -8,32 +8,28 @@ use near_mpc_contract_interface::types as dtos;
 use crate::metrics;
 
 #[derive(Debug, PartialEq, Eq)]
-struct Summary {
-    probed: usize,
-    healthy: usize,
+pub(super) struct Summary {
+    pub(super) probed: usize,
+    pub(super) healthy: usize,
+    /// Providers of a chain the probe cannot check.
+    pub(super) unchecked: usize,
 }
 
 fn summarize(rows: &[ProviderHealth]) -> Summary {
+    let probed = rows.iter().filter(|row| row.status.was_probed()).count();
     Summary {
-        probed: rows.iter().filter(|row| row.status.was_probed()).count(),
+        probed,
         healthy: rows.iter().filter(|row| row.status.is_healthy()).count(),
+        unchecked: rows.len() - probed,
     }
 }
 
-pub(super) fn log_report(report: &ProbeReport) {
+/// Warns about each unhealthy provider, and about a round that checked no provider at all.
+pub(super) fn log_problems(report: &ProbeReport) -> Summary {
     let rows = report.rows();
     for row in rows {
         match &row.status {
-            ProviderStatus::Healthy => tracing::info!(
-                chain = %row.chain.label(),
-                provider = %row.provider,
-                "foreign-chain RPC provider serves the expected network",
-            ),
-            ProviderStatus::ProbeNotImplemented => tracing::info!(
-                chain = %row.chain.label(),
-                provider = %row.provider,
-                "foreign-chain RPC provider cannot be checked",
-            ),
+            ProviderStatus::Healthy | ProviderStatus::ProbeNotImplemented => {}
             unhealthy => tracing::warn!(
                 chain = %row.chain.label(),
                 provider = %row.provider,
@@ -43,18 +39,15 @@ pub(super) fn log_report(report: &ProbeReport) {
         }
     }
 
-    let Summary { probed, healthy } = summarize(rows);
-    if probed == 0 {
+    let summary = summarize(rows);
+    if summary.probed == 0 {
         let chains: BTreeSet<&str> = rows.iter().map(|row| row.chain.label()).collect();
         tracing::warn!(
             ?chains,
             "no RPC provider was checked: none of the configured foreign chains has a probe"
         );
-        return;
     }
-    tracing::info!(
-        "foreign-chain RPC provider probe complete: {healthy}/{probed} providers healthy"
-    );
+    summary
 }
 
 pub(super) fn publish_metrics(report: &ProbeReport) {
@@ -118,7 +111,8 @@ mod tests {
             summary,
             Summary {
                 probed: 2,
-                healthy: 1
+                healthy: 1,
+                unchecked: 1,
             }
         );
     }
@@ -140,7 +134,8 @@ mod tests {
             summary,
             Summary {
                 probed: 0,
-                healthy: 0
+                healthy: 0,
+                unchecked: 1,
             }
         );
     }

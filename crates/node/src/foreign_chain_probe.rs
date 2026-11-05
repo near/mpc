@@ -21,10 +21,10 @@ mod whitelist_diagnostics;
 /// whenever `whitelist_rx` changes, and reports the verdicts as logs and metrics. Diagnostic only:
 /// nothing gates on the result.
 ///
-/// The probe starts before the indexer has read the whitelist from the contract, so `whitelist_rx`
-/// holds `None` until then, and each round logs that the whitelist is not read yet. Once it is read,
-/// each round logs every difference between the local config and the whitelist, see
-/// [`whitelist_diagnostics`].
+/// Each round logs a line per unhealthy provider and per difference between the local config and
+/// the whitelist, see [`whitelist_diagnostics`], then one summary line. The probe starts before the
+/// indexer has read the whitelist from the contract, so `whitelist_rx` holds `None` until then, and
+/// the summary says the whitelist is not read yet.
 pub async fn run_periodic_probe(
     foreign_chains: ForeignChainsConfig,
     whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
@@ -46,7 +46,9 @@ pub async fn run_periodic_probe(
     .await;
 }
 
-const WHITELIST_NOT_READ: &str = "foreign chain whitelist: not read from the contract yet";
+const ROUND_COMPLETE: &str = "foreign chain probe round complete";
+const WHITELIST_NOT_READ: &str = "not read yet";
+const WHITELIST_MATCHES: &str = "matches the local config";
 
 fn finish_round(
     report: &ProbeReport,
@@ -54,11 +56,19 @@ fn finish_round(
     whitelist: Option<&ForeignChainWhitelist>,
 ) {
     report::publish_metrics(report);
-    report::log_report(report);
-    match whitelist {
-        Some(whitelist) => whitelist_diagnostics::log_differences(local, whitelist),
-        None => tracing::info!("{WHITELIST_NOT_READ}"),
-    }
+    let report::Summary {
+        probed,
+        healthy,
+        unchecked,
+    } = report::log_problems(report);
+    let whitelist =
+        match whitelist.map(|whitelist| whitelist_diagnostics::log_differences(local, whitelist)) {
+            None => WHITELIST_NOT_READ.to_string(),
+            Some(0) => WHITELIST_MATCHES.to_string(),
+            Some(1) => "1 difference from the local config".to_string(),
+            Some(differences) => format!("{differences} differences from the local config"),
+        };
+    tracing::info!(healthy, probed, unchecked, whitelist, "{ROUND_COMPLETE}");
 }
 
 /// Each round ends with `finish_round`, given the whitelist as read after the probe, so a change
@@ -89,9 +99,10 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
 #[expect(non_snake_case)]
 mod tests {
     use std::cell::{Cell, RefCell};
-    use std::collections::VecDeque;
+    use std::collections::{BTreeMap, VecDeque};
 
     use foreign_chain_health_check::probe::{ProviderCounts, ProviderStatus};
+    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
     use near_mpc_contract_interface::types as dtos;
     use rstest::rstest;
     use tracing_test::traced_test;
@@ -99,9 +110,9 @@ mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
-        empty_report, gauges, mock_finish_round, mock_probe, no_whitelist, row, whitelist_of,
+        chain_config, empty_report, foreign_chains, gauges, mock_finish_round, mock_probe,
+        no_whitelist, row, whitelist_of,
     };
-    use crate::foreign_chain_probe::whitelist_diagnostics::CONFIG_MATCHES_WHITELIST;
     use crate::tick::MockTicker;
 
     #[test]
@@ -268,29 +279,51 @@ mod tests {
         assert_eq!(*whitelists_seen.borrow(), vec![Some(whitelist)]);
     }
 
+    fn polygon_config() -> ForeignChainsConfig {
+        let alchemy = ForeignChainProviderConfig {
+            rpc_url: "https://polygon-mainnet.g.alchemy.com/v2".to_string(),
+            auth: AuthConfig::None,
+        };
+        foreign_chains([(
+            dtos::ForeignChain::Polygon,
+            chain_config(&[("alchemy", alchemy)]),
+        )])
+    }
+
     #[traced_test]
     #[rstest]
-    #[case::without_a_whitelist(None, WHITELIST_NOT_READ, CONFIG_MATCHES_WHITELIST)]
-    #[case::with_a_whitelist(
-        Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)),
-        CONFIG_MATCHES_WHITELIST,
-        WHITELIST_NOT_READ
+    #[case::without_a_whitelist(ForeignChainsConfig::default(), None, WHITELIST_NOT_READ)]
+    #[case::with_a_matching_whitelist(
+        ForeignChainsConfig::default(),
+        Some(BTreeMap::new()),
+        WHITELIST_MATCHES
     )]
-    fn finish_round__should_compare_the_config_with_the_whitelist_or_log_that_it_is_not_read(
+    #[case::with_a_differing_whitelist(
+        polygon_config(),
+        Some(BTreeMap::new()),
+        "1 difference from the local config"
+    )]
+    fn finish_round__should_end_with_one_line_that_says_how_the_config_compares_with_the_whitelist(
+        #[case] local: ForeignChainsConfig,
         #[case] whitelist: Option<ForeignChainWhitelist>,
-        #[case] logged: &str,
-        #[case] not_logged: &str,
+        #[case] whitelist_state: &str,
     ) {
         // When
-        finish_round(
-            &empty_report(),
-            &ForeignChainsConfig::default(),
-            whitelist.as_ref(),
-        );
+        finish_round(&empty_report(), &local, whitelist.as_ref());
 
         // Then
-        assert!(logs_contain(logged));
-        assert!(!logs_contain(not_logged));
+        logs_assert(|lines: &[&str]| {
+            let round_lines: Vec<_> = lines
+                .iter()
+                .filter(|line| line.contains(ROUND_COMPLETE))
+                .collect();
+            match round_lines.as_slice() {
+                [line] if line.contains(whitelist_state) => Ok(()),
+                _ => Err(format!(
+                    "expected one round line with {whitelist_state:?}, got {round_lines:?}"
+                )),
+            }
+        });
     }
 
     #[test]
