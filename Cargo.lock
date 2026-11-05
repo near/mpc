@@ -6069,6 +6069,7 @@ dependencies = [
  "futures",
  "group 0.13.0",
  "hex",
+ "httpmock",
  "mpc-primitives",
  "near-account-id",
  "near-contract-transport",
@@ -6086,6 +6087,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
 ]
