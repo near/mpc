@@ -1,4 +1,6 @@
-//! End-to-end test that a single `respond` drains a fully-saturated fan-out queue.
+//! End-to-end tests for the duplicate-request fan-out cap: a single `respond` drains
+//! a saturated queue, and a duplicate past the cap is rejected without touching
+//! pending state.
 //!
 //! Items are declared in order of occurrence: every function (or type) is defined
 //! before any helper it transitively depends on.
