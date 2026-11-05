@@ -153,6 +153,8 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
 #[tokio::test]
 async fn contract_request__should_reject_129th_duplicate_without_extra_pending_state()
 -> anyhow::Result<()> {
+    // Given: a sandbox-running contract with CaitSith and CKD protocols,
+    // and a parallel contract to fan out requests
     let SandboxTestSetup {
         worker,
         contract,
@@ -167,6 +169,9 @@ async fn contract_request__should_reject_129th_duplicate_without_extra_pending_s
     let parallel = worker.dev_deploy(parallel_contract()).await?;
     let parallel_id: AccountId = parallel.id().clone();
 
+    // ==== SIGN HALF ====
+
+    // Given: a sign request queue filled to the fan-out cap
     let sign_key = keys
         .iter()
         .find(|key| key.domain_config.protocol == Protocol::CaitSith)
@@ -206,12 +211,15 @@ async fn contract_request__should_reject_129th_duplicate_without_extra_pending_s
     )
     .await?;
 
+    // When: submitting the 129th duplicate sign request (overflow)
     let rejected_sign = submit_duplicate_sign_batches(&worker, &contract, &parallel, &sign_args, 1)
         .await?
         .pop()
         .expect("one overflow sign batch should be submitted")
         .0
         .await?;
+
+    // Then: the overflow is rejected and the queue remains at the cap
     assert_queue_full_failure(&rejected_sign);
     assert_pending_signature_queue_len(
         &contract,
@@ -220,10 +228,14 @@ async fn contract_request__should_reject_129th_duplicate_without_extra_pending_s
     )
     .await?;
 
+    // Clean up: drain the sign queue with a valid respond
     submit_signature_response(&signature_response_args, &contract, attested).await?;
     await_batch_statuses(sign_statuses).await?;
     assert_pending_signature_queue_len(&contract, &signature_request, 0).await?;
 
+    // ==== CKD HALF ====
+
+    // Given: a CKD request queue filled to the fan-out cap
     let ckd_key = keys
         .iter()
         .find(|key| key.domain_config.protocol == Protocol::ConfidentialKeyDerivation)
@@ -264,12 +276,15 @@ async fn contract_request__should_reject_129th_duplicate_without_extra_pending_s
     )
     .await?;
 
+    // When: submitting the 129th duplicate CKD request (overflow)
     let rejected_ckd = submit_duplicate_ckd_batches(&worker, &contract, &parallel, &ckd_args, 1)
         .await?
         .pop()
         .expect("one overflow CKD batch should be submitted")
         .0
         .await?;
+
+    // Then: the overflow is rejected and the queue remains at the cap
     assert_queue_full_failure(&rejected_ckd);
     assert_pending_ckd_queue_len(
         &contract,
@@ -278,9 +293,11 @@ async fn contract_request__should_reject_129th_duplicate_without_extra_pending_s
     )
     .await?;
 
+    // Clean up: drain the CKD queue with a valid respond
     submit_ckd_response(&ckd_response_args, &contract, attested).await?;
     await_batch_statuses(ckd_statuses).await?;
     assert_pending_ckd_queue_len(&contract, &ckd_request, 0).await?;
+
     Ok(())
 }
 

@@ -117,6 +117,7 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn push_pending_yield__should_reject_an_entry_after_the_fan_out_limit() {
+        // Given: a pending-request queue filled to the configured fan-out cap
         let mut requests: LookupMap<u64, Vec<YieldIndex>> = LookupMap::new(b"t");
         let test_key: u64 = 42;
 
@@ -137,10 +138,12 @@ mod tests {
             );
         }
 
+        // When: pushing one more entry beyond the cap
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             push_pending_yield(&mut requests, test_key, [0xff; 32]);
         }));
 
+        // Then: the push panics with the expected message and the queue is unchanged
         let err = result.expect_err("appending past the cap should panic");
         let msg = err
             .downcast_ref::<String>()
