@@ -482,7 +482,7 @@ mod tests {
     use crate::api::test_utils::{
         basic_setup, destination_of, init_running_with_domain, initializing_state,
         prepay_and_attest_all_participants, prepay_and_submit_mock_attestation, resharing_state,
-        setup_tee_test_contract, submit_valid_attestations,
+        running_state, setup_tee_test_contract, submit_valid_attestations,
     };
     use crate::config::Config;
     use crate::primitives::key_state::AuthenticatedAccountId;
@@ -664,7 +664,7 @@ mod tests {
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
-        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
         let contract_account_id = env::current_account_id();
         let context = VMContextBuilder::new()
             .current_account_id(contract_account_id.clone())
@@ -673,7 +673,6 @@ mod tests {
             .build();
         testing_env!(context);
 
-        contract.tee_state = TeeState::default();
         whitelist_dstack_measurements(
             &mut contract.tee_state,
             image_digest(),

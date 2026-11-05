@@ -176,6 +176,7 @@ mod tests {
         attested_account_public_key, basic_setup, basic_setup_with_protocol, destination_of,
         init_running_with_domain, make_public_key_for_curve, must_attest_new_node,
         participant_account_ids, prepay_and_attest_all_participants,
+        prepay_and_submit_mock_attestation,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
@@ -190,7 +191,6 @@ mod tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::running::RunningContractState;
-    use crate::tee::tee_state::TeeState;
     use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_sdk::test_utils::VMContextBuilder;
@@ -912,7 +912,12 @@ mod tests {
                 .expect("contract has at least one domain")
         };
         contract.protocol_state = ProtocolContractState::Resharing(resharing);
-        contract.tee_state = TeeState::with_mocked_participant_attestations(&all_participants);
+        prepay_and_submit_mock_attestation(
+            &mut contract,
+            &joining,
+            joining_info.tls_public_key.clone(),
+        )
+        .expect("the joining participant's attestation should be accepted");
         let joining_pk = attested_account_public_key(&contract, &joining_info.tls_public_key);
         let departing_pk = attested_account_public_key(&contract, &departing_info.tls_public_key);
 

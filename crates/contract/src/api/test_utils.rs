@@ -211,9 +211,10 @@ pub(crate) fn prepay_and_submit_mock_attestation(
     account_id: &AccountId,
     tls_public_key: dtos::Ed25519PublicKey,
 ) -> Result<(), Error> {
+    let grants = contract.available_attestation_grants(account_id.clone()) + 1;
     contract
         .available_attestation_grants
-        .insert(account_id.clone(), 1);
+        .insert(account_id.clone(), grants);
     testing_env!(
         VMContextBuilder::new()
             .signer_account_id(account_id.clone())
