@@ -14,7 +14,7 @@ Both schemes share common types defined in this module:
 
 ### OT-based ECDSA (`ot_based_ecdsa/`)
 
-Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline triple generation phase**; `presign_and_sign` then consumes two triples in a three-round online protocol, leaving no presignature to store. Requires `N >= t` participants where `t = ReconstructionThreshold`.
+Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline triple generation phase**; `presign_and_sign` then consumes two triples in a three-round online protocol. Requires `N >= t` participants where `t = ReconstructionThreshold`.
 
 See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 

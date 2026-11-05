@@ -19,9 +19,10 @@ We call $t$ our threshold.
 
 Signing is split into two phases:
 
-1. Triple generation.
-2. Signing (`presign_and_sign`, see [signing](./signing.md)), which runs presigning and
-signing as one protocol once the message is known, so the presignature is never stored.
+1. Triple generation (see [triples](./triples.md)), which runs offline, before the
+message is known.
+2. Signing (see [signing](./signing.md)), which consumes two triples once the message
+is known.
 
 Each of these phases can potentially use a different set of parties,
 and these sets can have different sizes.
@@ -88,5 +89,3 @@ Here's a figure describing the dependencies between the different phases:
 </picture>
 
 The red boxes mean that the output of that phase can only be used once.
-Presign and Sign run as one protocol once $m$ is known, so the presignature
-is consumed by the run that produced it.

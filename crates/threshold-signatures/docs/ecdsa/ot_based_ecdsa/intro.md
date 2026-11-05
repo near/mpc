@@ -21,8 +21,8 @@ used to speed up signing.
 
 ## [Signing](./signing.md)
 
-This describes the signing protocol, which runs two presigning rounds and a
-signing round as one online protocol.
+This describes the signing protocol: three online rounds that consume two
+triples once the message is known.
 
 # Security Analysis
 

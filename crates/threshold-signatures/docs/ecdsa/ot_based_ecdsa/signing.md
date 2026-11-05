@@ -1,9 +1,7 @@
 This document specifies the signing protocol, `presign_and_sign`. Once the message is known, the
-signers consume two triples and run two presigning rounds followed by a signing round, as a single
-protocol over one channel. The presignature never leaves the run that produced it and is never
-stored.
+signers consume two triples and run three rounds over one channel.
 
-*Note: Due to the complexity of generating presignatures using multiplicative triples, this protocol shifts from the signing formulae stated in [Preliminaries](../preliminaries.md) and computes* $R$ *as in* $R\gets \frac{1}{k}\cdot G$ *and* $s$ *as in* $s \gets k \cdot (H(m) + rx)$*. These formulae do not require changes to be done on the verifier's end*
+*Note: Due to the complexity of signing with multiplicative triples, this protocol shifts from the signing formulae stated in [Preliminaries](../preliminaries.md) and computes* $R$ *as in* $R\gets \frac{1}{k}\cdot G$ *and* $s$ *as in* $s \gets k \cdot (H(m) + rx)$*. These formulae do not require changes to be done on the verifier's end*
 
 ### Note: the threshold $t = \mathsf{MaxMalicious} + 1$
 
@@ -28,7 +26,7 @@ Generation guarantees that triples are independent; the caller must guarantee th
 reused. Otherwise the secret key $x$ can be extracted by solving a system of two linear equations,
 and no party can detect this.
 
-# Presigning
+# Nonce generation
 
 **Round 1:**
 
@@ -74,7 +72,8 @@ $$
 6. Each $P_i$ sets: $R \gets \frac{1}{e} \cdot D$. (Recall that Beaver triple $(k,d,e)$ is computed s.t. $e = k\cdot d$ )
 7. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i$, which is already threshold shared.
 
-The presignature $(R, k_i, \sigma_i)$ stays local to the run.
+After round 2, each $P_i$ holds $R$ and its shares $k_i$ of $k$ and $\sigma_i$ of $k \cdot x$,
+which stay local to the run.
 
 # Key derivation
 
@@ -82,9 +81,8 @@ Each $P_i$ sets $\sigma_i \gets \sigma_i + \epsilon \cdot k_i$, so that the sign
 the derived public key $X + \epsilon \cdot G$.
 
 Nothing binds $R$ to $h$ or $\epsilon$: $R$ is determined by $\mathsf{triple}_0$ alone and is known
-to every party once round 1 completes. The presignature is consumed by the run that produced it,
-and the requirement above forbids reusing $\mathsf{triple}_0$: two runs sharing $R$ with different
-$h$ or $\epsilon$ reveal the private key.
+to every party once round 1 completes. The requirement above forbids reusing $\mathsf{triple}_0$:
+two runs sharing $R$ with different $h$ or $\epsilon$ reveal the private key.
 
 # Signing
 

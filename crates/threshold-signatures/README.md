@@ -62,9 +62,8 @@ $(A, B, C)= (g^a, g^b, g^c)$ where $c = a \cdot b$. These triples are required f
 More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/triples.md).
 
-4) **Signing (online)**: runs presigning and signing as one protocol that
-consumes two Beaver triples once the message is known, so no presignature is
-stored. More details can be found in
+4) **Signing (online)**: a three-round protocol that consumes two Beaver
+triples once the message is known. More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/signing.md).
 
 ### Threshold EdDSA Functionalities

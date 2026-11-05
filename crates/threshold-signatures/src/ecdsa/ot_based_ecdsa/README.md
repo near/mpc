@@ -5,8 +5,8 @@ This module implements the Cait-Sith OT-based threshold ECDSA scheme over Secp25
 ## Pipeline
 
 ```
-Triple Generation (offline)  -->  Presigning and signing (online)
-   2 triples per signature                1 signature
+Triple Generation (offline)  -->  Signing (online)
+   2 triples per signature          1 signature
 ```
 
 Each output is consumed **exactly once** (one-time use).
@@ -21,15 +21,15 @@ See [`triples/README.md`](triples/README.md) for the full OT pipeline.
 
 ### `presign_and_sign.rs`
 
-The signing protocol. Runs the presigning rounds and the signing round over one channel, consuming two Beaver triples once the message hash is known, so no presignature is stored. The key-derivation tweak is applied locally between the two. Nothing binds `R`, which `triple0` alone determines, to the message, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
+The signing protocol. Runs three rounds over one channel, consuming two Beaver triples once the message hash is known. The key-derivation tweak is applied locally between rounds 2 and 3. Nothing binds `R`, which `triple0` alone determines, to the message, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
 
 ### `presign.rs`
 
-The two presigning rounds of `presign_and_sign`. Consume two Beaver triples to produce a presignature `(R, k_i, sigma_i)` that stays local to the run. See the [presigning specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#presigning).
+Rounds 1 and 2 of `presign_and_sign`. Consume two Beaver triples to produce `R` and the shares `k_i`, `sigma_i`, which stay local to the run. See the [nonce generation specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#nonce-generation).
 
 ### `sign.rs`
 
-The signing round of `presign_and_sign`, with a designated coordinator. Takes the tweaked presignature and the message hash; the coordinator aggregates partial signatures into the final ECDSA `Signature`. See the [signing specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#signing).
+Round 3 of `presign_and_sign`, with a designated coordinator. Takes `R`, the shares `k_i` and tweaked `sigma_i`, and the message hash; the coordinator aggregates partial signatures into the final ECDSA `Signature`. See the [signing specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#signing).
 
 ## Types
 
