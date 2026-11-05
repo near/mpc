@@ -64,6 +64,7 @@ ignore = [
   "RUSTSEC-2026-0367", # zip extraction preserves SUID/SGID bits
   "RUSTSEC-2026-0368", # zip extraction creates symlinks pointing outside the destination
   "RUSTSEC-2026-0369", # zip extraction applies Unix permissions through symlinks
+  "RUSTSEC-2026-0429", # zip extraction aborts on a symlink entry with a huge declared size
   ## TEMPORARY, TODO(#4957): near-global-contracts 0.3 (via near-sdk 5.30 and near-kit 0.20) needs ##
   ## proc-macro-error3 >= 3.0.2, while alloy-sol-macro 1.7.3 (via dstack-sdk) caps it at 3.0.1, so
   ## cargo falls back to alloy-sol 1.6, which uses proc-macro-error2. A build time proc macro, no
@@ -101,6 +102,9 @@ ignore = [
   "RUSTSEC-2026-0401", # zstd-safe out-of-bounds read in `train_from_buffer`
   "RUSTSEC-2026-0403", # zstd-safe exposes uninitialized memory when a legacy frame fails to stream
   "RUSTSEC-2026-0406", # zstd-safe use-after-free changing a multithreaded context mid-frame
+  # Pulled in by nix 0.26's default `aio` feature, which webrtc-util 0.10 enables for nearcore's
+  # near-network through stun 0.7.
+  "RUSTSEC-2026-0441", # pin-utils is unmaintained
 ]
 
 [bans]

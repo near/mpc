@@ -10,6 +10,7 @@ use crate::primitives::domain::{
     AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
 };
 use crate::primitives::key_state::{EpochId, Keyset};
+use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
 use crate::state::running::RunningContractState;
@@ -75,6 +76,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 
@@ -154,6 +156,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 

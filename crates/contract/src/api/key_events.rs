@@ -107,6 +107,7 @@ impl MpcContract {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
+            self.parameters_votes.clear();
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.
