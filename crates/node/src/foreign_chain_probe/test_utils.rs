@@ -8,12 +8,12 @@ use std::num::NonZeroU64;
 use foreign_chain_health_check::probe::{
     ProbeReport, ProviderCounts, ProviderHealth, ProviderStatus,
 };
-use futures::Stream;
 use futures::future::Either;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
+use tokio::sync::watch;
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
@@ -95,8 +95,8 @@ pub(super) fn whitelist_of(
     BTreeMap::from([(chain, chain_entry(&providers, quorum))])
 }
 
-pub(super) fn no_whitelist() -> impl Stream<Item = ForeignChainWhitelist> {
-    futures::stream::pending()
+pub(super) fn no_whitelist() -> watch::Receiver<Option<ForeignChainWhitelist>> {
+    watch::channel(None).1
 }
 
 pub(super) fn empty_report() -> ProbeReport {
