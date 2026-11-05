@@ -5,7 +5,7 @@ use near_mpc_contract_interface::types::{
 /// Generates a dummy [`near_mpc_contract_interface::types::Config`] with different values for each field.
 pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
     near_mpc_contract_interface::types::Config {
-        key_event_timeout_blocks: BlockCount::new(value),
+        key_event_timeout_blocks: BlockCount::from(value),
         tee_upgrade_deadline_duration_seconds: value + 1,
         apply_contract_update_tera_gas: value + 2,
         sign_call_gas_attachment_requirement_tera_gas: value + 3,

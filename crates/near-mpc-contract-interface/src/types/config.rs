@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn test_config_round_trip_serialization() {
         let original_config = InitConfig {
-            key_event_timeout_blocks: Some(BlockCount::new(2000)),
+            key_event_timeout_blocks: Some(BlockCount::from(2000)),
             tee_upgrade_deadline_duration_seconds: Some(3333),
             apply_contract_update_tera_gas: Some(120),
             sign_call_gas_attachment_requirement_tera_gas: Some(15),
@@ -177,14 +177,14 @@ mod tests {
         let deserialized: InitConfig = serde_json::from_str(json).unwrap();
 
         let expected = InitConfig {
-            key_event_timeout_blocks: Some(BlockCount::new(9999)),
+            key_event_timeout_blocks: Some(BlockCount::from(9999)),
             ..Default::default()
         };
 
         assert_eq!(deserialized, expected);
         assert_eq!(
             deserialized.key_event_timeout_blocks,
-            Some(BlockCount::new(9999))
+            Some(BlockCount::from(9999))
         );
     }
 

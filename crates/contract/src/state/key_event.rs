@@ -261,7 +261,7 @@ impl KeyEventInstance {
         KeyEventInstance {
             attempt_id,
             started_in,
-            expires_on: started_in + BlockCount::new(1) + timeout_blocks,
+            expires_on: started_in + BlockCount::from(1) + timeout_blocks,
             completed: BTreeSet::new(),
             public_key: None,
         }

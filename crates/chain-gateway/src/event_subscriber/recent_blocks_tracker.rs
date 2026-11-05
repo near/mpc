@@ -500,8 +500,8 @@ impl RecentBlocksTracker {
         };
         Some(
             self.maximum_height_available
-                .saturating_sub(BlockCount::new(self.window_size))
-                .saturating_add(BlockCount::new(1))
+                .saturating_sub(BlockCount::from(self.window_size))
+                .saturating_add(BlockCount::from(1))
                 .min(final_head.height),
         )
     }
@@ -538,8 +538,8 @@ impl Debug for RecentBlocksTracker {
             f,
             "   Recent blocks: (Window = {} to {}, GC limit {})",
             self.maximum_height_available
-                .saturating_sub(BlockCount::new(self.window_size))
-                .saturating_add(BlockCount::new(1)),
+                .saturating_sub(BlockCount::from(self.window_size))
+                .saturating_add(BlockCount::from(1)),
             self.maximum_height_available,
             self.minimum_height_to_keep().unwrap_or(0.into())
         )?;
