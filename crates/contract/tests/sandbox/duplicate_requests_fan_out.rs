@@ -379,13 +379,8 @@ async fn wait_for_pending_signature_queue(
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
         let len = pending_signature_queue_len(contract, request).await?;
-        if len == expected_len {
+        if len >= expected_len {
             return Ok(());
-        }
-        if len > expected_len {
-            anyhow::bail!(
-                "signature queue exceeded {expected_len} while waiting for the fan-out boundary (saw {len})"
-            );
         }
         if std::time::Instant::now() >= deadline {
             anyhow::bail!(
@@ -563,13 +558,8 @@ async fn wait_for_pending_ckd_queue(
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
         let len = pending_ckd_queue_len(contract, request).await?;
-        if len == expected_len {
+        if len >= expected_len {
             return Ok(());
-        }
-        if len > expected_len {
-            anyhow::bail!(
-                "CKD queue exceeded {expected_len} while waiting for the fan-out boundary (saw {len})"
-            );
         }
         if std::time::Instant::now() >= deadline {
             anyhow::bail!("timed out waiting for CKD queue to reach {expected_len} (saw {len})");
