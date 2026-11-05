@@ -10,7 +10,7 @@
 /// # Partially redacted
 /// When some fields are public, shows public fields and redacts secret ones:
 /// ```ignore
-/// impl_secret_debug!(PresignOutput { show: [big_r], redact: [k, sigma] });
+/// impl_secret_debug!(NonceGenerationOutput { show: [big_r], redact: [k, sigma] });
 /// ```
 ///
 /// # Generic types
