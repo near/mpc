@@ -63,7 +63,6 @@ async fn update_mpc_network(
     }
 
     // Create new participants as needed and refill existing participants' balances.
-    // For each participant we maintain two accounts: the MPC account, and the responding account.
     let mut accounts_to_fund = Vec::new();
     for i in 0..desired_num_participants {
         if let Some(account_id) = mpc_setup.participants.get(i) {
@@ -71,38 +70,22 @@ async fn update_mpc_network(
                 account_id.clone(),
                 mpc_setup.desired_balance_per_account,
             ));
-            let participant = accounts
-                .account(account_id)
-                .get_mpc_participant()
-                // We could recover from this, but that's too much work.
-                .expect("Participant account is not marked as MPC participant");
-            accounts_to_fund.push(AccountToFund::from_existing(
-                participant.responding_account_id.clone(),
-                mpc_setup.desired_balance_per_responding_account,
-            ));
         } else {
             accounts_to_fund.push(AccountToFund::from_new(
                 mpc_setup.desired_balance_per_account,
                 format!("mpc-{}-{}-", i, name),
             ));
-            accounts_to_fund.push(AccountToFund::from_new(
-                mpc_setup.desired_balance_per_responding_account,
-                format!("mpc-responder-{}-{}-", i, name),
-            ));
         }
     }
     let funded_accounts = fund_accounts(accounts, accounts_to_fund, funding_account).await;
 
-    for i in mpc_setup.participants.len()..desired_num_participants {
-        let account_id = funded_accounts[i * 2].clone();
+    let num_existing = mpc_setup.participants.len();
+    for account_id in funded_accounts.into_iter().skip(num_existing) {
         let p2p_private_key = SigningKey::generate(&mut OsRng);
         let p2p_public_key = p2p_private_key.verifying_key();
         accounts
             .account_mut(&account_id)
-            .set_mpc_participant(MpcParticipantSetup {
-                responding_account_id: funded_accounts[i * 2 + 1].clone(),
-                p2p_public_key,
-            });
+            .set_mpc_participant(MpcParticipantSetup { p2p_public_key });
         mpc_setup.participants.push(account_id);
     }
 }
@@ -110,12 +93,8 @@ async fn update_mpc_network(
 impl NewMpcNetworkCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
-            "Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding. Using SSD: {}",
-            name,
-            self.num_participants,
-            self.near_per_account,
-            self.num_responding_access_keys,
-            self.ssd,
+            "Going to create MPC network {} with {} maximum participants, {} NEAR per account. Using SSD: {}",
+            name, self.num_participants, self.near_per_account, self.ssd,
         );
 
         let funding_account = resolve_funding_account(&config);
@@ -137,8 +116,6 @@ impl NewMpcNetworkCmd {
                 participants: Vec::new(),
                 contract: None,
                 desired_balance_per_account: self.near_per_account * ONE_NEAR,
-                num_responding_access_keys: self.num_responding_access_keys,
-                desired_balance_per_responding_account: self.near_per_responding_account * ONE_NEAR,
                 nomad_server_url: None,
                 ssd: self.ssd,
                 desired_num_participants: self.num_participants,
@@ -194,15 +171,6 @@ impl UpdateMpcNetworkCmd {
             mpc_setup.desired_balance_per_account = near_per_account * ONE_NEAR;
         }
 
-        if let Some(num_responding_access_keys) = self.num_responding_access_keys {
-            mpc_setup.num_responding_access_keys = num_responding_access_keys;
-        }
-
-        if let Some(near_per_responding_account) = self.near_per_responding_account {
-            mpc_setup.desired_balance_per_responding_account =
-                near_per_responding_account * ONE_NEAR;
-        }
-
         update_mpc_network(
             name,
             &mut setup.accounts,
@@ -224,12 +192,6 @@ impl MpcAddKeysCmd {
             .get_mut(name)
             .expect(&format!("MPC network {} must exist", name));
         for (i, account_id) in mpc_setup.participants.iter().enumerate() {
-            let participant = setup
-                .accounts
-                .account(account_id)
-                .get_mpc_participant()
-                .unwrap();
-
             let client = Client::new();
 
             let response = client
@@ -245,7 +207,6 @@ impl MpcAddKeysCmd {
             let mpc_participant = MpcParticipantSetup {
                 p2p_public_key: VerifyingKey::try_from(&public_data.near_p2p_public_key)
                     .expect("valid p2p public key"),
-                responding_account_id: participant.responding_account_id.clone(),
             };
 
             setup
@@ -253,16 +214,6 @@ impl MpcAddKeysCmd {
                 .account_mut(account_id)
                 .set_mpc_participant(mpc_participant.clone());
 
-            // add all access keys:
-            for key in &public_data.near_responder_public_keys {
-                setup
-                    .accounts
-                    .account_mut(&mpc_participant.responding_account_id)
-                    .add_access_key(
-                        VerifyingKey::try_from(key).expect("valid responder public key"),
-                    )
-                    .await;
-            }
             setup
                 .accounts
                 .account_mut(account_id)

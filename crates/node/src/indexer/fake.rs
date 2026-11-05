@@ -377,7 +377,6 @@ impl FakeMpcContractState {
                     domains: state.domains.clone(),
                     keyset: state.keyset.clone(),
                     parameters: new_parameters,
-                    parameters_votes: state.parameters_votes.clone(),
                     add_domains_votes: state.add_domains_votes.clone(),
                     previously_cancelled_resharing_epoch_id: state
                         .previously_cancelled_resharing_epoch_id,

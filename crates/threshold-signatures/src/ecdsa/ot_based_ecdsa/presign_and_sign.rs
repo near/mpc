@@ -28,17 +28,12 @@ pub(crate) const OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usi
 ///
 /// Each triple, not just the pair, must be used at most once (see [`PresignArguments`]). In
 /// particular, `big_r` is determined by `triple0` alone and is known to every participant once
-/// round 1 completes. Unlike [`sign`](super::sign::sign), no rerandomization binds `big_r` to
-/// `msg_hash`, so a second run on the same `triple0` under a different `tweak` or `msg_hash` leaks
-/// the private key.
+/// round 1 completes. Nothing binds `big_r` to `msg_hash`, so a second run on the same `triple0`
+/// under a different `tweak` or `msg_hash` leaks the private key.
 ///
 /// **WARNING** You must absolutely hash an actual message before passing it to
 /// this function. Allowing the signing of arbitrary scalars *is* a security risk,
 /// and this function only tolerates this risk to allow for genericity.
-///
-/// A [`Protocol`] owns its whole message channel: never drive one transport channel with
-/// [`presign`](super::presign::presign) followed by [`sign`](super::sign::sign), as both start
-/// at the same waitpoint and their messages would be confused. Use this protocol instead.
 pub fn presign_and_sign(
     participants: &[Participant],
     coordinator: Participant,
@@ -106,15 +101,11 @@ async fn do_presign_and_sign(
 mod test {
     use super::*;
     use crate::crypto::hash::test::scalar_hash_secp256k1;
-    use crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput;
-    use crate::ecdsa::ot_based_ecdsa::sign::sign;
-    use crate::ecdsa::ot_based_ecdsa::test::run_presign;
     use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
     use crate::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature, x_coordinate};
     use crate::test_utils::{
         GenProtocol, MockCryptoRng, assert_buffer_capacity, check_one_coordinator_output,
         deal_triple, expected_buffer_by_role, generate_participants, run_keygen, run_protocol,
-        run_sign,
     };
     use k256::{PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
     use rand_core::SeedableRng;
@@ -195,53 +186,6 @@ mod test {
             }
             run_protocol(protocols).unwrap()
         }
-
-        fn run_classic_presign_then_sign(&self, coordinator: Participant) -> Signature {
-            let presignatures = run_presign(
-                self.key_packages.clone(),
-                self.triple0.1.clone(),
-                self.triple1.1.clone(),
-                &self.triple0.0,
-                &self.triple1.0,
-                self.threshold.into(),
-            );
-            let tweaked = presignatures
-                .iter()
-                .map(|(p, presig)| {
-                    (
-                        *p,
-                        RerandomizedPresignOutput::new_without_rerandomization(
-                            &presig.with_tweak(&self.tweak),
-                        ),
-                    )
-                })
-                .collect();
-            let derived_pk = self
-                .tweak
-                .derive_verifying_key(&self.key_packages[0].1.public_key)
-                .to_element();
-            let threshold = self.threshold;
-            let result = run_sign::<Secp256K1Sha256, _, _, _>(
-                tweaked,
-                coordinator,
-                derived_pk,
-                self.msg_hash,
-                |participants, coordinator, me, pk, presignature, msg_hash| {
-                    sign(
-                        participants,
-                        coordinator,
-                        threshold,
-                        me,
-                        pk.to_affine(),
-                        presignature,
-                        msg_hash,
-                    )
-                    .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
-                },
-            )
-            .unwrap();
-            check_one_coordinator_output(result, coordinator).unwrap()
-        }
     }
 
     fn to_k256_signature(signature: &Signature) -> ecdsa::Signature<k256::Secp256k1> {
@@ -290,20 +234,18 @@ mod test {
     }
 
     #[test]
-    fn presign_and_sign__should_equal_classic_presign_then_tweaked_sign() {
+    fn presign_and_sign__should_produce_deterministic_signature() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let setup = Setup::new(4, 3, &mut rng);
+        let setup = Setup::new(3, 2, &mut rng);
         let coordinator = setup.participants[0];
-        let classic = setup.run_classic_presign_then_sign(coordinator);
 
         // When
-        let merged = setup.run_presign_and_sign(coordinator);
+        let result = setup.run_presign_and_sign(coordinator);
 
         // Then
-        let merged = check_one_coordinator_output(merged, coordinator).unwrap();
-        assert_eq!(merged.big_r, classic.big_r);
-        assert_eq!(merged.s, classic.s);
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        insta::assert_json_snapshot!(to_k256_signature(&signature));
     }
 
     #[test]
@@ -353,6 +295,33 @@ mod test {
 
         // Then
         assert_matches!(result.err(), Some(InitializationError::BadParameters(_)));
+    }
+
+    #[test]
+    fn presign_and_sign__should_reject_threshold_above_participant_count() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let setup = Setup::new(3, 3, &mut rng);
+        let signers = &setup.participants[..2];
+
+        // When
+        let result = presign_and_sign(
+            signers,
+            signers[0],
+            signers[0],
+            setup.args_for(0),
+            setup.tweak,
+            setup.msg_hash,
+        );
+
+        // Then
+        assert_matches!(
+            result.err(),
+            Some(InitializationError::ThresholdTooLarge {
+                threshold: 3,
+                max: 2
+            })
+        );
     }
 
     #[rstest]
