@@ -139,15 +139,20 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
 After each round the node also compares the configured providers with the
-provider whitelist and logs each difference, so a wrong config is reported
-every hour until it is fixed. It then judges every probed chain against the
-whitelist and logs the verdict. Until the node has synced and read the
-provider whitelist from the contract, each round logs that the whitelist is
-not read yet. The node probes again as soon as the whitelist is read, and
-whenever the whitelist changes.
+provider whitelist. It logs a warning for each unhealthy provider and a line
+for each difference from the whitelist, so a wrong config is reported every
+hour until it is fixed. Some differences are normal, such as a chain that is
+not whitelisted yet or an extra provider, and are logged as info. Each round
+ends with one `foreign chain probe round complete` line with the healthy,
+probed and unchecked provider counts, the chains the probe cannot check, and
+the whitelist state: `not read yet` until the node has synced and read the
+whitelist from the contract, then `matches the local config` or the number of
+differences logged above it. The node probes again as soon as the whitelist is
+read, and whenever the whitelist changes.
 
-A chain is healthy when at least its quorum of whitelisted providers is
-configured, all of them passed, and no configured provider serves another
+Once the whitelist is read, each round also judges every probed chain, and the
+summary line counts the healthy and the judged chains. A chain is healthy when
+at least its quorum of whitelisted providers is configured, all of them passed, and no configured provider serves another
 network. Fewer than the quorum, a whitelisted provider that failed, or any
 provider on another network logs a warning. A provider on another network
 fails every verify request on its chain, whether it is whitelisted or not,

@@ -94,32 +94,29 @@ fn judge_chain(
     }
 }
 
-pub(super) const CHAIN_HEALTHY: &str = "foreign chain is healthy";
-
-pub(super) fn log(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>) {
-    for (chain, health) in health_per_chain {
-        let chain = chain.label();
-        match health {
-            ChainHealth::Healthy => tracing::info!(%chain, "{CHAIN_HEALTHY}"),
-            ChainHealth::BelowQuorum(quorum) => tracing::warn!(
-                %chain,
-                whitelisted = quorum.configured_whitelisted_providers,
-                quorum = quorum.required_whitelisted_providers.get(),
-                "foreign chain is below quorum: configure more whitelisted RPC providers",
-            ),
-            ChainHealth::WrongNetwork { providers } => tracing::warn!(
-                %chain,
-                providers,
-                "foreign chain is unhealthy: an RPC provider serves another network, so every verify request fails",
-            ),
-            ChainHealth::UnhealthyProviders { unhealthy, quorum } => tracing::warn!(
-                %chain,
-                unhealthy,
-                whitelisted = quorum.configured_whitelisted_providers,
-                quorum = quorum.required_whitelisted_providers.get(),
-                "foreign chain is unhealthy: a whitelisted RPC provider did not pass the probe",
-            ),
-        }
+/// A healthy chain logs nothing: the round summary counts it.
+pub(super) fn log_if_unhealthy(chain: dtos::ForeignChain, health: &ChainHealth) {
+    let chain = chain.label();
+    match health {
+        ChainHealth::Healthy => {}
+        ChainHealth::BelowQuorum(quorum) => tracing::warn!(
+            %chain,
+            whitelisted = quorum.configured_whitelisted_providers,
+            quorum = quorum.required_whitelisted_providers.get(),
+            "foreign chain is below quorum: configure more whitelisted RPC providers",
+        ),
+        ChainHealth::WrongNetwork { providers } => tracing::warn!(
+            %chain,
+            providers,
+            "foreign chain is unhealthy: an RPC provider serves another network, so every verify request fails",
+        ),
+        ChainHealth::UnhealthyProviders { unhealthy, quorum } => tracing::warn!(
+            %chain,
+            unhealthy,
+            whitelisted = quorum.configured_whitelisted_providers,
+            quorum = quorum.required_whitelisted_providers.get(),
+            "foreign chain is unhealthy: a whitelisted RPC provider did not pass the probe",
+        ),
     }
 }
 
@@ -318,7 +315,7 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn log__should_warn_only_for_a_chain_below_quorum_or_unhealthy() {
+    fn log_if_unhealthy__should_warn_only_for_a_chain_below_quorum_or_unhealthy() {
         // Given
         let health_per_chain = BTreeMap::from([
             (dtos::ForeignChain::Polygon, ChainHealth::Healthy),
@@ -340,11 +337,12 @@ mod tests {
         ]);
 
         // When
-        log(&health_per_chain);
+        health_per_chain
+            .iter()
+            .for_each(|(chain, health)| log_if_unhealthy(*chain, health));
 
         // Then
         let expected_levels = [
-            ("INFO", CHAIN_HEALTHY),
             ("WARN", "foreign chain is below quorum"),
             (
                 "WARN",
@@ -358,7 +356,8 @@ mod tests {
         logs_assert(|lines: &[&str]| {
             expected_levels
                 .iter()
-                .try_for_each(|(level, message)| logged_times(lines, level, message, 1))
+                .try_for_each(|(level, message)| logged_times(lines, level, message, 1))?;
+            logged_times(lines, "", "chain=polygon", 0)
         });
     }
 }

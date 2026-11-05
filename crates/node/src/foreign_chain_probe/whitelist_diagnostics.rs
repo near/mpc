@@ -11,7 +11,6 @@
 //! - Error: a whitelist entry uses a variant this node version does not know (upgrade the node).
 //! - Warn: a local provider differs from its whitelist provider, or two local providers match a single whitelist entry.
 //! - Info: a local provider or chain is not in the whitelist. Both are normal.
-//! - Info: the local config matches the whitelist.
 //!
 //! Logs show the chain, the local provider name, local auth names and schemes, and public whitelist
 //! values. They never show the local `rpc_url` or a token.
@@ -33,7 +32,7 @@ use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
 /// Holds no local `rpc_url` and no token, because it is logged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Diagnostic {
+pub(super) struct Diagnostic {
     chain: dtos::ForeignChain,
     local_name: Option<RpcProviderName>,
     kind: DiagnosticKind,
@@ -60,7 +59,10 @@ enum DiagnosticKind {
     },
 }
 
-fn compare(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) -> Vec<Diagnostic> {
+pub(super) fn compare(
+    local: &ForeignChainsConfig,
+    whitelist: &ForeignChainWhitelist,
+) -> Vec<Diagnostic> {
     local
         .iter_chains()
         .flat_map(|(chain, local_config)| match whitelist.get(&chain) {
@@ -139,21 +141,7 @@ fn compare_chain(
     diagnostics
 }
 
-pub(super) fn log_differences(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) {
-    log(&compare(local, whitelist));
-}
-
-pub(super) const CONFIG_MATCHES_WHITELIST: &str =
-    "foreign chain whitelist: local config matches the contract whitelist";
-
-fn log(diagnostics: &[Diagnostic]) {
-    if diagnostics.is_empty() {
-        tracing::info!("{CONFIG_MATCHES_WHITELIST}");
-    }
-    diagnostics.iter().for_each(log_diagnostic);
-}
-
-fn log_diagnostic(diagnostic: &Diagnostic) {
+pub(super) fn log(diagnostic: &Diagnostic) {
     let chain = diagnostic.chain.label();
     let local_provider = diagnostic.local_name.as_deref();
     match &diagnostic.kind {
@@ -487,7 +475,7 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn log_differences__should_keep_configured_urls_and_tokens_out_of_logs() {
+    fn log__should_keep_configured_urls_and_tokens_out_of_logs() {
         // Given
         let header = AuthConfig::Header {
             name: "x-token".parse().expect("a test header name parses"),
@@ -533,7 +521,7 @@ mod tests {
         ]);
 
         // When
-        log_differences(&local, &whitelist);
+        compare(&local, &whitelist).iter().for_each(log);
 
         // Then
         assert!(logs_contain("provider differs from its whitelist entry"));
