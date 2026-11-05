@@ -123,8 +123,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        forwarded_participant_call_contract, make_public_key_for_curve, setup_tee_test_contract,
-        submit_attestation, submit_valid_attestations,
+        forwarded_participant_call_contract, make_public_key_for_curve, resharing_state,
+        running_state, setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
@@ -136,12 +136,14 @@ mod tests {
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::find_leader;
+    use crate::tee::tee_state::TeeState;
     use crate::tee::test_utils::Environment;
     use dtos::{Curve, DomainId, ParticipantCount, Protocol, ReconstructionThreshold};
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
     use rand::rngs::OsRng;
+    use rstest::rstest;
     use std::{assert_matches, collections::BTreeMap};
 
     /// Sets up the voting context and calls [`MpcContract::vote_new_parameters`] with the
@@ -251,6 +253,40 @@ mod tests {
             result.is_ok(),
             "Should succeed when the rejected submission leaves the initial mocked attestation in place"
         );
+    }
+
+    #[rstest]
+    fn vote_new_parameters__should_reject_a_participant_without_its_own_node(
+        #[values(running_state(), resharing_state())] protocol_state: ProtocolContractState,
+    ) {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
+        let parameters = contract
+            .protocol_state
+            .threshold_parameters_or_panic()
+            .clone();
+        contract.tee_state =
+            TeeState::with_mocked_participant_attestations(parameters.participants());
+        let mut participants = parameters.participants().clone();
+        participants.add_random_participants_till_n(participants.len() + 1);
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, parameters.threshold()).unwrap(),
+            BTreeMap::new(),
+        );
+        let voter = parameters.participants().participants()[0].0.clone();
+        let state_before = contract.state();
+
+        // When
+        let result = vote_params(&mut contract, &voter, &proposal);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::InvalidParameters(
+                InvalidParameters::InvalidTeeRemoteAttestation { .. }
+            ))
+        );
+        assert_eq!(contract.state(), state_before);
     }
 
     /// Builds a Running contract with `num_participants` participants, the given

@@ -162,7 +162,7 @@ On failure the output includes the error details and ends with `Verdict: FAIL`.
 | Attestation Type | TEE attestation type (Dstack = Intel TDX via Dstack) |
 | MPC Image Hash | SHA256 of the MPC Docker image running inside the TEE |
 | Launcher Compose Hash | SHA256 of the docker-compose file used by the launcher |
-| Expiry Timestamp | Attestation validity window (7 days from verification time) |
+| Expiry Timestamp | When the attestation expires: the collateral's earliest expiration date |
 
 ## Exit codes
 
