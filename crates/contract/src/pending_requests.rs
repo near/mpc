@@ -138,21 +138,24 @@ mod tests {
             push_pending_yield(&mut requests, test_key, [0xff; 32]);
         }));
 
-        // Then: the push panics with the expected message and the queue is unchanged
+        // Then: the push panics with the exact expected message and the queue is unchanged
         let err = result.expect_err("appending past the cap should panic");
         let msg = err
             .downcast_ref::<String>()
             .map(String::as_str)
             .or_else(|| err.downcast_ref::<&str>().copied())
             .unwrap_or_default();
-        assert!(
-            msg.contains("Pending-request queue is full"),
-            "unexpected panic message: {msg}"
-        );
-        assert!(
-            msg.contains(&MAX_PENDING_REQUEST_FAN_OUT.to_string()),
-            "panic message should include the configured limit"
-        );
+        // The NEAR SDK mock wraps the panic in HostError(GuestPanic { panic_msg: "..." })
+        // Extract the actual panic message from the wrapper.
+        let msg = msg
+            .strip_prefix("called `Result::unwrap()` on an `Err` value: HostError(GuestPanic { panic_msg: \"")
+            .and_then(|s| s.strip_suffix("\" })"))
+            .unwrap_or(msg);
+        let expected = RequestError::PendingRequestQueueFull {
+            limit: MAX_PENDING_REQUEST_FAN_OUT,
+        }
+        .to_string();
+        assert_eq!(msg, expected, "unexpected panic message: {msg}");
 
         let queue = requests.get(&test_key).expect("queue should still exist");
         assert_eq!(

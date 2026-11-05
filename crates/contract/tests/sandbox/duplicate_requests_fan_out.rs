@@ -20,7 +20,7 @@ use crate::sandbox::{
     },
 };
 use elliptic_curve::Group;
-use mpc_contract::MAX_PENDING_REQUEST_FAN_OUT;
+use mpc_contract::{errors::RequestError, MAX_PENDING_REQUEST_FAN_OUT};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args::SignatureRespondArgs;
 use near_mpc_contract_interface::types::{
@@ -309,11 +309,14 @@ fn assert_queue_full_failure(result: &ExecutionFinalResult) {
         "the overflow transaction should fail: {result:#?}"
     );
     let failures = result.failures();
+    let expected = RequestError::PendingRequestQueueFull {
+        limit: MAX_PENDING_REQUEST_FAN_OUT,
+    }
+    .to_string();
     assert!(
         failures.iter().any(|failure| {
             let failure = format!("{failure:#?}");
-            failure.contains("Pending-request queue is full")
-                && failure.contains(&MAX_PENDING_REQUEST_FAN_OUT.to_string())
+            failure.contains(&expected)
         }),
         "the overflow failure should report the configured fan-out limit: {result:#?}"
     );
