@@ -54,7 +54,9 @@ pub struct FakeMpcContractState {
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
-    pinned_accounts: BTreeSet<AccountId>,
+    /// Accounts whose own `register_foreign_chains_config` calls are dropped, so a test can
+    /// override their registration.
+    ignored_registration_signers: BTreeSet<AccountId>,
     foreign_chain_whitelist: BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
     pub migration_service: NodeMigrations,
 }
@@ -76,7 +78,7 @@ impl FakeMpcContractState {
             pending_verify_foreign_txs: BTreeMap::new(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
-            pinned_accounts: BTreeSet::new(),
+            ignored_registration_signers: BTreeSet::new(),
             foreign_chain_whitelist: BTreeMap::new(),
             migration_service: NodeMigrations::default(),
         }
@@ -105,9 +107,9 @@ impl FakeMpcContractState {
         account_id: AccountId,
         foreign_chains_config: dtos::ForeignChainsConfig,
     ) {
-        if self.pinned_accounts.contains(&account_id) {
+        if self.ignored_registration_signers.contains(&account_id) {
             tracing::info!(
-                "register_foreign_chains_config transaction ignored because the signer's config is pinned"
+                "register_foreign_chains_config transaction ignored because the test overrode the signer's config"
             );
             return;
         }
@@ -125,18 +127,18 @@ impl FakeMpcContractState {
 
     /// Registers `foreign_chains_config` for `account_id` and drops that node's own registrations
     /// from then on, as if none of them landed.
-    pub fn must_pin_foreign_chains_config(
+    pub fn must_override_foreign_chains_config(
         &mut self,
         account_id: AccountId,
         foreign_chains_config: dtos::ForeignChainsConfig,
     ) {
         assert!(
             self.participant_tls_key(&account_id).is_some(),
-            "cannot pin the foreign chains config of non-participant {account_id}"
+            "cannot override the foreign chains config of non-participant {account_id}"
         );
-        self.pinned_accounts.remove(&account_id);
+        self.ignored_registration_signers.remove(&account_id);
         self.register_foreign_chains_config(account_id.clone(), foreign_chains_config);
-        self.pinned_accounts.insert(account_id);
+        self.ignored_registration_signers.insert(account_id);
     }
 
     pub fn wipe_foreign_chains_configs(&mut self) {

@@ -2,6 +2,7 @@
 //! in step with the whitelist and with what the contract records.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -22,8 +23,8 @@ use crate::tracking::{self, AutoAbortTask};
 const MIN_RESEND_DELAY: Duration = Duration::from_secs(30);
 const MAX_RESEND_DELAY: Duration = Duration::from_hours(1);
 
-/// Registers the eligible chains until the contract records them for `my_tls_key`, and again
-/// whenever the recorded chains stop matching the eligible ones.
+/// Registers the eligible chains on start, then until the contract records them for `my_tls_key`,
+/// and again whenever the recorded chains stop matching the eligible ones.
 /// Must be called from a tracked task. Dropping the returned task stops the registrar.
 pub(crate) fn spawn_foreign_chains_registrar(
     txn_sender: impl TransactionSender + 'static,
@@ -59,7 +60,11 @@ async fn keep_foreign_chains_registration_up_to_date(
 ) {
     let mut pending: Option<PendingRegistration> = None;
     let mut last_published: Option<BTreeMap<dtos::ForeignChain, RpcQuorumStatus>> = None;
+    // Keygen does not make the contract recompute the available chains, but a registration does.
+    // So send once per start, even if the contract already records the eligible chains.
+    let mut is_start = true;
     loop {
+        let is_first_pass = mem::take(&mut is_start);
         let statuses = rpc_quorum_statuses(&local, &whitelist.borrow_and_update());
         if last_published.as_ref() != Some(&statuses) {
             publish_rpc_quorum_metrics(&statuses);
@@ -70,7 +75,16 @@ async fn keep_foreign_chains_registration_up_to_date(
             .borrow_and_update()
             .get(&my_tls_key)
             .is_some_and(|recorded| **recorded == eligible);
-        match update_registration(&mut pending, is_registered, eligible, &txn_sender).await {
+        let sent = if is_first_pass && is_registered {
+            tracing::info!(
+                chains = ?eligible,
+                "registering the foreign chains this node can serve, which the contract already records"
+            );
+            register_foreign_chains(&txn_sender, &eligible).await
+        } else {
+            update_registration(&mut pending, is_registered, eligible, &txn_sender).await
+        };
+        match sent {
             Ok(()) => {}
             Err(TransactionProcessorError::ProcessorIsClosed) => break,
         }
@@ -352,7 +366,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn keep_foreign_chains_registration_up_to_date__should_not_register_chains_the_contract_already_records()
+    async fn keep_foreign_chains_registration_up_to_date__should_register_once_on_start_when_the_contract_already_records_the_chains()
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
@@ -362,6 +376,10 @@ mod tests {
             let mut registrar = Registrar::start(whitelist, recorded(&[ForeignChain::Ethereum]));
 
             // Then
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
             registrar
                 .assert_no_registration_for(MAX_RESEND_DELAY * 2)
                 .await;
@@ -658,6 +676,10 @@ mod tests {
             // Given
             let mut registrar =
                 Registrar::start(ethereum_whitelist(1), recorded(&[ForeignChain::Ethereum]));
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
             registrar
                 .assert_no_registration_for(MIN_RESEND_DELAY / 2)
                 .await;
@@ -702,6 +724,10 @@ mod tests {
             // Given
             let mut registrar =
                 Registrar::start(ethereum_whitelist(1), recorded(&[ForeignChain::Ethereum]));
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
             registrar
                 .assert_no_registration_for(MIN_RESEND_DELAY / 2)
                 .await;
@@ -752,6 +778,10 @@ mod tests {
             // Given
             let mut registrar =
                 Registrar::start(ethereum_whitelist(1), recorded(&[ForeignChain::Ethereum]));
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
             registrar
                 .assert_no_registration_for(MIN_RESEND_DELAY / 2)
                 .await;

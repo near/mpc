@@ -140,10 +140,10 @@ fn ethereum_only_config(rpc_url: &str) -> ForeignChainsConfig {
 // Tests that nodes only serve a chain while it is available.
 //
 // Setup is with four nodes with Ethereum RPC while meeting the reconstruction
-// threshold; two nodes are then pinned to an empty registration, taking Ethereum below the
-// ForeignTx reconstruction threshold. Leader selection is narrowed to the
-// chain's supporters, so no node picks the request up: it parks in the queue
-// and never gets a response.
+// threshold; two nodes then have their registration overridden with an empty one,
+// taking Ethereum below the ForeignTx reconstruction threshold. Leader selection is
+// narrowed to the chain's supporters, so no node picks the request up: it parks in
+// the queue and never gets a response.
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
@@ -218,8 +218,10 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         .get();
     {
         let mut contract = setup.indexer.contract_mut().await;
-        contract.must_pin_foreign_chains_config("test2".parse().unwrap(), BTreeSet::new().into());
-        contract.must_pin_foreign_chains_config("test3".parse().unwrap(), BTreeSet::new().into());
+        contract
+            .must_override_foreign_chains_config("test2".parse().unwrap(), BTreeSet::new().into());
+        contract
+            .must_override_foreign_chains_config("test3".parse().unwrap(), BTreeSet::new().into());
         assert!(contract.available_foreign_chains().is_empty());
     }
     // Wait for the fake core to publish the post-change value on the shared
@@ -339,7 +341,7 @@ async fn must_start_foreign_tx_cluster(
 }
 
 /// The quorum asks for two providers and every node runs one, so no node registers Ethereum
-/// itself. Pinning three nodes to Ethereum, after their own empty registrations have landed,
+/// itself. Overriding three nodes' registrations with Ethereum, after their own empty registrations have landed,
 /// reproduces the window between a vote landing and the nodes dropping the chain.
 #[tokio::test]
 #[test_log::test]
@@ -352,7 +354,7 @@ async fn verify_foreign_tx__should_not_be_served_when_local_providers_are_below_
     {
         let mut contract = cluster.indexer.contract_mut().await;
         for account in ["test0", "test1", "test2"] {
-            contract.must_pin_foreign_chains_config(
+            contract.must_override_foreign_chains_config(
                 account.parse().unwrap(),
                 BTreeSet::from([ForeignChain::Ethereum]).into(),
             );

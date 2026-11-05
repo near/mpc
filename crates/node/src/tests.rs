@@ -636,7 +636,7 @@ fn test_build_info_metric_values() {
     assert_eq!(value, 1);
 }
 
-/// Panics if `node_count` nodes have not registered exactly `chains` within
+/// Waits until `node_count` nodes have registered exactly `chains`, failing the test after
 /// [`DEFAULT_MAX_PROTOCOL_WAIT_TIME`].
 pub async fn wait_and_assert_registrations(
     indexer: &FakeIndexerManager,
