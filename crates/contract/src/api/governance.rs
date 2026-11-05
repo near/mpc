@@ -310,13 +310,6 @@ mod tests {
             },
         );
         prepay_and_attest_all_participants(&mut contract);
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(first_participant_id.clone())
-                .predecessor_account_id(first_participant_id.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
         (contract, participants, first_participant_id, domain_id)
     }
 
