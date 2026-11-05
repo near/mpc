@@ -118,23 +118,25 @@ async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send
 
 /// Returns once the first whitelist is read, then keeps it updated in the background, like
 /// [`monitor_foreign_chain_supporters`].
+///
+/// `probe_whitelist` receives the same whitelists, wrapped in `Some`. Its channel exists from
+/// process start, for the foreign chain probe, which starts before the indexer has synced.
 pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sync + 'static>(
     contract: MpcContractHandle<V>,
+    probe_whitelist: watch::Sender<Option<ForeignChainWhitelist>>,
 ) -> watch::Receiver<ForeignChainWhitelist> {
     let initial = fetch_foreign_chain_whitelist_with_retry(&contract).await;
+    probe_whitelist.send_replace(Some(initial.clone()));
     let (sender, receiver) = watch::channel(initial);
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
             let whitelist = fetch_foreign_chain_whitelist_with_retry(&contract).await;
-            sender.send_if_modified(|previous| {
-                if *previous != whitelist {
-                    *previous = whitelist;
-                    true
-                } else {
-                    false
-                }
-            });
+            if *sender.borrow() == whitelist {
+                continue;
+            }
+            probe_whitelist.send_replace(Some(whitelist.clone()));
+            sender.send_replace(whitelist);
         }
     });
     receiver
@@ -143,7 +145,92 @@ pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sy
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use near_contract_transport::mock::{MockViewContract, MockViewError};
+    use near_contract_transport::{ObservedState, SerializedObservation};
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
+
     use super::*;
+
+    fn whitelist(provider: &str) -> ForeignChainWhitelist {
+        let config = dtos::ProviderConfig {
+            base_url: format!("https://{provider}.example.com"),
+            auth_scheme: dtos::AuthScheme::None,
+            chain_routing: dtos::ChainRouting::Embedded,
+        };
+        let entry = dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(dtos::ProviderId(provider.to_string()), config),
+            quorum: 1,
+        };
+        BTreeMap::from([(dtos::ForeignChain::Polygon, entry)])
+    }
+
+    fn observed(whitelist: &ForeignChainWhitelist) -> Result<SerializedObservation, MockViewError> {
+        Ok(ObservedState {
+            observed_at: 0.into(),
+            value: serde_json::to_vec(whitelist).unwrap(),
+        })
+    }
+
+    fn contract(viewer: &MockViewContract) -> MpcContractHandle<MockViewContract> {
+        MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap())
+    }
+
+    #[tokio::test]
+    async fn monitor_foreign_chain_whitelist__should_publish_the_first_whitelist_to_the_probe() {
+        // Given
+        let whitelist = whitelist("alchemy");
+        let viewer = MockViewContract::new(observed(&whitelist));
+        let (probe_whitelist, probe_rx) = watch::channel(None);
+
+        // When
+        let _whitelist_rx =
+            monitor_foreign_chain_whitelist(contract(&viewer), probe_whitelist).await;
+
+        // Then
+        assert_eq!(*probe_rx.borrow(), Some(whitelist));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn monitor_foreign_chain_whitelist__should_publish_a_changed_whitelist_to_the_probe() {
+        // Given
+        let changed = whitelist("quicknode");
+        let viewer = MockViewContract::new(observed(&whitelist("alchemy")));
+        let (probe_whitelist, mut probe_rx) = watch::channel(None);
+        let _whitelist_rx =
+            monitor_foreign_chain_whitelist(contract(&viewer), probe_whitelist).await;
+        probe_rx.mark_unchanged();
+
+        // When
+        viewer.set_response(observed(&changed));
+        tokio::time::timeout(Duration::from_mins(1), probe_rx.changed())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Then
+        assert_eq!(*probe_rx.borrow(), Some(changed));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn monitor_foreign_chain_whitelist__should_not_republish_an_unchanged_whitelist_to_the_probe()
+     {
+        // Given
+        let viewer = MockViewContract::new(observed(&whitelist("alchemy")));
+        let (probe_whitelist, mut probe_rx) = watch::channel(None);
+        let _whitelist_rx =
+            monitor_foreign_chain_whitelist(contract(&viewer), probe_whitelist).await;
+        probe_rx.mark_unchanged();
+
+        // When
+        tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL * 5).await;
+
+        // Then
+        assert!(
+            viewer.calls().len() > 1,
+            "the monitor should have refreshed"
+        );
+        assert!(!probe_rx.has_changed().unwrap());
+    }
 
     fn tls_key(seed: u8) -> dtos::Ed25519PublicKey {
         dtos::Ed25519PublicKey::from([seed; 32])
