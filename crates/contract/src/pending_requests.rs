@@ -131,12 +131,7 @@ mod tests {
             usize::from(MAX_PENDING_REQUEST_FAN_OUT),
             "queue should contain exactly the configured fan-out limit"
         );
-        for (idx, yield_idx) in queue.iter().enumerate() {
-            assert_eq!(
-                yield_idx.data_id, [idx as u8; 32],
-                "entry at {idx} should match insertion order"
-            );
-        }
+        assert_queue_matches_insertion_order(&queue);
 
         // When: pushing one more entry beyond the cap
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
@@ -165,11 +160,18 @@ mod tests {
             usize::from(MAX_PENDING_REQUEST_FAN_OUT),
             "queue should not grow past the configured fan-out limit"
         );
-        for (idx, yield_idx) in queue.iter().enumerate() {
-            assert_eq!(
-                yield_idx.data_id, [idx as u8; 32],
-                "original entry at {idx} should be preserved after rejection"
-            );
-        }
+        assert_queue_matches_insertion_order(&queue);
+    }
+}
+
+/// Helper to verify that the queue entries match the expected insertion order.
+/// Iterates over the u8 range directly to avoid `as` conversions.
+#[allow(dead_code)]
+fn assert_queue_matches_insertion_order(queue: &[YieldIndex]) {
+    for (expected, yield_idx) in (0..MAX_PENDING_REQUEST_FAN_OUT).zip(queue) {
+        assert_eq!(
+            yield_idx.data_id, [expected; 32],
+            "entry {expected} should match insertion order"
+        );
     }
 }
