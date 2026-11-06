@@ -23,6 +23,7 @@ pub use frost_secp256k1;
 
 pub use crypto::ciphersuite::Ciphersuite;
 pub use crypto::pedersen;
+pub use crypto::proofs::w_opening;
 pub use participants::ParticipantList;
 // For benchmark
 pub use crypto::polynomials::{
