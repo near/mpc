@@ -6713,9 +6713,9 @@ checksum = "b8fd0822ff3a82bdccda49b787cb11530512a929bfd13fd0d9fbd510b6360200"
 
 [[package]]
 name = "near-digest"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fe4cf64baeae787fa7b4e88f581b716d2d8c63c03489fdfe63f1b0ae8e9dfd6"
+checksum = "f92f07d8388f9ee34579ed39c8d435a5a2540333a791621fb042d1533526bbd0"
 dependencies = [
  "digest 0.11.3",
  "impl-tools",
@@ -6810,9 +6810,9 @@ dependencies = [
 
 [[package]]
 name = "near-global-contracts"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d5312a3e836e448bc0f1b9fa758d1e5926e741c78783f7bceb2a909f65b1205"
+checksum = "7a98e8d1fc8dab687eb5a4ac0acf0a8cdd1d18d25a89d8bc326414efdd95b6a6"
 dependencies = [
  "borsh",
  "cfg_eval",
@@ -7039,6 +7039,7 @@ dependencies = [
  "hex",
  "insta",
  "mpc-primitives",
+ "near-block-primitives",
  "near-contract-transport",
  "near-mpc-bounded-collections",
  "near-mpc-crypto-types",
@@ -7455,9 +7456,9 @@ source = "git+https://github.com/near/nearcore?tag=2.14.0#bc4e9e8cfb03d9e82f0278
 
 [[package]]
 name = "near-sdk"
-version = "5.30.0"
+version = "5.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "acec3bc38c787ca01423037c5fe505fbd0f0cf880706b2001cdf67cf2cf3855d"
+checksum = "690f7610eaa06f71f061bf6b1898508e12dd91657f5054504f8e8460872ee55e"
 dependencies = [
  "base64 0.22.1",
  "borsh",
@@ -7490,9 +7491,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-core"
-version = "4.4.1"
+version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "808019cb5ecbaac3b9856018bb5a48c4b612bf20d9a94d633038ce204a8ac11a"
+checksum = "64b34bacf6017badf5dc901497f05b61e55af5fb86b4df985d7c6430542d8061"
 dependencies = [
  "base64 0.22.1",
  "borsh",
@@ -7516,9 +7517,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-env"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ef675a82413fc8945d985a2d577769dc016db4988ce7df29d6113972d902dc7"
+checksum = "f64b7fc028768cdc30673da68b2787ebe63940e6b5c7c5dfffff66d0cdbb0ef3"
 dependencies = [
  "near-sys",
  "ripemd",
@@ -7528,9 +7529,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-macros"
-version = "5.30.0"
+version = "5.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93ff90cda89904459f69508790aa25d044221f372acafe3fddb13c10a5f1dc0a"
+checksum = "571ded3e31133559fd031d81a09ed9c7dbaf308f89220973442370aea4fff8b5"
 dependencies = [
  "Inflector",
  "darling 0.20.11",
@@ -7607,9 +7608,9 @@ dependencies = [
 
 [[package]]
 name = "near-sys"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "253a0b1ea647a92252d4943afcbc0bf4bedba7241aaf47a9a120a56668d011d5"
+checksum = "ecead5f7bc42aa4011ff46560b807a231d99da0a881095d5fa3c56682c5b3c70"
 
 [[package]]
 name = "near-telemetry"

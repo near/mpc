@@ -32,7 +32,7 @@ specification](../../../docs/ecdsa/robust_ecdsa/signing.md).
 ### `presign_and_sign.rs`
 
 Presigning and signing as one two-round protocol over a single channel. The tweak is
-applied locally between the two rounds, without rerandomization, and only the
+applied locally between the two rounds, and only the
 coordinator obtains the signature. The node signs with this protocol. See the
 [protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
 

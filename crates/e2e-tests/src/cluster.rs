@@ -16,7 +16,7 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     types::{
-        AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
+        AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo, BlockCount,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
         ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters, InitConfig,
@@ -62,7 +62,7 @@ fn tee_verifier_account() -> String {
 // blocks). The e2e sandbox runs ~8 blocks/s, so override it to 240 blocks
 // (~30 s) to leave room for resharing when concurrent e2e tests load the
 // runner.
-const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
+const KEY_EVENT_TIMEOUT_BLOCKS: BlockCount = BlockCount::new(240);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
