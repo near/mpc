@@ -4,10 +4,12 @@ use anyhow::Context;
 use launcher_interface::types::{PccsEndpointConfig, TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfig};
 use near_mpc_bounded_collections::NonEmptyVec;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, validate_pccs_endpoints,
 };
+
+const DOWNLOADED_GENESIS_FILE: &str = "downloaded_genesis.json";
 
 pub trait TeeAuthorityImpl {
     fn into_tee_authority(
@@ -73,6 +75,12 @@ impl StartConfigExt for StartConfig {
 /// Runs [`near_indexer::init_configs`] to create the NEAR data directory.
 fn run_near_init(config: &NearInitConfig, home_dir: &Path) -> anyhow::Result<()> {
     let is_localnet = config.chain_id.is_localnet();
+    // Before init: a leftover config.json would skip init on restart.
+    let localnet_genesis = if is_localnet {
+        localnet_genesis_source(config, home_dir)?
+    } else {
+        None
+    };
     let genesis_arg = config.genesis_path.as_deref().and_then(Path::to_str);
     let chain_id_arg = config.chain_id.to_init_arg();
     let boot_nodes = config.boot_nodes.as_deref();
@@ -96,10 +104,10 @@ fn run_near_init(config: &NearInitConfig, home_dir: &Path) -> anyhow::Result<()>
     )
     .context("failed to initialize NEAR node")?;
 
-    // For localnet, overwrite the genesis file with the original (init
-    // modifies it) and remove the unnecessary validator_key.json.
+    // For localnet, replace the generated genesis with the chain's, and remove
+    // the unnecessary validator_key.json.
     if is_localnet {
-        if let Some(genesis_src) = &config.genesis_path {
+        if let Some(genesis_src) = &localnet_genesis {
             let genesis_dst = home_dir.join("genesis.json");
             std::fs::copy(genesis_src, &genesis_dst).with_context(|| {
                 format!(
@@ -116,6 +124,28 @@ fn run_near_init(config: &NearInitConfig, home_dir: &Path) -> anyhow::Result<()>
     }
 
     Ok(())
+}
+
+/// [`NearInitConfig::download_genesis_url`] if set (testnet-only in
+/// [`near_indexer::init_configs`]), else [`NearInitConfig::genesis_path`].
+fn localnet_genesis_source(
+    config: &NearInitConfig,
+    home_dir: &Path,
+) -> anyhow::Result<Option<PathBuf>> {
+    let Some(url) = &config.download_genesis_url else {
+        return Ok(config.genesis_path.clone());
+    };
+    std::fs::create_dir_all(home_dir)
+        .with_context(|| format!("failed to create {}", home_dir.display()))?;
+    let path = home_dir.join(DOWNLOADED_GENESIS_FILE);
+    nearcore::config::download_genesis(url, &path)
+        .with_context(|| format!("failed to download genesis from {url}"))?;
+    // Fail before init on a bad body (e.g. an HTML page).
+    let genesis = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_str::<serde_json::Value>(&genesis)
+        .with_context(|| format!("genesis from {url} is not JSON"))?;
+    Ok(Some(path))
 }
 
 fn convert_download_config(dt: DownloadConfigType) -> near_config_utils::DownloadConfigType {
@@ -322,6 +352,7 @@ fn apply_near_config_patches(
 #[expect(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
     use mpc_node_config::ChainId;
     use rstest::rstest;
 
@@ -348,6 +379,99 @@ mod tests {
             "rpc": {},
             "state_sync": { "sync": { "ExternalStorage": {} } }
         })
+    }
+
+    fn genesis_server(status: u16, body: &str) -> MockServer {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/genesis.json");
+            then.status(status).body(body);
+        });
+        server
+    }
+
+    #[test]
+    fn localnet_genesis_source__should_download_from_url_over_genesis_path() {
+        // Given
+        let server = genesis_server(200, r#"{"protocol_version": 86}"#);
+        let dir = tempfile::tempdir().unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.genesis_path = Some(dir.path().join("embedded-genesis.json"));
+        init.download_genesis_url = Some(server.url("/genesis.json"));
+
+        // When
+        let source = localnet_genesis_source(&init, dir.path()).unwrap().unwrap();
+
+        // Then
+        assert_eq!(source, dir.path().join(DOWNLOADED_GENESIS_FILE));
+        assert_eq!(
+            std::fs::read_to_string(source).unwrap(),
+            r#"{"protocol_version": 86}"#
+        );
+    }
+
+    #[test]
+    fn localnet_genesis_source__should_use_genesis_path_without_url() {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.genesis_path = Some(dir.path().join("embedded-genesis.json"));
+
+        // When
+        let source = localnet_genesis_source(&init, dir.path()).unwrap();
+
+        // Then
+        assert_eq!(source, init.genesis_path);
+    }
+
+    #[test]
+    fn localnet_genesis_source__should_fail_on_non_json_body() {
+        // Given
+        let server = genesis_server(200, "<html>not found</html>");
+        let dir = tempfile::tempdir().unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.download_genesis_url = Some(server.url("/genesis.json"));
+
+        // When
+        let result = localnet_genesis_source(&init, dir.path());
+
+        // Then
+        result.expect_err("non-JSON genesis must fail");
+    }
+
+    #[test]
+    fn run_near_init__should_install_downloaded_genesis_on_localnet() {
+        // Given
+        let genesis = r#"{"protocol_version": 86}"#;
+        let server = genesis_server(200, genesis);
+        let dir = tempfile::tempdir().unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.download_genesis_url = Some(server.url("/genesis.json"));
+
+        // When
+        run_near_init(&init, dir.path()).unwrap();
+
+        // Then
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("genesis.json")).unwrap(),
+            genesis
+        );
+    }
+
+    #[test]
+    fn run_near_init__should_not_leave_config_when_genesis_download_fails() {
+        // Given
+        let server = genesis_server(404, "");
+        let dir = tempfile::tempdir().unwrap();
+        let mut init = near_init(ChainId::Localnet);
+        init.download_genesis_url = Some(server.url("/genesis.json"));
+
+        // When
+        let result = run_near_init(&init, dir.path());
+
+        // Then
+        result.expect_err("failed download must fail");
+        assert!(!near_config_file(dir.path()).exists());
     }
 
     #[test]
