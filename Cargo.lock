@@ -6976,18 +6976,34 @@ dependencies = [
 
 [[package]]
 name = "near-kit"
-version = "0.20.0"
+version = "0.30.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1e037efc6b79e69b2985785b329ea0bdd78c1b83bd524af8b07e4144fc7785a"
+checksum = "acb7a2e639ec0e47a464d2e7a2ab44ed82f64f3c3f46feed8377f037807fdbf1"
+dependencies = [
+ "base64 0.23.1",
+ "borsh",
+ "gloo-timers 0.4.0",
+ "hyper",
+ "near-kit-primitives",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "near-kit-primitives"
+version = "0.30.0-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eed3accd7c6b62c88772e69cd85d315e984352178991eed33c0af3365796f46"
 dependencies = [
  "base64 0.23.1",
  "borsh",
  "bs58 0.5.1",
  "ed25519-dalek 3.0.0",
  "getrandom 0.4.3",
- "gloo-timers 0.4.0",
  "hex",
- "hyper",
  "js-sys",
  "k256 0.14.0",
  "ml-dsa",
@@ -6995,14 +7011,12 @@ dependencies = [
  "near-gas",
  "near-global-contracts",
  "near-token",
- "reqwest 0.13.5",
  "serde",
  "serde_json",
  "serde_with",
  "sha2 0.11.0",
  "sha3 0.12.0",
  "thiserror 2.0.21",
- "tokio",
 ]
 
 [[package]]

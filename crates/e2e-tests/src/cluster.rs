@@ -11,6 +11,7 @@ use near_contract_transport::{
     NearKitCaller, NearKitViewError, NearToken, Subscription, WatchContractState,
 };
 use near_kit::AccountId;
+use near_kit::SigningNear;
 use near_kit::transaction::ExecutedOptimistic;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
@@ -259,7 +260,7 @@ pub struct MpcCluster {
     pub sandbox: NearSandbox,
     pub blockchain: NearBlockchain,
     pub contract: DeployedContract,
-    pub mpc_contract_handle: MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    pub mpc_contract_handle: MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
     state_subscription: Subscription<ProtocolContractState, NearKitViewError>,
     migration_info_subscription: OnceCell<Subscription<MigrationInfo, NearKitViewError>>,
     pub nodes: Vec<MpcNodeState>,
@@ -858,7 +859,7 @@ impl MpcCluster {
     pub fn client_for(
         &self,
         account_id: &AccountId,
-    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
+    ) -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
         let key = self
             .user_accounts
             .get(account_id)
@@ -876,7 +877,7 @@ impl MpcCluster {
     pub fn contract_handle(
         &self,
         account_id: &AccountId,
-    ) -> MpcContractHandle<NearKitCaller<ExecutedOptimistic>> {
+    ) -> MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
         self.client_for(account_id)
             .unwrap()
             .call_mpc(self.contract_id())
@@ -923,7 +924,7 @@ impl MpcCluster {
     pub fn operator_client_for(
         &self,
         node_index: usize,
-    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
+    ) -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
         let node = &self.nodes[node_index];
         self.blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
@@ -1021,13 +1022,18 @@ impl MpcCluster {
             let client = self
                 .operator_client_for(idx)
                 .with_context(|| format!("whitelist_foreign_chains: node {idx}"))?;
-            client
+            let outcome = client
                 .call_mpc(self.contract_id())
                 .vote_update_foreign_chain_providers(batch.clone())
                 .await
                 .with_context(|| {
                     format!("vote_update_foreign_chain_providers from node {idx} failed")
                 })?;
+            anyhow::ensure!(
+                outcome.is_success(),
+                "vote_update_foreign_chain_providers from node {idx} failed: {:?}",
+                outcome.failure_message()
+            );
         }
         Ok(())
     }
@@ -1331,7 +1337,7 @@ async fn prepay_attestation_grants(
 }
 
 async fn attestation_storage_fee(
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    mpc_contract_handle: &MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
 ) -> anyhow::Result<NearToken> {
     let config = mpc_contract_handle.config().await?.value;
     Ok(NearToken::from_millinear(u128::from(
@@ -1342,7 +1348,7 @@ async fn attestation_storage_fee(
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    mpc_contract_handle: &MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
     state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
     ports: &TestPorts,
     args: InitContractArgs,
@@ -1392,13 +1398,18 @@ async fn init_contract(
         let account = node_account(i);
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
-        blockchain
+        let outcome = blockchain
             .client_for(&account, &near_keys[i])
             .unwrap()
             .call_mpc(contract.account_id())
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "failed to submit attestation for node {i}: {:?}",
+            outcome.failure_message()
+        );
     }
 
     wait_for_contract_state(state_subscription, CONTRACT_INIT_TIMEOUT, |s| {
@@ -1465,11 +1476,16 @@ async fn add_initial_domains(
     for &i in participant_indices {
         let account = node_account(i);
         let client = blockchain.client_for(&account, &operator_keys[i])?;
-        client
+        let outcome = client
             .call_mpc(contract.account_id())
             .vote_add_domains(domains.to_vec())
             .await
             .with_context(|| format!("node {i} failed to vote add domains"))?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "node {i} failed to vote add domains: {:?}",
+            outcome.failure_message()
+        );
     }
 
     wait_for_contract_state(state_subscription, VOTE_KEY_EVENT_TIMEOUT, |s| {
