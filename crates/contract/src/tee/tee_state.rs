@@ -424,12 +424,14 @@ impl TeeState {
         account_id: &AccountId,
         tls_public_key: &Ed25519PublicKey,
     ) -> Result<(), AttestationSubmissionError> {
-        match self.nodes.get(tls_public_key) {
-            Some(node) if node.owner != *account_id => {
-                Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount)
-            }
-            _ => Ok(()),
+        if self
+            .nodes
+            .get(tls_public_key)
+            .is_some_and(|node| node.owner != *account_id)
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
         }
+        Ok(())
     }
 
     pub fn get_tee_accounts(&self) -> Vec<dtos::Node> {
