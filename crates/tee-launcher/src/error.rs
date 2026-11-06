@@ -5,6 +5,12 @@ pub enum LauncherError {
     #[error("EmitEvent failed while extending RTMR3: {0}")]
     DstackEmitEventFailed(String),
 
+    #[error("failed to run dstack-util: {0}")]
+    DstackUtilSpawn(std::io::Error),
+
+    #[error("dstack-util extend failed while extending RTMR3: {0}")]
+    DstackUtilExtendFailed(String),
+
     #[error("MPC_HASH_OVERRIDE invalid: {0}")]
     InvalidHashOverride(String),
 
