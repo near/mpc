@@ -1,0 +1,14 @@
+---
+source: crates/near-mpc-contract-interface/src/types/foreign_chain.rs
+expression: hashes
+---
+{
+  "account_not_found": "64345780232c25b48f84b10b5e03bc24e6ec0cd5fe85756202a19b516d4c8ec8",
+  "inconclusive": "669235aadb7c0728f5b65f6eb973a084de7a0aee9192c033938e8628d2d33697",
+  "log_index_out_of_bounds": "90c0d98ad1a4ec83b162777e409a0e4c507da55fa5ca65f3481eec7b1b14221a",
+  "non_canonical_block": "b03dba2212eb149853fdf0c8fbd78d07fedb5d972314a4a1f8ea6d018fe33f08",
+  "transaction_failed": "25173e9a5b62582433eec46b6ccbdd0b3c73fbd195f0c9045df4e3aa32d1d160",
+  "transaction_not_found": "5ea7d8014d5a78ceabcf5321f083a64e0b10fde81049857b0661bd8c34db7d3e",
+  "values_mismatch": "e74eddbb1ea412702465d4a1d5f9802a029b742a626fc83b5af0b5a474c958c6",
+  "verified": "07abae9f0c177b237d9b87e687a38c59b176f07774471ef24e13a8a1b180c008"
+}
