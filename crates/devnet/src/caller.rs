@@ -166,6 +166,7 @@ mod tests {
     use httpmock::prelude::*;
     use near_primitives::hash::CryptoHash;
     use rand::rngs::OsRng;
+    use rstest::rstest;
     use serde_json::json;
     use std::assert_matches;
 
@@ -228,37 +229,18 @@ mod tests {
             .await;
     }
 
+    #[rstest]
+    #[case::final_calls(TxExecutionStatus::Final, "final")]
+    #[case::calls_returning_before_final(TxExecutionStatus::ExecutedOptimistic, "optimistic")]
     #[tokio::test]
-    async fn view_contract__should_return_call_result_observed_at_final_block() {
+    async fn view_contract__should_return_call_result_at_finality_its_calls_wait_for(
+        #[case] wait_until: TxExecutionStatus,
+        #[case] finality: &str,
+    ) {
         // Given
         let server = MockServer::start_async().await;
-        mock_call_function(&server, "final").await;
-        let caller = must_make_caller(&server, TxExecutionStatus::Final).await;
-
-        // When
-        let observed = caller
-            .view_contract(
-                &CONTRACT_ID.parse().unwrap(),
-                ViewArgs::no_args(VIEW_METHOD),
-            )
-            .await;
-
-        // Then
-        assert_eq!(
-            observed,
-            Ok(ObservedState {
-                observed_at: OBSERVED_AT.into(),
-                value: VIEW_RESULT.to_vec(),
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn view_contract__should_read_optimistic_block_when_calls_return_before_final() {
-        // Given
-        let server = MockServer::start_async().await;
-        mock_call_function(&server, "optimistic").await;
-        let caller = must_make_caller(&server, TxExecutionStatus::ExecutedOptimistic).await;
+        mock_call_function(&server, finality).await;
+        let caller = must_make_caller(&server, wait_until).await;
 
         // When
         let observed = caller

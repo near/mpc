@@ -6084,6 +6084,7 @@ dependencies = [
  "node-types",
  "rand 0.8.8",
  "reqwest 0.13.5",
+ "rstest",
  "serde",
  "serde_json",
  "serde_yaml",

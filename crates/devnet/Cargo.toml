@@ -43,6 +43,7 @@ tokio-util = { workspace = true }
 
 [dev-dependencies]
 httpmock = { workspace = true }
+rstest = { workspace = true }
 
 [lints]
 workspace = true
