@@ -1,3 +1,8 @@
+# The mainnet-protocol tests run in their own non-required CI job: `main` may
+# target a newer protocol than mainnet runs. Custom profiles inherit this filter.
+[profile.default]
+default-filter = 'not test(/mainnet_protocol/)'
+
 # Limit sandbox test parallelism to avoid resource contention and flaky timeouts.
 # Each sandbox test spins up its own NEAR sandbox instance, so running too many
 # concurrently causes request timeouts on CI.

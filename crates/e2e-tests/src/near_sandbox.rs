@@ -21,7 +21,12 @@ pub struct NearSandbox {
 }
 
 impl NearSandbox {
-    pub async fn start(ports: &TestPorts, version: &str) -> anyhow::Result<Self> {
+    /// Starts at `protocol_version` if given, else at the binary's latest protocol.
+    pub async fn start(
+        ports: &TestPorts,
+        version: &str,
+        protocol_version: Option<u32>,
+    ) -> anyhow::Result<Self> {
         let rpc_port = ports.near_node_rpc_port();
         let network_port = ports.near_node_network_port();
 
@@ -53,13 +58,17 @@ impl NearSandbox {
             }
         });
 
+        let mut additional_genesis = protocol_version
+            .map(test_utils::pinned_protocol_genesis)
+            .unwrap_or_else(|| serde_json::json!({}));
         // Set chain_id to "sandbox" so MPC nodes recognize this as a local
         // network (is_localnet() returns true). Without this, `near-sandbox
         // init` generates a random chain_id like "test-chain-XXXXX".
+        additional_genesis["chain_id"] = "sandbox".into();
         let config = SandboxConfig {
             rpc_port: Some(rpc_port),
             net_port: Some(network_port),
-            additional_genesis: Some(serde_json::json!({"chain_id": "sandbox"})),
+            additional_genesis: Some(additional_genesis),
             additional_config: Some(additional_config),
             ..Default::default()
         };
