@@ -3,10 +3,10 @@ use near_account_id::AccountId;
 
 use crate::{constants::MPC_HOME_DIR, error::LauncherError};
 
-/// Inject launcher-controlled config into the user-provided MPC node config
-/// table: the `tee` section, the contract id, and the home directory, so a disk
-/// keeps the chain it was initialized with. Returns an error if the user config
-/// already contains a reserved key.
+/// Inject the launcher-controlled keys into the user-provided MPC node config: the `tee`
+/// section, the contract id measured into the launcher compose, and the home directory, so
+/// that the node always starts from the chain data already on the disk. Fails if the user
+/// config sets any of them.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
@@ -29,7 +29,6 @@ pub fn intercept_node_config(
     Ok(node_config)
 }
 
-/// Fails if the user config already sets the key or puts a non-table on its path.
 fn insert_reserved(
     mut table: &mut toml::Table,
     parents: &[&str],
@@ -40,7 +39,7 @@ fn insert_reserved(
     for parent in parents {
         table = table
             .entry(*parent)
-            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .or_insert_with(|| toml::Table::new().into())
             .as_table_mut()
             .ok_or_else(reserved_key)?;
     }

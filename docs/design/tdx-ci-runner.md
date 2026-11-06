@@ -196,7 +196,7 @@ rejected, which is exactly what the upgrade and migration tests do.
 
 **The launcher must come from Docker Hub.** The contract derives the allowed compose hash
 by filling `crates/contract/assets/launcher_docker_compose.yaml.template`
-(`crates/contract/src/tee/proposal.rs:401`), which hardcodes `nearone/mpc-launcher@sha256:…`.
+(`crates/contract/src/tee/proposal.rs`), which hardcodes `nearone/mpc-launcher@sha256:…`.
 So a PR-built launcher cannot run in a CVM — harmless for a nightly job on published images.
 
 ## The gap this design does *not* close
