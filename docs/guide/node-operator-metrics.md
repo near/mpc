@@ -130,7 +130,7 @@ answer with the chain's `expected_network_fingerprint` from your config:
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain |
+| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain, whitelisted or not |
 | `mpc_foreign_chain_rpc_providers_healthy` | providers that passed the latest probe |
 
 `healthy` should equal `configured`. Anything less is a provider the probe
@@ -148,6 +148,7 @@ Each round logs:
 * A line for each difference from the whitelist. A difference you must fix is
   a warning or an error. Two differences are normal and are logged as info: a
   chain that is not whitelisted yet, and an extra provider.
+* A warning for each chain that is not healthy, once the whitelist is read.
 * One `foreign chain probe round complete` line at the end, with these fields:
 
 | Field | What it tells you |
@@ -157,9 +158,25 @@ Each round logs:
 | `unchecked` | providers of a chain that has no probe |
 | `unchecked_chains` | the chains that have no probe |
 | `whitelist` | `not read yet`, `matches the local config`, or the number of differences logged above |
+| `healthy_chains` | chains judged healthy |
+| `judged_chains` | chains judged, `0` until the whitelist is read |
 
 The whitelist is `not read yet` until the node has synced and read it from the
 contract.
+
+Once the whitelist is read, each round judges every chain that has a probe and
+is whitelisted. A chain is healthy when all of these hold:
+
+* At least its quorum of whitelisted providers is configured.
+* All of them passed the probe.
+* No configured provider serves another network. Such a provider fails every
+  verify request on its chain, whitelisted or not, because the verdicts of all
+  configured providers must agree.
+
+A configured provider counts for a whitelisted provider only when its URL host,
+scheme, port, path, chain routing and auth all match the voted entry. When two
+configured providers match one whitelisted provider, only the first by name
+counts. The second one cannot stand in when the first one fails.
 
 ### Whitelist and quorum
 

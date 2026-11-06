@@ -10,13 +10,19 @@ use foreign_chain_health_check::probe::{
 };
 use futures::future::Either;
 use mpc_node_config::foreign_chains::RpcProviderName;
-use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
+use mpc_node_config::{
+    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
+};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
+
+pub(super) const ALCHEMY_URL: &str = "https://alchemy.example.com";
+pub(super) const QUICKNODE_URL: &str = "https://quicknode.example.com";
+pub(super) const OWN_NODE_URL: &str = "https://own-node.example.org";
 
 pub(super) fn row(
     chain: dtos::ForeignChain,
@@ -75,7 +81,8 @@ pub(super) fn chain_entry(
     }
 }
 
-/// Gives provider `p` the base URL `https://p.example.com`.
+/// Gives provider `p` the base URL `https://p.example.com`, so `ALCHEMY_URL` and `QUICKNODE_URL`
+/// match and `OWN_NODE_URL` does not.
 pub(super) fn whitelist_of(
     chain: dtos::ForeignChain,
     providers: &[&str],
@@ -93,6 +100,57 @@ pub(super) fn whitelist_of(
         })
         .collect();
     BTreeMap::from([(chain, chain_entry(&providers, quorum))])
+}
+
+/// A provider without auth, and the status its probe reports.
+#[derive(Clone)]
+pub(super) struct ProbedProvider<'a> {
+    pub(super) name: &'a str,
+    pub(super) rpc_url: &'a str,
+    pub(super) status: ProviderStatus,
+}
+
+/// A local config and the probe report of that config.
+pub(super) struct ProbedConfig {
+    pub(super) local: ForeignChainsConfig,
+    pub(super) report: ProbeReport,
+}
+
+pub(super) fn config_with_report(
+    providers: &[(dtos::ForeignChain, ProbedProvider)],
+) -> ProbedConfig {
+    let mut providers_per_chain: BTreeMap<_, Vec<_>> = BTreeMap::new();
+    for (chain, provider) in providers {
+        let config = ForeignChainProviderConfig {
+            rpc_url: provider.rpc_url.to_string(),
+            auth: AuthConfig::None,
+        };
+        providers_per_chain
+            .entry(*chain)
+            .or_default()
+            .push((provider.name, config));
+    }
+    let local = foreign_chains(
+        providers_per_chain
+            .into_iter()
+            .map(|(chain, providers)| (chain, chain_config(&providers))),
+    );
+    let rows: Vec<ProviderHealth> = providers
+        .iter()
+        .map(|(chain, provider)| row(*chain, provider.name, provider.status.clone()))
+        .collect();
+    ProbedConfig {
+        local,
+        report: ProbeReport::from(rows),
+    }
+}
+
+pub(super) fn polygon_with_report(providers: &[ProbedProvider]) -> ProbedConfig {
+    let providers: Vec<_> = providers
+        .iter()
+        .map(|provider| (dtos::ForeignChain::Polygon, provider.clone()))
+        .collect();
+    config_with_report(&providers)
 }
 
 pub(super) fn no_whitelist() -> watch::Receiver<Option<ForeignChainWhitelist>> {
@@ -125,6 +183,21 @@ pub(super) fn mock_finish_round(
     whitelists_seen: &RefCell<Vec<Option<ForeignChainWhitelist>>>,
 ) -> impl Fn(&ProbeReport, Option<&ForeignChainWhitelist>) + '_ {
     move |_, whitelist| whitelists_seen.borrow_mut().push(whitelist.cloned())
+}
+
+pub(super) fn logged_times(
+    lines: &[&str],
+    level: &str,
+    message: &str,
+    times: usize,
+) -> Result<(), String> {
+    let logged = lines
+        .iter()
+        .filter(|line| line.contains(level) && line.contains(message))
+        .count();
+    (logged == times)
+        .then_some(())
+        .ok_or_else(|| format!("{level} {message:?} logged {logged} times, expected {times}"))
 }
 
 pub(super) fn gauges(chain: &str) -> ProviderCounts {
