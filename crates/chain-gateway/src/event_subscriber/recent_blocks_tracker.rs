@@ -98,7 +98,7 @@ use near_contract_transport::{BlockCount, BlockHeight};
 ///  ..  ..      ..      ..  .. ┆       ..
 /// ```
 pub struct RecentBlocksTracker {
-    window_size: u64,
+    window_size: BlockCount,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
     /// with each other.
@@ -299,7 +299,7 @@ impl BlockNode {
 }
 
 impl RecentBlocksTracker {
-    pub fn new(window_size: u64) -> Self {
+    pub fn new(window_size: BlockCount) -> Self {
         Self {
             window_size,
             root_children: Vec::new(),
@@ -500,8 +500,8 @@ impl RecentBlocksTracker {
         };
         Some(
             self.maximum_height_available
-                .saturating_sub(BlockCount::from(self.window_size))
-                .saturating_add(BlockCount::from(1))
+                .saturating_sub(self.window_size)
+                .saturating_add(BlockCount::new(1))
                 .min(final_head.height),
         )
     }
@@ -538,8 +538,8 @@ impl Debug for RecentBlocksTracker {
             f,
             "   Recent blocks: (Window = {} to {}, GC limit {})",
             self.maximum_height_available
-                .saturating_sub(BlockCount::from(self.window_size))
-                .saturating_add(BlockCount::from(1)),
+                .saturating_sub(self.window_size)
+                .saturating_add(BlockCount::new(1)),
             self.maximum_height_available,
             self.minimum_height_to_keep().unwrap_or(0.into())
         )?;
@@ -565,7 +565,7 @@ impl Debug for RecentBlocksTracker {
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils {
     use super::super::block_events::BlockContext;
-    use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
+    use super::{BlockCount, BlockStatus, BlockStatusHandle, RecentBlocksTracker};
     use crate::types::BlockEntropy;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
@@ -736,7 +736,7 @@ pub mod test_utils {
     impl Tester {
         pub fn new(heights_to_keep: u64) -> Self {
             let maker = TestBlockMaker::new();
-            let tracker = RecentBlocksTracker::new(heights_to_keep);
+            let tracker = RecentBlocksTracker::new(BlockCount::new(heights_to_keep));
             Self {
                 maker,
                 tracker,
