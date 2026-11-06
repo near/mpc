@@ -10,6 +10,7 @@ services:
       - PLATFORM=TEE
       - DOCKER_CONTENT_TRUST=1
       - DEFAULT_IMAGE_DIGEST=sha256:{{DEFAULT_IMAGE_DIGEST_HASH}}
+      - MPC_CONTRACT_ID={{MPC_CONTRACT_ID}}
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

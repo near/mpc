@@ -22,6 +22,7 @@ All arguments are read from environment variables (set via docker-compose `envir
 | `PLATFORM` | Yes | `TEE` or `NONTEE` |
 | `DOCKER_CONTENT_TRUST` | Yes | Must be `1` |
 | `DEFAULT_IMAGE_DIGEST` | Yes | Fallback `sha256:...` digest when the approved-hashes file is absent |
+| `MPC_CONTRACT_ID` | Yes | Account id of the MPC contract the node serves |
 
 ## Configuration (TOML)
 
@@ -37,10 +38,6 @@ port_mappings = [
   { host = 2200, container = 2200 },
 ]
 
-# Opaque MPC node configuration.
-# The launcher does not interpret these fields — they are re-serialized
-# to TOML and mounted into the container at /mnt/shared/mpc-config.toml
-# for the MPC binary to consume via `start-with-config-file`.
 [mpc_node_config]
 # ... any fields the MPC node expects
 ```
@@ -50,12 +47,12 @@ port_mappings = [
 | Field | Required | Description |
 |-------|----------|-------------|
 | `image_reference` | Yes | Docker image reference. A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
-| `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
+| `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in the approved list and be no older than `DEFAULT_IMAGE_DIGEST`) |
 | `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
 ### `[mpc_node_config]`
 
-Arbitrary TOML table passed through to the MPC node. The launcher writes this verbatim to `/mnt/shared/mpc-config.toml`, which the container reads on startup.
+Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section, `home_dir` and `node.indexer.mpc_contract_id`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that already sets any of them is rejected.
 
 ## Supported Registries
 
@@ -78,7 +75,7 @@ The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any regis
 ## Image Hash Selection
 
 Priority order:
-1. If the approved hashes file (`/mnt/shared/image-digest.bin`) exists and `mpc_hash_override` is set: use the override (must be in the approved list)
+1. If the approved hashes file (`/mnt/shared/image-digest.bin`) exists and `mpc_hash_override` is set: use the override (must be in the approved list and no older than `DEFAULT_IMAGE_DIGEST`)
 2. If the approved hashes file exists: use the newest approved hash (first in list)
 3. If the file is absent: fall back to `DEFAULT_IMAGE_DIGEST`
 
@@ -90,15 +87,6 @@ Priority order:
 | `/mnt/shared/image-digest.bin` | JSON file with approved image hashes (written by the MPC node) |
 | `/mnt/shared/mpc-config.toml` | MPC node config (written by the launcher) |
 | `/var/run/dstack.sock` | dstack unix socket (TEE mode only) |
-
-## Key Differences from the Python Launcher
-
-| Aspect | Python (`launcher.py`) | Rust (`tee-launcher`) |
-|--------|----------------------|----------------------|
-| Config format | `.env` key-value file | TOML |
-| MPC node config | Environment variables passed to container | TOML file mounted into container |
-| Container launch | `docker run` with flags | `docker compose up -d` with rendered template |
-| RTMR3 extension | `curl` to unix socket | `dstack-sdk` native client |
 
 ## Building
 

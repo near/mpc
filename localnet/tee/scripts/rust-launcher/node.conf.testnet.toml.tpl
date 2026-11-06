@@ -6,9 +6,6 @@ pull_max_delay_secs = 60
 port_mappings = [
 ${PORTS_TOML}]
 
-[mpc_node_config]
-home_dir = "/data"
-
 [mpc_node_config.log]
 format = "plain"
 filter = "info"
@@ -35,7 +32,6 @@ cores = 4
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "${MPC_CONTRACT_ID}"
 finality = "optimistic"
 # Mirrors production: contract participant URLs may publish any port, but
 # the P2P/TLS listener always binds 80 inside the CVM.
