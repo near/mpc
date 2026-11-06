@@ -102,22 +102,15 @@ impl IndexerClient {
             .await??)
     }
 
-    /// Polls sync status, yielding `(syncing, head_height)`, or `None` on a
-    /// failed request.
-    async fn sync_info(&self) -> Option<(bool, BlockHeight)> {
-        let status = self.status().await.ok()?;
-        Some((
-            status.sync_info.syncing,
-            status.sync_info.latest_block_height,
-        ))
-    }
-
     async fn ensure_head_follows_tip(&self) {
         let mut progress = SyncProgress::default();
         loop {
             tokio::time::sleep(INTERVAL).await;
-            if let Some((syncing, head_height)) = self.sync_info().await
-                && progress.observe(syncing, head_height)
+            if let Ok(status) = self.status().await
+                && progress.observe(
+                    status.sync_info.syncing,
+                    status.sync_info.latest_block_height,
+                )
             {
                 return;
             }

@@ -147,11 +147,10 @@ pub fn spawn_real_indexer(
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
 
-            if let Err(err) = indexer_state.ensure_chain_matches_contract().await {
-                tracing::error!(?err, "Indexer refuses to start.");
-                let _ = indexer_exit_sender.send(Err(err));
-                return;
-            }
+            indexer_state
+                .ensure_chain_matches_contract()
+                .await
+                .expect("the node must follow its contract's chain");
 
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 

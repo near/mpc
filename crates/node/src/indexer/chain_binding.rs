@@ -41,11 +41,12 @@ mod tests {
         #[case] genesis_hash: &str,
         #[case] accepted: bool,
     ) {
+        // Given
+        let contract_id: AccountId = contract_id.parse().unwrap();
+        let genesis_hash: CryptoHash = genesis_hash.parse().unwrap();
+
         // When
-        let result = ensure_chain_matches_contract(
-            &contract_id.parse().unwrap(),
-            genesis_hash.parse().unwrap(),
-        );
+        let result = ensure_chain_matches_contract(&contract_id, genesis_hash);
 
         // Then
         assert_eq!(result.is_ok(), accepted);
