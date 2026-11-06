@@ -80,11 +80,11 @@ we need to create two accounts and then transfer funds between them.
 
 ```bash
 near account create-account sponsor-by-faucet-service $ROOT_ACCOUNT \
-  autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+  autogenerate-new-keypair --signature-scheme ed25519 save-to-legacy-keychain network-config testnet create
 
 
 near account create-account sponsor-by-faucet-service $MPC_CONTRACT_ACCOUNT \
-  autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+  autogenerate-new-keypair --signature-scheme ed25519 save-to-legacy-keychain network-config testnet create
 
 ```
 
@@ -138,9 +138,9 @@ near contract inspect $MPC_CONTRACT_ACCOUNT network-config testnet now
 ### Create two accounts for the MPC nodes:
 
 ```bash
-near account create-account sponsor-by-faucet-service $FRODO_ACCOUNT autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+near account create-account sponsor-by-faucet-service $FRODO_ACCOUNT autogenerate-new-keypair --signature-scheme ed25519 save-to-legacy-keychain network-config testnet create
 
-near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-new-keypair --signature-scheme ed25519 save-to-legacy-keychain network-config testnet create
 ```
 
 ### Update Bootnodes and IPs

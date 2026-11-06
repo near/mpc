@@ -10,6 +10,13 @@
     };
 
     crane.url = "github:ipetkov/crane";
+
+    # Source for the localnet/sandbox neard; keep the tag in sync with
+    # `DEFAULT_SANDBOX_VERSION` (scripts/check-sandbox-image-version.sh).
+    nearcore = {
+      url = "github:near/nearcore/2.14.0";
+      flake = false;
+    };
   };
 
   outputs =
@@ -18,6 +25,7 @@
       nixpkgs,
       rust-overlay,
       crane,
+      nearcore,
     }:
     let
       lib = nixpkgs.lib;
@@ -64,6 +72,7 @@
           mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
             cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           };
+          near-sandbox = pkgs.callPackage ./nix/near-sandbox.nix { inherit crane nearcore; };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
         }
         // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
@@ -104,6 +113,7 @@
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
+          near-sandbox = pkgs.callPackage ./nix/near-sandbox.nix { inherit crane nearcore; };
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix {
@@ -173,7 +183,7 @@
             rustPlatform.bindgenHook
           ];
 
-          nearTools = with pkgs; [
+          nearTools = [
             near-cli-rs
             cargo-near
           ];
@@ -219,9 +229,7 @@
             "zerocallusedregs"
           ];
 
-        in
-        {
-          default = pkgs.mkShell {
+          defaultShell = {
             strictDeps = true;
 
             packages =
@@ -255,6 +263,48 @@
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';
           };
+
+          # The repo's localnet CLI config, kept apart from the user's own. The
+          # CLI takes no config path, and only reads `XDG_CONFIG_HOME` on Linux.
+          nearLocalnet = pkgs.writeShellApplication {
+            name = "near";
+            runtimeInputs = [
+              pkgs.coreutils
+              pkgs.gnused
+            ];
+            text = ''
+              config_home="$HOME/.near/mpc-localnet-near-cli"
+              mkdir -p "$config_home/near-cli"
+              # Rendered atomically: launch-localnet.sh runs several `near`s at once.
+              tmp=$(mktemp "$config_home/near-cli/config.toml.XXXXXX")
+              sed "s|@CREDENTIALS_HOME_DIR@|$config_home/credentials|" \
+                ${./docs/development/localnet/near-cli-config.template.toml} >"$tmp"
+              mv "$tmp" "$config_home/near-cli/config.toml"
+              XDG_CONFIG_HOME="$config_home" exec ${near-cli-rs}/bin/near "$@"
+            '';
+          };
+
+        in
+        {
+          default = pkgs.mkShell defaultShell;
+
+          # Kept out of the default shell because it compiles neard from source.
+          localnet = pkgs.mkShell (
+            defaultShell
+            // {
+              packages = lib.optional stdenv.hostPlatform.isLinux nearLocalnet ++ defaultShell.packages ++ [
+                near-sandbox
+                pkgs.curl
+                pkgs.gettext # envsubst
+              ];
+
+              env = defaultShell.env // {
+                # The near-sandbox crate otherwise downloads a prebuilt neard,
+                # which cannot run on NixOS: it expects an FHS dynamic loader.
+                NEAR_SANDBOX_BIN_PATH = "${near-sandbox}/bin/near-sandbox";
+              };
+            }
+          );
 
           # The release contract build runs in a pinned Docker image, so its shell holds only the
           # tools that start it and the release job skips the default shell's other packages

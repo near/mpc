@@ -86,6 +86,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 main() {
+  export PATH="$PWD/target/release:$PATH"
   require_cmds jq envsubst near neard mpc-node
 
   if [[ ! -f "$MPC_CONTRACT_PATH" ]]; then
@@ -128,17 +129,10 @@ main() {
   neard_alive_cmd="curl -s localhost:3030/status | jq"
   wait_for_success "${neard_alive_cmd}"
 
-  if ! grep -q "mpc-localnet" ~/.config/near-cli/config.toml; then
-    echo "Not found. You need to add mpc-localnet config (shown below) to ~/.config/near-cli/config.toml"
-    cat <<EOF
-[network_connection.mpc-localnet]
-network_name = "mpc-localnet"
-rpc_url = "http://localhost:3030/"
-wallet_url = "http://localhost:3030/"
-explorer_transaction_url = "http://localhost:3030/"
-linkdrop_account_id = "test.near"
-EOF
-    echo "For more details, see localnet guide"
+  connections=$(near config show-connections 2>/dev/null) || true
+  if ! grep -q 'network_name = "mpc-localnet"' <<<"$connections"; then
+    echo "near CLI has no mpc-localnet connection. Add the one from" >&2
+    echo "docs/development/localnet/near-cli-config.template.toml to your near CLI config, or on Linux run inside \`nix develop .#localnet\`." >&2
     exit 1
   fi
 
@@ -146,7 +140,7 @@ EOF
   NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | grep -oE "ed25519:\w+")
 
   echo "Creating mpc-contract account"
-  run_quiet_on_success "near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+  run_quiet_on_success "near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
   run_quiet_on_success_with_retries "near account view-account-summary mpc-contract.test.near network-config mpc-localnet now"
 
   echo "Deploying mpc-contract"
@@ -158,7 +152,7 @@ EOF
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
-    run_quiet_on_success "near account create-account fund-myself ${node_name} '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send"
+    run_quiet_on_success "near account create-account fund-myself ${node_name} '100 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send"
 
   done
 
@@ -264,7 +258,7 @@ EOF
   wait_for_success "$(mpc_view state) 2>&1 | grep Running"
 
   echo "Creating tee-verifier account"
-  run_quiet_on_success "near account create-account fund-myself $TEE_VERIFIER_ACCOUNT '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+  run_quiet_on_success "near account create-account fund-myself $TEE_VERIFIER_ACCOUNT '5 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
 
   echo "Deploying tee-verifier"
   # The verifier is stateless, so it has no initializer to call on deploy.
