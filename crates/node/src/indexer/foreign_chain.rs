@@ -19,6 +19,12 @@ pub struct ForeignChainRegistrations {
     pub configs: watch::Receiver<dtos::ForeignChainsConfigs>,
 }
 
+/// One read of [`ForeignChainRegistrations`].
+struct RegistrationsSnapshot {
+    supporters: ForeignChainSupporters,
+    configs: dtos::ForeignChainsConfigs,
+}
+
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
 
@@ -33,7 +39,7 @@ pub async fn monitor_foreign_chain_registrations<
 >(
     contract: MpcContractHandle<V>,
 ) -> ForeignChainRegistrations {
-    let (initial_supporters, initial_configs) = loop {
+    let initial = loop {
         match read_registrations(&contract).await {
             Ok(registrations) => break registrations,
             Err(e) => {
@@ -43,15 +49,15 @@ pub async fn monitor_foreign_chain_registrations<
         }
     };
 
-    let (supporters_sender, supporters) = watch::channel(initial_supporters);
-    let (configs_sender, configs) = watch::channel(initial_configs);
+    let (supporters_sender, supporters) = watch::channel(initial.supporters);
+    let (configs_sender, configs) = watch::channel(initial.configs);
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(FOREIGN_CHAIN_REGISTRATIONS_REFRESH_INTERVAL).await;
             match read_registrations(&contract).await {
-                Ok((latest_supporters, latest_configs)) => {
-                    send_if_changed(&supporters_sender, latest_supporters);
-                    send_if_changed(&configs_sender, latest_configs);
+                Ok(latest) => {
+                    send_if_changed(&supporters_sender, latest.supporters);
+                    send_if_changed(&configs_sender, latest.configs);
                 }
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading foreign-chain registrations from chain: {:?}", e)
@@ -69,13 +75,15 @@ pub async fn monitor_foreign_chain_registrations<
 /// a transiently inconsistent snapshot, corrected on the next poll.
 async fn read_registrations<C: ViewContract + Clone + Send + 'static>(
     contract: &MpcContractHandle<C>,
-) -> anyhow::Result<(ForeignChainSupporters, dtos::ForeignChainsConfigs)> {
+) -> anyhow::Result<RegistrationsSnapshot> {
     let (available_chains, configs) = tokio::try_join!(
         contract.get_available_foreign_chains(),
         contract.get_foreign_chains_configs()
     )?;
-    let supporters = supporters_by_available_chain(&available_chains.value, &configs.value);
-    Ok((supporters, configs.value))
+    Ok(RegistrationsSnapshot {
+        supporters: supporters_by_available_chain(&available_chains.value, &configs.value),
+        configs: configs.value,
+    })
 }
 
 fn send_if_changed<T: PartialEq>(sender: &watch::Sender<T>, latest: T) {

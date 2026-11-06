@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
-use std::pin::Pin;
 use std::time::Duration;
 
 use backon::{BackoffBuilder, ExponentialBackoff, ExponentialBuilder};
@@ -11,7 +10,7 @@ use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
-use tokio::time::Sleep;
+use tokio::time::Instant;
 
 use crate::foreign_chain_rpc_policy::{RpcQuorumStatus, eligible_chains, rpc_quorum_statuses};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
@@ -99,7 +98,7 @@ async fn keep_foreign_chains_registration_up_to_date(
                     break;
                 }
             }
-            () = wait_for_resend(&mut pending) => {}
+            () = wait_for_resend(&pending) => {}
         }
     }
 }
@@ -126,7 +125,7 @@ struct PendingRegistration {
     chains: BTreeSet<dtos::ForeignChain>,
     resends: u32,
     resend_delays: ExponentialBackoff,
-    resend_timer: Pin<Box<Sleep>>,
+    resend_at: Instant,
 }
 
 impl PendingRegistration {
@@ -145,7 +144,7 @@ impl PendingRegistration {
             chains,
             resends: 0,
             resend_delays,
-            resend_timer: Box::pin(tokio::time::sleep(delay)),
+            resend_at: Instant::now() + delay,
         })
     }
 
@@ -153,7 +152,7 @@ impl PendingRegistration {
         &mut self,
         txn_sender: &impl TransactionSender,
     ) -> Result<(), TransactionProcessorError> {
-        if self.resend_timer.deadline() > tokio::time::Instant::now() {
+        if self.resend_at > Instant::now() {
             return Ok(());
         }
         self.resends = self.resends.saturating_add(1);
@@ -166,15 +165,15 @@ impl PendingRegistration {
              key allows register_foreign_chains_config"
         );
         register_foreign_chains(txn_sender, &self.chains).await?;
-        self.resend_timer = Box::pin(tokio::time::sleep(delay));
+        self.resend_at = Instant::now() + delay;
         Ok(())
     }
 }
 
 /// Never completes while nothing is pending.
-async fn wait_for_resend(pending: &mut Option<PendingRegistration>) {
+async fn wait_for_resend(pending: &Option<PendingRegistration>) {
     match pending {
-        Some(pending) => pending.resend_timer.as_mut().await,
+        Some(pending) => tokio::time::sleep_until(pending.resend_at).await,
         None => std::future::pending().await,
     }
 }
