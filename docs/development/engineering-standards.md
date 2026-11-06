@@ -392,3 +392,27 @@ pub enum SkipReason { ... }
 When two types reference each other, declare the one closer to the public API first.
 
 **Scope.** This applies to new code, and to files you are already reworking. It is not a request to reorder existing files in bulk.
+
+## Separate wire-format types from storage and internal types
+
+We prefer distinct types for the wire format and for internal data.
+For example, the crate `near-mpc-contract-interface` defines the wire format
+of the MPC contract, while the contract and the node each have their own
+internal representations.
+
+Wire-format and internal types evolve for different reasons. Wire types are
+an ABI and must stay compatible across versions of the node and the contract.
+Storage and internal types may change freely based on the needs of the
+component: versioning and migrations, trait derives, defaults, restructuring.
+
+Keeping the two separate from the start is cheaper than introducing a
+separation once it is needed. Maintaining separate types, even when they are
+mirror images of one another, is generally also very cheap.
+
+Conventions:
+- New types: use wire-format types for the wire format only. Introduce
+  separate storage and internal types, even if they start as 1:1 copies.
+- Existing types:
+    - keep separate storage/wire types where they already exist.
+    - Existing wire types that are used for storage may stay as-is, if there is no
+      need to retroactively duplicate them.
