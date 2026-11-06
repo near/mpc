@@ -2,7 +2,7 @@
 
 This module implements the full Beaver triple generation pipeline via Oblivious Transfer. A triple consists of threshold-shared values `(a, b, c)` satisfying `a * b = c`, along with public commitments `(A, B, C) = (g^a, g^b, g^c)`.
 
-Triples are the foundational building block for OT-based ECDSA presigning -- each presignature requires two triples.
+Triples are the foundational building block for OT-based ECDSA signing -- each signature requires two triples.
 
 ## Public API
 
