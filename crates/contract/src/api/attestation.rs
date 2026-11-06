@@ -479,6 +479,7 @@ mod tests {
         make_public_key_for_curve, resharing_state,
     };
     use crate::config::Config;
+    use crate::dto_mapping::IntoContractType;
     use crate::primitives::key_state::{
         AttemptId, AuthenticatedAccountId, EpochId, KeyForDomain, Keyset,
     };
@@ -492,8 +493,7 @@ mod tests {
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
     use crate::tee::test_utils::{
-        NANOS_PER_SECOND, dstack_fixture_node, mock_expiring_at, set_block_secs,
-        whitelist_dstack_measurements,
+        NANOS_PER_SECOND, dstack_fixture_node, set_block_secs, whitelist_dstack_measurements,
     };
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
@@ -513,7 +513,7 @@ mod tests {
     use std::{assert_matches, collections::BTreeSet};
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, verified_report,
+        launcher_image_hash, mock_expiring_at, mock_tcb_info, verified_report,
     };
 
     #[test]
@@ -983,7 +983,7 @@ mod tests {
             .tee_state
             .verify_and_store_mock(
                 node,
-                mock_expiring_at(ATTESTATION_EXPIRY_SECONDS),
+                mock_expiring_at(ATTESTATION_EXPIRY_SECONDS).into_contract_type(),
                 TEE_UPGRADE_DURATION,
             )
             .expect("mock attestation is not yet expired and valid");

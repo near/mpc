@@ -504,6 +504,7 @@ fn log_informational_advisory_ids(advisory_ids: &[String]) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::dto_mapping::IntoContractType;
     use crate::primitives::test_utils::{
         authenticate_account_as, bogus_ed25519_public_key, create_node, gen_account_id,
         gen_participant, gen_participants, node_for,
@@ -511,8 +512,7 @@ mod tests {
     use crate::tee::{
         proposal::get_docker_compose_hash,
         test_utils::{
-            dstack_fixture_node, mock_expiring_at, set_block_secs, set_block_timestamp,
-            whitelist_dstack_measurements,
+            dstack_fixture_node, set_block_secs, set_block_timestamp, whitelist_dstack_measurements,
         },
     };
     use mpc_attestation::attestation::MockAttestation;
@@ -529,7 +529,7 @@ mod tests {
     };
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, verified_report,
+        launcher_image_hash, mock_expiring_at, mock_tcb_info, verified_report,
     };
 
     #[test]
@@ -560,8 +560,8 @@ mod tests {
         let fresh_node = node_for(&"fresh.near".parse().unwrap());
         let stale_node = node_for(&"stale.near".parse().unwrap());
 
-        let fresh = mock_expiring_at(FRESH_EXPIRY_SECONDS);
-        let stale = mock_expiring_at(STALE_EXPIRY_SECONDS);
+        let fresh = mock_expiring_at(FRESH_EXPIRY_SECONDS).into_contract_type();
+        let stale = mock_expiring_at(STALE_EXPIRY_SECONDS).into_contract_type();
         submit_mock(&mut tee_state, &fresh_node, fresh).unwrap();
         submit_mock(&mut tee_state, &stale_node, stale).unwrap();
 
@@ -608,7 +608,8 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let node = node_for(&"alice.near".parse().unwrap());
-        let oversized = mock_expiring_at(attestation::MOCK_EXPIRATION_DURATION_SECONDS * 10);
+        let oversized = mock_expiring_at(attestation::MOCK_EXPIRATION_DURATION_SECONDS * 10)
+            .into_contract_type();
         submit_mock(&mut tee_state, &node, oversized).unwrap();
 
         // When: the clock advances just past the contract's default window, well before the
@@ -631,7 +632,7 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        let expired = mock_expiring_at(EXPIRY_SECONDS);
+        let expired = mock_expiring_at(EXPIRY_SECONDS).into_contract_type();
 
         for idx in 0..10 {
             let node = node_for(&format!("node{idx}.near").parse().unwrap());
@@ -667,7 +668,7 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let node = node_for(&"alice.near".parse().unwrap());
-        let attestation = mock_expiring_at(FUTURE_EXPIRY_SECONDS);
+        let attestation = mock_expiring_at(FUTURE_EXPIRY_SECONDS).into_contract_type();
         submit_mock(&mut tee_state, &node, attestation).unwrap();
 
         // When: cleanup runs while the attestation is still valid.
@@ -962,7 +963,8 @@ mod tests {
         let mut tee_state = TeeState::with_mocked_participant_attestations(&attested);
         let (account_id, _, participant_info) = &participants.participants()[2];
         let node = create_node(account_id, &participant_info.tls_public_key);
-        submit_mock(&mut tee_state, &node, mock_expiring_at(expiry_time_secs)).unwrap();
+        let expiring_attestation = mock_expiring_at(expiry_time_secs).into_contract_type();
+        submit_mock(&mut tee_state, &node, expiring_attestation).unwrap();
         set_block_timestamp((expiry_time_secs + 1) * 1_000_000_000);
 
         // When

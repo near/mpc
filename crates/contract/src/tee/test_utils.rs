@@ -16,8 +16,6 @@ use rand::Rng;
 use std::time::Duration;
 
 #[cfg(test)]
-use mpc_attestation::attestation::MockAttestation;
-#[cfg(test)]
 use near_mpc_contract_interface::types as dtos;
 #[cfg(test)]
 use test_utils::attestation::{account_key, p2p_tls_key};
@@ -163,15 +161,5 @@ pub(crate) fn dstack_fixture_node() -> dtos::Node {
         account_id: "alice.near".parse().unwrap(),
         tls_public_key: p2p_tls_key().into(),
         account_public_key: account_key().into(),
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
-    MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
-        expected_measurements: None,
     }
 }
