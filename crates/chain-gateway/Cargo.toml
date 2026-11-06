@@ -6,22 +6,31 @@ edition = { workspace = true }
 autotests = false
 
 [features]
+default = ["embedded-node"]
+embedded-node = [
+    "dep:near-async",
+    "dep:near-client",
+    "dep:near-indexer",
+    "dep:near-o11y",
+    "dep:near-store",
+    "dep:nearcore",
+]
 test-utils = ["near-contract-transport/test-utils"]
 
 [dependencies]
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 near-account-id = { workspace = true }
-near-async = { workspace = true }
-near-client = { workspace = true }
+near-async = { workspace = true, optional = true }
+near-client = { workspace = true, optional = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
-near-indexer = { workspace = true }
+near-indexer = { workspace = true, optional = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
-near-o11y = { workspace = true }
-near-store = { workspace = true }
-nearcore = { workspace = true }
+near-o11y = { workspace = true, optional = true }
+near-store = { workspace = true, optional = true }
+nearcore = { workspace = true, optional = true }
 prometheus = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -30,7 +39,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
-chain-gateway = { path = ".", features = ["test-utils"] }
+chain-gateway = { path = ".", default-features = false, features = ["test-utils"] }
 chain-gateway-test-contract = { workspace = true }
 insta = { workspace = true }
 near-sdk = { workspace = true }
@@ -45,6 +54,7 @@ tokio = { workspace = true, features = ["test-util"] }
 [[test]]
 name = "test"
 path = "tests/test.rs"
+required-features = ["embedded-node"]
 
 [lints]
 workspace = true
