@@ -1,4 +1,10 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
@@ -40,14 +46,15 @@ pub async fn spawn_recovery_server_and_run_onboarding(
     tx_sender: impl TransactionSender,
 ) -> anyhow::Result<()> {
     let (import_keyshares_sender, import_keyshares_receiver) = tokio::sync::watch::channel(vec![]);
-    let web_server_state = web::types::WebServerState {
+    let web_server_state = Arc::new(web::types::WebServerState {
         import_keyshares_sender,
         keyshare_storage: keyshare_storage.clone(),
         backup_encryption_key: migration_secrets.backup_encryption_key,
-    };
+        onboarded: AtomicBool::new(false),
+    });
 
     web::server::start_web_server(
-        web_server_state.into(),
+        web_server_state.clone(),
         migration_web_ui,
         my_migration_info_receiver.clone(),
         &migration_secrets.p2p_private_key,
@@ -63,5 +70,6 @@ pub async fn spawn_recovery_server_and_run_onboarding(
         import_keyshares_receiver,
     )
     .await?;
+    web_server_state.onboarded.store(true, Ordering::Relaxed);
     Ok(())
 }
