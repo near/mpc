@@ -1,6 +1,6 @@
 //! Compares the local foreign chain RPC config with the on chain whitelist
-//! (`allowed_foreign_chain_providers`) and logs each difference. The verifier only logs;
-//! [`crate::foreign_chain_rpc_policy`] applies the same match to decide which providers count
+//! (`allowed_foreign_chain_providers`) and logs each difference, once per probe round. It only
+//! logs: [`crate::foreign_chain_rpc_policy`] applies the same match to decide which providers count
 //! towards the RPC quorum.
 //!
 //! A local provider matches a whitelist provider by its URL host, as [`provider_identity`]
@@ -28,30 +28,8 @@ use mpc_node_config::{
     },
 };
 use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderConfig, ProviderId};
-use tokio::sync::watch;
 
-/// Compares the local config with each whitelist that
-/// [`monitor_foreign_chain_whitelist`](crate::indexer::foreign_chain::monitor_foreign_chain_whitelist)
-/// publishes.
-///
-/// `run` does not read the contract: the monitor polls it, so a change to how the node reads the
-/// whitelist changes only the monitor.
-pub(crate) async fn run(
-    mut whitelist_rx: watch::Receiver<BTreeMap<dtos::ForeignChain, ChainEntry>>,
-    local: ForeignChainsConfig,
-) {
-    loop {
-        let diagnostics = compare(&local, &whitelist_rx.borrow_and_update());
-        if diagnostics.is_empty() {
-            tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
-        }
-        diagnostics.iter().for_each(log_diagnostic);
-        if whitelist_rx.changed().await.is_err() {
-            // Sender dropped: the indexer is shutting down, nothing left to verify against.
-            break;
-        }
-    }
-}
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
 
 /// Holds no local `rpc_url` and no token, because it is logged.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,10 +60,7 @@ enum DiagnosticKind {
     },
 }
 
-fn compare(
-    local: &ForeignChainsConfig,
-    whitelist: &BTreeMap<dtos::ForeignChain, ChainEntry>,
-) -> Vec<Diagnostic> {
+fn compare(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) -> Vec<Diagnostic> {
     local
         .iter_chains()
         .flat_map(|(chain, local_config)| match whitelist.get(&chain) {
@@ -164,13 +139,27 @@ fn compare_chain(
     diagnostics
 }
 
+pub(super) fn log_differences(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) {
+    log(&compare(local, whitelist));
+}
+
+pub(super) const CONFIG_MATCHES_WHITELIST: &str =
+    "foreign chain whitelist: local config matches the contract whitelist";
+
+fn log(diagnostics: &[Diagnostic]) {
+    if diagnostics.is_empty() {
+        tracing::info!("{CONFIG_MATCHES_WHITELIST}");
+    }
+    diagnostics.iter().for_each(log_diagnostic);
+}
+
 fn log_diagnostic(diagnostic: &Diagnostic) {
-    let chain = diagnostic.chain;
+    let chain = diagnostic.chain.label();
     let local_provider = diagnostic.local_name.as_deref();
     match &diagnostic.kind {
         DiagnosticKind::ChainNotInWhitelist => {
             tracing::info!(
-                ?chain,
+                %chain,
                 "foreign chain whitelist: chain is not whitelisted yet"
             );
         }
@@ -180,7 +169,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             reason,
         } => {
             tracing::error!(
-                ?chain,
+                %chain,
                 %whitelist_id,
                 whitelist_base_url,
                 %reason,
@@ -189,7 +178,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
         }
         DiagnosticKind::ProviderNotInWhitelist => {
             tracing::info!(
-                ?chain,
+                %chain,
                 local_provider,
                 "foreign chain whitelist: extra provider (its host matches no whitelist entry)"
             );
@@ -200,7 +189,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             mismatch: Mismatch::UnknownContractVariant,
         } => {
             tracing::error!(
-                ?chain,
+                %chain,
                 local_provider,
                 %whitelist_id,
                 ?whitelist_provider,
@@ -213,7 +202,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             mismatch,
         } => {
             tracing::warn!(
-                ?chain,
+                %chain,
                 local_provider,
                 %whitelist_id,
                 ?whitelist_provider,
@@ -226,7 +215,7 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
             first_local_name,
         } => {
             tracing::warn!(
-                ?chain,
+                %chain,
                 local_provider,
                 first_local_provider = first_local_name.as_str(),
                 %whitelist_id,
@@ -240,8 +229,8 @@ fn log_diagnostic(diagnostic: &Diagnostic) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::foreign_chain_probe::test_utils::{chain_config, chain_entry, foreign_chains};
     use mpc_node_config::{AuthConfig, ForeignChainProviderConfig, TokenConfig};
-    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
     use rstest::rstest;
     use tracing_test::traced_test;
@@ -267,23 +256,8 @@ mod tests {
         local_provider(rpc_url, auth)
     }
 
-    fn must_local_ethereum(
-        providers: &[(&str, ForeignChainProviderConfig)],
-    ) -> ForeignChainsConfig {
-        let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> = providers
-            .iter()
-            .map(|(name, config)| (RpcProviderName::from(name.to_string()), config.clone()))
-            .collect();
-        ForeignChainsConfig {
-            ethereum: Some(ForeignChainConfig {
-                timeout_sec: std::num::NonZeroU64::new(30).unwrap(),
-                max_retries: std::num::NonZeroU64::new(3).unwrap(),
-                expected_network_fingerprint: None,
-                providers: NonEmptyBTreeMap::try_from(providers)
-                    .expect("a test chain has a provider"),
-            }),
-            ..Default::default()
-        }
+    fn local_ethereum(providers: &[(&str, ForeignChainProviderConfig)]) -> ForeignChainsConfig {
+        foreign_chains([(dtos::ForeignChain::Ethereum, chain_config(providers))])
     }
 
     fn whitelist_provider(base_url: &str, auth_scheme: AuthScheme) -> ProviderConfig {
@@ -294,19 +268,8 @@ mod tests {
         }
     }
 
-    fn must_ethereum_whitelist(
-        providers: &[(&str, ProviderConfig)],
-    ) -> BTreeMap<dtos::ForeignChain, ChainEntry> {
-        let providers: BTreeMap<ProviderId, ProviderConfig> = providers
-            .iter()
-            .map(|(id, config)| (ProviderId(id.to_string()), config.clone()))
-            .collect();
-        let entry = ChainEntry {
-            providers: NonEmptyBTreeMap::try_from(providers)
-                .expect("a test whitelist has a provider"),
-            quorum: 1,
-        };
-        BTreeMap::from([(dtos::ForeignChain::Ethereum, entry)])
+    fn ethereum_whitelist(providers: &[(&str, ProviderConfig)]) -> ForeignChainWhitelist {
+        BTreeMap::from([(dtos::ForeignChain::Ethereum, chain_entry(providers, 1))])
     }
 
     fn alchemy() -> ProviderConfig {
@@ -333,19 +296,19 @@ mod tests {
 
     #[rstest]
     #[case::config_names_swap_the_whitelist_ids(
-        must_local_ethereum(&[
+        local_ethereum(&[
             ("alchemy", local_path_auth("https://my-slug.quiknode.pro/{api_key}")),
             ("quicknode", local_path_auth("https://eth-mainnet.g.alchemy.com/v2/{api_key}")),
         ]),
-        must_ethereum_whitelist(&[("alchemy", alchemy()), ("quicknode", quicknode())])
+        ethereum_whitelist(&[("alchemy", alchemy()), ("quicknode", quicknode())])
     )]
     #[case::whitelisted_chain_not_configured(
         ForeignChainsConfig::default(),
-        must_ethereum_whitelist(&[("alchemy", alchemy())])
+        ethereum_whitelist(&[("alchemy", alchemy())])
     )]
     fn compare__should_be_silent_when_every_provider_conforms_to_an_entry_with_its_host(
         #[case] local: ForeignChainsConfig,
-        #[case] whitelist: BTreeMap<dtos::ForeignChain, ChainEntry>,
+        #[case] whitelist: ForeignChainWhitelist,
     ) {
         // When
         let diagnostics = compare(&local, &whitelist);
@@ -357,7 +320,7 @@ mod tests {
     #[test]
     fn compare__should_emit_chain_not_in_whitelist_when_the_chain_is_missing_from_the_contract() {
         // Given
-        let local = must_local_ethereum(&[(
+        let local = local_ethereum(&[(
             "alchemy",
             local_provider("https://eth-mainnet.example.com", AuthConfig::None),
         )]);
@@ -384,8 +347,8 @@ mod tests {
         #[case] rpc_url: &str,
     ) {
         // Given
-        let local = must_local_ethereum(&[(name, local_provider(rpc_url, AuthConfig::None))]);
-        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
+        let local = local_ethereum(&[(name, local_provider(rpc_url, AuthConfig::None))]);
+        let whitelist = ethereum_whitelist(&[("alchemy", alchemy())]);
 
         // When
         let diagnostics = compare(&local, &whitelist);
@@ -409,7 +372,7 @@ mod tests {
         #[case] reason: InvalidBaseUrl,
     ) {
         // Given
-        let local = must_local_ethereum(&[
+        let local = local_ethereum(&[
             (
                 "alchemy",
                 local_path_auth("https://eth-mainnet.g.alchemy.com/v2/{api_key}"),
@@ -420,8 +383,7 @@ mod tests {
             ),
         ]);
         let unparseable = whitelist_provider(base_url, AuthScheme::None);
-        let whitelist =
-            must_ethereum_whitelist(&[("alchemy", alchemy()), ("quicknode", unparseable)]);
+        let whitelist = ethereum_whitelist(&[("alchemy", alchemy()), ("quicknode", unparseable)]);
 
         // When
         let diagnostics = compare(&local, &whitelist);
@@ -448,11 +410,11 @@ mod tests {
     #[test]
     fn compare__should_emit_misconfigured_for_each_part_that_differs() {
         // Given
-        let local = must_local_ethereum(&[(
+        let local = local_ethereum(&[(
             "my-alchemy",
             local_path_auth("http://eth-mainnet.g.alchemy.com/v2/x/{api_key}"),
         )]);
-        let whitelist = must_ethereum_whitelist(&[("alchemy", alchemy())]);
+        let whitelist = ethereum_whitelist(&[("alchemy", alchemy())]);
 
         // When
         let diagnostics = compare(&local, &whitelist);
@@ -488,14 +450,14 @@ mod tests {
         #[case] second_mismatches: Vec<Mismatch>,
     ) {
         // Given
-        let local = must_local_ethereum(&[
+        let local = local_ethereum(&[
             (
                 "quicknode-a",
                 local_path_auth("https://slug-a.quiknode.pro/{api_key}"),
             ),
             ("quicknode-b", second_provider),
         ]);
-        let whitelist = must_ethereum_whitelist(&[("quicknode", quicknode())]);
+        let whitelist = ethereum_whitelist(&[("quicknode", quicknode())]);
 
         // When
         let diagnostics = compare(&local, &whitelist);
@@ -523,9 +485,9 @@ mod tests {
     /// Each local value that must not appear in logs contains this marker.
     const SECRET_MARKER: &str = "zq7";
 
-    #[tokio::test]
+    #[test]
     #[traced_test]
-    async fn run__should_keep_configured_urls_and_tokens_out_of_logs() {
+    fn log_differences__should_keep_configured_urls_and_tokens_out_of_logs() {
         // Given
         let header = AuthConfig::Header {
             name: "x-token".parse().expect("a test header name parses"),
@@ -536,7 +498,7 @@ mod tests {
             name: "dkey".to_string(),
             token: token("token-zq7"),
         };
-        let local = must_local_ethereum(&[
+        let local = local_ethereum(&[
             (
                 "duplicate-a",
                 local_path_auth("https://slug-zq7-a.quiknode.pro/{api_key}"),
@@ -564,16 +526,14 @@ mod tests {
                 name: "apikey".to_string(),
             },
         );
-        let whitelist = must_ethereum_whitelist(&[
+        let whitelist = ethereum_whitelist(&[
             ("alchemy", alchemy()),
             ("drpc", drpc),
             ("quicknode", quicknode()),
         ]);
-        let (whitelist_tx, whitelist_rx) = watch::channel(whitelist);
-        drop(whitelist_tx);
 
         // When
-        run(whitelist_rx, local).await;
+        log_differences(&local, &whitelist);
 
         // Then
         assert!(logs_contain("provider differs from its whitelist entry"));

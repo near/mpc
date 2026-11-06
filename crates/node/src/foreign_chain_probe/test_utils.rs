@@ -3,11 +3,14 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::future::{Pending, Ready};
+use std::num::NonZeroU64;
 
 use foreign_chain_health_check::probe::{
     ProbeReport, ProviderCounts, ProviderHealth, ProviderStatus,
 };
 use futures::future::Either;
+use mpc_node_config::foreign_chains::RpcProviderName;
+use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
@@ -25,6 +28,37 @@ pub(super) fn row(
         provider: dtos::ProviderId(provider.to_string()),
         status,
     }
+}
+
+pub(super) fn chain_config(providers: &[(&str, ForeignChainProviderConfig)]) -> ForeignChainConfig {
+    let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> = providers
+        .iter()
+        .map(|(name, config)| (RpcProviderName::from(name.to_string()), config.clone()))
+        .collect();
+    ForeignChainConfig {
+        timeout_sec: NonZeroU64::new(30).unwrap(),
+        max_retries: NonZeroU64::new(3).unwrap(),
+        expected_network_fingerprint: None,
+        providers: NonEmptyBTreeMap::try_from(providers).expect("a test chain has a provider"),
+    }
+}
+
+/// Covers only the chains the probe tests use.
+pub(super) fn foreign_chains(
+    chains: impl IntoIterator<Item = (dtos::ForeignChain, ForeignChainConfig)>,
+) -> ForeignChainsConfig {
+    let mut local = ForeignChainsConfig::default();
+    for (chain, config) in chains {
+        let slot = match chain {
+            dtos::ForeignChain::Polygon => &mut local.polygon,
+            dtos::ForeignChain::Ethereum => &mut local.ethereum,
+            dtos::ForeignChain::Base => &mut local.base,
+            dtos::ForeignChain::Bnb => &mut local.bnb,
+            other => panic!("no test config slot for {other:?}"),
+        };
+        *slot = Some(config);
+    }
+    local
 }
 
 pub(super) fn chain_entry(
