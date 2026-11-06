@@ -11229,6 +11229,7 @@ dependencies = [
  "mpc-primitives",
  "near-account-id",
  "near-mpc-bounded-collections",
+ "rstest",
  "rustls",
  "serde",
  "serde_json",

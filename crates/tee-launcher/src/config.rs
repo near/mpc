@@ -1,11 +1,12 @@
 use launcher_interface::types::TeeConfig;
 use near_account_id::AccountId;
 
-use crate::error::LauncherError;
+use crate::{constants::MPC_HOME_DIR, error::LauncherError};
 
-/// Inject launcher-controlled config (the `tee` section and the contract id)
-/// into the user-provided MPC node config table.  Returns an error if the user
-/// config already contains a reserved key.
+/// Inject launcher-controlled config into the user-provided MPC node config
+/// table: the `tee` section, the contract id, and the home directory, so a disk
+/// keeps the chain it was initialized with. Returns an error if the user config
+/// already contains a reserved key.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
@@ -17,19 +18,18 @@ pub fn intercept_node_config(
         "tee",
         toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
     )?;
+    insert_reserved(&mut node_config, &[], "home_dir", MPC_HOME_DIR.into())?;
     insert_reserved(
         &mut node_config,
         &["node", "indexer"],
         "mpc_contract_id",
-        toml::Value::String(mpc_contract_id.to_string()),
+        mpc_contract_id.as_str().into(),
     )?;
 
     Ok(node_config)
 }
 
-/// Insert `value` under `key` in the table at `parents`, returning an error if
-/// the key already exists or a parent is not a table. Used to inject
-/// launcher-controlled sections into user config.
+/// Fails if the user config already sets the key or puts a non-table on its path.
 fn insert_reserved(
     mut table: &mut toml::Table,
     parents: &[&str],
@@ -91,6 +91,7 @@ pub fn validate_image_reference(image_ref: &str) -> Result<(), LauncherError> {
 #[expect(non_snake_case)]
 mod tests {
     use launcher_interface::types::{DockerSha256Digest, TeeAuthorityConfig, TeeConfig};
+    use rstest::rstest;
     use std::assert_matches;
 
     use super::*;
@@ -123,71 +124,57 @@ mod tests {
     }
 
     #[test]
-    fn intercept_config_injects_tee_config() {
-        // given
-        let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
-
-        // when
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
-
-        // then
-        assert!(result.contains_key("tee"));
-        assert_eq!(result["home_dir"].as_str(), Some("/data"));
-    }
-
-    #[test]
-    fn intercept_config_rejects_user_provided_tee_key() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"[tee]
-type = "Local"
-"#,
-        )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
-
-        // then
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
-    }
-
-    #[test]
-    fn intercept_config_empty_table_gets_tee_key() {
-        // given
-        let config = toml::Table::new();
-
-        // when
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
-
-        // then
-        assert!(result.contains_key("tee"));
-    }
-
-    #[test]
-    fn intercept_config_preserves_all_existing_keys() {
-        // given
+    fn intercept_node_config__should_add_the_reserved_keys_and_keep_the_user_config() {
+        // Given
         let config: toml::Table = toml::from_str(
             r#"
-home_dir = "/data"
-port = 8080
-[nested]
-key = "value"
-"#,
+            port = 8080
+            node.indexer.sync_mode = "Latest"
+            "#,
         )
         .unwrap();
 
-        // when
+        // When
         let result =
             intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
 
-        // then
-        assert_eq!(result["home_dir"].as_str(), Some("/data"));
-        assert_eq!(result["port"].as_integer(), Some(8080));
-        assert_eq!(result["nested"]["key"].as_str(), Some("value"));
-        assert!(result.contains_key("tee"));
+        // Then
+        let mut expected: toml::Table = toml::from_str(
+            r#"
+            port = 8080
+            home_dir = "/data"
+            node.indexer = { sync_mode = "Latest", mpc_contract_id = "v1.signer" }
+            "#,
+        )
+        .unwrap();
+        expected.insert(
+            "tee".into(),
+            toml::Value::try_from(sample_tee_config()).unwrap(),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::tee_table(r#"tee.type = "Local""#, "tee")]
+    #[case::tee_value(r#"tee = "sneaky""#, "tee")]
+    #[case::home_dir(r#"home_dir = "/tmp""#, "home_dir")]
+    #[case::contract_id(
+        r#"node.indexer.mpc_contract_id = "other.near""#,
+        "node.indexer.mpc_contract_id"
+    )]
+    #[case::non_table_parent(r#"node.indexer = "sneaky""#, "node.indexer.mpc_contract_id")]
+    fn intercept_node_config__should_reject_a_user_config_that_sets_a_reserved_key(
+        #[case] user_config: &str,
+        #[case] reserved_key: &str,
+    ) {
+        // Given
+        let config: toml::Table = toml::from_str(user_config).unwrap();
+
+        // When
+        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
+
+        // Then
+        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == reserved_key);
     }
 
     #[test]
@@ -258,7 +245,7 @@ key = "value"
     #[test]
     fn intercept_config_output_re_serializes_to_valid_toml() {
         // given
-        let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
+        let config: toml::Table = toml::from_str("port = 8080").unwrap();
 
         // when
         let result =
@@ -268,74 +255,7 @@ key = "value"
         // then — the output can be parsed back
         let reparsed: toml::Table = toml::from_str(&toml_str).unwrap();
         assert!(reparsed.contains_key("tee"));
-        assert_eq!(reparsed["home_dir"].as_str(), Some("/data"));
-    }
-
-    #[test]
-    fn intercept_config_tee_as_non_table_value_is_rejected() {
-        // given — tee exists but as a string, not a table
-        let config: toml::Table = toml::from_str(r#"tee = "sneaky""#).unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
-
-        // then — any occupied entry is rejected regardless of value type
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
-    }
-
-    #[test]
-    fn intercept_node_config__should_inject_the_contract_id_next_to_the_user_indexer_settings() {
-        // Given
-        let config: toml::Table = toml::from_str(
-            r#"[node.indexer]
-sync_mode = "Latest"
-"#,
-        )
-        .unwrap();
-
-        // When
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
-
-        // Then
-        let expected_indexer: toml::Value = toml::from_str(
-            r#"sync_mode = "Latest"
-mpc_contract_id = "v1.signer"
-"#,
-        )
-        .unwrap();
-        assert_eq!(result["node"]["indexer"], expected_indexer);
-    }
-
-    #[test]
-    fn intercept_node_config__should_reject_a_user_supplied_contract_id() {
-        // Given
-        let config: toml::Table =
-            toml::from_str(r#"node.indexer.mpc_contract_id = "other.near""#).unwrap();
-
-        // When
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
-
-        // Then
-        assert_matches!(
-            result,
-            Err(LauncherError::ReservedConfigKey(key)) if key == "node.indexer.mpc_contract_id"
-        );
-    }
-
-    #[test]
-    fn intercept_node_config__should_reject_a_non_table_in_place_of_the_indexer_section() {
-        // Given
-        let config: toml::Table = toml::from_str(r#"node.indexer = "sneaky""#).unwrap();
-
-        // When
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
-
-        // Then
-        assert_matches!(
-            result,
-            Err(LauncherError::ReservedConfigKey(key)) if key == "node.indexer.mpc_contract_id"
-        );
+        assert_eq!(reparsed["port"].as_integer(), Some(8080));
     }
 
     // --- validate_image_reference: positive (valid references) ---
