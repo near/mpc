@@ -47,7 +47,7 @@ port_mappings = [
 | Field | Required | Description |
 |-------|----------|-------------|
 | `image_reference` | Yes | Docker image reference. A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
-| `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
+| `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in the approved list and be no older than `DEFAULT_IMAGE_DIGEST`) |
 | `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
 ### `[mpc_node_config]`
@@ -75,7 +75,7 @@ The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any regis
 ## Image Hash Selection
 
 Priority order:
-1. If the approved hashes file (`/mnt/shared/image-digest.bin`) exists and `mpc_hash_override` is set: use the override (must be in the approved list)
+1. If the approved hashes file (`/mnt/shared/image-digest.bin`) exists and `mpc_hash_override` is set: use the override (must be in the approved list and no older than `DEFAULT_IMAGE_DIGEST`)
 2. If the approved hashes file exists: use the newest approved hash (first in list)
 3. If the file is absent: fall back to `DEFAULT_IMAGE_DIGEST`
 

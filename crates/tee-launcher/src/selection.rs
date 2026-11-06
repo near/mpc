@@ -7,9 +7,12 @@ use crate::error::LauncherError;
 ///
 /// Selection rules:
 ///   - If the approved hashes file is absent → use `default_digest`
-///   - If `override_hash` is set and appears in the approved list → use it
-///   - If `override_hash` is set but NOT in the approved list → error
+///   - If `override_hash` is set, approved and not older than `default_digest` → use it
+///   - If `override_hash` is set but not approved, or older than `default_digest` → error
 ///   - Otherwise → use the newest approved hash (first in the list)
+///
+/// The default comes from the measured compose, so the unmeasured override cannot run an
+/// image older than the one the CVM was deployed with.
 pub fn select_image_hash(
     approved_hashes: Option<&ApprovedHashes>,
     default_digest: &DockerSha256Digest,
@@ -22,9 +25,20 @@ pub fn select_image_hash(
 
     if let Some(override_image) = override_hash {
         tracing::info!(?override_image, "override mpc image hash provided");
-        if !approved.approved_hashes.contains(override_image) {
+        let age = |digest: &DockerSha256Digest| {
+            approved
+                .approved_hashes
+                .iter()
+                .position(|approved| approved == digest)
+        };
+        let Some(override_age) = age(override_image) else {
             return Err(LauncherError::InvalidHashOverride(format!(
                 "MPC_HASH_OVERRIDE={override_image} does not match any approved hash",
+            )));
+        };
+        if age(default_digest).is_some_and(|default_age| override_age > default_age) {
+            return Err(LauncherError::InvalidHashOverride(format!(
+                "MPC_HASH_OVERRIDE={override_image} is older than the default image {default_digest}",
             )));
         }
         return Ok(override_image.clone());
@@ -36,9 +50,11 @@ pub fn select_image_hash(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
     use near_mpc_bounded_collections::NonEmptyVec;
+    use rstest::rstest;
     use std::assert_matches;
 
     use super::*;
@@ -86,6 +102,25 @@ mod tests {
 
         // then
         assert_matches!(result, Err(LauncherError::InvalidHashOverride(_)));
+    }
+
+    #[rstest]
+    #[case::newer_than_the_default('a', true)]
+    #[case::the_default_itself('b', true)]
+    #[case::older_than_the_default('c', false)]
+    fn select_image_hash__should_honor_an_override_only_if_it_is_not_older_than_the_default(
+        #[case] override_hex_char: char,
+        #[case] accepted: bool,
+    ) {
+        // Given
+        let approved = approved_file(vec![digest('a'), digest('b'), digest('c')]);
+        let override_digest = digest(override_hex_char);
+
+        // When
+        let result = select_image_hash(Some(&approved), &digest('b'), Some(&override_digest));
+
+        // Then
+        assert_eq!(result.ok(), accepted.then_some(override_digest));
     }
 
     #[test]
