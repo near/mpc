@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template) — rendered with the launcher and MPC node manifest digests and the contract account id before deployment (see below)
+* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template): rendered with the launcher and MPC node manifest digests and the contract account id before deployment (see below)
 * [frodo.toml](../../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../../deployment/localnet/tee/frodo.env)/ [sam.env](../../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 

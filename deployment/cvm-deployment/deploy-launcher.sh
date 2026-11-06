@@ -221,9 +221,6 @@ fi
 CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 
-# Render the launcher compose template with the supplied digests and contract
-# account id. The rendered file's SHA256 must match an entry in the
-# contract's allowed_launcher_compose_hashes for attestation to succeed.
 COMPOSE_TMP=$(mktemp)
 trap 'rm -f "$COMPOSE_TMP"' EXIT
 launcher_hex="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
