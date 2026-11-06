@@ -178,7 +178,7 @@ mod tests {
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
+    use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_tee_verifier_account_id, gen_account_id,
@@ -187,7 +187,7 @@ mod tests {
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     };
-    use crate::state::key_event::tests::Environment;
+    use crate::state::key_event::tests::{Environment, find_leader};
     use crate::state::running::RunningContractState;
     use crate::tee::tee_state::TeeState;
     use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
@@ -196,6 +196,7 @@ mod tests {
     use near_sdk::{AccountId, NearToken, testing_env};
     use rand::rngs::OsRng;
     use rstest::rstest;
+    use std::assert_matches;
     use std::collections::BTreeMap;
     use std::panic;
     use std::str::FromStr;
@@ -479,6 +480,77 @@ mod tests {
         // Then: all 4 chains available — no manual recompute needed.
         let available = contract.get_available_foreign_chains();
         assert_eq!(available.len(), 4);
+    }
+
+    /// Every participant registers Ethereum and the whitelist covers it while the only domain
+    /// signs, so nothing is available yet. Adding a ForeignTx domain then runs keygen back into
+    /// Running, with no further registration.
+    #[test]
+    fn vote_pk__should_recompute_available_foreign_chains_when_keygen_adds_a_foreign_tx_domain() {
+        // Given
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .clone();
+        let attest_as = |account_id: &AccountId| {
+            let tls_key = participants
+                .info(account_id)
+                .unwrap()
+                .tls_public_key
+                .clone();
+            Environment::new(Some(0), Some(account_id.clone()), None)
+                .set_pk(near_sdk::PublicKey::from(tls_key));
+        };
+        whitelist_chain(&mut contract, dtos::ForeignChain::Ethereum);
+        for (account_id, _, _) in participants.participants() {
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Ethereum],
+            );
+        }
+        assert!(contract.get_available_foreign_chains().is_empty());
+        let foreign_tx_domain = DomainConfig {
+            id: DomainId(1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
+            purpose: dtos::DomainPurpose::ForeignTx,
+        };
+        for (account_id, _, _) in participants.participants() {
+            attest_as(account_id);
+            contract
+                .vote_add_domains(vec![foreign_tx_domain.clone()])
+                .unwrap();
+        }
+        let ProtocolContractState::Initializing(initializing) = &contract.protocol_state else {
+            panic!("expected Initializing");
+        };
+        let (leader, _) = find_leader(&initializing.generating_key);
+        let key_event_id = KeyEventId {
+            attempt_id: AttemptId::new(),
+            domain_id: foreign_tx_domain.id,
+            epoch_id: EpochId::new(0),
+        };
+        attest_as(&leader);
+        contract.start_keygen_instance(key_event_id).unwrap();
+        let (public_key, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
+
+        // When
+        for (account_id, _, _) in participants.participants() {
+            attest_as(account_id);
+            contract.vote_pk(key_event_id, public_key.clone()).unwrap();
+        }
+
+        // Then
+        assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
+        assert!(
+            contract
+                .get_available_foreign_chains()
+                .contains(&dtos::ForeignChain::Ethereum)
+        );
     }
 
     #[test]
