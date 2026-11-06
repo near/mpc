@@ -173,26 +173,25 @@ mod tests {
     };
     use crate::api::node_migration::MINIMUM_NODE_MANAGEMENT_DEPOSIT;
     use crate::api::test_utils::{
-        basic_setup, basic_setup_with_protocol, make_public_key_for_curve, participant_account_ids,
+        basic_setup, basic_setup_with_protocol, destination_of, make_public_key_for_curve,
+        must_attest_new_node, participant_account_ids,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        gen_account_id, gen_participant, gen_participant_url, gen_participants,
+        bogus_ed25519_near_public_key, bogus_tee_verifier_account_id, gen_account_id,
+        gen_participant, gen_participants,
     };
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::running::RunningContractState;
-    use crate::tee::tee_state::{NodeId, TeeState};
+    use crate::tee::tee_state::TeeState;
     use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
-    use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
-    use near_mpc_contract_interface::types::DestinationNodeInfo;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
     use rand::rngs::OsRng;
@@ -200,7 +199,6 @@ mod tests {
     use std::collections::BTreeMap;
     use std::panic;
     use std::str::FromStr;
-    use std::time::Duration;
 
     #[test]
     fn vote_update_foreign_chain_providers__should_apply_chain_and_return_it_when_threshold_reached()
@@ -953,34 +951,6 @@ mod tests {
         assert!(has_config(&contract, &joining_info.tls_public_key));
         assert_eq!(departing_result, not_participant(&departing));
         assert!(!has_config(&contract, &departing_info.tls_public_key));
-    }
-
-    /// Stores a valid attestation for a new node of `account_id` under fresh keys.
-    fn must_attest_new_node(contract: &mut MpcContract, account_id: &AccountId) -> NodeId {
-        let node_id = NodeId {
-            account_id: account_id.clone(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-        contract
-            .tee_state
-            .verify_and_store_mock(
-                node_id.clone(),
-                MpcMockAttestation::Valid,
-                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
-            )
-            .expect("attestation insertion should succeed");
-        node_id
-    }
-
-    fn destination_of(node_id: &NodeId) -> DestinationNodeInfo {
-        DestinationNodeInfo {
-            signer_account_pk: node_id.account_public_key.clone(),
-            destination_node_info: dtos::ParticipantInfo {
-                url: gen_participant_url(0),
-                tls_public_key: node_id.tls_public_key.clone(),
-            },
-        }
     }
 
     fn register_bitcoin_as(

@@ -3,36 +3,44 @@
 > **Status: this is not a secure scheme.**
 > The implementation that used to live here was removed. What remains is a stub that
 > produces valid ECDSA signatures while leaking the signing key. It exists so that the node and contract plumbing built
-> around this protocol — presignature storage, task routing, resharing, threshold
-> validation — stays compiled and exercised until a real robust scheme replaces it.
+> around this protocol (task routing, resharing, threshold
+> validation) stays compiled and exercised until a real robust scheme replaces it.
 > TODO(#4383): replace the stub with a real robust scheme.
 > Never add a domain for this protocol on mainnet or testnet.
 
 ## Pipeline
 
 ```
-Presigning (offline)  -->  Signing (online)
-  1 round                    1 round
+Presigning  -->  Signing
+  1 round        1 round
 ```
 
-Each presignature is consumed **exactly once** (one-time use).
+`presign_and_sign` runs both rounds as one protocol once the message is known, so no
+presignature is ever stored or reused.
 
 ## Modules
 
 ### `presign.rs`
 
-One-round presigning protocol. Participants broadcast additive contributions to the
-nonce `k`, so all of them learn `k` and agree on `R = k * G`, then fill the
-`PresignOutput` fields so the signing phase recombines them into a valid signature.
-**This is where the key leaks:** any presigner can recover `x` from a resulting
-signature via `x = (s * k - h) / R_x`. See the [protocol
+The one-round presigning step of `presign_and_sign`. Participants broadcast additive
+contributions to the nonce `k`, so all of them learn `k` and agree on `R = k * G`, then
+fill the `PresignOutput` fields so the signing phase recombines them into a valid
+signature. **This is where the key leaks:** any presigner can recover `x` from a
+resulting signature via `x = (s * k - h) / R_x`. See the [protocol
 specification](../../../docs/ecdsa/robust_ecdsa/signing.md).
+
+### `presign_and_sign.rs`
+
+Presigning and signing as one two-round protocol over a single channel. The tweak is
+applied locally between the two rounds, and only the
+coordinator obtains the signature. The node signs with this protocol. See the
+[protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
 
 ### `sign.rs`
 
-One-round online signing protocol with a designated coordinator. Takes a rerandomized
-presignature and the message hash, produces a standard ECDSA signature (low-S
-normalized). Unchanged from the removed scheme and scheme-agnostic: it sums
+The one-round signing step of `presign_and_sign`, with a designated coordinator. Takes
+the tweaked presignature and the message hash, produces a standard ECDSA signature
+(low-S normalized). Unchanged from the removed scheme and scheme-agnostic: it sums
 Lagrange-linearized shares of `s` and provides no secrecy of its own. See the
 [protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md) for details.
 
@@ -42,7 +50,6 @@ Preserved verbatim from the removed scheme, so a replacement can reuse them:
 
 - **`PresignArguments`** -- input to presigning: keygen output + maximum number of malicious parties
 - **`PresignOutput`** -- presignature: `(big_r, c, e, alpha, beta)`
-- **`RerandomizedPresignOutput`** -- presignature after rerandomization via HKDF-SHA3-256 for a specific signing context
 
 ## Threshold
 

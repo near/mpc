@@ -131,7 +131,7 @@ pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usi
                     .build()
             });
         })
-        .id;
+        .id();
     register_unauthorized_catch_all(server, &auth);
     mock_id
 }
@@ -155,7 +155,7 @@ pub fn setup_evm_chain_id_mock(server: &MockServer, chain_id: u64) -> usize {
                     .build()
             });
         })
-        .id
+        .id()
 }
 
 pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
@@ -232,7 +232,7 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
                 .build()
         });
     })
-    .id;
+    .id();
     register_unauthorized_catch_all(server, &auth);
     mock_id
 }
@@ -269,7 +269,7 @@ pub fn setup_starknet_mock(server: &MockServer, auth: MockAuthExpectation) -> us
                     .build()
             });
         })
-        .id;
+        .id();
     register_unauthorized_catch_all(server, &auth);
     mock_id
 }

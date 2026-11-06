@@ -345,6 +345,7 @@ These functions require the caller to be a participant or candidate.
 | `allowed_os_measurements()`                                                | Returns all currently allowed OS measurement sets.                                                                                                                                                | `Vec<ExpectedMeasurements>` | TBD  | TBD                |
 | `os_measurement_votes()`                                                   | Returns pending OS measurement votes, keyed by the proposal hash of the action voted for, with the accounts backing each; may include former participants' votes.                                                                         | `MeasurementVotes`       | TBD             | TBD                |
 | `contract_update_votes()`                                                  | Returns current update votes, keyed by the hash voted for, with the accounts backing each.                                                                                                        | `BTreeMap<ProposalHash, BTreeSet<AccountId>>` | TBD | TBD |
+| `parameters_votes()`                                                   | Returns pending `vote_new_parameters` votes, keyed by the proposal hash of the `ProposedGovernanceThresholdParameters` voted for, with the accounts backing each.                                   | `GovernanceThresholdParametersVotes` | TBD | TBD |
 | `clean_tee_status()`                                                       | Private endpoint. Cleans up TEE information for non-participants after resharing. Only callable by the contract itself via a promise.                                                              | `Result<(), Error>`      | TBD             | TBD                |
 
 ## Building the contract
@@ -396,5 +397,4 @@ The process of doing so is as follows:
 1. The prospective participants set up their MPC inside their TEE environment (see [running an MPC node in TDX](../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md)).
 2. The prospective participants fetch their TEE related information from their logs.
 3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
-4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.
-5. The participants submit their data to the contract via `submit_participant_info`.
+4. The participants submit their data to the contract via `submit_participant_info`.

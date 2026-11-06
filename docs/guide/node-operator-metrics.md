@@ -114,8 +114,7 @@ Reading the numbers:
   counter stays at zero, suspect a disagreeing provider and compare the node
   logs.
 * Every configured provider's series appears, at zero, as soon as the node
-  serves requests, so an idle node reports zero rather than nothing. Solana can
-  be configured but is not checked, so it never appears.
+  serves requests, so an idle node reports zero rather than nothing.
 * With no traffic, all series stay flat whether providers are healthy or down.
   On a quiet node, the probe below is the health signal.
 * Every participating node checks for itself: one user request produces one
@@ -125,9 +124,9 @@ Reading the numbers:
 
 ### The hourly probe
 
-Once per hour, whether or not any traffic exists, the node asks each configured
-provider which network it is serving and compares the answer with the chain's
-`expected_network_fingerprint` from your config:
+At startup and then once per hour, whether or not any traffic exists, the node
+asks each configured provider which network it is serving and compares the
+answer with the chain's `expected_network_fingerprint` from your config:
 
 | Metric | What it tracks |
 | --- | --- |
@@ -137,8 +136,11 @@ provider which network it is serving and compares the answer with the chain's
 `healthy` should equal `configured`. Anything less is a provider the probe
 could not confirm: unreachable, refusing, too slow, serving a different
 network, or a chain configured without an `expected_network_fingerprint`,
-which the probe cannot check. Solana has no probe and is left out of both
-gauges.
+which the probe cannot check.
+
+Until the node has synced and read the provider whitelist from the contract,
+each round logs that the whitelist is not read yet. The node probes again as
+soon as the whitelist is read, and whenever the whitelist changes.
 
 ### Whitelist and quorum
 
@@ -150,10 +152,10 @@ participant:
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum; `0` while the chain is not whitelisted |
+| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum |
 | `mpc_foreign_chain_rpc_providers_whitelisted` | distinct whitelisted providers this node's config conforms to |
 
-`whitelisted` must reach a non-zero `required`. Anything less means the chain is
+`whitelisted` must reach `required`. Anything less means the chain is
 configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
 asks. The node logs the differing provider at startup and on every whitelist change.
@@ -183,9 +185,9 @@ sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count{
   for 15m
 
 # Warn: computations are running out of headroom against the deadline that ends
-# them. Signature, presignature, CKD and foreign-tx verification run under a
-# configured 60s by default, and 45s is three quarters of it. Key generation and
-# resharing are left out: a handful per epoch cannot support a percentile.
+# them. Signature, CKD and foreign-tx verification run under a configured 60s
+# by default, and 45s is three quarters of it. Key generation and resharing are
+# left out: a handful per epoch cannot support a percentile.
 histogram_quantile(0.99, sum by (protocol_scheme, task, le) (
   rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task!~"triple_generation|key_generation|key_resharing"}[15m])
 )) > 45  for 15m
@@ -229,12 +231,13 @@ time() - mpc_last_backup_served_timestamp_seconds > 86400  for 2h
 mpc_last_backup_served_epoch < mpc_current_epoch_id  for 2h
 
 # Warn: no attestation has landed in three resubmission intervals. This fires
-# within hours; the expiry alerts below only fire days later.
+# within hours; the expiry alerts below can fire weeks later.
 mpc_indexer_latest_block_timestamp_seconds - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
 
-# Page: under three days of attestation runway left. Backstop for the alert
-# above; reached about four days after submissions stop landing. `> 0` keeps
-# the sentinel values out.
+# Page: under three days of attestation runway left. The attestation expires
+# with the collateral it was submitted with, so this is a backstop for the alert
+# above, and also fires for a node that keeps submitting nearly stale
+# collateral. `> 0` keeps the sentinel values out.
 mpc_attestation_expiry_timestamp_seconds > 0
   and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
       < 3 * 86400  for 15m

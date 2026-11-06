@@ -804,21 +804,6 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 // --- Voting types ---
 
-impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
-    for &GovernanceThresholdParametersVotes
-{
-    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotes {
-        let proposal_by_account = self
-            .proposal_by_account
-            .iter()
-            .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
-            .collect();
-        dtos::GovernanceThresholdParametersVotes {
-            proposal_by_account,
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     fn into_dto_type(self) -> dtos::AddDomainsVotes {
         dtos::AddDomainsVotes {
@@ -828,6 +813,21 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
                 .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
                 .collect(),
         }
+    }
+}
+
+impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
+    for &GovernanceThresholdParametersVotes
+{
+    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotes {
+        dtos::GovernanceThresholdParametersVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
+                .collect(),
+        )
     }
 }
 
@@ -979,7 +979,6 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            parameters_votes: (&self.parameters_votes).into_dto_type(),
             add_domains_votes: (&self.add_domains_votes).into_dto_type(),
             previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }

@@ -26,7 +26,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_sdk::{log, near, store::IterableMap};
 use std::time::Duration;
-use tee_verifier_interface::VerifiedReport;
+use tee_verifier_interface::{CollateralDates, VerifiedReport};
 
 pub use near_mpc_contract_interface::types::NodeId;
 
@@ -57,6 +57,13 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
+    /// Invariant: each TLS key a participant uses (its current one and, during a node migration,
+    /// the destination one) maps to a node owned by that participant. Joining the participant set
+    /// and migrating require such a node, and [`crate::MpcContract::clean_invalid_attestations`]
+    /// never removes it. This lets [`Self::assert_tls_key_claimable`] decide whether an account
+    /// may store a node under a TLS key by looking only at this map, so code that changes how
+    /// participants get TLS keys or how nodes are removed must preserve the invariant.
+    ///
     /// Callers must not assume this map is small; use the key-indexed accessors rather than
     /// scanning the whole collection.
     pub(crate) nodes: IterableMap<Ed25519PublicKey, Node>,
@@ -149,6 +156,7 @@ impl TeeState {
         node_id: NodeId,
         tcb_info: &TcbInfo,
         report: &VerifiedReport,
+        collateral_dates: &CollateralDates,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<bool, AttestationSubmissionError> {
         let expected_report_data = Self::expected_report_data(&node_id);
@@ -158,8 +166,8 @@ impl TeeState {
             advisory_ids,
         } = tcb_info.verify(
             report,
+            collateral_dates,
             expected_report_data,
-            Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
             &accepted_measurements,
@@ -185,15 +193,7 @@ impl TeeState {
     ) -> Result<bool, AttestationSubmissionError> {
         let tls_pk = node_id.tls_public_key.clone();
 
-        // Authorization: a TLS key registered to one account must not be
-        // overwritten by a submission from a different account. Without this,
-        // any caller could replace any participant's stored attestation, since
-        // the entry is keyed only by `tls_public_key`.
-        if let Some(existing) = self.nodes.get(&tls_pk)
-            && existing.owner != node_id.account_id
-        {
-            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
-        }
+        self.assert_tls_key_claimable(&node_id.account_id, &tls_pk)?;
 
         let previous = self.nodes.insert(
             tls_pk,
@@ -224,7 +224,7 @@ impl TeeState {
     /// certificate expired).
     ///
     /// The attestations themselves are not pruned here; reclaiming them is
-    /// [`Self::clean_invalid_attestations`]'s job.
+    /// [`crate::MpcContract::clean_invalid_attestations`]'s job.
     pub fn reverify_and_cleanup_participants(
         &mut self,
         participants: &Participants,
@@ -391,7 +391,7 @@ impl TeeState {
 
     /// Drops votes cast by nodes that are no longer participants. Used after a resharing
     /// concludes. Attestation cleanup is handled separately by
-    /// [`TeeState::clean_invalid_attestations`].
+    /// [`crate::MpcContract::clean_invalid_attestations`].
     pub fn clean_non_participant_votes(&mut self, participants: &Participants) {
         self.votes
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
@@ -401,41 +401,47 @@ impl TeeState {
             .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
     }
 
-    /// Scans up to `max_scan` stored nodes and removes any whose
-    /// attestation no longer passes `re_verify` under the current docker-hash /
-    /// launcher-hash / measurement whitelists, or whose attestation has expired.
-    /// Returns the account that owned each removed entry, so the caller can return the
-    /// attestation-storage grant it consumed.
-    pub fn clean_invalid_attestations(
+    /// Returns the owner of each removed node, so the caller can give back the attestation-storage
+    /// grant it consumed.
+    pub(crate) fn clean_invalid_attestations(
         &mut self,
         tee_upgrade_deadline_duration: Duration,
         max_scan: usize,
+        is_in_use: impl Fn(&Node) -> bool,
     ) -> Vec<AccountId> {
         // Materialize candidates before any mutation to avoid iterator invalidation.
-        let invalid_tls_keys: Vec<Ed25519PublicKey> = self
+        let removable_tls_keys: Vec<Ed25519PublicKey> = self
             .nodes
             .iter()
             .take(max_scan)
-            .filter(|(_, node)| !self.has_valid_attestation(node, tee_upgrade_deadline_duration))
+            .filter(|(_, node)| {
+                !self.has_valid_attestation(node, tee_upgrade_deadline_duration) && !is_in_use(node)
+            })
             .map(|(tls_pk, _)| tls_pk.clone())
             .collect();
 
-        let mut removed_entry_owners = Vec::with_capacity(invalid_tls_keys.len());
-        for tls_pk in invalid_tls_keys {
-            if let Some(removed) = self.nodes.remove(&tls_pk) {
-                removed_entry_owners.push(removed.owner);
-            }
-        }
-        removed_entry_owners
+        removable_tls_keys
+            .into_iter()
+            .filter_map(|tls_pk| self.nodes.remove(&tls_pk))
+            .map(|node| node.owner)
+            .collect()
     }
 
-    /// Account that owns the entry stored under `tls_public_key`, if any. Read-only,
-    /// so [`crate::MpcContract::submit_participant_info`] can classify a submission before doing any
-    /// verification work.
-    pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
-        self.nodes
+    /// Fails if another account's node is stored under the TLS key. Checking only the stored node
+    /// is enough because of the invariant on [`Self::nodes`].
+    pub(crate) fn assert_tls_key_claimable(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Result<(), AttestationSubmissionError> {
+        if self
+            .nodes
             .get(tls_public_key)
-            .map(|node| node.owner.clone())
+            .is_some_and(|node| node.owner != *account_id)
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+        }
+        Ok(())
     }
 
     /// Returns the id of every stored node, including nodes of accounts that are not participants.
@@ -443,7 +449,11 @@ impl TeeState {
         self.nodes.values().map(Node::id).collect()
     }
 
-    fn node_of(&self, account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> Option<&Node> {
+    pub(crate) fn node_of(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Option<&Node> {
         self.nodes
             .get(tls_public_key)
             .filter(|node| node.owner == *account_id)
@@ -550,8 +560,8 @@ mod tests {
         collections::{BTreeMap, BTreeSet},
     };
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, account_key, collateral_dates, image_digest,
+        launcher_compose_digest, launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
     };
 
     #[test]
@@ -650,7 +660,7 @@ mod tests {
 
         // When: the clock advances past the stale entry's expiry and cleanup runs.
         set_block_timestamp(NOW_SECONDS * 1_000_000_000);
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: only the expired entry is removed.
         assert_eq!(removed.len(), 1);
@@ -681,13 +691,13 @@ mod tests {
         // Before expiry: cleanup keeps the entry.
         assert!(
             tee_state
-                .clean_invalid_attestations(Duration::from_secs(0), 100)
+                .clean_invalid_attestations(Duration::from_secs(0), 100, |_| false)
                 .is_empty()
         );
 
         // When: the clock advances past the stamped expiry window and cleanup runs.
-        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
+        set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: the previously uncleanable mock entry is removed.
         assert_eq!(removed.len(), 1);
@@ -709,7 +719,7 @@ mod tests {
         let oversized = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS * 10),
+            expiry_timestamp_seconds: Some(attestation::MOCK_EXPIRATION_DURATION_SECONDS * 10),
             expected_measurements: None,
         };
         tee_state
@@ -718,8 +728,8 @@ mod tests {
 
         // When: the clock advances just past the contract's default window — well
         // before the submitter's requested expiry.
-        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
+        set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: the entry is cleaned — the submitted expiry was capped at the default.
         assert_eq!(removed.len(), 1);
@@ -756,7 +766,8 @@ mod tests {
         // When: cleanup is called repeatedly with a scan limit of 3 until no progress is made.
         let mut total_removed = 0u32;
         loop {
-            let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 3);
+            let removed =
+                tee_state.clean_invalid_attestations(Duration::from_secs(0), 3, |_| false);
             total_removed += removed.len() as u32;
             if removed.is_empty() {
                 break;
@@ -789,11 +800,33 @@ mod tests {
             .unwrap();
 
         // When: cleanup runs while the attestation is still valid.
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
         // Then: nothing is removed.
         assert!(removed.is_empty());
         assert!(tee_state.nodes.contains_key(&node_id.tls_public_key));
+    }
+
+    #[test]
+    fn clean_invalid_attestations__should_keep_an_invalid_node_in_use() {
+        // Given
+        set_block_secs(0);
+        let mut tee_state = TeeState::default();
+        let in_use = node_id_for(&"alice.near".parse().unwrap());
+        let unused = node_id_for(&"bob.near".parse().unwrap());
+        for node_id in [&in_use, &unused] {
+            submit_mock(&mut tee_state, node_id, MockAttestation::Valid).unwrap();
+        }
+        set_block_secs(attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1);
+
+        // When
+        let removed = tee_state.clean_invalid_attestations(Duration::ZERO, 100, |node| {
+            node.tls_public_key == in_use.tls_public_key
+        });
+
+        // Then
+        assert_eq!(removed, vec![unused.account_id]);
+        assert_eq!(tee_state.get_tee_accounts(), vec![in_use]);
     }
 
     #[test]
@@ -918,8 +951,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::before_expiry(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS - 1, true)]
-    #[case::after_expiry(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1, false)]
+    #[case::before_expiry(attestation::MOCK_EXPIRATION_DURATION_SECONDS - 1, true)]
+    #[case::after_expiry(attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1, false)]
     fn has_valid_attestation__should_hold_until_the_attestation_expires(
         #[case] now_seconds: u64,
         #[case] expected: bool,
@@ -1411,6 +1444,7 @@ mod tests {
             node_id,
             &mock_tcb_info(),
             &verified_report(),
+            &collateral_dates(),
             Duration::MAX,
         );
 
@@ -1422,12 +1456,10 @@ mod tests {
         assert!(tee_state.nodes.is_empty());
     }
 
-    #[test]
-    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
-        // Given
+    /// A [`TeeState`] that accepts the fixture attestation, and the [`NodeId`] it attests.
+    fn tee_state_accepting_the_fixture() -> (TeeState, NodeId) {
         set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
         let mut tee_state = TeeState::default();
-        assert_eq!(tee_state.nodes.len(), 0);
         whitelist_dstack_measurements(
             &mut tee_state,
             image_digest(),
@@ -1439,12 +1471,20 @@ mod tests {
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
             account_public_key: Ed25519PublicKey(account_key()),
         };
+        (tee_state, node_id)
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
+        // Given
+        let (mut tee_state, node_id) = tee_state_accepting_the_fixture();
 
         // When
         let result = tee_state.verify_and_store_dstack(
             node_id.clone(),
             &mock_tcb_info(),
             &verified_report(),
+            &collateral_dates(),
             Duration::MAX,
         );
 
@@ -1459,6 +1499,52 @@ mod tests {
         assert_eq!(
             stored.attestation_accepted_at_seconds,
             VALID_ATTESTATION_TIMESTAMP
+        );
+        assert_matches!(
+            &stored.attestation,
+            VerifiedAttestation::Dstack(attestation)
+                if attestation.expiry_timestamp_seconds == collateral_dates().earliest_expiration_date
+        );
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_overwrite_the_expiry_with_an_earlier_one() {
+        // Given
+        let (mut tee_state, node_id) = tee_state_accepting_the_fixture();
+        tee_state
+            .verify_and_store_dstack(
+                node_id.clone(),
+                &mock_tcb_info(),
+                &verified_report(),
+                &collateral_dates(),
+                Duration::MAX,
+            )
+            .unwrap();
+        let earlier_expiry = collateral_dates().earliest_expiration_date - 1;
+        let older_collateral_dates = CollateralDates {
+            earliest_expiration_date: earlier_expiry,
+            ..collateral_dates()
+        };
+
+        // When
+        let result = tee_state.verify_and_store_dstack(
+            node_id.clone(),
+            &mock_tcb_info(),
+            &verified_report(),
+            &older_collateral_dates,
+            Duration::MAX,
+        );
+
+        // Then
+        assert_eq!(result, Ok(false));
+        let stored = tee_state
+            .nodes
+            .get(&node_id.tls_public_key)
+            .expect("attestation must be stored");
+        assert_matches!(
+            &stored.attestation,
+            VerifiedAttestation::Dstack(attestation)
+                if attestation.expiry_timestamp_seconds == earlier_expiry
         );
     }
 
