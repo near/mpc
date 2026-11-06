@@ -29,9 +29,9 @@ use crate::errors::{Error, InvalidParameters, RequestError};
 /// duplicates to make `respond*` run out of gas and strand every queued caller.
 ///
 /// 128 is validated empirically by the sandbox test
-/// `test_contract_request_duplicate_requests_fan_out`, which fills the queue to this
-/// cap across all four signature schemes and confirms `respond*` drains it inside its
-/// 300 TGas budget.
+/// `respond__should_drain_saturated_fan_out_queue`, which fills the queue to this cap
+/// across all four signature schemes and confirms `respond*` drains it inside its 300 TGas
+/// budget.
 pub const MAX_PENDING_REQUEST_FAN_OUT: u8 = 128;
 
 /// Append a yield index to the pending-request fan-out queue for `request`.
@@ -105,5 +105,75 @@ where
     queue.remove(0);
     if queue.is_empty() {
         requests.remove(request);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::panic;
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn push_pending_yield__should_reject_an_entry_after_the_fan_out_limit() {
+        // Given: a pending-request queue filled to the configured fan-out cap
+        let mut requests: LookupMap<u64, Vec<YieldIndex>> = LookupMap::new(b"t");
+        let test_key: u64 = 42;
+
+        for i in 0..MAX_PENDING_REQUEST_FAN_OUT {
+            push_pending_yield(&mut requests, test_key, [i; 32]);
+        }
+
+        let queue = requests.get(&test_key).expect("queue should exist");
+        assert_eq!(
+            queue.len(),
+            usize::from(MAX_PENDING_REQUEST_FAN_OUT),
+            "queue should contain exactly the configured fan-out limit"
+        );
+        assert_queue_matches_insertion_order(&queue);
+
+        // When: pushing one more entry beyond the cap
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            push_pending_yield(&mut requests, test_key, [0xff; 32]);
+        }));
+
+        // Then: the push panics with the exact expected message and the queue is unchanged
+        let err = result.expect_err("appending past the cap should panic");
+        let msg = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        // The NEAR SDK mock wraps the panic in HostError(GuestPanic { panic_msg: "..." })
+        // Extract the actual panic message from the wrapper.
+        let msg = msg
+            .strip_prefix("called `Result::unwrap()` on an `Err` value: HostError(GuestPanic { panic_msg: \"")
+            .and_then(|s| s.strip_suffix("\" })"))
+            .unwrap_or(msg);
+        let expected = RequestError::PendingRequestQueueFull {
+            limit: MAX_PENDING_REQUEST_FAN_OUT,
+        }
+        .to_string();
+        assert_eq!(msg, expected, "unexpected panic message: {msg}");
+
+        let queue = requests.get(&test_key).expect("queue should still exist");
+        assert_eq!(
+            queue.len(),
+            usize::from(MAX_PENDING_REQUEST_FAN_OUT),
+            "queue should not grow past the configured fan-out limit"
+        );
+        assert_queue_matches_insertion_order(&queue);
+    }
+}
+
+/// Helper to verify that the queue entries match the expected insertion order.
+/// Iterates over the u8 range directly to avoid `as` conversions.
+#[allow(dead_code)]
+fn assert_queue_matches_insertion_order(queue: &[YieldIndex]) {
+    for (expected, yield_idx) in (0..MAX_PENDING_REQUEST_FAN_OUT).zip(queue) {
+        assert_eq!(
+            yield_idx.data_id, [expected; 32],
+            "entry {expected} should match insertion order"
+        );
     }
 }
