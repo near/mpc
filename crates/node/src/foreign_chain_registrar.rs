@@ -125,7 +125,8 @@ struct PendingRegistration {
     chains: BTreeSet<dtos::ForeignChain>,
     resends: u32,
     resend_delays: ExponentialBackoff,
-    resend_at: Instant,
+    /// `None` if the next resend time overflows the clock, the registration is then not resent.
+    resend_at: Option<Instant>,
 }
 
 impl PendingRegistration {
@@ -144,7 +145,7 @@ impl PendingRegistration {
             chains,
             resends: 0,
             resend_delays,
-            resend_at: Instant::now() + delay,
+            resend_at: resend_at_after(delay),
         })
     }
 
@@ -152,7 +153,10 @@ impl PendingRegistration {
         &mut self,
         txn_sender: &impl TransactionSender,
     ) -> Result<(), TransactionProcessorError> {
-        if self.resend_at > Instant::now() {
+        if self
+            .resend_at
+            .is_none_or(|resend_at| resend_at > Instant::now())
+        {
             return Ok(());
         }
         self.resends = self.resends.saturating_add(1);
@@ -165,15 +169,26 @@ impl PendingRegistration {
              key allows register_foreign_chains_config"
         );
         register_foreign_chains(txn_sender, &self.chains).await?;
-        self.resend_at = Instant::now() + delay;
+        self.resend_at = resend_at_after(delay);
         Ok(())
     }
 }
 
-/// Never completes while nothing is pending.
+fn resend_at_after(delay: Duration) -> Option<Instant> {
+    let resend_at = Instant::now().checked_add(delay);
+    if resend_at.is_none() {
+        tracing::error!(
+            ?delay,
+            "next foreign chains registration resend time overflows the clock; not resending"
+        );
+    }
+    resend_at
+}
+
+/// Never completes while no resend is scheduled.
 async fn wait_for_resend(pending: &Option<PendingRegistration>) {
-    match pending {
-        Some(pending) => tokio::time::sleep_until(pending.resend_at).await,
+    match pending.as_ref().and_then(|pending| pending.resend_at) {
+        Some(resend_at) => tokio::time::sleep_until(resend_at).await,
         None => std::future::pending().await,
     }
 }
@@ -822,6 +837,18 @@ mod tests {
         // Then
         assert_eq!(gauges(ForeignChain::Polygon), Some((1, 1)));
         assert_eq!(gauges(ForeignChain::Base), None);
+    }
+
+    #[test]
+    fn resend_at_after__should_return_none_when_the_delay_overflows_the_clock() {
+        // Given
+        let delay = Duration::MAX;
+
+        // When
+        let resend_at = resend_at_after(delay);
+
+        // Then
+        assert_eq!(resend_at, None);
     }
 
     #[test]
