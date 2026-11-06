@@ -123,9 +123,9 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        attested_account_public_key, forwarded_participant_call_contract, init_running_with_domain,
-        prepay_and_attest_all_participants, resharing_state, running_state,
-        setup_tee_test_contract, submit_attestation, submit_valid_attestations,
+        forwarded_participant_call_contract, init_running_with_domain,
+        must_get_attested_signer_key, prepay_and_attest_all_participants, resharing_state,
+        running_state, setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
@@ -164,25 +164,6 @@ mod tests {
             BTreeMap::new(),
         );
         contract.vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
-    }
-
-    /// Test that [`MpcContract::vote_new_parameters`] succeeds when every participant keeps the
-    /// attestation it submitted right after initialization.
-    #[test]
-    fn test_vote_new_parameters_succeeds_with_default_tee_status() {
-        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let governance_threshold = GovernanceThreshold::new(2);
-
-        let result = setup_voting_context_and_vote(
-            &mut contract,
-            &first_participant_id,
-            participants,
-            governance_threshold,
-        );
-        assert!(
-            result.is_ok(),
-            "Should succeed when all participants keep their initial attestations"
-        );
     }
 
     /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants
@@ -554,7 +535,7 @@ mod tests {
     ) {
         let info = participants.info(account_id).unwrap();
         Environment::new(Some(0), Some(account_id.clone()), None)
-            .set_pk(attested_account_public_key(contract, &info.tls_public_key));
+            .set_pk(must_get_attested_signer_key(contract, &info.tls_public_key));
     }
 
     /// Drives a 3-participant Running contract with one domain into Resharing: every

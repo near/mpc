@@ -27,7 +27,7 @@ use near_mpc_contract_interface::types as dtos;
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{NearToken, VMContext, env, testing_env};
-use rand::rngs::OsRng;
+use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 use std::{str::FromStr, time::Duration};
 use threshold_signatures::confidential_key_derivation as ckd;
@@ -164,7 +164,8 @@ pub(crate) fn init_running_with_domain(
     parameters: &GovernanceThresholdParameters,
     domain: DomainConfig,
 ) -> MpcContract {
-    let (pk, _) = make_public_key_for_curve(Curve::from(domain.protocol), &mut OsRng);
+    let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+    let (pk, _) = make_public_key_for_curve(Curve::from(domain.protocol), &mut rng);
     let keyset = Keyset::new(
         EpochId::new(0),
         vec![KeyForDomain {
@@ -204,17 +205,26 @@ pub(crate) fn prepay_and_attest_all_participants(contract: &mut MpcContract) {
     contract.available_attestation_grants.flush();
 }
 
-/// Stands in for the operator's prepayment of one grant, then submits a valid mock attestation
-/// from `account_id`, signed with a fresh account key.
+/// Prepays one attestation-storage grant for `account_id`, then submits a valid mock
+/// attestation from it, signed with a fresh account key.
 pub(crate) fn prepay_and_submit_mock_attestation(
     contract: &mut MpcContract,
     account_id: &AccountId,
     tls_public_key: dtos::Ed25519PublicKey,
 ) -> Result<(), Error> {
-    let grants = contract.available_attestation_grants(account_id.clone()) + 1;
+    let fee = NearToken::from_millinear(u128::from(
+        contract.config.attestation_storage_fee_millinear,
+    ));
+    testing_env!(
+        VMContextBuilder::new()
+            .predecessor_account_id(account_id.clone())
+            .attached_deposit(fee)
+            .block_timestamp(env::block_timestamp())
+            .build()
+    );
     contract
-        .available_attestation_grants
-        .insert(account_id.clone(), grants);
+        .prepay_attestation_storage(account_id.clone(), 1)
+        .expect("prepaying one grant should succeed");
     testing_env!(
         VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -228,8 +238,7 @@ pub(crate) fn prepay_and_submit_mock_attestation(
         .map(|_| ())
 }
 
-/// The account key of the node attested under `tls_public_key`, which it signs transactions with.
-pub(crate) fn attested_account_public_key(
+pub(crate) fn must_get_attested_signer_key(
     contract: &MpcContract,
     tls_public_key: &dtos::Ed25519PublicKey,
 ) -> near_sdk::PublicKey {

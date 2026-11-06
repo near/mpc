@@ -173,8 +173,8 @@ mod tests {
     };
     use crate::api::node_migration::MINIMUM_NODE_MANAGEMENT_DEPOSIT;
     use crate::api::test_utils::{
-        attested_account_public_key, basic_setup, basic_setup_with_protocol, destination_of,
-        init_running_with_domain, make_public_key_for_curve, must_attest_new_node,
+        basic_setup, basic_setup_with_protocol, destination_of, init_running_with_domain,
+        make_public_key_for_curve, must_attest_new_node, must_get_attested_signer_key,
         participant_account_ids, prepay_and_attest_all_participants,
         prepay_and_submit_mock_attestation,
     };
@@ -918,8 +918,8 @@ mod tests {
             joining_info.tls_public_key.clone(),
         )
         .expect("the joining participant's attestation should be accepted");
-        let joining_pk = attested_account_public_key(&contract, &joining_info.tls_public_key);
-        let departing_pk = attested_account_public_key(&contract, &departing_info.tls_public_key);
+        let joining_pk = must_get_attested_signer_key(&contract, &joining_info.tls_public_key);
+        let departing_pk = must_get_attested_signer_key(&contract, &departing_info.tls_public_key);
 
         // When
         let joining_result = register_bitcoin_as(&mut contract, &joining, joining_pk);
@@ -1008,7 +1008,7 @@ mod tests {
             .unwrap()
             .tls_public_key
             .clone();
-        let previous_node_pk = attested_account_public_key(&contract, &previous_tls_key);
+        let previous_node_pk = must_get_attested_signer_key(&contract, &previous_tls_key);
         let destination = must_attest_new_node(&mut contract, &operator);
         let mut env = Environment::new(None, Some(operator.clone()), None);
         env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);

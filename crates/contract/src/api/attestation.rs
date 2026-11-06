@@ -494,7 +494,6 @@ mod tests {
     use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
     use crate::state::resharing::ResharingContractState;
-    use crate::storage_keys::StorageKey;
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
     use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
@@ -508,9 +507,9 @@ mod tests {
     };
     use mpc_primitives::hash::LauncherImageHash;
     use near_mpc_contract_interface::types::DomainPurpose;
-    use near_sdk::store::IterableMap;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use rand::SeedableRng;
     use rand::rngs::OsRng;
     use rstest::rstest;
     use std::panic;
@@ -1239,14 +1238,14 @@ mod tests {
     }
 
     fn measure_grant_row_bytes() -> u64 {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut rng);
         testing_env!(VMContextBuilder::new().build());
-        let mut grants: IterableMap<AccountId, u32> =
-            IterableMap::new(StorageKey::AttestationGrants);
         let account: AccountId = "a".repeat(64).parse().unwrap();
 
         let before = env::storage_usage();
-        grants.insert(account, 1);
-        grants.flush();
+        contract.available_attestation_grants.insert(account, 1);
+        contract.available_attestation_grants.flush();
 
         env::storage_usage() - before
     }
