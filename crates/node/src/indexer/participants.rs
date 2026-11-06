@@ -45,7 +45,9 @@ pub fn convert_key_event_to_instance(
         .unwrap_or(domain.reconstruction_threshold);
 
     Ok(match &key_event.instance {
-        Some(current_instance) if current_height < current_instance.expires_on => {
+        Some(current_instance)
+            if dtos::BlockHeight::from(current_height) < current_instance.expires_on =>
+        {
             ContractKeyEventInstance {
                 id: dtos::KeyEventId {
                     epoch_id: key_event.epoch_id,
