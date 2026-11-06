@@ -33,6 +33,8 @@ use threshold_signatures::frost_core::Group as _;
 use threshold_signatures::frost_ed25519::Ed25519Group;
 use threshold_signatures::frost_secp256k1::Secp256K1Group;
 
+pub(crate) const FORWARDER_ACCOUNT_ID: &str = "forwarder.near";
+
 #[derive(Debug)]
 pub(crate) enum SharedSecretKey {
     Secp256k1(k256::Scalar),
@@ -273,6 +275,8 @@ pub(crate) fn destination_of(node: &dtos::Node) -> dtos::DestinationNodeInfo {
     }
 }
 
+/// Returns a Running contract whose current call has its only participant as signer and
+/// [`FORWARDER_ACCOUNT_ID`] as predecessor.
 pub(crate) fn running_contract_called_by_participant_via_forwarder() -> MpcContract {
     let running_state = gen_running_state(1);
     let participant = running_state.parameters.participants().participants()[0]
@@ -283,7 +287,7 @@ pub(crate) fn running_contract_called_by_participant_via_forwarder() -> MpcContr
 
     let ctx = VMContextBuilder::new()
         .signer_account_id(participant)
-        .predecessor_account_id("forwarder.near".parse().unwrap())
+        .predecessor_account_id(FORWARDER_ACCOUNT_ID.parse().unwrap())
         .build();
     testing_env!(ctx);
 

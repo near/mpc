@@ -123,7 +123,7 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        make_public_key_for_curve, resharing_state,
+        FORWARDER_ACCOUNT_ID, make_public_key_for_curve, resharing_state,
         running_contract_called_by_participant_via_forwarder, running_state,
         setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
@@ -726,7 +726,7 @@ mod tests {
 
         let ctx = VMContextBuilder::new()
             .signer_account_id(first_participant_id)
-            .predecessor_account_id("forwarder.near".parse().unwrap())
+            .predecessor_account_id(FORWARDER_ACCOUNT_ID.parse().unwrap())
             .attached_deposit(NearToken::ZERO)
             .build();
         testing_env!(ctx);
