@@ -273,7 +273,7 @@ pub(crate) fn destination_of(node: &dtos::Node) -> dtos::DestinationNodeInfo {
     }
 }
 
-pub(crate) fn forwarded_participant_call_contract() -> MpcContract {
+pub(crate) fn running_contract_called_by_participant_via_forwarder() -> MpcContract {
     let running_state = gen_running_state(1);
     let participant = running_state.parameters.participants().participants()[0]
         .0

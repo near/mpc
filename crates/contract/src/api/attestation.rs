@@ -475,8 +475,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, destination_of, forwarded_participant_call_contract, initializing_state,
-        make_public_key_for_curve, resharing_state,
+        basic_setup, destination_of, initializing_state, make_public_key_for_curve,
+        resharing_state, running_contract_called_by_participant_via_forwarder,
     };
     use crate::config::Config;
     use crate::dto_mapping::IntoContractType;
@@ -520,7 +520,7 @@ mod tests {
     #[should_panic(expected = "Caller must be the signer account")]
     fn test_submit_participant_info_panics_if_predecessor_differs() {
         // Given
-        let mut contract = forwarded_participant_call_contract();
+        let mut contract = running_contract_called_by_participant_via_forwarder();
 
         // When, Then
         let _ = contract.submit_participant_info(
