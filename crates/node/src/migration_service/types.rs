@@ -200,7 +200,7 @@ pub mod tests {
         let participant_tls_public_key = participant_info_0.tls_public_key.clone();
         let destination_node_info = DestinationNodeInfo {
             signer_account_pk: signer_account_pk.clone(),
-            destination_node_info: participant_info_0,
+            destination_node_info: participant_info_0.clone().into(),
         };
 
         let backup_service_info = BackupServiceInfo {

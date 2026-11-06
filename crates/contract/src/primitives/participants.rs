@@ -6,11 +6,19 @@ use near_sdk::near;
 use std::collections::BTreeSet;
 
 pub use near_mpc_contract_interface::types::{
-    MAX_PARTICIPANT_URL_BYTES, ParticipantCount, ParticipantId, ParticipantInfo, ParticipantUrl,
+    MAX_PARTICIPANT_URL_BYTES, ParticipantCount, ParticipantId, ParticipantUrl,
 };
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct ParticipantInfo {
+    pub url: ParticipantUrl,
+    /// The Ed25519 public key used for P2P TLS.
+    pub tls_public_key: Ed25519PublicKey,
 }
 
 #[near(serializers=[borsh])]
