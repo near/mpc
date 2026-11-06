@@ -4,14 +4,7 @@ pub use blaire_interface::NodeReport;
 pub use near_account_id::AccountId;
 pub use near_mpc_crypto_types::Ed25519PublicKey as TlsKey;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UserId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Timestamp(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BlockHeight(pub u64);
+pub use near_block_primitives::BlockHeight;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WhitelistedAccount {
@@ -35,3 +28,9 @@ pub struct ReportedData {
     pub node_report: NodeReport,
     pub received_at: Timestamp,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UserId(pub u64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Timestamp(pub u64);

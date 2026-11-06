@@ -5,10 +5,18 @@ use crate::types::{
 
 pub trait WhitelistAccounts {
     type Error;
-    fn add_account(&self, account_id: AccountId, added_by: UserId, added_at: Timestamp) -> Result<(), Self::Error>;
+    fn add_account(
+        &self,
+        account_id: AccountId,
+        added_by: UserId,
+        added_at: Timestamp,
+    ) -> Result<(), Self::Error>;
     fn remove_account(&self, account_id: &AccountId) -> Result<(), Self::Error>;
-    fn is_whitelisted(&self, account_id: &AccountId) -> Result<Option<WhitelistedAccount>, Self::Error>;
-    fn list_account(&self) -> Result<Vec<WhitelistedAccount>, Self::Error>;
+    fn is_whitelisted(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Option<WhitelistedAccount>, Self::Error>;
+    fn list_accounts(&self) -> Result<Vec<WhitelistedAccount>, Self::Error>;
 }
 
 pub trait TrackMpcNodes {
@@ -34,5 +42,9 @@ pub trait StoreReports {
         received_at: Timestamp,
     ) -> Result<(), Self::Error>;
     fn latest_report(&self, tls_key: &TlsKey) -> Result<Option<ReportedData>, Self::Error>;
-    fn list_reports(&self, account_id: &AccountId, limit: u32) -> Result<Vec<ReportedData>, Self::Error>;
+    fn list_reports(
+        &self,
+        account_id: &AccountId,
+        limit: u32,
+    ) -> Result<Vec<ReportedData>, Self::Error>;
 }

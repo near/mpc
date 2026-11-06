@@ -4,17 +4,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
-/// Version of the MPC node software that sent the report, e.g. "3.2.0".
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
-#[serde(transparent)]
-pub struct Version(pub String);
+// TODO(#5089): Add snapshot test module for NodeReport and a round-trip tests.
 
-// Report an MPC node publishes to Blaire at startup.
+/// Report an MPC node publishes to Blaire at startup.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct NodeReport {
     pub version: Version,
     pub redacted_config: RedactedForeignChainsConfig,
 }
+
+/// Version of the MPC node software that sent the report, e.g. "3.2.0".
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct Version(pub String);
 
 /// Foreign chain configuration published by an MPC node at startup.
 ///
@@ -48,6 +50,12 @@ pub struct RedactedForeignChainsConfig {
     pub aptos: Option<RedactedForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sui: Option<RedactedForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avalanche: Option<RedactedForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adi: Option<RedactedForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fogo: Option<RedactedForeignChainConfig>,
 }
 
 /// Debug-relevant settings for one foreign chain.
