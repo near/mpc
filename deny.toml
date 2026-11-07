@@ -102,6 +102,9 @@ ignore = [
   "RUSTSEC-2026-0401", # zstd-safe out-of-bounds read in `train_from_buffer`
   "RUSTSEC-2026-0403", # zstd-safe exposes uninitialized memory when a legacy frame fails to stream
   "RUSTSEC-2026-0406", # zstd-safe use-after-free changing a multithreaded context mid-frame
+  # Pulled in by nix 0.26's default `aio` feature, which webrtc-util 0.10 enables for nearcore's
+  # near-network through stun 0.7.
+  "RUSTSEC-2026-0441", # pin-utils is unmaintained
 ]
 
 [bans]
