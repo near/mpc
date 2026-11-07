@@ -7,7 +7,6 @@ This module implements two threshold ECDSA signing schemes over the **Secp256k1*
 Both schemes share common types defined in this module:
 
 - **`Signature`** -- ECDSA signature containing the full point `big_r` and scalar `s`, with `verify(public_key, msg_hash)` and `recovery_id(public_key, msg_hash)` methods
-- **`RerandomizationArguments`** -- (OT-based ECDSA only) binds a presignature to a specific signing context (public key, tweak, message hash, participants) before use. Derives a deterministic scalar `delta` via HKDF-SHA3-256 that rerandomizes the presignature nonce, mitigating Wagner attacks (see \[[GS21](https://eprint.iacr.org/2021/1330.pdf)\])
 - **`KeygenOutput`** / **`Tweak`** -- Secp256k1-specialized aliases for the curve-generic DKG output types. `Tweak` allows deriving different signing keys from a single DKG output
 - **Type aliases** -- `Scalar`, `Element`, `Polynomial`, `PolynomialCommitment`, `CoefficientCommitment` specialized to `Secp256K1Sha256`
 
@@ -15,7 +14,7 @@ Both schemes share common types defined in this module:
 
 ### OT-based ECDSA (`ot_based_ecdsa/`)
 
-Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline phase with two protocols** (triple generation + presigning) to enable efficient one-round online signing. Alternatively, `presign_and_sign` consumes two triples directly in a three-round online protocol, leaving no presignature to store. Requires `N >= t` participants where `t = ReconstructionThreshold`.
+Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline triple generation phase**; `presign_and_sign` then consumes two triples in a three-round online protocol. Requires `N >= t` participants where `t = ReconstructionThreshold`.
 
 See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 
@@ -32,10 +31,10 @@ the interface each one presents, not a choice between them.
 
 | | OT-based ECDSA | Robust ECDSA (stub) |
 |---|---|---|
-| **Offline phases** | Triple generation + Presigning | None |
-| **Offline rounds** | 11+ | 0 |
-| **Sign rounds** | 1 | 2 |
-| **Triple requirement** | 2 triples per presignature | None |
+| **Offline phases** | Triple generation | None |
+| **Offline rounds** | 9+ | 0 |
+| **Sign rounds** | 3 | 2 |
+| **Triple requirement** | 2 triples per signature | None |
 | **Threshold parameter** | `ReconstructionThreshold` | `MaxMalicious` |
 | **Participants** | `N >= t` | exactly `N = 2t + 1` |
 

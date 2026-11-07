@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use crate::event_subscriber::block_events::BlockContext;
 use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
-use near_contract_transport::BlockHeight;
+use near_contract_transport::{BlockCount, BlockHeight};
 
 #[expect(rustdoc::private_intra_doc_links)]
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
@@ -500,8 +500,8 @@ impl RecentBlocksTracker {
         };
         Some(
             self.maximum_height_available
-                .saturating_sub(self.window_size)
-                .saturating_add(1)
+                .saturating_sub(BlockCount::from(self.window_size))
+                .saturating_add(BlockCount::from(1))
                 .min(final_head.height),
         )
     }
@@ -538,8 +538,8 @@ impl Debug for RecentBlocksTracker {
             f,
             "   Recent blocks: (Window = {} to {}, GC limit {})",
             self.maximum_height_available
-                .saturating_sub(self.window_size)
-                .saturating_add(1),
+                .saturating_sub(BlockCount::from(self.window_size))
+                .saturating_add(BlockCount::from(1)),
             self.maximum_height_available,
             self.minimum_height_to_keep().unwrap_or(0.into())
         )?;
