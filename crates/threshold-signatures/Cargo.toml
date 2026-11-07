@@ -24,7 +24,6 @@ frost-ed25519.workspace = true
 frost-secp256k1.workspace = true
 futures.workspace = true
 hex.workspace = true
-hkdf.workspace = true
 itertools.workspace = true
 k256 = { workspace = true, default-features = true, features = [
     "sha256",
@@ -51,6 +50,7 @@ zeroize.workspace = true
 [dev-dependencies]
 average.workspace = true
 criterion.workspace = true
+hkdf.workspace = true
 insta.workspace = true
 rand.workspace = true
 rand_core = { workspace = true, features = ["getrandom"] }

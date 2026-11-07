@@ -4,8 +4,8 @@ to be strictly followed, this specification is less opinionated about generating
 triples.
 
 As long as valid triples are generated according to the process, they
-can be used in the subsequent presigning phase.
-The presigning phase is agnostic as to how these triples have been generated.
+can be consumed by [signing](./signing.md).
+Signing is agnostic as to how these triples have been generated.
 
 This document only gives a very concrete suggestion as to how this might be implemented,
 and describes how this crate implements triple generation without a trusted
