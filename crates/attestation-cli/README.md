@@ -162,7 +162,7 @@ On failure the output includes the error details and ends with `Verdict: FAIL`.
 | Attestation Type | TEE attestation type (Dstack = Intel TDX via Dstack) |
 | MPC Image Hash | SHA256 of the MPC Docker image running inside the TEE |
 | Launcher Compose Hash | SHA256 of the docker-compose file used by the launcher |
-| Expiry Timestamp | Attestation validity window (7 days from verification time) |
+| Expiry Timestamp | When the attestation expires: the collateral's earliest expiration date |
 
 ## Exit codes
 
@@ -230,10 +230,10 @@ Status:                 UpToDate
 Status:                 OutOfDate
 Advisory IDs:           INTEL-SA-01379, INTEL-SA-01404, INTEL-SA-01428, INTEL-SA-01439, INTEL-SA-01442, INTEL-SA-01419, INTEL-SA-01436
   TDX module TDX_03 ISV SVN is 7, needs 9 -> update the TDX module (SEAM loader)
-  TDX TCB component 2 is 6, needs 8 -> update BIOS/microcode
   SGX TCB component 0 is 4, needs 8 -> update BIOS/microcode
   SGX TCB component 1 is 4, needs 8 -> update BIOS/microcode
   SGX TCB component 4 is 4, needs 7 -> update BIOS/microcode
+  TDX TCB component 2 is 6, needs 8 -> update BIOS/microcode
 
 This platform clears TCB recovery set 20 but not set 22, which Intel publishes and has yet to promote.
 ```
