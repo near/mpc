@@ -3,6 +3,8 @@ pub mod conn;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
+pub mod liveness_check;
+pub mod rfc1982;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;
@@ -330,7 +332,10 @@ impl MeshNetworkClient {
         //  - There is a NetworkTaskChannel object alive for this MpcTaskId.
         //    - This is maintained by the drop_fn we give to NetworkTaskChannel, which is called
         //      when the NetworkTaskChannel is destroyed.
-        let mut channels = self.channels.lock().unwrap();
+        let mut channels = self
+            .channels
+            .lock()
+            .map_err(|e| anyhow::anyhow!("mutex poisoned: {e}"))?;
         let sender = match channels.senders.entry(channel_id) {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
@@ -1159,6 +1164,7 @@ pub mod testing {
                 Packet::ConnectedPeersInfo(info) => {
                     PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo { from, info })
                 }
+                Packet::Echo(_) | Packet::EchoAck(_) => return Ok(()),
             };
             sender
                 .send(message)
@@ -1344,8 +1350,7 @@ pub mod testing {
         futures::future::join_all(join_handles)
             .await
             .into_iter()
-            .collect::<Result<_, _>>()
-            .unwrap()
+            .collect::<Result<_, _>>()?
     }
 }
 
@@ -1992,13 +1997,11 @@ mod tests {
             from: ParticipantId,
             message: MpcMessage,
         ) -> anyhow::Result<()> {
-            self.peer_senders[&from]
-                .send(
-                    ME,
-                    Packet::MpcMessage(message),
-                    Some(ConnectionVersion::default()),
-                )
-                .unwrap();
+            self.peer_senders[&from].send(
+                ME,
+                Packet::MpcMessage(message),
+                Some(ConnectionVersion::default()),
+            )?;
             run_receive_message(
                 self.client.clone(),
                 &mut self.my_receiver,
@@ -2013,9 +2016,7 @@ mod tests {
             from: ParticipantId,
             info: ConnectedPeersInfo,
         ) -> anyhow::Result<()> {
-            self.peer_senders[&from]
-                .send(ME, Packet::ConnectedPeersInfo(info), None)
-                .unwrap();
+            self.peer_senders[&from].send(ME, Packet::ConnectedPeersInfo(info), None)?;
             run_receive_message(
                 self.client.clone(),
                 &mut self.my_receiver,
