@@ -15,9 +15,6 @@
 //!
 //! Logs show the chain, the local provider name, local auth names and schemes, and public whitelist
 //! values. They never show the local `rpc_url` or a token.
-
-use std::collections::BTreeMap;
-
 use mpc_node_config::{
     ForeignChainConfig, ForeignChainsConfig,
     foreign_chains::{
@@ -28,6 +25,7 @@ use mpc_node_config::{
     },
 };
 use near_mpc_contract_interface::types::{self as dtos, ChainEntry, ProviderConfig, ProviderId};
+use std::collections::BTreeMap;
 use tokio::sync::watch;
 
 /// Compares the local config with each whitelist that
@@ -41,15 +39,18 @@ pub(crate) async fn run(
     local: ForeignChainsConfig,
 ) {
     loop {
-        let diagnostics = compare(&local, &whitelist_rx.borrow_and_update());
-        if diagnostics.is_empty() {
-            tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
-        }
-        diagnostics.iter().for_each(log_diagnostic);
         if whitelist_rx.changed().await.is_err() {
             // Sender dropped: the indexer is shutting down, nothing left to verify against.
             break;
         }
+        let diagnostics = {
+            let whitelist = whitelist_rx.borrow_and_update();
+            compare(&local, &whitelist)
+        };
+        if diagnostics.is_empty() {
+            tracing::info!("foreign chain whitelist: local config matches the contract whitelist");
+        }
+        diagnostics.iter().for_each(log_diagnostic);
     }
 }
 
@@ -569,7 +570,10 @@ mod tests {
             ("drpc", drpc),
             ("quicknode", quicknode()),
         ]);
-        let (whitelist_tx, whitelist_rx) = watch::channel(whitelist);
+        let (whitelist_tx, whitelist_rx) = watch::channel(BTreeMap::new());
+        whitelist_tx
+            .send(whitelist)
+            .expect("the receiver is still alive");
         drop(whitelist_tx);
 
         // When
