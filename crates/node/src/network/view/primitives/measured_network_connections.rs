@@ -5,9 +5,10 @@ use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use near_time::Instant;
+use near_time::{Duration, Instant};
 use petgraph::{Directed, Undirected};
 
+use crate::network::constants::{UPTIME_HALF_MINUTE, UPTIME_SECONDS};
 use crate::network::view::primitives::LinkStatus;
 use crate::network::view::primitives::{
     adjacency_matrix::{AdjacencyMatrix, AdjacencyMatrixError},
@@ -99,6 +100,19 @@ pub enum Uptime {
     Any,
     Seconds,
     HalfMinute,
+}
+
+impl Uptime {
+    /// The highest tier an uninterrupted presence of `up_for` satisfies.
+    pub fn exceeds(up_for: Duration) -> Self {
+        if up_for >= UPTIME_HALF_MINUTE {
+            Self::HalfMinute
+        } else if up_for >= UPTIME_SECONDS {
+            Self::Seconds
+        } else {
+            Self::Any
+        }
+    }
 }
 
 pub enum LinkSpeed {

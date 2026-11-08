@@ -35,7 +35,8 @@
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 
-use near_time::Instant;
+use near_time::{Duration, Instant};
+use time::ext::InstantExt as _;
 
 /// A link together with its recent observations and the status inferred from them.
 ///
@@ -88,15 +89,20 @@ pub enum LinkStatus<S> {
 pub struct RecentObservations<T> {
     buffer_size: NonZeroUsize,
     samples: VecDeque<TimedObservation<T>>,
+    presence: Presence,
 }
 
 impl<T> RecentObservations<T> {
+    // todo: we don't really need an observation if we have presence
     pub fn new(buffer_size: NonZeroUsize, observation: LinkObservation<T>, at: Instant) -> Self {
+        let observation = TimedObservation { at, observation };
+        let presence = Presence::NeverUp.observe(&observation);
         let mut samples = VecDeque::with_capacity(buffer_size.get());
-        samples.push_back(TimedObservation { at, observation });
+        samples.push_back(observation);
         Self {
             buffer_size,
             samples,
+            presence,
         }
     }
 
@@ -104,7 +110,9 @@ impl<T> RecentObservations<T> {
         if self.samples.len() == self.buffer_size.get() {
             self.samples.pop_front();
         }
-        self.samples.push_back(TimedObservation { at, observation });
+        let observation = TimedObservation { at, observation };
+        self.presence = self.presence.observe(&observation);
+        self.samples.push_back(observation);
     }
     pub fn newest(&self) -> &TimedObservation<T> {
         self.samples
@@ -113,6 +121,40 @@ impl<T> RecentObservations<T> {
     }
     pub fn newest_first(&self) -> impl Iterator<Item = &TimedObservation<T>> {
         self.samples.iter().rev()
+    }
+
+    /// Time since the link last came back up, [`Duration::MAX`] if it never went down.
+    /// [`LinkStatus::Absent`] while it is down or has not come up yet.
+    pub fn uptime(&self) -> LinkStatus<Duration> {
+        match self.presence {
+            Presence::NeverUp | Presence::Down => LinkStatus::Absent,
+            Presence::AlwaysUp => LinkStatus::Present(Duration::MAX),
+            Presence::UpAgain { since } => {
+                LinkStatus::Present(self.newest().at.signed_duration_since(since))
+            }
+        }
+    }
+}
+
+/// Presence as of the newest observation, kept up to date as observations arrive.
+#[derive(Debug, Clone, Copy)]
+enum Presence {
+    NeverUp,
+    AlwaysUp,
+    UpAgain { since: Instant },
+    Down,
+}
+
+impl Presence {
+    fn observe<T>(self, observation: &TimedObservation<T>) -> Self {
+        match (self, observation.present().is_some()) {
+            (Self::NeverUp, true) => Self::AlwaysUp,
+            (Self::Down, true) => Self::UpAgain {
+                since: observation.at,
+            },
+            (Self::AlwaysUp | Self::UpAgain { .. }, true) | (Self::NeverUp, false) => self,
+            (Self::AlwaysUp | Self::UpAgain { .. } | Self::Down, false) => Self::Down,
+        }
     }
 }
 

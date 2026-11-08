@@ -3,18 +3,16 @@ use std::{collections::BTreeMap, num::NonZeroUsize};
 use near_block_primitives::BlockCount;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_time::{Duration, Instant};
-use time::ext::InstantExt as _;
 
 use crate::{
     network::{
         constants::MAX_ONLINE_DELAY_BLOCKS,
         view::{
             first_hand_indexer_heights::{FirstHandHeight, FirstHandIndexerHeights, parse_height},
-            network_link_uptime::uptime_reached,
             primitives::{
                 GradeLink, InferLinkStatus, LinkObservation, LinkReport, LinkSpeed, LinkStatus,
                 MeasuredNetworkConnections, PreviousViewValidity, RecentObservations,
-                TimedObservation, UsableNetworkConnections,
+                TimedObservation, Uptime, UsableNetworkConnections,
             },
             view_manager::{LocalPeerReport, MeasureNetworkConnections, NetworkViewUpdateError},
         },
@@ -121,8 +119,7 @@ impl MeanBlockLag {
     }
 }
 
-/// Mean lag over the window's present samples, and for how long the link has been present
-/// without interruption: from the first present sample after the last absent one to the newest.
+/// Mean lag over the window's present samples, and [`RecentObservations::uptime`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LinkHealth {
     pub mean_lag: MeanBlockLag,
@@ -131,26 +128,20 @@ pub struct LinkHealth {
 
 impl InferLinkStatus<BlockCount> for LinkHealth {
     fn infer_link_status(obs: &RecentObservations<BlockCount>) -> LinkStatus<Self> {
-        let newest = obs.newest();
-        let LinkObservation::Present(newest_lag) = &newest.observation else {
+        let LinkStatus::Present(up_for) = obs.uptime() else {
             return LinkStatus::Absent;
         };
-        let up_since = obs
-            .newest_first()
-            .take_while(|observation| observation.present().is_some())
-            .last()
-            .map_or(newest.at, |observation| observation.at);
+        let mut present = obs.newest_first().filter_map(TimedObservation::present);
+        let Some(newest_lag) = present.next() else {
+            return LinkStatus::Absent;
+        };
         let mut summed = helper::SummedLatencies::new(*newest_lag);
-        for latency in obs
-            .newest_first()
-            .skip(1)
-            .filter_map(TimedObservation::present)
-        {
+        for latency in present {
             summed.add(*latency);
         }
         LinkStatus::Present(LinkHealth {
             mean_lag: summed.average_latency(),
-            up_for: newest.at.signed_duration_since(up_since),
+            up_for,
         })
     }
 }
@@ -163,7 +154,7 @@ impl GradeLink for LinkHealth {
         if self.mean_lag > MAX_ONLINE_DELAY_BLOCKS {
             return LinkSpeed::TooSlow;
         }
-        LinkSpeed::Up(uptime_reached(self.up_for))
+        LinkSpeed::Up(Uptime::exceeds(self.up_for))
     }
 }
 

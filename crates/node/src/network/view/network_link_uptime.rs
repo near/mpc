@@ -7,20 +7,16 @@ use std::{collections::BTreeMap, num::NonZeroUsize};
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_time::{Duration, Instant};
-use time::ext::InstantExt as _;
 
 use crate::{
-    network::{
-        constants::{UPTIME_HALF_MINUTE, UPTIME_SECONDS},
-        view::{
-            first_hand_indexer_heights::FirstHandIndexerHeights,
-            primitives::{
-                GradeLink, InferLinkStatus, LinkObservation, LinkReport, LinkSpeed, LinkStatus,
-                MeasuredNetworkConnections, PreviousViewValidity, RecentObservations, Uptime,
-                UsableNetworkConnections,
-            },
-            view_manager::{LocalPeerReport, MeasureNetworkConnections, NetworkViewUpdateError},
+    network::view::{
+        first_hand_indexer_heights::FirstHandIndexerHeights,
+        primitives::{
+            GradeLink, InferLinkStatus, LinkObservation, LinkReport, LinkSpeed, LinkStatus,
+            MeasuredNetworkConnections, PreviousViewValidity, RecentObservations, Uptime,
+            UsableNetworkConnections,
         },
+        view_manager::{LocalPeerReport, MeasureNetworkConnections, NetworkViewUpdateError},
     },
     primitives::ParticipantId,
 };
@@ -78,8 +74,7 @@ impl MeasureNetworkConnections for NetworkConnectionsUptime {
     }
 }
 
-/// For how long the link has been present without interruption: from the first present sample
-/// after the last absent one to the newest.
+/// See [`RecentObservations::uptime`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LinkUptime {
     pub up_for: Duration,
@@ -87,34 +82,15 @@ pub struct LinkUptime {
 
 impl<T> InferLinkStatus<T> for LinkUptime {
     fn infer_link_status(obs: &RecentObservations<T>) -> LinkStatus<Self> {
-        let newest = obs.newest();
-        if newest.present().is_none() {
-            return LinkStatus::Absent;
+        match obs.uptime() {
+            LinkStatus::Absent => LinkStatus::Absent,
+            LinkStatus::Present(up_for) => LinkStatus::Present(LinkUptime { up_for }),
         }
-        let up_since = obs
-            .newest_first()
-            .take_while(|observation| observation.present().is_some())
-            .last()
-            .map_or(newest.at, |observation| observation.at);
-        LinkStatus::Present(LinkUptime {
-            up_for: newest.at.signed_duration_since(up_since),
-        })
     }
 }
 
 impl GradeLink for LinkUptime {
     fn grade(&self) -> LinkSpeed {
-        LinkSpeed::Up(uptime_reached(self.up_for))
-    }
-}
-
-/// The highest [`Uptime`] an uninterrupted presence of `up_for` satisfies.
-pub fn uptime_reached(up_for: Duration) -> Uptime {
-    if up_for >= UPTIME_HALF_MINUTE {
-        Uptime::HalfMinute
-    } else if up_for >= UPTIME_SECONDS {
-        Uptime::Seconds
-    } else {
-        Uptime::Any
+        LinkSpeed::Up(Uptime::exceeds(self.up_for))
     }
 }
