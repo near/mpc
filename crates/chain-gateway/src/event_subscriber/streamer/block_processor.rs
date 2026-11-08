@@ -1,3 +1,4 @@
+use near_contract_transport::BlockCount;
 use near_indexer::IndexerExecutionOutcomeWithReceipt;
 use near_indexer_primitives::{
     CryptoHash,
@@ -29,7 +30,8 @@ pub(super) async fn listen_blocks(
     number_of_tracked_blocks: u64,
 ) -> Result<(), ChainGatewayError> {
     let mut blocks_processed_count: u64 = 0;
-    let mut recent_blocks_tracker = RecentBlocksTracker::new(number_of_tracked_blocks);
+    let mut recent_blocks_tracker =
+        RecentBlocksTracker::new(BlockCount::new(number_of_tracked_blocks));
     loop {
         let streamer_message = stream
             .recv()
