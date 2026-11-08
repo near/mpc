@@ -36,12 +36,6 @@ pub struct NetworkIndexerBlockHeights {
     connections: MeasuredNetworkConnections<ParticipantId, MeanBlockLag, BlockCount>,
 }
 
-// todo: implement NetworkAPIForRequests on top of this.
-pub struct NetworkIndexerBlockHeightsReport {
-    pub first_hand_heights: NonEmptyBTreeMap<ParticipantId, FirstHandHeight>,
-    pub link_report: LinkReport<ParticipantId, MeanBlockLag>,
-}
-
 /// `Unknown` until the participant's first message, then whatever it last reported.
 /// The wire format encodes `Unknown` as `0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,13 +87,12 @@ fn observe_link(
 }
 
 impl NetworkIndexerBlockHeights {
-    pub fn generate_report(&self) -> NetworkIndexerBlockHeightsReport {
-        let first_hand_heights = self.first_hand_heights.clone();
-        let link_report = self.connections.link_report();
-        NetworkIndexerBlockHeightsReport {
-            first_hand_heights,
-            link_report,
-        }
+    pub fn first_hand_heights(&self) -> BTreeMap<ParticipantId, FirstHandHeight> {
+        self.first_hand_heights.clone().into()
+    }
+
+    pub fn link_report(&self) -> LinkReport<ParticipantId, MeanBlockLag> {
+        self.connections.link_report()
     }
     /// Validates a message and translates it into what we record. Pure: a malformed message
     /// leaves the state untouched.
@@ -214,21 +207,6 @@ impl NetworkIndexerBlockHeights {
     }
 }
 
-impl NetworkIndexerBlockHeightsReport {
-    /// Our first-hand heights for `peers`, wire-encoded.
-    pub fn first_hand_heights_of(
-        &self,
-        peers: impl IntoIterator<Item = ParticipantId>,
-    ) -> BTreeMap<ParticipantId, u64> {
-        peers
-            .into_iter()
-            .filter_map(|peer| {
-                let height = self.first_hand_heights.get(&peer)?;
-                Some((peer, u64::from(*height)))
-            })
-            .collect()
-    }
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum NetworkViewUpdateError {
     #[error("{0:?} is not a participant")]

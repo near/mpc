@@ -1,15 +1,15 @@
 // todo: clean this file
 
-use std::time::Duration;
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use tokio::sync::{mpsc, watch};
 
 use crate::{
     network::view::{
         network_link_latency::{
-            NetworkIndexerBlockHeights, NetworkIndexerBlockHeightsReport, NetworkViewUpdateError,
+            FirstHandHeight, MeanBlockLag, NetworkIndexerBlockHeights, NetworkViewUpdateError,
         },
-        primitives::{PreviousViewValidity, UsableNetworkConnections},
+        primitives::{LinkReport, PreviousViewValidity, UsableNetworkConnections},
     },
     primitives::{ParticipantId, PeerConnectedPeersInfo},
 };
@@ -35,10 +35,12 @@ pub struct NetworkViewManager {
     observations: mpsc::Receiver<NetworkViewUpdate>,
 
     // everything we send to other components
-    /// as soon as a link or participant changes its status, this is updated
-    broken: watch::Sender<OfflineParticipantView>,
+    /// as soon as a connection changes its status, this is updated
+    connections: watch::Sender<Arc<UsableNetworkConnections<ParticipantId>>>,
+    /// updated on every height update
+    heights: watch::Sender<BTreeMap<ParticipantId, FirstHandHeight>>,
     /// update every report_interval
-    link_reports: watch::Sender<NetworkIndexerBlockHeightsReport>,
+    link_reports: watch::Sender<LinkReport<ParticipantId, MeanBlockLag>>,
     // todo: should this be a near_time::Duration?
     report_interval: Duration,
 }
@@ -55,7 +57,7 @@ impl NetworkViewManager {
                     }
                 }
                 _ = tick.tick() => {
-                    self.link_reports.send_replace(self.indexer_block_heights.generate_report());
+                    self.link_reports.send_replace(self.indexer_block_heights.link_report());
                 }
                 else => break,
             }
@@ -75,19 +77,12 @@ impl NetworkViewManager {
                 PreviousViewValidity::Valid
             }
         };
+        self.heights
+            .send_replace(self.indexer_block_heights.first_hand_heights());
         if validity == PreviousViewValidity::Superseded {
-            self.publish_offline_view();
+            self.connections
+                .send_replace(Arc::new(self.indexer_block_heights.usable_connections()));
         }
         Ok(())
     }
-    fn publish_offline_view(&self) {
-        self.broken.send_replace(OfflineParticipantView {
-            connections: self.indexer_block_heights.usable_connections(),
-        });
-    }
-}
-
-// todo: implement NetworkAPIForRequests on top of this.
-pub struct OfflineParticipantView {
-    pub connections: UsableNetworkConnections<ParticipantId>,
 }
