@@ -5,9 +5,8 @@ use crate::requests::metrics;
 use crate::types::{self, Request, RequestId, RequestsUpdate};
 use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 use k256::sha2::Sha256;
-use near_contract_transport::BlockHeight;
+use near_contract_transport::{BlockCount, BlockHeight};
 use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
 use std::cmp::Reverse;
@@ -28,10 +27,10 @@ pub trait NetworkAPIForRequests: Send + Sync + 'static {
 pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
 /// A participant is considered stale if its indexer's highest height is more than this many
 /// blocks behind the reference height of [`PendingRequests::eligible_leaders_and_heights`].
-const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
+const STALE_PARTICIPANT_THRESHOLD: BlockCount = BlockCount::new(10);
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
-pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
+pub const REQUEST_EXPIRATION_BLOCKS: BlockCount = BlockCount::new(200);
 /// The maximum time we'll wait, after a transaction is submitted to the chain, before we decide
 /// that the transaction is lost and that we should retry.
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
@@ -561,14 +560,14 @@ impl DropReason {
 
 pub(super) struct EligibleLeadersAndHeights {
     pub eligible_leaders: HashSet<ParticipantId>,
-    pub reference_height: u64,
-    pub my_indexer_height: u64,
+    pub reference_height: BlockHeight,
+    pub my_indexer_height: BlockHeight,
 }
 
 /// Returns the highest height reached by more than half of `heights` (their lower median), or
 /// `None` if `heights` is empty.
-fn majority_height(heights: impl IntoIterator<Item = u64>) -> Option<u64> {
-    let mut heights: Vec<u64> = heights.into_iter().collect();
+fn majority_height(heights: impl IntoIterator<Item = BlockHeight>) -> Option<BlockHeight> {
+    let mut heights: Vec<BlockHeight> = heights.into_iter().collect();
     heights.sort_unstable_by_key(|height| Reverse(*height));
     heights.get(heights.len() / 2).copied()
 }
@@ -693,11 +692,12 @@ where
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
-        let height_of =
-            |participant: &ParticipantId| indexer_heights.get(participant).copied().unwrap_or(0);
+        let height_of = |participant: &ParticipantId| {
+            BlockHeight::new(indexer_heights.get(participant).copied().unwrap_or(0))
+        };
         let my_indexer_height = height_of(&self.my_participant_id);
-        let reference_height =
-            majority_height(alive_participants.iter().map(height_of)).unwrap_or(0);
+        let reference_height = majority_height(alive_participants.iter().map(height_of))
+            .unwrap_or(BlockHeight::new(0));
         let eligible_leaders = self
             .all_participants
             .iter()
@@ -764,7 +764,7 @@ where
         enum Removal {
             Dropped,
             Resolved {
-                latency_blocks: NumBlocks,
+                latency_blocks: BlockCount,
                 latency_duration: near_time::Duration,
             },
         }
@@ -772,8 +772,8 @@ where
 
         // Any request strictly older than `cutoff_block` is considered expired. This is measured
         // against our own indexer height to prevent spurious timeouts for old requests
-        let cutoff_block: BlockHeight =
-            (my_indexer_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1).into();
+        let cutoff_block =
+            my_indexer_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + BlockCount::new(1);
 
         for (id, request) in &mut self.requests {
             let _span = tracing::debug_span!(
@@ -822,11 +822,20 @@ where
                     block_height,
                 } => {
                     mpc_pending_queue_finalized_responses.inc();
-                    // Response block ≥ request block by construction; saturate just in case.
-                    let latency_blocks = u64::from(block_height.blocks_since(request.block_height));
+                    // Response block ≥ request block by construction; `None` means a reorg or a bug.
+                    let latency_blocks = block_height
+                        .blocks_since(request.block_height)
+                        .unwrap_or_else(|| {
+                            tracing::warn!(
+                                target: "request",
+                                "response block {block_height} precedes request block {}",
+                                request.block_height
+                            );
+                            BlockCount::new(0)
+                        });
                     let latency_duration = received_at.signed_duration_since(request.time_indexed);
 
-                    request_response_latency_blocks.observe(latency_blocks as f64);
+                    request_response_latency_blocks.observe(u64::from(latency_blocks) as f64);
                     request_response_latency_seconds.observe(latency_duration.as_seconds_f64());
 
                     requests_to_remove.push((
@@ -850,7 +859,7 @@ where
                 };
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
-                        indexed_block_height: request.block_height.into(),
+                        indexed_block_height: request.block_height,
                         request: request.request,
                         progress: request.computation_progress,
                         completion_delay,
@@ -882,7 +891,10 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest, majority_height};
+    use super::{
+        BlockCount, BlockHeight, NetworkAPIForRequests, PendingRequests, QueuedRequest,
+        majority_height,
+    };
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
         CHECK_EACH_REQUEST_INTERVAL, LEADER_FAILOVER_INTERVAL,
@@ -944,7 +956,7 @@ mod tests {
 
     struct TestNetworkAPI {
         alive: Mutex<HashSet<ParticipantId>>,
-        heights: Mutex<HashMap<ParticipantId, u64>>,
+        heights: Mutex<HashMap<ParticipantId, BlockHeight>>,
     }
 
     impl NetworkAPIForRequests for TestNetworkAPI {
@@ -953,7 +965,8 @@ mod tests {
         }
 
         fn indexer_heights(&self) -> HashMap<ParticipantId, u64> {
-            self.heights.lock().unwrap().clone()
+            let heights = self.heights.lock().unwrap();
+            heights.iter().map(|(p, h)| (*p, u64::from(*h))).collect()
         }
     }
 
@@ -961,7 +974,12 @@ mod tests {
         fn new(participants: &[ParticipantId]) -> Self {
             Self {
                 alive: Mutex::new(participants.iter().cloned().collect()),
-                heights: Mutex::new(participants.iter().map(|p| (*p, 0)).collect()),
+                heights: Mutex::new(
+                    participants
+                        .iter()
+                        .map(|p| (*p, BlockHeight::from(0)))
+                        .collect(),
+                ),
             }
         }
 
@@ -973,7 +991,7 @@ mod tests {
             self.alive.lock().unwrap().insert(participant);
         }
 
-        fn set_height(&self, participant: ParticipantId, height: u64) {
+        fn set_height(&self, participant: ParticipantId, height: BlockHeight) {
             self.heights.lock().unwrap().insert(participant, height);
         }
     }
@@ -1017,7 +1035,7 @@ mod tests {
                 network_api.clone(),
             );
             for participant in &participants {
-                network_api.set_height(*participant, 100);
+                network_api.set_height(*participant, BlockHeight::from(100));
             }
 
             let t = TestBlockMaker::new();
@@ -1039,7 +1057,7 @@ mod tests {
             )
         }
 
-        fn set_participant_network_height(&mut self, height: u64) {
+        fn set_participant_network_height(&mut self, height: BlockHeight) {
             for participant in &self.participant_ids {
                 self.network_api.set_height(*participant, height);
             }
@@ -1087,7 +1105,7 @@ mod tests {
         fn update<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
             pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
-        ) -> u64 {
+        ) -> BlockHeight {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
             let block_status = self
@@ -1104,14 +1122,14 @@ mod tests {
             self.responses_to_submit = Vec::new();
             self.head = new_block;
             pending.notify_new_block(update);
-            new_height
+            new_height.into()
         }
 
         /// Like [`update`] but forks the current head, making a new canonical chain.
         fn update_canonical_fork<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
             pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
-        ) -> u64 {
+        ) -> BlockHeight {
             let new_height = self.max_known_height() + 1;
             if self.fork.is_none() {
                 self.fork = self.head.parent.clone();
@@ -1131,7 +1149,7 @@ mod tests {
             self.responses_to_submit = Vec::new();
             self.fork = Some(new_block);
             pending.notify_new_block(update);
-            new_height
+            new_height.into()
         }
 
         fn advance_clock(&self, duration: Duration) {
@@ -1361,10 +1379,18 @@ mod tests {
 
         // Indexer 0 is offline; indexer 2 is stale.
         setup.network_api.bring_down(setup.participant_ids[0]);
-        setup.network_api.set_height(setup.participant_ids[0], 100);
-        setup.network_api.set_height(setup.participant_ids[1], 100);
-        setup.network_api.set_height(setup.participant_ids[2], 80); // stale
-        setup.network_api.set_height(setup.participant_ids[3], 100);
+        setup
+            .network_api
+            .set_height(setup.participant_ids[0], BlockHeight::from(100));
+        setup
+            .network_api
+            .set_height(setup.participant_ids[1], BlockHeight::from(100));
+        setup
+            .network_api
+            .set_height(setup.participant_ids[2], BlockHeight::from(80)); // stale
+        setup
+            .network_api
+            .set_height(setup.participant_ids[3], BlockHeight::from(100));
 
         let req1 = setup.add_request_leader_order(&[0, 1]);
         let req2 = setup.add_request_leader_order(&[2, 0, 1]);
@@ -1423,10 +1449,10 @@ mod tests {
     /// A single peer reporting a far higher height than everyone else must neither overflow the
     /// staleness check nor make the other participants stale.
     #[rstest]
-    #[case::slightly_ahead(120)]
-    #[case::at_maximum_height(u64::MAX)]
+    #[case::slightly_ahead(BlockHeight::from(120))]
+    #[case::at_maximum_height(BlockHeight::from(u64::MAX))]
     fn eligible_leaders_and_heights__should_ignore_a_single_peer_far_ahead(
-        #[case] peer_height: u64,
+        #[case] peer_height: BlockHeight,
     ) {
         // Given
         let (pending_requests, setup) = TestSetup::new();
@@ -1438,7 +1464,7 @@ mod tests {
         let eligible = pending_requests.eligible_leaders_and_heights();
 
         // Then
-        assert_eq!(eligible.reference_height, 100);
+        assert_eq!(eligible.reference_height, BlockHeight::new(100));
         assert_eq!(
             eligible.eligible_leaders,
             setup.participant_ids.iter().copied().collect()
@@ -1454,7 +1480,7 @@ mod tests {
         setup.update(&mut pending_requests);
         let peers = setup.participant_ids.iter().filter(|p| **p != me);
         for peer in peers.clone() {
-            setup.network_api.set_height(*peer, 120);
+            setup.network_api.set_height(*peer, BlockHeight::from(120));
         }
 
         // When
@@ -1463,7 +1489,7 @@ mod tests {
         // Then
         assert!(to_attempt.is_empty());
         let eligible = pending_requests.eligible_leaders_and_heights();
-        assert_eq!(eligible.reference_height, 120);
+        assert_eq!(eligible.reference_height, BlockHeight::new(120));
         assert_eq!(eligible.eligible_leaders, peers.copied().collect());
     }
 
@@ -1480,10 +1506,10 @@ mod tests {
         #[case] expected: Option<u64>,
     ) {
         // When
-        let majority = majority_height(heights);
+        let majority = majority_height(heights.into_iter().map(BlockHeight::new));
 
         // Then
-        assert_eq!(majority, expected);
+        assert_eq!(majority, expected.map(BlockHeight::new));
     }
 
     #[test_log::test]
@@ -1660,7 +1686,9 @@ mod tests {
         let block_height = setup.update(&mut pending_requests);
 
         // When: set network height to H + REQUEST_EXPIRATION_BLOCKS - 1
-        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
+        setup.set_participant_network_height(
+            (block_height + REQUEST_EXPIRATION_BLOCKS).saturating_sub(BlockCount::from(1)),
+        );
 
         // Then: request is NOT expired (returned by get_requests_to_attempt)
         let to_attempt = pending_requests.get_requests_to_attempt();
