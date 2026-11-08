@@ -105,6 +105,22 @@ pub trait HasParticipants {
 
 /// Helper functions to convert back and forth public key types
 #[cfg(test)]
+/// Picks the participant set for a computation we lead.
+pub trait SelectParticipants {
+    /// `total` participants including us, pairwise alive, taken from `candidates`.
+    fn select_participants(
+        &self,
+        total: usize,
+        candidates: &[ParticipantId],
+    ) -> Result<Vec<ParticipantId>, SelectParticipantsError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum SelectParticipantsError {
+    #[error("not enough alive participants: need {needed}, got {available}")]
+    NotEnoughParticipants { needed: usize, available: usize },
+}
+
 pub trait PublicKeyConversion: Sized {
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey>;
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self>;

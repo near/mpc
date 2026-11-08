@@ -9,6 +9,7 @@ pub mod wire_format;
 use crate::metrics::networking_metrics;
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
+use crate::network::view::network_link_latency::FirstHandHeight;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
@@ -22,7 +23,7 @@ use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -533,6 +534,13 @@ async fn run_receive_message(
         }
     }
     Ok(())
+}
+
+pub trait ReadFirstHandIndexerHeights {
+    fn first_hand_indexer_heights_of(
+        &self,
+        peers: impl IntoIterator<Item = ParticipantId>,
+    ) -> BTreeMap<ParticipantId, FirstHandHeight>;
 }
 
 // todo: also broadcast immediately when the transport's connectivity changes, and feed our own

@@ -11,8 +11,21 @@ use borsh::BorshDeserialize;
 use near_time::Clock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
+
+/// Whether a stored participant set can still be used, e.g. for an owned triple or presignature.
+pub trait CheckParticipantsAlive {
+    fn check_alive(&self, participants: &BTreeSet<ParticipantId>) -> Result<(), AliveCheckError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AliveCheckError {
+    #[error("{0:?} is not alive")]
+    NotAlive(ParticipantId),
+    #[error("{0:?} and {1:?} cannot reach each other")]
+    Unreachable(ParticipantId, ParticipantId),
+}
 
 /// The cold queue contains a collection of assets and a condition function.
 /// The queue is divided into three sections by two barriers:
