@@ -91,6 +91,8 @@ struct NetworkViewManager {
     /// updated on every height update
     heights: watch::Sender<BTreeMap<ParticipantId, FirstHandHeight>>,
     /// update every report_interval
+    // todo: metrics task on this watch: mean lag and uptime per link, status per pair, as gauges,
+    // to learn the healthy lag distribution and its tail
     link_reports: watch::Sender<LinkReport<ParticipantId, LinkHealth>>,
     report_interval: Duration,
     clock: Clock,

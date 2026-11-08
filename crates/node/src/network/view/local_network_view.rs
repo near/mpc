@@ -97,6 +97,8 @@ impl NetworkAPIForRequests for LocalNetworkView {
 }
 
 impl SelectParticipants for LocalNetworkView {
+    // todo: record the worst pair lag of the chosen set, so computation duration and outcome can
+    // be bucketed by it and a lag cutoff derived from where they degrade
     /// Draws at random so that no fixed subset carries every computation.
     fn select_participants(
         &self,

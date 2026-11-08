@@ -273,6 +273,9 @@ impl InferLinkStatus<BlockCount> for LinkHealth {
     }
 }
 
+// todo: calibrate the lag estimator on localnet with injected delay (tc netem) before deriving a
+// cutoff from it: how much of a delay shows up as lag, how the path-difference error smears it, and
+// how fast the 60-sample mean reacts
 impl GradeLink for LinkHealth {
     fn grade(&self) -> LinkSpeed {
         if self.mean_lag > MAX_ONLINE_DELAY_BLOCKS {
