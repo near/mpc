@@ -23,3 +23,7 @@ pub const RECENT_DELAY_SAMPLES: NonZeroUsize =
 /// liveness lag plus a buffer for the extra gossip hop in the measurement.
 pub const MAX_ONLINE_DELAY_BLOCKS: MeanBlockLag =
     MeanBlockLag::new(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF + 10);
+/// Network view updates buffered per participant. Every participant sends one per
+/// [`CONNECTED_PEERS_BROADCAST_INTERVAL`], so this is a few intervals of backlog before producers
+/// start dropping updates.
+pub const NETWORK_VIEW_UPDATES_BUFFERED_PER_PARTICIPANT: usize = 4;

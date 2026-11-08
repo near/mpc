@@ -2,14 +2,23 @@
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use tokio::sync::{mpsc, watch};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
-    network::view::{
-        network_link_latency::{
-            FirstHandHeight, MeanBlockLag, NetworkIndexerBlockHeights, NetworkViewUpdateError,
+    network::{
+        constants::{
+            MAX_ONLINE_DELAY_BLOCKS, NETWORK_VIEW_UPDATES_BUFFERED_PER_PARTICIPANT,
+            RECENT_DELAY_SAMPLES,
         },
-        primitives::{LinkReport, PreviousViewValidity, UsableNetworkConnections},
+        view::{
+            local_network_view::LocalNetworkView,
+            network_link_latency::{
+                FirstHandHeight, MeanBlockLag, NetworkIndexerBlockHeights, NetworkViewUpdateError,
+            },
+            primitives::{LinkReport, PreviousViewValidity, UsableNetworkConnections},
+        },
     },
     primitives::{ParticipantId, PeerConnectedPeersInfo},
 };
@@ -26,7 +35,52 @@ pub enum NetworkViewUpdate {
     },
 }
 
-pub struct NetworkViewManager {
+pub struct NetworkViewHandles {
+    pub local_view: LocalNetworkView,
+    pub updates: mpsc::Sender<NetworkViewUpdate>,
+    pub link_reports: watch::Receiver<LinkReport<ParticipantId, MeanBlockLag>>,
+}
+
+/// The manager runs until `cancellation_token` is cancelled or every `updates` sender is gone.
+pub fn run_network_view_manager(
+    me: ParticipantId,
+    participants: &NonEmptyBTreeSet<ParticipantId>,
+    report_interval: Duration,
+    cancellation_token: CancellationToken,
+) -> NetworkViewHandles {
+    let indexer_block_heights = NetworkIndexerBlockHeights::new(
+        participants,
+        RECENT_DELAY_SAMPLES,
+        MAX_ONLINE_DELAY_BLOCKS,
+    );
+    let (updates, observations) = mpsc::channel(update_buffer_size(participants.len()));
+    let (connections, connections_receiver) =
+        watch::channel(Arc::new(indexer_block_heights.usable_connections()));
+    let (heights, heights_receiver) = watch::channel(indexer_block_heights.first_hand_heights());
+    let (link_reports, link_reports_receiver) = watch::channel(indexer_block_heights.link_report());
+    let manager = NetworkViewManager {
+        indexer_block_heights,
+        observations,
+        connections,
+        heights,
+        link_reports,
+        report_interval,
+    };
+    tokio::spawn(manager.run(cancellation_token));
+    NetworkViewHandles {
+        local_view: LocalNetworkView::new(me, connections_receiver, heights_receiver),
+        updates,
+        link_reports: link_reports_receiver,
+    }
+}
+
+fn update_buffer_size(participants: usize) -> usize {
+    participants
+        .saturating_mul(NETWORK_VIEW_UPDATES_BUFFERED_PER_PARTICIPANT)
+        .max(1)
+}
+
+struct NetworkViewManager {
     // todo: add bidirectionally connected views...
     // transport_view: T,
     indexer_block_heights: NetworkIndexerBlockHeights,
@@ -46,20 +100,23 @@ pub struct NetworkViewManager {
 }
 
 impl NetworkViewManager {
-    pub async fn run(mut self) {
+    async fn run(mut self, cancellation_token: CancellationToken) {
         let mut tick = tokio::time::interval(self.report_interval);
         loop {
-            // todo: handle cancellation / dropping
             tokio::select! {
-                Some(o) = self.observations.recv() => {
-                    if let Err(err) = self.apply(o) {
+                _ = cancellation_token.cancelled() => break,
+                update = self.observations.recv() => {
+                    // a closed channel never reopens: senders can only be cloned from one another
+                    let Some(update) = update else {
+                        break;
+                    };
+                    if let Err(err) = self.apply(update) {
                         tracing::error!(?err, "could not apply network view update");
                     }
                 }
                 _ = tick.tick() => {
                     self.link_reports.send_replace(self.indexer_block_heights.link_report());
                 }
-                else => break,
             }
         }
     }
