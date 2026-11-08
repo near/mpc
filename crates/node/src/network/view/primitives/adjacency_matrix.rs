@@ -4,7 +4,7 @@ use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use petgraph::{
     EdgeType, Undirected,
     matrix_graph::{MatrixGraph, NodeIndex},
-    visit::IntoEdgeReferences,
+    visit::{IntoEdgeReferences, IntoEdges},
 };
 
 /// A `MatrixGraph` over a fixed node set, addressed by node id instead of `NodeIndex`.
@@ -42,11 +42,12 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         Ok((a, b))
     }
 
-    /// The first pair among `nodes` without an edge, or `None` if all of them are connected.
+    /// The first pair among `nodes` whose edge weight, `None` for no edge, satisfies `predicate`.
     /// Ids are translated once; the pair loop runs on indices.
-    pub fn find_missing_edge_within<'a>(
+    pub fn find_pair_within<'a>(
         &self,
         nodes: impl IntoIterator<Item = &'a N>,
+        mut predicate: impl FnMut(Option<&E>) -> bool,
     ) -> Result<Option<(&'a N, &'a N)>, AdjacencyMatrixError<N>>
     where
         N: 'a,
@@ -59,7 +60,7 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         let mut rest = indexed.as_slice();
         while let Some((&(p, i), tail)) = rest.split_first() {
             for &(q, j) in tail {
-                if !self.matrix.has_edge(i, j) {
+                if predicate(self.matrix.get_edge_weight(i, j)) {
                     return Ok(Some((p, q)));
                 }
             }
@@ -91,16 +92,16 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         Ok(self.matrix.update_edge(i, j, weight))
     }
 
-    /// Nodes sharing an edge with `node`.
-    pub fn neighbors(&self, node: &N) -> Result<impl Iterator<Item = &N>, AdjacencyMatrixError<N>> {
+    /// Every node sharing an edge with `node`, with that edge's weight.
+    pub fn edges_from(
+        &self,
+        node: &N,
+    ) -> Result<impl Iterator<Item = (&N, &E)>, AdjacencyMatrixError<N>> {
         let i = self.index(node)?;
-        Ok(self.matrix.neighbors(i).map(|j| self.matrix.node_weight(j)))
-    }
-
-    /// Removes the edge; returns its weight, if there was one.
-    pub fn remove_edge(&mut self, a: &N, b: &N) -> Result<Option<E>, AdjacencyMatrixError<N>> {
-        let (i, j) = self.node_indices(a, b)?;
-        Ok(self.matrix.try_remove_edge(i, j))
+        Ok(self
+            .matrix
+            .edges(i)
+            .map(|(_, j, weight)| (self.matrix.node_weight(j), weight)))
     }
 
     fn index(&self, node: &N) -> Result<NodeIndex, AdjacencyMatrixError<N>> {

@@ -1,21 +1,19 @@
 // todo: clean this file
 
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
+use near_time::{Clock, Duration};
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     network::{
-        constants::{
-            MAX_ONLINE_DELAY_BLOCKS, NETWORK_VIEW_UPDATES_BUFFERED_PER_PARTICIPANT,
-            RECENT_DELAY_SAMPLES,
-        },
+        constants::{NETWORK_VIEW_UPDATES_BUFFERED_PER_PARTICIPANT, RECENT_DELAY_SAMPLES},
         view::{
             local_network_view::LocalNetworkView,
             network_link_latency::{
-                FirstHandHeight, MeanBlockLag, NetworkIndexerBlockHeights, NetworkViewUpdateError,
+                FirstHandHeight, LinkHealth, NetworkIndexerBlockHeights, NetworkViewUpdateError,
             },
             primitives::{LinkReport, PreviousViewValidity, UsableNetworkConnections},
         },
@@ -38,7 +36,7 @@ pub enum NetworkViewUpdate {
 pub struct NetworkViewHandles {
     pub local_view: LocalNetworkView,
     pub updates: mpsc::Sender<NetworkViewUpdate>,
-    pub link_reports: watch::Receiver<LinkReport<ParticipantId, MeanBlockLag>>,
+    pub link_reports: watch::Receiver<LinkReport<ParticipantId, LinkHealth>>,
 }
 
 /// The manager runs until `cancellation_token` is cancelled or every `updates` sender is gone.
@@ -46,18 +44,16 @@ pub fn run_network_view_manager(
     me: ParticipantId,
     participants: &NonEmptyBTreeSet<ParticipantId>,
     report_interval: Duration,
+    clock: Clock,
     cancellation_token: CancellationToken,
 ) -> NetworkViewHandles {
-    let indexer_block_heights = NetworkIndexerBlockHeights::new(
-        participants,
-        RECENT_DELAY_SAMPLES,
-        MAX_ONLINE_DELAY_BLOCKS,
-    );
+    let indexer_block_heights = NetworkIndexerBlockHeights::new(participants, RECENT_DELAY_SAMPLES);
     let (updates, observations) = mpsc::channel(update_buffer_size(participants.len()));
     let (connections, connections_receiver) =
         watch::channel(Arc::new(indexer_block_heights.usable_connections()));
     let (heights, heights_receiver) = watch::channel(indexer_block_heights.first_hand_heights());
-    let (link_reports, link_reports_receiver) = watch::channel(indexer_block_heights.link_report());
+    let (link_reports, link_reports_receiver) =
+        watch::channel(indexer_block_heights.link_report(clock.now()));
     let manager = NetworkViewManager {
         indexer_block_heights,
         observations,
@@ -65,6 +61,7 @@ pub fn run_network_view_manager(
         heights,
         link_reports,
         report_interval,
+        clock,
     };
     tokio::spawn(manager.run(cancellation_token));
     NetworkViewHandles {
@@ -94,14 +91,14 @@ struct NetworkViewManager {
     /// updated on every height update
     heights: watch::Sender<BTreeMap<ParticipantId, FirstHandHeight>>,
     /// update every report_interval
-    link_reports: watch::Sender<LinkReport<ParticipantId, MeanBlockLag>>,
-    // todo: should this be a near_time::Duration?
+    link_reports: watch::Sender<LinkReport<ParticipantId, LinkHealth>>,
     report_interval: Duration,
+    clock: Clock,
 }
 
 impl NetworkViewManager {
     async fn run(mut self, cancellation_token: CancellationToken) {
-        let mut tick = tokio::time::interval(self.report_interval);
+        let mut tick = tokio::time::interval(self.report_interval.unsigned_abs());
         loop {
             tokio::select! {
                 _ = cancellation_token.cancelled() => break,
@@ -115,16 +112,17 @@ impl NetworkViewManager {
                     }
                 }
                 _ = tick.tick() => {
-                    self.link_reports.send_replace(self.indexer_block_heights.link_report());
+                    self.link_reports
+                        .send_replace(self.indexer_block_heights.link_report(self.clock.now()));
                 }
             }
         }
     }
     fn apply(&mut self, update: NetworkViewUpdate) -> Result<(), NetworkViewUpdateError> {
         let validity = match update {
-            NetworkViewUpdate::ConnectedPeersInfo(info) => {
-                self.indexer_block_heights.update_with(info)?
-            }
+            NetworkViewUpdate::ConnectedPeersInfo(info) => self
+                .indexer_block_heights
+                .update_with(info, self.clock.now())?,
             NetworkViewUpdate::IndexerHeight {
                 participant,
                 height,

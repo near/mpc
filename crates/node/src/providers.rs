@@ -14,6 +14,7 @@ pub mod verify_foreign_tx;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
+use crate::network::view::primitives::Uptime;
 use crate::network::wire_format::MpcTaskId;
 use crate::primitives::ParticipantId;
 use crate::types::SignatureId;
@@ -107,11 +108,13 @@ pub trait HasParticipants {
 #[cfg(test)]
 /// Picks the participant set for a computation we lead.
 pub trait SelectParticipants {
-    /// `total` participants including us, pairwise alive, taken from `candidates`.
+    /// `total` participants including us, pairwise connected for at least `required_uptime`,
+    /// taken from `candidates`.
     fn select_participants(
         &self,
         total: usize,
         candidates: &[ParticipantId],
+        required_uptime: Uptime,
     ) -> Result<Vec<ParticipantId>, SelectParticipantsError>;
 }
 

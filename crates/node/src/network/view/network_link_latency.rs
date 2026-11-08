@@ -2,12 +2,17 @@ use std::{collections::BTreeMap, num::NonZeroUsize};
 
 use near_block_primitives::{BlockCount, BlockHeight};
 use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+use near_time::{Duration, Instant};
+use time::ext::InstantExt as _;
 
 use crate::{
-    network::view::primitives::{
-        AdjacencyMatrixError, InferLinkStatus, LinkObservation, LinkReport, LinkStatus,
-        MeasuredNetworkConnections, PreviousViewValidity, RecentObservations,
-        UsableNetworkConnections,
+    network::{
+        constants::{MAX_ONLINE_DELAY_BLOCKS, UPTIME_HALF_MINUTE, UPTIME_SECONDS},
+        view::primitives::{
+            AdjacencyMatrixError, GradeLink, InferLinkStatus, LinkObservation, LinkReport,
+            LinkSpeed, LinkStatus, MeasuredNetworkConnections, PreviousViewValidity,
+            RecentObservations, TimedObservation, Uptime, UsableNetworkConnections,
+        },
     },
     primitives::{ConnectedPeersInfo, ParticipantId, PeerConnectedPeersInfo},
 };
@@ -33,7 +38,7 @@ use crate::{
 pub struct NetworkIndexerBlockHeights {
     // list of all participants
     first_hand_heights: NonEmptyBTreeMap<ParticipantId, FirstHandHeight>,
-    connections: MeasuredNetworkConnections<ParticipantId, MeanBlockLag, BlockCount>,
+    connections: MeasuredNetworkConnections<ParticipantId, LinkHealth, BlockCount>,
 }
 
 /// `Unknown` until the participant's first message, then whatever it last reported.
@@ -91,8 +96,8 @@ impl NetworkIndexerBlockHeights {
         self.first_hand_heights.clone().into()
     }
 
-    pub fn link_report(&self) -> LinkReport<ParticipantId, MeanBlockLag> {
-        self.connections.link_report()
+    pub fn link_report(&self, now: Instant) -> LinkReport<ParticipantId, LinkHealth> {
+        self.connections.link_report(now)
     }
     /// Validates a message and translates it into what we record. Pure: a malformed message
     /// leaves the state untouched.
@@ -130,7 +135,6 @@ impl NetworkIndexerBlockHeights {
     pub fn new(
         participants: &NonEmptyBTreeSet<ParticipantId>,
         measurement_window: NonZeroUsize,
-        threshold: MeanBlockLag,
     ) -> Self {
         Self {
             first_hand_heights: participants
@@ -139,11 +143,7 @@ impl NetworkIndexerBlockHeights {
                 .collect::<BTreeMap<_, _>>()
                 .try_into()
                 .expect("a non-empty participant set yields a non-empty map"),
-            connections: MeasuredNetworkConnections::new(
-                participants,
-                measurement_window,
-                threshold,
-            ),
+            connections: MeasuredNetworkConnections::new(participants, measurement_window),
         }
     }
     /// Updates the view based on one participant's message.
@@ -154,6 +154,7 @@ impl NetworkIndexerBlockHeights {
             from: reporter,
             info,
         }: PeerConnectedPeersInfo,
+        now: Instant,
     ) -> Result<PreviousViewValidity, NetworkViewUpdateError> {
         let ConnectedPeersInfo { peers } = info;
         let ParsedConnectedPeersInfo {
@@ -166,7 +167,7 @@ impl NetworkIndexerBlockHeights {
         // future refactors might break that invariant.
         Ok(self
             .connections
-            .record_observations_from(&reporter, observations)?)
+            .record_observations_from(&reporter, observations, now)?)
     }
     /// Records the `reporter`'s own height. Errors if the `reporter` is not a participant, so the
     /// participant set never grows.
@@ -238,24 +239,52 @@ impl MeanBlockLag {
     }
 }
 
-/// Trailing average over the latest present observations.
-// todo: also weigh recent interruptions: how often the link was Absent within the window.
-impl InferLinkStatus<BlockCount> for MeanBlockLag {
+/// Mean lag over the window's present samples, and for how long the link has been present
+/// without interruption: from the first present sample after the last absent one to the newest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinkHealth {
+    pub mean_lag: MeanBlockLag,
+    pub up_for: Duration,
+}
+
+impl InferLinkStatus<BlockCount> for LinkHealth {
     fn infer_link_status(obs: &RecentObservations<BlockCount>) -> LinkStatus<Self> {
-        match obs.newest() {
-            LinkObservation::Absent => LinkStatus::Absent,
-            LinkObservation::Present(first) => {
-                let mut summed = helper::SummedLatencies::new(*first);
-                for latency in obs
-                    .newest_first()
-                    .skip(1)
-                    .map_while(LinkObservation::present)
-                {
-                    summed.add(*latency);
-                }
-                LinkStatus::Present(summed.average_latency())
-            }
+        let newest = obs.newest();
+        let LinkObservation::Present(newest_lag) = &newest.observation else {
+            return LinkStatus::Absent;
+        };
+        let up_since = obs
+            .newest_first()
+            .take_while(|observation| observation.present().is_some())
+            .last()
+            .map_or(newest.at, |observation| observation.at);
+        let mut summed = helper::SummedLatencies::new(*newest_lag);
+        for latency in obs
+            .newest_first()
+            .skip(1)
+            .filter_map(TimedObservation::present)
+        {
+            summed.add(*latency);
         }
+        LinkStatus::Present(LinkHealth {
+            mean_lag: summed.average_latency(),
+            up_for: newest.at.signed_duration_since(up_since),
+        })
+    }
+}
+
+impl GradeLink for LinkHealth {
+    fn grade(&self) -> LinkSpeed {
+        if self.mean_lag > MAX_ONLINE_DELAY_BLOCKS {
+            return LinkSpeed::TooSlow;
+        }
+        LinkSpeed::Up(if self.up_for >= UPTIME_HALF_MINUTE {
+            Uptime::HalfMinute
+        } else if self.up_for >= UPTIME_SECONDS {
+            Uptime::Seconds
+        } else {
+            Uptime::Any
+        })
     }
 }
 

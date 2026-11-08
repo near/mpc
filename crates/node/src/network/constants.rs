@@ -14,11 +14,13 @@ pub const MESSAGE_READ_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 pub const CONNECTED_PEERS_BROADCAST_INTERVAL: Duration = Duration::from_secs(1);
 
 pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);
-/// Gossip-delay samples averaged per link direction. One arrives per received row, so this is
-/// roughly a window in seconds: ten average out the broadcast-phase jitter of up to two
-/// [`CONNECTED_PEERS_BROADCAST_INTERVAL`]s and still react within seconds.
+/// Observations kept per link direction. One arrives per received report, so at one per
+/// [`CONNECTED_PEERS_BROADCAST_INTERVAL`] this covers [`UPTIME_HALF_MINUTE`] with margin.
 pub const RECENT_DELAY_SAMPLES: NonZeroUsize =
-    NonZeroUsize::new(10).expect("literal must be non-zero");
+    NonZeroUsize::new(60).expect("literal must be non-zero");
+/// Uninterrupted presence behind the `Seconds` and `HalfMinute` uptimes.
+pub const UPTIME_SECONDS: near_time::Duration = near_time::Duration::seconds(5);
+pub const UPTIME_HALF_MINUTE: near_time::Duration = near_time::Duration::seconds(25);
 /// Largest moving-average gossip delay, in blocks, at which a link still counts as online: the
 /// liveness lag plus a buffer for the extra gossip hop in the measurement.
 pub const MAX_ONLINE_DELAY_BLOCKS: MeanBlockLag =

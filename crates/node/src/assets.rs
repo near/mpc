@@ -5,6 +5,7 @@ pub mod test_utils;
 
 use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
+use crate::network::view::primitives::Uptime;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
@@ -16,7 +17,11 @@ use std::sync::{Arc, Mutex};
 
 /// Whether a stored participant set can still be used, e.g. for an owned triple or presignature.
 pub trait CheckParticipantsAlive {
-    fn check_alive(&self, participants: &BTreeSet<ParticipantId>) -> Result<(), AliveCheckError>;
+    fn check_alive(
+        &self,
+        participants: &BTreeSet<ParticipantId>,
+        required_uptime: Uptime,
+    ) -> Result<(), AliveCheckError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

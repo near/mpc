@@ -14,7 +14,8 @@ use crate::{
         view::{
             network_link_latency::FirstHandHeight,
             primitives::{
-                AdjacencyMatrixError, MeasuredNetworkConnectionsError, UsableNetworkConnections,
+                AdjacencyMatrixError, MeasuredNetworkConnectionsError, Uptime,
+                UsableNetworkConnections,
             },
         },
     },
@@ -47,8 +48,9 @@ impl LocalNetworkView {
         self.connections.borrow().clone()
     }
 
-    /// Us, plus every participant we have a usable connection with that is not behind us.
-    fn alive(&self) -> BTreeSet<ParticipantId> {
+    /// Us, plus every participant we have a connection with of at least `required_uptime` that
+    /// is not behind us.
+    fn alive(&self, required_uptime: Uptime) -> BTreeSet<ParticipantId> {
         let heights = self.heights.borrow();
         let height_of = |participant: &ParticipantId| {
             heights
@@ -59,7 +61,7 @@ impl LocalNetworkView {
         let my_height = height_of(&self.me);
         let mut alive: BTreeSet<ParticipantId> = self
             .connections()
-            .usable_from(&self.me)
+            .usable_from(&self.me, required_uptime)
             .unwrap_or_default()
             .into_iter()
             .filter(|participant| not_behind(my_height, height_of(participant)))
@@ -82,7 +84,7 @@ fn not_behind(my_height: FirstHandHeight, peer_height: FirstHandHeight) -> bool 
 
 impl NetworkAPIForRequests for LocalNetworkView {
     fn alive_participants(&self) -> HashSet<ParticipantId> {
-        self.alive().into_iter().collect()
+        self.alive(Uptime::Any).into_iter().collect()
     }
 
     fn indexer_heights(&self) -> HashMap<ParticipantId, u64> {
@@ -100,9 +102,10 @@ impl SelectParticipants for LocalNetworkView {
         &self,
         total: usize,
         candidates: &[ParticipantId],
+        required_uptime: Uptime,
     ) -> Result<Vec<ParticipantId>, SelectParticipantsError> {
         let connections = self.connections();
-        let alive = self.alive();
+        let alive = self.alive(required_uptime);
         let mut candidates: Vec<ParticipantId> = candidates
             .iter()
             .copied()
@@ -117,7 +120,7 @@ impl SelectParticipants for LocalNetworkView {
             }
             if chosen
                 .iter()
-                .all(|member| connections.are_connected(member, &candidate))
+                .all(|member| connections.are_connected(member, &candidate, required_uptime))
             {
                 chosen.push(candidate);
             }
@@ -133,13 +136,17 @@ impl SelectParticipants for LocalNetworkView {
 }
 
 impl CheckParticipantsAlive for LocalNetworkView {
-    fn check_alive(&self, participants: &BTreeSet<ParticipantId>) -> Result<(), AliveCheckError> {
-        let alive = self.alive();
+    fn check_alive(
+        &self,
+        participants: &BTreeSet<ParticipantId>,
+        required_uptime: Uptime,
+    ) -> Result<(), AliveCheckError> {
+        let alive = self.alive(required_uptime);
         if let Some(participant) = participants.iter().find(|p| !alive.contains(p)) {
             return Err(AliveCheckError::NotAlive(*participant));
         }
         self.connections()
-            .can_compute_with(participants)
+            .can_compute_with(participants, required_uptime)
             .map_err(|error| match error {
                 MeasuredNetworkConnectionsError::BrokenConnection(p, q) => {
                     AliveCheckError::Unreachable(p, q)
