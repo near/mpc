@@ -18,13 +18,14 @@ pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);
 /// [`CONNECTED_PEERS_BROADCAST_INTERVAL`] this covers [`UPTIME_HALF_MINUTE`] with margin.
 pub const RECENT_DELAY_SAMPLES: NonZeroUsize =
     NonZeroUsize::new(60).expect("literal must be non-zero");
+/// Largest moving-average gossip delay, in blocks, at which a link still counts as online: the
+/// liveness lag plus a buffer for the extra gossip hop in the measurement.
+// todo: uncalibrated; see the todo on `LinkHealth`'s `GradeLink` impl
+pub const MAX_ONLINE_DELAY_BLOCKS: MeanBlockLag =
+    MeanBlockLag::new(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF + 10);
 /// Uninterrupted presence behind the `Seconds` and `HalfMinute` uptimes.
 pub const UPTIME_SECONDS: near_time::Duration = near_time::Duration::seconds(5);
 pub const UPTIME_HALF_MINUTE: near_time::Duration = near_time::Duration::seconds(25);
-/// Largest moving-average gossip delay, in blocks, at which a link still counts as online: the
-/// liveness lag plus a buffer for the extra gossip hop in the measurement.
-pub const MAX_ONLINE_DELAY_BLOCKS: MeanBlockLag =
-    MeanBlockLag::new(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF + 10);
 /// Network view updates buffered per participant. Every participant sends one per
 /// [`CONNECTED_PEERS_BROADCAST_INTERVAL`], so this is a few intervals of backlog before producers
 /// start dropping updates.

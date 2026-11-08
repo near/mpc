@@ -9,7 +9,7 @@ pub mod wire_format;
 use crate::metrics::networking_metrics;
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
-use crate::network::view::network_link_latency::FirstHandHeight;
+use crate::network::view::first_hand_indexer_heights::FirstHandHeight;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
@@ -543,7 +543,7 @@ pub trait ReadFirstHandIndexerHeights {
     ) -> BTreeMap<ParticipantId, FirstHandHeight>;
 }
 
-// todo: also broadcast immediately when the transport's connectivity changes, and feed our own
+// todo: broadcast as soon as a connection with a peer was reset, and feed our own
 // ConnectedPeersInfo into the NetworkViewManager like any peer's.
 fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
     let me = client.my_participant_id();

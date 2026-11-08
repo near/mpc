@@ -12,7 +12,7 @@ use crate::{
     network::{
         ReadFirstHandIndexerHeights,
         view::{
-            network_link_latency::FirstHandHeight,
+            first_hand_indexer_heights::FirstHandHeight,
             primitives::{
                 AdjacencyMatrixError, MeasuredNetworkConnectionsError, Uptime,
                 UsableNetworkConnections,
