@@ -91,6 +91,12 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         Ok(self.matrix.update_edge(i, j, weight))
     }
 
+    /// Nodes sharing an edge with `node`.
+    pub fn neighbors(&self, node: &N) -> Result<impl Iterator<Item = &N>, AdjacencyMatrixError<N>> {
+        let i = self.index(node)?;
+        Ok(self.matrix.neighbors(i).map(|j| self.matrix.node_weight(j)))
+    }
+
     /// Removes the edge; returns its weight, if there was one.
     pub fn remove_edge(&mut self, a: &N, b: &N) -> Result<Option<E>, AdjacencyMatrixError<N>> {
         let (i, j) = self.node_indices(a, b)?;

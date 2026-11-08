@@ -226,6 +226,14 @@ impl<N: Ord + Clone> UsableNetworkConnections<N> {
         }
     }
 
+    pub fn are_connected(&self, a: &N, b: &N) -> bool {
+        matches!(self.connections.edge(a, b), Ok(Some(_)))
+    }
+
+    pub fn usable_from(&self, node: &N) -> Result<BTreeSet<N>, AdjacencyMatrixError<N>> {
+        Ok(self.connections.neighbors(node)?.cloned().collect())
+    }
+
     pub fn can_compute_with(
         &self,
         nodes: &BTreeSet<N>,
