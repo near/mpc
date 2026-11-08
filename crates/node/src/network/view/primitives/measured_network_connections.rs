@@ -208,13 +208,10 @@ impl<N: Ord + Clone, S: InferLinkStatus<T>, T> MeasuredNetworkLinks<N, S, T> {
         observation: LinkObservation<T>,
         now: Instant,
     ) -> Result<(), AdjacencyMatrixError<N>> {
-        match self.measured_network_links.edge_mut(from, to)? {
-            Some(link) => link.add_observation(observation, now),
-            None => {
-                let link = MeasuredLink::new(self.measurement_window, observation, now);
-                self.measured_network_links.set_edge(from, to, link)?;
-            }
-        }
+        let window = self.measurement_window;
+        self.measured_network_links
+            .edge_mut_or_insert_with(from, to, || MeasuredLink::new(window))?
+            .add_observation(observation, now);
         Ok(())
     }
 

@@ -81,6 +81,19 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         Ok(self.matrix.get_edge_weight_mut(i, j))
     }
 
+    pub fn edge_mut_or_insert_with(
+        &mut self,
+        a: &N,
+        b: &N,
+        insert: impl FnOnce() -> E,
+    ) -> Result<&mut E, AdjacencyMatrixError<N>> {
+        let (i, j) = self.node_indices(a, b)?;
+        if !self.matrix.has_edge(i, j) {
+            self.matrix.add_edge(i, j, insert());
+        }
+        Ok(self.matrix.edge_weight_mut(i, j))
+    }
+
     /// Adds or replaces the edge; returns the previous weight, if any.
     pub fn set_edge(
         &mut self,

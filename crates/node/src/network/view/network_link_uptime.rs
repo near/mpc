@@ -28,12 +28,10 @@ pub struct NetworkConnectionsUptime {
 }
 
 impl NetworkConnectionsUptime {
-    pub fn new(
-        participants: &NonEmptyBTreeSet<ParticipantId>,
-        measurement_window: NonZeroUsize,
-    ) -> Self {
+    /// Presence is tracked as observations arrive, so only the newest one is kept.
+    pub fn new(participants: &NonEmptyBTreeSet<ParticipantId>) -> Self {
         Self {
-            connections: MeasuredNetworkConnections::new(participants, measurement_window),
+            connections: MeasuredNetworkConnections::new(participants, NonZeroUsize::MIN),
         }
     }
 }

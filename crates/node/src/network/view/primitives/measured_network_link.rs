@@ -15,17 +15,17 @@
 //!
 //! impl InferLinkStatus<Ping> for Latency {
 //!     fn infer_link_status(observations: &RecentObservations<Ping>) -> LinkStatus<Self> {
-//!         match &observations.newest().observation {
-//!             LinkObservation::Present(Ping(ms)) => LinkStatus::Present(Latency(*ms)),
-//!             LinkObservation::Absent => LinkStatus::Absent,
+//!         match observations.newest().map(|newest| &newest.observation) {
+//!             Some(LinkObservation::Present(Ping(ms))) => LinkStatus::Present(Latency(*ms)),
+//!             Some(LinkObservation::Absent) | None => LinkStatus::Absent,
 //!         }
 //!     }
 //! }
 //!
 //! let clock = Clock::real();
 //! let window = NonZeroUsize::new(3).unwrap();
-//! let mut link: MeasuredLink<Latency, Ping> =
-//!     MeasuredLink::new(window, LinkObservation::Present(Ping(20)), clock.now());
+//! let mut link: MeasuredLink<Latency, Ping> = MeasuredLink::new(window);
+//! link.add_observation(LinkObservation::Present(Ping(20)), clock.now());
 //! assert_eq!(link.status(), &LinkStatus::Present(Latency(20)));
 //!
 //! link.add_observation(LinkObservation::Absent, clock.now());
@@ -55,8 +55,8 @@ impl<S, T> MeasuredLink<S, T> {
 }
 
 impl<S: InferLinkStatus<T>, T> MeasuredLink<S, T> {
-    pub fn new(window: NonZeroUsize, first_observation: LinkObservation<T>, at: Instant) -> Self {
-        let recent_observations = RecentObservations::new(window, first_observation, at);
+    pub fn new(window: NonZeroUsize) -> Self {
+        let recent_observations = RecentObservations::new(window);
         let status = S::infer_link_status(&recent_observations);
         Self {
             status,
@@ -84,7 +84,6 @@ pub enum LinkStatus<S> {
 }
 
 /// A ring-buffer for recent observations.
-/// Invariant: this is never empty
 #[derive(Debug, Clone)]
 pub struct RecentObservations<T> {
     buffer_size: NonZeroUsize,
@@ -93,16 +92,11 @@ pub struct RecentObservations<T> {
 }
 
 impl<T> RecentObservations<T> {
-    // todo: we don't really need an observation if we have presence
-    pub fn new(buffer_size: NonZeroUsize, observation: LinkObservation<T>, at: Instant) -> Self {
-        let observation = TimedObservation { at, observation };
-        let presence = Presence::NeverUp.observe(&observation);
-        let mut samples = VecDeque::with_capacity(buffer_size.get());
-        samples.push_back(observation);
+    pub fn new(buffer_size: NonZeroUsize) -> Self {
         Self {
             buffer_size,
-            samples,
-            presence,
+            samples: VecDeque::with_capacity(buffer_size.get()),
+            presence: Presence::NeverUp,
         }
     }
 
@@ -114,10 +108,8 @@ impl<T> RecentObservations<T> {
         self.presence = self.presence.observe(&observation);
         self.samples.push_back(observation);
     }
-    pub fn newest(&self) -> &TimedObservation<T> {
-        self.samples
-            .back()
-            .expect("by construction, recent observations is never empty")
+    pub fn newest(&self) -> Option<&TimedObservation<T>> {
+        self.samples.back()
     }
     pub fn newest_first(&self) -> impl Iterator<Item = &TimedObservation<T>> {
         self.samples.iter().rev()
@@ -129,8 +121,8 @@ impl<T> RecentObservations<T> {
         match self.presence {
             Presence::NeverUp | Presence::Down => LinkStatus::Absent,
             Presence::AlwaysUp => LinkStatus::Present(Duration::MAX),
-            Presence::UpAgain { since } => {
-                LinkStatus::Present(self.newest().at.signed_duration_since(since))
+            Presence::UpAgain { since, last_seen } => {
+                LinkStatus::Present(last_seen.signed_duration_since(since))
             }
         }
     }
@@ -141,7 +133,7 @@ impl<T> RecentObservations<T> {
 enum Presence {
     NeverUp,
     AlwaysUp,
-    UpAgain { since: Instant },
+    UpAgain { since: Instant, last_seen: Instant },
     Down,
 }
 
@@ -151,8 +143,13 @@ impl Presence {
             (Self::NeverUp, true) => Self::AlwaysUp,
             (Self::Down, true) => Self::UpAgain {
                 since: observation.at,
+                last_seen: observation.at,
             },
-            (Self::AlwaysUp | Self::UpAgain { .. }, true) | (Self::NeverUp, false) => self,
+            (Self::UpAgain { since, .. }, true) => Self::UpAgain {
+                since,
+                last_seen: observation.at,
+            },
+            (Self::AlwaysUp, true) | (Self::NeverUp, false) => self,
             (Self::AlwaysUp | Self::UpAgain { .. } | Self::Down, false) => Self::Down,
         }
     }
