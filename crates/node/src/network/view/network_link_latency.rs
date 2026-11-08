@@ -5,8 +5,9 @@ use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 
 use crate::{
     network::view::primitives::{
-        AdjacencyMatrixError, BrokenNetworkConnections, InferLinkStatus, LinkObservation,
-        LinkReport, LinkStatus, NetworkConnectionsView, PreviousViewValidity, RecentObservations,
+        AdjacencyMatrixError, InferLinkStatus, LinkObservation, LinkReport, LinkStatus,
+        MeasuredNetworkConnections, PreviousViewValidity, RecentObservations,
+        UsableNetworkConnections,
     },
     primitives::{ConnectedPeersInfo, ParticipantId, PeerConnectedPeersInfo},
 };
@@ -26,29 +27,75 @@ use crate::{
 ///   approximate_latency(origin --> reporter)
 ///       = first_hand(origin) - height_reported_by(reporter, origin)
 ///   ```
-/// - Any `origin` not reported by the `reporter` assumes `origin --> reporter` is broken.
+/// - An `origin` the `reporter` does not list marks `origin --> reporter` as absent. Since a
+///   `reporter` lists a peer only while connected to it both ways, that absence is its verdict on
+///   the whole connection, not on this direction alone.
 pub struct NetworkIndexerBlockHeights {
     // list of all participants
-    // BlockHeight is set to 0 if we haven't yet heard from that participant
-    first_hand_heights: NonEmptyBTreeMap<ParticipantId, BlockHeight>,
-    network_view: NetworkConnectionsView<ParticipantId, MeanBlockLag, BlockCount>,
+    first_hand_heights: NonEmptyBTreeMap<ParticipantId, FirstHandHeight>,
+    connections: MeasuredNetworkConnections<ParticipantId, MeanBlockLag, BlockCount>,
 }
 
 // todo: implement NetworkAPIForRequests on top of this.
 pub struct NetworkIndexerBlockHeightsReport {
-    pub first_hand_heights: NonEmptyBTreeMap<ParticipantId, BlockHeight>,
+    pub first_hand_heights: NonEmptyBTreeMap<ParticipantId, FirstHandHeight>,
     pub link_report: LinkReport<ParticipantId, MeanBlockLag>,
 }
 
+/// `Unknown` until the participant's first message, then whatever it last reported.
+/// The wire format encodes `Unknown` as `0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstHandHeight {
+    Unknown,
+    Known(BlockHeight),
+}
+
+impl From<u64> for FirstHandHeight {
+    fn from(height: u64) -> Self {
+        match height {
+            0 => Self::Unknown,
+            height => Self::Known(BlockHeight::from(height)),
+        }
+    }
+}
+
+impl From<FirstHandHeight> for u64 {
+    fn from(height: FirstHandHeight) -> Self {
+        match height {
+            FirstHandHeight::Unknown => 0,
+            FirstHandHeight::Known(height) => height.into(),
+        }
+    }
+}
+
 struct ParsedConnectedPeersInfo {
-    own_height: BlockHeight,
+    own_height: FirstHandHeight,
     observations: BTreeMap<ParticipantId, LinkObservation<BlockCount>>,
+}
+
+/// Latency of `origin --> reporter`, approximated as
+/// `(origin --> us) - (origin --> reporter --> us)`, saturating at zero.
+/// Link is considered absent if `reported_height` is `None`.
+/// Returns `None` if `first_hand` or `reported_height` is [`FirstHandHeight::Unknown`] (i.e. if we
+/// don't have a first-hand account `origin --> us`, or the reporter has no height for the origin
+/// yet).
+fn observe_link(
+    first_hand: FirstHandHeight,
+    reported_height: Option<FirstHandHeight>,
+) -> Option<LinkObservation<BlockCount>> {
+    match (first_hand, reported_height) {
+        (_, None) => Some(LinkObservation::Absent),
+        (FirstHandHeight::Known(own), Some(FirstHandHeight::Known(seen))) => {
+            Some(LinkObservation::Present(own.blocks_since(seen)))
+        }
+        (FirstHandHeight::Unknown, Some(_)) | (_, Some(FirstHandHeight::Unknown)) => None,
+    }
 }
 
 impl NetworkIndexerBlockHeights {
     pub fn generate_report(&self) -> NetworkIndexerBlockHeightsReport {
         let first_hand_heights = self.first_hand_heights.clone();
-        let link_report = self.network_view.link_report();
+        let link_report = self.connections.link_report();
         NetworkIndexerBlockHeightsReport {
             first_hand_heights,
             link_report,
@@ -60,32 +107,30 @@ impl NetworkIndexerBlockHeights {
         &self,
         reporter: ParticipantId,
         peers: BTreeMap<ParticipantId, u64>,
-    ) -> Result<ParsedConnectedPeersInfo, ConnectedPeersInfoError> {
+    ) -> Result<ParsedConnectedPeersInfo, NetworkViewUpdateError> {
         if !self.first_hand_heights.contains_key(&reporter) {
-            return Err(ConnectedPeersInfoError::UnknownSender(reporter));
+            return Err(NetworkViewUpdateError::UnknownParticipant(reporter));
         }
-        let own_height = *peers
-            .get(&reporter)
-            .ok_or(ConnectedPeersInfoError::FirstHandAccountMissing(reporter))?;
+        let own_height = FirstHandHeight::from(
+            *peers
+                .get(&reporter)
+                .ok_or(NetworkViewUpdateError::OwnHeightMissing(reporter))?,
+        );
         // A report is complete: a participant the sender does not list is unreachable from it.
-        let observations = self
-            .first_hand_heights
-            .iter()
-            .filter(|(origin, _)| **origin != reporter)
-            .map(|(origin, own)| {
-                (
-                    *origin,
-                    match peers.get(origin) {
-                        Some(seen) => {
-                            LinkObservation::Present(own.blocks_since(BlockHeight::from(*seen)))
-                        }
-                        None => LinkObservation::Absent,
-                    },
-                )
-            })
-            .collect();
+        let mut observations = BTreeMap::new();
+        for (origin, first_hand) in self.first_hand_heights.iter() {
+            if *origin == reporter {
+                continue;
+            }
+            let reported_height = peers
+                .get(origin)
+                .map(|height| FirstHandHeight::from(*height));
+            if let Some(observation) = observe_link(*first_hand, reported_height) {
+                observations.insert(*origin, observation);
+            }
+        }
         Ok(ParsedConnectedPeersInfo {
-            own_height: own_height.into(),
+            own_height,
             observations,
         })
     }
@@ -97,11 +142,15 @@ impl NetworkIndexerBlockHeights {
         Self {
             first_hand_heights: participants
                 .iter()
-                .map(|&p| (p, BlockHeight::default()))
+                .map(|&p| (p, FirstHandHeight::Unknown))
                 .collect::<BTreeMap<_, _>>()
                 .try_into()
                 .expect("a non-empty participant set yields a non-empty map"),
-            network_view: NetworkConnectionsView::new(participants, measurement_window, threshold),
+            connections: MeasuredNetworkConnections::new(
+                participants,
+                measurement_window,
+                threshold,
+            ),
         }
     }
     /// Updates the view based on one participant's message.
@@ -112,58 +161,91 @@ impl NetworkIndexerBlockHeights {
             from: reporter,
             info,
         }: PeerConnectedPeersInfo,
-    ) -> Result<PreviousViewValidity, ConnectedPeersInfoError> {
+    ) -> Result<PreviousViewValidity, NetworkViewUpdateError> {
         let ConnectedPeersInfo { peers } = info;
         let ParsedConnectedPeersInfo {
             own_height,
             observations,
         } = self.parse_connected_peers_info(reporter, peers)?;
-        self.first_hand_heights.insert(reporter, own_height);
+        self.record_first_hand(reporter, own_height);
         // below error only fires in case the partcipant set between network view and the lower
         // structs have diverged. This is currently impossible, but we still propagate, as
         // future refactors might break that invariant.
-        self.network_view
-            .record_observations_from(&reporter, observations)
-            .map_err(|source| ConnectedPeersInfoError::Rejected {
-                from: reporter,
-                source,
-            })
+        Ok(self
+            .connections
+            .record_observations_from(&reporter, observations)?)
     }
     /// Records the `reporter`'s own height. Errors if the `reporter` is not a participant, so the
     /// participant set never grows.
     pub fn update_first_hand(
         &mut self,
         reporter: ParticipantId,
-        height: BlockHeight,
-    ) -> Result<(), BlockHeightInfoError> {
+        height: u64,
+    ) -> Result<(), NetworkViewUpdateError> {
         if !self.first_hand_heights.contains_key(&reporter) {
-            return Err(BlockHeightInfoError::UnknownParticipant(reporter));
+            return Err(NetworkViewUpdateError::UnknownParticipant(reporter));
         }
-        self.first_hand_heights.insert(reporter, height);
+        self.record_first_hand(reporter, FirstHandHeight::from(height));
         Ok(())
     }
+    /// `Unknown` leaves the record untouched.
+    fn record_first_hand(&mut self, reporter: ParticipantId, height: FirstHandHeight) {
+        let FirstHandHeight::Known(height) = height else {
+            return;
+        };
+        let previous = self
+            .first_hand_heights
+            .insert(reporter, FirstHandHeight::Known(height));
+        if let Some(FirstHandHeight::Known(previous)) = previous
+            && height < previous
+        {
+            tracing::warn!(
+                %reporter,
+                %previous,
+                %height,
+                "indexer height moved backwards. This is unexpected, because the indexer \
+                 processes blocks in order."
+            );
+        }
+    }
     /// The read-only snapshot for readers.
-    pub fn broken_connections(&self) -> BrokenNetworkConnections<ParticipantId> {
-        self.network_view.broken_connections()
+    pub fn usable_connections(&self) -> UsableNetworkConnections<ParticipantId> {
+        self.connections.usable_connections()
+    }
+}
+
+impl NetworkIndexerBlockHeightsReport {
+    /// Our first-hand heights for `peers`, wire-encoded.
+    pub fn first_hand_heights_of(
+        &self,
+        peers: impl IntoIterator<Item = ParticipantId>,
+    ) -> BTreeMap<ParticipantId, u64> {
+        peers
+            .into_iter()
+            .filter_map(|peer| {
+                let height = self.first_hand_heights.get(&peer)?;
+                Some((peer, u64::from(*height)))
+            })
+            .collect()
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum ConnectedPeersInfoError {
-    #[error("sender {0:?} is not a participant")]
-    UnknownSender(ParticipantId),
-    #[error("message from {0:?} does not report its own block height")]
-    FirstHandAccountMissing(ParticipantId),
-    #[error("network view rejected the report from {from:?}")]
-    Rejected {
-        from: ParticipantId,
-        #[source]
-        source: AdjacencyMatrixError<ParticipantId>,
-    },
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum BlockHeightInfoError {
-    #[error("sender {0:?} is not a known participant")]
+pub enum NetworkViewUpdateError {
+    #[error("{0:?} is not a participant")]
     UnknownParticipant(ParticipantId),
+    #[error("message from {0:?} does not report its own block height")]
+    OwnHeightMissing(ParticipantId),
+    #[error("a link needs two distinct participants, got {0:?} twice")]
+    SelfLink(ParticipantId),
+}
+
+impl From<AdjacencyMatrixError<ParticipantId>> for NetworkViewUpdateError {
+    fn from(error: AdjacencyMatrixError<ParticipantId>) -> Self {
+        match error {
+            AdjacencyMatrixError::UnknownNode(participant) => Self::UnknownParticipant(participant),
+            AdjacencyMatrixError::Loop(participant) => Self::SelfLink(participant),
+        }
+    }
 }
 
 /// todo: not sure about all these derives
@@ -229,3 +311,4 @@ mod helper {
 }
 
 // todo tests
+// todo: test that a peer lying about heights only affects links with itself as an endpoint

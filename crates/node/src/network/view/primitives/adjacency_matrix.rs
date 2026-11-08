@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, hash::RandomState};
 
 use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use petgraph::{
-    EdgeType,
+    EdgeType, Undirected,
     matrix_graph::{MatrixGraph, NodeIndex},
     visit::IntoEdgeReferences,
 };
@@ -42,9 +42,9 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         Ok((a, b))
     }
 
-    /// The first edge found among `nodes`, or `None` if no two of them are connected.
+    /// The first pair among `nodes` without an edge, or `None` if all of them are connected.
     /// Ids are translated once; the pair loop runs on indices.
-    pub fn find_edge_within<'a>(
+    pub fn find_missing_edge_within<'a>(
         &self,
         nodes: impl IntoIterator<Item = &'a N>,
     ) -> Result<Option<(&'a N, &'a N)>, AdjacencyMatrixError<N>>
@@ -59,7 +59,7 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         let mut rest = indexed.as_slice();
         while let Some((&(p, i), tail)) = rest.split_first() {
             for &(q, j) in tail {
-                if self.matrix.has_edge(i, j) {
+                if !self.matrix.has_edge(i, j) {
                     return Ok(Some((p, q)));
                 }
             }
@@ -102,6 +102,22 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
             .get(node)
             .copied()
             .ok_or(AdjacencyMatrixError::UnknownNode(node.clone()))
+    }
+}
+
+impl<N: Ord + Clone, E: Clone> AdjacencyMatrix<N, E, Undirected> {
+    /// Every pair of nodes connected with `weight`. Panics above 65,535 nodes.
+    pub fn complete(nodes: &NonEmptyBTreeSet<N>, weight: E) -> Self {
+        let mut this = Self::new(nodes);
+        let indices: Vec<NodeIndex> = this.nodes.values().copied().collect();
+        let mut rest = indices.as_slice();
+        while let Some((&i, tail)) = rest.split_first() {
+            for &j in tail {
+                this.matrix.update_edge(i, j, weight.clone());
+            }
+            rest = tail;
+        }
+        this
     }
 }
 

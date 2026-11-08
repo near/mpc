@@ -1,20 +1,17 @@
 // todo: clean this file
 
-use std::collections::BTreeSet;
 use std::time::Duration;
 
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use tokio::sync::{mpsc, watch};
 
 use crate::{
     network::view::{
         network_link_latency::{
-            BlockHeightInfoError, ConnectedPeersInfoError, NetworkIndexerBlockHeights,
-            NetworkIndexerBlockHeightsReport,
+            NetworkIndexerBlockHeights, NetworkIndexerBlockHeightsReport, NetworkViewUpdateError,
         },
-        primitives::{BrokenNetworkConnections, PreviousViewValidity},
+        primitives::{PreviousViewValidity, UsableNetworkConnections},
     },
-    primitives::{ConnectedPeersInfo, ParticipantId, PeerConnectedPeersInfo},
+    primitives::{ParticipantId, PeerConnectedPeersInfo},
 };
 
 // todo: think about how to make these better
@@ -27,22 +24,15 @@ pub enum NetworkViewUpdate {
         participant: ParticipantId,
         height: u64,
     },
-    // disconnectedpeers??
-    /// The participants the transport is bidirectionally connected to.
-    ConnectedPeers(BTreeSet<ParticipantId>),
 }
 
 pub struct NetworkViewManager {
     // todo: add bidirectionally connected views...
     // transport_view: T,
-    all_participants: NonEmptyBTreeSet<ParticipantId>,
-    offline_participants: BTreeSet<ParticipantId>,
-
     indexer_block_heights: NetworkIndexerBlockHeights,
 
     // everything we receive from other components
     observations: mpsc::Receiver<NetworkViewUpdate>,
-    connected_peers_info_receiver: watch::Receiver<ConnectedPeersInfo>,
 
     // everything we send to other components
     /// as soon as a link or participant changes its status, this is updated
@@ -64,9 +54,6 @@ impl NetworkViewManager {
                         tracing::error!(?err, "could not apply network view update");
                     }
                 }
-                Ok(()) = self.connected_peers_info_receiver.changed() => {
-                    // todo: fold our own ConnectedPeersInfo into the view.
-                }
                 _ = tick.tick() => {
                     self.link_reports.send_replace(self.indexer_block_heights.generate_report());
                 }
@@ -84,21 +71,8 @@ impl NetworkViewManager {
                 height,
             } => {
                 self.indexer_block_heights
-                    .update_first_hand(participant, height.into())?;
+                    .update_first_hand(participant, height)?;
                 PreviousViewValidity::Valid
-            }
-            NetworkViewUpdate::ConnectedPeers(connected) => {
-                let offline: BTreeSet<ParticipantId> = self
-                    .all_participants
-                    .difference(&connected)
-                    .copied()
-                    .collect();
-                if offline == self.offline_participants {
-                    PreviousViewValidity::Valid
-                } else {
-                    self.offline_participants = offline;
-                    PreviousViewValidity::Superseded
-                }
             }
         };
         if validity == PreviousViewValidity::Superseded {
@@ -108,24 +82,12 @@ impl NetworkViewManager {
     }
     fn publish_offline_view(&self) {
         self.broken.send_replace(OfflineParticipantView {
-            offline_peers: self.offline_participants.clone(),
-            offline_links: self.indexer_block_heights.broken_connections(),
+            connections: self.indexer_block_heights.usable_connections(),
         });
     }
 }
 
 // todo: implement NetworkAPIForRequests on top of this.
 pub struct OfflineParticipantView {
-    // peers we don't have a connection to.
-    pub offline_peers: BTreeSet<ParticipantId>,
-    // links between peers that are offline or very slow.
-    pub offline_links: BrokenNetworkConnections<ParticipantId>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum NetworkViewUpdateError {
-    #[error(transparent)]
-    ConnectedPeersInfo(#[from] ConnectedPeersInfoError),
-    #[error(transparent)]
-    BlockHeightInfo(#[from] BlockHeightInfoError),
+    pub connections: UsableNetworkConnections<ParticipantId>,
 }

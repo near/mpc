@@ -1,10 +1,10 @@
 mod adjacency_matrix;
+mod measured_network_connections;
 mod measured_network_link;
-mod network_view;
 
-pub use network_view::{
-    BrokenNetworkConnections, LinkEntry, LinkReport, MeasuredNetworkLinks, NetworkConnectionsView,
-    NetworkConnectionsViewError, PreviousViewValidity,
+pub use measured_network_connections::{
+    LinkEntry, LinkReport, MeasuredNetworkConnections, MeasuredNetworkConnectionsError,
+    MeasuredNetworkLinks, PreviousViewValidity, UsableNetworkConnections,
 };
 
 pub use measured_network_link::{

@@ -15,14 +15,13 @@ use crate::network::view::primitives::{
 
 // todo: maybe split this file?
 
-// todo: rename?
-pub struct NetworkConnectionsView<N, S, T> {
+pub struct MeasuredNetworkConnections<N, S, T> {
     // a link is a directed connection node A --> B,
     // each link is measured, such that we can infer link quality from the measurements.
     measured_links: MeasuredNetworkLinks<N, S, T>,
     // a connection between two nodes is considered broken if one of the two links between the
-    // nodes is of insufficient quality, determined by [`NetworkConnectionsView::threshold`]
-    broken_connections: BrokenNetworkConnections<N>,
+    // nodes is of insufficient quality, determined by [`MeasuredNetworkConnections::threshold`]
+    connections: UsableNetworkConnections<N>,
     // highest link state a direction may have a still be considered usable
     threshold: S,
 }
@@ -33,7 +32,7 @@ pub enum PreviousViewValidity {
     Valid,
 }
 
-impl<N: Ord + Clone, S: InferLinkStatus<T> + PartialOrd, T> NetworkConnectionsView<N, S, T> {
+impl<N: Ord + Clone, S: InferLinkStatus<T> + PartialOrd, T> MeasuredNetworkConnections<N, S, T> {
     /// Records the `reporter`'s observations and updates the status for all connections of
     /// `reporter`.
     /// Returns [`PreviousViewValidity::Superseded`] in case a connection changed status (e.g. one
@@ -46,9 +45,7 @@ impl<N: Ord + Clone, S: InferLinkStatus<T> + PartialOrd, T> NetworkConnectionsVi
     ) -> Result<PreviousViewValidity, AdjacencyMatrixError<N>> {
         let mut validity = PreviousViewValidity::Valid;
         for (origin, observation) in observations {
-            self.measured_links
-                .record_observation(&origin, reporter, observation)?;
-            if self.refresh_connection_status(reporter, &origin)?
+            if self.record_link_observation(&origin, reporter, observation)?
                 == PreviousViewValidity::Superseded
             {
                 validity = PreviousViewValidity::Superseded;
@@ -57,9 +54,20 @@ impl<N: Ord + Clone, S: InferLinkStatus<T> + PartialOrd, T> NetworkConnectionsVi
         Ok(validity)
     }
 
+    fn record_link_observation(
+        &mut self,
+        origin: &N,
+        receiver: &N,
+        observation: LinkObservation<T>,
+    ) -> Result<PreviousViewValidity, AdjacencyMatrixError<N>> {
+        self.measured_links
+            .record_observation(origin, receiver, observation)?;
+        self.refresh_connection_status(origin, receiver)
+    }
+
     /// The read-only snapshot for readers.
-    pub fn broken_connections(&self) -> BrokenNetworkConnections<N> {
-        self.broken_connections.clone()
+    pub fn usable_connections(&self) -> UsableNetworkConnections<N> {
+        self.connections.clone()
     }
 
     /// errors if from == to or if the nodes are not in the graph
@@ -76,7 +84,7 @@ impl<N: Ord + Clone, S: InferLinkStatus<T> + PartialOrd, T> NetworkConnectionsVi
             (_, LinkQuality::InsufficientOrBroken) => ConnectionStatus::InsufficientOrBroken,
             _ => ConnectionStatus::LiveOrUnknown,
         };
-        self.broken_connections.set(a, b, connection_status)
+        self.connections.set(a, b, connection_status)
     }
 
     pub fn link_report(&self) -> LinkReport<N, S>
@@ -92,16 +100,16 @@ enum ConnectionStatus {
     InsufficientOrBroken,
 }
 
-impl<N: Ord + Clone, S, T> NetworkConnectionsView<N, S, T> {
+impl<N: Ord + Clone, S, T> MeasuredNetworkConnections<N, S, T> {
     /// A view over `nodes` with no observations yet.
     ///
     /// Panics if there are more nodes than `NodeIndex` can address (65,535).
     pub fn new(nodes: &NonEmptyBTreeSet<N>, window: NonZeroUsize, threshold: S) -> Self {
         let measured_links = MeasuredNetworkLinks::new(nodes, window);
-        let broken_connections = BrokenNetworkConnections::new(nodes);
+        let connections = UsableNetworkConnections::new(nodes);
         Self {
             measured_links,
-            broken_connections,
+            connections,
             threshold,
         }
     }
@@ -204,25 +212,27 @@ enum LinkQuality {
     InsufficientOrBroken,
 }
 
+/// An edge `a – b` means the connection is usable for a computation: both links between `a` and
+/// `b` are alive and fast enough, or not measured yet.
 #[derive(Clone)]
-pub struct BrokenNetworkConnections<N> {
-    broken_connections: AdjacencyMatrix<N, (), Undirected>,
+pub struct UsableNetworkConnections<N> {
+    connections: AdjacencyMatrix<N, (), Undirected>,
 }
 
-impl<N: Ord + Clone> BrokenNetworkConnections<N> {
+impl<N: Ord + Clone> UsableNetworkConnections<N> {
     pub fn new(nodes: &NonEmptyBTreeSet<N>) -> Self {
         Self {
-            broken_connections: AdjacencyMatrix::new(nodes),
+            connections: AdjacencyMatrix::complete(nodes, ()),
         }
     }
 
     pub fn can_compute_with(
         &self,
         nodes: &BTreeSet<N>,
-    ) -> Result<(), NetworkConnectionsViewError<N>> {
-        match self.broken_connections.find_edge_within(nodes)? {
+    ) -> Result<(), MeasuredNetworkConnectionsError<N>> {
+        match self.connections.find_missing_edge_within(nodes)? {
             None => Ok(()),
-            Some((p, q)) => Err(NetworkConnectionsViewError::BrokenConnection(
+            Some((p, q)) => Err(MeasuredNetworkConnectionsError::BrokenConnection(
                 p.clone(),
                 q.clone(),
             )),
@@ -236,10 +246,8 @@ impl<N: Ord + Clone> BrokenNetworkConnections<N> {
         status: ConnectionStatus,
     ) -> Result<PreviousViewValidity, AdjacencyMatrixError<N>> {
         let changed = match status {
-            ConnectionStatus::InsufficientOrBroken => {
-                self.broken_connections.set_edge(a, b, ())?.is_none()
-            }
-            ConnectionStatus::LiveOrUnknown => self.broken_connections.remove_edge(a, b)?.is_some(),
+            ConnectionStatus::LiveOrUnknown => self.connections.set_edge(a, b, ())?.is_none(),
+            ConnectionStatus::InsufficientOrBroken => self.connections.remove_edge(a, b)?.is_some(),
         };
         if changed {
             Ok(PreviousViewValidity::Superseded)
@@ -250,7 +258,7 @@ impl<N: Ord + Clone> BrokenNetworkConnections<N> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum NetworkConnectionsViewError<N> {
+pub enum MeasuredNetworkConnectionsError<N> {
     #[error(transparent)]
     Participants(#[from] AdjacencyMatrixError<N>),
     #[error("connection between {0:?} and {1:?} is not usable")]

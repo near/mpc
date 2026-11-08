@@ -535,6 +535,8 @@ async fn run_receive_message(
     Ok(())
 }
 
+// todo: also broadcast immediately when the transport's connectivity changes, and feed our own
+// ConnectedPeersInfo into the NetworkViewManager like any peer's.
 fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
     let me = client.my_participant_id();
     let indexer_heights = client.get_indexer_heights();
