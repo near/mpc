@@ -17,14 +17,13 @@
 //! because no production domain is served by it: never add a domain for this
 //! protocol on mainnet or testnet while the stub is in place. Reintroducing a real
 //! robust scheme means replacing the presigning round in `presign`; the signing round
-//! in `sign` is scheme-agnostic.
+//! in `presign_and_sign` is scheme-agnostic.
 //!
 //! TODO(#4383): replace this stub with a real robust scheme.
 
 pub mod presign_and_sign;
 
 mod presign;
-mod sign;
 
 #[cfg(test)]
 mod test;
