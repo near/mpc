@@ -1,5 +1,6 @@
 pub mod cleanup;
 pub mod metrics;
+pub mod retention;
 #[cfg(test)]
 pub mod test_utils;
 
@@ -43,6 +44,7 @@ struct ColdQueue<T, CondVal> {
     cold_ready: usize,
     cold_available: usize,
     cold_queue: VecDeque<(UniqueId, T)>,
+    parked: VecDeque<(UniqueId, T)>,
 
     /// The last condition value that was used to check against the cold queue elements.
     /// Whenever the current condition value changes, we need to update the cold_available barrier.
@@ -66,6 +68,7 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
             cold_ready: 0,
             cold_available: 0,
             cold_queue: VecDeque::new(),
+            parked: VecDeque::new(),
             last_condition_value: Default::default(),
             condition,
             condition_value_fetcher,
@@ -82,6 +85,15 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         let new_condition_value = (self.condition_value_fetcher)();
         if new_condition_value != self.last_condition_value {
             self.last_condition_value = new_condition_value;
+            let mut parked = VecDeque::new();
+            for (id, value) in self.parked.drain(..) {
+                if (self.condition)(&self.last_condition_value, &value) {
+                    self.cold_queue.push_back((id, value));
+                } else {
+                    parked.push_back((id, value));
+                }
+            }
+            self.parked = parked;
             self.cold_ready = 0;
             self.cold_available = self.cold_queue.len();
         }
@@ -116,7 +128,11 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
 
     /// Try to remove and return an element that *doesn't* satisfy the current condition.
     /// If the element does satisfy it, it will be moved to the front of the queue.
-    pub(self) fn discard(&mut self) -> ColdQueueDiscardResult<T> {
+    pub(self) fn discard(
+        &mut self,
+        retain: &CondVal,
+        max_parked: usize,
+    ) -> ColdQueueDiscardResult<T> {
         self.update_condition_value_if_due();
         if self.cold_ready == self.cold_queue.len() {
             return ColdQueueDiscardResult::NotDiscardedAndNoneAvailable;
@@ -129,12 +145,42 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
             false
         };
         if !condition_satisfied {
-            return ColdQueueDiscardResult::Discarded((id, value));
+            return match self.park_or_drop(id, value, retain, max_parked) {
+                Some(dropped) => ColdQueueDiscardResult::Discarded(dropped),
+                None => ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable,
+            };
         }
         self.cold_queue.push_front((id, value));
         self.cold_ready += 1;
         self.cold_available += 1;
         ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable
+    }
+
+    pub(self) fn park_or_drop(
+        &mut self,
+        id: UniqueId,
+        value: T,
+        retain: &CondVal,
+        max_parked: usize,
+    ) -> Option<(UniqueId, T)> {
+        if self.parked.len() < max_parked && (self.condition)(retain, &value) {
+            self.parked.push_back((id, value));
+            return None;
+        }
+        Some((id, value))
+    }
+
+    pub(self) fn sweep_parked(&mut self, retain: &CondVal) -> Vec<UniqueId> {
+        let condition = self.condition;
+        let mut dropped = Vec::new();
+        self.parked.retain(|(id, value)| {
+            let keep = condition(retain, value);
+            if !keep {
+                dropped.push(*id);
+            }
+            keep
+        });
+        dropped
     }
 
     /// Adds an element to the cold queue. If the condition is *not* satisfied,
@@ -364,14 +410,21 @@ where
 
     /// Process `num_elements_to_process`, removing any that doesn't satisfy condition.
     /// Return ids, that were removed from cold storage.
-    pub async fn maybe_discard_owned(&self, mut num_elements_to_process: usize) -> Vec<UniqueId> {
-        self.cold_queue.lock().unwrap().update_condition_value();
-
-        let mut removed_from_cold_queue: Vec<UniqueId> = vec![];
+    pub async fn maybe_discard_owned(
+        &self,
+        mut num_elements_to_process: usize,
+        retain: &CondVal,
+        max_parked: usize,
+    ) -> Vec<UniqueId> {
+        let mut removed_from_cold_queue = {
+            let mut cold_queue = self.cold_queue.lock().unwrap();
+            cold_queue.update_condition_value();
+            cold_queue.sweep_parked(retain)
+        };
 
         // First process elements in the cold queue
         while num_elements_to_process > 0 {
-            let discarded = self.cold_queue.lock().unwrap().discard();
+            let discarded = self.cold_queue.lock().unwrap().discard(retain, max_parked);
             match discarded {
                 ColdQueueDiscardResult::Discarded((id, _)) => {
                     removed_from_cold_queue.push(id);
@@ -393,11 +446,12 @@ where
             && let Ok((id, value)) = self.hot_receiver.try_recv()
         {
             num_elements_to_process -= 1;
-            let _ = self
-                .cold_queue
-                .lock()
-                .unwrap()
-                .add_if_condition_satisfied(id, value);
+            let mut cold_queue = self.cold_queue.lock().unwrap();
+            if let ColdQueueAddIfSatisfiedResult::ConditionNotSatisfied(value) =
+                cold_queue.add_if_condition_satisfied(id, value)
+            {
+                let _ = cold_queue.park_or_drop(id, value, retain, max_parked);
+            }
         }
 
         removed_from_cold_queue
@@ -405,6 +459,12 @@ where
 
     pub fn available(&self) -> usize {
         self.hot_receiver.len() + self.cold_queue.lock().unwrap().cold_available
+    }
+
+    pub fn available_with_parked(&self) -> usize {
+        let hot = self.hot_receiver.len();
+        let cold_queue = self.cold_queue.lock().unwrap();
+        hot + cold_queue.cold_available + cold_queue.parked.len()
     }
 
     /// Owned counts under a single lock, so they describe the same moment:
@@ -415,7 +475,8 @@ where
         OwnedAssetCounts {
             available: hot + cold_queue.cold_available,
             online: cold_queue.cold_ready,
-            offline: cold_queue.cold_queue.len() - cold_queue.cold_available,
+            offline: cold_queue.cold_queue.len() - cold_queue.cold_available
+                + cold_queue.parked.len(),
         }
     }
 }
@@ -568,6 +629,10 @@ where
         self.owned_queue.available()
     }
 
+    pub fn num_owned_with_parked(&self) -> usize {
+        self.owned_queue.available_with_parked()
+    }
+
     /// Available, online and offline counts, read under one lock so they are
     /// consistent with each other.
     pub fn owned_asset_counts(&self) -> OwnedAssetCounts {
@@ -600,10 +665,15 @@ where
     /// Examines up to `num_assets_to_process` elements in the storage.
     /// If any are found not to satisfy the current condition, they are discarded.
     /// Otherwise, they are kept aside as ready for immediate use.
-    pub async fn maybe_discard_owned(&self, num_assets_to_process: usize) {
+    pub async fn maybe_discard_owned(
+        &self,
+        num_assets_to_process: usize,
+        retain: &[ParticipantId],
+        max_parked: usize,
+    ) {
         let removed_cold_ids = self
             .owned_queue
-            .maybe_discard_owned(num_assets_to_process)
+            .maybe_discard_owned(num_assets_to_process, &retain.to_vec(), max_parked)
             .await;
         if !removed_cold_ids.is_empty() {
             let mut update = self.db.update();
@@ -680,11 +750,12 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
     use crate::async_testing::{MaybeReady, run_future_once};
-    use crate::db::DBCol;
+    use crate::db::{DBCol, SecretDB};
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
     use borsh::BorshDeserialize;
@@ -704,6 +775,50 @@ mod tests {
             Some(d) => d.0.to_be_bytes().to_vec(),
             None => Vec::new(),
         }
+    }
+
+    fn participants(raw: &[u32]) -> Vec<ParticipantId> {
+        raw.iter().copied().map(ParticipantId::from_raw).collect()
+    }
+
+    fn store_with_alive_set(
+        db: &Arc<SecretDB>,
+        alive: &Arc<Mutex<Vec<ParticipantId>>>,
+    ) -> DistributedAssetStorage<ParticipantsWithI32> {
+        DistributedAssetStorage::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            DBCol::TripleV2,
+            Vec::new(),
+            ParticipantId::from_raw(42),
+            |cond, val: &ParticipantsWithI32| val.is_subset_of_active_participants(cond),
+            {
+                let alive = alive.clone();
+                Arc::new(move || alive.lock().unwrap().clone())
+            },
+        )
+        .unwrap()
+    }
+
+    type AliveSet = Arc<Mutex<Vec<ParticipantId>>>;
+    fn setup(
+        alive_ids: &[u32],
+    ) -> (
+        tempfile::TempDir,
+        Arc<SecretDB>,
+        AliveSet,
+        DistributedAssetStorage<ParticipantsWithI32>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let alive = Arc::new(Mutex::new(participants(alive_ids)));
+        let store = store_with_alive_set(&db, &alive);
+        (dir, db, alive, store)
+    }
+
+    fn num_assets_persisted(db: &Arc<SecretDB>) -> usize {
+        let everyone = Arc::new(Mutex::new(participants(&[0, 1, 2, 3])));
+        store_with_alive_set(db, &everyone).num_owned()
     }
 
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -744,7 +859,7 @@ mod tests {
 
         // Operations on empty
         verify_cold_queue_internal_consistency(&queue, 0);
-        queue.discard();
+        queue.discard(&0, 0);
         verify_cold_queue_internal_consistency(&queue, 0);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 0);
@@ -760,13 +875,13 @@ mod tests {
         verify_cold_queue_internal_consistency(&queue, 0);
         queue.add_if_condition_satisfied(id1, 1);
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard(&0, 0);
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.add_if_condition_not_satisfied(id2, 2);
         verify_cold_queue_internal_consistency(&queue, 2);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard(&0, 0);
         verify_cold_queue_internal_consistency(&queue, 0);
 
         // Reset then discard
@@ -775,13 +890,13 @@ mod tests {
         queue.update_condition_value();
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard(&0, 0);
         verify_cold_queue_internal_consistency(&queue, 0);
         // Reset then take
         queue.add_if_condition_not_satisfied(id1, 1);
         cond_value.store(1, Ordering::Relaxed);
         queue.update_condition_value();
-        queue.discard();
+        queue.discard(&0, 0);
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 0);
@@ -794,7 +909,7 @@ mod tests {
         // Discard from known non-satisfying
         queue.add_if_condition_not_satisfied(id2, 2);
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard(&0, 0);
         verify_cold_queue_internal_consistency(&queue, 0);
     }
 
@@ -813,7 +928,7 @@ mod tests {
         });
 
         // Discard should never block, even if the queue is completely empty
-        queue.maybe_discard_owned(3).now_or_never().unwrap();
+        queue.maybe_discard_owned(3, &0, 0).now_or_never().unwrap();
 
         // Add 3 elements, 2 of which don't match the condition
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
@@ -825,19 +940,19 @@ mod tests {
         queue.add_owned(id3, 3);
         assert_eq!(queue.available(), 3);
 
-        queue.maybe_discard_owned(1).now_or_never().unwrap();
+        queue.maybe_discard_owned(1, &0, 0).now_or_never().unwrap();
         assert_eq!(queue.available(), 2);
 
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id2, 2));
         assert_eq!(queue.available(), 1);
 
-        queue.maybe_discard_owned(1).now_or_never().unwrap();
+        queue.maybe_discard_owned(1, &0, 0).now_or_never().unwrap();
         assert_eq!(queue.available(), 0);
 
         queue.add_owned(id4, 4);
         assert_eq!(queue.available(), 1);
 
-        queue.maybe_discard_owned(1).now_or_never().unwrap();
+        queue.maybe_discard_owned(1, &0, 0).now_or_never().unwrap();
         assert_eq!(queue.available(), 1);
 
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id4, 4));
@@ -947,7 +1062,7 @@ mod tests {
             crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
-            |cond, val| val.is_subset_of_active_participants(cond),
+            |cond, val: &ParticipantsWithI32| val.is_subset_of_active_participants(cond),
             {
                 let alive_participants = alive_participants.clone();
                 Arc::new(move || alive_participants.lock().unwrap().clone())
@@ -1308,7 +1423,7 @@ mod tests {
         assert_eq!(store.take_owned().now_or_never().unwrap().1, 2);
         assert_eq!(store.owned_asset_counts().offline, 1);
 
-        store.maybe_discard_owned(1).now_or_never().unwrap();
+        store.maybe_discard_owned(1, &[], 0).now_or_never().unwrap();
 
         drop(store);
         let store = DistributedAssetStorage::<u32>::new(
@@ -1323,6 +1438,245 @@ mod tests {
         .unwrap();
 
         assert_eq!(store.num_owned(), 0);
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_keep_a_new_asset_of_a_peer_that_blips_and_use_it_when_it_returns()
+     {
+        // Given
+        let (_dir, db, alive, store) = setup(&[0, 1, 2, 3]);
+
+        let with_peer_3 = store.generate_and_reserve_id();
+        let without_peer_3 = store.generate_and_reserve_id();
+
+        store.add_owned(
+            with_peer_3,
+            ParticipantsWithI32(participants(&[0, 1, 2, 3]), 1),
+        );
+        store.add_owned(
+            without_peer_3,
+            ParticipantsWithI32(participants(&[0, 1, 2]), 2),
+        );
+
+        // When
+        *alive.lock().unwrap() = participants(&[0, 1, 2]);
+        store
+            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 10)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        let counts = store.owned_asset_counts();
+        assert_eq!((counts.available, counts.online, counts.offline), (1, 1, 1));
+        assert_eq!(num_assets_persisted(&db), 2);
+
+        *alive.lock().unwrap() = participants(&[0, 1, 2, 3]);
+
+        let mut taken = vec![
+            store.take_owned().now_or_never().unwrap().0,
+            store.take_owned().now_or_never().unwrap().0,
+        ];
+        taken.sort();
+
+        assert_eq!(taken, vec![with_peer_3, without_peer_3]);
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_keep_a_known_offline_asset_of_a_peer_that_blips_and_use_it_when_it_returns()
+     {
+        // Given
+        let (_dir, db, alive, store) = setup(&[0, 1, 2]);
+
+        let with_peer_3 = store.generate_and_reserve_id();
+        let without_peer_3 = store.generate_and_reserve_id();
+
+        store.add_owned(
+            with_peer_3,
+            ParticipantsWithI32(participants(&[0, 1, 2, 3]), 1),
+        );
+        store.add_owned(
+            without_peer_3,
+            ParticipantsWithI32(participants(&[0, 1, 2]), 2),
+        );
+
+        assert_eq!(store.take_owned().now_or_never().unwrap().0, without_peer_3);
+        assert_eq!(store.owned_asset_counts().offline, 1);
+
+        // When
+        store
+            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 10)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        assert_eq!(store.owned_asset_counts().offline, 1);
+        assert_eq!(num_assets_persisted(&db), 1);
+
+        *alive.lock().unwrap() = participants(&[0, 1, 2, 3]);
+        assert_eq!(store.take_owned().now_or_never().unwrap().0, with_peer_3);
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_keep_a_ready_asset_when_its_peer_goes_away() {
+        // Given
+        let (_dir, db, alive, store) = setup(&[0, 1, 2, 3]);
+        let id = store.generate_and_reserve_id();
+        let everyone = participants(&[0, 1, 2, 3]);
+
+        store.add_owned(id, ParticipantsWithI32(everyone.clone(), 1));
+        store
+            .maybe_discard_owned(1, &everyone, 10)
+            .now_or_never()
+            .unwrap();
+
+        assert_eq!(store.owned_asset_counts().online, 1);
+
+        // When
+        *alive.lock().unwrap() = participants(&[0, 1, 2]);
+        store
+            .maybe_discard_owned(32, &everyone, 10)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        let counts = store.owned_asset_counts();
+        assert_eq!((counts.available, counts.online, counts.offline), (0, 0, 1));
+        assert_eq!(num_assets_persisted(&db), 1);
+        assert_eq!(store.num_owned(), 0);
+        assert_eq!(store.num_owned_with_parked(), 1);
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_not_count_a_kept_asset_as_available_when_another_peer_flaps() {
+        // Given
+        let (_dir, _db, alive, store) = setup(&[0, 1, 2]);
+        let retain = participants(&[0, 1, 2, 3]);
+
+        store.add_owned(
+            store.generate_and_reserve_id(),
+            ParticipantsWithI32(participants(&[0, 1, 3]), 1),
+        );
+        store.add_owned(
+            store.generate_and_reserve_id(),
+            ParticipantsWithI32(participants(&[0, 1, 2]), 2),
+        );
+
+        store
+            .maybe_discard_owned(32, &retain, 10)
+            .now_or_never()
+            .unwrap();
+
+        assert_eq!(store.owned_asset_counts().available, 1);
+
+        // When
+        *alive.lock().unwrap() = participants(&[0, 1]);
+        store
+            .maybe_discard_owned(0, &retain, 10)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        let counts = store.owned_asset_counts();
+        assert_eq!((counts.available, counts.offline), (1, 1));
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_delete_a_kept_asset_once_its_peer_is_no_longer_retained() {
+        // Given
+        let (_dir, db, _alive, store) = setup(&[0, 1, 2]);
+
+        store.add_owned(
+            store.generate_and_reserve_id(),
+            ParticipantsWithI32(participants(&[0, 1, 2, 3]), 1),
+        );
+        store
+            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 10)
+            .now_or_never()
+            .unwrap();
+
+        assert_eq!(store.owned_asset_counts().offline, 1);
+        assert_eq!(num_assets_persisted(&db), 1);
+
+        // When
+        store
+            .maybe_discard_owned(0, &participants(&[0, 1, 2]), 10)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        assert_eq!(store.owned_asset_counts().offline, 0);
+        assert_eq!(num_assets_persisted(&db), 0);
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_delete_the_assets_of_a_peer_that_is_not_retained() {
+        // Given
+        let (_dir, db, _alive, store) = setup(&[0, 1, 2]);
+        store.add_owned(
+            store.generate_and_reserve_id(),
+            ParticipantsWithI32(participants(&[0, 1, 2, 3]), 1),
+        );
+        let usable = store.generate_and_reserve_id();
+        store.add_owned(usable, ParticipantsWithI32(participants(&[0, 1, 2]), 2));
+        assert_eq!(store.take_owned().now_or_never().unwrap().0, usable);
+
+        // When
+        store
+            .maybe_discard_owned(32, &participants(&[0, 1, 2]), 10)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        assert_eq!(store.owned_asset_counts(), Default::default());
+        assert_eq!(num_assets_persisted(&db), 0);
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_not_keep_more_than_max_parked_assets() {
+        // Given
+        let (_dir, _db, _alive, store) = setup(&[0, 1, 2]);
+
+        for i in 0..3 {
+            store.add_owned(
+                store.generate_and_reserve_id(),
+                ParticipantsWithI32(participants(&[0, 1, 2, 3]), i),
+            );
+        }
+
+        // When
+        store
+            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 2)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        assert_eq!(store.owned_asset_counts().offline, 2);
+    }
+
+    #[test]
+    fn maybe_discard_owned__should_not_keep_more_than_max_parked_assets_from_the_cold_queue() {
+        // Given
+        let (_dir, db, _alive, store) = setup(&[0, 1, 2]);
+        for i in 0..3 {
+            store.add_owned(
+                store.generate_and_reserve_id(),
+                ParticipantsWithI32(participants(&[0, 1, 2, 3]), i),
+            );
+        }
+        let usable = store.generate_and_reserve_id();
+        store.add_owned(usable, ParticipantsWithI32(participants(&[0, 1, 2]), 3));
+        assert_eq!(store.take_owned().now_or_never().unwrap().0, usable);
+        assert_eq!(store.owned_asset_counts().offline, 3);
+
+        // When
+        store
+            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 2)
+            .now_or_never()
+            .unwrap();
+
+        // Then
+        assert_eq!(store.owned_asset_counts().offline, 2);
+        assert_eq!(num_assets_persisted(&db), 2);
     }
 
     #[test]
@@ -1426,7 +1780,7 @@ mod tests {
                 db_col,
                 domain_id_to_prefix(domain_id),
                 my_participant_id,
-                |cond, val| val.is_subset_of_active_participants(cond),
+                |cond, val: &ParticipantsWithI32| val.is_subset_of_active_participants(cond),
                 {
                     let alive_participants = alive_participants.clone();
                     Arc::new(move || alive_participants.lock().unwrap().clone())
@@ -1500,7 +1854,6 @@ mod tests {
     // is parked in the cold queue while 4 stays buffered in the hot queue
     // (counted by `available`, invisible to `offline`).
     #[test]
-    #[expect(non_snake_case)]
     fn take_owned_matching__should_only_take_asset_satisfying_both_conditions() {
         // Given
         let clock = FakeClock::default();
@@ -1529,7 +1882,6 @@ mod tests {
     // `take_owned_matching` must refresh before selecting, or it hands out an asset that
     // only satisfies the stale value and the computation fails downstream.
     #[test]
-    #[expect(non_snake_case)]
     fn take_owned_matching__should_refresh_condition_value_before_selecting() {
         // Given
         let offline_participant = "offline".to_owned();
@@ -1571,7 +1923,6 @@ mod tests {
     // A take with a supplied value nothing matches yet parks; it completes once
     // a matching asset is added, without consuming the non-matching one.
     #[test]
-    #[expect(non_snake_case)]
     fn take_owned_matching__should_wait_until_matching_asset_is_added() {
         // Given
         let clock = FakeClock::default();
@@ -1600,7 +1951,6 @@ mod tests {
     // element failing the standing condition (never returned even when it
     // satisfies the supplied value), checking barrier consistency at every step.
     #[test]
-    #[expect(non_snake_case)]
     fn take_first_matching__should_maintain_barrier_invariants() {
         // Given
         let clock = FakeClock::default();
@@ -1635,7 +1985,6 @@ mod tests {
     // clock past the refresh interval): the barrier reset must keep the
     // sections consistent, and takes must honor the new standing value.
     #[test]
-    #[expect(non_snake_case)]
     fn take_first_matching__should_stay_consistent_when_condition_value_changes() {
         // Given
         let clock = FakeClock::default();
@@ -1665,7 +2014,6 @@ mod tests {
     // Takes the asset matching the supplied participant set, then reopens the
     // store from the same DB: only the taken asset is deleted from disk.
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn distributed_store_take_owned_matching__should_delete_taken_asset_from_disk() {
         // Given
         let dir = tempfile::tempdir().unwrap();
@@ -1714,7 +2062,6 @@ mod tests {
     /// parked `take_owned` taker must be woken for it immediately — the clock
     /// never advances, so a missing wakeup leaves it pending on its 1s tick.
     #[test]
-    #[expect(non_snake_case)]
     fn take_owned__should_wake_when_matching_take_drains_incompatible_asset() {
         // Given
         let clock = FakeClock::default();
@@ -1740,7 +2087,6 @@ mod tests {
     /// arm rather than by the drain on the first scan; the parked `take_owned`
     /// taker must be woken all the same.
     #[test]
-    #[expect(non_snake_case)]
     fn take_owned__should_wake_when_parked_matching_take_receives_incompatible_asset() {
         // Given
         let clock = FakeClock::default();
