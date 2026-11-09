@@ -27,7 +27,6 @@ use mpc_contract::{
             ProposedGovernanceThresholdParameters,
         },
     },
-    tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
 use near_contract_transport::WatchContractState;
@@ -384,30 +383,25 @@ pub async fn approve_contract_update(
     );
 }
 
-/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the [`Account`]'s
-/// signer. Mirrors what the contract reads via [`env::signer_account_pk()`] when
-/// the account submits a transaction.
-pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
-    let bytes: [u8; 32] = account
+/// The node the contract stores when the [`Account`] attests under the given TLS key.
+pub fn sandbox_node(account: &Account, tls_public_key: dtos::Ed25519PublicKey) -> dtos::NodeInfo {
+    let signer_key: [u8; 32] = account
         .secret_key()
         .public_key()
         .key_data()
         .try_into()
         .expect("sandbox Account key must be Ed25519");
-    dtos::Ed25519PublicKey::from(bytes)
+    dtos::NodeInfo {
+        account_id: account.id().clone(),
+        tls_public_key,
+        account_public_key: signer_key.into(),
+    }
 }
 
-/// Builds the set of [`NodeId`]s that a sandbox contract will store after
-/// each participant has submitted its attestation. Both the TLS key (from the
-/// participant's `tls_public_key`) and the account public key (read from the
-/// matching [`Account`]'s signer) must line up with what `submit_participant_info`
-/// will persist on-chain — it stores [`env::signer_account_pk()`] alongside the
-/// TLS key. Keep this in sync with [`MpcContract::submit_participant_info`] so
-/// that test-side [`NodeId`] comparisons against [`get_tee_accounts()`] stay valid.
-pub fn build_sandbox_node_ids(
+pub fn build_sandbox_nodes(
     participants: &Participants,
     accounts: &[Account],
-) -> BTreeSet<NodeId> {
+) -> BTreeSet<dtos::NodeInfo> {
     participants
         .participants()
         .iter()
@@ -416,48 +410,25 @@ pub fn build_sandbox_node_ids(
                 .iter()
                 .find(|a| a.id() == account_id)
                 .expect("matching Account must exist for each participant");
-            NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: info.tls_public_key.clone(),
-                account_public_key: account_ed25519_public_key(account),
-            }
+            sandbox_node(account, info.tls_public_key.clone())
         })
         .collect()
 }
 
-pub async fn submit_tee_attestations(
-    contract: &SandboxMpcContract,
-    env_accounts: &mut [Account],
-    node_ids: &BTreeSet<NodeId>,
-) -> anyhow::Result<()> {
-    env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
-    for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
-        let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
-        let result =
-            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
-                .await?;
-        assert!(result.is_success());
-    }
-    Ok(())
-}
-
-/// Like [`submit_tee_attestations`], for accounts whose entry does not exist yet: each
-/// submission stores a new entry, so each needs a grant.
 pub async fn prepay_and_submit_tee_attestations(
     contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
-    node_ids: &BTreeSet<NodeId>,
+    nodes: &BTreeSet<dtos::NodeInfo>,
 ) -> anyhow::Result<()> {
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
-    for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+    for (account, node) in env_accounts.iter().zip(nodes) {
+        assert_eq!(*account.id(), node.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid);
         let result = prepay_and_submit_participant_info(
             account,
             contract,
             &attestation,
-            &node_id.tls_public_key,
+            &node.tls_public_key,
         )
         .await?;
         assert!(result.is_success());
