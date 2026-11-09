@@ -94,6 +94,8 @@ pub struct MpcClusterConfig {
     pub triples_to_buffer: usize,
     /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
     pub sandbox_version: String,
+    /// Protocol the sandbox starts at. If `None`, the binary's latest.
+    pub sandbox_protocol_version: Option<u32>,
     /// Parent of the directory holding all test artifacts (logs, configs, DB).
     /// If `None`, `E2E_HOME_BASE` is used, else the system temp dir.
     pub home_base: Option<PathBuf>,
@@ -214,6 +216,7 @@ impl MpcClusterConfig {
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
+            sandbox_protocol_version: None,
             home_base: None,
             initial_participant_indices: vec![],
             migration_targets: vec![],
@@ -231,6 +234,17 @@ impl MpcClusterConfig {
         } else {
             self.initial_participant_indices.clone()
         }
+    }
+
+    /// Attestation-storage grants each node's account needs, by node index: one for the node
+    /// itself, plus one for each migration target, which attests under its source's account
+    /// with a new TLS key.
+    fn attestation_grants(&self) -> Vec<u32> {
+        let mut grants = vec![1; self.num_nodes];
+        for &source_idx in &self.migration_targets {
+            grants[source_idx] += 1;
+        }
+        grants
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -296,7 +310,12 @@ impl MpcCluster {
         let threshold = config.threshold;
         let ports = TestPorts::e2e_tests(config.port_seed);
 
-        let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
+        let sandbox = NearSandbox::start(
+            &ports,
+            &config.sandbox_version,
+            config.sandbox_protocol_version,
+        )
+        .await?;
         let root_secret_key: near_kit::signer::SecretKey = SANDBOX_ROOT_SECRET_KEY
             .parse()
             .context("invalid sandbox root secret key")?;
@@ -349,6 +368,7 @@ impl MpcCluster {
             &ports,
             InitContractArgs {
                 near_keys: node_near_keys.clone(),
+                attestation_grants: config.attestation_grants(),
                 p2p_keys: node_p2p_keys.clone(),
                 threshold: config.threshold,
                 participant_indices: participant_indices.clone(),
@@ -1032,6 +1052,24 @@ impl MpcCluster {
         Ok(())
     }
 
+    /// Prepay one attestation-storage grant for a specific node's account, paid by its operator.
+    pub async fn prepay_attestation_grant(&self, node_index: usize) -> anyhow::Result<()> {
+        let fee = attestation_storage_fee(&self.mpc_contract_handle).await?;
+        let account_id = self.nodes[node_index].account_id().to_string().parse()?;
+        let outcome = self
+            .operator_client_for(node_index)?
+            .call_mpc(self.contract_id())
+            .prepay_attestation_storage(account_id, 1, fee)
+            .await
+            .context("failed to prepay attestation storage")?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "prepay for node {node_index} failed: {:?}",
+            outcome.failure_message()
+        );
+        Ok(())
+    }
+
     /// Submit an attestation for a TLS key from a specific node's account, signed with its
     /// operator key.
     pub async fn submit_participant_info(
@@ -1292,6 +1330,8 @@ async fn create_node_accounts(
 
 struct InitContractArgs {
     near_keys: Vec<SigningKey>,
+    /// Grants to prepay for each node's account, by node index.
+    attestation_grants: Vec<u32>,
     p2p_keys: Vec<SigningKey>,
     threshold: usize,
     participant_indices: Vec<usize>,
@@ -1299,7 +1339,7 @@ struct InitContractArgs {
     tee_verifier_account_id: ContractAccountId,
 }
 
-/// Prepays one attestation-storage grant for every node in the cluster.
+/// Prepays `attestation_grants[i]` attestation-storage grants for the account of node `i`.
 ///
 /// For every node, not only the initial participants: a node joining in a later resharing
 /// attests from its own process with a function-call key, which cannot attach a deposit, so
@@ -1309,15 +1349,15 @@ async fn prepay_attestation_grants(
     contract: &DeployedContract,
     fee: NearToken,
     near_keys: &[SigningKey],
+    attestation_grants: &[u32],
 ) -> anyhow::Result<()> {
-    // Granting the initial participants too is harmless: their attestations update the
-    // sentinel entry written at init, so they consume nothing and the grant stays unspent.
-    for (i, near_key) in near_keys.iter().enumerate() {
+    for (i, (near_key, &grants)) in near_keys.iter().zip(attestation_grants).enumerate() {
         let account = node_account(i);
+        let deposit = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
         let outcome = blockchain
             .client_for(&account, near_key)?
             .call_mpc(contract.account_id())
-            .prepay_attestation_storage(account.parse()?, 1, fee)
+            .prepay_attestation_storage(account.parse()?, grants, deposit)
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
         anyhow::ensure!(
@@ -1349,6 +1389,7 @@ async fn init_contract(
 ) -> anyhow::Result<()> {
     let InitContractArgs {
         near_keys,
+        attestation_grants,
         p2p_keys,
         threshold,
         participant_indices,
@@ -1386,7 +1427,7 @@ async fn init_contract(
     );
 
     let fee = attestation_storage_fee(mpc_contract_handle).await?;
-    prepay_attestation_grants(blockchain, contract, fee, &near_keys).await?;
+    prepay_attestation_grants(blockchain, contract, fee, &near_keys, &attestation_grants).await?;
 
     for &i in &participant_indices {
         let account = node_account(i);

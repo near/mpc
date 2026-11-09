@@ -14,13 +14,13 @@ Both schemes share common types defined in this module:
 
 ### OT-based ECDSA (`ot_based_ecdsa/`)
 
-Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline triple generation phase**; `presign_and_sign` then consumes two triples in a three-round online protocol. Requires `N >= t` participants where `t = ReconstructionThreshold`.
+Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline triple generation phase**; `sign` then consumes two triples in a three-round online protocol. Requires `N >= t` participants where `t = ReconstructionThreshold`.
 
 See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 
 ### Robust ECDSA (`robust_ecdsa/`) -- stub, not a secure scheme
 
-The previous implementation was removed and replaced by a stub that produces valid signatures while leaking the signing key, so that the node plumbing built around this protocol stays exercised until a real robust scheme replaces it. `presign_and_sign` runs a presigning round and a signing round as one protocol, so no presignature is stored. Requires exactly `N = 2t+1` signers where `t = MaxMalicious`.
+The previous implementation was removed and replaced by a stub that produces valid signatures while leaking the signing key, so that the node plumbing built around this protocol stays exercised until a real robust scheme replaces it. `sign` runs a nonce generation round and a signing round as one protocol, so nothing is stored between them. Requires exactly `N = 2t+1` signers where `t = MaxMalicious`.
 
 See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) before using it for anything.
 

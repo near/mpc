@@ -153,6 +153,71 @@ async fn available_foreign_chains__should_require_a_reachable_quorum_and_thresho
         .expect("timed out waiting for Solana to become available");
 }
 
+/// Nodes 0 and 1 register Solana while the only domain signs, so nothing is available yet.
+/// Adding a ForeignTx domain then runs keygen back into Running, and the chains registered
+/// before it must become available.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn available_foreign_chains__should_include_chains_registered_before_a_foreign_tx_domain_is_added()
+ {
+    // Given
+    let (cluster, _running) = common::must_setup_cluster(
+        common::FOREIGN_TX_DOMAIN_AFTER_REGISTRATION_PORT_SEED,
+        |c| {
+            c.domains = vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            }];
+            c.foreign_chains.node_configs = vec![
+                solana_foreign_chains_config(), // node 0
+                solana_foreign_chains_config(), // node 1
+                ForeignChainsConfig::default(), // node 2
+            ];
+            c.foreign_chains.whitelist = solana_whitelist(1);
+        },
+    )
+    .await;
+    let expected_registrations: ForeignChainsConfigs = BTreeMap::from([
+        (
+            cluster.nodes[0].p2p_public_key(),
+            BTreeSet::from([ForeignChain::Solana]).into(),
+        ),
+        (
+            cluster.nodes[1].p2p_public_key(),
+            BTreeSet::from([ForeignChain::Solana]).into(),
+        ),
+        (cluster.nodes[2].p2p_public_key(), BTreeSet::new().into()),
+    ])
+    .into();
+    cluster
+        .wait_for_foreign_chains_registrations(&expected_registrations)
+        .await
+        .expect("timed out waiting for nodes 0 and 1 to register Solana");
+    cluster
+        .wait_for_available_foreign_chains(&BTreeSet::new())
+        .await
+        .expect("no chain must be available without a ForeignTx domain");
+
+    // When
+    cluster
+        .add_domains_and_wait(vec![DomainConfig {
+            id: DomainId(1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::ForeignTx,
+        }])
+        .await
+        .expect("failed to add the ForeignTx domain");
+
+    // Then
+    cluster
+        .wait_for_available_foreign_chains(&BTreeSet::from([ForeignChain::Solana]))
+        .await
+        .expect("Solana did not become available after keygen added the ForeignTx domain");
+}
+
 /// Verify that a node resolves its `rpc_preset` at startup and registers the resolved chains.
 ///
 /// 3-node cluster (ForeignTx domain threshold 2): node 0 selects the testnet preset with dummy

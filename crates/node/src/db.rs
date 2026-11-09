@@ -26,7 +26,7 @@ impl std::fmt::Debug for SecretDB {
 pub enum DBCol {
     /// Per-`t` triple column: keys are `[t as u64 BE][borsh(UniqueId)]`. A
     /// triple is stored under the threshold it was generated with so that
-    /// presign can draw from a store of matching `t`.
+    /// signing can draw from a store of matching `t`.
     TripleV2,
     /// Retired: kept only so that startup deletes the presignatures older versions stored.
     Presignature,
