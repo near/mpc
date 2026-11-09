@@ -8,6 +8,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 #[tokio::test]
 #[expect(non_snake_case)]
+#[ignore = "pinned to mainnet's protocol; runs in the Mainnet protocol compatibility CI job"]
 async fn mpc_cluster__should_serve_requests_at_mainnet_protocol_version() {
     // Given
     let (cluster, running) = must_setup_cluster(MAINNET_PROTOCOL_PORT_SEED, |c| {

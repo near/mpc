@@ -356,9 +356,9 @@ local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
 
-nextest skips the `mainnet_protocol` test by default, which runs the cluster at
-`test_utils::MAINNET_PROTOCOL_VERSION`. CI runs it in the non-required
-`mainnet-protocol-tests` job; locally, pass `--ignore-default-filter -E 'test(/mainnet_protocol/)'`.
+The `mainnet_protocol` test, which runs the cluster at
+`test_utils::MAINNET_PROTOCOL_VERSION`, is `#[ignore]`d. CI runs it in the
+non-required `mainnet-protocol-tests` job; locally, pass `--run-ignored only -E 'test(/mainnet_protocol/)'`.
 
 ---
 

@@ -396,11 +396,11 @@ jobs:
         run: nix develop --command cargo make build-tee-verifier-optimized
 
       - name: Run contract sandbox test
-        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked -p mpc-contract --ignore-default-filter -E 'test(/mainnet_protocol/)'
+        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked -p mpc-contract --run-ignored only -E 'test(/mainnet_protocol/)'
 
       - name: Run E2E test
         if: ${{ !cancelled() }}
-        run: nix develop --command cargo make e2e-tests-skip-build --ignore-default-filter -E 'test(/mainnet_protocol/)'
+        run: nix develop --command cargo make e2e-tests-skip-build --run-ignored only -E 'test(/mainnet_protocol/)'
         env:
           RUST_LOG: info,e2e_tests=debug
 
