@@ -255,9 +255,9 @@ impl TryIntoContractType<EventLog> for dtos::EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::Node> for &Node {
-    fn into_dto_type(self) -> dtos::Node {
-        dtos::Node {
+impl IntoInterfaceType<dtos::NodeInfo> for &Node {
+    fn into_dto_type(self) -> dtos::NodeInfo {
+        dtos::NodeInfo {
             account_id: self.owner.clone(),
             tls_public_key: self.tls_public_key.clone(),
             account_public_key: self.signer_public_key.clone(),

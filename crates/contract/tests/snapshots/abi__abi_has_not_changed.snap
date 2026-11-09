@@ -459,7 +459,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/Node"
+              "$ref": "#/definitions/NodeInfo"
             }
           }
         }
@@ -880,7 +880,7 @@ expression: abi
                       "[u8; 48]"
                     ]
                   },
-                  "Node": {
+                  "NodeInfo": {
                     "Struct": [
                       [
                         "account_id",
@@ -981,7 +981,7 @@ expression: abi
                     "Struct": [
                       [
                         "node",
-                        "Node"
+                        "NodeInfo"
                       ],
                       [
                         "tcb_info",
@@ -4301,7 +4301,7 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "Node": {
+        "NodeInfo": {
           "description": "A node the contract stores under its TLS key. Its attestation is a separate [`StoredAttestation`](crate::types::StoredAttestation).",
           "type": "object",
           "required": [

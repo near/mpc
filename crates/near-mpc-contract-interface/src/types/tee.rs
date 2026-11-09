@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct Node {
+pub struct NodeInfo {
     /// Operator account.
     pub account_id: AccountId,
     /// TLS public key used by the node for peer-to-peer communication.
@@ -175,12 +175,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn node__should_round_trip_json_with_public_keys_as_strings() {
+    fn node_info__should_round_trip_json_with_public_keys_as_strings() {
         // Given
         let account_id = "alice.near";
         let tls_key = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
         let account_key = "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k";
-        let node = Node {
+        let node = NodeInfo {
             account_id: account_id.parse().unwrap(),
             tls_public_key: tls_key.parse().unwrap(),
             account_public_key: account_key.parse().unwrap(),
@@ -191,7 +191,7 @@ mod tests {
 
         // When
         let serialized = serde_json::to_string(&node).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
+        let deserialized: NodeInfo = serde_json::from_str(&json).unwrap();
 
         // Then
         assert_eq!(serialized, json);

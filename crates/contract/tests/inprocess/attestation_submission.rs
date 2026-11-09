@@ -16,7 +16,7 @@ use mpc_contract::{
     tee::tee_state::AttestationSubmissionError,
 };
 use near_mpc_contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, Node, ProtocolContractState,
+    Attestation, InitConfig, MockAttestation, NodeInfo, ProtocolContractState,
 };
 use std::{
     assert_matches,
@@ -166,20 +166,24 @@ impl TestSetup {
 
     /// Prepays one grant, then submits. For a first submission; re-attesting a key the account
     /// already owns consumes no grant, so use [`Self::submit_attestation_for_node`] there.
-    fn prepay_and_submit_attestation_for_node(&mut self, node: &Node, attestation: Attestation) {
+    fn prepay_and_submit_attestation_for_node(
+        &mut self,
+        node: &NodeInfo,
+        attestation: Attestation,
+    ) {
         self.prepay_grants(&node.account_id, 1);
         self.submit_attestation_for_node(node, attestation);
     }
 
     /// For a re-attestation, which consumes no grant.
-    fn submit_attestation_for_node(&mut self, node: &Node, attestation: Attestation) {
+    fn submit_attestation_for_node(&mut self, node: &NodeInfo, attestation: Attestation) {
         self.try_submit_attestation_for_node(node, attestation)
             .unwrap();
     }
 
     fn try_submit_attestation_for_node(
         &mut self,
-        node: &Node,
+        node: &NodeInfo,
         attestation: Attestation,
     ) -> Result<(), Error> {
         testing_env!(common::participant_context(&node.account_id));
@@ -209,7 +213,7 @@ impl TestSetup {
         }
     }
     /// Every participant's node, with a placeholder signer key these tests never read.
-    fn get_participant_nodes(&self) -> Vec<Node> {
+    fn get_participant_nodes(&self) -> Vec<NodeInfo> {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| {

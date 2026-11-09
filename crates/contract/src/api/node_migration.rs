@@ -820,7 +820,7 @@ mod tests {
 
     struct ConcludeNodeMigrationTestSetup {
         is_migration_started: bool,
-        attested_node: dtos::Node,
+        attested_node: dtos::NodeInfo,
         expected_error_check: Option<fn(&Error) -> bool>,
         expected_post_call_info: Option<(ParticipantId, ParticipantInfo)>,
     }
@@ -951,19 +951,19 @@ mod tests {
         setup.run(&mut contract, &keyset);
     }
 
-    fn unstored_node(_: &mut MpcContract) -> dtos::Node {
+    fn unstored_node(_: &mut MpcContract) -> dtos::NodeInfo {
         node_for(&gen_account_id())
     }
 
-    fn node_of_another_account(contract: &mut MpcContract) -> dtos::Node {
+    fn node_of_another_account(contract: &mut MpcContract) -> dtos::NodeInfo {
         must_attest_new_node(contract, &gen_account_id())
     }
 
-    fn destination_node_not_found(_: &dtos::Node) -> NodeMigrationError {
+    fn destination_node_not_found(_: &dtos::NodeInfo) -> NodeMigrationError {
         NodeMigrationError::DestinationNodeNotFound
     }
 
-    fn tls_key_already_claimed(node: &dtos::Node) -> NodeMigrationError {
+    fn tls_key_already_claimed(node: &dtos::NodeInfo) -> NodeMigrationError {
         NodeMigrationError::TlsKeyAlreadyClaimed {
             tls_public_key: node.tls_public_key.clone(),
             account_id: node.account_id.clone(),
@@ -974,8 +974,8 @@ mod tests {
     #[case::not_stored(unstored_node, destination_node_not_found)]
     #[case::attested_by_another_account(node_of_another_account, tls_key_already_claimed)]
     fn start_node_migration__should_reject_a_destination_node_the_caller_does_not_own(
-        #[case] destination_node: fn(&mut MpcContract) -> dtos::Node,
-        #[case] expected_error: fn(&dtos::Node) -> NodeMigrationError,
+        #[case] destination_node: fn(&mut MpcContract) -> dtos::NodeInfo,
+        #[case] expected_error: fn(&dtos::NodeInfo) -> NodeMigrationError,
     ) {
         // Given
         let (mut contract, _, participants) = running_contract();
@@ -1084,8 +1084,8 @@ mod tests {
     #[case::not_stored(unstored_node, destination_node_not_found)]
     #[case::attested_by_another_account(node_of_another_account, tls_key_already_claimed)]
     fn conclude_node_migration__should_reject_a_destination_node_the_caller_does_not_own(
-        #[case] destination_node: fn(&mut MpcContract) -> dtos::Node,
-        #[case] expected_error: fn(&dtos::Node) -> NodeMigrationError,
+        #[case] destination_node: fn(&mut MpcContract) -> dtos::NodeInfo,
+        #[case] expected_error: fn(&dtos::NodeInfo) -> NodeMigrationError,
     ) {
         // Given
         let (mut contract, keyset, participants) = running_contract();

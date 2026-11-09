@@ -125,7 +125,7 @@ impl TeeState {
     /// Returns whether the node is new.
     pub(crate) fn verify_and_store_mock(
         &mut self,
-        node: dtos::Node,
+        node: dtos::NodeInfo,
         mock: MockAttestation,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<bool, AttestationSubmissionError> {
@@ -143,7 +143,7 @@ impl TeeState {
     /// node is new.
     pub(crate) fn verify_and_store_dstack(
         &mut self,
-        node: dtos::Node,
+        node: dtos::NodeInfo,
         tcb_info: &TcbInfo,
         report: &VerifiedReport,
         collateral_dates: &CollateralDates,
@@ -160,7 +160,7 @@ impl TeeState {
         self.store_verified_attestation(node, accepted)
     }
 
-    fn expected_report_data(node: &dtos::Node) -> ::attestation_types::ReportData {
+    fn expected_report_data(node: &dtos::NodeInfo) -> ::attestation_types::ReportData {
         let report_data: ReportData = ReportDataV1::new(
             *node.tls_public_key.as_bytes(),
             *node.account_public_key.as_bytes(),
@@ -171,7 +171,7 @@ impl TeeState {
 
     fn store_verified_attestation(
         &mut self,
-        node: dtos::Node,
+        node: dtos::NodeInfo,
         accepted: AcceptedAttestation,
     ) -> Result<bool, AttestationSubmissionError> {
         log_informational_advisory_ids(&accepted.advisory_ids);
@@ -434,7 +434,7 @@ impl TeeState {
         Ok(())
     }
 
-    pub fn get_tee_accounts(&self) -> Vec<dtos::Node> {
+    pub fn get_tee_accounts(&self) -> Vec<dtos::NodeInfo> {
         self.nodes
             .values()
             .map(IntoInterfaceType::into_dto_type)
@@ -860,7 +860,9 @@ mod tests {
     }
 
     /// An older launcher attested by the given node, and a newer unused one.
-    fn tee_state_with_old_launcher_attested_by(node: dtos::Node) -> (TeeState, LauncherImageHash) {
+    fn tee_state_with_old_launcher_attested_by(
+        node: dtos::NodeInfo,
+    ) -> (TeeState, LauncherImageHash) {
         let mut tee_state = TeeState::default();
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let old = LauncherImageHash::from([1u8; 32]);
@@ -1029,7 +1031,7 @@ mod tests {
         let mut tee_state = TeeState::default();
         let initial_node = node_for(&"alice.near".parse().unwrap());
         submit_mock(&mut tee_state, &initial_node, MockAttestation::Valid).unwrap();
-        let rotated_node = dtos::Node {
+        let rotated_node = dtos::NodeInfo {
             account_public_key: bogus_ed25519_public_key(),
             ..initial_node
         };
@@ -1083,7 +1085,7 @@ mod tests {
     }
 
     /// A [`TeeState`] that accepts the fixture attestation, and the node it attests.
-    fn tee_state_accepting_the_fixture() -> (TeeState, dtos::Node) {
+    fn tee_state_accepting_the_fixture() -> (TeeState, dtos::NodeInfo) {
         set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
         let mut tee_state = TeeState::default();
         whitelist_dstack_measurements(
@@ -1287,7 +1289,7 @@ mod tests {
     const ACCEPTED_AT_SECONDS: u64 = 1_800_000_000;
     const RESUBMITTED_AT_SECONDS: u64 = ACCEPTED_AT_SECONDS + 3600;
 
-    fn stamped_accepted_at(tee_state: &TeeState, node: &dtos::Node) -> u64 {
+    fn stamped_accepted_at(tee_state: &TeeState, node: &dtos::NodeInfo) -> u64 {
         tee_state
             .nodes
             .get(&node.tls_public_key)
@@ -1297,7 +1299,7 @@ mod tests {
 
     fn submit_mock(
         tee_state: &mut TeeState,
-        node: &dtos::Node,
+        node: &dtos::NodeInfo,
         mock: MockAttestation,
     ) -> Result<bool, AttestationSubmissionError> {
         tee_state.verify_and_store_mock(node.clone(), mock, Duration::from_secs(0))

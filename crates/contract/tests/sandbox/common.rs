@@ -384,14 +384,14 @@ pub async fn approve_contract_update(
 }
 
 /// The node the contract stores when the [`Account`] attests under the given TLS key.
-pub fn sandbox_node(account: &Account, tls_public_key: dtos::Ed25519PublicKey) -> dtos::Node {
+pub fn sandbox_node(account: &Account, tls_public_key: dtos::Ed25519PublicKey) -> dtos::NodeInfo {
     let signer_key: [u8; 32] = account
         .secret_key()
         .public_key()
         .key_data()
         .try_into()
         .expect("sandbox Account key must be Ed25519");
-    dtos::Node {
+    dtos::NodeInfo {
         account_id: account.id().clone(),
         tls_public_key,
         account_public_key: signer_key.into(),
@@ -401,7 +401,7 @@ pub fn sandbox_node(account: &Account, tls_public_key: dtos::Ed25519PublicKey) -
 pub fn build_sandbox_nodes(
     participants: &Participants,
     accounts: &[Account],
-) -> BTreeSet<dtos::Node> {
+) -> BTreeSet<dtos::NodeInfo> {
     participants
         .participants()
         .iter()
@@ -418,7 +418,7 @@ pub fn build_sandbox_nodes(
 pub async fn prepay_and_submit_tee_attestations(
     contract: &SandboxMpcContract,
     env_accounts: &mut [Account],
-    nodes: &BTreeSet<dtos::Node>,
+    nodes: &BTreeSet<dtos::NodeInfo>,
 ) -> anyhow::Result<()> {
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
     for (account, node) in env_accounts.iter().zip(nodes) {

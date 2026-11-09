@@ -151,15 +151,15 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
-pub fn create_node(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> dtos::Node {
-    dtos::Node {
+pub fn create_node(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> dtos::NodeInfo {
+    dtos::NodeInfo {
         account_id: account_id.clone(),
         tls_public_key: tls_public_key.clone(),
         account_public_key: bogus_ed25519_public_key(),
     }
 }
 
-pub fn node_for(account_id: &AccountId) -> dtos::Node {
+pub fn node_for(account_id: &AccountId) -> dtos::NodeInfo {
     create_node(account_id, &bogus_ed25519_public_key())
 }
 

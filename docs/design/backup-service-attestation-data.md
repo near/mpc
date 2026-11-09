@@ -77,10 +77,10 @@ pub struct NodeMigrations {
 `backup_services_info` is removed — `TeeState` already stores each node's TLS key.
 The MPC node reads the backup service's TLS key from `backup_service_tee_state` instead.
 
-The attestation uses the same [`Node`](../../crates/near-mpc-contract-interface/src/types/tee.rs) struct as MPC nodes:
+The attestation uses the same [`NodeInfo`](../../crates/near-mpc-contract-interface/src/types/tee.rs) struct as MPC nodes:
 
 ```rust
-Node {
+NodeInfo {
     account_id: env::predecessor_account_id(),
     tls_public_key,
     account_public_key,

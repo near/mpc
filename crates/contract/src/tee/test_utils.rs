@@ -156,8 +156,8 @@ pub fn whitelist_dstack_in_state(
 }
 
 #[cfg(test)]
-pub(crate) fn dstack_fixture_node() -> dtos::Node {
-    dtos::Node {
+pub(crate) fn dstack_fixture_node() -> dtos::NodeInfo {
+    dtos::NodeInfo {
         account_id: "alice.near".parse().unwrap(),
         tls_public_key: p2p_tls_key().into(),
         account_public_key: account_key().into(),

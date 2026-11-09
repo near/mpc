@@ -130,7 +130,7 @@ impl MpcContract {
             }
         })?;
 
-        let node = dtos::Node {
+        let node = dtos::NodeInfo {
             account_id: account_id.clone(),
             tls_public_key,
             account_public_key,
@@ -212,7 +212,7 @@ impl MpcContract {
     /// [`Self::resolve_verification`] chained as its callback.
     fn submit_dstack_attestation(
         &mut self,
-        node: dtos::Node,
+        node: dtos::NodeInfo,
         attestation: DstackAttestation,
     ) -> Promise {
         ext_tee_verifier::ext(self.tee_verifier_account_id.clone())
@@ -240,7 +240,7 @@ impl MpcContract {
     }
 
     /// Returns every stored node, including nodes of accounts that are not participants.
-    pub fn get_tee_accounts(&self) -> Vec<dtos::Node> {
+    pub fn get_tee_accounts(&self) -> Vec<dtos::NodeInfo> {
         log!("get_tee_accounts");
         self.tee_state.get_tee_accounts()
     }
@@ -556,7 +556,7 @@ mod tests {
             .map(|_| ())
     }
 
-    fn must_store_expired_node(contract: &mut MpcContract, node: dtos::Node) {
+    fn must_store_expired_node(contract: &mut MpcContract, node: dtos::NodeInfo) {
         set_block_secs(0);
         contract
             .tee_state
@@ -841,12 +841,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case::node_under_another_tls_key(|node| dtos::Node { tls_public_key: bogus_ed25519_public_key(), ..node })]
-    #[case::node_of_another_account(|node| dtos::Node { account_id: gen_account_id(), ..node })]
-    #[case::node_with_another_signer_key(|node| dtos::Node { account_public_key: bogus_ed25519_public_key(), ..node })]
+    #[case::node_under_another_tls_key(|node| dtos::NodeInfo { tls_public_key: bogus_ed25519_public_key(), ..node })]
+    #[case::node_of_another_account(|node| dtos::NodeInfo { account_id: gen_account_id(), ..node })]
+    #[case::node_with_another_signer_key(|node| dtos::NodeInfo { account_public_key: bogus_ed25519_public_key(), ..node })]
     #[should_panic(expected = "Caller must be an attested participant")]
     fn assert_caller_is_attested_participant_and_protocol_active__should_reject_a_participant_not_signing_as_its_node(
-        #[case] stored_node: fn(dtos::Node) -> dtos::Node,
+        #[case] stored_node: fn(dtos::NodeInfo) -> dtos::NodeInfo,
     ) {
         // Given
         let (mut contract, account_id, tls_public_key) = participant_setup();

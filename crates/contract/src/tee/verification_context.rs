@@ -8,7 +8,7 @@ use near_mpc_contract_interface::types as dtos;
     derive(borsh::BorshSchema)
 )]
 pub struct VerificationContext {
-    pub(crate) node: dtos::Node,
+    pub(crate) node: dtos::NodeInfo,
     pub(crate) tcb_info: TcbInfo,
 }
 

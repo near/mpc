@@ -252,7 +252,7 @@ pub(crate) fn submit_valid_attestations(
 pub(crate) fn must_attest_new_node(
     contract: &mut MpcContract,
     account_id: &AccountId,
-) -> dtos::Node {
+) -> dtos::NodeInfo {
     let node = node_for(account_id);
     contract
         .tee_state
@@ -265,7 +265,7 @@ pub(crate) fn must_attest_new_node(
     node
 }
 
-pub(crate) fn destination_of(node: &dtos::Node) -> dtos::DestinationNodeInfo {
+pub(crate) fn destination_of(node: &dtos::NodeInfo) -> dtos::DestinationNodeInfo {
     dtos::DestinationNodeInfo {
         signer_account_pk: node.account_public_key.clone(),
         destination_node_info: dtos::ParticipantInfo {
