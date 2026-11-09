@@ -1,87 +1,53 @@
 use std::error::Error;
-use std::marker::PhantomData;
 use std::time::Duration;
 
 use near_account_id::AccountId;
-use near_kit::rpc::{BlockReference, Finality, RpcError, TxExecutionStatus};
+use near_kit::protocol::Action;
+use near_kit::rpc::{Finality, RpcError, TxExecutionStatus};
 use near_kit::transaction::WaitLevel;
+use near_kit::{Near, SigningNear, TxSender, Viewer};
 
 use crate::{
     CallContract, FunctionCallArgs, HasPollInterval, ObservedState, PollInterval,
     SerializedObservation, ViewArgs, ViewContract,
 };
 
-/// [`near_kit::Near`] as a call and view backend. `T` is the wait level a call blocks on
-/// before returning, which decides its [`CallContract::Output`] and the finality views read
-/// at; `poll_interval` paces subscriptions and `read_timeout` bounds each view.
+/// A near-kit client as a call and view backend. `C` is the client: a [`Near`] only views
+/// (at [`Finality::Final`]); a [`SigningNear<W>`] also calls, blocking on the wait level `W`,
+/// which decides its [`CallContract::Output`] and the finality views read at.
+/// `poll_interval` paces subscriptions and `read_timeout` bounds each view.
 #[derive(Clone)]
-pub struct NearKitCaller<T> {
-    inner: near_kit::Near,
+pub struct NearKitCaller<C> {
+    inner: C,
     poll_interval: PollInterval,
     read_timeout: Duration,
-    _wait_level: PhantomData<fn() -> T>,
 }
 
-impl<T> NearKitCaller<T> {
-    pub fn new(near: near_kit::Near, poll_interval: PollInterval, read_timeout: Duration) -> Self {
+impl<C> NearKitCaller<C> {
+    pub fn new(client: C, poll_interval: PollInterval, read_timeout: Duration) -> Self {
         Self {
-            inner: near,
+            inner: client,
             poll_interval,
             read_timeout,
-            _wait_level: PhantomData,
         }
     }
 
-    pub fn with_wait_level<U: WaitLevel>(self) -> NearKitCaller<U> {
-        NearKitCaller {
-            inner: self.inner,
-            poll_interval: self.poll_interval,
-            read_timeout: self.read_timeout,
-            _wait_level: PhantomData,
-        }
-    }
-}
-
-impl<T> HasPollInterval for NearKitCaller<T> {
-    fn poll_interval(&self) -> PollInterval {
-        self.poll_interval
-    }
-}
-
-impl<T: WaitLevel> CallContract for NearKitCaller<T> {
-    type Output = T::Response;
-    type Error = NearKitCallError;
-
-    async fn call_contract(
-        &self,
-        contract_id: &AccountId,
-        call_args: FunctionCallArgs,
-    ) -> Result<Self::Output, Self::Error> {
-        self.inner
-            .call(contract_id, &call_args.method_name)
-            .args_raw(call_args.args)
-            .gas(call_args.gas)
-            .deposit(call_args.deposit)
-            .finish()
-            .wait_until::<T>()
-            .await
-            .map_err(Into::into)
-    }
-}
-
-impl<T: WaitLevel> ViewContract for NearKitCaller<T> {
-    type Error = NearKitViewError;
-
-    async fn view_contract(
+    /// Views `contract_id` through any near-kit [`Viewer`] at `finality`, bounded by
+    /// `read_timeout`.
+    async fn view_at(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> Result<SerializedObservation, Self::Error> {
-        let view = self.inner.rpc().view_function(
+        finality: Finality,
+    ) -> Result<SerializedObservation, NearKitViewError>
+    where
+        C: Viewer<ViewError = RpcError>,
+    {
+        let view = self.inner.view_function(
             contract_id,
             &view_args.method_name,
             &view_args.args,
-            BlockReference::Finality(view_finality::<T>()),
+            finality.into(),
         );
         let result = tokio::time::timeout(self.read_timeout, view)
             .await
@@ -90,6 +56,69 @@ impl<T: WaitLevel> ViewContract for NearKitCaller<T> {
             observed_at: result.block_height.into(),
             value: result.result,
         })
+    }
+}
+
+impl<T: WaitLevel> NearKitCaller<SigningNear<T>> {
+    pub fn with_wait_level<U: WaitLevel>(self) -> NearKitCaller<SigningNear<U>> {
+        NearKitCaller {
+            inner: self.inner.wait_until::<U>(),
+            poll_interval: self.poll_interval,
+            read_timeout: self.read_timeout,
+        }
+    }
+}
+
+impl<C> HasPollInterval for NearKitCaller<C> {
+    fn poll_interval(&self) -> PollInterval {
+        self.poll_interval
+    }
+}
+
+impl<T: WaitLevel> CallContract for NearKitCaller<SigningNear<T>> {
+    type Output = T::Response;
+    type Error = NearKitCallError;
+
+    async fn call_contract(
+        &self,
+        contract_id: &AccountId,
+        call_args: FunctionCallArgs,
+    ) -> Result<Self::Output, Self::Error> {
+        let action = Action::function_call(
+            call_args.method_name,
+            call_args.args,
+            call_args.gas,
+            call_args.deposit,
+        );
+        self.inner
+            .send(contract_id.clone(), vec![action])
+            .await
+            .map_err(Into::into)
+    }
+}
+
+impl ViewContract for NearKitCaller<Near> {
+    type Error = NearKitViewError;
+
+    async fn view_contract(
+        &self,
+        contract_id: &AccountId,
+        view_args: ViewArgs,
+    ) -> Result<SerializedObservation, Self::Error> {
+        self.view_at(contract_id, view_args, Finality::Final).await
+    }
+}
+
+impl<T: WaitLevel> ViewContract for NearKitCaller<SigningNear<T>> {
+    type Error = NearKitViewError;
+
+    async fn view_contract(
+        &self,
+        contract_id: &AccountId,
+        view_args: ViewArgs,
+    ) -> Result<SerializedObservation, Self::Error> {
+        self.view_at(contract_id, view_args, view_finality::<T>())
+            .await
     }
 }
 
@@ -154,10 +183,9 @@ fn describe(err: &RpcError) -> String {
 mod tests {
     use std::time::Duration;
 
-    use near_kit::Near;
     use near_kit::rpc::RetryConfig;
     use near_kit::signer::{InMemorySigner, SecretKey};
-    use near_kit::transaction::Final;
+    use near_kit::{Near, SigningNear, account};
     use rstest::rstest;
     use tokio::net::TcpListener;
 
@@ -175,7 +203,7 @@ mod tests {
 
     /// near-kit retries a dropped connection with a backoff longer than [`READ_TIMEOUT`],
     /// so retries are off to surface the transport error itself.
-    async fn must_make_caller_into_hung_up_keyed_endpoint() -> NearKitCaller<Final> {
+    async fn must_make_caller_into_hung_up_keyed_endpoint() -> NearKitCaller<SigningNear> {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
@@ -183,16 +211,17 @@ mod tests {
                 drop(stream);
             }
         });
-        let signer =
-            InMemorySigner::from_secret_key("alice.near", SecretKey::ed25519_from_bytes([7u8; 32]))
-                .unwrap();
+        let signer = InMemorySigner::new(
+            account!("alice.near"),
+            SecretKey::ed25519_from_bytes([7u8; 32]),
+        );
         let near = Near::custom(
             format!("http://127.0.0.1:{port}/?apikey={API_KEY}"),
             "mainnet",
         )
-        .signer(signer)
         .retry_config(RetryConfig::none())
-        .build();
+        .build()
+        .with_signer(signer);
         NearKitCaller::new(
             near,
             PollInterval::new(Duration::from_secs(1)).unwrap(),
@@ -262,7 +291,7 @@ mod tests {
                 held_open.push(stream);
             }
         });
-        let caller = NearKitCaller::<Final>::new(
+        let caller = NearKitCaller::new(
             Near::custom(format!("http://127.0.0.1:{port}"), "mainnet").build(),
             PollInterval::new(Duration::from_secs(1)).unwrap(),
             READ_TIMEOUT,
