@@ -105,10 +105,10 @@ fn bench_cait_sith(
         config.samples,
     );
     bench_simulation(
-        "Cait-Sith: presign+sign online",
+        "Cait-Sith: sign",
         &|| {
             let mut rng = MockCryptoRng::seed_from_u64(77);
-            ot_run_presign_and_sign(
+            ot_run_sign(
                 participants,
                 &triples,
                 key_packages,
@@ -167,7 +167,7 @@ fn ot_run_triples(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ot_run_presign_and_sign(
+fn ot_run_sign(
     participants: &[Participant],
     two_triples: &[(Participant, Vec<TriplePair>)],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
@@ -194,11 +194,11 @@ fn ot_run_presign_and_sign(
         Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
     )> = Vec::with_capacity(participants.len());
     for (((p, keygen_out), share0), share1) in key_packages.iter().zip(shares0).zip(shares1) {
-        let protocol = ot_based_ecdsa::presign_and_sign(
+        let protocol = ot_based_ecdsa::sign(
             participants,
             coordinator,
             *p,
-            ot_based_ecdsa::PresignArguments {
+            ot_based_ecdsa::SignArguments {
                 triple0: (share0, pub0[0].clone()),
                 triple1: (share1, pub1[0].clone()),
                 keygen_out: keygen_out.clone(),
@@ -207,7 +207,7 @@ fn ot_run_presign_and_sign(
             tweak,
             msg_hash,
         )
-        .expect("Presign and sign should succeed");
+        .expect("Signing should succeed");
         protocols.push((*p, Box::new(protocol)));
     }
 
@@ -240,11 +240,11 @@ fn robust_run_sign(
     )> = Vec::with_capacity(participants.len());
     for (p, keygen_out) in key_packages {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = robust_ecdsa::presign_and_sign(
+        let protocol = robust_ecdsa::sign(
             participants,
             coordinator,
             *p,
-            robust_ecdsa::PresignArguments {
+            robust_ecdsa::SignArguments {
                 keygen_out: keygen_out.clone(),
                 max_malicious,
             },

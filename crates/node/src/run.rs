@@ -243,7 +243,6 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         migration_state_sender,
         probe_whitelist_sender,
         *tls_public_key,
-        node_config.foreign_chains.clone(),
         RecentTransactionsLogger::new(recent_tx_sender),
         indexer_shutdown_token.clone(),
     );
