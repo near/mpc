@@ -123,9 +123,10 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        forwarded_participant_call_contract, init_running_with_domain,
-        must_get_attested_signer_key, prepay_and_attest_all_participants, resharing_state,
-        running_state, setup_tee_test_contract, submit_attestation, submit_valid_attestations,
+        FORWARDER_ACCOUNT_ID, init_running_with_domain, must_get_attested_signer_key,
+        prepay_and_attest_all_participants, resharing_state,
+        running_contract_called_by_participant_via_forwarder, running_state,
+        setup_tee_test_contract, submit_attestation, submit_valid_attestations,
     };
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
@@ -686,7 +687,7 @@ mod tests {
 
         let ctx = VMContextBuilder::new()
             .signer_account_id(first_participant_id)
-            .predecessor_account_id("forwarder.near".parse().unwrap())
+            .predecessor_account_id(FORWARDER_ACCOUNT_ID.parse().unwrap())
             .attached_deposit(NearToken::ZERO)
             .build();
         testing_env!(ctx);
@@ -700,7 +701,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn vote_add_domains__should_panic_when_predecessor_differs_from_signer() {
-        let mut contract = forwarded_participant_call_contract();
+        let mut contract = running_contract_called_by_participant_via_forwarder();
         contract
             .vote_add_domains(vec![])
             .expect("expected panic when predecessor != signer");
