@@ -1,7 +1,8 @@
 //! Compares the local foreign chain RPC config with the on chain whitelist
-//! (`allowed_foreign_chain_providers`) and logs each difference, once per probe round. It only
-//! logs: [`crate::foreign_chain_rpc_policy`] applies the same match to decide which providers count
-//! towards the RPC quorum.
+//! (`allowed_foreign_chain_providers`) and logs each difference, once per probe round.
+//! The result has no effect on what the node does: [`crate::foreign_chain_rpc_policy`]
+//! applies the same match to decide which providers count towards the RPC quorum, which
+//! gates verify requests and chain registration.
 //!
 //! A local provider matches a whitelist provider by its URL host, as [`provider_identity`]
 //! describes.
@@ -139,14 +140,11 @@ fn compare_chain(
     diagnostics
 }
 
-pub(super) fn log_differences(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) {
-    log(&compare(local, whitelist));
-}
-
 pub(super) const CONFIG_MATCHES_WHITELIST: &str =
     "foreign chain whitelist: local config matches the contract whitelist";
 
-fn log(diagnostics: &[Diagnostic]) {
+pub(super) fn log_differences(local: &ForeignChainsConfig, whitelist: &ForeignChainWhitelist) {
+    let diagnostics = compare(local, whitelist);
     if diagnostics.is_empty() {
         tracing::info!("{CONFIG_MATCHES_WHITELIST}");
     }
