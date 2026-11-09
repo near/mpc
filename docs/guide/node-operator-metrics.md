@@ -138,8 +138,11 @@ could not confirm: unreachable, refusing, too slow, serving a different
 network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
-Until the node has synced and read the provider whitelist from the contract,
-each round logs that the whitelist is not read yet. The node probes again as
+After each round the node also compares the configured providers with the
+provider whitelist and logs each difference, so a wrong config is reported
+every hour until it is fixed. Until the node has synced and read the provider
+whitelist from the contract, each round logs that the whitelist is not read
+yet. The node probes again as
 soon as the whitelist is read, and whenever the whitelist changes.
 
 ### Whitelist and quorum
@@ -158,7 +161,7 @@ participant:
 `whitelisted` must reach `required`. Anything less means the chain is
 configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
-asks. The node logs the differing provider at startup and on every whitelist change.
+asks. The probe logs the differing provider each round, as described above.
 
 ## Recommended alerts
 
