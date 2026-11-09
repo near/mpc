@@ -12,7 +12,7 @@ pub const DEFAULT_SANDBOX_VERSION: &str = "2.14.0";
 
 /// Protocol version mainnet runs. It can lag behind [`DEFAULT_SANDBOX_VERSION`]'s
 /// protocol until validators vote the upgrade in.
-pub const MAINNET_PROTOCOL_VERSION: u32 = 87;
+pub const MAINNET_PROTOCOL_VERSION: u32 = 88;
 
 /// Genesis overrides that start a sandbox at `protocol_version` instead of its
 /// binary's latest protocol.
