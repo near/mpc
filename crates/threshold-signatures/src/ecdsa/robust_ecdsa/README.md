@@ -36,9 +36,7 @@ applied locally between the two rounds, and only the
 coordinator obtains the signature. The node signs with this protocol. See the
 [protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
 
-### `sign.rs`
-
-The one-round signing step of `presign_and_sign`, with a designated coordinator. Takes
+Also holds the one-round signing step, with a designated coordinator. Takes
 the tweaked presignature and the message hash, produces a standard ECDSA signature
 (low-S normalized). Unchanged from the removed scheme and scheme-agnostic: it sums
 Lagrange-linearized shares of `s` and provides no secrecy of its own. See the
