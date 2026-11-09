@@ -20,6 +20,9 @@ use tokio::sync::watch;
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::metrics;
 
+const CHAIN_TIMEOUT_SEC: NonZeroU64 = NonZeroU64::new(30).unwrap();
+const CHAIN_MAX_RETRIES: NonZeroU64 = NonZeroU64::new(3).unwrap();
+
 pub(super) const ALCHEMY_URL: &str = "https://alchemy.example.com";
 pub(super) const QUICKNODE_URL: &str = "https://quicknode.example.com";
 pub(super) const OWN_NODE_URL: &str = "https://own-node.example.org";
@@ -42,8 +45,8 @@ pub(super) fn chain_config(providers: &[(&str, ForeignChainProviderConfig)]) -> 
         .map(|(name, config)| (RpcProviderName::from(name.to_string()), config.clone()))
         .collect();
     ForeignChainConfig {
-        timeout_sec: NonZeroU64::new(30).unwrap(),
-        max_retries: NonZeroU64::new(3).unwrap(),
+        timeout_sec: CHAIN_TIMEOUT_SEC,
+        max_retries: CHAIN_MAX_RETRIES,
         expected_network_fingerprint: None,
         providers: NonEmptyBTreeMap::try_from(providers).expect("a test chain has a provider"),
     }
