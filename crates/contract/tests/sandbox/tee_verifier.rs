@@ -8,8 +8,8 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, gen_accounts, gen_participant_info, init_contract, init_with_wasm,
-        make_threshold_params, prepay_and_submit_attestations,
+        SandboxTestSetup, gen_accounts, gen_participant_info, init_contract_running,
+        init_with_wasm, make_threshold_params, prepay_and_submit_attestations,
     },
     utils::{
         consts::ALL_PROTOCOLS,
@@ -23,13 +23,19 @@ use crate::sandbox::{
             tee_verifier_account_id, total_gas_fee, vote_tee_verifier_change,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+        shared_key_utils::{DomainKey, make_key_for_domain},
+        sign_utils::DomainResponseTest,
     },
 };
 use mpc_attestation::attestation::dev_measurements;
 use mpc_contract::{
     MpcContract,
     errors::TeeError,
-    primitives::participants::ParticipantInfo,
+    primitives::{
+        key_state::{AttemptId, EpochId},
+        participants::ParticipantInfo,
+        thresholds::GovernanceThresholdParameters,
+    },
     tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -41,6 +47,7 @@ use near_workspaces::{
     result::ExecutionFinalResult,
     types::{Gas, NearToken, SecretKey},
 };
+use rand::{SeedableRng, rngs::StdRng};
 use std::time::Duration;
 use tee_verifier_interface::VerificationResult;
 use test_utils::attestation::{
@@ -255,15 +262,18 @@ async fn assert_only_gas_spent(
     );
 }
 
+/// Burning more than 90% of a receipt's static gas budget fails these tests, leaving room for
+/// gas-schedule changes and code growth before the receipt runs out of gas in production.
+const GAS_HEADROOM_PERCENT: u64 = 10;
+
 /// The receipt gets exactly `verifier_tera_gas` of static gas, so success already
 /// proves it fit. Assert headroom instead: the regression that matters is
 /// `dcap-qvl` growing until it OOGs in production.
 fn assert_verifier_gas_headroom(method: &str, burnt: Gas, budget: Gas) {
-    const HEADROOM_PERCENT: u64 = 10;
-    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - GAS_HEADROOM_PERCENT) / 100);
     assert!(
         burnt <= max_allowed,
-        "{method} burnt {burnt} of the {budget} budget, leaving less than {HEADROOM_PERCENT}% \
+        "{method} burnt {burnt} of the {budget} budget, leaving less than {GAS_HEADROOM_PERCENT}% \
          headroom. Find what grew (gas schedule or `dcap-qvl`) before raising \
          DEFAULT_VERIFIER_TERA_GAS, or the OOG this guards against reaches mainnet",
     );
@@ -603,7 +613,6 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
  {
     // Given
     const NUM_PARTICIPANTS: usize = 40;
-    const HEADROOM_PERCENT: u64 = 10;
     let (worker, contract) = init_with_wasm(current_contract_with_pinned_clock()).await;
     let contract = SandboxMpcContract::from_deployed(&worker, contract);
     let (accounts, attested_participants) = gen_accounts(&worker, NUM_PARTICIPANTS - 1).await;
@@ -618,7 +627,8 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
             },
         )
         .unwrap();
-    init_contract(&contract, make_threshold_params(&participants), None).await;
+    let domain_key =
+        init_running_with_sign_domain(&contract, make_threshold_params(&participants)).await;
     prepay_and_submit_attestations(&contract, &accounts, &attested_participants).await;
     let setup = SandboxTestSetup {
         worker,
@@ -626,7 +636,7 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
         mpc_signer_accounts: accounts,
         keys: Vec::new(),
     };
-    deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
+    let verifier = deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
     whitelist_fixture_dstack_hashes(&setup, Some(launcher_compose_digest())).await;
     prepay_grant_from_separate_payer(&setup, &submitter).await;
 
@@ -637,32 +647,64 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
     let outcomes = result.outcomes();
     let resolve_outcome = outcomes
         .iter()
-        .find(|outcome| {
-            outcome
-                .logs
-                .iter()
-                .any(|log| log.starts_with("resolve_verification:"))
-        })
-        .expect("the resolve_verification receipt must have executed");
-    assert!(
-        resolve_outcome
-            .logs
-            .iter()
-            .any(|log| log == "All participants have an accepted Tee status"),
-        "resolve_verification should resume the contract, logs: {:?}",
-        resolve_outcome.logs
-    );
+        .skip_while(|outcome| outcome.executor_id != *verifier.id())
+        .find(|outcome| outcome.executor_id == *setup.contract.id())
+        .expect("the resolve_verification receipt must run on the contract after the verifier");
     let budget = Gas::from_tgas(
         get_config(&setup.contract)
             .await
             .unwrap()
             .resolve_verification_tera_gas,
     );
-    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - GAS_HEADROOM_PERCENT) / 100);
     assert!(
         resolve_outcome.gas_burnt <= max_allowed,
         "resolve_verification burnt {} of the {budget} budget, leaving less than \
-         {HEADROOM_PERCENT}% headroom",
+         {GAS_HEADROOM_PERCENT}% headroom",
         resolve_outcome.gas_burnt,
     );
+    // Nobody responds, so the request stays pending; only its admission to the queue matters.
+    let _pending_request =
+        DomainResponseTest::new(&mut StdRng::seed_from_u64(42), &domain_key, submitter.id())
+            .submit_request_ensure_included(&submitter, &setup.contract)
+            .await
+            .expect("the contract should accept requests once every participant has attested");
+}
+
+/// Initializes `contract` as Running with `parameters` and a single CaitSith Sign domain.
+async fn init_running_with_sign_domain(
+    contract: &SandboxMpcContract,
+    parameters: GovernanceThresholdParameters,
+) -> DomainKey {
+    let (public_key, secret_key) = make_key_for_domain(dtos::Curve::Secp256k1);
+    let domain_config = dtos::DomainConfig {
+        id: dtos::DomainId(0),
+        protocol: dtos::Protocol::CaitSith,
+        reconstruction_threshold: dtos::ReconstructionThreshold::new(
+            parameters.threshold().value(),
+        ),
+        purpose: dtos::DomainPurpose::Sign,
+    };
+    let keyset = dtos::Keyset::new(
+        EpochId::new(0),
+        vec![dtos::KeyForDomain {
+            attempt: AttemptId::new(),
+            domain_id: domain_config.id,
+            key: public_key.clone().into(),
+        }],
+    );
+    init_contract_running(
+        contract,
+        vec![domain_config.clone()],
+        dtos::DomainId(1),
+        keyset,
+        parameters,
+        None,
+    )
+    .await;
+    DomainKey {
+        domain_config,
+        domain_secret_key: secret_key,
+        domain_public_key: public_key.try_into().unwrap(),
+    }
 }

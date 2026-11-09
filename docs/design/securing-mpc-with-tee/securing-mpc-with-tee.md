@@ -615,7 +615,7 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 _Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
-Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out; instead the contract stops accepting signing requests until every participant is valid again or a vote replaces the participant set.
+Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out; instead the contract stops accepting signing requests until every participant attestation is valid again or a vote replaces the participant set.
 
 # CVM Upgrades
 

@@ -7,7 +7,7 @@ use crate::primitives::thresholds::{
     GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{Node, TeeValidationResult};
+use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
@@ -99,11 +99,12 @@ impl MpcContract {
     /// consumes one attestation-storage grant, prepaid for the node's account by whoever
     /// onboards it; a re-attestation under a key the account already owns consumes none.
     ///
-    /// A contract that is not accepting requests, as after [`Self::init`], resumes once a stored
-    /// attestation leaves every participant with an accepted TEE state.
+    /// A contract that is not accepting requests resumes once a stored attestation leaves every
+    /// participant with an accepted TEE state.
     ///
-    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`](crate::tee::tee_state::AttestationSubmissionError::TlsKeyOwnedByOtherAccount)
-    /// if the node stored under the TLS key belongs to another account.
+    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`]
+    /// if the node stored under the TLS key belongs to another account, or another participant
+    /// uses the TLS key.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -176,6 +177,16 @@ impl MpcContract {
     ) -> Result<(), Error> {
         self.tee_state
             .assert_tls_key_claimable(account_id, tls_public_key)?;
+        // TODO(#823): remove once mock attestations are gone. An initial participant has no node
+        // until its first attestation, so until then only the participant set reserves its TLS key.
+        if self
+            .protocol_state
+            .active_participants()
+            .account_with_tls_key(tls_public_key)
+            .is_some_and(|owner| owner != account_id)
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
+        }
         let is_reattestation = self.tee_state.node_of(account_id, tls_public_key).is_some();
         if !is_reattestation && self.grants_for(account_id) == 0 {
             return Err(InvalidParameters::NoAttestationStorageGrant {
@@ -200,8 +211,8 @@ impl MpcContract {
         }
     }
 
-    /// Lets a contract that is not accepting requests resume as soon as the last participant
-    /// attests, instead of at the next [`Self::verify_tee`] call.
+    /// Starts accepting requests if the contract is Running and every participant has a valid
+    /// attestation.
     fn resume_if_all_participants_attested(&mut self) {
         if self.accept_requests {
             return;
@@ -276,9 +287,8 @@ impl MpcContract {
     /// Returns `false` and stops the contract from accepting new signature requests or responses,
     /// in case the participants running in an accepted TEE State are too few for the
     /// GovernanceThreshold or for any domain's signing protocol.
-    /// While the contract is not accepting requests, as after [`Self::init`] and
-    /// [`Self::init_running`], it kicks out no one and returns `false` until every participant has
-    /// an accepted TEE state.
+    /// While the contract is not accepting requests, it kicks out no one and returns `false`
+    /// until every participant has an accepted TEE state.
     /// Also retires launcher hashes that no current participant uses (see
     /// [`dtos::Config::launcher_hash_unused_ttl_seconds`]).
     #[handle_result]
@@ -915,6 +925,30 @@ mod tests {
 
         // Then
         assert_eq!(contract.accept_requests, expected_accept_requests);
+    }
+
+    #[test]
+    fn submit_participant_info__should_reject_an_unattested_participants_tls_key_from_another_account()
+     {
+        // Given
+        let participants = gen_participants(3);
+        let mut contract = freshly_initialized_contract(&participants, 2);
+        let (_, _, participant_info) = &participants.participants()[0];
+
+        // When
+        let result = prepay_and_submit_mock_attestation(
+            &mut contract,
+            &gen_account_id(),
+            participant_info.tls_public_key.clone(),
+        );
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::AttestationSubmission(
+                AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+            ))
+        );
     }
 
     /// Two of three participants attest, enough for the GovernanceThreshold of two, and one
