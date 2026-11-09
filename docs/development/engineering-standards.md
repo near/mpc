@@ -10,7 +10,7 @@ To ensure consistent high quality code, every PR must conform to the following p
 - [Name capability traits after the action](#name-capability-traits-after-the-action)
 - [Write helpful code comments](#write-helpful-code-comments)
 - [Declare referencing types first](#declare-referencing-types-first)
-- [Separate wire-format types from storage and internal types](#separate-wire-format-types-from-storage-and-internal-types)
+- [Separate wire format, storage and internal types](#separate-wire-format-storage-and-internal-types)
 
 Beyond our engineering standards,
 The Rust library team maintains a set of [API guidelines](https://rust-lang.github.io/api-guidelines/about.html).
@@ -394,26 +394,30 @@ When two types reference each other, declare the one closer to the public API fi
 
 **Scope.** This applies to new code, and to files you are already reworking. It is not a request to reorder existing files in bulk.
 
-## Separate wire-format types from storage and internal types
+## Separate wire format, storage and internal types
 
-We prefer distinct types for the wire format and for internal data.
-For example, the crate `near-mpc-contract-interface` defines the wire format
-of the MPC contract, while the contract and the node each have their own
-internal representations.
+We prefer distinct types for the wire format, for storage and for internal
+use. For example, the crate `near-mpc-contract-interface` defines the wire
+format of the MPC contract, while the contract and the node each have their
+own storage and internal representations.
 
-Wire-format and internal types evolve for different reasons. Wire types are
-an ABI and must stay compatible across versions of the node and the contract.
-Storage and internal types may change freely based on the needs of the
-component: versioning and migrations, trait derives, defaults, restructuring.
+These types evolve for different reasons:
+- Wire format types must stay backwards compatible across versions of their
+  consumers.
+- Storage types must stay backwards and forwards compatible across versions
+  of the same component.
+- Internal types may change with the needs of the component and its logic.
 
-Keeping the two separate from the start is simpler than introducing a
-separation once it is needed. Maintaining separate types, even when they are
-mirror images of one another, is a low cost to ensure this boundary is obvious in the code.
+If the situation allows, wire format and storage types may be used
+internally, but if a type needs to be used for anything beyond deserializing
+and passing through, create an internal type and convert it at the boundary.
+Internal types are often modified freely, and a change that breaks backwards
+or forwards compatibility is not always obvious during review.
 
-Conventions:
-- New types: use wire-format types for the wire format only. Introduce
-  separate storage and internal types, even if they start as 1:1 copies.
-- Existing types:
-    - keep separate storage/wire types where they already exist.
-    - Existing wire types that are used for storage may stay as-is, if there is no
-      need to retroactively duplicate them.
+In practice:
+- Pin the serialized form of wire format and storage types with an `insta`
+  snapshot test (e.g. `test_abi_has_not_changed` or
+  `db_key_layout__is_stable`), so a compatibility break is visible during
+  review.
+- Don't embed wire format types in storage types or vice versa.
+
