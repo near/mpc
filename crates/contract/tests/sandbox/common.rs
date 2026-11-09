@@ -106,12 +106,8 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
 }
 
 pub async fn init() -> (SandboxWorker, Contract) {
-    init_with_wasm(current_contract()).await
-}
-
-pub async fn init_with_wasm(wasm: &[u8]) -> (SandboxWorker, Contract) {
     let worker = test_utils::sandbox::start_sandbox().await.unwrap();
-    let contract = worker.dev_deploy(wasm).await.unwrap();
+    let contract = worker.dev_deploy(current_contract()).await.unwrap();
     (worker, contract)
 }
 
@@ -174,6 +170,7 @@ impl SandboxTestSetup {
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
             contract_wasm: current_contract,
+            protocol_version: None,
         }
     }
 
@@ -192,6 +189,7 @@ pub struct SandboxTestSetupBuilder {
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
     contract_wasm: fn() -> &'static [u8],
+    protocol_version: Option<u32>,
 }
 
 impl SandboxTestSetupBuilder {
@@ -223,6 +221,12 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Runs the sandbox at `protocol_version` instead of its binary's latest.
+    pub fn at_protocol_version(mut self, protocol_version: u32) -> Self {
+        self.protocol_version = Some(protocol_version);
+        self
+    }
+
     /// Deploys [`contract_build::current_contract_with_pinned_clock`].
     pub fn with_pinned_clock(mut self) -> Self {
         self.contract_wasm = contract_build::current_contract_with_pinned_clock;
@@ -230,7 +234,12 @@ impl SandboxTestSetupBuilder {
     }
 
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = init_with_wasm((self.contract_wasm)()).await;
+        let worker = match self.protocol_version {
+            Some(version) => test_utils::sandbox::start_sandbox_at_protocol(version).await,
+            None => test_utils::sandbox::start_sandbox().await,
+        }
+        .unwrap();
+        let contract = worker.dev_deploy((self.contract_wasm)()).await.unwrap();
         let contract = SandboxMpcContract::from_deployed(&worker, contract);
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
