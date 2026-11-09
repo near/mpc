@@ -94,6 +94,8 @@ pub struct MpcClusterConfig {
     pub triples_to_buffer: usize,
     /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
     pub sandbox_version: String,
+    /// Protocol the sandbox starts at. If `None`, the binary's latest.
+    pub sandbox_protocol_version: Option<u32>,
     /// Parent of the directory holding all test artifacts (logs, configs, DB).
     /// If `None`, `E2E_HOME_BASE` is used, else the system temp dir.
     pub home_base: Option<PathBuf>,
@@ -214,6 +216,7 @@ impl MpcClusterConfig {
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
+            sandbox_protocol_version: None,
             home_base: None,
             initial_participant_indices: vec![],
             migration_targets: vec![],
@@ -307,7 +310,12 @@ impl MpcCluster {
         let threshold = config.threshold;
         let ports = TestPorts::e2e_tests(config.port_seed);
 
-        let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
+        let sandbox = NearSandbox::start(
+            &ports,
+            &config.sandbox_version,
+            config.sandbox_protocol_version,
+        )
+        .await?;
         let root_secret_key: near_kit::signer::SecretKey = SANDBOX_ROOT_SECRET_KEY
             .parse()
             .context("invalid sandbox root secret key")?;
