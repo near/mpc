@@ -406,9 +406,9 @@ an ABI and must stay compatible across versions of the node and the contract.
 Storage and internal types may change freely based on the needs of the
 component: versioning and migrations, trait derives, defaults, restructuring.
 
-Keeping the two separate from the start is cheaper than introducing a
+Keeping the two separate from the start is simpler than introducing a
 separation once it is needed. Maintaining separate types, even when they are
-mirror images of one another, is generally also very cheap.
+mirror images of one another, is a low cost to ensure this boundary is obvious in the code.
 
 Conventions:
 - New types: use wire-format types for the wire format only. Introduce
