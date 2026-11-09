@@ -3,8 +3,8 @@ use crate::sandbox::utils::{
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{
-        assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
-        submit_participant_info,
+        assert_running_return_threshold, attestation_storage_fee, get_state,
+        prepay_and_submit_participant_info, submit_participant_info,
     },
     sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
     shared_key_utils::{DomainKey, make_key_for_domain},
@@ -319,7 +319,7 @@ impl SandboxTestSetupBuilder {
             init_contract(&contract, threshold_parameters, self.init_config).await;
         }
 
-        submit_attestations(&contract, &accounts, &participants).await;
+        prepay_and_submit_attestations(&contract, &accounts, &participants).await;
 
         SandboxTestSetup {
             worker,
@@ -491,6 +491,33 @@ pub async fn submit_attestations(
         })
         .collect();
     futures::future::join_all(futures).await;
+}
+
+pub async fn prepay_and_submit_attestations(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+    participants: &Participants,
+) {
+    let fee = attestation_storage_fee(contract).await.unwrap();
+    execute_async_handle_calls(accounts, contract, |handle| async move {
+        let account_id = handle.caller().0.id().clone();
+        handle.prepay_attestation_storage(account_id, 1, fee).await
+    })
+    .await
+    .unwrap();
+    execute_async_handle_calls(accounts, contract, |handle| async move {
+        let participant = participants
+            .info(handle.caller().0.id())
+            .expect("every account must be a participant");
+        handle
+            .submit_participant_info(
+                Attestation::Mock(MockAttestation::Valid),
+                participant.tls_public_key.clone(),
+            )
+            .await
+    })
+    .await
+    .unwrap();
 }
 
 /// This function assumes that the accounts are sorted by participant id.

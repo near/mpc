@@ -483,17 +483,16 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, destination_of, initializing_state, make_public_key_for_curve,
-        resharing_state, setup_tee_test_contract, submit_valid_attestations,
+        basic_setup, destination_of, init_running_with_domain, initializing_state,
+        prepay_and_attest_all_participants, prepay_and_submit_mock_attestation, resharing_state,
+        running_state, setup_tee_test_contract, submit_valid_attestations,
     };
     use crate::config::Config;
-    use crate::primitives::key_state::{
-        AttemptId, AuthenticatedAccountId, EpochId, KeyForDomain, Keyset,
-    };
+    use crate::primitives::key_state::AuthenticatedAccountId;
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        create_node_id, gen_account_id, gen_participants, node_id_for,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id, gen_account_id,
+        gen_participants, node_id_for,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
@@ -513,6 +512,7 @@ mod tests {
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use rand::SeedableRng;
     use rand::rngs::OsRng;
     use rstest::rstest;
     use std::panic;
@@ -554,26 +554,6 @@ mod tests {
             report: verified_report(),
             collateral_dates: collateral_dates(),
         }
-    }
-
-    fn prepay_and_submit_mock_attestation(
-        contract: &mut MpcContract,
-        account_id: &AccountId,
-        tls_public_key: Ed25519PublicKey,
-    ) -> Result<(), Error> {
-        contract
-            .available_attestation_grants
-            .insert(account_id.clone(), 1);
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(env::block_timestamp())
-                .build()
-        );
-        contract
-            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), tls_public_key)
-            .map(|_| ())
     }
 
     fn must_store_expired_node(contract: &mut MpcContract, node_id: NodeId) {
@@ -686,7 +666,7 @@ mod tests {
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
-        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
         let contract_account_id = env::current_account_id();
         let context = VMContextBuilder::new()
             .current_account_id(contract_account_id.clone())
@@ -695,7 +675,6 @@ mod tests {
             .build();
         testing_env!(context);
 
-        contract.tee_state = TeeState::default();
         whitelist_dstack_measurements(
             &mut contract.tee_state,
             image_digest(),
@@ -943,30 +922,14 @@ mod tests {
                 .unwrap();
 
         // Set up contract in Running state
-        let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
-            id: domain_id,
+        let domain = DomainConfig {
+            id: DomainId::default(),
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
-        }];
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let key_for_domain = KeyForDomain {
-            domain_id,
-            key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
         };
-        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
-
-        let mut contract = MpcContract::init_running(
-            domains.clone(),
-            DomainId(1),
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
+        let mut contract = init_running_with_domain(&parameters, domain.clone());
+        prepay_and_attest_all_participants(&mut contract);
 
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
 
@@ -992,6 +955,7 @@ mod tests {
             panic!("expected Running state");
         };
         let running_state_before = running_state_before.clone();
+        let next_epoch_id = running_state_before.keyset.epoch_id.next();
 
         // Set time to the second after expiry
         let (first_account_id, _, _) = &participant_list[0];
@@ -1041,11 +1005,7 @@ mod tests {
         let expected_resharing_state = ResharingContractState {
             previous_running_state: running_state_before,
             reshared_keys: Vec::new(),
-            resharing_key: KeyEvent::new(
-                keyset.epoch_id.next(),
-                domains[0].clone(),
-                expected_params,
-            ),
+            resharing_key: KeyEvent::new(next_epoch_id, domain, expected_params),
             cancellation_requests: BTreeSet::new(),
             per_domain_thresholds: BTreeMap::new(),
         };
@@ -1070,25 +1030,8 @@ mod tests {
             GovernanceThreshold::new(governance_threshold),
         )
         .unwrap();
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let keyset = Keyset::new(
-            EpochId::new(0),
-            vec![KeyForDomain {
-                domain_id: domain.id,
-                key: pk.try_into().unwrap(),
-                attempt: AttemptId::new(),
-            }],
-        );
-        let next_domain_id = DomainId(domain.id.0 + 1);
-        let mut contract = MpcContract::init_running(
-            vec![domain],
-            next_domain_id,
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
+        let mut contract = init_running_with_domain(&parameters, domain);
+        prepay_and_attest_all_participants(&mut contract);
 
         // Expire the last participant's attestation so a kickout drops the set to
         // `participant_count - 1`.
@@ -1298,7 +1241,8 @@ mod tests {
     }
 
     fn measure_grant_row_bytes() -> u64 {
-        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut rng);
         testing_env!(VMContextBuilder::new().build());
         let account: AccountId = "a".repeat(64).parse().unwrap();
 
