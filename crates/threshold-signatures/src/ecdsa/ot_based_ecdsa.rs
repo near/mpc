@@ -2,7 +2,6 @@ pub mod presign_and_sign;
 pub mod triples;
 
 mod presign;
-mod sign;
 
 #[cfg(test)]
 mod test;
