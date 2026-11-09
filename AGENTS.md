@@ -169,6 +169,13 @@ In doc comments, reference other items with rustdoc intra-doc links (`` [`Foo`] 
 
 See `docs/development/engineering-standards.md` §Write helpful code comments for the full rationale and a `Don't` / `Do` example.
 
+### Separate wire-format types from storage and internal types
+
+Wire-format types should be used only on the wire. If a type needs to be stored, or used for anything beyond deserializing and passing through, convert it to an internal type at the boundary, ideally following our parse-don’t-validate philosophy so invariants are established once and trusted downstream.
+
+Existing wire-format types that are already used internally or in storage may continue to be used that way, but prefer introducing the separation when making significant changes to that code.
+
+
 ## Test Terminology
 
 - **Unit test**: Rust test in `/src` folder
