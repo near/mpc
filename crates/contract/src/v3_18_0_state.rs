@@ -166,7 +166,7 @@ fn assert_participants_own_their_tls_keys(
 mod tests {
     use super::*;
     use crate::{
-        api::test_utils::destination_of, primitives::test_utils::node_id_for,
+        api::test_utils::destination_of, primitives::test_utils::node_for,
         state::test_utils::gen_running_state, storage_keys::StorageKey,
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
@@ -265,10 +265,8 @@ mod tests {
         let running_state = old_running_state();
         let (account_id, _, _) = running_state.parameters.participants().participants()[0].clone();
         let mut old = old_contract(running_state);
-        old.node_migrations.set_destination_node_info(
-            account_id.clone(),
-            destination_of(&node_id_for(&account_id)),
-        );
+        old.node_migrations
+            .set_destination_node_info(account_id.clone(), destination_of(&node_for(&account_id)));
 
         // When, Then
         let _: crate::MpcContract = old.into();

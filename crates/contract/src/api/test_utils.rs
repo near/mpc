@@ -8,13 +8,12 @@ use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
 use crate::primitives::participants::Participants;
 use crate::primitives::test_utils::{
     NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_tee_verifier_account_id,
-    gen_participant_url, gen_participants, infer_purpose_from_protocol, node_id_for,
+    gen_participant_url, gen_participants, infer_purpose_from_protocol, node_for,
 };
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
-use crate::tee::tee_state::NodeId;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
     ReconstructionThreshold,
@@ -34,6 +33,8 @@ use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_core::Group as _;
 use threshold_signatures::frost_ed25519::Ed25519Group;
 use threshold_signatures::frost_secp256k1::Secp256K1Group;
+
+pub(crate) const FORWARDER_ACCOUNT_ID: &str = "forwarder.near";
 
 #[derive(Debug)]
 pub(crate) enum SharedSecretKey {
@@ -252,37 +253,26 @@ pub(crate) fn must_get_attested_signer_key(
 
 /// Temporarily sets the testing environment so that calls appear
 /// to come from an attested MPC node registered in the contract's `tee_state`.
-/// Returns the [`AccountId`] of the node used.
-pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContract) -> AccountId {
-    let active_participant_pks: Vec<dtos::Ed25519PublicKey> = contract
+pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContract) {
+    let node = contract
         .protocol_state
         .active_participants()
         .participants()
         .iter()
-        .map(|(_, _, participant_info)| participant_info.tls_public_key.clone())
-        .collect();
-
-    let node_id = contract
-        .tee_state
-        .nodes
-        .iter()
-        .find(|(public_key, _)| active_participant_pks.contains(public_key))
-        .expect("No attested participants in tee_state")
-        .1
-        .id();
-
-    // Build a new simulated environment with this node as caller.
-    let mut ctx_builder = VMContextBuilder::new();
-    ctx_builder
-        .signer_account_id(node_id.account_id.clone())
-        .predecessor_account_id(node_id.account_id.clone())
-        .signer_account_pk(near_sdk::PublicKey::from(
-            node_id.account_public_key.clone(),
-        ))
-        .attached_deposit(NearToken::from_yoctonear(1));
-
-    testing_env!(ctx_builder.build());
-    node_id.account_id.clone()
+        .find_map(|(account_id, _, participant_info)| {
+            contract
+                .tee_state
+                .node_of(account_id, &participant_info.tls_public_key)
+        })
+        .expect("No attested participants in tee_state");
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(node.owner.clone())
+            .predecessor_account_id(node.owner.clone())
+            .signer_account_pk(node.signer_public_key.clone().into())
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build()
+    );
 }
 
 pub(crate) fn setup_tee_test_contract(
@@ -346,30 +336,35 @@ pub(crate) fn submit_valid_attestations(
     }
 }
 
-pub(crate) fn must_attest_new_node(contract: &mut MpcContract, account_id: &AccountId) -> NodeId {
-    let node_id = node_id_for(account_id);
+pub(crate) fn must_attest_new_node(
+    contract: &mut MpcContract,
+    account_id: &AccountId,
+) -> dtos::NodeInfo {
+    let node = node_for(account_id);
     contract
         .tee_state
         .verify_and_store_mock(
-            node_id.clone(),
+            node.clone(),
             MpcMockAttestation::Valid,
             Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
         )
         .expect("attestation insertion should succeed");
-    node_id
+    node
 }
 
-pub(crate) fn destination_of(node_id: &NodeId) -> dtos::DestinationNodeInfo {
+pub(crate) fn destination_of(node: &dtos::NodeInfo) -> dtos::DestinationNodeInfo {
     dtos::DestinationNodeInfo {
-        signer_account_pk: node_id.account_public_key.clone(),
+        signer_account_pk: node.account_public_key.clone(),
         destination_node_info: dtos::ParticipantInfo {
             url: gen_participant_url(0),
-            tls_public_key: node_id.tls_public_key.clone(),
+            tls_public_key: node.tls_public_key.clone(),
         },
     }
 }
 
-pub(crate) fn forwarded_participant_call_contract() -> MpcContract {
+/// Returns a Running contract whose current call has its only participant as signer and
+/// [`FORWARDER_ACCOUNT_ID`] as predecessor.
+pub(crate) fn running_contract_called_by_participant_via_forwarder() -> MpcContract {
     let running_state = gen_running_state(1);
     let participant = running_state.parameters.participants().participants()[0]
         .0
@@ -379,7 +374,7 @@ pub(crate) fn forwarded_participant_call_contract() -> MpcContract {
 
     let ctx = VMContextBuilder::new()
         .signer_account_id(participant)
-        .predecessor_account_id("forwarder.near".parse().unwrap())
+        .predecessor_account_id(FORWARDER_ACCOUNT_ID.parse().unwrap())
         .build();
     testing_env!(ctx);
 
