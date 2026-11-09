@@ -1,9 +1,8 @@
 #![allow(non_snake_case)]
 
 use foreign_chain_inspector::Verdict;
-use std::time::Duration;
+use std::{assert_matches, time::Duration};
 
-use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     aptos::{

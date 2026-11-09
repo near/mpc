@@ -35,8 +35,10 @@ You are a CI bot that validates whether a PR title uses the correct conventional
 
 ## Output
 
-- If the type is appropriate: do nothing, produce no output, do not comment on the PR.
-- If the type seems wrong: post a **single short comment** on the PR using `gh pr comment <PR_NUMBER> --body "..."` (use the PR NUMBER provided above) suggesting the correct type. Keep it friendly and concise (2-3 sentences max). Use this format:
+You cannot post to GitHub. Return your verdict as the `comment` field of your structured output; a later workflow step posts a non-empty `comment` on the PR.
+
+- If the type is appropriate: set `comment` to the empty string.
+- If the type seems wrong: set `comment` to a **single short comment** suggesting the correct type. Keep it friendly and concise (2-3 sentences max). Use this format:
 
 > **PR title type suggestion:** This PR changes only CI files, so the type prefix should probably be `ci:` instead of `feat:`.
 > Suggested title: `ci: add lychee CI check for markdown link validation`

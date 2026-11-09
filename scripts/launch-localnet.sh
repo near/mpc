@@ -5,7 +5,7 @@
 # Requirements: jq envsubst near neard mpc-node
 #
 # Usage:
-#   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]
+#   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>] [--rpc-preset <mainnet|testnet>]
 
 set -euo pipefail
 
@@ -21,6 +21,11 @@ N=2
 
 # threshold, currently must be > 1 and at least 60% of N
 THRESHOLD=2
+
+# Embedded foreign chain preset (e.g. testnet|mainnet). When enabled, one should
+# also pass provider credentials (<PROVIDER>_API_KEY + slug (when present)) in env vars.
+# For full list see use_embedded_foreign_chains().
+RPC_PRESET=""
 
 # Base ports used by the mpc-nodes
 # Currently mpc-node i uses port
@@ -68,9 +73,13 @@ while [[ $# -gt 0 ]]; do
     THRESHOLD="$2"
     shift 2
     ;;
+  --rpc-preset)
+    RPC_PRESET="$2"
+    shift 2
+    ;;
   *)
     echo "Unknown parameter: $1"
-    echo "Usage: $0 [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]"
+    echo "Usage: $0 [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>] [--rpc-preset <mainnet|testnet>]"
     exit 1
     ;;
   esac
@@ -165,6 +174,10 @@ EOF
 
     WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/development/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
 
+    if [[ -n "$RPC_PRESET" ]]; then
+      use_embedded_foreign_chains ~/.near/$node_name/config.yaml
+    fi
+
   done
 
   echo "Starting mpc nodes"
@@ -188,11 +201,9 @@ EOF
     node_name="mpc-node-$i.test.near"
 
     NODE_PUBKEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_signer_public_key")
-    NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
     # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" &
     pids_adding_keys+=($!)
   done
 
@@ -266,11 +277,36 @@ EOF
     run_quiet_on_success "$(mpc_tx sign "file-args docs/development/localnet/args/${args_file}.json" '100 yoctoNEAR' "${signer_account}")"
   done
   run_quiet_on_success "$(mpc_tx request_app_private_key 'file-args docs/development/localnet/args/ckd.json' '100 yoctoNEAR' "${signer_account}")"
-  for chain in bitcoin abstract aptos sui; do
-    run_quiet_on_success "$(mpc_tx verify_foreign_transaction "file-args docs/development/localnet/args/verify_foreign_tx_${chain}.json" '100 yoctoNEAR' "${signer_account}")"
-  done
 
   read -rp "Press Enter to finish the script and run clean-up steps..."
+}
+
+# Replace the config's `foreign_chains` with the embedded preset and the credentials found in env.
+use_embedded_foreign_chains() {
+  local config="$1"
+  local stripped
+  stripped=$(awk '/^foreign_chains:/ { skip = 1; next } skip && /^[^ #]/ { skip = 0 } !skip' "$config")
+
+  {
+    echo "$stripped"
+    echo "foreign_chains:"
+    echo "  rpc_preset: ${RPC_PRESET}"
+    local credentials=""
+    local provider var
+    for provider in alchemy chainstack fluxrpc geomi quicknode tatum; do
+      var="$(echo "$provider" | tr '[:lower:]' '[:upper:]')_API_KEY"
+      [[ -n "${!var:-}" ]] || continue
+      credentials+="    ${provider}:\n      env: ${var}\n"
+      if [[ "$provider" == quicknode ]]; then
+        [[ -n "${QUICKNODE_SLUG:-}" ]] || die "QUICKNODE_API_KEY is set but QUICKNODE_SLUG is not"
+        credentials+="      slug: ${QUICKNODE_SLUG}\n"
+      fi
+    done
+    if [[ -n "$credentials" ]]; then
+      echo "  credentials:"
+      printf '%b' "$credentials"
+    fi
+  } >"$config"
 }
 
 die() {

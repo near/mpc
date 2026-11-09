@@ -306,7 +306,6 @@ mod tests {
         },
     };
 
-    use assert_matches::assert_matches;
     use bytes::Bytes;
     use ed25519_dalek::SigningKey;
     use http_body_util::Full;
@@ -317,7 +316,7 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use serial_test::serial;
-    use std::sync::Arc;
+    use std::{assert_matches, sync::Arc};
     use tokio::sync::{RwLock, watch};
 
     const BACKUP_ENCRYPTION_KEY: [u8; 32] = [7u8; 32];

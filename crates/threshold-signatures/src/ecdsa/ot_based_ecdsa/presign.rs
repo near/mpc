@@ -1,23 +1,21 @@
 use crate::ReconstructionThreshold;
 use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
-use crate::ecdsa::{
-    AffinePoint, KeygenOutput, ProjectivePoint, RerandomizationArguments, Scalar, Secp256K1Sha256,
-    Tweak,
-};
+use crate::ecdsa::{AffinePoint, KeygenOutput, ProjectivePoint, Scalar, Secp256K1Sha256, Tweak};
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
-use crate::protocol::helpers::recv_from_others;
-use crate::protocol::{
-    Protocol,
-    internal::{Comms, SharedChannel, make_protocol},
-};
-use serde::{Deserialize, Serialize};
-use subtle::{Choice, ConstantTimeEq};
+use crate::protocol::{helpers::recv_from_others, internal::SharedChannel};
 use zeroize::ZeroizeOnDrop;
 
 type Secp256 = Secp256K1Sha256;
 
 /// The arguments needed to create a presignature.
+///
+/// Each of [`triple0`](Self::triple0) and [`triple1`](Self::triple1) must be an unmodified output
+/// of [`generate_triple`](super::triples::generate_triple) or
+/// [`generate_triple_many`](super::triples::generate_triple_many), used at most once: in one slot
+/// of one run of [`presign_and_sign`](super::presign_and_sign::presign_and_sign),
+/// aborted runs included. A reused or modified triple leaks the private key, and no participant
+/// can detect this.
 #[derive(Debug, Clone)]
 pub struct PresignArguments {
     /// The first triple's public information, and our share.
@@ -31,11 +29,11 @@ pub struct PresignArguments {
     pub threshold: ReconstructionThreshold,
 }
 
-/// The output of the presigning protocol.
+/// The output of the presigning rounds.
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
-#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(ZeroizeOnDrop)]
 pub struct PresignOutput {
     /// The public nonce commitment.
     #[zeroize(skip)]
@@ -46,29 +44,10 @@ pub struct PresignOutput {
     pub sigma: Scalar,
 }
 
-impl_secret_debug!(PresignOutput {
-    show: [big_r],
-    redact: [k, sigma]
-});
-
-impl ConstantTimeEq for PresignOutput {
-    fn ct_eq(&self, other: &Self) -> Choice {
-        self.big_r.ct_eq(&other.big_r) & self.k.ct_eq(&other.k) & self.sigma.ct_eq(&other.sigma)
-    }
-}
-
-impl PartialEq for PresignOutput {
-    fn eq(&self, other: &Self) -> bool {
-        self.ct_eq(other).into()
-    }
-}
-impl Eq for PresignOutput {}
-
 impl PresignOutput {
     /// The same presignature under the key derived with `tweak`: `sigma' = sigma + tweak * k`.
     ///
-    /// Only sound when the presignature is consumed by the computation that produced it; a
-    /// stored one must go through [`RerandomizedPresignOutput::rerandomize_presign`].
+    /// Only sound when the presignature is consumed by the computation that produced it.
     pub(crate) fn with_tweak(&self, tweak: &Tweak) -> Self {
         Self {
             big_r: self.big_r,
@@ -78,105 +57,8 @@ impl PresignOutput {
     }
 }
 
-/// The output of the presigning protocol.
-/// Contains the signature precomputed elements
-/// independently of the message
-#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
-pub struct RerandomizedPresignOutput {
-    /// The rerandomized public nonce commitment.
-    #[zeroize(skip)]
-    pub big_r: AffinePoint,
-    /// Our rerandomized share of the nonce value.
-    pub k: Scalar,
-    /// Our rerandomized share of the sigma value.
-    pub sigma: Scalar,
-}
-
-impl_secret_debug!(RerandomizedPresignOutput {
-    show: [big_r],
-    redact: [k, sigma]
-});
-
-impl RerandomizedPresignOutput {
-    pub fn rerandomize_presign(
-        presignature: &PresignOutput,
-        args: &RerandomizationArguments,
-    ) -> Result<Self, ProtocolError> {
-        if presignature.big_r != args.big_r {
-            return Err(ProtocolError::IncompatibleRerandomizationInputs);
-        }
-        let delta = args.derive_randomness()?;
-        if delta.is_zero().into() {
-            return Err(ProtocolError::ZeroScalar);
-        }
-
-        // cannot be zero due to the previous check
-        let inv_delta = delta.invert().unwrap();
-
-        // delta . R
-        let rerandomized_big_r = presignature.big_r * delta;
-
-        //  (sigma + tweak * k) * delta^{-1}
-        let rerandomized_sigma =
-            (presignature.sigma + args.tweak.value() * presignature.k) * inv_delta;
-
-        // k * delta^{-1}
-        let rerandomized_k = presignature.k * inv_delta;
-
-        Ok(Self {
-            big_r: rerandomized_big_r.into(),
-            k: rerandomized_k,
-            sigma: rerandomized_sigma,
-        })
-    }
-
-    #[cfg(test)]
-    /// Outputs the same elements as in the [`PresignatureOutput`]
-    /// Used for testing the core schemes without rerandomization
-    pub fn new_without_rerandomization(presignature: &PresignOutput) -> Self {
-        Self {
-            big_r: presignature.big_r,
-            k: presignature.k,
-            sigma: presignature.sigma,
-        }
-    }
-}
-
-/// A rerandomized presignature is consumed by the same signing round as a plain one.
-impl From<RerandomizedPresignOutput> for PresignOutput {
-    fn from(presignature: RerandomizedPresignOutput) -> Self {
-        Self {
-            big_r: presignature.big_r,
-            k: presignature.k,
-            sigma: presignature.sigma,
-        }
-    }
-}
-
-/// Maximum incoming buffer entries for the OT-based ECDSA presign protocol.
-pub(crate) const OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 2;
-
-/// The presignature protocol.
-///
-/// This is the first phase of performing a signature, in which we perform
-/// all the work we can do without yet knowing the message to be signed.
-///
-/// This work does depend on the private key though, and it's crucial
-/// that a presignature is never reused.
-pub fn presign(
-    participants: &[Participant],
-    me: Participant,
-    args: PresignArguments,
-) -> Result<impl Protocol<Output = PresignOutput> + use<>, InitializationError> {
-    let participants = validate_presign_arguments(participants, me, &args)?;
-
-    let ctx = Comms::with_buffer_capacity(OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
-    let fut = do_presign(ctx.shared_channel(), participants, me, args);
-    Ok(make_protocol(ctx, fut))
-}
-
 /// Checks the participant set against `args` and returns it as a [`ParticipantList`].
-pub(crate) fn validate_presign_arguments(
+pub fn validate_presign_arguments(
     participants: &[Participant],
     me: Participant,
     args: &PresignArguments,
@@ -218,18 +100,9 @@ pub(crate) fn validate_presign_arguments(
     Ok(participants)
 }
 
-async fn do_presign(
-    mut chan: SharedChannel,
-    participants: ParticipantList,
-    me: Participant,
-    args: PresignArguments,
-) -> Result<PresignOutput, ProtocolError> {
-    presign_rounds(&mut chan, &participants, me, args).await
-}
-
 /// The two presigning rounds, run on a caller-owned channel so that a longer protocol can
 /// continue on the same channel with further waitpoints.
-pub(crate) async fn presign_rounds(
+pub async fn presign_rounds(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     me: Participant,
@@ -357,126 +230,8 @@ pub(crate) async fn presign_rounds(
 #[allow(non_snake_case)]
 mod test {
     use super::*;
-    use crate::{
-        ecdsa::ot_based_ecdsa::triples::test::deal,
-        test_utils::{
-            GenProtocol, MockCryptoRng, generate_participants, generate_test_keys,
-            make_keygen_output, run_protocol,
-        },
-    };
+    use crate::test_utils::MockCryptoRng;
     use rand_core::SeedableRng;
-    use rstest::rstest;
-
-    #[test]
-    fn test_presign() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-
-        let participants = generate_participants(4);
-        let original_threshold: usize = 2;
-        let (f, pk) = generate_test_keys(original_threshold - 1, &mut rng);
-
-        let threshold = 2;
-
-        let (triple0_pub, triple0_shares) =
-            deal(&mut rng, &participants, original_threshold.into()).unwrap();
-        let (triple1_pub, triple1_shares) =
-            deal(&mut rng, &participants, original_threshold.into()).unwrap();
-
-        let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
-
-        for ((p, triple0), triple1) in participants
-            .iter()
-            .take(3)
-            .zip(triple0_shares)
-            .zip(triple1_shares)
-        {
-            let keygen_out = make_keygen_output(&f, &pk, *p);
-
-            let protocol = presign(
-                &participants[..3],
-                *p,
-                PresignArguments {
-                    triple0: (triple0, triple0_pub.clone()),
-                    triple1: (triple1, triple1_pub.clone()),
-                    keygen_out,
-                    threshold: threshold.into(),
-                },
-            )
-            .unwrap();
-            protocols.push((*p, Box::new(protocol)));
-        }
-
-        let result = run_protocol(protocols).unwrap();
-
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[0].1.big_r, result[1].1.big_r);
-        assert_eq!(result[1].1.big_r, result[2].1.big_r);
-
-        let big_k = result[2].1.big_r;
-
-        let participants = vec![result[0].0, result[1].0];
-        let k_shares = [result[0].1.k, result[1].1.k];
-        let sigma_shares = [result[0].1.sigma, result[1].1.sigma];
-        let p_list = ParticipantList::new(&participants).unwrap();
-        let k = p_list.lagrange::<Secp256>(participants[0]).unwrap() * k_shares[0]
-            + p_list.lagrange::<Secp256>(participants[1]).unwrap() * k_shares[1];
-        assert_eq!(ProjectivePoint::GENERATOR * k.invert().unwrap(), big_k);
-        let sigma = p_list.lagrange::<Secp256>(participants[0]).unwrap() * sigma_shares[0]
-            + p_list.lagrange::<Secp256>(participants[1]).unwrap() * sigma_shares[1];
-        assert_eq!(sigma, k * f.eval_at_zero().unwrap().0);
-
-        insta::assert_json_snapshot!(result);
-    }
-
-    #[rstest]
-    #[case(3, 2)]
-    #[case(4, 3)]
-    #[case(5, 3)]
-    fn test_presign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
-        // Given
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants(num_participants);
-        let (f, pk) = generate_test_keys(threshold - 1, &mut rng);
-
-        let (triple0_pub, triple0_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
-            &mut rng,
-            &participants,
-            threshold.into(),
-        )
-        .unwrap();
-        let (triple1_pub, triple1_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
-            &mut rng,
-            &participants,
-            threshold.into(),
-        )
-        .unwrap();
-
-        let triple0_map: std::collections::HashMap<_, _> =
-            participants.iter().copied().zip(triple0_shares).collect();
-        let triple1_map: std::collections::HashMap<_, _> =
-            participants.iter().copied().zip(triple1_shares).collect();
-
-        // When + Then
-        crate::test_utils::assert_buffer_capacity(
-            &participants,
-            &mut rng,
-            |comms, p_list, p, _rng_p| {
-                let keygen_out = make_keygen_output(&f, &pk, p);
-                do_presign(
-                    comms.shared_channel(),
-                    p_list,
-                    p,
-                    PresignArguments {
-                        triple0: (triple0_map[&p].clone(), triple0_pub.clone()),
-                        triple1: (triple1_map[&p].clone(), triple1_pub.clone()),
-                        keygen_out,
-                        threshold: threshold.into(),
-                    },
-                )
-            },
-            |_| OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES,
-        );
-    }
 
     #[test]
     fn with_tweak__should_shift_sigma_by_tweak_times_k() {

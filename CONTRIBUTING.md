@@ -40,6 +40,8 @@ Now, please do the following things:
 2. Create a branch and link it to the issue.
    We recommend using the GitHub UI to create the branch as it will automatically link it and use a canonical format for the branch name.
 3. Check out the branch and get to work.
+   [Building and testing](./docs/development/building-and-testing.md) covers the development environment,
+   build and test commands, and the checks to run before opening a PR.
 
 Once you've made the relevant changes to fulfill the acceptance criteria and the code lives up to our [engineering standards](./docs/development/engineering-standards.md),
 it's time to open a PR.
@@ -47,6 +49,13 @@ it's time to open a PR.
 When opening the PR, make sure to link the issue in the PR description.
 Add any other notes that will be helpful for reviewers in the description.
 However, in many cases it is sufficient to only reference the issue in the PR description.
+
+## Documentation
+Documentation in this repository falls into two categories: live documentation, aiming to explain how something works _right now_, and archived documentation records that may help future developers retrace past decisions. Live documentation _must_ be updated if invalidated by a change, but archived documentation _must not_ be updated, as doing so would undermine its purpose.
+
+Archived documentation must be labeled as such with a status banner: a `**Status:** ARCHIVED` line immediately below the document's title. Any document without such a banner is considered live.
+
+To archive a file, one must open a PR adding the status banner.
 
 # PR review guidelines
 This section mainly targets current maintainers of this code authorized

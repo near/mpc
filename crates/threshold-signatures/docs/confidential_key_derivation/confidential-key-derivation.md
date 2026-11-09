@@ -9,7 +9,7 @@ as a reference when we develop the different parts of it.
 
 The confidential key derivation feature is an extension of the current MPC
 system with a custom scheme that provides applications with
-deterministic secrets. Deterministic means that the same
+deterministic private secrets. Deterministic means that the same
 application may request the same secret at different points in time. Private
 means that the secret itself is never revealed to any entity other than the
 application itself, not even to individual MPC nodes.
@@ -85,7 +85,7 @@ required.
 - *operator*: entity owning the TEE-enabled hardware executing *app*
 - *developer*: the developer of the *app*
 - *Developer contract*: a contract that guarantees the integrity of *app*,
-  and verifies that is running inside a valid TEE. On receiving a request, it validates
+  and verifies that it is running inside a valid TEE. On receiving a request, it validates
   the *app* through remote attestation, and calls the CKD functionality in the
   MPC contract.
 - $`\texttt{gen\_app\_private\_key}(A)`$: function inside MPC smart contract to
@@ -125,16 +125,16 @@ app
   secure
 - MPC nodes running in TEE: All are trusted and execute the protocol honestly.
   Liveness and correctness depend on this assumption, while the secrecy does
-  not. Example values that should not be leaked even if a node is malicious of
+  not. Example values that should not be leaked even if a node is malicious
   are $`s`$, $`\texttt{msk}`$ and private shares of other nodes
-- The *developer* guarantee's the *app* security, and that the intended
+- The *developer* guarantees the *app*'s security, and that the intended
 attestation measurements ensure the chain of trust inside the TEE is not broken
 
 ## Algorithm Steps
 
 ### On the developer side
 
-- The *app* generates EC ElGammal key pair $`(a, A)`$ and creates a transaction
+- The *app* generates an EC ElGamal key pair $`(a, A)`$ and creates a transaction
   on-chain that calls $`\texttt{get\_key}(\texttt{attestation},A)`$ on the
   *Developer contract*
 - $`\texttt{get\_key}`$ verifies *app* is correctly being executed inside a TEE:
@@ -171,7 +171,7 @@ contract.
     - computes:
       - $`y_i  \gets^{\$} \mathbb{Z}_q`$
       - $`Y_i \gets y_i \cdot G_1`$
-      - $`S_i = x_i \cdot H(\texttt{\texttt{pk}, app\_id})`$
+      - $`S_i = x_i \cdot H(\texttt{pk}, \texttt{app\_id})`$
       - $`C_i =  S_i + y_i \cdot A_1`$
     - sends $`(λ_i \cdot Y_i, λ_i \cdot C_i)`$ to the *MPC network* coordinator
   - The coordinator
@@ -181,7 +181,7 @@ contract.
       λ_n \cdot S_n + ({y_1 \cdot λ_1 + \ldots + y_n \cdot λ_n }) \cdot A_1 =
       \texttt{msk} \cdot H(\texttt{pk},\, \texttt{app\_id}) + a \cdot Y`$
       - $`\texttt{es} \gets (Y, C) `$
-    > **Publicly verifiable variant:** Verifies that $es$ is a valid
+    > **Publicly verifiable variant:** Verifies that $`\texttt{es}`$ is a valid
     > encryption of a signature with respect to the MPC network public key
     > $`\texttt{pk}`$, i.e.
     > $`e(C, G_2) = e\bigl(H(\texttt{pk},\, \texttt{app\_id}),\; \texttt{pk}\bigr) \cdot e(Y, A_2)`$

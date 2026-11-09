@@ -136,10 +136,10 @@ impl<Chain> ForeignChainRequestBuilder<BuildableEvmRequest<Chain>, NotSet> {
 /// chain module.
 #[cfg(test)]
 mod test {
-    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{
         DomainId, Hash160, Hash256, VerifyForeignTransactionRequestArgs,
     };
+    use std::assert_matches;
 
     use crate::foreign_chain::ForeignChainSignatureVerifier;
     use crate::foreign_chain::{
@@ -245,15 +245,16 @@ mod test {
             .unwrap();
 
         // then
-        assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
-            assert_eq!(
-                rpc_request.extractors.to_vec(),
-                vec![
-                    EvmExtractor::Log { log_index: 1 },
-                    EvmExtractor::Log { log_index: 2 },
-                ]
-            );
-        });
+        let ForeignChainRpcRequest::Abstract(rpc_request) = &request_args.request else {
+            panic!("expected Abstract request, got {:?}", request_args.request);
+        };
+        assert_eq!(
+            rpc_request.extractors.to_vec(),
+            vec![
+                EvmExtractor::Log { log_index: 1 },
+                EvmExtractor::Log { log_index: 2 },
+            ]
+        );
 
         assert_eq!(
             verifier.expected_extracted_values,
@@ -370,8 +371,9 @@ mod test {
             .unwrap();
 
         // then
-        assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
-            assert!(rpc_request.extractors.is_empty());
-        });
+        assert_matches!(
+            &request_args.request,
+            ForeignChainRpcRequest::Abstract(rpc_request) if rpc_request.extractors.is_empty()
+        );
     }
 }

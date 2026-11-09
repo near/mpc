@@ -1,3 +1,4 @@
+# TODO(#4562): remove this action together with repro-env
 name: Cache repro-env packages
 description: |
   Restore repro-env's content-addressed package store, so `repro-env build`
@@ -15,7 +16,9 @@ runs:
     - name: Compute repro-env cache key
       id: compute-key
       shell: bash
-      run: echo "key=repro-env-pkgs-${{ runner.os }}-${{ hashFiles('repro-env.lock') }}" >> "$GITHUB_OUTPUT"
+      env:
+        LOCK_HASH: ${{ hashFiles('repro-env.lock') }}
+      run: echo "key=repro-env-pkgs-$RUNNER_OS-$LOCK_HASH" >> "$GITHUB_OUTPUT"
 
     - name: Restore and save repro-env packages
       if: inputs.save == 'true'
@@ -30,3 +33,16 @@ runs:
       with:
         path: ~/.cache/repro-env/pkgs
         key: ${{ steps.compute-key.outputs.key }}
+
+    # repro-env checks a package's hash only when downloading it, stores it under that hash and
+    # installs a cached copy as is. Anyone able to write the cache could swap a package, so every
+    # restored package is checked against the hash in its path, as a fresh download would be
+    - name: Verify the restored packages
+      shell: bash
+      run: |
+        cd ~/.cache/repro-env/pkgs 2> /dev/null || exit 0
+        shopt -s nullglob
+        for package in */*; do
+          hash="${package/\//}"
+          sha256sum --check --quiet <<< "$hash  $package"
+        done

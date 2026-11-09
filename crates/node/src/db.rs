@@ -28,6 +28,7 @@ pub enum DBCol {
     /// triple is stored under the threshold it was generated with so that
     /// presign can draw from a store of matching `t`.
     TripleV2,
+    /// Retired: kept only so that startup deletes the presignatures older versions stored.
     Presignature,
     SignRequest,
     CKDRequest,
@@ -217,6 +218,7 @@ impl SecretDBUpdate {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     #[test]
     fn test_encrypt_decrypt() {
@@ -308,6 +310,6 @@ mod tests {
         let result = SecretDB::new(dir.path(), key);
 
         // Then
-        assert_matches::assert_matches!(result, Ok(_));
+        assert_matches!(result, Ok(_));
     }
 }

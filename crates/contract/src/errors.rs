@@ -4,7 +4,10 @@ use crate::primitives::key_state::{EpochId, Keyset};
 use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
+use near_mpc_contract_interface::types::{
+    DomainId, DomainPurpose, ForeignChain, ParticipantCount, Protocol,
+};
+use near_sdk::FunctionError;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NodeMigrationError {
@@ -30,6 +33,17 @@ pub enum NodeMigrationError {
         "The destination node carries the caller's current TLS public key. A migration must move the participant to a node with a different TLS key; use `update_participant_url` to change only the url."
     )]
     DestinationTlsKeyUnchanged,
+    #[error(
+        "The caller has no node stored under the destination TLS public key; the new node must submit its attestation first."
+    )]
+    DestinationNodeNotFound,
+    #[error(
+        "The destination signer key differs from the one its node attested with. Found: {found:?}, expected: {expected:?}"
+    )]
+    DestinationSignerKeyMismatch {
+        found: dtos::Ed25519PublicKey,
+        expected: dtos::Ed25519PublicKey,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -40,7 +54,7 @@ pub enum TeeError {
     TeeValidationFailed,
     #[error("The TEE verifier rejected the quote: {reason}")]
     QuoteRejected { reason: String },
-    #[error("The TEE verifier did not answer the verify_quote call.")]
+    #[error("The TEE verifier did not answer the verify_quote_with_collateral_dates call.")]
     VerifierUnavailable,
 }
 
@@ -123,8 +137,10 @@ pub enum InvalidParameters {
     InsufficientGas { provided: u64, required: u64 },
     #[error("This sign request has timed out, was completed, or never existed.")]
     RequestNotFound,
-    #[error("Update not found.")]
-    UpdateNotFound,
+    #[error(
+        "The submitted update is not backed by a governance threshold of current participants."
+    )]
+    UpdateNotApproved,
     #[error("Participant already in set.")]
     ParticipantAlreadyInSet,
     #[error("Participant id already used.")]
@@ -183,7 +199,7 @@ pub enum InvalidThreshold {
     )]
     MinRelRequirementFailed { required: u64, found: u64 },
     #[error("GovernanceThreshold must not exceed number of participants: max {max}, found {found}")]
-    MaxRequirementFailed { max: u64, found: u64 },
+    MaxRequirementFailed { max: ParticipantCount, found: u64 },
     #[error(
         "GovernanceThreshold exceeds the maximum allowed relative to the participant count: max {max}, found {found}"
     )]
@@ -229,8 +245,6 @@ pub enum InvalidCandidateSet {
     NewParticipantIdsNotContiguous,
     #[error("New Participant ids need to not skip any unused participant ids.")]
     NewParticipantIdsTooHigh,
-    #[error("Participant url is {len} bytes, exceeding the {max} byte limit.")]
-    ParticipantUrlTooLong { len: usize, max: usize },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -268,7 +282,7 @@ pub enum DomainError {
     )]
     ReconstructionThresholdExceedsParticipants {
         reconstruction_threshold: u64,
-        participants: u64,
+        participants: ParticipantCount,
     },
     #[error(
         "Protocol {protocol:?} requires at least {required} participants, found {participants}."
@@ -276,12 +290,8 @@ pub enum DomainError {
     InsufficientParticipantsForProtocol {
         protocol: Protocol,
         required: u64,
-        participants: u64,
+        participants: ParticipantCount,
     },
-    #[error(
-        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the Robust ECDSA bound."
-    )]
-    ReconstructionThresholdOverflow { reconstruction_threshold: u64 },
     #[error(
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]
@@ -289,7 +299,7 @@ pub enum DomainError {
 }
 
 /// A list specifying general categories of MPC Contract errors.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, FunctionError, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// An error occurred while node is performing respond call.
@@ -331,12 +341,6 @@ pub enum Error {
     // Tee attestation submission errors
     #[error(transparent)]
     AttestationSubmission(#[from] AttestationSubmissionError),
-}
-
-impl near_sdk::FunctionError for Error {
-    fn panic(&self) -> ! {
-        crate::env::panic_str(&self.to_string())
-    }
 }
 
 impl From<TweakNotOnCurve> for PublicKeyError {

@@ -23,13 +23,11 @@ pub use ot_based_ecdsa::*;
 pub use robust_ecdsa::*;
 
 use average::{Estimate, Quantile, Variance};
-use k256::AffinePoint;
 use std::{collections::HashMap, env, sync::LazyLock};
 
 use rand_core::SeedableRng;
 use threshold_signatures::{
     ReconstructionThreshold,
-    ecdsa::{self, Scalar},
     participants::Participant,
     protocol::Protocol,
     test_utils::{MockCryptoRng, Simulator},
@@ -76,20 +74,8 @@ pub struct PreparedPresig<PresignOutput, KeygenOutput> {
     pub protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)>,
     pub key_packages: Vec<(Participant, KeygenOutput)>,
     pub participants: Vec<Participant>,
-    /// Per-participant RNG seed used to build each presign protocol; empty when
-    /// the protocol is built from deterministic inputs.
+    /// Per-participant RNG seed used to build each presign protocol.
     pub seeds: HashMap<Participant, u64>,
-}
-
-pub struct PreparedSig<RerandomizedPresignOutput> {
-    pub protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
-    )>,
-    pub index: usize,
-    pub presig: RerandomizedPresignOutput,
-    pub derived_pk: AffinePoint,
-    pub msg_hash: Scalar,
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -98,7 +84,7 @@ pub fn analyze_received_sizes(
     sizes: &[usize],
     is_print: bool,
 ) -> (usize, usize, f64, f64, f64, f64) {
-    if sizes.len() <= 1 {
+    if sizes.is_empty() {
         return (0, 0, 0.0, 0.0, 0.0, 0.0);
     }
     let min = *sizes.iter().min().expect("Minimum should exist");
@@ -118,7 +104,11 @@ pub fn analyze_received_sizes(
     }
 
     let median = quantile.quantile();
-    let variance = variance_est.sample_variance();
+    let variance = if sizes.len() > 1 {
+        variance_est.sample_variance()
+    } else {
+        0.0
+    };
     let std_dev = variance.sqrt();
 
     if is_print {

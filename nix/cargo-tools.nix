@@ -72,9 +72,9 @@ in
 
   (buildTool {
     pname = "zizmor";
-    version = "1.25.2";
-    hash = "sha256-7QdSHT/CRPFRnjpQ/QypX4s451kpz5sv8IAqfs8+bQM=";
-    cargoHash = "sha256-DW0a7Qr8q3fD9ZkSbf9R4KBhPOVEVPTqYwQ9sF4Btiw=";
+    version = "1.31.1";
+    hash = "sha256-6BWZ9tPSbTjqTiOgBW+id6omjpjeA/1mFrFDG8ClVvs=";
+    cargoHash = "sha256-6Hkc3eVbAILyYwI+bqT9hHXSdqeAhNmgAG/Gz2sTxfY=";
   })
 
   (buildTool {

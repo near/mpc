@@ -2,7 +2,7 @@
   description = "Rust development environment for NEAR (Workspace)";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -51,15 +51,39 @@
 
     in
     {
-      packages = forAllSystems (pkgs: {
-        mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
-          inherit crane prodCFlags;
-        };
-        mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
-          cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
-        };
-        opengrep = pkgs.callPackage ./nix/opengrep.nix { };
-      });
+      packages = forAllSystems (
+        pkgs:
+        let
+          mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
+            inherit crane prodCFlags;
+            gitRev = self.shortRev or self.dirtyShortRev or null;
+          };
+        in
+        {
+          inherit mpc-node;
+          mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
+            cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
+          };
+          opengrep = pkgs.callPackage ./nix/opengrep.nix { };
+        }
+        // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+          let
+            tee-launcher = pkgs.callPackage ./nix/mpc-node.nix {
+              inherit crane prodCFlags;
+              pname = "tee-launcher";
+            };
+            registryImage = pkgs.callPackage ./nix/registry-image.nix { };
+          in
+          {
+            mpc-node-image = registryImage (
+              pkgs.callPackage ./nix/mpc-node-image.nix { inherit mpc-node; }
+            );
+            mpc-launcher-image = registryImage (
+              pkgs.callPackage ./nix/mpc-launcher-image.nix { inherit tee-launcher; }
+            );
+          }
+        )
+      );
 
       devShells = forAllSystems (
         pkgs:
@@ -82,7 +106,13 @@
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
 
           # Pinned to CI version
-          cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
+          cargoTools = pkgs.callPackage ./nix/cargo-tools.nix {
+            # nixpkgs' rustc can be older than the minimum Rust version of these tools
+            rustPlatform = pkgs.makeRustPlatform {
+              cargo = rustToolchain;
+              rustc = rustToolchain;
+            };
+          };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;
@@ -224,6 +254,17 @@
               ''}
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';
+          };
+
+          # The release contract build runs in a pinned Docker image, so its shell holds only the
+          # tools that start it and the release job skips the default shell's other packages
+          contract = pkgs.mkShell {
+            packages = with pkgs; [
+              rustToolchain
+              cargo-near
+              git
+              docker-client
+            ];
           };
         }
       );

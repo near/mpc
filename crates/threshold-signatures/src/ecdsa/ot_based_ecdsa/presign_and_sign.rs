@@ -1,12 +1,17 @@
+use elliptic_curve::scalar::IsHigh;
+use subtle::ConditionallySelectable;
+
 use crate::ecdsa::ot_based_ecdsa::presign::{
-    PresignArguments, presign_rounds, validate_presign_arguments,
+    PresignArguments, PresignOutput, presign_rounds, validate_presign_arguments,
 };
-use crate::ecdsa::ot_based_ecdsa::sign::sign_round;
-use crate::ecdsa::{Scalar, SignatureOption, Tweak};
+use crate::ecdsa::{
+    AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
+};
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
 use crate::protocol::{
     Protocol,
+    helpers::recv_from_others,
     internal::{Comms, SharedChannel, make_protocol},
 };
 
@@ -26,19 +31,14 @@ pub(crate) const OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usi
 ///
 /// # Safety contract
 ///
-/// A given triple pair must be passed to this function at most once, including across aborted
-/// runs: `big_r` is determined by `triple0` alone and is known to every participant once round 1
-/// completes. Unlike [`sign`](super::sign::sign), no rerandomization binds `big_r` to `msg_hash`,
-/// so a second run on the same `triple0` under a different `tweak` or `msg_hash` leaks the
-/// private key.
+/// Each triple, not just the pair, must be used at most once (see [`PresignArguments`]). In
+/// particular, `big_r` is determined by `triple0` alone and is known to every participant once
+/// round 1 completes. Nothing binds `big_r` to `msg_hash`, so a second run on the same `triple0`
+/// under a different `tweak` or `msg_hash` leaks the private key.
 ///
 /// **WARNING** You must absolutely hash an actual message before passing it to
 /// this function. Allowing the signing of arbitrary scalars *is* a security risk,
 /// and this function only tolerates this risk to allow for genericity.
-///
-/// A [`Protocol`] owns its whole message channel: never drive one transport channel with
-/// [`presign`](super::presign::presign) followed by [`sign`](super::sign::sign), as both start
-/// at the same waitpoint and their messages would be confused. Use this protocol instead.
 pub fn presign_and_sign(
     participants: &[Participant],
     coordinator: Participant,
@@ -101,25 +101,121 @@ async fn do_presign_and_sign(
     .await
 }
 
+async fn sign_round(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    public_key: AffinePoint,
+    presignature: &PresignOutput,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    if me == coordinator {
+        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
+    } else {
+        do_sign_participant(chan, participants, coordinator, me, presignature, msg_hash)
+    }
+}
+
+/// Performs signing from any participant's perspective (except the coordinator)
+fn do_sign_participant(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    presignature: &PresignOutput,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    // Round 3
+    let s_i = compute_signature_share(participants, me, presignature, msg_hash)?;
+    // Send si
+    // Spec 3.4
+    let wait0 = chan.next_waitpoint();
+    chan.send_private(wait0, coordinator, &s_i)?;
+
+    Ok(None)
+}
+
+/// Performs signing from only the coordinator's perspective
+async fn do_sign_coordinator(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
+    me: Participant,
+    public_key: AffinePoint,
+    presignature: &PresignOutput,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    // Round 3
+    let s_i = compute_signature_share(participants, me, presignature, msg_hash)?;
+    // Spec 3.4 is non-existent for a coordinator
+
+    let wait0 = chan.next_waitpoint();
+    // Receive sj
+    // Spec 3.5
+    let mut s = s_i;
+    for (_, s_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
+        // Spec 3.6
+        s += s_j;
+    }
+
+    // Normalize s
+    // Spec 3.7
+    s.conditional_assign(&(-s), s.is_high());
+
+    let sig = Signature {
+        big_r: presignature.big_r,
+        s,
+    };
+
+    // Spec 3.8
+    if !sig.verify(&public_key, &msg_hash) {
+        return Err(ProtocolError::AssertionFailed(
+            "signature failed to verify".to_string(),
+        ));
+    }
+
+    Ok(Some(sig))
+}
+
+/// A common computation done by both the coordinator and the other participants
+fn compute_signature_share(
+    participants: &ParticipantList,
+    me: Participant,
+    presignature: &PresignOutput,
+    msg_hash: Scalar,
+) -> Result<Scalar, ProtocolError> {
+    // Round 3
+    // Linearize ki
+    // Spec 3.1
+    let lambda = participants.lagrange::<Secp256K1Sha256>(me)?;
+    let k_i = lambda * presignature.k;
+
+    // Linearize sigmai
+    // Spec 3.2
+    let sigma_i = lambda * presignature.sigma;
+
+    // Compute si = h * ki + Rx * sigmai
+    // Spec 3.3
+    let r = x_coordinate(&presignature.big_r);
+    Ok(msg_hash * k_i + r * sigma_i)
+}
+
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
     use super::*;
     use crate::crypto::hash::test::scalar_hash_secp256k1;
-    use crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput;
-    use crate::ecdsa::ot_based_ecdsa::sign::sign;
-    use crate::ecdsa::ot_based_ecdsa::test::run_presign;
-    use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare, test::deal};
-    use crate::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature, x_coordinate};
+    use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
+    use crate::ecdsa::{KeygenOutput, Polynomial};
     use crate::test_utils::{
         GenProtocol, MockCryptoRng, assert_buffer_capacity, check_one_coordinator_output,
-        expected_buffer_by_role, generate_participants, run_keygen, run_protocol, run_sign,
+        deal_triple, expected_buffer_by_role, generate_participants, run_keygen, run_protocol,
+        run_sign,
     };
-    use assert_matches::assert_matches;
-    use k256::{PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
+    use k256::{ProjectivePoint, PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
     use rand_core::SeedableRng;
     use rstest::rstest;
-    use std::collections::HashMap;
+    use std::{assert_matches, collections::HashMap};
 
     const MSG: &[u8] = b"presign and sign in one go";
 
@@ -137,8 +233,8 @@ mod test {
         fn new(num_participants: usize, threshold: usize, rng: &mut MockCryptoRng) -> Self {
             let participants = generate_participants(num_participants);
             let key_packages = run_keygen(&participants, threshold, rng);
-            let triple0 = deal(rng, &participants, threshold.into()).unwrap();
-            let triple1 = deal(rng, &participants, threshold.into()).unwrap();
+            let triple0 = deal_triple(rng, &participants, threshold.into()).unwrap();
+            let triple1 = deal_triple(rng, &participants, threshold.into()).unwrap();
             let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(rng));
             Self {
                 participants,
@@ -195,53 +291,6 @@ mod test {
             }
             run_protocol(protocols).unwrap()
         }
-
-        fn run_classic_presign_then_sign(&self, coordinator: Participant) -> Signature {
-            let presignatures = run_presign(
-                self.key_packages.clone(),
-                self.triple0.1.clone(),
-                self.triple1.1.clone(),
-                &self.triple0.0,
-                &self.triple1.0,
-                self.threshold.into(),
-            );
-            let tweaked = presignatures
-                .iter()
-                .map(|(p, presig)| {
-                    (
-                        *p,
-                        RerandomizedPresignOutput::new_without_rerandomization(
-                            &presig.with_tweak(&self.tweak),
-                        ),
-                    )
-                })
-                .collect();
-            let derived_pk = self
-                .tweak
-                .derive_verifying_key(&self.key_packages[0].1.public_key)
-                .to_element();
-            let threshold = self.threshold;
-            let result = run_sign::<Secp256K1Sha256, _, _, _>(
-                tweaked,
-                coordinator,
-                derived_pk,
-                self.msg_hash,
-                |participants, coordinator, me, pk, presignature, msg_hash| {
-                    sign(
-                        participants,
-                        coordinator,
-                        threshold,
-                        me,
-                        pk.to_affine(),
-                        presignature,
-                        msg_hash,
-                    )
-                    .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
-                },
-            )
-            .unwrap();
-            check_one_coordinator_output(result, coordinator).unwrap()
-        }
     }
 
     fn to_k256_signature(signature: &Signature) -> ecdsa::Signature<k256::Secp256k1> {
@@ -290,20 +339,18 @@ mod test {
     }
 
     #[test]
-    fn presign_and_sign__should_equal_classic_presign_then_tweaked_sign() {
+    fn presign_and_sign__should_produce_deterministic_signature() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let setup = Setup::new(4, 3, &mut rng);
+        let setup = Setup::new(3, 2, &mut rng);
         let coordinator = setup.participants[0];
-        let classic = setup.run_classic_presign_then_sign(coordinator);
 
         // When
-        let merged = setup.run_presign_and_sign(coordinator);
+        let result = setup.run_presign_and_sign(coordinator);
 
         // Then
-        let merged = check_one_coordinator_output(merged, coordinator).unwrap();
-        assert_eq!(merged.big_r, classic.big_r);
-        assert_eq!(merged.s, classic.s);
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        insta::assert_json_snapshot!(to_k256_signature(&signature));
     }
 
     #[test]
@@ -355,6 +402,33 @@ mod test {
         assert_matches!(result.err(), Some(InitializationError::BadParameters(_)));
     }
 
+    #[test]
+    fn presign_and_sign__should_reject_threshold_above_participant_count() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let setup = Setup::new(3, 3, &mut rng);
+        let signers = &setup.participants[..2];
+
+        // When
+        let result = presign_and_sign(
+            signers,
+            signers[0],
+            signers[0],
+            setup.args_for(0),
+            setup.tweak,
+            setup.msg_hash,
+        );
+
+        // Then
+        assert_matches!(
+            result.err(),
+            Some(InitializationError::ThresholdTooLarge {
+                threshold: 3,
+                max: 2
+            })
+        );
+    }
+
     #[rstest]
     #[case(3, 2)]
     #[case(5, 3)]
@@ -389,5 +463,85 @@ mod test {
                 OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
             ),
         );
+    }
+
+    fn simulate_presignatures(
+        participants: &[Participant],
+        threshold: usize,
+        rng: &mut MockCryptoRng,
+    ) -> (ProjectivePoint, Vec<(Participant, PresignOutput)>) {
+        let degree = threshold - 1;
+        let f = Polynomial::generate_polynomial(None, degree, rng).unwrap();
+        let x = f.eval_at_zero().unwrap().0;
+        let public_key = ProjectivePoint::GENERATOR * x;
+        let g = Polynomial::generate_polynomial(None, degree, rng).unwrap();
+        let k = g.eval_at_zero().unwrap().0;
+        let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
+        let sigma = k * x;
+        let h = Polynomial::generate_polynomial(Some(sigma), degree, rng).unwrap();
+        let presignatures = participants
+            .iter()
+            .map(|p| {
+                (
+                    *p,
+                    PresignOutput {
+                        big_r,
+                        k: g.eval_at_participant(*p).unwrap().0,
+                        sigma: h.eval_at_participant(*p).unwrap().0,
+                    },
+                )
+            })
+            .collect();
+        (public_key, presignatures)
+    }
+
+    #[test]
+    fn sign_round__should_produce_signature_verifiable_under_public_key() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let threshold: usize = 2;
+        let msg = b"Hello? Is it me you're looking for?";
+        let participants = generate_participants(2);
+        let (public_key, presignatures) =
+            simulate_presignatures(&participants, threshold, &mut rng);
+        let coordinator = participants[0];
+
+        // When
+        let result = run_sign::<Secp256K1Sha256, _, _, _>(
+            presignatures,
+            coordinator,
+            public_key,
+            scalar_hash_secp256k1(msg),
+            |participants, coordinator, me, public_key, presignature, msg_hash| {
+                let participants = ParticipantList::new(participants)
+                    .ok_or(InitializationError::DuplicateParticipants)?;
+                let ctx = Comms::with_buffer_capacity(
+                    OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                );
+                let mut chan = ctx.shared_channel();
+                let fut = async move {
+                    sign_round(
+                        &mut chan,
+                        &participants,
+                        coordinator,
+                        me,
+                        public_key.to_affine(),
+                        &presignature,
+                        msg_hash,
+                    )
+                    .await
+                };
+                Ok(Box::new(make_protocol(ctx, fut))
+                    as Box<dyn Protocol<Output = SignatureOption>>)
+            },
+        )
+        .unwrap();
+
+        // Then
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        let signature = to_k256_signature(&signature);
+        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
+            .verify(msg, &signature)
+            .unwrap();
     }
 }

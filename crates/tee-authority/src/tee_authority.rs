@@ -213,7 +213,7 @@ fn format_pccs_failures(failures: &[PccsEndpointError]) -> String {
 }
 
 /// The maximum duration to wait for retrying requests.
-const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
+const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
 
 /// Per-request timeout for fetching collateral from PCCS. Applied at two
 /// layers — `reqwest::Client::builder().timeout(...)` (per-HTTP-request)
@@ -238,10 +238,9 @@ const DSTACK_MAX_RETRIES: usize = 3;
 /// 31 days accepts collateral for its full Intel-declared validity plus a
 /// day of headroom, so operators refreshing on Intel's own schedule are
 /// never rejected for age. This is the freshness bound on the
-/// collateral's Intel signature and is independent of the contract's
-/// attestation expiry
-/// (`DEFAULT_EXPIRATION_DURATION_SECONDS`); the two windows serve
-/// different purposes and are not required to match.
+/// collateral's Intel signature. The attestation expiry is the collateral's
+/// own earliest expiration date, so an older collateral gets a shorter
+/// attestation.
 ///
 /// Applies uniformly to the three periodically re-signed pieces of
 /// collateral that share Intel's 30-day window: `tcb_info.issueDate`,
@@ -759,10 +758,10 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use mpc_attestation::report_data::ReportDataV1;
     use rstest::rstest;
     use std::{
+        assert_matches,
         cell::RefCell,
         rc::Rc,
         sync::{

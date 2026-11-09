@@ -2,8 +2,7 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, build_sandbox_node_ids, gen_accounts, prepay_and_submit_tee_attestations,
-        submit_tee_attestations,
+        SandboxTestSetup, build_sandbox_nodes, gen_accounts, prepay_and_submit_tee_attestations,
     },
     utils::{
         consts::ALL_PROTOCOLS,
@@ -15,33 +14,23 @@ use crate::sandbox::{
             submit_participant_info, vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         sign_utils::DomainResponseTest,
         transactions::CallMpcContract,
-        views::{SandboxViewer, ViewMpcContract},
     },
 };
 use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
-use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     self as dtos, Attestation, MockAttestation, Protocol, VerifiedAttestation,
 };
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
-use near_workspaces::{AccessKey, Account, Contract};
+use near_workspaces::{AccessKey, Account};
 use rand::SeedableRng;
-use test_utils::attestation::{image_digest, p2p_tls_key};
-
-fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
-    MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
-        expected_measurements: None,
-    }
-}
+use test_utils::attestation::{image_digest, mock_expiring_at, p2p_tls_key};
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
@@ -49,7 +38,7 @@ fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
 #[tokio::test]
 async fn test_vote_mpc_node_manifest_digest_basic_threshold_and_stability() -> Result<()> {
     let SandboxTestSetup {
-        worker,
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -57,18 +46,17 @@ async fn test_vote_mpc_node_manifest_digest_basic_threshold_and_stability() -> R
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mpc_contract = worker.view_mpc(contract.id());
     let threshold = assert_running_return_threshold(&contract).await;
 
     let allowed_mpc_image_digest = image_digest();
 
     // Initially, there should be no allowed hashes
-    assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
+    assert_allowed_docker_image_hashes(&contract, &[]).await;
 
     // First votes - should not be enough
     for account in mpc_signer_accounts.iter().take((threshold.0 - 1) as usize) {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
-        assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
+        assert_allowed_docker_image_hashes(&contract, &[]).await;
     }
 
     // `threshold`-th vote - should reach threshold
@@ -78,7 +66,7 @@ async fn test_vote_mpc_node_manifest_digest_basic_threshold_and_stability() -> R
         &allowed_mpc_image_digest,
     )
     .await?;
-    assert_allowed_docker_image_hashes(&mpc_contract, &[allowed_mpc_image_digest]).await;
+    assert_allowed_docker_image_hashes(&contract, &[allowed_mpc_image_digest]).await;
 
     // Additional votes - should not change the allowed hashes
     const EXTRA_VOTES_TO_TEST_STABILITY: usize = 4;
@@ -90,7 +78,7 @@ async fn test_vote_mpc_node_manifest_digest_basic_threshold_and_stability() -> R
         )
         .await?;
         // Should still have exactly one hash
-        assert_allowed_docker_image_hashes(&mpc_contract, &[allowed_mpc_image_digest]).await;
+        assert_allowed_docker_image_hashes(&contract, &[allowed_mpc_image_digest]).await;
     }
 
     Ok(())
@@ -102,7 +90,7 @@ async fn test_vote_mpc_node_manifest_digest_basic_threshold_and_stability() -> R
 async fn test_vote_mpc_node_manifest_digest_approved_hashes_persist_after_vote_changes()
 -> Result<()> {
     let SandboxTestSetup {
-        worker,
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -110,7 +98,6 @@ async fn test_vote_mpc_node_manifest_digest_approved_hashes_persist_after_vote_c
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mpc_contract = worker.view_mpc(contract.id());
     let threshold = assert_running_return_threshold(&contract).await;
     // This is necessary for some parts of the test below
     assert!((threshold.0 as usize) < mpc_signer_accounts.len());
@@ -120,7 +107,7 @@ async fn test_vote_mpc_node_manifest_digest_approved_hashes_persist_after_vote_c
     let second_hash = NodeImageHash::from(arbitrary_bytes);
 
     // Initially, there should be no allowed hashes
-    assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
+    assert_allowed_docker_image_hashes(&contract, &[]).await;
 
     // Initial votes for first hash - reach threshold
     for account in mpc_signer_accounts.iter().take(threshold.0 as usize) {
@@ -128,14 +115,14 @@ async fn test_vote_mpc_node_manifest_digest_approved_hashes_persist_after_vote_c
     }
 
     // Verify first hash is allowed
-    assert_allowed_docker_image_hashes(&mpc_contract, &[first_hash]).await;
+    assert_allowed_docker_image_hashes(&contract, &[first_hash]).await;
 
     // Participant 0 changes vote to second hash
     vote_for_hash(&mpc_signer_accounts[0], &contract, &second_hash).await?;
 
     // First hash should still be allowed
     // Second hash should not be allowed yet (only 1 vote)
-    assert_allowed_docker_image_hashes(&mpc_contract, &[first_hash]).await;
+    assert_allowed_docker_image_hashes(&contract, &[first_hash]).await;
 
     // Participants 2..threshold votes for second hash - should reach threshold
     for account in mpc_signer_accounts
@@ -147,14 +134,14 @@ async fn test_vote_mpc_node_manifest_digest_approved_hashes_persist_after_vote_c
     }
 
     // Now both hashes should be allowed
-    assert_allowed_docker_image_hashes(&mpc_contract, &[second_hash, first_hash]).await;
+    assert_allowed_docker_image_hashes(&contract, &[second_hash, first_hash]).await;
 
     // Participant 1 also changes vote to second hash
     vote_for_hash(&mpc_signer_accounts[1], &contract, &second_hash).await?;
 
     // Both hashes should still be allowed (once a hash reaches threshold, it stays)
     // Second hash should still be allowed (threshold + 1 votes)
-    assert_allowed_docker_image_hashes(&mpc_contract, &[second_hash, first_hash]).await;
+    assert_allowed_docker_image_hashes(&contract, &[second_hash, first_hash]).await;
 
     Ok(())
 }
@@ -191,10 +178,10 @@ async fn test_vote_mpc_node_manifest_digest_doesnt_accept_account_id_not_in_part
 }
 
 async fn assert_allowed_docker_image_hashes(
-    mpc_contract: &MpcContractHandle<SandboxViewer>,
+    contract: &SandboxMpcContract,
     expected: &[NodeImageHash],
 ) {
-    let entries = mpc_contract
+    let entries = contract
         .allowed_docker_image_hashes()
         .await
         .expect("allowed_docker_image_hashes view should succeed")
@@ -220,20 +207,6 @@ async fn assert_allowed_docker_image_hashes(
         expiries.is_sorted_by(|a, b| a >= b),
         "eviction times must be descending, got {expiries:?}"
     );
-}
-
-pub async fn get_participants(contract: &Contract) -> Result<usize> {
-    let state = contract
-        .call(method_names::STATE)
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
-        .await?;
-    let value: dtos::ProtocolContractState = state.json()?;
-    let dtos::ProtocolContractState::Running(running) = value else {
-        panic!("Expected running state")
-    };
-    Ok(running.parameters.participants.participants.len())
 }
 
 // / **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
@@ -324,9 +297,8 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 
     // Try to call clean_tee_status from external account - should fail
     let result = external_account
-        .call(contract.id(), method_names::CLEAN_TEE_STATUS)
-        .args_json(serde_json::json!({}))
-        .transact()
+        .call_mpc(contract.id())
+        .clean_tee_status()
         .await?;
 
     // The call should fail because it's not from the contract itself
@@ -342,7 +314,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 }
 
 /// **`clean_tee_status` when called by the contract itself** — the call succeeds and the
-/// endpoint leaves `stored_attestations` untouched. Attestation pruning is handled by the
+/// endpoint leaves the stored attestations untouched. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
 #[tokio::test]
 async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_attestations_alone()
@@ -351,7 +323,7 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
     let SandboxTestSetup {
         worker,
         contract,
-        mut mpc_signer_accounts,
+        mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
@@ -360,32 +332,26 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
 
     let participants: Participants =
         (&assert_running_return_participants(&contract).await?).into_contract_type();
-    let participant_uids = build_sandbox_node_ids(&participants, &mpc_signer_accounts);
-    submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_uids).await?;
+    let participant_nodes = build_sandbox_nodes(&participants, &mpc_signer_accounts);
 
     // Verify current participants have TEE data
-    assert_eq!(get_tee_accounts(&contract).await?, participant_uids);
+    assert_eq!(get_tee_accounts(&contract).await?, participant_nodes);
 
     // Create additional accounts (non-participants) and submit TEE info for them
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
     let (mut additional_accounts, additional_participants) =
         gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
-    let additional_uids = build_sandbox_node_ids(&additional_participants, &additional_accounts);
-    prepay_and_submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids)
+    let additional_nodes = build_sandbox_nodes(&additional_participants, &additional_accounts);
+    prepay_and_submit_tee_attestations(&contract, &mut additional_accounts, &additional_nodes)
         .await?;
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
-    let expected_union = &additional_uids | &participant_uids;
+    let expected_union = &additional_nodes | &participant_nodes;
     assert_eq!(tee_participants_before, expected_union);
 
     // When: contract calls clean_tee_status on itself.
-    let result = contract
-        .as_account()
-        .call(contract.id(), method_names::CLEAN_TEE_STATUS)
-        .args_json(serde_json::json!({}))
-        .transact()
-        .await?;
+    let result = contract.clean_tee_status().await?;
 
     assert!(result.is_success());
 
@@ -397,7 +363,7 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
 }
 
 /// **`clean_invalid_attestations` end-to-end** — an attestation whose expiry has passed
-/// is evicted from `stored_attestations` when the endpoint is invoked. Restores the
+/// is evicted from storage when the endpoint is invoked. Restores the
 /// functional cleanup-path coverage previously asserted via `clean_tee_status`.
 #[tokio::test]
 async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<()> {
@@ -412,19 +378,16 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     let SandboxTestSetup {
         worker,
         contract,
-        mut mpc_signer_accounts,
+        mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
-    // Submit a structurally-valid attestation for every current participant so those
-    // entries survive the sweep.
     let participants: Participants =
         (&assert_running_return_participants(&contract).await?).into_contract_type();
-    let participant_uids = build_sandbox_node_ids(&participants, &mpc_signer_accounts);
-    submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_uids).await?;
+    let participant_nodes = build_sandbox_nodes(&participants, &mpc_signer_accounts);
 
     // Submit an attestation from a non-participant that will expire shortly.
     let (stale_accounts, _stale_participants) = gen_accounts(&worker, 1).await;
@@ -444,7 +407,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     assert!(submit_result.is_success());
 
     let before_cleanup = get_tee_accounts(&contract).await?;
-    assert_eq!(before_cleanup.len(), participant_uids.len() + 1);
+    assert_eq!(before_cleanup.len(), participant_nodes.len() + 1);
 
     // Advance past the expiry.
     worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
@@ -452,17 +415,12 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     // When: any account calls `clean_invalid_attestations` with a scan budget large enough
     // to cover every stored entry.
     let scan_budget: u32 = (before_cleanup.len() as u32) + 1;
-    let result = contract
-        .as_account()
-        .call(contract.id(), method_names::CLEAN_INVALID_ATTESTATIONS)
-        .args_json(serde_json::json!({ "max_scan": scan_budget }))
-        .transact()
-        .await?;
+    let result = contract.clean_invalid_attestations(scan_budget).await?;
     assert!(result.is_success());
 
     // Then: the expired entry is evicted while the valid participant entries remain.
     let after_cleanup = get_tee_accounts(&contract).await?;
-    assert_eq!(after_cleanup, participant_uids);
+    assert_eq!(after_cleanup, participant_nodes);
 
     Ok(())
 }
@@ -471,7 +429,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
 async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification()
 -> Result<()> {
     let SandboxTestSetup {
-        worker,
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -479,7 +437,6 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mpc_contract = worker.view_mpc(contract.id());
     let threshold = assert_running_return_threshold(&contract).await;
     let hash_1 = [1; 32];
     let hash_2 = [2; 32];
@@ -488,7 +445,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let participant_account_1 = &mpc_signer_accounts[0];
 
     // Initially, there should be no allowed hashes
-    assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
+    assert_allowed_docker_image_hashes(&contract, &[]).await;
 
     let hashes = [hash_1, hash_2, hash_3];
 
@@ -640,7 +597,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         .unwrap();
 
     assert_eq!(
-        attestation_for_tls_key_2,
+        attestation_for_tls_key_2.map(|stored| stored.attestation),
         Some(VerifiedAttestation::Mock(participant_2_mock))
     );
 }
@@ -704,7 +661,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         .unwrap();
 
     assert_eq!(
-        attestation_for_tls_key,
+        attestation_for_tls_key.map(|stored| stored.attestation),
         Some(VerifiedAttestation::Mock(second_mock)),
         "Expected the second attestation to overwrite the first for the same TLS key"
     );
@@ -715,7 +672,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
 #[tokio::test]
 async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     let SandboxTestSetup {
-        worker,
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -723,10 +680,9 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mpc_contract = worker.view_mpc(contract.id());
 
     assert_eq!(
-        mpc_contract
+        contract
             .allowed_launcher_compose_hashes()
             .await?
             .value
@@ -740,7 +696,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
     }
     assert_eq!(
-        mpc_contract
+        contract
             .allowed_launcher_compose_hashes()
             .await?
             .value
@@ -755,7 +711,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_add_launcher_hash(account, &contract, &launcher_hash).await?;
     }
     assert_eq!(
-        mpc_contract
+        contract
             .allowed_launcher_compose_hashes()
             .await?
             .value
@@ -806,9 +762,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     // Submit an expiring attestation for the last participant
     let target_account = &mpc_signer_accounts[2];
     let internal_participants: Participants = (&initial_participants).into_contract_type();
-    let target_node_id = build_sandbox_node_ids(&internal_participants, &mpc_signer_accounts)
-        .into_iter()
-        .find(|node| node.account_id == *target_account.id())
+    let target_info = internal_participants
+        .info(target_account.id())
         .expect("target participant not found");
 
     let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp));
@@ -817,7 +772,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &target_node_id.tls_public_key,
+        &target_info.tls_public_key,
     )
     .await?
     .is_success();
@@ -932,17 +887,15 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     // Submit an expiring attestation for every participant past the first `remaining_valid`.
     let internal_participants: Participants = (&initial_participants).into_contract_type();
-    let node_ids = build_sandbox_node_ids(&internal_participants, &mpc_signer_accounts);
     for target_account in &mpc_signer_accounts[remaining_valid..] {
-        let target_node_id = node_ids
-            .iter()
-            .find(|node| node.account_id == *target_account.id())
+        let target_info = internal_participants
+            .info(target_account.id())
             .expect("target participant not found");
         let submit_success = submit_participant_info(
             target_account,
             &contract,
             &expiring_attestation,
-            &target_node_id.tls_public_key,
+            &target_info.tls_public_key,
         )
         .await?
         .is_success();
@@ -1031,13 +984,12 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mpc_contract = worker.view_mpc(contract.id());
     let image_hash = image_digest();
     for account in &mpc_signer_accounts {
         vote_for_hash(account, &contract, &image_hash).await?;
         vote_add_launcher_hash(account, &contract, &LauncherImageHash::from([0xAA; 32])).await?;
     }
-    let [compose_hash] = mpc_contract.allowed_launcher_compose_hashes().await?.value[..] else {
+    let [compose_hash] = contract.allowed_launcher_compose_hashes().await?.value[..] else {
         panic!("the launcher and image hashes must derive exactly one compose hash");
     };
     let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
@@ -1137,6 +1089,7 @@ async fn submit_participant_info__should_reject_an_attached_deposit() -> Result<
     let fresh_tls_key = bogus_ed25519_public_key();
 
     // When
+    // TODO(#4741): typed call with a deposit override.
     let result = outsider
         .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
         .args_json((

@@ -5,13 +5,10 @@ This repository offers cryptographic implementations of **threshold ECDSA**,
 [PR#15](https://github.com/near/threshold-signatures/pull/15), the
 implementation had undergone professional *audit*.
 
-The ECDSA code implements an OT-based threshold protocol and a Secret-Sharing
-based one. The former is originally imported from the
-[Cait-Sith](https://github.com/cronokirby/cait-sith) library and amended to meet
-our industrial needs. This includes modifying parts of the code to improve the
-performance, augment the security, and generalize functions' syntax. The latter
-is currently an insecure stub; see
-[Robust Threshold ECDSA](#robust-threshold-ecdsa) below.
+The ECDSA code implements an OT-based threshold protocol, originally imported
+from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library and amended
+to meet our industrial needs. This includes modifying parts of the code to
+improve the performance, augment the security, and generalize functions' syntax.
 
 The EdDSA implementation is mainly a wrapper of the
 [Frost](https://github.com/ZcashFoundation/frost) signing functions instantiated
@@ -44,15 +41,13 @@ generation (DKG) that is agnostic of the curve.
 
 ### Threshold ECDSA Functionalities
 
-The repository provides two different Threshold ECDSA schemes implemented
-over the Secp256k1 curve: an OT-based ECDSA scheme and a Robust ECDSA scheme.
-While both rely on the same DKG and key resharing, they differ in their
-signing workflows and preprocessing requirements.
+The repository provides an OT-based Threshold ECDSA scheme implemented
+over the Secp256k1 curve.
 
 #### OT-based Threshold ECDSA
 
-The OT-based threshold ECDSA scheme relies on offline phase with two protocols (triple generation and presigning) to enable
-efficient online signing. The following functionalities are provided:
+The OT-based threshold ECDSA scheme relies on an offline triple generation phase,
+whose output is consumed by online signing. The following functionalities are provided:
 
 1) **Distributed Key Generation (DKG)**: allows multiple parties to each
 generate its own secret key shares and a corresponding master public key.
@@ -63,45 +58,13 @@ without changing the participant set.
 
 3) **Beaver Triple Generation (offline)**: allows the distributed generation
 of multiplicative Beaver triples $(a, b, c)$ and their commitments
-$(A, B, C)= (g^a, g^b, g^c)$ where $c = a \cdot b$. These triples are required for presigning.
+$(A, B, C)= (g^a, g^b, g^c)$ where $c = a \cdot b$. These triples are required for signing.
 More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/triples.md).
 
-4) **Presigning (offline)**: allows generating presignatures during an offline
-phase, which are later consumed during online signing when the message becomes
-known to the set of signers. More details can be found in
+4) **Signing (online)**: a three-round protocol that consumes two Beaver
+triples once the message is known. More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/signing.md).
-
-5) **Signing (online)**: corresponds to the online signing phase in which the
-signing parties produce a valid ECDSA signature using precomputed material.
-More details can be found in
-[docs](docs/ecdsa/ot_based_ecdsa/signing.md).
-
-6) **Presigning and signing (online)**: runs presigning and signing as one
-protocol that consumes two Beaver triples directly once the message is known,
-so no presignature is stored. More details can be found in
-[docs](docs/ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol).
-
-#### Robust Threshold ECDSA
-
-The Robust ECDSA scheme improves efficiency and communication overhead
-by avoiding Beaver triple generation. In this variant,
-the offline round consists of a single, round-efficient, presigning protocol.
-
-The following functionalities are provided:
-
-1) **Distributed Key Generation (DKG)**: same as in OT-based ECDSA.
-
-2) **Key Resharing / Key Refresh**: same as in OT-based ECDSA.
-
-3) **Presigning (offline)**: **stub, not a secure scheme.** The previous
-implementation was removed and replaced by a one-round stub that produces
-valid signatures while leaking the
-signing key, so that the plumbing built around this protocol stays exercised
-until a real robust scheme replaces it. Read the
-[docs](docs/ecdsa/robust_ecdsa/signing.md) before using it for anything.
-
-4) **Signing (online)**: signing is performed in a single round protocol between the signers. More details can be found in [docs](docs/ecdsa/robust_ecdsa/signing.md).
 
 ### Threshold EdDSA Functionalities
 
@@ -221,15 +184,13 @@ cargo bench
 Some benchmarks accept additional features that one can fix such as the maximum number of malicious parties `MAX_MALICIOUS`, the number of iterations to be executed `SAMPLE_SIZE`, and the network latency `LATENCY`. All three variables have to be added as environment variables. Example:
 
 ```sh
-MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- robust_ecdsa_presign_advanced
+MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- ot_ecdsa_presign_and_sign_advanced
 ```
 
 By default, the maximum number of malicious parties is 6, the latency is 0 milliseconds and the number of iterations is 15.
 The detailed numbers and analysis can be found in the [docs/benches/results.md](docs/benches/results.md) documentation.
 
-The `robust_ecdsa` benchmarks measure the stub, so they serve only as a lower
-bound on what a replacement scheme could cost.
-As for Ed25519 the online phase is relatively slow with the current implementation (which does not split the scheme into presign and sign) compared to the ECDSA. With 100ms of latency, the current implementation (no presigning) is roughly 3 times slower to serve a message signing request (online phase) than both of the ECDSA schemes due to the fact that it has 3 times more rounds.
+As for Ed25519, the implementation without presigning takes 3 rounds to serve a message signing request, as many as ECDSA's online phase, so with 100ms of latency both take roughly 300ms.
 
 ## Acknowledgments
 

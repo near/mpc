@@ -1,22 +1,22 @@
 pub mod key_generation;
 pub mod key_resharing;
-pub mod presign;
 pub mod triple;
 
 mod sign;
 
 use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
-pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 
 pub use triple::TripleStorage;
 
+use crate::assets::metrics::{TRIPLE_GAUGES, report_store};
 use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::ParticipantId;
-use crate::providers::{DomainKeyshare, SignatureProvider, ecdsa_common};
+use crate::protocol_version::NetworkProtocolVersion;
+use crate::providers::{DomainKeyshare, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
@@ -27,7 +27,6 @@ use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
@@ -45,7 +44,13 @@ pub struct EcdsaSignatureProvider {
     keyshares: HashMap<DomainId, EcdsaKeyshare>,
 }
 
-pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
+pub(super) type EcdsaKeyshare = DomainKeyshare<Secp256K1Sha256>;
+
+/// Handshake protocol version from which a follower honours the batch size in
+/// [`EcdsaTaskId::ManyTriples`] rather than requiring
+/// [`TripleBatchSize::LEGACY`](mpc_node_config::TripleBatchSize::LEGACY).
+pub const CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
+    NetworkProtocolVersion::Oct2026;
 
 impl EcdsaSignatureProvider {
     pub fn new(
@@ -55,10 +60,8 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
+        keyshares: HashMap<DomainId, EcdsaKeyshare>,
     ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
-
         // cait-sith triple generation runs with exactly `t` parties, so keep one store per distinct reconstruction threshold.
         let mut triple_stores = HashMap::new();
         for t in triple::distinct_thresholds(keyshares.values().map(|d| d.reconstruction_threshold))
@@ -85,7 +88,18 @@ impl EcdsaSignatureProvider {
     }
 
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
-        ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
+        self.keyshares
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+    }
+
+    /// Reports the owned-asset gauges of every triple store of this provider,
+    /// labelled by their `t`.
+    pub fn report_asset_metrics(&self) {
+        for (t, store) in &self.triple_stores {
+            report_store(&TRIPLE_GAUGES, t.value(), store);
+        }
     }
 
     /// Returns the triple store for `t`, or an error if no store was
@@ -100,11 +114,11 @@ impl EcdsaSignatureProvider {
             .cloned()
             .ok_or_else(|| {
                 let mut configured: Vec<u64> =
-                    self.triple_stores.keys().map(|t| t.inner()).collect();
+                    self.triple_stores.keys().map(|t| t.value()).collect();
                 configured.sort();
                 anyhow::anyhow!(
                     "No triple store configured for t = {} (configured: {:?})",
-                    reconstruction_threshold.inner(),
+                    reconstruction_threshold.value(),
                     configured,
                 )
             })
@@ -185,28 +199,20 @@ impl SignatureProvider for EcdsaSignatureProvider {
                         .instrument(self.run_triple_generation_follower(channel, start, count))
                         .await?;
                 }
-                EcdsaTaskId::Presignature {
+                EcdsaTaskId::Presignature { .. } | EcdsaTaskId::Signature { .. } => {
+                    anyhow::bail!("Retired stored-presignature task rejected");
+                }
+                EcdsaTaskId::OnlinePresignSignature {
                     id,
-                    domain_id,
                     paired_triple_id,
                 } => {
                     ECDSA_TASK_MONITORS
-                        .presignature_generation_follower
-                        .instrument(self.run_presignature_generation_follower(
+                        .make_signature_follower
+                        .instrument(self.make_online_presign_signature_follower(
                             channel,
                             id,
-                            domain_id,
                             paired_triple_id,
                         ))
-                        .await?;
-                }
-                EcdsaTaskId::Signature {
-                    id,
-                    presignature_id,
-                } => {
-                    ECDSA_TASK_MONITORS
-                        .make_signature_follower
-                        .instrument(self.make_signature_follower(channel, id, presignature_id))
                         .await?;
                 }
             },
@@ -225,11 +231,11 @@ impl SignatureProvider for EcdsaSignatureProvider {
         // by a generator running at its own threshold.
         let mut generate_triples = Vec::new();
         for (&t, triple_store) in &self.triple_stores {
-            let reconstruction_threshold_usize: usize = t.inner().try_into()?;
+            let reconstruction_threshold_usize: usize = t.value().try_into()?;
             let reconstruction_threshold_bound =
                 TSReconstructionThreshold::from(reconstruction_threshold_usize);
             generate_triples.push(tracking::spawn(
-                &format!("generate triples for t={}", t.inner()),
+                &format!("generate triples for t={}", t.value()),
                 Self::run_background_triple_generation(
                     self.client.clone(),
                     self.mpc_config.clone(),
@@ -240,35 +246,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        // Held outside the join group below: this reporter never completes, so
-        // joining it would mask generator failures. Aborted on drop when this returns.
-        let _metrics_task = tracking::spawn(
-            "report triple metrics",
-            Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
-        );
-
-        let mut generate_presignatures = Vec::new();
-        for (domain_id, data) in &self.keyshares {
-            let triple_store = self.triple_store_for_t(data.reconstruction_threshold)?;
-            generate_presignatures.push(tracking::spawn(
-                &format!("generate presignatures for domain {}", domain_id.0),
-                Self::run_background_presignature_generation(
-                    self.client.clone(),
-                    self.config.presignature.clone().into(),
-                    triple_store,
-                    *domain_id,
-                    data.clone(),
-                ),
-            ));
-        }
-
         for Err(join_error) in futures::future::join_all(generate_triples).await {
             tracing::error!(
                 "ecdsa background triple generation task ended unexpectedly: {join_error}"
             );
-        }
-        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
-            tracing::error!("ecdsa background presignature task ended unexpectedly: {join_error}");
         }
 
         Ok(())

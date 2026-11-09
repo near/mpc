@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use crate::event_subscriber::block_events::BlockContext;
 use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
-use near_contract_transport::BlockHeight;
+use near_contract_transport::{BlockCount, BlockHeight};
 
 #[expect(rustdoc::private_intra_doc_links)]
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
@@ -98,7 +98,7 @@ use near_contract_transport::BlockHeight;
 ///  ..  ..      ..      ..  .. ┆       ..
 /// ```
 pub struct RecentBlocksTracker {
-    window_size: u64,
+    window_size: BlockCount,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
     /// with each other.
@@ -269,8 +269,10 @@ impl BlockNode {
                 _ => unreachable!(),
             }
         }
-        if indents.last().is_some_and(|indent| *indent >= 2) {
-            *indents.last_mut().unwrap() -= 2;
+        if let Some(indent) = indents.last_mut()
+            && *indent >= 2
+        {
+            *indent -= 2;
         }
         write!(
             f,
@@ -297,7 +299,7 @@ impl BlockNode {
 }
 
 impl RecentBlocksTracker {
-    pub fn new(window_size: u64) -> Self {
+    pub fn new(window_size: BlockCount) -> Self {
         Self {
             window_size,
             root_children: Vec::new(),
@@ -426,16 +428,9 @@ impl RecentBlocksTracker {
         new_final_height: BlockHeight,
         subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
     ) {
-        let mut new_root_children = Vec::new();
-        for node in self.root_children.iter() {
-            if !node.status.is_final() && node.height <= new_final_height {
-                // the entire subtree can be removed
-                subtrees_to_remove.push_back(node.clone());
-            } else {
-                new_root_children.push(node.clone());
-            }
-        }
-        self.root_children = new_root_children;
+        subtrees_to_remove.extend(self.root_children.extract_if(.., |node| {
+            !node.status.is_final() && node.height <= new_final_height
+        }));
     }
 
     fn remove_subtrees(&mut self, mut subtrees_to_remove: VecDeque<Arc<BlockNode>>) {
@@ -506,7 +501,7 @@ impl RecentBlocksTracker {
         Some(
             self.maximum_height_available
                 .saturating_sub(self.window_size)
-                .saturating_add(1)
+                .saturating_add(BlockCount::new(1))
                 .min(final_head.height),
         )
     }
@@ -544,7 +539,7 @@ impl Debug for RecentBlocksTracker {
             "   Recent blocks: (Window = {} to {}, GC limit {})",
             self.maximum_height_available
                 .saturating_sub(self.window_size)
-                .saturating_add(1),
+                .saturating_add(BlockCount::new(1)),
             self.maximum_height_available,
             self.minimum_height_to_keep().unwrap_or(0.into())
         )?;
@@ -570,7 +565,7 @@ impl Debug for RecentBlocksTracker {
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils {
     use super::super::block_events::BlockContext;
-    use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
+    use super::{BlockCount, BlockStatus, BlockStatusHandle, RecentBlocksTracker};
     use crate::types::BlockEntropy;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
@@ -741,7 +736,7 @@ pub mod test_utils {
     impl Tester {
         pub fn new(heights_to_keep: u64) -> Self {
             let maker = TestBlockMaker::new();
-            let tracker = RecentBlocksTracker::new(heights_to_keep);
+            let tracker = RecentBlocksTracker::new(BlockCount::new(heights_to_keep));
             Self {
                 maker,
                 tracker,

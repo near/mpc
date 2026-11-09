@@ -1,24 +1,30 @@
-use crate::config::MpcConfig;
-use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
+use crate::log_throttle::{Decision, LogThrottle};
+use crate::{
+    config::MpcConfig,
+    metrics::networking_metrics::{
+        self, INCOMING_CONNECTION, INCOMING_CONNECTIONS_REJECTED, MPC_P2P_TCP_WRITE_SIZE_BYTES,
+        OUTGOING_CONNECTION,
+    },
+    network::conn::{
+        AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
+        NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
+    },
+    network::{
+        constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION},
+        handshake::{
+            DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID,
+            p2p_handshake_dialer, p2p_handshake_listener,
+        },
+        wire_format::{MpcMessageKind, Packet},
+        {MeshNetworkTransportReceiver, MeshNetworkTransportSender, SendError},
+    },
+    primitives::{
+        MpcMessage, MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo,
+        PeerIndexerHeightMessage, PeerMessage,
+    },
+    protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
+    tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
 };
-use crate::network::conn::{
-    AllNodeConnectivities, ConnectionVersion, HasPeerNetworkProtocolVersion, NodeConnectivity,
-    NodeConnectivityInterface, OptionSenderConnectionId, SenderConnectionId,
-};
-use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
-use crate::network::handshake::{
-    DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID, p2p_handshake_dialer,
-    p2p_handshake_listener,
-};
-use crate::network::wire_format::{MpcMessageKind, Packet};
-use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
-    PeerMessage,
-};
-use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
-use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
@@ -26,18 +32,24 @@ use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
 use rustls::{ClientConfig, CommonState};
-use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::time::timeout;
-use tokio_rustls::TlsAcceptor;
-use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
-use tokio_util::sync::CancellationToken;
-use tokio_util::time::FutureExt;
-use tracing::info;
+use std::{
+    collections::HashMap,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    time::timeout,
+};
+use tokio_rustls::{TlsAcceptor, client::TlsStream};
+use tokio_util::{
+    codec::{Decoder, Framed, LengthDelimitedCodec},
+    sync::CancellationToken,
+    time::FutureExt,
+};
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
 /// This will send small packets immediately, reducing latency for node messages at
@@ -69,6 +81,9 @@ const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// never sends a ClientHello would hang the accept task forever.
 const TLS_ACCEPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Max concurrent incoming connections per authenticated participant with headroom for stale ones that haven't timed out yet.
+const MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT: usize = 4;
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -82,6 +97,37 @@ pub struct TlsMeshSender {
 pub struct TlsMeshReceiver {
     receiver: UnboundedReceiver<PeerMessage>,
     _incoming_connections_task: AutoAbortTask<()>,
+}
+
+/// Tracks how many incoming connections are currently open from each authenticated participant.
+#[derive(Default)]
+struct IncomingConnectionLimits {
+    per_participant: HashMap<ParticipantId, Arc<tokio::sync::Semaphore>>,
+}
+
+impl IncomingConnectionLimits {
+    fn new(participants: impl IntoIterator<Item = ParticipantId>) -> Self {
+        let per_participant = participants
+            .into_iter()
+            .map(|participant_id| {
+                (
+                    participant_id,
+                    Arc::new(tokio::sync::Semaphore::new(
+                        MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+                    )),
+                )
+            })
+            .collect();
+        Self { per_participant }
+    }
+
+    fn try_reserve(&self, peer_id: ParticipantId) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.per_participant
+            .get(&peer_id)?
+            .clone()
+            .try_acquire_owned()
+            .ok()
+    }
 }
 
 /// Maps public keys to participant IDs. Used to identify incoming connections.
@@ -141,6 +187,7 @@ impl Packet {
         match &self {
             Packet::Ping => networking_metrics::PING_MESSAGE,
             Packet::IndexerHeight(_) => networking_metrics::INDEXER_HEIGHT_MESSAGE,
+            Packet::ConnectedPeersInfo(_) => networking_metrics::CONNECTED_PEERS_MESSAGE,
             Packet::MpcMessage(MpcMessage { kind, .. }) => match kind {
                 MpcMessageKind::Start(_) => networking_metrics::MPC_START_MESSAGE,
                 MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
@@ -171,7 +218,38 @@ impl OutgoingConnection {
         participant_identities: &ParticipantIdentities,
         sender_connection_id: u32,
     ) -> anyhow::Result<OutgoingConnection> {
-        let mut tls_stream = timeout(Self::CONNECT_TIMEOUT, async {
+        let mut tls_stream = Self::connect_tls(client_config, target_address).await?;
+        let peer_id =
+            Self::verify_expected_peer(&tls_stream, participant_identities, target_participant_id)?;
+
+        tracing::info!("performing P2P handshake with: {:?}", target_address);
+        let peer_network_protocol_version =
+            Self::negotiate_protocol(&mut tls_stream, sender_connection_id).await?;
+
+        let (sender, receiver) = mpsc::unbounded_channel::<Packet>();
+        let closed = CancellationToken::new();
+        let sender_task = tracking::spawn_checked(
+            &format!("TLS connection to {}", target_participant_id),
+            Self::run_sender_loop(tls_stream, receiver, peer_id, closed.clone()),
+        );
+        let keepalive_task = tracking::spawn(
+            &format!("ping keepalive task for {}", target_participant_id),
+            run_ping_keepalive(sender.clone()),
+        );
+        Ok(OutgoingConnection {
+            sender,
+            _sender_task: sender_task,
+            _keepalive_task: keepalive_task,
+            closed,
+            peer_network_protocol_version,
+        })
+    }
+
+    async fn connect_tls(
+        client_config: Arc<ClientConfig>,
+        target_address: &str,
+    ) -> anyhow::Result<TlsStream<TcpStream>> {
+        let tls_stream = timeout(Self::CONNECT_TIMEOUT, async {
             let tcp_stream = TcpStream::connect(target_address)
                 .await
                 .context("failed to establish tcp stream")?;
@@ -185,7 +263,14 @@ impl OutgoingConnection {
         })
         .await
         .context("timed out establishing tls connection")??;
+        Ok(tls_stream)
+    }
 
+    fn verify_expected_peer(
+        tls_stream: &TlsStream<TcpStream>,
+        participant_identities: &ParticipantIdentities,
+        target_participant_id: ParticipantId,
+    ) -> anyhow::Result<ParticipantId> {
         let peer_id = verify_peer_identity(tls_stream.get_ref().1, participant_identities)
             .context("verify server identity")?;
         if peer_id != target_participant_id {
@@ -195,15 +280,20 @@ impl OutgoingConnection {
                 peer_id
             );
         }
+        Ok(peer_id)
+    }
 
-        info!("performing P2P handshake with: {:?}", target_address);
+    async fn negotiate_protocol(
+        tls_stream: &mut TlsStream<TcpStream>,
+        sender_connection_id: u32,
+    ) -> anyhow::Result<NetworkProtocolVersion> {
         let connection_info = timeout(
             Self::HANDSHAKE_TIMEOUT,
             p2p_handshake_dialer(
                 DialerData {
                     sender_connection_id,
                 },
-                &mut tls_stream,
+                tls_stream,
             ),
         )
         .await??;
@@ -237,175 +327,157 @@ impl OutgoingConnection {
                 handshake_data.peer_network_protocol_version
             }
         };
+        Ok(peer_network_protocol_version)
+    }
 
+    async fn run_sender_loop<T>(
+        tls_stream: T,
+        mut receiver: UnboundedReceiver<Packet>,
+        peer_id: ParticipantId,
+        closed: CancellationToken,
+    ) -> anyhow::Result<()>
+    where
+        T: AsyncRead + AsyncWrite + Unpin,
+    {
         let mut framed_tls_stream = configure_framed_stream(tls_stream);
+        let _drop_to_cancel = DropToCancel(closed);
+        let mut sent_bytes: u64 = 0;
+        let peer_id_string = peer_id.to_string();
 
-        let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
-        let closed = CancellationToken::new();
-        let closed_clone = closed.clone();
-        let sender_task = tracking::spawn_checked(
-            &format!("TLS connection to {}", target_participant_id),
-            async move {
-                let _drop_to_cancel = DropToCancel(closed_clone);
-                let mut sent_bytes: u64 = 0;
-                let peer_id_string = peer_id.to_string();
+        let result: anyhow::Result<()> = async {
+            loop {
+                tokio::select! {
+                    data = receiver.recv() => {
+                        let Some(data) = data else {
+                            break;
+                        };
+                        let serialized = borsh::to_vec(&data)?;
+                        let bytes = Bytes::from(serialized);
+                        let payload_size = bytes.len();
 
-                let result: anyhow::Result<()> = async {
-                    loop {
-                        tokio::select! {
-                            data = receiver.recv() => {
-                                let Some(data) = data else {
-                                    break;
-                                };
-                                let serialized = borsh::to_vec(&data)?;
-                                let bytes = Bytes::from(serialized);
-                                let payload_size = bytes.len();
-
-                                // Add timeout to write operations to detect if writes are hanging
-                                // (e.g., due to half-open connection where peer stopped ACKing)
-                                match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
-                                    Ok(Ok(_)) => {},
-                                    Ok(Err(e)) => return Err(e.into()),
-                                    Err(_) => {
-                                        // Write timed out - connection is likely stuck/half-open
-                                        return Err(anyhow::anyhow!(
-                                            "write operation timed out after {}s (connection may be half-open)",
-                                            WRITE_OPERATION_TIMEOUT.as_secs()
-                                        ));
-                                    }
-                                }
-
-                                let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
-                                    Some(size) => match size.try_into() {
-                                        Ok(size) => size,
-                                        Err(_) => {
-                                            tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
-                                            u64::MAX
-                                        }
-                                    },
-                                    None => {
-                                        tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({payload_size})");
-                                        u64::MAX
-                                    }
-                                };
-
-                                let metric_labels = [
-                                    peer_id_string.as_str(),
-                                    OUTGOING_CONNECTION,
-                                    data.message_type_label(),
-                                ];
-
-                                MPC_P2P_TCP_WRITE_SIZE_BYTES
-                                    .with_label_values(&metric_labels)
-                                    .observe(total_message_size_bytes as f64);
-
-                                sent_bytes = match sent_bytes.checked_add(total_message_size_bytes) {
-                                    Some(size) => size,
-                                    None => {
-                                        tracing::error!("sent_bytes overflow: {sent_bytes} + {total_message_size_bytes}");
-                                        u64::MAX
-                                    }
-                                };
-                                tracking::set_progress(&format!("sent {} bytes", sent_bytes));
-                            }
-                            _ = futures::StreamExt::next(&mut framed_tls_stream) => {
-                                // We do not expect any data from the other side. However,
-                                // selecting on it will quickly return error if the connection
-                                // is broken before we have data to send. That way we can
-                                // immediately quit the loop as soon as the connection is broken
-                                // (so we can reconnect).
-                                break;
+                        // Add timeout to write operations to detect if writes are hanging
+                        // (e.g., due to half-open connection where peer stopped ACKing)
+                        match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
+                            Ok(Ok(_)) => {},
+                            Ok(Err(e)) => return Err(e.into()),
+                            Err(_) => {
+                                // Write timed out - connection is likely stuck/half-open
+                                return Err(anyhow::anyhow!(
+                                    "write operation timed out after {}s (connection may be half-open)",
+                                    WRITE_OPERATION_TIMEOUT.as_secs()
+                                ));
                             }
                         }
+
+                        let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
+                            Some(size) => size.try_into().unwrap_or_else(|_| {
+                                    tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
+                                    u64::MAX
+                                }),
+                            None => {
+                                tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({payload_size})");
+                                u64::MAX
+                            }
+                        };
+
+                        let metric_labels = [
+                            peer_id_string.as_str(),
+                            OUTGOING_CONNECTION,
+                            data.message_type_label(),
+                        ];
+
+                        MPC_P2P_TCP_WRITE_SIZE_BYTES
+                            .with_label_values(&metric_labels)
+                            .observe(total_message_size_bytes as f64);
+
+                        sent_bytes = sent_bytes.checked_add(total_message_size_bytes).unwrap_or_else(|| {
+                                tracing::error!("sent_bytes overflow: {sent_bytes} + {total_message_size_bytes}");
+                                u64::MAX
+                            });
+                        tracking::set_progress(&format!("sent {} bytes", sent_bytes));
                     }
-                    anyhow::Ok(())
-                }.await;
-
-                // Peer closing without close_notify is normal in P2P networks (task aborts,
-                // reconnections, process restarts). Treat it as a clean close, not an error.
-                if let Err(err) = &result
-                    && is_tls_close_notify_error(err)
-                {
-                    tracing::debug!(
-                        err = %err,
-                        peer_id = %peer_id,
-                        "peer closed connection without TLS close_notify"
-                    );
-                    return Ok(());
-                }
-
-                // Send TLS close_notify before dropping the connection so
-                // the peer does not see an unexpected EOF.
-                let mut tls_stream = framed_tls_stream.into_inner();
-                if let Err(err) = tls_stream.shutdown().await {
-                    tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
-                }
-
-                result
-            },
-        );
-        let sender_clone = sender.clone();
-        let keepalive_task = tracking::spawn(
-            &format!("ping keepalive task for {}", target_participant_id),
-            async move {
-                loop {
-                    tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
-                    if sender_clone.send(Packet::Ping).is_err() {
-                        // The receiver side will be dropped when the sender task is
-                        // dropped (i.e. connection is closed).
+                    _ = futures::StreamExt::next(&mut framed_tls_stream) => {
+                        // We do not expect any data from the other side. However,
+                        // selecting on it will quickly return error if the connection
+                        // is broken before we have data to send. That way we can
+                        // immediately quit the loop as soon as the connection is broken
+                        // (so we can reconnect).
                         break;
                     }
                 }
-            },
-        );
-        Ok(OutgoingConnection {
-            sender,
-            _sender_task: sender_task,
-            _keepalive_task: keepalive_task,
-            closed,
-            peer_network_protocol_version,
-        })
+            }
+            anyhow::Ok(())
+        }.await;
+
+        // Peer closing without close_notify is normal in P2P networks (task aborts,
+        // reconnections, process restarts). Treat it as a clean close, not an error.
+        if let Err(err) = &result
+            && is_tls_close_notify_error(err)
+        {
+            tracing::debug!(
+                err = %err,
+                peer_id = %peer_id,
+                "peer closed connection without TLS close_notify"
+            );
+            return Ok(());
+        }
+
+        // Send TLS close_notify before dropping the connection so
+        // the peer does not see an unexpected EOF.
+        let mut tls_stream = framed_tls_stream.into_inner();
+        if let Err(err) = tls_stream.shutdown().await {
+            tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
+        }
+
+        result
     }
 
     async fn wait_for_close(&self) {
         self.closed.cancelled().await;
     }
 
-    fn send_mpc_message(&self, msg: MpcMessage) -> anyhow::Result<()> {
-        self.sender.send(Packet::MpcMessage(msg))?;
+    fn send(&self, packet: Packet) -> anyhow::Result<()> {
+        self.sender.send(packet)?;
         Ok(())
     }
+}
 
-    fn send_indexer_height(&self, msg: IndexerHeightMessage) -> anyhow::Result<()> {
-        self.sender.send(Packet::IndexerHeight(msg))?;
-        Ok(())
+async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
+    loop {
+        tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
+        if sender.send(Packet::Ping).is_err() {
+            // The receiver side will be dropped when the sender task is
+            // dropped (i.e. connection is closed).
+            break;
+        }
     }
 }
 
 impl PersistentConnection {
     const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
-    /// Sends a message over the connection. If the connection was reset, fail.
-    fn send_mpc_message(
+    fn send(
         &self,
-        expected_version: ConnectionVersion,
-        msg: MpcMessage,
-    ) -> anyhow::Result<()> {
-        self.connectivity
-            .outgoing_connection_asserting(expected_version)
-            .with_context(|| format!("Cannot send MPC message to {}", self.target_participant_id))?
-            .send_mpc_message(msg)
-            .with_context(|| {
-                format!("Cannot send MPC message to {}", self.target_participant_id)
-            })?;
-        Ok(())
-    }
-
-    /// Sends a message over the connection. This is done on a best-effort basis.
-    fn send_indexer_height(&self, height: IndexerHeightMessage) {
-        if let Some(conn) = self.connectivity.any_outgoing_connection() {
-            let _ = conn.send_indexer_height(height);
+        packet: Packet,
+        connection_version: Option<ConnectionVersion>,
+    ) -> Result<(), SendError> {
+        let peer = self.target_participant_id;
+        let conn = match connection_version {
+            Some(expected) => self
+                .connectivity
+                .outgoing_connection_asserting(expected)
+                .map_err(|source| SendError::ConnectionLost { peer, source })?,
+            None => self
+                .connectivity
+                .any_outgoing_connection()
+                .ok_or(SendError::PeerNotConnected(peer))?,
+        };
+        let version = conn.peer_network_protocol_version();
+        if !version.supports(packet.min_protocol_version()) {
+            return Err(SendError::PeerNotSupportingMessage { peer, version });
         }
+        conn.send(packet)
+            .map_err(|_| SendError::PeerNotConnected(peer))
     }
     const MIN_CONNECTION_ID: u32 = 0;
 
@@ -422,6 +494,7 @@ impl PersistentConnection {
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
+                let mut log_throttle = LogThrottle::new(Duration::from_mins(1));
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
@@ -438,6 +511,7 @@ impl PersistentConnection {
                     .await
                     {
                         Ok(new_conn) => {
+                            log_throttle.reset();
                             tracing::info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
@@ -447,13 +521,20 @@ impl PersistentConnection {
                             new_conn
                         }
                         Err(e) => {
-                            tracing::info!(
-                                my_id = %my_id,
-                                target_participant_id = %target_participant_id,
-                                error = %format_args!("{e:#}"),
-                                "could not connect, retrying"
-                            );
-
+                            let decision =
+                                log_throttle.check(tokio::time::Instant::now().into_std());
+                            match decision {
+                                Decision::Suppress => {}
+                                Decision::Emit { observed } => {
+                                    tracing::info!(
+                                        my_id = %my_id,
+                                        target_participant_id = %target_participant_id,
+                                        observed,
+                                        error = %format_args!("{e:#}"),
+                                        "could not connect",
+                                    );
+                                }
+                            }
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
@@ -532,7 +613,7 @@ where
         .map(|participant| participant.port)
         .ok_or_else(|| anyhow!("My ID not found in participants"))?;
 
-    info!("Preparing participant data.");
+    tracing::info!("Preparing participant data.");
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
@@ -583,6 +664,13 @@ where
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
+    let incoming_connection_limits = Arc::new(IncomingConnectionLimits::new(
+        participant_identities
+            .key_to_participant_id
+            .values()
+            .copied(),
+    ));
+
     let (message_sender, message_receiver) = mpsc::unbounded_channel();
     let tcp_listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0),
@@ -593,7 +681,7 @@ where
 
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
-    info!("Spawning incoming connections handler.");
+    tracing::info!("Spawning incoming connections handler.");
     let incoming_connections_task =
         tracking::spawn("incoming connection handler tls mesh network", async move {
             let mut tasks = AutoAbortTaskCollection::new();
@@ -607,6 +695,7 @@ where
                         tls_acceptor.clone(),
                         participant_identities.clone(),
                         my_id,
+                        incoming_connection_limits.clone(),
                     ),
                 );
             })
@@ -640,6 +729,7 @@ async fn incoming_connection_handler(
     tls_acceptor: TlsAcceptor,
     participant_identities: Arc<ParticipantIdentities>,
     my_id: ParticipantId,
+    incoming_connection_limits: Arc<IncomingConnectionLimits>,
 ) -> anyhow::Result<()> {
     let tcp_stream = configure_tcp_stream(tcp_stream)?;
     let mut tls_stream = timeout(TLS_ACCEPT_TIMEOUT, tls_acceptor.accept(tcp_stream))
@@ -648,6 +738,21 @@ async fn incoming_connection_handler(
 
     let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
     tracking::set_progress(&format!("Authenticated as {}", peer_id));
+
+    let Some(_connection_slot) = incoming_connection_limits.try_reserve(peer_id) else {
+        tracing::debug!(
+            peer_id = %peer_id,
+            max = MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+            "dropping incoming connection, participant at connection limit"
+        );
+        INCOMING_CONNECTIONS_REJECTED
+            .with_label_values(&[peer_id.to_string().as_str()])
+            .inc();
+        if let Err(err) = tls_stream.shutdown().await {
+            tracing::error!(err = %err, "TLS shutdown failed");
+        }
+        return Ok(());
+    };
 
     let peer = connectivities.get(peer_id)?;
     // If we have an existing connection, we require this connection attempt to
@@ -734,13 +839,10 @@ async fn incoming_connection_handler(
             };
 
             let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_bytes.len()) {
-                Some(size) => match size.try_into() {
-                    Ok(size) => size,
-                    Err(_) => {
-                        tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
-                        u64::MAX
-                    }
-                },
+                Some(size) => size.try_into().unwrap_or_else(|_| {
+                    tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
+                    u64::MAX
+                }),
                 None => {
                     tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({})", payload_bytes.len());
                     u64::MAX
@@ -768,6 +870,12 @@ async fn incoming_connection_handler(
                         message,
                     }))?;
                 }
+                Packet::ConnectedPeersInfo(info) => {
+                    message_sender.send(PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo {
+                        from: peer_id,
+                        info,
+                    }))?;
+                }
             }
 
             let metric_labels = [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
@@ -776,20 +884,17 @@ async fn incoming_connection_handler(
                 .with_label_values(&metric_labels)
                 .observe(total_message_size_bytes as f64);
 
-            received_bytes = match received_bytes.checked_add(total_message_size_bytes) {
-                Some(size) => size,
-                None => {
-                    tracing::error!("received_bytes overflow: {received_bytes} + {total_message_size_bytes}");
-                    u64::MAX
-                }
-            };
+            received_bytes = received_bytes.checked_add(total_message_size_bytes).unwrap_or_else(|| {
+                tracing::error!("received_bytes overflow: {received_bytes} + {total_message_size_bytes}");
+                u64::MAX
+            });
             tracking::set_progress(&format!(
                 "Received {} bytes from {}",
                 received_bytes, peer_id
             ));
         }
     }
-    .await;
+        .await;
 
     // Peer closing without close_notify is normal in P2P networks (task aborts,
     // reconnections, process restarts). Treat it as a clean close, not an error.
@@ -941,21 +1046,13 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     fn send(
         &self,
         recipient_id: ParticipantId,
-        message: MpcMessage,
-        connection_version: ConnectionVersion,
-    ) -> anyhow::Result<()> {
+        packet: Packet,
+        connection_version: Option<ConnectionVersion>,
+    ) -> Result<(), SendError> {
         self.connections
             .get(&recipient_id)
-            .ok_or_else(|| anyhow!("Recipient not found"))?
-            .send_mpc_message(connection_version, message)
-            .with_context(|| format!("Cannot send MPC message to recipient {}", recipient_id))?;
-        Ok(())
-    }
-
-    fn send_indexer_height(&self, height: IndexerHeightMessage) {
-        for conn in self.connections.values() {
-            conn.send_indexer_height(height.clone());
-        }
+            .ok_or(SendError::PeerNotConnected(recipient_id))?
+            .send(packet, connection_version)
     }
 
     async fn wait_for_ready(
@@ -1033,6 +1130,9 @@ pub mod testing {
         pub const MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST: TestPorts = TestPorts::mpc_node_tests(28);
         pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
         pub const PEER_PROTOCOL_VERSION_TEST: TestPorts = TestPorts::mpc_node_tests(30);
+        pub const VERIFY_FOREIGN_TX_RPC_QUORUM_TEST: TestPorts = TestPorts::mpc_node_tests(32);
+        pub const TRIPLE_BATCH_SIZE_TEST: TestPorts = TestPorts::mpc_node_tests(33);
+        pub const FOREIGN_CHAIN_REREGISTRATION_TEST: TestPorts = TestPorts::mpc_node_tests(34);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1083,32 +1183,41 @@ pub mod testing {
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
+        IncomingConnection, IncomingConnectionLimits, MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+        OutgoingConnection, ParticipantIdentities, PersistentConnection,
         incoming_connection_handler,
     };
-    use crate::config::MpcConfig;
-    use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
-    use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
-    use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
-    use crate::primitives::{
-        ChannelId, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
+    use crate::{
+        config::MpcConfig,
+        network::{
+            conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity},
+            wire_format::{EcdsaTaskId, MpcTaskId, Packet},
+            {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
+        },
+        p2p::testing::{generate_test_p2p_configs, port_seed},
+        primitives::{
+            ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, PeerMessage,
+            UniqueId,
+        },
+        protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
+        tracking::{self, testing::start_root_task_with_periodic_dump},
     };
-    use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
-    use crate::tracking::testing::start_root_task_with_periodic_dump;
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
-    use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rstest::rstest;
     use rustls::ClientConfig;
-    use std::sync::{Arc, Mutex};
-    use std::time::Duration;
-    use tokio::net::{TcpListener, TcpStream};
-    use tokio::sync::mpsc;
-    use tokio::task::JoinHandle;
-    use tokio::time::timeout;
+    use std::{collections::BTreeMap, sync::Arc, time::Duration};
+    use tokio::{
+        io::AsyncReadExt,
+        net::{TcpListener, TcpStream},
+        sync::mpsc,
+        task::JoinHandle,
+        time::timeout,
+    };
     use tokio_rustls::TlsAcceptor;
+    use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
     #[test_log::test]
@@ -1137,11 +1246,12 @@ mod tests {
             sender0.wait_for_ready(2, &all_participants).await.unwrap();
             sender1.wait_for_ready(2, &all_participants).await.unwrap();
 
+            let mut rng = StdRng::seed_from_u64(42);
             for _ in 0..100 {
-                // TODO: adjust test?
-                let domain_id = rand::thread_rng().r#gen();
-                let epoch_id = rand::thread_rng().r#gen();
-                let n_attempts = rand::thread_rng().r#gen::<usize>() % 100;
+                // TODO: adjust test
+                let domain_id = rng.r#gen();
+                let epoch_id = rng.r#gen();
+                let n_attempts = rng.r#gen::<usize>() % 100;
                 let mut attempt_id = AttemptId::new();
                 for _ in 0..n_attempts {
                     attempt_id = attempt_id.next();
@@ -1161,8 +1271,8 @@ mod tests {
                 sender0
                     .send(
                         participant1,
-                        msg0to1.clone(),
-                        sender0.connectivity(participant1).connection_version(),
+                        Packet::MpcMessage(msg0to1.clone()),
+                        Some(sender0.connectivity(participant1).connection_version()),
                     )
                     .unwrap();
                 let PeerMessage::Mpc(msg) = receiver1.receive().await.unwrap() else {
@@ -1178,8 +1288,8 @@ mod tests {
                 sender1
                     .send(
                         participant0,
-                        msg1to0.clone(),
-                        sender1.connectivity(participant0).connection_version(),
+                        Packet::MpcMessage(msg1to0.clone()),
+                        Some(sender1.connectivity(participant0).connection_version()),
                     )
                     .unwrap();
 
@@ -1389,6 +1499,47 @@ mod tests {
         ids
     }
 
+    #[rstest]
+    #[case::older_peer(NetworkProtocolVersion::Sep2026, false)]
+    #[case::current_peer(NetworkProtocolVersion::Oct2026, true)]
+    #[case::newer_peer(NetworkProtocolVersion::Unknown(42), true)]
+    #[tokio::test]
+    async fn persistent_connection__should_send_connected_peers_only_to_peers_negotiating_oct2026(
+        #[case] peer_version: NetworkProtocolVersion,
+        #[case] expected_sent: bool,
+    ) {
+        // Given
+        let (sender, mut packets) = mpsc::unbounded_channel();
+        let connection = Arc::new(OutgoingConnection {
+            sender,
+            _sender_task: tokio::spawn(std::future::pending()).into(),
+            _keepalive_task: tokio::spawn(std::future::pending()).into(),
+            closed: CancellationToken::new(),
+            peer_network_protocol_version: peer_version,
+        });
+        let connectivity =
+            Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
+        connectivity.set_outgoing_connection(&connection);
+        let persistent_connection = PersistentConnection {
+            target_participant_id: ParticipantId::from_raw(1),
+            connectivity,
+            _task: tokio::spawn(std::future::pending()).into(),
+        };
+
+        // When
+        let result = persistent_connection.send(
+            Packet::ConnectedPeersInfo(ConnectedPeersInfo {
+                peers: BTreeMap::from([(ParticipantId::from_raw(2), 7)]),
+            }),
+            None,
+        );
+
+        // Then
+        assert_eq!(result.is_ok(), expected_sent);
+        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
+        assert_eq!(sent, expected_sent);
+    }
+
     #[tokio::test]
     #[test_log::test]
     async fn test_receiver_does_not_accept_new_connection_if_connected() {
@@ -1563,7 +1714,7 @@ mod tests {
         // When dialing it (under an outer timeout so a regression fails the
         // test instead of hanging it).
         let result = timeout(
-            Duration::from_secs(60),
+            Duration::from_mins(1),
             OutgoingConnection::new(
                 make_client_config(),
                 &target_address,
@@ -1617,7 +1768,7 @@ mod tests {
             // Then each hung attempt times out and is retried, so the listener
             // keeps receiving fresh dial attempts.
             for _ in 0..3 {
-                timeout(Duration::from_secs(120), accept_rx.recv())
+                timeout(Duration::from_mins(2), accept_rx.recv())
                     .await
                     .expect("retry loop stopped dialing after a hung attempt")
                     .unwrap();
@@ -1638,7 +1789,8 @@ mod tests {
         let client_config = make_client_config();
         let my_id = ParticipantId::from_raw(0);
         let target_id = ParticipantId::from_raw(1);
-        let resolved_address = Arc::new(Mutex::new(addr_a.clone()));
+        let (resolved_address_tx, resolved_address_rx) =
+            tokio::sync::watch::channel(addr_a.clone());
 
         start_root_task_with_periodic_dump(async move {
             let connectivities =
@@ -1646,10 +1798,7 @@ mod tests {
                     my_id,
                     &[my_id, target_id],
                 );
-            let resolve_address = {
-                let resolved_address = resolved_address.clone();
-                move || Some(resolved_address.lock().unwrap().clone())
-            };
+            let resolve_address = move || Some(resolved_address_rx.borrow().clone());
 
             let _connection = PersistentConnection::new(
                 client_config,
@@ -1662,16 +1811,16 @@ mod tests {
             )
             .unwrap();
 
-            timeout(Duration::from_secs(120), accept_a.recv())
+            timeout(Duration::from_mins(2), accept_a.recv())
                 .await
                 .expect("should dial the initial address A")
                 .unwrap();
 
             // When
-            *resolved_address.lock().unwrap() = addr_b.clone();
+            resolved_address_tx.send_replace(addr_b.clone());
 
             // Then
-            timeout(Duration::from_secs(120), accept_b.recv())
+            timeout(Duration::from_mins(2), accept_b.recv())
                 .await
                 .expect("should dial the updated address B after the resolver update")
                 .unwrap();
@@ -1697,7 +1846,7 @@ mod tests {
 
         // When
         let result = timeout(
-            Duration::from_secs(60),
+            Duration::from_mins(1),
             incoming_connection_handler(
                 message_sender,
                 connectivities,
@@ -1705,6 +1854,7 @@ mod tests {
                 tls_acceptor,
                 Arc::new(ParticipantIdentities::default()),
                 my_id,
+                Arc::new(IncomingConnectionLimits::default()),
             ),
         )
         .await
@@ -1718,5 +1868,60 @@ mod tests {
             format!("{error:#}").contains("timed out"),
             "unexpected error: {error:#}"
         );
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn incoming_connection_handler__should_close_connection_when_peer_connection_limit_is_reached()
+     {
+        start_root_task_with_periodic_dump(async move {
+            // Given
+            let my_id = ParticipantId::from_raw(0);
+            let peer_id = ParticipantId::from_raw(1);
+            let mut participant_identities = ParticipantIdentities::default();
+            participant_identities
+                .key_to_participant_id
+                .insert(make_signing_key().verifying_key(), peer_id);
+            let limits = Arc::new(IncomingConnectionLimits::new([peer_id]));
+            let _held_slots: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT)
+                .map(|_| limits.try_reserve(peer_id).unwrap())
+                .collect();
+            let connectivities = Arc::new(AllNodeConnectivities::<
+                OutgoingConnection,
+                IncomingConnection,
+            >::new(my_id, &[my_id, peer_id]));
+            let (message_sender, _message_receiver) = mpsc::unbounded_channel();
+            let (server_tcp, client_tcp) = must_accept_silent_connection().await;
+            let _handler = tracking::spawn(
+                "incoming connection handler",
+                incoming_connection_handler(
+                    message_sender,
+                    connectivities,
+                    server_tcp,
+                    make_tls_acceptor(),
+                    Arc::new(participant_identities),
+                    my_id,
+                    limits,
+                ),
+            );
+
+            // When
+            let mut client = tokio_rustls::TlsConnector::from(make_client_config())
+                .connect("dummy".try_into().unwrap(), client_tcp)
+                .await
+                .unwrap();
+
+            // Then
+            let mut buf = [0u8; 1];
+            let bytes_read = timeout(
+                OutgoingConnection::HANDSHAKE_TIMEOUT / 2,
+                client.read(&mut buf),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(bytes_read, 0);
+        })
+        .await;
     }
 }

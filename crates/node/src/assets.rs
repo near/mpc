@@ -1,7 +1,9 @@
 pub mod cleanup;
+pub mod metrics;
 #[cfg(test)]
 pub mod test_utils;
 
+use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
@@ -387,21 +389,15 @@ where
         }
 
         // If the cold queue is exhausted, process elements buffered in the hot queue
-        while num_elements_to_process > 0 {
-            match self.hot_receiver.try_recv().ok() {
-                Some((id, value)) => {
-                    num_elements_to_process -= 1;
-                    let _ = self
-                        .cold_queue
-                        .lock()
-                        .unwrap()
-                        .add_if_condition_satisfied(id, value);
-                }
-                _ => {
-                    // Nothing waiting in the hot queue
-                    break;
-                }
-            }
+        while num_elements_to_process > 0
+            && let Ok((id, value)) = self.hot_receiver.try_recv()
+        {
+            num_elements_to_process -= 1;
+            let _ = self
+                .cold_queue
+                .lock()
+                .unwrap()
+                .add_if_condition_satisfied(id, value);
         }
 
         removed_from_cold_queue
@@ -411,17 +407,20 @@ where
         self.hot_receiver.len() + self.cold_queue.lock().unwrap().cold_available
     }
 
-    pub fn ready(&self) -> usize {
-        self.cold_queue.lock().unwrap().cold_ready
-    }
-
-    pub fn offline(&self) -> usize {
+    /// Owned counts under a single lock, so they describe the same moment:
+    /// `online + unknown == available`, and `offline` is the rest.
+    pub fn counts(&self) -> OwnedAssetCounts {
+        let hot = self.hot_receiver.len();
         let cold_queue = self.cold_queue.lock().unwrap();
-        cold_queue.cold_queue.len() - cold_queue.cold_available
+        OwnedAssetCounts {
+            available: hot + cold_queue.cold_available,
+            online: cold_queue.cold_ready,
+            offline: cold_queue.cold_queue.len() - cold_queue.cold_available,
+        }
     }
 }
 
-/// Persistent storage for a single type of asset (triples or presignatures).
+/// Persistent storage for a single type of asset (e.g. triples).
 /// The storage is distributed across all participants, with each participant
 /// owning some of the assets. Each asset has exactly one owner.
 ///
@@ -455,8 +454,7 @@ pub struct DistributedAssetStorage<T> {
 ///
 /// The caller is responsible for committing `update_writer`. Sharing a writer
 /// across multiple calls lets a single cleanup pass (per-`t` triple columns +
-/// per-domain presignature columns + epoch marker) be committed as one atomic
-/// batch.
+/// epoch marker) be committed as one atomic batch.
 pub fn clean_db<T>(
     db: &Arc<SecretDB>,
     update_writer: &mut SecretDBUpdate,
@@ -539,18 +537,19 @@ where
         Ok(UniqueId::try_from_slice(&key[prefix_len..])?)
     }
 
-    /// Generates an ID that won't conflict with existing ones, and reserves it
-    /// so that the next call to the same function will return a different one.
-    /// TODO(#10): This reservation does not persist across restarts, leading to
-    /// the assumption that the clock moves forward at least a second across
-    /// restarts.
+    /// Same as [`Self::generate_and_reserve_id_range`], for a single ID.
+    #[cfg(test)]
     pub fn generate_and_reserve_id(&self) -> UniqueId {
         self.generate_and_reserve_id_range(1)
     }
 
-    /// Same as `generate_and_reserve_id`, but for a range of IDs.
+    /// Generates a range of IDs that won't conflict with existing ones, and reserves it
+    /// so that the next call to the same function will return a different one.
     /// The returned ID represents a range that starts from that ID and ending at
     /// that ID .add_to_counter(count - 1).
+    /// TODO(#10): This reservation does not persist across restarts, leading to
+    /// the assumption that the clock moves forward at least a second across
+    /// restarts.
     pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
         assert!(count > 0);
         let mut last_id = self.last_id.lock().unwrap();
@@ -569,16 +568,10 @@ where
         self.owned_queue.available()
     }
 
-    /// Returns the current number of owned assets in the database which
-    /// are known to have all participants alive.
-    pub fn num_owned_ready(&self) -> usize {
-        self.owned_queue.ready()
-    }
-
-    /// Returns the current number of owned assets in the database which
-    /// are known to have some participant offline.
-    pub fn num_owned_offline(&self) -> usize {
-        self.owned_queue.offline()
+    /// Available, online and offline counts, read under one lock so they are
+    /// consistent with each other.
+    pub fn owned_asset_counts(&self) -> OwnedAssetCounts {
+        self.owned_queue.counts()
     }
 
     pub async fn take_owned(&self) -> (UniqueId, T) {
@@ -1313,7 +1306,7 @@ mod tests {
         store.add_owned(id1, 1);
         store.add_owned(id1.add_to_counter(1).unwrap(), 2);
         assert_eq!(store.take_owned().now_or_never().unwrap().1, 2);
-        assert_eq!(store.num_owned_offline(), 1);
+        assert_eq!(store.owned_asset_counts().offline, 1);
 
         store.maybe_discard_owned(1).now_or_never().unwrap();
 
@@ -1529,7 +1522,7 @@ mod tests {
         // Then
         assert_eq!(taken, Some((id2, 3)));
         assert_eq!(queue.available(), 2);
-        assert_eq!(queue.offline(), 0);
+        assert_eq!(queue.counts().offline, 0);
     }
 
     // The condition value (the alive set) can change after the queue last observed it.
@@ -1571,7 +1564,7 @@ mod tests {
         // Then: the one the stale value would have allowed is skipped
         assert_eq!(taken, Some((id_fresh, online_participant)));
         // and it is parked rather than dropped, so it becomes usable again on reconnect
-        assert_eq!(queue.offline(), 1);
+        assert_eq!(queue.counts().offline, 1);
         assert_eq!(queue.available(), 0);
     }
 

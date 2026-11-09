@@ -27,13 +27,13 @@ pub const VOTE_REMOVE_OS_MEASUREMENT: &str = "vote_remove_os_measurement";
 pub const VOTE_CANCEL_KEYGEN: &str = "vote_cancel_keygen";
 pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
-pub const VOTE_UPDATE: &str = "vote_update";
 pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
 pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
 pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
-pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
-pub const REMOVE_UPDATE_PROPOSAL: &str = "remove_update_proposal";
-pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
+pub const VOTE_CONTRACT_UPDATE: &str = "vote_contract_update";
+pub const REMOVE_CONTRACT_UPDATE_VOTE: &str = "remove_contract_update_vote";
+pub const REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES: &str =
+    "remove_non_participant_contract_update_votes";
 
 // Protocol management
 pub const INIT: &str = "init";
@@ -41,8 +41,7 @@ pub const INIT_RUNNING: &str = "init_running";
 pub const MIGRATE: &str = "migrate";
 pub const START_KEYGEN_INSTANCE: &str = "start_keygen_instance";
 pub const START_RESHARE_INSTANCE: &str = "start_reshare_instance";
-pub const PROPOSE_UPDATE: &str = "propose_update";
-pub const UPDATE_CONFIG: &str = "update_config";
+pub const SUBMIT_CONTRACT_UPDATE: &str = "submit_contract_update";
 pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
 // TEE / Participant
@@ -54,12 +53,8 @@ pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
 pub const START_NODE_MIGRATION: &str = "start_node_migration";
 pub const CANCEL_NODE_MIGRATION: &str = "cancel_node_migration";
 pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
-pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrations";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
-pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
-pub const REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES: &str =
-    "remove_non_participant_tee_verifier_votes";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
@@ -67,11 +62,6 @@ pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
-pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
-pub const FAIL_ATTESTATION_SUBMISSION: &str = "fail_attestation_submission";
-
-// TEE verifier contract (the method `mpc-contract` calls cross-contract)
-pub const VERIFY_QUOTE: &str = "verify_quote";
 
 // View methods
 pub const STATE: &str = "state";
@@ -79,14 +69,15 @@ pub const CONFIG: &str = "config";
 pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
 pub const VERSION: &str = "version";
-pub const LATEST_KEY_VERSION: &str = "latest_key_version";
-pub const PROPOSED_UPDATES: &str = "proposed_updates";
+pub const CONTRACT_UPDATE_VOTES: &str = "contract_update_votes";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const AVAILABLE_ATTESTATION_GRANTS: &str = "available_attestation_grants";
 pub const TEE_VERIFIER_ACCOUNT_ID: &str = "tee_verifier_account_id";
+pub const TEE_VERIFIER_VOTES: &str = "tee_verifier_votes";
+pub const PARAMETERS_VOTES: &str = "parameters_votes";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_AVAILABLE_FOREIGN_CHAINS: &str = "get_available_foreign_chains";
 pub const GET_FOREIGN_CHAINS_CONFIGS: &str = "get_foreign_chains_configs";

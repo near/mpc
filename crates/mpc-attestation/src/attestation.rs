@@ -1,4 +1,6 @@
 use alloc::vec::Vec;
+#[cfg(feature = "local-verify")]
+pub use attestation::attestation::VerifiedQuote;
 pub use attestation::attestation::{
     AcceptedDstackAttestation, DstackAttestation, VerificationError,
 };
@@ -9,22 +11,19 @@ use attestation::{
 pub use attestation::{ExpectedMeasurements, Measurements};
 
 use include_measurements::include_measurements;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
-use tee_verifier_interface::VerifiedReport;
+use mpc_primitives::hash::{LauncherDockerComposeHash, MPC_IMAGE_HASH_EVENT, NodeImageHash};
+use tee_verifier_interface::{CollateralDates, VerifiedReport};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::alloc::format;
 use crate::alloc::string::{String, ToString};
 
-/// How long an accepted attestation stays trusted before it must be
-/// re-verified via [`VerifiedAttestation::re_verify`]. Nodes resubmit hourly,
-/// well within this window, so valid attestations refresh in time.
-// TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
+/// How long an accepted [`MockAttestation`] stays trusted. A Dstack attestation
+/// instead expires with its collateral (see [`DstackVerify::verify`]).
+pub const MOCK_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 
 // `large_enum_variant` fires only where `usize` is 64-bit; under the contract's
 // wasm32 build the variants are close enough in size that it doesn't, so gate the
@@ -60,23 +59,19 @@ pub struct AcceptedAttestation {
 }
 
 impl AcceptedAttestation {
-    /// Assembles the acceptance for a verified [`Dstack`](crate::attestation::Attestation::Dstack) attestation, stamping the
-    /// expiry.
+    /// Assembles the acceptance for a verified [`Dstack`](crate::attestation::Attestation::Dstack) attestation.
     fn dstack(
         mpc_image_hash: NodeImageHash,
         launcher_compose_hash: LauncherDockerComposeHash,
         measurements: ExpectedMeasurements,
         advisory_ids: Vec<String>,
-        current_timestamp_seconds: u64,
+        expiry_timestamp_seconds: u64,
     ) -> Self {
-        // TODO(#1639): extract timestamp from certificate itself
-        let expiration_timestamp_seconds =
-            current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
         Self {
             attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
                 mpc_image_hash,
                 launcher_compose_hash,
-                expiry_timestamp_seconds: expiration_timestamp_seconds,
+                expiry_timestamp_seconds,
                 measurements,
             }),
             advisory_ids,
@@ -84,12 +79,11 @@ impl AcceptedAttestation {
     }
 
     /// Assembles the acceptance for a verified [`Mock`](crate::attestation::Attestation::Mock) attestation. Stamps a
-    /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] expiry (via [`MockAttestation::with_expiry_capped_at`]),
-    /// mirroring [`AcceptedAttestation::dstack`], so a [`MockAttestation::Valid`] mock
-    /// does not pass re-verification forever and can be cleaned up.
+    /// [`MOCK_EXPIRATION_DURATION_SECONDS`] expiry (via [`MockAttestation::with_expiry_capped_at`]),
+    /// so a [`MockAttestation::Valid`] mock does not pass re-verification forever and can be
+    /// cleaned up.
     fn mock(mock_attestation: &MockAttestation, current_timestamp_seconds: u64) -> Self {
-        let expiry_timestamp_seconds =
-            current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
+        let expiry_timestamp_seconds = current_timestamp_seconds + MOCK_EXPIRATION_DURATION_SECONDS;
         Self {
             attestation: VerifiedAttestation::Mock(
                 mock_attestation
@@ -154,8 +148,7 @@ impl MockAttestation {
     // TODO(#4005): Dstack fully owns the expiry (the submission carries none, so
     // the contract sets it outright); here a mock's submitted expiry is only capped.
     // Full alignment — override the value, or split the submitted vs stored mock
-    // types (`ValidatedMockAttestation`) — is tracked in #4005; revisit alongside
-    // #1639 (certificate-derived expiry).
+    // types (`ValidatedMockAttestation`) — is tracked in #4005.
     pub fn with_expiry_capped_at(self, expiry_timestamp_seconds: u64) -> Self {
         match self {
             MockAttestation::Valid => MockAttestation::WithConstraints {
@@ -231,11 +224,11 @@ impl MockAttestation {
                         })?;
                 };
                 if let Some(expiry_timestamp) = expiry_timestamp_seconds {
-                    (current_timestamp_seconds < *expiry_timestamp).or_err(|| {
-                        VerificationError::ExpiredCertificate {
-                            attestation_time: current_timestamp_seconds,
-                            expiry_time: *expiry_timestamp,
-                        }
+                    (!UnixSeconds(*expiry_timestamp)
+                        .has_expired_at(UnixSeconds(current_timestamp_seconds)))
+                    .or_err(|| VerificationError::ExpiredCertificate {
+                        attestation_time: current_timestamp_seconds,
+                        expiry_time: *expiry_timestamp,
                     })?;
                 };
 
@@ -257,8 +250,7 @@ impl MockAttestation {
 pub struct ValidatedDstackAttestation {
     pub mpc_image_hash: NodeImageHash,
     pub launcher_compose_hash: LauncherDockerComposeHash,
-    // TODO(#1639): This timestamp can not come from the contract,
-    // but should be extracted from the certificate itself.
+    /// The collateral's [`CollateralDates::earliest_expiration_date`].
     pub expiry_timestamp_seconds: u64,
     /// The measurements that were verified during initial attestation.
     /// Stored so that re-verification can check they are still in the allowed set.
@@ -292,9 +284,9 @@ impl VerifiedAttestation {
                 expiry_timestamp_seconds: expiration_timestamp_seconds,
                 measurements,
             }) => {
-                let attestation_has_expired = *expiration_timestamp_seconds < timestamp_seconds;
-
-                if attestation_has_expired {
+                if UnixSeconds(*expiration_timestamp_seconds)
+                    .has_expired_at(UnixSeconds(timestamp_seconds))
+                {
                     return Err(VerificationError::Custom(format!(
                         "The attestation expired at t = {:?}, time_now = {:?}",
                         expiration_timestamp_seconds, timestamp_seconds
@@ -321,14 +313,16 @@ impl VerifiedAttestation {
     }
 }
 
-/// Returns the default compiled-in TCB measurements (prod + dev).
-pub fn default_measurements() -> &'static [ExpectedMeasurements] {
-    static MEASUREMENTS: [ExpectedMeasurements; 2] = [
-        include_measurements!("assets/tcb_info.json"),
-        // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
-        include_measurements!("assets/tcb_info_dev.json"),
-    ];
-    &MEASUREMENTS
+/// Returns the compiled-in TCB measurements of the production OS image.
+pub fn default_measurements() -> ExpectedMeasurements {
+    include_measurements!("assets/tcb_info.json")
+}
+
+/// Returns the TCB measurements of the dev OS image that the `test-utils` fixture quote was taken
+/// on.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn dev_measurements() -> ExpectedMeasurements {
+    include_measurements!("assets/tcb_info_dev.json")
 }
 
 /// Post-DCAP verification of a dstack [`TcbInfo`] at the `mpc-attestation` layer.
@@ -340,12 +334,13 @@ pub fn default_measurements() -> &'static [ExpectedMeasurements] {
 pub trait DstackVerify {
     /// Runs the MPC-hash allowlist checks and the post-DCAP checks against an
     /// already-DCAP-verified [`VerifiedReport`], returning the
-    /// [`AcceptedAttestation`].
+    /// [`AcceptedAttestation`]. It expires at the collateral's
+    /// [`CollateralDates::earliest_expiration_date`].
     fn verify(
         &self,
         report: &VerifiedReport,
+        collateral_dates: &CollateralDates,
         expected_report_data: ReportData,
-        current_timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
@@ -356,8 +351,8 @@ impl DstackVerify for TcbInfo {
     fn verify(
         &self,
         report: &VerifiedReport,
+        collateral_dates: &CollateralDates,
         expected_report_data: ReportData,
-        current_timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
@@ -383,40 +378,12 @@ impl DstackVerify for TcbInfo {
             launcher_compose_hash,
             measurements,
             advisory_ids,
-            current_timestamp_seconds,
+            collateral_dates.earliest_expiration_date,
         ))
     }
 }
 
 impl Attestation {
-    /// Verifies the attestation given an already-DCAP-verified report.
-    pub fn verify_with_report(
-        &self,
-        report: &VerifiedReport,
-        expected_report_data: ReportData,
-        current_timestamp_seconds: u64,
-        allowed_mpc_docker_image_hashes: &[NodeImageHash],
-        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-        accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<AcceptedAttestation, VerificationError> {
-        match self {
-            Self::Dstack(dstack_attestation) => dstack_attestation.tcb_info.verify(
-                report,
-                expected_report_data,
-                current_timestamp_seconds,
-                allowed_mpc_docker_image_hashes,
-                allowed_launcher_docker_compose_hashes,
-                accepted_measurements,
-            ),
-            Self::Mock(mock_attestation) => mock_attestation.verify(
-                current_timestamp_seconds,
-                allowed_mpc_docker_image_hashes,
-                allowed_launcher_docker_compose_hashes,
-                accepted_measurements,
-            ),
-        }
-    }
-
     /// Full local verification: runs the DCAP quote verification and then the
     /// post-DCAP checks. Behind the `local-verify` feature, which pulls in
     /// `dcap-qvl`. Used by off-chain callers (node, tee-authority, attestation-cli).
@@ -431,11 +398,14 @@ impl Attestation {
     ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
-                let report = dstack_attestation.verify_dcap_quote(current_timestamp_seconds)?;
+                let VerifiedQuote {
+                    report,
+                    collateral_dates,
+                } = dstack_attestation.verify_dcap_quote(current_timestamp_seconds)?;
                 dstack_attestation.tcb_info.verify(
                     &report,
+                    &collateral_dates,
                     expected_report_data,
-                    current_timestamp_seconds,
                     allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
                     accepted_measurements,
@@ -554,10 +524,22 @@ fn verify_measurements(
     Ok(())
 }
 
+/// A Unix timestamp in whole seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UnixSeconds(pub u64);
+
+impl UnixSeconds {
+    /// An item stays valid for the whole of its expiry second: `expiry == now` is not expired.
+    pub fn has_expired_at(self, now: UnixSeconds) -> bool {
+        self < now
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use alloc::vec;
+    use core::assert_matches;
 
     use super::*;
 
@@ -567,7 +549,7 @@ mod tests {
         let stamped = MockAttestation::Valid.with_expiry_capped_at(42);
 
         // Then
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash: None,
@@ -593,7 +575,7 @@ mod tests {
         let stamped = mock.with_expiry_capped_at(42);
 
         // Then: the expiry is filled in and the other constraints are preserved.
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash: Some(hash),
@@ -617,7 +599,7 @@ mod tests {
         let stamped = mock.with_expiry_capped_at(42);
 
         // Then: it is capped at the contract-provided value (a caller cannot extend it).
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 expiry_timestamp_seconds: Some(42),
@@ -640,7 +622,7 @@ mod tests {
         let stamped = mock.with_expiry_capped_at(42);
 
         // Then: the shorter expiry is left as-is (capping only lowers, never raises).
-        assert_matches::assert_matches!(
+        assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
                 expiry_timestamp_seconds: Some(20),
@@ -655,7 +637,7 @@ mod tests {
         let stamped = MockAttestation::Invalid.with_expiry_capped_at(42);
 
         // Then
-        assert_matches::assert_matches!(stamped, MockAttestation::Invalid);
+        assert_matches!(stamped, MockAttestation::Invalid);
     }
 
     #[test]
@@ -810,7 +792,7 @@ mod tests {
 
         let verification_result = time_constrained_attestation.re_verify(time_now, &[], &[], &[]);
 
-        assert_matches::assert_matches!(
+        assert_matches!(
             verification_result,
             Err(VerificationError::ExpiredCertificate {
                 attestation_time,
@@ -865,7 +847,7 @@ mod tests {
         let result = attestation.re_verify(0, &[], &[], &allowed);
 
         // then
-        assert_matches::assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
+        assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
     }
 
     #[test]
@@ -883,7 +865,7 @@ mod tests {
         let result = attestation.re_verify(0, &[], &[], &[]);
 
         // then
-        assert_matches::assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
+        assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
     }
 
     #[test]

@@ -9,7 +9,7 @@ use anyhow::{Context as _, bail};
 use attestation::attestation::DstackAttestation;
 use clap::ValueEnum;
 use dcap_qvl::{
-    QuoteCollateralV3, TcbLevel, TcbStatus,
+    QuoteCollateralV3, SvnShortfall, TcbStatus,
     collateral::{CollateralClient, INTEL_PCS_URL, TcbEvaluationDataSet},
     policy::{PckIdentity, QuoteClaims, QuotePolicy},
     quote::{Quote, TDReport10},
@@ -22,22 +22,10 @@ use node_types::http_server::StaticWebData;
 /// Timeout around a whole collateral fetch, which makes several requests.
 const PCS_TIMEOUT: Duration = Duration::from_secs(30);
 
-const UPDATE_TDX_MODULE: &str = "update the TDX module (SEAM loader)";
-const UPDATE_BIOS: &str = "update BIOS/microcode";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum EvaluationDataSet {
     Standard,
     Early,
-}
-
-/// One security version number that Intel's accepted TCB level puts out of reach.
-#[derive(Debug)]
-pub struct Shortfall {
-    pub component: String,
-    pub have: u16,
-    pub needs: u16,
-    pub remedy: &'static str,
 }
 
 #[expect(clippy::large_enum_variant)]
@@ -52,7 +40,7 @@ pub enum TcbVerdict {
         /// accepts no level at all, or every SVN clears one and the module
         /// identity's advisories carry the status down. Only the first is
         /// `UpToDate`; the other two print a line saying nothing can be raised.
-        shortfalls: Vec<Shortfall>,
+        shortfalls: Vec<SvnShortfall>,
     },
     /// No status at all. Usually expired collateral in a long-running node's
     /// boot-time snapshot.
@@ -174,7 +162,7 @@ async fn fetch_from_intel(
         .context("fetching collateral from Intel's PCS")
 }
 
-/// Both failure modes are per-collateral, so each becomes a [`TcbVerdict::Rejected`]
+/// Every failure mode is per-collateral, so each becomes a [`TcbVerdict::Rejected`]
 /// row rather than aborting the other one.
 fn evaluate(
     quote: &[u8],
@@ -196,7 +184,16 @@ fn evaluate(
         Err(err) => return TcbVerdict::Rejected(err.to_string()),
     };
 
-    let shortfalls = shortfalls(&tcb_info, &claims.platform.pck, report);
+    // An `UpToDate` platform clears an accepted level, so nothing falls short,
+    // and a malformed level DCAP never reached must not overturn its verdict.
+    let shortfalls = if claims.tcb.status == TcbStatus::UpToDate {
+        Vec::new()
+    } else {
+        match shortfalls(&tcb_info, &claims.platform.pck, report) {
+            Ok(shortfalls) => shortfalls,
+            Err(err) => return TcbVerdict::Rejected(err.to_string()),
+        }
+    };
     TcbVerdict::Verified {
         tcb_info,
         claims,
@@ -207,18 +204,26 @@ fn evaluate(
 /// Every SVN that keeps the platform off Intel's nearest accepted TCB level.
 ///
 /// Explanatory only: the status already says whether the platform clears the
-/// bar, this says by how much it misses.
-fn shortfalls(tcb_info: &TcbInfo, pck: &PckIdentity, report: &TDReport10) -> Vec<Shortfall> {
-    let (identity, module_svn) = tdx_module(&report.tee_tcb_svn);
-    let module = identity.and_then(|identity| {
-        let needs = accepted_module_svn(tcb_info, &identity)?;
-        (module_svn < needs).then(|| Shortfall {
-            component: format!("TDX module {identity} ISV SVN"),
-            have: module_svn.into(),
-            needs: needs.into(),
-            remedy: UPDATE_TDX_MODULE,
-        })
-    });
+/// bar, this says by how much it misses. Fails on TCB info with no identity for
+/// the quote's module, or with an accepted level whose component counts differ
+/// from the platform's. Intel's QVL rejects the latter at parse time, but
+/// `dcap-qvl` only checks the levels it reaches before a match.
+fn shortfalls(
+    tcb_info: &TcbInfo,
+    pck: &PckIdentity,
+    report: &TDReport10,
+) -> anyhow::Result<Vec<SvnShortfall>> {
+    let tee_tcb_svn = &report.tee_tcb_svn;
+    let module = tcb_info
+        .tdx_module_identity(tee_tcb_svn)?
+        .and_then(|identity| {
+            identity
+                .tcb_levels
+                .iter()
+                .filter(|level| level.tcb_status == TcbStatus::UpToDate)
+                .min_by_key(|level| level.tcb.isvsvn)?
+                .shortfall(tee_tcb_svn)
+        });
 
     // Matching is conjunctive per level: a platform is `UpToDate` only once some
     // single level is cleared on every axis. Reporting the deficit against the
@@ -228,77 +233,21 @@ fn shortfalls(tcb_info: &TcbInfo, pck: &PckIdentity, report: &TDReport10) -> Vec
         .tcb_levels
         .iter()
         .filter(|level| level.tcb_status == TcbStatus::UpToDate)
-        .map(|level| level_shortfalls(level, pck, report))
+        .map(|level| level.shortfalls(&pck.cpu_svn, pck.pce_svn, Some(tee_tcb_svn)))
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
         .min_by_key(|short| {
             (
                 short.len(),
                 short
                     .iter()
-                    .map(|s| u32::from(s.needs - s.have))
+                    .map(|s| u32::from(s.needs.saturating_sub(s.have)))
                     .sum::<u32>(),
             )
         })
         .unwrap_or_default();
 
-    module.into_iter().chain(platform).collect()
-}
-
-/// The platform-half SVNs one accepted level puts out of reach. Clearing all of
-/// them puts the platform on that level.
-///
-/// Mirrors the per-level predicate of the private `match_platform_tcb` in
-/// `dcap-qvl`'s `src/verify.rs`: a level is cleared only when PCESVN and every
-/// SGX and TDX component sit at or above it. The first two TDX components are
-/// the module's, so they carry the module remedy.
-fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) -> Vec<Shortfall> {
-    let short = |component: String, have: u8, needs: u8, remedy| {
-        (have < needs).then_some(Shortfall {
-            component,
-            have: have.into(),
-            needs: needs.into(),
-            remedy,
-        })
-    };
-    let tdx = level
-        .tcb
-        .tdx_components
-        .iter()
-        .zip(report.tee_tcb_svn)
-        .enumerate()
-        .filter_map(|(index, (needs, have))| {
-            let remedy = if index < 2 {
-                UPDATE_TDX_MODULE
-            } else {
-                UPDATE_BIOS
-            };
-            short(
-                format!("TDX TCB component {index}"),
-                have,
-                needs.svn,
-                remedy,
-            )
-        });
-    let sgx = level
-        .tcb
-        .sgx_components
-        .iter()
-        .zip(pck.cpu_svn)
-        .enumerate()
-        .filter_map(|(index, (needs, have))| {
-            short(
-                format!("SGX TCB component {index}"),
-                have,
-                needs.svn,
-                UPDATE_BIOS,
-            )
-        });
-    let pce = (pck.pce_svn < level.tcb.pce_svn).then(|| Shortfall {
-        component: "PCESVN".to_owned(),
-        have: pck.pce_svn,
-        needs: level.tcb.pce_svn,
-        remedy: UPDATE_BIOS,
-    });
-    tdx.chain(sgx).chain(pce).collect()
+    Ok(module.into_iter().chain(platform).collect())
 }
 
 /// The TDX module a quote reports, read out of the first two `tee_tcb_svn`
@@ -307,26 +256,15 @@ fn level_shortfalls(level: &TcbLevel, pck: &PckIdentity, report: &TDReport10) ->
 /// module's ISV SVN. A zero selector means the quote names no identity, and
 /// Intel's base `tdxModule` entry applies instead.
 ///
-/// Mirrors the private `match_tdx_module_identity` in `dcap-qvl`'s
-/// `src/verify.rs`, which surfaces only the converged status, not these.
+/// Mirrors the naming rule of [`TcbInfo::tdx_module_identity`], which resolves
+/// the identity against TCB info. This reads it off the quote alone, so the
+/// module is named even when no collateral verifies.
 pub fn tdx_module(tee_tcb_svn: &[u8; 16]) -> (Option<String>, u8) {
     let [isv_svn, selector, ..] = *tee_tcb_svn;
     (
         (selector != 0).then(|| format!("TDX_{selector:02X}")),
         isv_svn,
     )
-}
-
-fn accepted_module_svn(tcb_info: &TcbInfo, identity: &str) -> Option<u8> {
-    tcb_info
-        .tdx_module_identities
-        .iter()
-        .find(|candidate| candidate.id.eq_ignore_ascii_case(identity))?
-        .tcb_levels
-        .iter()
-        .filter(|level| level.tcb_status == TcbStatus::UpToDate)
-        .map(|level| level.tcb.isvsvn)
-        .min()
 }
 
 fn dstack_attestation(static_data: &StaticWebData) -> anyhow::Result<&DstackAttestation> {
@@ -347,8 +285,9 @@ fn parse_tcb_info(collateral: &QuoteCollateralV3) -> anyhow::Result<TcbInfo> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
+    use dcap_qvl::SvnComponent;
     use rstest::rstest;
+    use std::assert_matches;
     use test_utils::attestation::{TEST_PUBLIC_DATA_STRING, VALID_ATTESTATION_TIMESTAMP};
 
     const STANDARD_SET: u32 = 20;
@@ -567,22 +506,42 @@ mod tests {
         let tcb_info = demanding_tcb_info(pck, report);
 
         // When
-        let shortfalls = shortfalls(&tcb_info, pck, report);
+        let shortfalls = shortfalls(&tcb_info, pck, report).unwrap();
 
         // Then
-        let named: Vec<_> = shortfalls
+        let components: Vec<_> = shortfalls
             .iter()
-            .map(|shortfall| shortfall.component.as_str())
+            .map(|shortfall| shortfall.component)
             .collect();
-        assert!(named.contains(&"TDX module TDX_01 ISV SVN"));
-        assert!(named.contains(&"TDX TCB component 2"));
-        assert!(named.contains(&"SGX TCB component 0"));
-        assert!(named.contains(&"PCESVN"));
+        assert!(components.contains(&SvnComponent::TdxModuleIsvSvn));
+        assert!(components.contains(&SvnComponent::Tdx(2)));
+        assert!(components.contains(&SvnComponent::Sgx(0)));
+        assert!(components.contains(&SvnComponent::PceSvn));
         assert!(
             shortfalls
                 .iter()
                 .all(|shortfall| shortfall.have + 1 == shortfall.needs)
         );
+    }
+
+    #[test]
+    fn shortfalls__should_leave_the_module_components_to_the_module_identity() {
+        // Given
+        let claims = fixture_claims();
+        let pck = &claims.platform.pck;
+        let report = claims.report.as_td10().expect("fixture is a TDX quote");
+        let tcb_info = demanding_tcb_info(pck, report);
+
+        // When
+        let shortfalls = shortfalls(&tcb_info, pck, report).unwrap();
+
+        // Then
+        let components: Vec<_> = shortfalls
+            .iter()
+            .map(|shortfall| shortfall.component)
+            .collect();
+        assert!(!components.contains(&SvnComponent::Tdx(0)));
+        assert!(!components.contains(&SvnComponent::Tdx(1)));
     }
 
     #[test]
@@ -603,15 +562,17 @@ mod tests {
         tcb_info.tcb_levels = vec![level_a, level_b];
 
         // When
-        let shortfalls = shortfalls(&tcb_info, pck, report);
+        let shortfalls = shortfalls(&tcb_info, pck, report).unwrap();
 
         // Then: exactly one axis short, and it comes from a single level.
-        let named: Vec<_> = shortfalls
+        let components: Vec<_> = shortfalls
             .iter()
-            .map(|shortfall| shortfall.component.as_str())
+            .map(|shortfall| shortfall.component)
             .collect();
-        assert_eq!(named.len(), 1, "reported {named:?}");
-        assert!(named == ["SGX TCB component 0"] || named == ["PCESVN"]);
+        assert!(
+            components == [SvnComponent::Sgx(0)] || components == [SvnComponent::PceSvn],
+            "reported {components:?}"
+        );
     }
 
     #[test]
@@ -625,10 +586,30 @@ mod tests {
             &tcb_info,
             &claims.platform.pck,
             claims.report.as_td10().expect("fixture is a TDX quote"),
-        );
+        )
+        .unwrap();
 
         // Then
         assert!(shortfalls.is_empty());
+    }
+
+    #[test]
+    fn shortfalls__should_fail_when_the_tcb_info_lacks_the_quoted_module_identity() {
+        // Given
+        let claims = fixture_claims();
+        let mut tcb_info = parse_tcb_info(&served().1).unwrap();
+        tcb_info.tdx_module_identities.clear();
+
+        // When
+        let shortfalls = shortfalls(
+            &tcb_info,
+            &claims.platform.pck,
+            claims.report.as_td10().expect("fixture is a TDX quote"),
+        );
+
+        // Then
+        let err = shortfalls.unwrap_err();
+        assert!(err.to_string().contains("TDX_01"), "{err:#}");
     }
 
     /// Guards that the `update` parameter still reaches Intel: were it ignored

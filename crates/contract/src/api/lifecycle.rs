@@ -6,19 +6,22 @@ use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
-use crate::primitives::domain::{AddDomainsVotes, DomainRegistry, max_reconstruction_threshold};
+use crate::primitives::domain::{
+    AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
+};
 use crate::primitives::key_state::{EpochId, Keyset};
+use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
 use crate::state::running::RunningContractState;
 use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
-use crate::update::ProposedUpdates;
-use crate::{MpcContract, MpcContractExt, v3_15_1_state};
+use crate::update::ContractUpdateVotes;
+use crate::{MpcContract, MpcContractExt, v3_18_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
-use near_sdk::{AccountId, env, log, near};
+use near_sdk::{AccountId, env, log, near, state::ContractState};
 
 #[near]
 impl MpcContract {
@@ -35,7 +38,7 @@ impl MpcContract {
         log!(
             "init: signer={}, num_participants={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
             env::signer_account_id(),
-            parameters.participants().len(),
+            parameters.participants().count(),
             params_hash,
             tee_verifier_account_id,
             init_config,
@@ -47,10 +50,7 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = match init_config {
-            Some(c) => c.try_into()?,
-            None => Config::default(),
-        };
+        let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -64,7 +64,7 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: ProposedUpdates::default(),
+            contract_update_votes: ContractUpdateVotes::default(),
             config,
             tee_state,
             accept_requests: true,
@@ -76,6 +76,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 
@@ -85,7 +86,7 @@ impl MpcContract {
     #[handle_result]
     pub fn init_running(
         domains: Vec<dtos::DomainConfig>,
-        next_domain_id: u64,
+        next_domain_id: dtos::DomainId,
         keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
@@ -100,7 +101,7 @@ impl MpcContract {
             env::signer_account_id(),
             domains,
             keyset,
-            parameters.participants().len(),
+            parameters.participants().count(),
             parameters.threshold().value(),
             params_hash,
             tee_verifier_account_id,
@@ -108,18 +109,11 @@ impl MpcContract {
         );
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
-        let num_participants = parameters.participants().len() as u64;
-        for domain in domains.domains() {
-            crate::primitives::domain::validate_domain_reconstruction_threshold(
-                domain,
-                num_participants,
-            )?;
-        }
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
-        GovernanceThresholdParameters::validate_governance_against_reconstruction(
-            num_participants,
+        validate_domains_against_governance(
+            domains.domains(),
+            parameters.participants().count(),
             parameters.threshold(),
-            max_reconstruction_threshold(domains.domains()),
         )?;
 
         // Check that the domains match exactly those in the keyset.
@@ -136,10 +130,7 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = match init_config {
-            Some(c) => c.try_into()?,
-            None => Config::default(),
-        };
+        let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(MpcContract {
             config,
@@ -154,7 +145,7 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: Default::default(),
+            contract_update_votes: Default::default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -165,6 +156,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 
@@ -180,11 +172,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_15_1_state::MpcContract>() {
+        match try_state_read::<v3_18_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.15.1 state: {:?}", err);
+                log!("failed to deserialize state into 3.18.0 state: {:?}", err);
             }
         };
 
@@ -210,54 +202,7 @@ impl MpcContract {
 }
 
 fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
-    env::storage_read(b"STATE")
+    env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::*;
-    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
-    use crate::primitives::thresholds::GovernanceThreshold;
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::{NearToken, testing_env};
-
-    #[test]
-    fn init__should_reject_launcher_ttl_below_attestation_validity() {
-        // Given a launcher TTL one second below the attestation validity window.
-        let participants = gen_participants(3);
-        let signer = participants.participants()[0].0.clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer.clone())
-                .predecessor_account_id(signer)
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
-        let parameters =
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
-        let bad_config = dtos::InitConfig {
-            launcher_hash_unused_ttl_seconds: Some(
-                mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS - 1,
-            ),
-            ..Default::default()
-        };
-
-        // When init is called with that config.
-        let err = MpcContract::init(
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            Some(bad_config),
-        )
-        .expect_err("init must reject a launcher TTL below the attestation validity window");
-
-        // Then it fails, pointing at the invalid config field.
-        assert!(
-            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
-            "error should point at the invalid config field, got: {err:?}"
-        );
-    }
 }

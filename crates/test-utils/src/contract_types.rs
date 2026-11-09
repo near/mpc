@@ -1,13 +1,13 @@
 use near_mpc_contract_interface::types::{
-    AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
+    AuthScheme, BlockCount, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
 };
 
 /// Generates a dummy [`near_mpc_contract_interface::types::Config`] with different values for each field.
 pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
     near_mpc_contract_interface::types::Config {
-        key_event_timeout_blocks: value,
+        key_event_timeout_blocks: BlockCount::from(value),
         tee_upgrade_deadline_duration_seconds: value + 1,
-        contract_upgrade_deposit_tera_gas: value + 2,
+        apply_contract_update_tera_gas: value + 2,
         sign_call_gas_attachment_requirement_tera_gas: value + 3,
         ckd_call_gas_attachment_requirement_tera_gas: value + 4,
         return_signature_and_clean_state_on_success_call_tera_gas: value + 5,
@@ -23,7 +23,6 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         resolve_verification_tera_gas: value + 15,
         fail_attestation_submission_tera_gas: value + 16,
         attestation_storage_fee_millinear: value + 17,
-        // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
         launcher_hash_unused_ttl_seconds: value + (14 * 24 * 60 * 60),
     }
 }

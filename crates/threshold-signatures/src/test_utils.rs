@@ -17,6 +17,7 @@ mod presign;
 mod protocol;
 mod sign;
 mod snapshot;
+mod triples;
 
 use crate::KeygenOutput;
 use crate::participants::Participant;
@@ -37,7 +38,7 @@ pub use dkg::{
 };
 pub use participant_simulation::Simulator;
 pub use participants::{generate_participants, generate_participants_with_random_ids};
-pub use presign::{ecdsa_generate_rerandpresig_args, frost_run_presignature};
+pub use presign::frost_run_presignature;
 pub use protocol::{
     assert_buffer_capacity, build_buffer_test, expected_buffer_by_role,
     run_and_assert_buffer_entries,
@@ -51,6 +52,7 @@ pub use simulator_bench::{
     BenchConfig, LatencyModel, SimulationMetrics, bench_simulation, run_simulation,
 };
 pub use snapshot::ProtocolSnapshot;
+pub use triples::deal_triple;
 
 // Taken from https://github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/frost-secp256k1/tests/common_traits_tests.rs#L9
 #[allow(clippy::unnecessary_literal_unwrap)]

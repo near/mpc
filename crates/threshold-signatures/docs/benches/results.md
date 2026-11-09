@@ -13,6 +13,8 @@ If interested only in the advanced benchmarking technique, please skip to sectio
 
 *Note: the triple generation for OT based ECDSA generates two triples, enough for the secure computation of one single presignature and thus one single signature.*
 
+*Note: the OT based ECDSA Presign and Sign numbers below were measured with the separate presigning and signing protocols, which have since been replaced by `presign_and_sign` (see [Signing without presignatures](#signing-without-presignatures)). The current benches measure triple generation and `presign_and_sign`.*
+
 ## Naive Technique
 
 A quick solution to benchmark our schemes is to run the entire protocol for all the participants (side-by-side) and analyze the results.
@@ -147,10 +149,70 @@ In the case where the protocol allows distinguishing between normal participants
 
 <br>
 
+## Distributed Key Generation
+
+The tables below show the DKG results for the crypto layer, measured with the advanced
+technique (a simulated replay against a snapshot, as in the `advanced_dkg` bench) and
+without network latency. As before, the numbers are from the perspective of a single
+participant: the time a participant takes to complete a DKG run and the size of the data
+it receives during that run. Each time is the best of 3 replays; the received data size
+is deterministic for a fixed set of participant ids. These numbers were measured in
+October 2026 on an **Intel Core Ultra 9 288V** with **32 GB RAM**, so they are comparable
+with each other but not with the tables above.
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 8 | 28.96 ms | 135318 Bytes |
+| **ed25519**   | 8 | 67.22 ms | 133702 Bytes |
+| **bls12381**  | 8 | 135.94 ms | 285241 Bytes |
+
+| **Maximum number of malicious parties: 7** | **Network Latency: 0 ms** |
+|--------------------------------------------|---------------------------|
+
+<br>
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 16 | 132.71 ms | 874941 Bytes |
+| **ed25519**   | 16 | 351.50 ms | 863275 Bytes |
+| **bls12381**  | 16 | 717.46 ms | 2065133 Bytes |
+
+| **Maximum number of malicious parties: 15** | **Network Latency: 0 ms** |
+|---------------------------------------------|---------------------------|
+
+<br>
+
+| Curve | Parties | DKG | Data received |
+|:-----:|:-------:|----:|--------------:|
+| **secp256k1** | 41 | 2.0764 s | 12337135 Bytes |
+| **ed25519**   | 41 | 8.8304 s | 12156511 Bytes |
+| **bls12381**  | 41 | 17.077 s | 32117098 Bytes |
+
+| **Maximum number of malicious parties: 40** | **Network Latency: 0 ms** |
+|---------------------------------------------|---------------------------|
+
+Our DKG is PedPop+, which effectively takes eleven and a half rounds of communication to
+complete (see [dkg.md](../dkg.md)). Thus with 100 ms of RTT latency, one needs to add
+roughly **+1.1 s** to each of the numbers above; note that at 41 participants the
+computation time dominates that latency rather than the other way around.
+
+Two observations on scaling. The per-participant time grows roughly cubically in the
+number of participants: the echo broadcast delivers $O(n)$ copies of each of the $n$
+commitment vectors, each holding $t$ group elements that are deserialized (with point
+validation) on receipt. On top of that, BLS12-381 pays a large constant factor per
+element: a G2 deserialization with subgroup check costs ~57 µs against ~3.4 µs for an
+ed25519 decompression, and a G2 scalar multiplication ~112 µs against ~22 µs.
+
+Reproduce with:
+
+```sh
+MAX_MALICIOUS=7 SAMPLE_SIZE=10 cargo bench -p threshold-signatures --features test-utils --bench advanced_dkg
+```
+
 ## Signing without presignatures
 
 `presign_and_sign` folds the two presigning rounds into the online phase, consuming a triple pair
-directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol)).
+directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md)).
 The numbers below were measured in September 2026 on a different machine than the tables above,
 so they are comparable with each other but not with the other tables.
 
@@ -171,6 +233,9 @@ rounds instead of one, with the presign computation (about a millisecond) on top
 online are the presign bytes plus the signature shares. Nothing is precomputed per signature any
 more, so the offline phase reduces to triple generation and no presignature store has to be kept
 consistent across nodes. The trade is two extra round trips on the signing path.
+
+The Presign and Sign rows were measured with the separate presigning and signing protocols, which
+the benches no longer cover; the commands below reproduce only the Presign+sign online rows.
 
 Reproduce with:
 

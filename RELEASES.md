@@ -7,16 +7,21 @@ This document describes the release process for the NEAR MPC project.
 The NEAR MPC project ships two artifacts together as one release bundle:
 
 - **MPC Node binary** — distributed as Docker images
-  (`nearone/mpc-node`, `nearone/mpc-node-gcp`, `nearone/mpc-launcher`).
+  (`nearone/mpc-node`, `nearone/mpc-launcher`).
 - **Chain Signatures contract** — distributed as a reproducibly-built WASM
   attached to the GitHub release.
+
+The TEE verifier contract is not part of the release today. If a release needs a new
+verifier (for example, for a security fix), deploy and vote it in separately, per
+[`deploy-tee-verifier.md`](docs/development/deploy-tee-verifier.md), before upgrading
+the contract.
 
 A release is a [Release workflow](.github/workflows/release.yml) run that
 promotes already-built artifacts to a versioned release. The workflow:
 
 1. Reads the version from `Cargo.toml` on the dispatched branch.
 2. Retags the Docker images that were built for the branch HEAD
-   (`nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`) to the
+   (`nearone/mpc-{node,launcher}:<branch>-<short-sha>`) to the
    release version (`:X.Y.Z`).
 3. Downloads the reproducibly-built contract WASM from the matching
    [Build Contract](.github/workflows/build_contract.yml) run.
@@ -29,21 +34,24 @@ If the tag exists, the release succeeded.
 
 ## Branch model
 
-Releases ship from protected branches:
+Every release, including `X.Y.0`, is published from a `release/vX.Y` branch.
+What differs is where the release-prep PR lands:
 
-- **`main`** — ships the next minor or major.
-- **`release/vX.Y`** — ships patches for the X.Y line (`X.Y.0`, `X.Y.1`, ...).
-  Created from `main` by a repository admin when a release line needs its
-  own branch.
+| Release             | Prep PR targets | Release workflow runs on                        |
+| ------------------- | --------------- | ----------------------------------------------- |
+| Major/minor `X.Y.0` | `main`          | `release/vX.Y`, cut from the merged prep commit |
+| Patch `X.Y.Z`       | `release/vX.Y`  | `release/vX.Y`                                  |
 
-Patches accumulate on `release/vX.Y` over time:
+Landing the `X.Y.0` prep commit (changelog + version bump) on `main` keeps
+the `X.Y.0` tag reachable from `main`, so the next minor's changelog starts
+from it. Patches then accumulate on the release branch:
 
 - `release/v3.11` ships `3.11.0`, then `3.11.1`, then `3.11.2`, ...
 - `release/v3.12` ships `3.12.0` and onward.
 
 Branch protection on `main` and `release/v*` requires every commit to land
 via a reviewed PR. Branch *creation* on `release/v*` is restricted to repo
-admins — admins are trusted to fork release branches from `main` HEAD.
+admins.
 
 ## How to make a release
 
@@ -52,45 +60,63 @@ with whatever version you're releasing.
 
 ### 1. Prepare the release PR
 
-Create a working branch off the release-source branch, then run
+Create a working branch off the prep target (see [Branch model](#branch-model)),
+then run
 [`scripts/ops/prepare-github-release.sh`](./scripts/ops/prepare-github-release.sh) to apply the
 release boilerplate (changelog, version bump, ABI snapshot, licenses):
 
 ```sh
-# For a minor/major release:
+# Major/minor release: prep on main
 git checkout main && git pull
 git checkout -b release-prep/v3.11.0
 ./scripts/ops/prepare-github-release.sh 3.11.0
 
-# For a patch release:
+# Patch release: prep on the release branch
 git checkout release/v3.11 && git pull
 git checkout -b release-prep/v3.11.1
 ./scripts/ops/prepare-github-release.sh 3.11.1
 ```
 
-Push the working branch and open a PR against `main` (for minor releases)
-or `release/vX.Y` (for patches). Once the PR is reviewed and merged, the
-merge commit is what will be released.
+Push the working branch and open a PR against the branch you started from.
+Once it merges:
+
+- **Major/minor**: a repo admin cuts `release/vX.Y` at the merged prep commit
+  (see [Creating a new release branch](#creating-a-new-release-branch)).
+- **Patch**: the merge commit on `release/vX.Y` is what will be released.
 
 ### 2. Wait for the build workflows
 
-When the release PR merges, four workflows fire on the protected branch:
+The three workflows the release needs fire on every push to `main` and
+`release/v*`:
 
 - [Build Docker Node Image](.github/workflows/docker_build_node.yml)
-- [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
 - [Build Docker Rust Launcher Image](.github/workflows/docker_build_rust_launcher.yml)
 - [Build Contract](.github/workflows/build_contract.yml)
 
-The image workflows push `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`.
+The image workflows push `nearone/mpc-{node,launcher}:<branch>-<short-sha>`.
 The contract workflow uploads the reproducible WASM as a GitHub Actions
 artifact named `contract`.
 
-Wait for all four to finish successfully. The Release workflow refuses to
-run if any artifact is missing.
+The Release workflow only uses images tagged for the branch it is dispatched
+on, so wait for the runs on `release/vX.Y`:
+
+- **Patch**: they fire when the prep PR merges.
+- **Major/minor**: they fire when the admin pushes the new release branch.
+  The `main` builds from the prep PR merge are not used.
+
+The contract artifact is looked up by commit SHA, so either run's artifact
+works. Wait for all three to finish successfully. The Release workflow refuses
+to run if any artifact is missing.
+
+<!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
+
+[Build and Publish Nix Docker Images](.github/workflows/docker_build_nix_images.yml)
+also pushes `<branch>-<short-sha>-nix` images, which the Release workflow does
+not use yet.
 
 > **Tip:** The pre-release images are deployable. If you want to
 > smoke-test on testnet before promoting, deploy
-> `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
+> `nearone/mpc-node:release-v3.11-<short-sha>` directly.
 
 ### 3. Verify the build is reproducible
 
@@ -105,8 +131,8 @@ exactly what the source produces:
   cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
   ```
 - **Docker images** — compare the digests in the draft release to the ones
-  produced locally (with no flags the script builds and prints digests for all
-  three images):
+  produced locally (with no flags the script builds and prints digests for both
+  images):
   ```sh
   ./deployment/build-images.sh
   ```
@@ -117,13 +143,14 @@ procedure. If any hash/digest differs, do **not** publish — investigate first.
 ### 4. Run the Release workflow
 
 Trigger the [Release workflow](.github/workflows/release.yml) against the
-branch:
+release branch (not `main`):
 
 ```sh
 gh workflow run release.yml --ref release/v3.11
 ```
 
-Or use the Actions UI: "Release" → "Run workflow" → pick the branch.
+Or use the Actions UI: "Release" → "Run workflow" → pick the release branch
+(e.g. `release/v3.11`).
 
 The workflow runs in the `production` environment and uses
 `DOCKERHUB_PAT` to retag images. It refuses if the version's git tag
@@ -145,17 +172,21 @@ includes the changelog section, Docker image manifest digests, and the
 contract `.tar.gz`. **The git tag does not yet exist** — it is created
 by GitHub when the draft is published.
 
-Review the draft and click "Publish release." Publishing creates the
-`3.11.0` git tag at the released commit.
+Review the draft, rename it to `3.11.0`, add a one-sentence summary at the
+top of the notes (what the release is for, which networks it targets, and
+whether it needs a contract upgrade or launcher vote), and click "Publish
+release."
+
+Publishing creates the `3.11.0` git tag at the released commit.
 
 > ⚠️ **Point of no return.** Publishing creates the tag, and once the tag is published it cannot be modified as we are using [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
 
 ### 6. Promote to operator floating tags (optional)
 
-Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
+Some operators consume floating tags like `nearone/mpc-node:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
 
-- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run once with `repository: mpc-node` and once with `repository: mpc-node-gcp`.
+- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — single run for `mpc-node`.
 - [Release Launcher Docker Image](.github/workflows/docker_launcher_release.yml) — single run for `mpc-launcher`.
 
 Use `source-tag = 3.11.0` and `release-tag = testnet-release` or
@@ -200,12 +231,18 @@ the orphaned blob (usually a few minutes) and re-run.
 
 ## Creating a new release branch
 
-When a minor line needs its own branch (typically just before or just
-after shipping `X.Y.0`), a repo admin forks from `main`:
+After the `X.Y.0` prep PR merges to `main`, a repo admin forks the release
+branch at that merge commit:
 
 ```sh
 git checkout main && git pull
 git push origin main:refs/heads/release/v3.11
+```
+
+If other PRs merged after the prep commit, push that commit instead:
+
+```sh
+git push origin <prep-sha>:refs/heads/release/v3.11
 ```
 
 The branch ruleset on `release/v*` restricts creation to admins. After
@@ -214,21 +251,32 @@ further commits.
 
 ## SemVer compatibility guarantees
 
-We follow [Semantic Versioning](https://semver.org/) with these compatibility rules:
+We follow [Semantic Versioning](https://semver.org/) with these compatibility rules.
+
+Upgrades roll out **nodes first, then the contract** (see the
+[operator guide](docs/guide/operating-an-mpc-node.md#upgrades)). So a new node
+must keep working with the previous contract until the contract is upgraded.
 
 ### Major version bumps (X.Y.Z → X+1.0.0)
-- **Contract compatibility**: the new contract must remain compatible
-  with nodes from the previous major version.
+- **Node compatibility**: the new node must remain compatible with the
+  contract from the previous major version.
 - **Breaking changes**: node-to-node protocol may change, requiring
   coordinated upgrades.
+- Example: 3.x → 4.0.0. 4.0.0 nodes must run against the 3.x contract.
 
 ### Minor version bumps (X.Y.Z → X.Y+1.0)
-- **Backward compatibility**: both contract and node must remain
-  compatible with previous node binaries.
+- **Node compatibility**: the new node must remain compatible with the
+  previous contract, as for major bumps.
+- **No protocol breaks**: new nodes must work alongside previous-release
+  nodes, since operators don't all upgrade at once.
+- Example: 3.18.0 → 3.19.0. 3.19.0 nodes must run against the 3.18.0
+  contract and next to 3.18.0 nodes.
 
 ### Patch version bumps (X.Y.Z → X.Y.Z+1)
 - **Full backward compatibility**: no breaking changes.
 - **Bug fixes only**: bug fixes and security patches.
+- Example: 3.17.1 → 3.17.2. Any mix of 3.17.1 and 3.17.2 nodes and
+  contracts works.
 
 ## Changelog conventions
 
@@ -241,8 +289,8 @@ concrete SHA rather than the literal `HEAD`: git-cliff derives the ref it
 fetches PR/author metadata from off the range head, and `HEAD` resolves to
 the repo's default branch (`main`), so PRs merged only into a release
 branch would render with empty links. Using the SHA makes git-cliff fetch
-from the branch actually being released, so both minor releases on `main`
-and patch releases on `release/vX.Y` get correct PR links, and the
+from the branch actually being released, so both minor prep on `main`
+and patch prep on `release/vX.Y` get correct PR links, and the
 baseline is always the previous semver release regardless of where
 unrelated tags point.
 

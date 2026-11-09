@@ -1,3 +1,4 @@
+use crate::assets::metrics::{ASSET_METRICS_REPORTING_INTERVAL, ClearOwnedAssetGaugesOnDrop};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -44,12 +45,12 @@ use tokio::time::{sleep, timeout};
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
-    Duration::from_secs(60 * 60 * 24 * 2);
+    Duration::from_hours(2 * 24);
 
 #[derive(Clone)]
 pub struct MpcClient {
     config: Arc<ConfigFile>,
-    client: Arc<MeshNetworkClient>,
+    network_client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
@@ -64,19 +65,20 @@ pub struct MpcClient {
 }
 
 /// Whether a task is CPU-heavy asset generation that should run on the
-/// lower-priority gen runtime. Triples and presignatures qualify; signing,
+/// lower-priority gen runtime. Triples qualify; signing,
 /// keygen, resharing, CKD, and foreign-tx verification stay on the main MPC
 /// runtime. Inner matches are exhaustive so a new task kind forces a decision.
 fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
     match task_id {
         MpcTaskId::EcdsaTaskId(id) => match id {
-            EcdsaTaskId::ManyTriples { .. } | EcdsaTaskId::Presignature { .. } => true,
+            EcdsaTaskId::ManyTriples { .. } => true,
             EcdsaTaskId::KeyGeneration { .. }
             | EcdsaTaskId::KeyResharing { .. }
-            | EcdsaTaskId::Signature { .. } => false,
+            | EcdsaTaskId::Presignature { .. }
+            | EcdsaTaskId::Signature { .. }
+            | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
         MpcTaskId::RobustEcdsaTaskId(id) => match id {
-            RobustEcdsaTaskId::Presignature { .. } => true,
             RobustEcdsaTaskId::KeyGeneration { .. }
             | RobustEcdsaTaskId::KeyResharing { .. }
             | RobustEcdsaTaskId::Signature { .. } => false,
@@ -111,7 +113,7 @@ impl MpcClient {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
-        client: Arc<MeshNetworkClient>,
+        network_client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
@@ -125,7 +127,7 @@ impl MpcClient {
     ) -> Self {
         Self {
             config,
-            client,
+            network_client,
             sign_request_store,
             ckd_request_store,
             verify_foreign_tx_request_store,
@@ -150,11 +152,16 @@ impl MpcClient {
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
-        let client = self.client.clone();
-        let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
-            loop {
-                client.emit_metrics();
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        // Reads every asset store directly, so the owned-asset gauges do not
+        // depend on any generation loop iterating.
+        let asset_metrics_reporter = tracking::spawn("report asset metrics", {
+            let ecdsa = self.ecdsa_signature_provider.clone();
+            async move {
+                let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
+                loop {
+                    ecdsa.report_asset_metrics();
+                    tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
+                }
             }
         });
 
@@ -231,7 +238,7 @@ impl MpcClient {
         );
 
         let _ = monitor_passive_channels.await?;
-        metrics_emitter.await?;
+        asset_metrics_reporter.await?;
         monitor_chain.await?;
         let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
@@ -254,15 +261,15 @@ impl MpcClient {
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
                 Clock::real(),
-                self.client.all_participant_ids(),
-                self.client.my_participant_id(),
-                self.client.clone(),
+                self.network_client.all_participant_ids(),
+                self.network_client.my_participant_id(),
+                self.network_client.clone(),
             );
         let mut pending_ckds = PendingRequests::<CKDRequest, contract_args::CKDRespondArgs>::new(
             Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
+            self.network_client.all_participant_ids(),
+            self.network_client.my_participant_id(),
+            self.network_client.clone(),
         );
 
         let mut pending_verify_foreign_txs = PendingRequests::<
@@ -270,9 +277,9 @@ impl MpcClient {
             contract_args::VerifyForeignTransactionRespondArgs,
         >::new(
             Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
+            self.network_client.all_participant_ids(),
+            self.network_client.my_participant_id(),
+            self.network_client.clone(),
         )
         .with_eligible_leaders_refiner(
             self.verify_foreign_tx_provider
@@ -292,7 +299,7 @@ impl MpcClient {
                         break;
                     };
 
-                    self.client.update_indexer_height(block_update.block.height.into());
+                    self.network_client.update_indexer_height(block_update.block.height.into());
 
                     let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 
@@ -717,8 +724,8 @@ mod tests {
     fn is_heavy_generation_task__should_classify_generation_vs_other_tasks() {
         // Given every task kind paired with whether it is CPU-heavy asset
         // generation that must run on the lower-priority gen runtime.
-        let cases: [(MpcTaskId, bool); 12] = [
-            // ECDSA: triples and presignatures are heavy generation.
+        let cases: [(MpcTaskId, bool); _] = [
+            // ECDSA: triples are heavy generation.
             (
                 EcdsaTaskId::ManyTriples {
                     start: uid(),
@@ -727,20 +734,11 @@ mod tests {
                 .into(),
                 true,
             ),
-            (
-                EcdsaTaskId::Presignature {
-                    id: uid(),
-                    domain_id: DomainId(0),
-                    paired_triple_id: uid(),
-                }
-                .into(),
-                true,
-            ),
             // ECDSA: signing and key events stay on the main runtime.
             (
-                EcdsaTaskId::Signature {
+                EcdsaTaskId::OnlinePresignSignature {
                     id: CryptoHash::default(),
-                    presignature_id: uid(),
+                    paired_triple_id: uid(),
                 }
                 .into(),
                 false,
@@ -759,19 +757,27 @@ mod tests {
                 .into(),
                 false,
             ),
-            // RobustEcdsa: presignatures are heavy; signing and key events are not.
+            // ECDSA: retired stored-presignature tasks are only rejected.
             (
-                RobustEcdsaTaskId::Presignature {
+                EcdsaTaskId::Presignature {
                     id: uid(),
                     domain_id: DomainId(0),
+                    paired_triple_id: uid(),
                 }
                 .into(),
-                true,
+                false,
+            ),
+            (
+                EcdsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }
+                .into(),
+                false,
             ),
             (
                 RobustEcdsaTaskId::Signature {
                     id: CryptoHash::default(),
-                    presignature_id: uid(),
                 }
                 .into(),
                 false,
@@ -809,6 +815,14 @@ mod tests {
                 VerifyForeignTxTaskId::VerifyForeignTx {
                     id: CryptoHash::default(),
                     presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+                    id: CryptoHash::default(),
+                    paired_triple_id: uid(),
                 }
                 .into(),
                 false,

@@ -32,7 +32,8 @@ pub struct PresignArguments<C: Ciphersuite> {
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
-#[derive(Clone, Serialize, Deserialize, Eq, PartialEq, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct PresignOutput<C: Ciphersuite> {
     /// The secret signing nonces.
     pub nonces: SigningNonces<C>,

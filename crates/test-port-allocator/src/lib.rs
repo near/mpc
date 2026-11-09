@@ -5,12 +5,12 @@
 //!   per test crate — [`TestPorts::mpc_node_tests`] (10000+) and
 //!   [`TestPorts::e2e_tests`] (20000+).
 //! - [`reserve_port`]: a random port from `40000..=65535` behind an OS-level
-//!   named lock, so it's race-free across processes (`chain-gateway` tests).
+//!   file lock, so it's race-free across processes (`chain-gateway` tests).
 
+use std::fs::File;
 use std::net::TcpListener;
 use std::sync::Mutex;
 
-use named_lock::{NamedLock, NamedLockGuard};
 use rand::Rng;
 
 /// Block-allocation arithmetic for one port space: each `test_id` owns a
@@ -207,9 +207,9 @@ impl E2eTestPorts for TestPorts {
     }
 }
 
-/// Holds lock guards for the lifetime of the process, preventing other
+/// Holds the locked files for the lifetime of the process, preventing other
 /// processes from grabbing the same ports.
-static RESERVED_PORT_LOCKS: Mutex<Vec<NamedLockGuard>> = Mutex::new(Vec::new());
+static RESERVED_PORT_LOCKS: Mutex<Vec<File>> = Mutex::new(Vec::new());
 
 /// `reserve_port` owns everything from here upward; the deterministic
 /// [`TestPorts`] schemes partition the range below it.
@@ -217,24 +217,23 @@ const RESERVE_RANGE_START: u16 = 40000;
 const RESERVE_RANGE_END: u16 = 65535;
 const MAX_ATTEMPTS: u32 = 1000;
 
-/// Reserves a random TCP port behind a process-lifetime OS named lock, so no
+/// Reserves a random TCP port behind a process-lifetime OS file lock, so no
 /// other process can grab it (unlike TOCTOU-prone bind-to-`:0`-then-drop).
 pub fn reserve_port() -> u16 {
     let mut rng = rand::thread_rng();
 
     for _ in 0..MAX_ATTEMPTS {
         let port = rng.gen_range(RESERVE_RANGE_START..=RESERVE_RANGE_END);
-        let lock_name = format!("mpc_test_reserved_port_{port}");
+        let lock_path = std::env::temp_dir().join(format!("mpc_test_reserved_port_{port}.lock"));
 
-        let lock = match NamedLock::create(&lock_name) {
-            Ok(lock) => lock,
+        let lock_file = match File::create(&lock_path) {
+            Ok(lock_file) => lock_file,
             Err(_) => continue,
         };
 
-        let guard = match lock.try_lock() {
-            Ok(guard) => guard,
-            Err(_) => continue,
-        };
+        if lock_file.try_lock().is_err() {
+            continue;
+        }
 
         // Verify the port is actually bindable.
         if TcpListener::bind(("127.0.0.1", port)).is_err() {
@@ -244,7 +243,7 @@ pub fn reserve_port() -> u16 {
         RESERVED_PORT_LOCKS
             .lock()
             .expect("RESERVED_PORT_LOCKS poisoned")
-            .push(guard);
+            .push(lock_file);
 
         return port;
     }
