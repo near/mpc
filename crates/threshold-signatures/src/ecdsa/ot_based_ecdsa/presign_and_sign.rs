@@ -101,7 +101,7 @@ async fn do_presign_and_sign(
     .await
 }
 
-pub(crate) async fn sign_round(
+async fn sign_round(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     coordinator: Participant,
@@ -539,8 +539,7 @@ mod test {
 
         // Then
         let signature = check_one_coordinator_output(result, coordinator).unwrap();
-        let signature =
-            ecdsa::Signature::from_scalars(x_coordinate(&signature.big_r), signature.s).unwrap();
+        let signature = to_k256_signature(&signature);
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
             .verify(msg, &signature)
             .unwrap();

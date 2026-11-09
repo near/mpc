@@ -113,7 +113,7 @@ async fn do_presign_and_sign(
 /// shares of `s`, so it carries over unchanged to whichever scheme replaces the
 /// current presigning stub. It provides no secrecy of its own, and inherits the key
 /// leak documented in the [module docs](super).
-pub(crate) async fn sign_round(
+pub(super) async fn sign_round(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     coordinator: Participant,
@@ -566,7 +566,7 @@ mod test {
             simulate_sign_inputs(&participants, max_malicious, &mut rng);
 
         let (_, sig) = run_sign_round(participants_presign, public_key, msg, &mut rng).unwrap();
-        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
+        let sig = to_k256_signature(&sig);
 
         // verify the correctness of the generated signature
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
