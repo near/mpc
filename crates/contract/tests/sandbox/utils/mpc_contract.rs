@@ -70,7 +70,7 @@ pub async fn prepay_attestation_grants(
         .map_err(Into::into)
 }
 
-async fn attestation_storage_fee(contract: &SandboxMpcContract) -> anyhow::Result<NearToken> {
+pub async fn attestation_storage_fee(contract: &SandboxMpcContract) -> anyhow::Result<NearToken> {
     let fee = contract
         .config()
         .await?

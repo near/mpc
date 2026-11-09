@@ -475,17 +475,15 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, destination_of, initializing_state, make_public_key_for_curve,
-        resharing_state, running_contract_called_by_participant_via_forwarder,
+        basic_setup, destination_of, init_running_with_domain, initializing_state,
+        prepay_and_attest_all_participants, prepay_and_submit_mock_attestation, resharing_state,
+        running_contract_called_by_participant_via_forwarder, running_state,
     };
     use crate::config::Config;
     use crate::dto_mapping::IntoContractType;
-    use crate::primitives::key_state::{
-        AttemptId, AuthenticatedAccountId, EpochId, KeyForDomain, Keyset,
-    };
+    use crate::primitives::key_state::AuthenticatedAccountId;
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key, bogus_tee_verifier_account_id, create_node, gen_account_id,
-        gen_participants, node_for,
+        bogus_ed25519_public_key, create_node, gen_account_id, gen_participants, node_for,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
     use crate::state::key_event::KeyEvent;
@@ -507,6 +505,7 @@ mod tests {
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use rand::SeedableRng;
     use rand::rngs::OsRng;
     use rstest::rstest;
     use std::panic;
@@ -534,26 +533,6 @@ mod tests {
             report: verified_report(),
             collateral_dates: collateral_dates(),
         }
-    }
-
-    fn prepay_and_submit_mock_attestation(
-        contract: &mut MpcContract,
-        account_id: &AccountId,
-        tls_public_key: Ed25519PublicKey,
-    ) -> Result<(), Error> {
-        contract
-            .available_attestation_grants
-            .insert(account_id.clone(), 1);
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(env::block_timestamp())
-                .build()
-        );
-        contract
-            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), tls_public_key)
-            .map(|_| ())
     }
 
     fn must_store_expired_node(contract: &mut MpcContract, node: dtos::NodeInfo) {
@@ -666,7 +645,7 @@ mod tests {
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
-        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
         let contract_account_id = env::current_account_id();
         let context = VMContextBuilder::new()
             .current_account_id(contract_account_id.clone())
@@ -675,7 +654,6 @@ mod tests {
             .build();
         testing_env!(context);
 
-        contract.tee_state = TeeState::default();
         whitelist_dstack_measurements(
             &mut contract.tee_state,
             image_digest(),
@@ -953,25 +931,8 @@ mod tests {
             GovernanceThreshold::new(governance_threshold),
         )
         .unwrap();
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let keyset = Keyset::new(
-            EpochId::new(0),
-            vec![KeyForDomain {
-                domain_id: domain.id,
-                key: pk.try_into().unwrap(),
-                attempt: AttemptId::new(),
-            }],
-        );
-        let next_domain_id = DomainId(domain.id.0 + 1);
-        let mut contract = MpcContract::init_running(
-            vec![domain],
-            next_domain_id,
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
+        let mut contract = init_running_with_domain(&parameters, domain);
+        prepay_and_attest_all_participants(&mut contract);
 
         // Expire the last participant's attestation so a kickout drops the set to
         // `participant_count - 1`.
@@ -1175,7 +1136,8 @@ mod tests {
     }
 
     fn measure_grant_row_bytes() -> u64 {
-        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut rng);
         testing_env!(VMContextBuilder::new().build());
         let account: AccountId = "a".repeat(64).parse().unwrap();
 

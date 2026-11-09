@@ -107,6 +107,12 @@ impl TestSetupBuilder {
             contract,
             participants_list,
         };
+        for node in setup.get_participant_nodes() {
+            setup.prepay_and_submit_attestation_for_node(
+                &node,
+                Attestation::Mock(MockAttestation::Valid),
+            );
+        }
 
         match contract_protocol_state {
             ContractProtocolState::Running => {}
@@ -117,13 +123,6 @@ impl TestSetupBuilder {
             ContractProtocolState::Resharing => {
                 let all_nodes = setup.get_participant_nodes();
                 let threshold_nodes = all_nodes.iter().take(threshold as usize);
-
-                for node in threshold_nodes.clone() {
-                    setup.submit_attestation_for_node(
-                        node,
-                        Attestation::Mock(MockAttestation::Valid),
-                    );
-                }
 
                 for node in threshold_nodes {
                     testing_env!(common::participant_context(&node.account_id));
