@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_block_primitives::BlockHeight;
 use near_mpc_bounded_collections::{NonEmptyBTreeMap, UpperBoundedVec};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
@@ -133,7 +134,7 @@ pub struct VerifyForeignTransactionRequest {
 
 /// Requests a [`ForeignTxSignPayload::V2`] signature. Unlike V1 there is no
 /// expected payload hash: the V2 payload covers the [`YieldId`] and
-/// [`NearBlockHeight`] the contract assigns to the request, which the caller
+/// [`BlockHeight`] the contract assigns to the request, which the caller
 /// only learns from the response.
 #[derive(
     Debug,
@@ -218,7 +219,7 @@ pub struct VerifyForeignTransactionResponse {
 pub struct VerifyForeignTransactionResponseV2 {
     pub payload_hash: Hash256,
     pub signature: SignatureResponse,
-    pub request_block_height: NearBlockHeight,
+    pub request_block_height: BlockHeight,
     pub yield_id: YieldId,
     pub outcome: ForeignTxVerificationOutcome,
 }
@@ -1574,56 +1575,6 @@ pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
 )]
 pub struct BlockConfirmations(pub u64);
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-    derive_more::Display,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct NearBlockHeight(pub u64);
-
-/// Identifies the yield a V2 verification request waits on. The contract picks
-/// it, so a signature naming it answers that one request only.
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct YieldId(#[serde_as(as = "Hex")] pub [u8; 32]);
-
 #[serde_as]
 #[derive(
     Debug,
@@ -1821,41 +1772,6 @@ pub struct StarknetFelt(#[serde_as(as = "Hex")] pub [u8; 32]);
 )]
 pub struct StarknetTxId(pub StarknetFelt);
 
-/// The network's negative answer about the requested foreign chain
-/// transaction, as observed while the request was pending, which starts at
-/// [`ForeignTxSignPayloadV2::request_block_height`].
-///
-/// A later check may answer differently, for example once a transaction that
-/// was not found lands.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub enum ForeignTxVerificationNegativeVerdict {
-    TransactionFailed,
-    LogIndexOutOfBounds,
-    TransactionNotFound,
-    AccountNotFound,
-    NonCanonicalBlock,
-    /// The transaction was found, but its extracted values differ from
-    /// [`VerifyForeignTransactionRequestV2::expected_values`].
-    ValuesMismatch,
-}
-
 /// Canonical payload for foreign-chain transaction verification signatures.
 ///
 /// This enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte
@@ -1931,7 +1847,7 @@ pub struct ForeignTxSignPayloadV2 {
     /// See [`VerifyForeignTransactionRequestV2::expected_values_hash`].
     pub expected_values_hash: Hash256,
     /// The block the request's yield was created in.
-    pub request_block_height: NearBlockHeight,
+    pub request_block_height: BlockHeight,
     /// The one yield this payload answers.
     pub yield_id: YieldId,
     pub outcome: ForeignTxVerificationOutcome,
@@ -1964,6 +1880,67 @@ pub enum ForeignTxVerificationOutcome {
     /// transaction.
     Inconclusive {},
 }
+
+/// The network's negative answer about the requested foreign chain
+/// transaction, as observed while the request was pending, which starts at
+/// [`ForeignTxSignPayloadV2::request_block_height`].
+///
+/// A later check may answer differently, for example once a transaction that
+/// was not found lands.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ForeignTxVerificationNegativeVerdict {
+    TransactionFailed,
+    LogIndexOutOfBounds,
+    TransactionNotFound,
+    AccountNotFound,
+    NonCanonicalBlock,
+    /// The transaction was found, but its extracted values differ from
+    /// [`VerifyForeignTransactionRequestV2::expected_values`].
+    ValuesMismatch,
+}
+
+/// Identifies the yield a V2 verification request waits on. The contract picks
+/// it, so a signature naming it answers that one request only.
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct YieldId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 impl ForeignTxSignPayload {
     pub fn new(
@@ -2457,7 +2434,7 @@ mod tests {
                 let payload = ForeignTxSignPayload::V2(ForeignTxSignPayloadV2 {
                     request: request.request.clone(),
                     expected_values_hash: request.expected_values_hash().unwrap(),
-                    request_block_height: NearBlockHeight(0x0102_0304_0506_0708),
+                    request_block_height: BlockHeight::new(0x0102_0304_0506_0708),
                     yield_id: YieldId([0xcd; 32]),
                     outcome,
                 });
