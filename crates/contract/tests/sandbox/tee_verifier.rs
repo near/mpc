@@ -103,22 +103,32 @@ async fn create_fixture_account(worker: &Worker<Sandbox>, account_id: &str) -> A
         .unwrap()
 }
 
+struct SubmitterFunds {
+    balance: NearToken,
+    grants: u32,
+}
+
+async fn submitter_funds(contract: &SandboxMpcContract, submitter: &Account) -> SubmitterFunds {
+    SubmitterFunds {
+        balance: submitter.view_account().await.unwrap().balance,
+        grants: available_attestation_grants(contract, submitter.id())
+            .await
+            .unwrap(),
+    }
+}
+
 /// A separate payer leaves the beneficiary's balance untouched, so tests can assert it
-/// spent only gas. Returns the beneficiary's balance and grants after the prepayment.
+/// spent only gas. Returns the beneficiary's funds after the prepayment.
 async fn prepay_grant_from_separate_payer(
     setup: &SandboxTestSetup,
     beneficiary: &Account,
-) -> (NearToken, u32) {
+) -> SubmitterFunds {
     let payer = setup.worker.dev_create_account().await.unwrap();
     let prepayment = prepay_attestation_grants(&payer, &setup.contract, beneficiary.id(), 1)
         .await
         .unwrap();
     assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
-    let balance = beneficiary.view_account().await.unwrap().balance;
-    let grants = available_attestation_grants(&setup.contract, beneficiary.id())
-        .await
-        .unwrap();
-    (balance, grants)
+    submitter_funds(&setup.contract, beneficiary).await
 }
 
 async fn setup_verified_fixture() -> VerifiedFixture {
@@ -199,8 +209,7 @@ async fn assert_submission_failed_cleanly(
     result: &ExecutionFinalResult,
     contract: &SandboxMpcContract,
     submitter: &Account,
-    balance_before: NearToken,
-    grants_before: u32,
+    funds_before: SubmitterFunds,
     expected_errors: &[&str],
 ) {
     assert_failure_contains(result, expected_errors);
@@ -210,10 +219,10 @@ async fn assert_submission_failed_cleanly(
         .await
         .unwrap();
     assert_eq!(
-        remaining, grants_before,
+        remaining, funds_before.grants,
         "a failed submission must not consume the prepaid grant"
     );
-    assert_only_gas_spent(submitter, balance_before, result).await;
+    assert_only_gas_spent(submitter, funds_before.balance, result).await;
 }
 
 /// The unspent-gas refund lands a block or two after the transaction, so the
@@ -281,7 +290,7 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
     let setup = setup().await;
     deploy_and_trust(&setup, tee_verifier_contract()).await;
     let submitter = &setup.mpc_signer_accounts[0];
-    let (balance_before, grants_before) = prepay_grant_from_separate_payer(&setup, submitter).await;
+    let funds_before = prepay_grant_from_separate_payer(&setup, submitter).await;
     let mut attestation = mock_dto_dstack_attestation();
     let dtos::Attestation::Dstack(dstack) = &mut attestation else {
         panic!("fixture must be a Dstack attestation");
@@ -303,8 +312,7 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
         &result,
         &setup.contract,
         submitter,
-        balance_before,
-        grants_before,
+        funds_before,
         &[&TeeError::QuoteRejected {
             reason: String::new(),
         }
@@ -326,7 +334,7 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
     .await
     .unwrap();
     let submitter = &setup.mpc_signer_accounts[0];
-    let (balance_before, grants_before) = prepay_grant_from_separate_payer(&setup, submitter).await;
+    let funds_before = prepay_grant_from_separate_payer(&setup, submitter).await;
 
     // When
     let result = submit_dstack(submitter, &setup.contract).await;
@@ -336,8 +344,7 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
         &result,
         &setup.contract,
         submitter,
-        balance_before,
-        grants_before,
+        funds_before,
         &[&TeeError::VerifierUnavailable.to_string()],
     )
     .await;
@@ -422,7 +429,7 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
         .await;
     deploy_and_trust(&setup, tee_verifier_contract()).await;
     let submitter = &setup.mpc_signer_accounts[0];
-    let (balance_before, grants_before) = prepay_grant_from_separate_payer(&setup, submitter).await;
+    let funds_before = prepay_grant_from_separate_payer(&setup, submitter).await;
 
     // When
     let result = submit_dstack(submitter, &setup.contract).await;
@@ -432,8 +439,7 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
         &result,
         &setup.contract,
         submitter,
-        balance_before,
-        grants_before,
+        funds_before,
         &[&TeeError::VerifierUnavailable.to_string()],
     )
     .await;
@@ -548,10 +554,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
 async fn submit_participant_info__should_reject_verified_quote_when_compose_hash_not_allowed() {
     // Given
     let fx = setup_fixture(None).await;
-    let balance_before = fx.submitter.view_account().await.unwrap().balance;
-    let grants_before = available_attestation_grants(&fx.setup.contract, fx.submitter.id())
-        .await
-        .unwrap();
+    let funds_before = submitter_funds(&fx.setup.contract, &fx.submitter).await;
 
     // When
     let result = submit_dstack(&fx.submitter, &fx.setup.contract).await;
@@ -565,8 +568,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_compose_hash
         &result,
         &fx.setup.contract,
         &fx.submitter,
-        balance_before,
-        grants_before,
+        funds_before,
         &["failed verification", &expected_rejection],
     )
     .await;
@@ -580,8 +582,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_submitter_ke
     // DCAP.
     let fx = setup_verified_fixture().await;
     let submitter = &fx.setup.mpc_signer_accounts[0];
-    let (balance_before, grants_before) =
-        prepay_grant_from_separate_payer(&fx.setup, submitter).await;
+    let funds_before = prepay_grant_from_separate_payer(&fx.setup, submitter).await;
 
     // When
     let result = submit_dstack(submitter, &fx.setup.contract).await;
@@ -591,8 +592,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_submitter_ke
         &result,
         &fx.setup.contract,
         submitter,
-        balance_before,
-        grants_before,
+        funds_before,
         &["failed verification", "report_data"],
     )
     .await;
