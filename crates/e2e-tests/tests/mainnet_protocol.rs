@@ -8,12 +8,14 @@ use rand::{SeedableRng, rngs::StdRng};
 
 #[tokio::test]
 #[expect(non_snake_case)]
+#[ignore = "pinned to mainnet's protocol; runs in the Mainnet protocol compatibility CI job"]
 async fn mpc_cluster__should_serve_requests_at_mainnet_protocol_version() {
     // Given
     let (cluster, running) = must_setup_cluster(MAINNET_PROTOCOL_PORT_SEED, |c| {
         c.sandbox_protocol_version = Some(test_utils::MAINNET_PROTOCOL_VERSION);
     })
     .await;
+    assert!(!running.domains.domains.is_empty(), "no domains found");
     let mut rng = StdRng::seed_from_u64(0);
 
     for domain in &running.domains.domains {

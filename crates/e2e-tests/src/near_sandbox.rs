@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
+use mpc_node_config::ChainId;
 use near_sandbox::{Sandbox, SandboxConfig};
 
 use test_port_allocator::{E2eTestPorts, TestPorts};
@@ -61,10 +62,10 @@ impl NearSandbox {
         let mut additional_genesis = protocol_version
             .map(test_utils::pinned_protocol_genesis)
             .unwrap_or_else(|| serde_json::json!({}));
-        // Set chain_id to "sandbox" so MPC nodes recognize this as a local
+        // Use the sandbox chain_id so MPC nodes recognize this as a local
         // network (is_localnet() returns true). Without this, `near-sandbox
         // init` generates a random chain_id like "test-chain-XXXXX".
-        additional_genesis["chain_id"] = "sandbox".into();
+        additional_genesis["chain_id"] = ChainId::Sandbox.to_string().into();
         let config = SandboxConfig {
             rpc_port: Some(rpc_port),
             net_port: Some(network_port),

@@ -7,6 +7,7 @@ use test_utils::MAINNET_PROTOCOL_VERSION;
 
 #[tokio::test]
 #[expect(non_snake_case)]
+#[ignore = "pinned to mainnet's protocol; runs in the Mainnet protocol compatibility CI job"]
 async fn contract__should_serve_requests_at_mainnet_protocol_version() {
     // Given
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
