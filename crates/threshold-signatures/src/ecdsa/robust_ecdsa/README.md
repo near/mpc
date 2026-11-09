@@ -44,7 +44,7 @@ Lagrange-linearized shares of `s` and provides no secrecy of its own. See the
 
 ## Types
 
-Preserved verbatim from the removed scheme, so a replacement can reuse them:
+Fields preserved verbatim from the removed scheme, so a replacement can reuse them:
 
 - **`SignArguments`** -- input to `sign`: keygen output + maximum number of malicious parties
 - **`NonceGenerationOutput`** -- output of nonce generation: `(big_r, c, e, alpha, beta)`
