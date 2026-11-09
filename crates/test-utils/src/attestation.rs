@@ -4,7 +4,7 @@ use mpc_attestation::{
     quote::QuoteBytes,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
-use near_mpc_contract_interface::types::HexVec;
+use near_mpc_contract_interface::types::{HexVec, MockAttestation};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tee_verifier_interface::{Collateral, CollateralDates, VerifiedReport};
@@ -162,6 +162,15 @@ pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Atte
     near_mpc_contract_interface::types::Attestation::Dstack(
         near_mpc_contract_interface::types::DstackAttestation::new(quote, collateral, tcb_info),
     )
+}
+
+pub fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
+    MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+        expected_measurements: None,
+    }
 }
 
 #[cfg(test)]
