@@ -10,6 +10,7 @@ To ensure consistent high quality code, every PR must conform to the following p
 - [Name capability traits after the action](#name-capability-traits-after-the-action)
 - [Write helpful code comments](#write-helpful-code-comments)
 - [Declare referencing types first](#declare-referencing-types-first)
+- [Separate wire-format types from storage and internal types](#separate-wire-format-types-from-storage-and-internal-types)
 
 Beyond our engineering standards,
 The Rust library team maintains a set of [API guidelines](https://rust-lang.github.io/api-guidelines/about.html).
