@@ -62,7 +62,7 @@ impl FakeMpcContractState {
     pub fn new() -> Self {
         let state = ProtocolContractState::NotInitialized;
         let config = dtos::InitConfig {
-            key_event_timeout_blocks: Some(10),
+            key_event_timeout_blocks: Some(dtos::BlockCount::from(10)),
             ..Default::default()
         };
         let env = Environment::new(None, None, None);
@@ -511,7 +511,7 @@ impl FakeIndexerCore {
                             state.state.clone().into();
                         let config = ContractState::from_contract_state(
                             &dto_state,
-                            state.env.block_height,
+                            dtos::BlockHeight::new(state.env.block_height),
                             None,
                         )
                         .expect("Failed to convert contract state");
