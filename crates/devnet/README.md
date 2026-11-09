@@ -167,9 +167,12 @@ Finally, initialize the contract
 mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2 --tee-verifier-account-id <tee-verifier-account>
 ```
 
-`init-contract` also prepays one attestation-storage grant for every participant, so each node can
-store its first attestation. The contract refuses requests until every initial participant has
-attested.
+`init-contract` also prepays one attestation-storage grant for every participant of the
+network, including those beyond `--init-participants`, so each node can store its first
+attestation. The contract account pays the fee, which it reads from the contract's `config()`.
+A participant created with `update` after `init-contract` gets no grant; prepay one by hand as
+described in [Prepay Your Node's Attestation Storage](../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepay-your-nodes-attestation-storage).
+The contract refuses requests until every initial participant has attested.
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.

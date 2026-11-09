@@ -169,12 +169,14 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::foreign_chain::test_utils::{
-        attested_account_public_key, register_foreign_chains_config_for, whitelist_chain,
+        register_foreign_chains_config_for, whitelist_chain,
     };
     use crate::api::node_migration::MINIMUM_NODE_MANAGEMENT_DEPOSIT;
     use crate::api::test_utils::{
-        attest_all_participants, basic_setup, basic_setup_with_protocol, destination_of,
-        make_public_key_for_curve, must_attest_new_node, participant_account_ids,
+        basic_setup, basic_setup_with_protocol, destination_of, init_running_with_domain,
+        make_public_key_for_curve, must_attest_new_node, must_get_attested_signer_key,
+        participant_account_ids, prepay_and_attest_all_participants,
+        prepay_and_submit_mock_attestation,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
@@ -189,7 +191,6 @@ mod tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::running::RunningContractState;
-    use crate::tee::tee_state::TeeState;
     use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_sdk::test_utils::VMContextBuilder;
@@ -761,41 +762,19 @@ mod tests {
     fn recompute_available_foreign_chains__should_use_domain_threshold_not_governance_threshold() {
         // Given: 4 participants, governance threshold=3, ForeignTx domain reconstruction_threshold=2.
         // Only 2 supporters will register — below governance threshold but meets domain threshold.
-        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
-        testing_env!(
-            VMContextBuilder::new()
-                .attached_deposit(NearToken::from_yoctonear(1))
-                .predecessor_account_id(contract_account_id.clone())
-                .current_account_id(contract_account_id)
-                .build()
-        );
-        let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
-            id: domain_id,
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: dtos::DomainPurpose::ForeignTx,
-        }];
-        let (pk, _sk) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let key_for_domain = KeyForDomain {
-            domain_id,
-            key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
-        };
-        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain]);
         let parameters =
             GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
                 .unwrap();
-        let mut contract = MpcContract::init_running(
-            domains,
-            DomainId(1),
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
-        attest_all_participants(&mut contract);
+        let mut contract = init_running_with_domain(
+            &parameters,
+            DomainConfig {
+                id: DomainId::default(),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: dtos::DomainPurpose::ForeignTx,
+            },
+        );
+        prepay_and_attest_all_participants(&mut contract);
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -864,7 +843,7 @@ mod tests {
             None,
         )
         .unwrap();
-        attest_all_participants(&mut contract);
+        prepay_and_attest_all_participants(&mut contract);
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -933,9 +912,14 @@ mod tests {
                 .expect("contract has at least one domain")
         };
         contract.protocol_state = ProtocolContractState::Resharing(resharing);
-        contract.tee_state = TeeState::with_mocked_participant_attestations(&all_participants);
-        let joining_pk = attested_account_public_key(&contract, &joining_info.tls_public_key);
-        let departing_pk = attested_account_public_key(&contract, &departing_info.tls_public_key);
+        prepay_and_submit_mock_attestation(
+            &mut contract,
+            &joining,
+            joining_info.tls_public_key.clone(),
+        )
+        .expect("the joining participant's attestation should be accepted");
+        let joining_pk = must_get_attested_signer_key(&contract, &joining_info.tls_public_key);
+        let departing_pk = must_get_attested_signer_key(&contract, &departing_info.tls_public_key);
 
         // When
         let joining_result = register_bitcoin_as(&mut contract, &joining, joining_pk);
@@ -1024,6 +1008,7 @@ mod tests {
             .unwrap()
             .tls_public_key
             .clone();
+        let previous_node_pk = must_get_attested_signer_key(&contract, &previous_tls_key);
         let destination = must_attest_new_node(&mut contract, &operator);
         let mut env = Environment::new(None, Some(operator.clone()), None);
         env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
@@ -1043,11 +1028,7 @@ mod tests {
             .expect("migration should conclude");
 
         // When
-        let result = register_bitcoin_as(
-            &mut contract,
-            &operator,
-            near_sdk::PublicKey::from(previous_tls_key.clone()),
-        );
+        let result = register_bitcoin_as(&mut contract, &operator, previous_node_pk);
 
         // Then
         assert_eq!(result, not_participant(&operator));

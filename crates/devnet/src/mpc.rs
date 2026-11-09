@@ -1,6 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
-use crate::caller::{CallMpcContract, Verbosity, WithVerbosity};
+use crate::caller::{CallMpcContract, DevnetCaller, Verbosity, WithVerbosity};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcSubmitUpdateCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -23,10 +23,11 @@ use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    Config, DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters,
-    ParticipantId, ParticipantInfo, Participants, ProposedGovernanceThresholdParameters, Protocol,
+    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, ParticipantId,
+    ParticipantInfo, Participants, ProposedGovernanceThresholdParameters, Protocol,
     ProtocolContractState, ReconstructionThreshold, Update, protocol_state_to_string,
 };
 use near_mpc_sdk::update::hash;
@@ -348,27 +349,29 @@ impl MpcInitContractCmd {
             .into_return_value()
             .unwrap();
 
-        let contract_config: Config = serde_json::from_slice(
-            &setup
-                .accounts
-                .account(&contract)
-                .query_contract(method_names::CONFIG, b"{}".to_vec())
-                .await
-                .expect("config() call failed")
-                .result,
-        )
-        .expect("failed to parse config()");
-        let fee = NearToken::from_millinear(u128::from(
-            contract_config.attestation_storage_fee_millinear,
-        ));
+        // Every participant, not only the initial ones: a node joining later attests with a
+        // function-call key, which cannot attach the deposit a grant costs.
+        let fee = attestation_storage_fee(&mpc_contract_handle).await;
         for account_id in &mpc_setup.participants {
             mpc_contract_handle
                 .prepay_attestation_storage(account_id.clone(), 1, fee)
                 .await
                 .into_return_value()
-                .unwrap();
+                .expect(&format!(
+                    "failed to prepay an attestation grant for {account_id}"
+                ));
         }
     }
+}
+
+async fn attestation_storage_fee(contract: &MpcContractHandle<DevnetCaller>) -> NearToken {
+    let fee_millinear = contract
+        .config()
+        .await
+        .expect("config() call failed")
+        .value
+        .attestation_storage_fee_millinear;
+    NearToken::from_millinear(u128::from(fee_millinear))
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
@@ -411,12 +414,14 @@ impl MpcViewContractCmd {
         let contract_state = setup
             .accounts
             .account(contract)
-            .query_contract(method_names::STATE, b"{}".to_vec())
+            .call_mpc(contract)
+            .state()
             .await
-            .expect("state() call failed");
+            .expect("state() call failed")
+            .value;
         println!(
             "Contract state: {}",
-            String::from_utf8_lossy(&contract_state.result)
+            serde_json::to_string(&contract_state).expect("failed to serialize the state")
         );
     }
 }

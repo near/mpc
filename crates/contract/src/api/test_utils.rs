@@ -7,14 +7,14 @@ use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
 use crate::primitives::participants::Participants;
 use crate::primitives::test_utils::{
-    NUM_PROTOCOLS, bogus_tee_verifier_account_id, gen_participant_url, gen_participants,
-    infer_purpose_from_protocol, node_id_for,
+    NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_tee_verifier_account_id,
+    gen_participant_url, gen_participants, infer_purpose_from_protocol, node_id_for,
 };
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
-use crate::tee::tee_state::{NodeId, TeeState};
+use crate::tee::tee_state::NodeId;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
     ReconstructionThreshold,
@@ -26,7 +26,8 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::test_utils::VMContextBuilder;
-use near_sdk::{NearToken, VMContext, testing_env};
+use near_sdk::{NearToken, VMContext, env, testing_env};
+use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 use std::{str::FromStr, time::Duration};
 use threshold_signatures::confidential_key_derivation as ckd;
@@ -114,13 +115,6 @@ pub(crate) fn basic_setup_with_protocol(
     rng: &mut impl CryptoRngCore,
 ) -> (VMContext, MpcContract, SharedSecretKey) {
     let curve = Curve::from(protocol);
-    let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
-    let context = VMContextBuilder::new()
-        .attached_deposit(NearToken::from_yoctonear(1))
-        .predecessor_account_id(contract_account_id.clone())
-        .current_account_id(contract_account_id)
-        .build();
-    testing_env!(context.clone());
     let domain_id = DomainId::default();
     // RobustEcdsa requires 2t - 1 <= n; with n=4, the max valid t is 2.
     let reconstruction_threshold = match protocol {
@@ -153,20 +147,107 @@ pub(crate) fn basic_setup_with_protocol(
         None,
     )
     .unwrap();
-    attest_all_participants(&mut contract);
+    prepay_and_attest_all_participants(&mut contract);
+
+    let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
+    let context = VMContextBuilder::new()
+        .attached_deposit(NearToken::from_yoctonear(1))
+        .predecessor_account_id(contract_account_id.clone())
+        .current_account_id(contract_account_id)
+        .build();
+    testing_env!(context.clone());
     (context, contract, sk)
 }
 
-/// Gives every participant a valid mock attestation and lets the contract accept requests, as
-/// if each participant had attested after initialization.
-pub(crate) fn attest_all_participants(contract: &mut MpcContract) {
+/// Initializes a Running contract with `parameters` and the single `domain`, under a fresh key.
+pub(crate) fn init_running_with_domain(
+    parameters: &GovernanceThresholdParameters,
+    domain: DomainConfig,
+) -> MpcContract {
+    let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+    let (pk, _) = make_public_key_for_curve(Curve::from(domain.protocol), &mut rng);
+    let keyset = Keyset::new(
+        EpochId::new(0),
+        vec![KeyForDomain {
+            domain_id: domain.id,
+            key: pk.try_into().unwrap(),
+            attempt: AttemptId::new(),
+        }],
+    );
+    let next_domain_id = DomainId(domain.id.0 + 1);
+    MpcContract::init_running(
+        vec![domain],
+        next_domain_id,
+        (&keyset).into_dto_type(),
+        parameters.into_dto_type(),
+        bogus_tee_verifier_account_id(),
+        None,
+    )
+    .unwrap()
+}
+
+/// Prepays a grant for every participant and submits a valid mock attestation from each, as
+/// their nodes do right after initialization.
+pub(crate) fn prepay_and_attest_all_participants(contract: &mut MpcContract) {
     let participants = contract
         .protocol_state
         .threshold_parameters()
         .unwrap()
-        .participants();
-    contract.tee_state = TeeState::with_mocked_participant_attestations(participants);
-    contract.accept_requests = true;
+        .participants()
+        .clone();
+    for (account_id, _, info) in participants.participants() {
+        prepay_and_submit_mock_attestation(contract, account_id, info.tls_public_key.clone())
+            .expect("a participant's valid mock attestation should be accepted");
+    }
+    // Writes the attestations to storage as the end of their transactions would. Left pending,
+    // they are written when the contract is dropped, against the gas of the test's last call.
+    contract.tee_state.nodes.flush();
+    contract.available_attestation_grants.flush();
+}
+
+/// Prepays one attestation-storage grant for `account_id`, then submits a valid mock
+/// attestation from it, signed with a fresh account key.
+pub(crate) fn prepay_and_submit_mock_attestation(
+    contract: &mut MpcContract,
+    account_id: &AccountId,
+    tls_public_key: dtos::Ed25519PublicKey,
+) -> Result<(), Error> {
+    let fee = NearToken::from_millinear(u128::from(
+        contract.config.attestation_storage_fee_millinear,
+    ));
+    testing_env!(
+        VMContextBuilder::new()
+            .predecessor_account_id(account_id.clone())
+            .attached_deposit(fee)
+            .block_timestamp(env::block_timestamp())
+            .build()
+    );
+    contract
+        .prepay_attestation_storage(account_id.clone(), 1)
+        .expect("prepaying one grant should succeed");
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .signer_account_pk(bogus_ed25519_near_public_key())
+            .block_timestamp(env::block_timestamp())
+            .build()
+    );
+    contract
+        .submit_participant_info(Attestation::Mock(MockAttestation::Valid), tls_public_key)
+        .map(|_| ())
+}
+
+pub(crate) fn must_get_attested_signer_key(
+    contract: &MpcContract,
+    tls_public_key: &dtos::Ed25519PublicKey,
+) -> near_sdk::PublicKey {
+    let node = contract
+        .tee_state
+        .nodes
+        .get(tls_public_key)
+        .expect("a node must be attested under the TLS key");
+    near_sdk::PublicKey::from(node.signer_public_key.clone())
 }
 
 /// Temporarily sets the testing environment so that calls appear
@@ -191,7 +272,6 @@ pub(crate) fn with_active_participant_and_attested_context(contract: &MpcContrac
         .id();
 
     // Build a new simulated environment with this node as caller.
-    // Sign with the account public key the attestation was stored under.
     let mut ctx_builder = VMContextBuilder::new();
     ctx_builder
         .signer_account_id(node_id.account_id.clone())
@@ -212,13 +292,6 @@ pub(crate) fn setup_tee_test_contract(
     let participants = gen_participants(num_participants);
     let first_participant_id = participants.participants()[0].0.clone();
 
-    let context = VMContextBuilder::new()
-        .signer_account_id(first_participant_id.clone())
-        .predecessor_account_id(first_participant_id.clone())
-        .attached_deposit(NearToken::from_near(1))
-        .build();
-    testing_env!(context);
-
     let threshold = GovernanceThreshold::new(threshold_value);
     let parameters = GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
     let mut contract = MpcContract::init(
@@ -227,8 +300,7 @@ pub(crate) fn setup_tee_test_contract(
         None,
     )
     .unwrap();
-    attest_all_participants(&mut contract);
-
+    prepay_and_attest_all_participants(&mut contract);
     (contract, participants, first_participant_id)
 }
 

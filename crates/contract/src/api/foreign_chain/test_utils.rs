@@ -1,5 +1,5 @@
 use crate::MpcContract;
-use crate::api::test_utils::participant_account_ids;
+use crate::api::test_utils::{must_get_attested_signer_key, participant_account_ids};
 use crate::tee::test_utils::Environment;
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -47,23 +47,9 @@ pub(super) fn register_foreign_chains_config_for(
         .expect("account must be a participant")
         .tls_public_key
         .clone();
-    let signer_pk = attested_account_public_key(contract, &tls_key);
     let mut env = Environment::new(None, Some(account_id.clone()), None);
-    env.set_pk(signer_pk);
+    env.set_pk(must_get_attested_signer_key(contract, &tls_key));
     contract
         .register_foreign_chains_config(foreign_chains_config)
         .expect("register should succeed");
-}
-
-/// The account public key of the attestation stored under `tls_public_key`.
-pub(super) fn attested_account_public_key(
-    contract: &MpcContract,
-    tls_public_key: &dtos::Ed25519PublicKey,
-) -> near_sdk::PublicKey {
-    let node = contract
-        .tee_state
-        .nodes
-        .get(tls_public_key)
-        .expect("an attestation must be stored under the TLS key");
-    near_sdk::PublicKey::from(node.signer_public_key.clone())
 }

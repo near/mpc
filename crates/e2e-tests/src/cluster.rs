@@ -16,7 +16,7 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     types::{
-        AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
+        AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo, BlockCount,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
         ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters, InitConfig,
@@ -62,7 +62,7 @@ fn tee_verifier_account() -> String {
 // blocks). The e2e sandbox runs ~8 blocks/s, so override it to 240 blocks
 // (~30 s) to leave room for resharing when concurrent e2e tests load the
 // runner.
-const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
+const KEY_EVENT_TIMEOUT_BLOCKS: BlockCount = BlockCount::new(240);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
@@ -233,6 +233,17 @@ impl MpcClusterConfig {
         }
     }
 
+    /// Attestation-storage grants each node's account needs, by node index: one for the node
+    /// itself, plus one for each migration target, which attests under its source's account
+    /// with a new TLS key.
+    fn attestation_grants(&self) -> Vec<u32> {
+        let mut grants = vec![1; self.num_nodes];
+        for &source_idx in &self.migration_targets {
+            grants[source_idx] += 1;
+        }
+        grants
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
         for (i, &source_idx) in self.migration_targets.iter().enumerate() {
             anyhow::ensure!(
@@ -349,10 +360,10 @@ impl MpcCluster {
             &ports,
             InitContractArgs {
                 near_keys: node_near_keys.clone(),
+                attestation_grants: config.attestation_grants(),
                 p2p_keys: node_p2p_keys.clone(),
                 threshold: config.threshold,
                 participant_indices: participant_indices.clone(),
-                migration_targets: config.migration_targets.clone(),
                 init_format: config.init_format,
                 tee_verifier_account_id: tee_verifier_account().parse()?,
             },
@@ -1034,17 +1045,21 @@ impl MpcCluster {
     }
 
     /// Prepay one attestation-storage grant for a specific node's account, paid by its operator.
-    pub async fn prepay_attestation_grant(
-        &self,
-        node_index: usize,
-    ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
+    pub async fn prepay_attestation_grant(&self, node_index: usize) -> anyhow::Result<()> {
         let fee = attestation_storage_fee(&self.mpc_contract_handle).await?;
         let account_id = self.nodes[node_index].account_id().to_string().parse()?;
-        self.operator_client_for(node_index)?
+        let outcome = self
+            .operator_client_for(node_index)?
             .call_mpc(self.contract_id())
             .prepay_attestation_storage(account_id, 1, fee)
             .await
-            .context("failed to prepay attestation storage")
+            .context("failed to prepay attestation storage")?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "prepay for node {node_index} failed: {:?}",
+            outcome.failure_message()
+        );
+        Ok(())
     }
 
     /// Submit an attestation for a TLS key from a specific node's account, signed with its
@@ -1307,17 +1322,16 @@ async fn create_node_accounts(
 
 struct InitContractArgs {
     near_keys: Vec<SigningKey>,
+    /// Grants to prepay for each node's account, by node index.
+    attestation_grants: Vec<u32>,
     p2p_keys: Vec<SigningKey>,
     threshold: usize,
     participant_indices: Vec<usize>,
-    migration_targets: Vec<usize>,
     init_format: ContractInitFormat,
     tee_verifier_account_id: ContractAccountId,
 }
 
-/// Prepays one attestation-storage grant for every node in the cluster, plus one on the
-/// source's account for each of `migration_targets`, which attests under that account with a
-/// new TLS key.
+/// Prepays `attestation_grants[i]` attestation-storage grants for the account of node `i`.
 ///
 /// For every node, not only the initial participants: a node joining in a later resharing
 /// attests from its own process with a function-call key, which cannot attach a deposit, so
@@ -1327,15 +1341,10 @@ async fn prepay_attestation_grants(
     contract: &DeployedContract,
     fee: NearToken,
     near_keys: &[SigningKey],
-    migration_targets: &[usize],
+    attestation_grants: &[u32],
 ) -> anyhow::Result<()> {
-    for (i, near_key) in near_keys.iter().enumerate() {
+    for (i, (near_key, &grants)) in near_keys.iter().zip(attestation_grants).enumerate() {
         let account = node_account(i);
-        let num_targets = migration_targets
-            .iter()
-            .filter(|&&source_idx| source_idx == i)
-            .count();
-        let grants = 1 + u32::try_from(num_targets)?;
         let deposit = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
         let outcome = blockchain
             .client_for(&account, near_key)?
@@ -1372,10 +1381,10 @@ async fn init_contract(
 ) -> anyhow::Result<()> {
     let InitContractArgs {
         near_keys,
+        attestation_grants,
         p2p_keys,
         threshold,
         participant_indices,
-        migration_targets,
         init_format,
         tee_verifier_account_id,
     } = args;
@@ -1410,7 +1419,7 @@ async fn init_contract(
     );
 
     let fee = attestation_storage_fee(mpc_contract_handle).await?;
-    prepay_attestation_grants(blockchain, contract, fee, &near_keys, &migration_targets).await?;
+    prepay_attestation_grants(blockchain, contract, fee, &near_keys, &attestation_grants).await?;
 
     for &i in &participant_indices {
         let account = node_account(i);
