@@ -108,11 +108,6 @@ async fn do_presign_and_sign(
 
 /// The signing round, run on a caller-owned channel so that it can follow presigning on the
 /// same channel.
-///
-/// This phase is scheme-agnostic: it sums the participants' Lagrange-linearized
-/// shares of `s`, so it carries over unchanged to whichever scheme replaces the
-/// current presigning stub. It provides no secrecy of its own, and inherits the key
-/// leak documented in the [module docs](super).
 pub(super) async fn sign_round(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
