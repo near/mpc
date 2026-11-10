@@ -2145,8 +2145,10 @@ key may call **all** methods on that contract.
 If your node's key was previously added with a restricted `method_names` list
 (e.g. an older guide granted an explicit list), the node will fail — with no
 obvious error — on any contract method that was not in that list. A symptom of
-this is the node being unable to call `register_foreign_chains_config`, so the
-contract reports no foreign chains supported by your node.
+this is the node logging `foreign chains registration has not landed, resending;
+check that the node's access key allows register_foreign_chains_config` at
+growing intervals, while the contract reports no foreign chains supported by
+your node.
 
 Access-key permissions are **immutable** in NEAR: you cannot edit an existing
 key's allowed methods. Instead, delete the restricted key and re-add the same
@@ -2175,7 +2177,8 @@ near account add-key $ACCOUNT_ID \
 > **Note:** Verify with `near account list-keys $ACCOUNT_ID` that the node key
 > now shows an empty `method_names` list.
 
-After the key is fixed, **restart the node** so foreign-chain registration runs again.
+After the key is fixed, the node retries its foreign-chain registration by itself within an
+hour. To register at once, restart the node.
 
 ## Joining the MPC Cluster
 

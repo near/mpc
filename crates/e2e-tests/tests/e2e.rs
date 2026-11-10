@@ -10,6 +10,7 @@ mod foreign_chain_tx_validation;
 mod key_resharing;
 mod leader_failover;
 mod lost_assets;
+mod mainnet_protocol;
 mod migration_endpoint;
 mod migration_service;
 mod parallel_sign_calls;

@@ -13,20 +13,20 @@ use zeroize::ZeroizeOnDrop;
 
 type C = Secp256K1Sha256;
 
-/// The necessary inputs for the creation of a presignature.
-pub struct PresignArguments {
+/// The necessary inputs for the creation of a signature.
+pub struct SignArguments {
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
     /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
     pub keygen_out: KeygenOutput,
-    /// The desired threshold for the presignature, which must match the original threshold
+    /// The desired threshold for the signature, which must match the original threshold
     pub max_malicious: MaxMalicious,
 }
 
-/// The output of the presigning protocol.
+/// The output of the nonce generation round.
 /// Contains the signature precomputed elements
 /// independently of the message
 #[derive(ZeroizeOnDrop)]
-pub struct PresignOutput {
+pub struct NonceGenerationOutput {
     /// The public nonce commitment.
     #[zeroize(skip)]
     pub big_r: AffinePoint,
@@ -38,8 +38,8 @@ pub struct PresignOutput {
     pub beta: Scalar,
 }
 
-impl PresignOutput {
-    /// The presignature under the key derived with `tweak`, in the form the signing round
+impl NonceGenerationOutput {
+    /// The output under the key derived with `tweak`, in the form the signing round
     /// consumes: `beta' = beta + c * tweak`.
     pub(crate) fn with_tweak(&self, tweak: &Tweak) -> Self {
         Self {
@@ -53,10 +53,10 @@ impl PresignOutput {
 }
 
 /// Checks the participant set against `args` and returns it as a [`ParticipantList`].
-pub fn validate_presign_arguments(
+pub fn validate_sign_arguments(
     participants: &[Participant],
     me: Participant,
-    args: &PresignArguments,
+    args: &SignArguments,
 ) -> Result<ParticipantList, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -96,21 +96,21 @@ pub fn validate_presign_arguments(
         ));
     }
 
-    // The removed scheme needed exactly 2*max_malicious+1 presigners to avoid
+    // The removed scheme needed exactly 2*max_malicious+1 signers to avoid
     // split-view attacks. The stub does not, but keeping the check preserves the
     // participant-count contract a replacement scheme is likely to need again.
     if participants.len() != robust_ecdsa_threshold {
         return Err(InitializationError::BadParameters(
-            "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+            "the number of participants must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
         ));
     }
 
     Ok(participants)
 }
 
-/// The stub presigning protocol, run on a caller-owned channel so that a longer protocol can
-/// continue on the same channel with further waitpoints. This is where the signing key leaks:
-/// see the [module docs](super).
+/// The stub nonce generation round, run on a caller-owned channel so that a longer protocol
+/// can continue on the same channel with further waitpoints. This is where the signing key
+/// leaks: see the [module docs](super).
 ///
 /// One broadcast round, in which every participant contributes a random summand to
 /// the nonce `k`. All parties therefore learn `k` and agree on `R = k * G`. The
@@ -123,13 +123,13 @@ pub fn validate_presign_arguments(
 ///   to `k^{-1} * x`;
 /// - `e = 0`, since the zero-sharing mask it carried in the removed scheme has
 ///   nothing to mask here.
-pub async fn presign_round(
+pub async fn nonce_generation_round(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     me: Participant,
-    args: PresignArguments,
+    args: SignArguments,
     mut rng: impl CryptoRngCore,
-) -> Result<PresignOutput, ProtocolError> {
+) -> Result<NonceGenerationOutput, ProtocolError> {
     let k_me = frost_core::random_nonzero::<C, _>(&mut rng);
     let wait_round_1 = chan.next_waitpoint();
     chan.send_many(wait_round_1, &SigningShare::<C>::new(k_me))?;
@@ -146,7 +146,7 @@ pub async fn presign_round(
     let big_r = Secp256K1Group::generator() * k;
     let x_me = args.keygen_out.private_share.to_scalar();
 
-    Ok(PresignOutput {
+    Ok(NonceGenerationOutput {
         big_r: big_r.to_affine(),
         alpha: k_inv,
         beta: k_inv * x_me,
@@ -167,7 +167,7 @@ mod test {
     fn with_tweak__should_shift_beta_by_tweak_times_c() {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let presignature = PresignOutput {
+        let nonce_package = NonceGenerationOutput {
             big_r: (Secp256K1Group::generator() * Scalar::from(3u64)).to_affine(),
             c: Scalar::from(5u64),
             e: Scalar::from(7u64),
@@ -177,15 +177,15 @@ mod test {
         let tweak = Tweak::new(frost_core::random_nonzero::<C, _>(&mut rng));
 
         // When
-        let tweaked = presignature.with_tweak(&tweak);
+        let tweaked = nonce_package.with_tweak(&tweak);
 
         // Then
-        assert_eq!(tweaked.big_r, presignature.big_r);
-        assert_eq!(tweaked.alpha, presignature.alpha);
-        assert_eq!(tweaked.e, presignature.e);
+        assert_eq!(tweaked.big_r, nonce_package.big_r);
+        assert_eq!(tweaked.alpha, nonce_package.alpha);
+        assert_eq!(tweaked.e, nonce_package.e);
         assert_eq!(
             tweaked.beta,
-            presignature.beta + presignature.c * tweak.value()
+            nonce_package.beta + nonce_package.c * tweak.value()
         );
     }
 }

@@ -4,10 +4,9 @@ use crate::sandbox::utils::sandbox_mpc_contract::SandboxMpcContract;
 use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::transactions::{all_receipts_successful, execute_async_handle_calls};
-use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::types::{
-    Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
+    Attestation, Config, Ed25519PublicKey, GovernanceThreshold, NodeInfo, Participants,
     ProtocolContractState, StoredAttestation,
 };
 use near_workspaces::{Account, AccountId, result::ExecutionFinalResult, types::NearToken};
@@ -37,7 +36,7 @@ pub async fn get_participants(contract: &SandboxMpcContract) -> anyhow::Result<P
     Ok(running.parameters.participants)
 }
 
-pub async fn get_tee_accounts(contract: &SandboxMpcContract) -> anyhow::Result<BTreeSet<NodeId>> {
+pub async fn get_tee_accounts(contract: &SandboxMpcContract) -> anyhow::Result<BTreeSet<NodeInfo>> {
     Ok(contract
         .get_tee_accounts()
         .await?
@@ -71,7 +70,7 @@ pub async fn prepay_attestation_grants(
         .map_err(Into::into)
 }
 
-async fn attestation_storage_fee(contract: &SandboxMpcContract) -> anyhow::Result<NearToken> {
+pub async fn attestation_storage_fee(contract: &SandboxMpcContract) -> anyhow::Result<NearToken> {
     let fee = contract
         .config()
         .await?

@@ -124,7 +124,7 @@ mod test {
     use crate::SigningShare;
     use crate::ecdsa::{
         KeygenOutput, Polynomial, Scalar, SignatureOption, Tweak,
-        robust_ecdsa::{PresignArguments, presign_and_sign},
+        robust_ecdsa::{SignArguments, sign},
     };
     use crate::test_utils::{
         GenProtocol, MockCryptoRng, generate_participants, run_protocol_and_take_snapshots,
@@ -192,7 +192,7 @@ mod test {
     }
 
     #[test]
-    fn ecdsa_presign_and_sign_should_return_same_snapshot_when_executed_twice() {
+    fn ecdsa_sign_should_return_same_snapshot_when_executed_twice() {
         let max_malicious = 2;
         let num_participants = 5;
         let participants = generate_participants(num_participants);
@@ -218,11 +218,11 @@ mod test {
                 let rng_p = MockCryptoRng::seed_from_u64(root_rng.next_u64());
                 // simulating the key packages for each participant
                 let keygen_out = prepare_keys(*p, &f, big_x);
-                let protocol = presign_and_sign(
+                let protocol = sign(
                     &participants[..],
                     coordinator,
                     *p,
-                    PresignArguments {
+                    SignArguments {
                         keygen_out,
                         max_malicious: max_malicious.into(),
                     },
