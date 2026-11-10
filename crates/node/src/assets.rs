@@ -5,32 +5,14 @@ pub mod test_utils;
 
 use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
-use crate::network::view::primitives::Uptime;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use near_time::Clock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
-
-/// Whether a stored participant set can still be used, e.g. for an owned triple or presignature.
-pub trait CheckParticipantsAlive {
-    fn check_alive(
-        &self,
-        participants: &BTreeSet<ParticipantId>,
-        required_uptime: Uptime,
-    ) -> Result<(), AliveCheckError>;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum AliveCheckError {
-    #[error("{0:?} is not alive")]
-    NotAlive(ParticipantId),
-    #[error("{0:?} and {1:?} cannot reach each other")]
-    Unreachable(ParticipantId, ParticipantId),
-}
 
 /// The cold queue contains a collection of assets and a condition function.
 /// The queue is divided into three sections by two barriers:
@@ -77,6 +59,8 @@ struct ColdQueue<T, CondVal> {
 impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
     pub(self) fn new(
         clock: Clock,
+        // todo: at call-site, replace this with a call to CheckReadyness, declaring the required
+        // computation duration (different for triples, presignatures and signatures
         condition: fn(&CondVal, &T) -> bool,
         condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
     ) -> Self {
@@ -506,7 +490,9 @@ where
         col: DBCol,
         prefix: Vec<u8>,
         my_participant_id: ParticipantId,
+        // todo: or this one?
         condition: fn(&Vec<ParticipantId>, &T) -> bool,
+        // todo: probably this one?
         alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
     ) -> anyhow::Result<Self> {
         let owned_queue = DoubleQueue::new(clock, condition, alive_participant_ids_query);

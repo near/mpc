@@ -9,7 +9,7 @@ pub mod wire_format;
 use crate::metrics::networking_metrics;
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
-use crate::network::view::first_hand_indexer_heights::FirstHandHeight;
+use crate::network::view::first_hand_indexer_heights::ReportedIndexerHeight;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
@@ -264,6 +264,7 @@ impl MeshNetworkClient {
         result
     }
 
+    // todo: this method here will change....
     pub fn select_random_active_participants_including_me(
         &self,
         total: usize,
@@ -540,7 +541,7 @@ pub trait ReadFirstHandIndexerHeights {
     fn first_hand_indexer_heights_of(
         &self,
         peers: impl IntoIterator<Item = ParticipantId>,
-    ) -> BTreeMap<ParticipantId, FirstHandHeight>;
+    ) -> BTreeMap<ParticipantId, ReportedIndexerHeight>;
 }
 
 // todo: broadcast as soon as a connection with a peer was reset, and feed our own

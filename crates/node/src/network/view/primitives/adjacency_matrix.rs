@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::{collections::BTreeMap, hash::RandomState};
 
 use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
@@ -6,6 +7,8 @@ use petgraph::{
     matrix_graph::{MatrixGraph, NodeIndex},
     visit::{IntoEdgeReferences, IntoEdges},
 };
+
+// todo: make a trait for the stuff our consumer needs.
 
 /// A `MatrixGraph` over a fixed node set, addressed by node id instead of `NodeIndex`.
 /// Loops are not allowed.
@@ -42,32 +45,50 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
         Ok((a, b))
     }
 
-    /// The first pair among `nodes` whose edge weight, `None` for no edge, satisfies `predicate`.
-    /// Ids are translated once; the pair loop runs on indices.
-    pub fn find_pair_within<'a>(
-        &self,
+    /// Every unordered pair among `nodes`, with the edge between them (`None` for no edge).
+    /// Errors if any node is not in the graph.
+    pub fn pairs_within<'a>(
+        &'a self,
         nodes: impl IntoIterator<Item = &'a N>,
-        mut predicate: impl FnMut(Option<&E>) -> bool,
-    ) -> Result<Option<(&'a N, &'a N)>, AdjacencyMatrixError<N>>
-    where
-        N: 'a,
-    {
-        let mut indexed = Vec::new();
-        for node in nodes {
-            let idx = self.index(node)?;
-            indexed.push((node, idx));
-        }
-        let mut rest = indexed.as_slice();
-        while let Some((&(p, i), tail)) = rest.split_first() {
-            for &(q, j) in tail {
-                if predicate(self.matrix.get_edge_weight(i, j)) {
-                    return Ok(Some((p, q)));
-                }
-            }
-            rest = tail;
-        }
-        Ok(None)
+    ) -> Result<impl Iterator<Item = (&'a N, &'a N, Option<&'a E>)> + 'a, UnknownNodeError<N>> {
+        let indexed = nodes
+            .into_iter()
+            .map(|node| Ok((node, self.index(node)?)))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(indexed
+            .into_iter()
+            .array_combinations::<2>()
+            .map(move |[(a, i), (b, j)]| (a, b, self.matrix.get_edge_weight(i, j))))
     }
+
+    //   /// The first pair among `nodes` for which `f` returns `Some`, together with that value.
+    //   /// `f` receives the edge weight, `None` for no edge.
+    //   /// Ids are translated once; the pair loop runs on indices.
+    //   pub fn find_map_pair_within<'a, T>(
+    //       &self,
+    //       nodes: impl IntoIterator<Item = &'a N>,
+    //       mut f: impl FnMut(Option<&E>) -> Option<T>,
+    //   ) -> Result<Option<(&'a N, &'a N, T)>, AdjacencyMatrixError<N>>
+    //   where
+    //       N: 'a,
+    //   {
+    //       let mut indexed = Vec::new();
+    //       for node in nodes {
+    //           let idx = self.index(node)?;
+    //           indexed.push((node, idx));
+    //       }
+    //       let mut rest = indexed.as_slice();
+    //       while let Some((&(p, i), tail)) = rest.split_first() {
+    //           for &(q, j) in tail {
+    //               if let Some(found) = f(self.matrix.get_edge_weight(i, j)) {
+    //                   return Ok(Some((p, q, found)));
+    //               }
+    //           }
+    //           rest = tail;
+    //       }
+    //       Ok(None)
+    //   }
 
     /// `None` if there is no edge between `a` and `b`.
     pub fn edge(&self, a: &N, b: &N) -> Result<Option<&E>, AdjacencyMatrixError<N>> {
@@ -79,19 +100,6 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
     pub fn edge_mut(&mut self, a: &N, b: &N) -> Result<Option<&mut E>, AdjacencyMatrixError<N>> {
         let (i, j) = self.node_indices(a, b)?;
         Ok(self.matrix.get_edge_weight_mut(i, j))
-    }
-
-    pub fn edge_mut_or_insert_with(
-        &mut self,
-        a: &N,
-        b: &N,
-        insert: impl FnOnce() -> E,
-    ) -> Result<&mut E, AdjacencyMatrixError<N>> {
-        let (i, j) = self.node_indices(a, b)?;
-        if !self.matrix.has_edge(i, j) {
-            self.matrix.add_edge(i, j, insert());
-        }
-        Ok(self.matrix.edge_weight_mut(i, j))
     }
 
     /// Adds or replaces the edge; returns the previous weight, if any.
@@ -109,7 +117,7 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
     pub fn edges_from(
         &self,
         node: &N,
-    ) -> Result<impl Iterator<Item = (&N, &E)>, AdjacencyMatrixError<N>> {
+    ) -> Result<impl Iterator<Item = (&N, &E)>, UnknownNodeError<N>> {
         let i = self.index(node)?;
         Ok(self
             .matrix
@@ -117,13 +125,18 @@ impl<N: Ord + Clone, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
             .map(|(_, j, weight)| (self.matrix.node_weight(j), weight)))
     }
 
-    fn index(&self, node: &N) -> Result<NodeIndex, AdjacencyMatrixError<N>> {
+    fn index(&self, node: &N) -> Result<NodeIndex, UnknownNodeError<N>> {
         self.nodes
             .get(node)
             .copied()
-            .ok_or(AdjacencyMatrixError::UnknownNode(node.clone()))
+            .ok_or(UnknownNodeError(node.clone()))
     }
 }
+
+// todo: do we really need copy?
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("node {0:?} is not in the network")]
+pub struct UnknownNodeError<N>(pub N);
 
 impl<N: Ord + Clone, E: Clone> AdjacencyMatrix<N, E, Undirected> {
     /// Every pair of nodes connected with `weight`. Panics above 65,535 nodes.
@@ -152,8 +165,8 @@ impl<N, E, Ty: EdgeType> AdjacencyMatrix<N, E, Ty> {
 /// Why an operation on an `AdjacencyMatrix` could not be carried out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AdjacencyMatrixError<N> {
-    #[error("node {0:?} is not part of the network")]
-    UnknownNode(N),
+    #[error(transparent)]
+    UnknownNodeError(#[from] UnknownNodeError<N>),
     #[error("this adjacency matrix does not support loops (node {0:?})")]
     Loop(N),
 }

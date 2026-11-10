@@ -67,7 +67,9 @@ impl TripleStorage {
             DBCol::TripleV2,
             reconstruction_threshold.value().to_be_bytes().to_vec(),
             client.my_participant_id(),
+            // todo: here, need to change
             |participants, pair| pair.is_subset_of_active_participants(participants),
+            // todo: and here
             Arc::new(move || client.all_alive_participant_ids()),
         )?))
     }
@@ -259,6 +261,7 @@ fn batch_size_for(
 pub type PairedTriple = (TripleGenerationOutput, TripleGenerationOutput);
 
 impl HasParticipants for PairedTriple {
+    // todo: this can probably also go?
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
         let triple_participants = participants_from_triples(&self.0, &self.1);
         triple_participants

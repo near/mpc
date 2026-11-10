@@ -1,16 +1,16 @@
 mod adjacency_matrix;
-mod measured_network_connections;
+mod live_network_connections;
 mod measured_network_link;
+mod network_view;
 
-pub use measured_network_connections::{
-    ConnectionStatus, GradeLink, LinkEntry, LinkReport, LinkSpeed, MeasuredNetworkConnections,
-    MeasuredNetworkConnectionsError, MeasuredNetworkLinks, PreviousViewValidity, Uptime,
-    UsableNetworkConnections,
-};
-
+pub use adjacency_matrix::UnknownNodeError;
 pub use measured_network_link::{
-    InferLinkStatus, LinkObservation, LinkStatus, MeasuredLink, RecentObservations,
-    TimedObservation,
+    LinkObservation, MeasuredNetworkLinkError, MeasuredNetworkLinks, NetworkLinkStatuses,
+    ObserveLinkHealth, UpdateResult,
 };
 
-pub use adjacency_matrix::AdjacencyMatrixError;
+pub use live_network_connections::{LiveNetworkConnectionTrackerError, LiveNetworkConnections};
+pub use network_view::{
+    InferConnectionStatusFromLinkHealth, MeasuredNetworkConnectionsError,
+    NetworkConnectionsHealthTracker,
+};

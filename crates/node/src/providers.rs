@@ -10,13 +10,14 @@ pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
 pub mod robust_ecdsa;
+pub mod traits;
 pub mod verify_foreign_tx;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
-use crate::network::view::primitives::Uptime;
 use crate::network::wire_format::MpcTaskId;
 use crate::primitives::ParticipantId;
+use crate::providers::traits::ComputationDuration;
 use crate::types::SignatureId;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
@@ -104,17 +105,15 @@ pub trait HasParticipants {
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool;
 }
 
-/// Helper functions to convert back and forth public key types
-#[cfg(test)]
 /// Picks the participant set for a computation we lead.
 pub trait SelectParticipants {
-    /// `total` participants including us, pairwise connected for at least `required_uptime`,
+    /// `total` participants including us, pairwise ready for a computation of `duration`,
     /// taken from `candidates`.
     fn select_participants(
         &self,
         total: usize,
         candidates: &[ParticipantId],
-        required_uptime: Uptime,
+        duration: ComputationDuration,
     ) -> Result<Vec<ParticipantId>, SelectParticipantsError>;
 }
 
@@ -124,6 +123,8 @@ pub enum SelectParticipantsError {
     NotEnoughParticipants { needed: usize, available: usize },
 }
 
+/// Helper functions to convert back and forth public key types
+#[cfg(test)]
 pub trait PublicKeyConversion: Sized {
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey>;
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self>;

@@ -3,48 +3,24 @@ use std::collections::BTreeMap;
 use near_block_primitives::BlockHeight;
 use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 
-use crate::{network::view::view_manager::NetworkViewUpdateError, primitives::ParticipantId};
+use crate::network::view::primitives::UnknownNodeError;
 
 /// Every participant's indexer height as that participant itself last reported it: its own entry
 /// in its [`ConnectedPeersInfo`](crate::primitives::ConnectedPeersInfo), or its legacy
 /// `IndexerHeight` message.
-pub struct FirstHandIndexerHeights {
-    heights: NonEmptyBTreeMap<ParticipantId, FirstHandHeight>,
+pub struct FirstHandIndexerHeights<N> {
+    heights: NonEmptyBTreeMap<N, ReportedIndexerHeight>,
 }
 
-/// `Unknown` until the participant's first message, then whatever it last reported.
-/// The wire format encodes `Unknown` as `0`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FirstHandHeight {
-    Unknown,
-    Known(BlockHeight),
-}
-
-impl From<u64> for FirstHandHeight {
-    fn from(wire: u64) -> Self {
-        parse_height(wire).map_or(Self::Unknown, Self::Known)
-    }
-}
-
-impl From<FirstHandHeight> for u64 {
-    fn from(height: FirstHandHeight) -> Self {
-        match height {
-            FirstHandHeight::Unknown => 0,
-            FirstHandHeight::Known(height) => height.into(),
-        }
-    }
-}
-
-pub(super) fn parse_height(wire: u64) -> Option<BlockHeight> {
-    (wire != 0).then(|| BlockHeight::from(wire))
-}
-
-impl FirstHandIndexerHeights {
-    pub fn new(participants: &NonEmptyBTreeSet<ParticipantId>) -> Self {
+impl<N> FirstHandIndexerHeights<N>
+where
+    N: Ord + Clone,
+{
+    pub fn new(participants: &NonEmptyBTreeSet<N>) -> Self {
         Self {
             heights: participants
                 .iter()
-                .map(|&p| (p, FirstHandHeight::Unknown))
+                .map(|p| (p.clone(), ReportedIndexerHeight::Unknown))
                 .collect::<BTreeMap<_, _>>()
                 .try_into()
                 .expect("a non-empty participant set yields a non-empty map"),
@@ -55,37 +31,58 @@ impl FirstHandIndexerHeights {
     /// set never grows; `Unknown` leaves the record untouched.
     pub fn record(
         &mut self,
-        participant: ParticipantId,
-        height: u64,
-    ) -> Result<(), NetworkViewUpdateError> {
-        if !self.heights.contains_key(&participant) {
-            return Err(NetworkViewUpdateError::UnknownParticipant(participant));
-        }
-        let FirstHandHeight::Known(height) = FirstHandHeight::from(height) else {
-            return Ok(());
+        participant: N,
+        height: ReportedIndexerHeight,
+    ) -> Result<(), UnknownNodeError<N>>
+    where
+        N: std::fmt::Display,
+    {
+        let Some(&previous) = self.heights.get(&participant) else {
+            return Err(UnknownNodeError(participant));
         };
-        let previous = self
-            .heights
-            .insert(participant, FirstHandHeight::Known(height));
-        if let Some(FirstHandHeight::Known(previous)) = previous
-            && height < previous
-        {
+        if height < previous {
             tracing::warn!(
                 %participant,
-                %previous,
-                %height,
+                ?previous,
+                ?height,
                 "indexer height moved backwards. This is unexpected, because the indexer \
                  processes blocks in order."
             );
         }
+        self.heights.insert(participant, height);
         Ok(())
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&ParticipantId, &FirstHandHeight)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&N, &ReportedIndexerHeight)> {
         self.heights.iter()
     }
 
-    pub fn snapshot(&self) -> BTreeMap<ParticipantId, FirstHandHeight> {
-        self.heights.clone().into()
+    // pub fn snapshot(&self) -> BTreeMap<ParticipantId, ReportedIndexerHeight> {
+    //     self.heights.clone().into()
+    // }
+}
+
+// todo: place these in primitives or somewhere
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ReportedIndexerHeight {
+    Unknown,
+    Known(BlockHeight),
+}
+
+impl ReportedIndexerHeight {
+    /// Decodes the wire format, where `0` means `Unknown`.
+    pub fn from_wire(wire: u64) -> Self {
+        match wire {
+            0 => Self::Unknown,
+            wire => Self::Known(wire.into()),
+        }
+    }
+
+    /// Encodes to the wire format, where `0` means `Unknown`.
+    pub fn to_wire(self) -> u64 {
+        match self {
+            Self::Unknown => 0,
+            Self::Known(height) => height.into(),
+        }
     }
 }

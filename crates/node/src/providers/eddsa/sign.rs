@@ -38,6 +38,7 @@ impl EddsaSignatureProvider {
             .collect();
 
         let participants = self
+            // todo: here, we want a different method...
             .client
             .select_random_active_participants_including_me(
                 reconstruction_threshold.value(),
