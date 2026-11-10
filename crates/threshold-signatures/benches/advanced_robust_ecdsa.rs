@@ -11,7 +11,7 @@ use crate::bench_utils::{
 use threshold_signatures::{
     ecdsa::{
         KeygenOutput, Scalar, SignatureOption, Tweak,
-        robust_ecdsa::{PresignArguments, presign_and_sign},
+        robust_ecdsa::{SignArguments, sign},
     },
     participants::Participant,
     protocol::Protocol,
@@ -100,11 +100,11 @@ fn setup_sign_snapshot(num_participants: usize) -> SignSetup {
 
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
 fn prepare_simulated_sign(setup: &SignSetup) -> PreparedSimulatedSig {
-    let real_protocol = presign_and_sign(
+    let real_protocol = sign(
         &setup.participants,
         setup.real_participant,
         setup.real_participant,
-        PresignArguments {
+        SignArguments {
             keygen_out: setup.keygen_out.clone(),
             max_malicious: (*MAX_MALICIOUS).into(),
         },

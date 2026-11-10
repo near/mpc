@@ -5,10 +5,10 @@ cryptographic material (herein simply called **assets**) as input. This
 document describes how our MPC nodes manage asset generation, storage
 and consumption. Only **OT-based ECDSA** (**Cait-Sith**) uses assets: it
 consumes **triples**. Each signature consumes a pair of triples (called a
-`PairedTriple`): the leader presigns and signs over the pair in one
-computation. **Robust ECDSA**, an insecure stub that is never enabled in
-production (see `crates/node/src/providers/robust_ecdsa.rs`), uses no
-assets: it presigns and signs in one computation from the key share alone.
+`PairedTriple`): the leader signs over the pair in one computation.
+**Robust ECDSA**, an insecure stub that is never enabled in production
+(see `crates/node/src/providers/robust_ecdsa.rs`), uses no assets: it
+signs in one computation from the key share alone.
 
 The system supports an arbitrary number of secret keys. Each key is
 uniquely identified by a `DomainId`, which maps to a combination of
@@ -21,13 +21,12 @@ reconstruction threshold `t` among the OT-based ECDSA domains, shared by
 all domains with that `t`.
 
 ```
-Triples  ──►  Signatures (presign and sign over a triple pair)
+Triples  ──►  Signatures (sign over a triple pair)
 (slow)        (fast)
 ```
 
 Triple generation is the bottleneck: it involves heavy OT-based
-cryptographic computation. Presigning and signing over a triple pair is
-fairly cheap.
+cryptographic computation. Signing over a triple pair is fairly cheap.
 
 ## Queue design
 
@@ -267,14 +266,13 @@ signature request arrives:
 2. Leader opens a network channel with the pair's borrowers and
    broadcasts the pair's ID along with the signature request.
 3. **Followers** call `take_unowned(id)` on their triple store to
-   retrieve their shares, then presign and sign over the pair in one
-   computation.
+   retrieve their shares, then sign over the pair in one computation.
 4. The leader does **not** wait for all followers to confirm success
    (`leader_waits_for_success` returns `false`).
 
 Robust ECDSA (`crates/node/src/providers/robust_ecdsa/sign.rs`) takes
 no asset: the leader picks the signers among random online participants,
-and they presign and sign in one computation.
+and they sign in one computation.
 
 ## Asset cleanup on epoch transition
 

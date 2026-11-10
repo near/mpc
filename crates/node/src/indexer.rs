@@ -208,6 +208,8 @@ pub struct IndexerAPI<TransactionSender> {
     pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
     /// The contract's RPC provider whitelist, seeded with the first successful read.
     pub foreign_chain_whitelist_receiver: watch::Receiver<foreign_chain::ForeignChainWhitelist>,
+    /// The foreign chains each node registered, keyed by TLS key, seeded with the first successful read.
+    pub foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
 }
 
 #[cfg(test)]

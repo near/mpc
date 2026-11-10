@@ -8,7 +8,7 @@ use threshold_signatures::{
     ecdsa::{
         self,
         ot_based_ecdsa::{
-            PresignArguments, presign_and_sign,
+            SignArguments, sign,
             triples::{TriplePub, TripleShare, generate_triple_many},
         },
     },
@@ -44,7 +44,7 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
 }
 
 /// Used to prepare ot based ecdsa signatures for benchmarking, each consuming a pair of triples
-pub fn ot_ecdsa_prepare_presign_and_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+pub fn ot_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
     threshold: ReconstructionThreshold,
     rng: &mut R,
@@ -74,11 +74,11 @@ pub fn ot_ecdsa_prepare_presign_and_sign<R: CryptoRngCore + SeedableRng + Send +
     for (((p, keygen_out), share0), share1) in
         key_packages.clone().into_iter().zip(shares0).zip(shares1)
     {
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &participants,
             coordinator,
             p,
-            PresignArguments {
+            SignArguments {
                 triple0: (share0, pub0[0].clone()),
                 triple1: (share1, pub1[0].clone()),
                 keygen_out,
@@ -88,7 +88,7 @@ pub fn ot_ecdsa_prepare_presign_and_sign<R: CryptoRngCore + SeedableRng + Send +
             msg_hash,
         )
         .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = ecdsa::SignatureOption>>)
-        .expect("Presigning and signing should succeed");
+        .expect("Signing should succeed");
         protocols.push((p, protocol));
     }
     OTECDSAPreparedSig {

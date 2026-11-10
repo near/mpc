@@ -1,5 +1,6 @@
 //! Periodic probe of every configured foreign-chain RPC provider, via
-//! [`foreign_chain_health_check::probe`].
+//! [`foreign_chain_health_check::probe`], with the local config compared against the on chain
+//! provider whitelist.
 
 use std::future::Future;
 
@@ -7,7 +8,6 @@ use foreign_chain_health_check::probe::{ProbeReport, probe_all_providers};
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
 use tokio::sync::watch;
-use tracing::{info, warn};
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::tick::Tick;
@@ -15,26 +15,31 @@ use crate::tick::Tick;
 mod report;
 #[cfg(test)]
 mod test_utils;
+mod whitelist_diagnostics;
 
 /// Asks every configured RPC provider which network it serves, once per tick of `ticker` and
 /// whenever `whitelist_rx` changes, and reports the verdicts as logs and metrics. Diagnostic only:
 /// nothing gates on the result.
 ///
 /// The probe starts before the indexer has read the whitelist from the contract, so `whitelist_rx`
-/// holds `None` until then, and each round logs that the whitelist is not read yet.
+/// holds `None` until then, and each round logs that the whitelist is not read yet. Once it is read,
+/// each round logs every difference between the local config and the whitelist, see
+/// [`whitelist_diagnostics`].
 pub async fn run_periodic_probe(
     foreign_chains: ForeignChainsConfig,
     whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     ticker: impl Tick,
 ) {
     if foreign_chains.is_empty() {
-        warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
+        tracing::warn!(
+            "no foreign chain is configured: this node cannot verify foreign-chain transactions"
+        );
         return;
     }
 
     probe_periodically(
         || probe_all_providers(&foreign_chains, &InspectorFactory),
-        finish_round,
+        |report, whitelist| finish_round(report, &foreign_chains, whitelist),
         whitelist_rx,
         ticker,
     )
@@ -43,11 +48,16 @@ pub async fn run_periodic_probe(
 
 const WHITELIST_NOT_READ: &str = "foreign chain whitelist: not read from the contract yet";
 
-fn finish_round(report: &ProbeReport, whitelist: Option<&ForeignChainWhitelist>) {
+fn finish_round(
+    report: &ProbeReport,
+    local: &ForeignChainsConfig,
+    whitelist: Option<&ForeignChainWhitelist>,
+) {
     report::publish_metrics(report);
     report::log_report(report);
-    if whitelist.is_none() {
-        info!("{WHITELIST_NOT_READ}");
+    match whitelist {
+        Some(whitelist) => whitelist_diagnostics::log_differences(local, whitelist),
+        None => tracing::info!("{WHITELIST_NOT_READ}"),
     }
 }
 
@@ -68,7 +78,7 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
             Ok(()) = whitelist_rx.changed() => {}
         }
 
-        info!("probing foreign-chain RPC providers");
+        tracing::info!("probing foreign-chain RPC providers");
         let report = probe().await;
         let whitelist = whitelist_rx.borrow_and_update().clone();
         finish_round(&report, whitelist.as_ref());
@@ -91,6 +101,7 @@ mod tests {
     use crate::foreign_chain_probe::test_utils::{
         empty_report, gauges, mock_finish_round, mock_probe, no_whitelist, row, whitelist_of,
     };
+    use crate::foreign_chain_probe::whitelist_diagnostics::CONFIG_MATCHES_WHITELIST;
     use crate::tick::MockTicker;
 
     #[test]
@@ -132,7 +143,7 @@ mod tests {
         // When
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
             probe_dispatch,
-            finish_round,
+            |report, whitelist| finish_round(report, &ForeignChainsConfig::default(), whitelist),
             no_whitelist(),
             ticker.clone(),
         )) else {
@@ -259,17 +270,27 @@ mod tests {
 
     #[traced_test]
     #[rstest]
-    #[case::without_a_whitelist(None, true)]
-    #[case::with_a_whitelist(Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)), false)]
-    fn finish_round__should_log_that_the_whitelist_is_not_read_only_without_one(
+    #[case::without_a_whitelist(None, WHITELIST_NOT_READ, CONFIG_MATCHES_WHITELIST)]
+    #[case::with_a_whitelist(
+        Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)),
+        CONFIG_MATCHES_WHITELIST,
+        WHITELIST_NOT_READ
+    )]
+    fn finish_round__should_compare_the_config_with_the_whitelist_or_log_that_it_is_not_read(
         #[case] whitelist: Option<ForeignChainWhitelist>,
-        #[case] expect_logged: bool,
+        #[case] logged: &str,
+        #[case] not_logged: &str,
     ) {
         // When
-        finish_round(&empty_report(), whitelist.as_ref());
+        finish_round(
+            &empty_report(),
+            &ForeignChainsConfig::default(),
+            whitelist.as_ref(),
+        );
 
         // Then
-        assert_eq!(logs_contain(WHITELIST_NOT_READ), expect_logged);
+        assert!(logs_contain(logged));
+        assert!(!logs_contain(not_logged));
     }
 
     #[test]

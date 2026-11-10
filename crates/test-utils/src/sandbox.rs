@@ -27,19 +27,28 @@ impl Deref for SandboxWorker {
     }
 }
 
+pub async fn start_sandbox() -> anyhow::Result<SandboxWorker> {
+    start_sandbox_with_genesis(serde_json::json!({ "epoch_length": EPOCH_LENGTH })).await
+}
+
+/// Starts the sandbox at `protocol_version` instead of its binary's latest.
+pub async fn start_sandbox_at_protocol(protocol_version: u32) -> anyhow::Result<SandboxWorker> {
+    start_sandbox_with_genesis(crate::pinned_protocol_genesis(protocol_version)).await
+}
+
 /// Starts the sandbox through [`near_sandbox`] directly because
 /// [`near_workspaces::sandbox_with_version`] does not expose the node-config
 /// overrides we need (block retention).
-pub async fn start_sandbox() -> anyhow::Result<SandboxWorker> {
+async fn start_sandbox_with_genesis(
+    additional_genesis: serde_json::Value,
+) -> anyhow::Result<SandboxWorker> {
     let config = near_sandbox::SandboxConfig {
         // near-workspaces adds this account when it spawns the sandbox itself;
         // top-level account creation needs it.
         additional_accounts: vec![near_sandbox::GenesisAccount::default_with_name(
             "registrar".parse().expect("static account id is valid"),
         )],
-        additional_genesis: Some(serde_json::json!({
-            "epoch_length": EPOCH_LENGTH,
-        })),
+        additional_genesis: Some(additional_genesis),
         additional_config: Some(serde_json::json!({
             "gc_num_epochs_to_keep": GC_NUM_EPOCHS_TO_KEEP,
         })),
