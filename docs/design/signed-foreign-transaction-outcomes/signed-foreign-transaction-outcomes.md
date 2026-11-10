@@ -32,8 +32,8 @@ In short:
 - V2 attempts fail fast. Each follower signs what it found and sends it to the leader with its
   share, so the leader ends a failed attempt at the first sign of trouble instead of waiting
   out the deadline.
-- Only an acting leader (Component 3) can get the network to sign an inconclusive, and only
-  with signed node outcomes as evidence.
+- Only an acting leader (see "Attempts that fail fast") can get the network to sign an
+  inconclusive, and only with signed node outcomes as evidence.
 
 ## Vocabulary
 
@@ -53,7 +53,7 @@ The doc uses these terms for the levels of an answer, from the bottom up.
 Callers talk to the contract as they do today. What changes is what the nodes sign, and when
 they stop trying.
 
-![Overview: the caller sends a V2 request with the values it expects. The contract stores the request, the hash of the expected values and the block height under a yield id it picks, and emits the id. The leader takes an asset if needed and sends Start. Everyone inspects, and followers return their signed outcome with their share. The signature over the request, its block height, the yield id and the outcome goes back to the contract, which returns the response with the signature and the outcome to the caller. When nodes disagree, or after the last attempt, the leader runs the inconclusive round with signed evidence, and its signature also answers only that yield.](attachments/overview.png)
+![Overview: the caller makes V2 requests with expected values to the MPC contract, which returns the signed outcome. Among the MPC nodes, the leader observes requests and sends responses to the contract, and coordinates attempts and inconclusive rounds with the followers. The followers observe requests too, and send the leader their signed outcomes and shares.](attachments/overview.png)
 
 1. **Request.** The caller calls `verify_foreign_transaction_v2` with the values it expects.
    The contract picks a yield id, stores the request, the hash of the expected values and the
@@ -61,7 +61,7 @@ they stop trying.
    up the request and the id together.
 2. **Start.** The leader takes an asset if needed and sends Start. A node takes part only while
    the request is unanswered, inside its 200 block window, and the sender is an acting leader
-   in its view (Component 3).
+   in its view (see "Attempts that fail fast").
 3. **Inspect.** The leader and followers inspect in parallel. Every node signs what it found,
    and each follower sends it to the leader, followed by its share if it found a verdict.
 4. **Sign or fail.** If all node outcomes match, the shares combine into a signature. If
@@ -73,11 +73,11 @@ they stop trying.
 6. **Respond.** The leader submits the yield id, the outcome and the signature. The contract
    looks up the request, rebuilds the hash, checks the signature and resumes that yield.
 
-### Component 1: payload and response types
+### Payload and response types
 
 ```rust
-struct NearBlockHeight(u64);
-struct YieldId([u8; 32]);                          // picked by the contract, see Component 2
+struct BlockHeight(u64);                           // a NEAR block height
+struct YieldId([u8; 32]);                          // picked by the contract, see "Yields and the respond method"
 
 enum ForeignTxSignPayload {
     V1(ForeignTxSignPayloadV1),                    // unchanged
@@ -87,7 +87,7 @@ enum ForeignTxSignPayload {
 struct ForeignTxSignPayloadV2 {
     request: ForeignChainRpcRequest,
     expected_values_hash: Hash256,                 // sha256 of the Borsh encoded expected values
-    request_block_height: NearBlockHeight,         // the block the request's yield was created in
+    request_block_height: BlockHeight,             // the block the request's yield was created in
     yield_id: YieldId,                             // the one yield this answers
     outcome: ForeignTxVerificationOutcome,
 }
@@ -135,7 +135,7 @@ struct VerifyForeignTransactionRequestV2 {
 struct VerifyForeignTransactionResponseV2 {
     payload_hash: Hash256,
     signature: SignatureResponse,
-    request_block_height: NearBlockHeight,
+    request_block_height: BlockHeight,
     yield_id: YieldId,
     outcome: ForeignTxVerificationOutcome,
 }
@@ -152,7 +152,7 @@ struct VerifyForeignTransactionResponseV2 {
   does this for V1 today. We extend it to V2, and document the steps for callers who don't use
   it.
 
-### Component 2: yields and the respond method
+### Yields and the respond method
 
 **Yield ids.** The contract keeps a `u64` counter that only goes up and survives every
 migration. For each V2 request it:
@@ -234,7 +234,7 @@ outside NEAR can check that window too.
 **One signature, one request.** Identical requests made at the same time each get their own
 attempt, since nodes queue them by receipt id.
 
-### Component 3: attempts that fail fast
+### Attempts that fail fast
 
 Today a follower that fails before signing sends nothing, and the leader waits out the
 attempt deadline. A V2 attempt runs like this:
@@ -265,8 +265,8 @@ What happens next depends on why the attempt ended:
 
 | Why the attempt ended | Next |
 |---|---|
-| Two nodes' verdicts differ, or a node's inspectors disagree, the leader's included | The request ends with an inconclusive at once (Component 4). A disagreement is never retried. |
-| A node, the leader included, has no verdict because of transient errors | The leader retries. Once its evidence holds transient errors from s − t + 1 nodes, it asks for the inconclusive instead (Component 4). |
+| Two nodes' verdicts differ, or a node's inspectors disagree, the leader's included | The request ends with an inconclusive at once (see "The signed inconclusive"). A disagreement is never retried. |
+| A node, the leader included, has no verdict because of transient errors | The leader retries. Once its evidence holds transient errors from s − t + 1 nodes, it asks for the inconclusive instead (see "The signed inconclusive"). |
 | A follower refuses, goes silent, or its share fails after every node agreed | The leader retries. This is a problem within the cluster, not a finding about the transaction, so it is never evidence. |
 
 **Acting leaders.** An acting leader is a node the request queue lets lead the request now,
@@ -276,7 +276,8 @@ to 3 seconds early, the same margin it has to index a request.
 
 **Signed node outcomes.** Every node signs its node outcome as a `NodeOutcomeStatement`, with
 the Ed25519 key of its TLS identity. A leader keeps the statements from its attempts for a
-yield. These statements are its **evidence** when it asks for an inconclusive (Component 4).
+yield. These statements are its **evidence** when it asks for an inconclusive (see "The signed
+inconclusive").
 
 ```rust
 struct NodeOutcomeStatement {
@@ -330,16 +331,17 @@ refused or stayed silent.
 - **A transaction that isn't final yet ends inconclusive.** The caller asks again later.
 - **Sign, CKD and V1 keep their limit of ten.**
 
-Component 4, "How long a request takes", lists the time for each case.
+"How long a request takes" in "The signed inconclusive" lists the time for each case.
 
-### Component 4: the signed inconclusive
+### The signed inconclusive
 
 1. **The leader runs one more signing round**, this time over a V2 payload whose outcome is
    `Inconclusive`. The payload only depends on the request, its expected values hash, its
    block height and the yield id, so every signer derives the same hash, and only a missing or bad
    share can fail the round.
-2. **Signers check the leader and the evidence.** A node signs this round only if the request
-   is still open and the node asking is an acting leader in its own view (Component 3).
+2. **Signers check the leader and the evidence.** A node signs this round only if the request is
+   still open and the node asking is an acting leader in its own view (see "Attempts that fail
+   fast").
 
    The node asking sends its evidence with the round's Start. A signer checks each
    `NodeOutcomeStatement` against the TLS key of the node that signed it. It joins only if the
@@ -350,9 +352,10 @@ Component 4, "How long a request takes", lists the time for each case.
      nodes that support the chain and t is the signing threshold. Then fewer than t nodes
      answered without a transient error, too few to sign a verdict.
 
-   A disagreement ends the request at once (Component 3). Transient errors can build up over
-   several attempts, the leader starts the inconclusive signing round as soon as s − t + 1 nodes have reported
-   transient errors. A transient error report counts even if it arrives after its attempt ended.
+   A disagreement ends the request at once (see "Attempts that fail fast"). Transient errors can
+   build up over several attempts, the leader starts the inconclusive signing round as soon as
+   s − t + 1 nodes have reported transient errors. A transient error report counts even if it
+   arrives after its attempt ended.
 
    Signers don't check how many attempts the leader made, only the evidence.
 
@@ -452,8 +455,8 @@ show the nodes involved.
 
 ### How does V2 behave when the leader changes?
 
-V2 relies only on the request queue's answer to who may lead right now (Component 3). This has
-two costs.
+V2 relies only on the request queue's answer to who may lead right now (see "Attempts that fail
+fast"). This has two costs.
 
 - Nodes can disagree on who may lead. While they do, followers refuse the leaders they don't
   accept, and every refused attempt counts against that leader, so a request can time out if
@@ -491,17 +494,17 @@ threshold.
 | Responder submits a signature with a different outcome | The contract rebuilds the hash from the submitted outcome, and rejects the response if the signature doesn't match.                                                                           |
 | Provider details split honest nodes                    | Negative verdicts carry no provider data, so honest nodes sign the same bytes.                                                                                                                |
 | Faulty provider drives a verdict                       | Blocked as long as the node's other providers answer, because they would disagree. If they are all down, the faulty provider decides that node's outcome, and other nodes would disagree. Only a provider that decides the outcome at every node in an attempt can drive a verdict, just as it can drive a success today. |
-| Follower refuses, goes silent or sends a bad share     | Fails that attempt, and the leader retries. When it can, it uses an asset without a follower that refused or stayed silent (Component 3). None of these is evidence for an inconclusive, so a request can time out if every attempt includes that follower. |
-| Node forces an inconclusive                            | A follower can end any request whose attempt includes it, where V1 would retry (Component 3). An acting leader can end any request it leads, which it could already let time out (Component 4, step 2). Only liveness is affected, and the metric records the nodes involved. |
+| Follower refuses, goes silent or sends a bad share     | Fails that attempt, and the leader retries. When it can, it uses an asset without a follower that refused or stayed silent (see "Attempts that fail fast"). None of these is evidence for an inconclusive, so a request can time out if every attempt includes that follower. |
+| Node forces an inconclusive                            | A follower can end any request whose attempt includes it, where V1 would retry (see "Attempts that fail fast"). An acting leader can end any request it leads, which it could already let time out ("The signed inconclusive", step 2). Only liveness is affected, and the metric records the nodes involved. |
 | Malicious leader uses up assets on a request it leads  | A follower joins at most three attempts and three inconclusive rounds per request and leader, and only from acting leaders. A leader can only use assets it owns.                             |
 | Leader forges or replays another node's outcome        | Node outcomes are signed with each node's attested TLS key and name the yield id, the leader and the attempt. So a leader can't forge them or reuse them for another request or leader. Each node counts once toward the evidence. |
-| Node outside an attempt sends an outcome               | The leader counts an outcome only from a node in that attempt (Component 3).                                                                                                                  |
-| A node that isn't an acting leader sends Start         | Followers and signers refuse it, since it isn't an acting leader in their view (Components 3 and 4).                                                                                          |
+| Node outside an attempt sends an outcome               | The leader counts an outcome only from a node in that attempt (see "Attempts that fail fast").                                                                                                |
+| A node that isn't an acting leader sends Start         | Followers and signers refuse it, since it isn't an acting leader in their view (see "Attempts that fail fast" and "The signed inconclusive").                                                 |
 | Caller plants a fake yield id                          | Nodes read the id only from the log of the MPC contract's own V2 receipt. Only the contract's code can log there, and it logs only the id it generated.                                       |
 | Late timeout removes an open request                   | Each request is stored under its own yield id, and a timeout only removes its own entry.                                                                                                      |
-| Node overstates its indexer height to lead more        | Not new. V2 uses the queue's leader rule unchanged. Such a node can already let those requests time out, and in V2 end them inconclusive instead (Component 4).                               |
+| Node overstates its indexer height to lead more        | Not new. V2 uses the queue's leader rule unchanged. Such a node can already let those requests time out, and in V2 end them inconclusive instead (see "The signed inconclusive").             |
 | Caller floods requests the network can't decide        | Every attempt and inconclusive round uses an asset, so such a request uses up to six per leader, where a sign request uses one for the same deposit. We accept that as the cost of signing every answer. |
-| Caller trusts the outcome label                        | On NEAR the contract checked the signature over the caller's own expected values hash, so the label is safe to trust. Outside NEAR the receiver must check the signature (Component 1).       |
+| Caller trusts the outcome label                        | On NEAR the contract checked the signature over the caller's own expected values hash, so the label is safe to trust. Outside NEAR the receiver must check the signature (see "Payload and response types").       |
 | Caller states wrong expected values                    | Nodes sign the negative verdict `ValuesMismatch`. It answers only that request.                                                                                                               |
 
 ---
@@ -528,8 +531,8 @@ threshold.
   about Bob's transaction, or to block Bob's request. A request's leaders follow from a hash
   of its receipt id, which Eve can't pick, but she can submit identical copies of Bob's
   request until one of them lands on M. What M can and cannot do with that copy:
-  - **Can end it with an inconclusive**, as its leader (Component 4, step 2), which costs
-    only liveness on Eve's own copy.
+  - **Can end it with an inconclusive**, as its leader ("The signed inconclusive", step 2),
+    which costs only liveness on Eve's own copy.
   - **Cannot get a false verdict signed**, for the copy or any other request (Security
     analysis, "Malicious leader forges a verdict").
   - **Gains nothing on Bob's request.** The inconclusive names the copy's yield id, and the
