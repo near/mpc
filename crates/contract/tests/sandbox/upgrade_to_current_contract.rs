@@ -40,6 +40,7 @@ use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::{BTreeMap, HashSet};
+use test_utils::attestation::mock_expiring_at;
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -480,7 +481,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
             .await
             .unwrap()
             .into_iter()
-            .map(|node_id| node_id.account_id.clone())
+            .map(|node| node.account_id)
             .collect();
 
     let participant_set: HashSet<AccountId> = initial_participants
@@ -508,12 +509,8 @@ async fn old_contract_with_a_participant_missing_its_node(
 
     // Submission rejects an expired attestation, so the node expires only after it is stored
     let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
-    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(now_seconds + ATTESTATION_EXPIRY_SECONDS),
-        expected_measurements: None,
-    });
+    let expiring_attestation =
+        Attestation::Mock(mock_expiring_at(now_seconds + ATTESTATION_EXPIRY_SECONDS));
     let submission =
         submit_participant_info(&accounts[0], &contract, &expiring_attestation, &tls_key).await?;
     assert!(submission.is_success(), "{submission:#?}");
@@ -557,18 +554,9 @@ async fn submit_contract_update__should_upgrade_once_the_participant_attests_aga
     let submission =
         prepay_and_submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
     assert!(submission.is_success(), "{submission:#?}");
-    let update = Update::Code(current_contract().to_vec());
-    approve_contract_update(&contract, &accounts, hash(&update)).await;
 
-    // When
-    let execution = accounts[0]
-        .call_mpc(contract.id())
-        .submit_contract_update(update)
-        .await?;
-
-    // Then
-    assert!(execution.is_success(), "{execution:#?}");
-    assert_eq!(contract.view_code().await?, current_contract());
+    // When, Then
+    vote_and_submit_contract_binary(&accounts, &contract, current_contract()).await;
     Ok(())
 }
 

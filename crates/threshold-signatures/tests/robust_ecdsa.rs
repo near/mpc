@@ -10,7 +10,7 @@ use threshold_signatures::{
     self, MaxMalicious,
     ecdsa::{
         Secp256K1Sha256, Signature, SignatureOption,
-        robust_ecdsa::{PresignArguments, presign_and_sign},
+        robust_ecdsa::{SignArguments, sign},
     },
     participants::Participant,
 };
@@ -36,11 +36,11 @@ fn run_sign(
 
     let participant_list: Vec<Participant> = participants.keys().copied().collect();
     for (p, keygen_out) in participants {
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &participant_list,
             coordinator,
             p,
-            PresignArguments {
+            SignArguments {
                 keygen_out,
                 max_malicious,
             },
