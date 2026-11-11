@@ -1,6 +1,7 @@
 mod inspect_request;
 mod inspection;
 mod node_outcome;
+mod node_outcome_statement;
 mod provider_call_metrics;
 mod sign;
 
