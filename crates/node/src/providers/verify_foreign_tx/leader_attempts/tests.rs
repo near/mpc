@@ -366,7 +366,7 @@ async fn lead_request__should_sign_an_inconclusive_after_a_disagreement(#[case] 
     assert_eq!(leader.rounds_run(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn lead_request__should_stop_after_a_disagreement_without_evidence() {
     // Given
     let leader = ScriptedLeader::new([Err(AttemptFailure::Disagreement(verdicts_differ()))]);
@@ -398,8 +398,8 @@ async fn lead_request__should_sign_an_inconclusive_once_the_evidence_holds_enoug
     assert_eq!(leader.attempts_run(), 2);
 }
 
-#[tokio::test]
-async fn lead_request__should_stop_when_the_attempts_leave_no_evidence() {
+#[tokio::test(start_paused = true)]
+async fn lead_request__should_stop_when_no_evidence_comes_within_the_inspection_cap() {
     // Given
     let leader = ScriptedLeader::new([
         Err(AttemptFailure::Transient {
@@ -408,6 +408,7 @@ async fn lead_request__should_stop_when_the_attempts_leave_no_evidence() {
         Err(cluster_problem()),
         Err(AttemptFailure::Aborted(aborted_by(OTHER_FOLLOWER))),
     ]);
+    let started = Instant::now();
 
     // When
     let stop = lead_request(&leader).await;
@@ -415,6 +416,52 @@ async fn lead_request__should_stop_when_the_attempts_leave_no_evidence() {
     // Then
     assert_matches!(stop, Err(LeaderStop::AttemptsExhausted(_)));
     assert_eq!(leader.rounds_run(), 0);
+    assert_eq!(started.elapsed(), FOREIGN_CHAIN_INSPECTION_TIMEOUT);
+}
+
+#[tokio::test(start_paused = true)]
+async fn lead_request__should_count_evidence_that_completes_after_the_last_attempt() {
+    // Given
+    let late_report = Duration::from_secs(1);
+    let transient = || AttemptFailure::Transient {
+        participant: FOLLOWER,
+    };
+    let leader = ScriptedLeader {
+        evidence_at: Some(late_report),
+        ..ScriptedLeader::new([Err(transient()), Err(transient()), Err(transient())])
+            .with_rounds([Ok(SIGNED_INCONCLUSIVE)])
+    };
+    let started = Instant::now();
+
+    // When
+    let signed = lead_request(&leader).await;
+
+    // Then
+    assert_eq!(signed.unwrap(), SIGNED_INCONCLUSIVE);
+    assert_eq!(leader.attempts_run(), 3);
+    assert_eq!(started.elapsed(), late_report);
+}
+
+#[test]
+fn led_attempt_count__should_count_an_attempt_dropped_before_its_result_as_abandoned() {
+    // Given
+    let counted = |label| {
+        metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+            .with_label_values(&[label])
+            .get()
+    };
+    let total_before = counted(metrics::TOTAL_RESULT_LABEL);
+    let abandoned_before = counted(metrics::ABANDONED_OUTCOME_LABEL);
+
+    // When
+    drop(LedAttemptCount::new());
+
+    // Then
+    assert_eq!(counted(metrics::TOTAL_RESULT_LABEL), total_before + 1);
+    assert_eq!(
+        counted(metrics::ABANDONED_OUTCOME_LABEL),
+        abandoned_before + 1
+    );
 }
 
 #[tokio::test(start_paused = true)]

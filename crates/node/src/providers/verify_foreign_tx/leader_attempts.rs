@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
-use futures::FutureExt as _;
+use tokio::time::{Duration, timeout};
 
+use crate::metrics;
 use crate::network::AbortedByParticipant;
 use crate::network::computation::ComputationTimeout;
 use crate::primitives::ParticipantId;
@@ -10,8 +11,13 @@ use crate::providers::verify_foreign_tx::attempt_outcomes::AttemptEnd;
 use crate::providers::verify_foreign_tx::node_outcome::NoVerdictReason;
 use crate::providers::verify_foreign_tx::node_outcome_statement::AttemptId;
 use crate::providers::verify_foreign_tx::{
-    MAX_ATTEMPTS_PER_LEADER, MAX_INCONCLUSIVE_ROUNDS_PER_LEADER,
+    FOREIGN_CHAIN_INSPECTION_TIMEOUT, MAX_ATTEMPTS_PER_LEADER, MAX_INCONCLUSIVE_ROUNDS_PER_LEADER,
 };
+
+/// The time a leader still waits for the evidence of an inconclusive once its attempts stopped.
+/// The followers of the last attempt may still inspect for this long, and their late reports
+/// count.
+const LATE_EVIDENCE_WAIT: Duration = FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 /// Leads one V2 request: takes the asset of each attempt or inconclusive round and runs it.
 pub(crate) trait LeadV2Request {
@@ -124,8 +130,9 @@ impl From<AttemptEnd> for AttemptFailure {
 }
 
 /// Leads one V2 request and returns the first signature. The leader runs attempts, see
-/// [`lead_attempts`], until the node outcomes of its attempts prove a cause for an inconclusive.
-/// It then runs inconclusive rounds instead, see [`lead_inconclusive_rounds`].
+/// [`lead_attempts`], until the node outcomes of its attempts prove a cause for an inconclusive,
+/// also up to [`LATE_EVIDENCE_WAIT`] after its attempts stopped. It then runs inconclusive rounds
+/// instead, see [`lead_inconclusive_rounds`].
 pub(crate) async fn lead_request<L: LeadV2Request>(leader: &L) -> Result<L::Signed, LeaderStop> {
     let attempts_stop = tokio::select! {
         biased;
@@ -137,9 +144,13 @@ pub(crate) async fn lead_request<L: LeadV2Request>(leader: &L) -> Result<L::Sign
             Err(stop) => stop,
         },
     };
-    match leader.wait_for_inconclusive_evidence().now_or_never() {
-        Some(evidence) => lead_inconclusive_rounds(leader, &evidence).await,
-        None => Err(attempts_stop),
+    let late_evidence_wait = match attempts_stop {
+        LeaderStop::NoAsset(_) => Duration::ZERO,
+        _ => LATE_EVIDENCE_WAIT,
+    };
+    match timeout(late_evidence_wait, leader.wait_for_inconclusive_evidence()).await {
+        Ok(evidence) => lead_inconclusive_rounds(leader, &evidence).await,
+        Err(_) => Err(attempts_stop),
     }
 }
 
@@ -201,6 +212,36 @@ async fn lead_inconclusive_rounds<L: LeadV2Request>(
             .downcast_ref::<AbortedByParticipant>()
             .map(|aborted| BTreeSet::from([aborted.participant]))
             .unwrap_or_default();
+    }
+}
+
+/// Counts one led V2 attempt in
+/// [`MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED`](metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED)
+/// once dropped. An attempt dropped before its result counts as abandoned, for example when the
+/// evidence of earlier attempts starts the inconclusive.
+pub(crate) struct LedAttemptCount {
+    outcome_label: &'static str,
+}
+
+impl LedAttemptCount {
+    pub(crate) fn new() -> Self {
+        Self {
+            outcome_label: metrics::ABANDONED_OUTCOME_LABEL,
+        }
+    }
+
+    pub(crate) fn finish(&mut self, outcome_label: &'static str) {
+        self.outcome_label = outcome_label;
+    }
+}
+
+impl Drop for LedAttemptCount {
+    fn drop(&mut self) {
+        for label in [metrics::TOTAL_RESULT_LABEL, self.outcome_label] {
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                .with_label_values(&[label])
+                .inc();
+        }
     }
 }
 

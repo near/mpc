@@ -25,7 +25,7 @@ use crate::providers::verify_foreign_tx::attempt_outcomes::{AttemptOutcomes, Att
 use crate::providers::verify_foreign_tx::inconclusive_evidence::InconclusiveEvidence;
 use crate::providers::verify_foreign_tx::inconclusive_round::InconclusiveRoundComputation;
 use crate::providers::verify_foreign_tx::leader_attempts::{
-    AttemptFailure, LeadV2Request, lead_request,
+    AttemptFailure, LeadV2Request, LedAttemptCount, lead_request,
 };
 use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 use crate::providers::verify_foreign_tx::node_outcome_statement::{
@@ -364,6 +364,7 @@ impl LeadV2Request for V2Leader {
             self.provider.v2.participants.clone(),
         )
         .map_err(AttemptFailure::Cluster)?;
+        let mut count = LedAttemptCount::new();
         let result = V2LeaderComputation {
             own_outcome: self.provider.spawn_own_inspection(&self.request, &attempt),
             attempt,
@@ -378,11 +379,7 @@ impl LeadV2Request for V2Leader {
             }
             Err(_) => metrics::FAILED_OUTCOME_LABEL,
         };
-        for label in [metrics::TOTAL_RESULT_LABEL, outcome_label] {
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
-                .with_label_values(&[label])
-                .inc();
-        }
+        count.finish(outcome_label);
         result
     }
 

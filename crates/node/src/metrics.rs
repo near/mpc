@@ -276,7 +276,7 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntC
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
             "mpc_num_verify_foreign_tx_computations_led",
-            "Number of finished verify foreign tx computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
+            "Number of finished verify foreign tx computation attempts that this node led. A V2 attempt the node drops before its result counts as abandoned. Attempts a node restart interrupts are not counted.",
             &["result"],
         )
         .unwrap()
