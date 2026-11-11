@@ -698,6 +698,13 @@ where
         let my_indexer_height = height_of(&self.my_participant_id);
         let reference_height =
             majority_height(alive_participants.iter().map(height_of)).unwrap_or(0);
+        // todo: `alive_participants` only tells us that a participant is connected to us, not that
+        // it is connected to enough peers to lead a request.
+        // Example with participants A, B, C, D, a threshold of 3, and us being B: A is connected
+        // to B only, while B, C and D are all connected to each other. We consider A eligible, but
+        // every request A leads fails, and is only picked up after `LEADER_FAILOVER_INTERVAL`.
+        // The check should instead ask whether a clique of the required size that contains the
+        // participant exists among the peers we are connected to.
         let eligible_leaders = self
             .all_participants
             .iter()
