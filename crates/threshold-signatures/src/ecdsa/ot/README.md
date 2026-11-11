@@ -14,13 +14,13 @@ bits.rs      bit vectors and matrices
 
 Implements the "Simplest" OT Protocol \[[CO15](https://eprint.iacr.org/2015/267)\]. The sender obtains two random keys; the receiver selects one based on a choice bit. This is the base OT layer that bootstraps all subsequent extensions.
 
-### `extension/amended_kos15/random.rs`
+### `extension/kos15_roy22/random.rs`
 
 Extends a small number of base OTs into many via the \[[KOS15](https://eprint.iacr.org/2015/546)\] SoftspokenOT scheme, producing random OT correlations efficiently.
 
 **The amendment.** The original KOS15 consistency check compresses each row of the OT matrix into one element of GF(2^λ), and the sender verifies a single equation `q = t + x·Δ` using a field multiplication by `Δ`. \[[Roy22](https://eprint.iacr.org/2022/192)\] (SoftSpokenOT) found a flaw in the security proof of that check. The amended check hashes each of the λ columns separately: the receiver sends `x` and `t_1, ..., t_λ`, and the sender verifies `q_j = t_j + Δ_j·x` for every column `j`, where `Δ_j` is a single bit. This costs λ + 1 field elements of communication instead of 2.
 
-### `extension/amended_kos15/correlated.rs`
+### `extension/kos15_roy22/correlated.rs`
 
 The inner step of the extension, called by `random.rs`. It stretches the base OT keys with a PRG: the receiver inputs a matrix `X` and learns a random `T`, and the sender learns `Q = T + X·Δ`. It has no consistency check of its own.
 

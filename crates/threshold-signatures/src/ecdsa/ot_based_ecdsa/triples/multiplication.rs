@@ -9,7 +9,7 @@ use crate::{
                 batch_random_ot_sender, batch_random_ot_sender_helper,
             },
             bits::{BitVector, ChoiceVector, SEC_PARAM_64},
-            extension::amended_kos15::random::{
+            extension::kos15_roy22::random::{
                 RandomOtExtensionParams, random_ot_extension_receiver,
                 random_ot_extension_receiver_helper, random_ot_extension_sender,
                 random_ot_extension_sender_helper,

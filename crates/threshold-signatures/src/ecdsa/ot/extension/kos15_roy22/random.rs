@@ -11,7 +11,7 @@ use crate::{
 use crate::crypto::constants::SECURITY_PARAMETER;
 use crate::ecdsa::ot::{
     bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
-    extension::amended_kos15::correlated::{
+    extension::kos15_roy22::correlated::{
         CorrelatedOtParams, correlated_ot_receiver, correlated_ot_sender,
     },
 };
