@@ -3,11 +3,10 @@
 use std::collections::BTreeSet;
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
+use near_time::Instant;
 
 use crate::network::connectivity::graph::{AdjacencyMatrix, UndirectedEdge, UnknownNodeError};
-use crate::providers::participant_selection::{
-    CheckReadiness, ComputationDuration, NotReadyError,
-};
+use crate::providers::participant_selection::ComputationDuration;
 
 /// Keeps track of bidirectional connections in the network
 #[derive(Clone)]
@@ -70,23 +69,23 @@ impl<S> InferredConnection<S> {
     }
 }
 
-impl<N, S> CheckReadiness for EstablishedConnections<N, S>
+impl<N, S> EstablishedConnections<N, S>
 where
     N: Ord + Clone,
     S: CheckComputationSupport,
 {
-    type Node = N;
-
-    fn check_readiness(
+    /// Whether `nodes` can currently run a computation of `duration` together.
+    /// Errors only if a node in `nodes` is not part of the network.
+    pub fn check_readiness(
         &self,
         nodes: &BTreeSet<N>,
         duration: ComputationDuration,
+        now: Instant,
     ) -> Result<(), NotReadyError<N>> {
         self.connections
-            .pairs_within(nodes)
-            .map_err(|UnknownNodeError(node)| NotReadyError::UnknownNode(node))?
+            .pairs_within(nodes)?
             .try_for_each(|(connection, status)| {
-                match status.map(|s| s.connection_supports(duration)) {
+                match status.map(|s| s.connection_supports(duration, now)) {
                     Some(ComputationSupported::Yes) => Ok(()),
                     Some(ComputationSupported::No) => Err(NotReadyError::Degraded(connection)),
                     None => Err(NotReadyError::NotConnected(connection)),
@@ -95,9 +94,23 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum NotReadyError<N> {
+    #[error(transparent)]
+    UnknownNode(#[from] UnknownNodeError<N>),
+    #[error("connection {0} is not established")]
+    NotConnected(UndirectedEdge<N>),
+    #[error("connection {0} is too degraded for this computation")]
+    Degraded(UndirectedEdge<N>),
+}
+
 /// can be used to estimate whether a connection is suffienct for a specific computation duration
 pub trait CheckComputationSupport {
-    fn connection_supports(&self, duration: ComputationDuration) -> ComputationSupported;
+    fn connection_supports(
+        &self,
+        duration: ComputationDuration,
+        now: Instant,
+    ) -> ComputationSupported;
 }
 
 pub enum ComputationSupported {

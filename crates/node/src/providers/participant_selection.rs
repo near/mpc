@@ -1,12 +1,11 @@
-use std::collections::BTreeSet;
-
-use crate::network::connectivity::UndirectedEdge;
 use crate::primitives::ParticipantId;
 
-/// Picks the participant set for a computation we lead.
+/// Chooses a clique of participants: a set in which every two are connected to each other.
 pub trait SelectParticipants {
-    /// `participant_count` participants taken from `eligible`, one of them `must_include`,
-    /// pairwise ready for a computation of `duration`.
+    /// Returns a clique of `participant_count` participants from `eligible` that contains
+    /// `must_include` and whose connections are expected to hold for `duration`.
+    ///
+    /// Errors if `must_include` is not in `eligible`, or if no such clique exists.
     fn select_participants(
         &self,
         participant_count: usize,
@@ -20,18 +19,8 @@ pub trait SelectParticipants {
 pub enum SelectParticipantsError {
     #[error("not enough alive participants: need {needed}, got {available}")]
     NotEnoughParticipants { needed: usize, available: usize },
-}
-
-pub trait CheckReadiness {
-    type Node: Ord + Clone;
-
-    /// Whether `nodes` can currently run a computation of `duration` together.
-    /// Errors only if a node in `nodes` is not part of the network.
-    fn check_readiness(
-        &self,
-        nodes: &BTreeSet<Self::Node>,
-        duration: ComputationDuration,
-    ) -> Result<(), NotReadyError<Self::Node>>;
+    #[error("participant {0} must be included, but is not eligible")]
+    MustIncludeNotEligible(ParticipantId),
 }
 
 #[derive(Clone, Copy)]
@@ -39,14 +28,4 @@ pub enum ComputationDuration {
     Any,
     Seconds,
     HalfMinute,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum NotReadyError<N> {
-    #[error("node {0:?} is not in the network")]
-    UnknownNode(N),
-    #[error("connection {0} is not established")]
-    NotConnected(UndirectedEdge<N>),
-    #[error("connection {0} is too degraded for this computation")]
-    Degraded(UndirectedEdge<N>),
 }
