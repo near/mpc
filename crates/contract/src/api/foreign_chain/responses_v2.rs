@@ -25,9 +25,9 @@ impl MpcContract {
     ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
         log!(
-            "respond_verify_foreign_tx_v2: signer={}, yield_id={:?}",
+            "respond_verify_foreign_tx_v2: signer={}, yield_id={}",
             &signer,
-            &yield_id
+            hex::encode(yield_id.0)
         );
 
         self.assert_caller_is_attested_participant_and_protocol_active();
@@ -77,18 +77,13 @@ mod tests {
         announced_yield_ids, bitcoin_request_v2, make_chains_available, sign_payload_hash,
     };
     use crate::api::test_utils::{
-        SharedSecretKey, basic_setup_with_protocol, make_public_key_for_curve,
-        participant_account_ids, prepay_and_attest_all_participants,
+        ContractWithKeys, SharedSecretKey, basic_setup_with_protocol,
+        running_contract_with_domains, start_adding_a_domain,
         with_active_participant_and_attested_context,
     };
-    use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::RespondError;
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
-    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
-    use crate::state::ProtocolContractState;
     use dtos::{
-        BlockHeight, Curve, DomainConfig, DomainId, DomainPurpose, ForeignTxSignPayloadV2,
+        BlockHeight, DomainConfig, DomainId, DomainPurpose, ForeignTxSignPayloadV2,
         ForeignTxVerificationNegativeVerdict, ForeignTxVerificationOutcome, Protocol,
         ReconstructionThreshold, YieldId,
     };
@@ -140,38 +135,23 @@ mod tests {
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::ForeignTx,
         });
-        let mut secret_keys = BTreeMap::new();
-        let mut keys = vec![];
-        for domain in &domains {
-            let (public_key, secret_key) = make_public_key_for_curve(Curve::Secp256k1, &mut rng);
-            let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
-                unreachable!();
-            };
-            secret_keys.insert(domain.id, secret_key);
-            keys.push(KeyForDomain {
-                domain_id: domain.id,
-                key: public_key.try_into().unwrap(),
-                attempt: AttemptId::new(),
-            });
-        }
-        let parameters =
-            GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
-                .unwrap();
-        let mut contract = MpcContract::init_running(
-            domains.to_vec(),
-            DomainId(2),
-            (&Keyset::new(EpochId::new(0), keys)).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
-        prepay_and_attest_all_participants(&mut contract);
+        let ContractWithKeys {
+            mut contract,
+            secret_keys,
+        } = running_contract_with_domains(domains.to_vec(), &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         with_active_participant_and_attested_context(&contract);
         TwoDomainSetup {
             contract,
-            secret_keys,
+            secret_keys: secret_keys
+                .into_iter()
+                .map(|(domain_id, secret_key)| {
+                    let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+                        unreachable!();
+                    };
+                    (domain_id, secret_key)
+                })
+                .collect(),
         }
     }
 
@@ -184,30 +164,6 @@ mod tests {
             panic!("expected exactly one yield created event");
         };
         yield_id
-    }
-
-    /// Moves the contract from Running to Initializing with every
-    /// participant's vote for a new domain.
-    fn start_adding_a_domain(contract: &mut MpcContract) {
-        let new_domain = DomainConfig {
-            id: DomainId(1),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        };
-        for account_id in participant_account_ids(contract) {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id)
-                    .build()
-            );
-            contract.vote_add_domains(vec![new_domain.clone()]).unwrap();
-        }
-        assert_matches!(
-            contract.protocol_state,
-            ProtocolContractState::Initializing(_)
-        );
     }
 
     fn submit_requests<const N: usize>(contract: &mut MpcContract) -> [YieldId; N] {
