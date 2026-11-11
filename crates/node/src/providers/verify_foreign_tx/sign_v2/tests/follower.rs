@@ -7,6 +7,7 @@ use crate::network::testing::{new_test_client_with_versions, run_test_clients};
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
+use crate::requests::queue::leader_selection_order;
 use crate::storage::{SignRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::testing::start_root_task_with_periodic_dump;
 use httpmock::prelude::*;
@@ -211,13 +212,23 @@ async fn reach_node_outcome__should_retry_a_transient_error_within_the_inspectio
     assert_eq!(outcome.unwrap(), VERIFIED);
 }
 
-/// The packets the follower sends to the leader for the Start of a V2 attempt at `request()`.
+/// The packets the follower sends to the leader for the Start of a V2 attempt at `request()`,
+/// led by its first eligible leader.
 async fn run_v2_follower(
     open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
     rpc_url: String,
 ) -> Vec<MpcMessageKind> {
+    run_v2_follower_led_by_rank(0, open_requests, rpc_url).await
+}
+
+/// Like [`run_v2_follower`], led by the participant of `rank` in the leader selection order.
+async fn run_v2_follower_led_by_rank(
+    rank: usize,
+    open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
+    rpc_url: String,
+) -> Vec<MpcMessageKind> {
     let participants = vec![ParticipantId::from_raw(0), ParticipantId::from_raw(1)];
-    let leader = participants[0];
+    let leader = leader_selection_order(&participants, request().id)[rank];
     let results = run_test_clients(participants.clone(), move |client, mut receiver| {
         let participants = participants.clone();
         let open_requests = open_requests.clone();
@@ -327,6 +338,51 @@ async fn make_verify_foreign_tx_v2_follower__should_refuse_a_request_that_comple
             error.contains("the V2 request closed during the inspection"),
             "{error}"
         );
+    })
+    .await;
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn make_verify_foreign_tx_v2_follower__should_refuse_a_backup_leader_before_its_turn() {
+    start_root_task_with_periodic_dump(async {
+        // Given
+        let first_backup = 1;
+
+        // When
+        let received = run_v2_follower_led_by_rank(
+            first_backup,
+            open_requests_with(request()),
+            "http://127.0.0.1:1".to_string(),
+        )
+        .await;
+
+        // Then
+        let [MpcMessageKind::Abort(error)] = &received[..] else {
+            panic!("expected the network abort, got {received:?}");
+        };
+        assert!(error.contains("is not an acting leader"), "{error}");
+    })
+    .await;
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn make_verify_foreign_tx_v2_follower__should_refuse_a_fourth_attempt_of_one_leader() {
+    start_root_task_with_periodic_dump(async {
+        // Given
+        let open_requests = open_requests_with(request());
+        let leader = ParticipantId::from_raw(0);
+        for _ in 0..3 {
+            open_requests.join_attempt(request().id, leader).unwrap();
+        }
+
+        // When
+        let received = run_v2_follower(open_requests, "http://127.0.0.1:1".to_string()).await;
+
+        // Then
+        let [MpcMessageKind::Abort(error)] = &received[..] else {
+            panic!("expected the network abort, got {received:?}");
+        };
+        assert!(error.contains("already joined 3 attempts"), "{error}");
     })
     .await;
 }

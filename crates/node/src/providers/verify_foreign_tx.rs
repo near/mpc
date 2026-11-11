@@ -3,6 +3,7 @@ pub(crate) mod node_outcome;
 pub(crate) mod node_outcome_statement;
 pub(crate) mod open_requests;
 
+mod acting_leader;
 mod attempt_outcomes;
 mod inspect_request;
 mod inspection;

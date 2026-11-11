@@ -31,7 +31,7 @@ use crate::providers::verify_foreign_tx::{
 use crate::types::{SignatureRequest, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
 /// The time a follower waits for its own indexer to report the request of a Start.
-const FOLLOWER_INDEX_WAIT: Duration = Duration::from_secs(3);
+pub(crate) const FOLLOWER_INDEX_WAIT: Duration = Duration::from_secs(3);
 
 #[cfg(test)]
 #[expect(non_snake_case)]
@@ -154,7 +154,9 @@ impl VerifyForeignTxProvider {
         Ok(candidates)
     }
 
-    /// Takes part in a V2 attempt. A follower that cannot inspect refuses with the network abort.
+    /// Takes part in a V2 attempt. A follower refuses with the network abort when it cannot
+    /// inspect, or when [`Self::ensure_acting_leader`] or
+    /// [`OpenVerifyForeignTxRequestsV2::join_attempt`] refuses the leader.
     /// Otherwise it sends its signed node outcome, even when the attempt already ended, and its
     /// share only for a verdict.
     pub(crate) async fn make_verify_foreign_tx_v2_follower(
@@ -197,8 +199,8 @@ impl VerifyForeignTxProvider {
             .with_context(|| {
                 format!("the V2 request is not open within {FOLLOWER_INDEX_WAIT:?} of Start")
             })?;
-        // TODO(#5124): refuse a leader that is not an acting leader of the request, or that
-        // already ran three attempts with this node.
+        self.ensure_acting_leader(&request, channel.leader())?;
+        self.v2.open_requests.join_attempt(id, channel.leader())?;
         let signed = self
             .signed_node_outcome(&request, channel.leader(), AttemptId(channel.channel_id()))
             .await?;
