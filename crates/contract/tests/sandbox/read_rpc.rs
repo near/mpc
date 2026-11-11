@@ -5,24 +5,14 @@ use crate::sandbox::common::{
 };
 use crate::sandbox::utils::transactions::CallMpcContract;
 use mpc_contract::errors::RequestError;
-use near_mpc_contract_interface::events::{
-    MPC_CONTRACT_EVENT_STANDARD, VerifyForeignTxV2YieldCreated,
-};
+use near_mpc_contract_interface::events::VerifyForeignTxV2YieldCreated;
 use near_mpc_contract_interface::types::{self as dtos, VerifyForeignTransactionRequestV2};
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
-const EVENT_JSON_PREFIX: &str = "EVENT_JSON:";
 
 fn yield_created_events(logs: &[&str]) -> Vec<VerifyForeignTxV2YieldCreated> {
     logs.iter()
-        .filter_map(|line| line.strip_prefix(EVENT_JSON_PREFIX))
-        .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap())
-        .filter(|event| {
-            event["standard"] == MPC_CONTRACT_EVENT_STANDARD
-                && event["event"] == VerifyForeignTxV2YieldCreated::EVENT
-                && event["version"] == VerifyForeignTxV2YieldCreated::VERSION
-        })
-        .map(|event| serde_json::from_value(event["data"].clone()).unwrap())
+        .filter_map(|line| VerifyForeignTxV2YieldCreated::from_log_line(line))
         .collect()
 }
 
