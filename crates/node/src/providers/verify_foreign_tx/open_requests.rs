@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use anyhow::Context;
 use near_contract_transport::BlockHeight;
@@ -79,7 +80,7 @@ impl OpenVerifyForeignTxRequestsV2 {
     }
 
     /// The time since this node indexed the open request `id`.
-    pub(crate) fn time_since_indexed(&self, id: VerifyForeignTxId) -> Option<std::time::Duration> {
+    pub(crate) fn time_since_indexed(&self, id: VerifyForeignTxId) -> Option<Duration> {
         let indexed_at = self.requests.lock().unwrap().get(&id)?.indexed_at;
         Some(self.clock.now().saturating_duration_since(indexed_at))
     }
@@ -138,7 +139,6 @@ mod tests {
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types as dtos;
     use near_time::FakeClock;
-    use std::time::Duration;
 
     const REQUEST_HEIGHT: BlockHeight = BlockHeight::new(1000);
 

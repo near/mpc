@@ -8,6 +8,7 @@ use mpc_primitives::domain::DomainId;
 use near_contract_transport::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict;
+use near_time::FakeClock;
 
 mod follower;
 mod leader;
@@ -77,9 +78,24 @@ fn request() -> VerifyForeignTxRequestV2 {
     }
 }
 
+/// Open requests on a clock that stands still, with none indexed.
+fn no_open_requests() -> (Arc<OpenVerifyForeignTxRequestsV2>, FakeClock) {
+    let clock = FakeClock::default();
+    let open_requests = Arc::new(OpenVerifyForeignTxRequestsV2::new(clock.clock()));
+    (open_requests, clock)
+}
+
 fn open_requests_with(request: VerifyForeignTxRequestV2) -> Arc<OpenVerifyForeignTxRequestsV2> {
-    let open_requests = Arc::new(OpenVerifyForeignTxRequestsV2::default());
+    open_requests_indexed_ago(request, near_time::Duration::ZERO)
+}
+
+fn open_requests_indexed_ago(
+    request: VerifyForeignTxRequestV2,
+    since_indexed: near_time::Duration,
+) -> Arc<OpenVerifyForeignTxRequestsV2> {
+    let (open_requests, clock) = no_open_requests();
     open_requests.notify_new_block(&block_update(REQUEST_HEIGHT, vec![request], vec![]));
+    clock.advance(since_indexed);
     open_requests
 }
 
