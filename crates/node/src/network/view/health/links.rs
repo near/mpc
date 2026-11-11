@@ -7,9 +7,9 @@ use near_mpc_bounded_collections::NonEmptyBTreeSet;
 
 use near_time::Instant;
 
-use crate::network::view::primitives::{
-    adjacency_matrix::AdjacencyMatrix, edge::DirectedEdge, errors::UnknownNodeError,
-    live_network_connections::InferredConnection,
+use crate::network::view::{
+    graph::{AdjacencyMatrix, DirectedEdge, UnknownNodeError},
+    health::connections::InferredConnection,
 };
 
 pub struct NetworkLinkStatuses<N, S>(BTreeMap<(N, N), S>);

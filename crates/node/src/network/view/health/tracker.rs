@@ -1,11 +1,13 @@
 use near_time::Instant;
 
-use crate::network::view::primitives::{
-    LinkObservation,
-    errors::UnknownNodeError,
-    live_network_connections::{ConnectionChanged, LiveNetworkConnections},
-    measured_network_link::{
-        InferConnectionStatus, MeasuredNetworkLinks, UpdateLinkStatus, UpdateResult,
+use crate::network::view::{
+    graph::UnknownNodeError,
+    health::{
+        connections::{ConnectionChanged, LiveNetworkConnections},
+        links::{
+            InferConnectionStatus, LinkObservation, MeasuredNetworkLinks, UpdateLinkStatus,
+            UpdateResult,
+        },
     },
 };
 

@@ -1,9 +1,12 @@
+use std::collections::BTreeMap;
+
 use near_block_primitives::BlockCount;
 
 use crate::network::view::{
     first_hand_indexer_heights::ReportedIndexerHeight,
-    primitives::{DirectedEdge, LinkObservation},
-    view_manager::{IndexerHeightReport, IntoLinkObservation, ObservationContext},
+    graph::DirectedEdge,
+    health::LinkObservation,
+    updates::{IntoLinkObservation, ObservationContext},
 };
 
 /// How far a reporter's height for a peer trails our first-hand height for that peer, or
@@ -15,6 +18,16 @@ use crate::network::view::{
 pub enum IndexerHeightLag {
     Present(BlockCount),
     Absent,
+}
+
+pub struct IndexerHeightReport<N> {
+    pub reporter: N,
+    pub indexer_heights: BTreeMap<N, ReportedIndexerHeight>,
+}
+// todo: think if you really need this, we can deprecate..
+pub struct LegacyIndexerHeightReport<N> {
+    pub reporter: N,
+    pub indexer_height: ReportedIndexerHeight,
 }
 
 impl IndexerHeightLag {

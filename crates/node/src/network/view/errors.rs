@@ -1,4 +1,4 @@
-use crate::network::view::primitives::UnknownNodeError;
+use crate::network::view::graph::UnknownNodeError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum NetworkViewUpdateError<N> {

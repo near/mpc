@@ -2,7 +2,7 @@ use std::{cmp::Ordering, fmt};
 
 use petgraph::EdgeType;
 
-use crate::network::view::primitives::{adjacency_matrix::AddressEdge, errors::SameNodeError};
+use crate::network::view::graph::{adjacency_matrix::AddressEdge, errors::SameNodeError};
 
 /// An edge between two distinct nodes of an undirected graph. The order the nodes are given in
 /// does not matter.

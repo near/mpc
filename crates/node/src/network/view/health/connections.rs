@@ -4,9 +4,7 @@ use std::collections::BTreeSet;
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 
-use crate::network::view::primitives::adjacency_matrix::AdjacencyMatrix;
-use crate::network::view::primitives::edge::UndirectedEdge;
-use crate::network::view::primitives::errors::UnknownNodeError;
+use crate::network::view::graph::{AdjacencyMatrix, UndirectedEdge, UnknownNodeError};
 use crate::providers::traits::{CheckReadiness, ComputationDuration, NotReadyError};
 
 /// Keeps track of bidirectional connections in the network

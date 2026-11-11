@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use near_block_primitives::BlockHeight;
 use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 
-use crate::network::view::primitives::UnknownNodeError;
+use crate::network::view::graph::UnknownNodeError;
 
 /// Every participant's indexer height as that participant itself last reported it: its own entry
 /// in its [`ConnectedPeersInfo`](crate::primitives::ConnectedPeersInfo), or its legacy

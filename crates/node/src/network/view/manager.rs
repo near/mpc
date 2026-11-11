@@ -1,30 +1,20 @@
 // todo: clean this file
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use near_time::{Clock, Duration};
 use tokio::sync::{mpsc, watch};
 
 use crate::network::view::{
     errors::NetworkViewUpdateError,
-    first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
-    primitives::{
-        ConnectionChanged, InferConnectionStatus, LinkObservation, LiveNetworkConnections,
-        NetworkConnectionsHealthTracker, NetworkLinkStatuses, UnknownNodeError, UpdateLinkStatus,
+    first_hand_indexer_heights::FirstHandIndexerHeights,
+    graph::UnknownNodeError,
+    health::{
+        ConnectionChanged, InferConnectionStatus, LiveNetworkConnections,
+        NetworkConnectionsHealthTracker, NetworkLinkStatuses, UpdateLinkStatus,
     },
+    updates::{IndexerHeightReport, IntoLinkObservation, NetworkViewUpdate, ObservationContext},
 };
-
-pub struct ObservationContext<'a, N> {
-    pub first_hand_indexer_heights: &'a FirstHandIndexerHeights<N>,
-}
-
-/// Implemented by an observation type: how to read it out of an update.
-pub trait IntoLinkObservation<N, U>: Sized {
-    fn into_link_observation(
-        update: &U,
-        context: &ObservationContext<'_, N>,
-    ) -> Vec<LinkObservation<N, Self>>;
-}
 
 struct NetworkViewManager<N, C, S, L> {
     // state
@@ -105,19 +95,6 @@ where
             .set(update.reporter.clone(), own_height)?;
         Ok(self.process_link_observations(&update)?)
     }
-}
-pub struct IndexerHeightReport<N> {
-    pub reporter: N,
-    pub indexer_heights: BTreeMap<N, ReportedIndexerHeight>,
-}
-// todo: think if you really need this, we can deprecate..
-pub struct LegacyIndexerHeightReport<N> {
-    pub reporter: N,
-    pub indexer_height: ReportedIndexerHeight,
-}
-pub enum NetworkViewUpdate<N> {
-    LegacyIndexerHeightReport(LegacyIndexerHeightReport<N>),
-    IndexerHeightReport(IndexerHeightReport<N>),
 }
 //enum IndexerHeightLag {
 //    Present(BlockCount),
