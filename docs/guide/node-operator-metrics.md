@@ -179,6 +179,20 @@ configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
 asks. The probe logs the differing provider each round, as described above.
 
+### Read RPC answers
+
+For a `read_rpc` request, the network signs an inconclusive answer when nodes
+disagree about a transaction, or when provider errors keep too many nodes from
+a verdict. The node that led the request counts each one:
+
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_num_verify_foreign_tx_inconclusives` | inconclusive answers this node led, labeled with the `chain` and the `cause`: `verdicts_differ` when two nodes found different verdicts, `inspectors_disagree` when the providers of one node disagreed, or `transient` when provider errors kept too many nodes from a verdict. `first_node` and `second_node` hold the participant ids of the nodes involved. |
+
+The labels show where to look, not who is at fault: a node whose providers lag
+behind the foreign chain looks the same as a node that lies. When your node
+shows up in them, check its providers for that chain first.
+
 ## Recommended alerts
 
 ```promql
@@ -204,9 +218,10 @@ sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count{
   for 15m
 
 # Warn: computations are running out of headroom against the deadline that ends
-# them. Signature, CKD and foreign-tx verification run under a configured 60s
-# by default, and 45s is three quarters of it. Key generation and resharing are
-# left out: a handful per epoch cannot support a percentile.
+# them. Signature, CKD and verify_foreign_transaction checks run under a
+# configured 60s by default, and 45s is three quarters of it. A read_rpc attempt
+# stops after 13s. Key generation and resharing are left out: a handful per
+# epoch cannot support a percentile.
 histogram_quantile(0.99, sum by (protocol_scheme, task, le) (
   rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task!~"triple_generation|key_generation|key_resharing"}[15m])
 )) > 45  for 15m

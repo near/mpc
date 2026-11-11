@@ -987,7 +987,7 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider: the participants vote which providers count and how many must agree, and a node serves a chain only while it meets that vote (see [Whitelist and quorum](#whitelist-and-quorum)).
+MPC nodes verify foreign chain transactions (`verify_foreign_transaction` and `read_rpc` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider: the participants vote which providers count and how many must agree, and a node serves a chain only while it meets that vote (see [Whitelist and quorum](#whitelist-and-quorum)).
 
 You need your own API keys:
 
@@ -1686,6 +1686,18 @@ verdict, never help reach the quorum.
 The gauges `mpc_foreign_chain_rpc_quorum_required` and `mpc_foreign_chain_rpc_providers_whitelisted`
 show, per chain, the quorum and how many of your providers count, see
 [Whitelist and quorum](../node-operator-metrics.md#whitelist-and-quorum) in the metrics guide.
+
+#### Read RPC requests
+
+`read_rpc` requests use the same providers and need nothing else to configure. For them, the nodes
+also sign negative answers, such as a failed or missing transaction, and an inconclusive answer
+when nodes, or the providers of one node, disagree about a transaction. A provider that answers
+differently from your other providers therefore makes requests end inconclusive. See
+[Read RPC answers](../node-operator-metrics.md#read-rpc-answers) in the metrics guide.
+
+Only node releases that support `read_rpc` serve these requests. Vote for the contract update that
+adds `read_rpc` only once every participant runs such a release. Until then, a request that a node
+without support leads times out.
 
 ### Preparing a Docker Compose File
 
