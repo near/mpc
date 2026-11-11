@@ -18,12 +18,15 @@ pub(super) struct Summary {
 }
 
 pub(super) fn summarize(rows: &[ProviderHealth]) -> Summary {
-    let unchecked = || rows.iter().filter(|row| !row.status.was_probed());
     Summary {
         probed: rows.iter().filter(|row| row.status.was_probed()).count(),
         healthy: rows.iter().filter(|row| row.status.is_healthy()).count(),
-        unchecked: unchecked().count(),
-        unchecked_chains: unchecked().map(|row| row.chain.label()).collect(),
+        unchecked: rows.iter().filter(|row| !row.status.was_probed()).count(),
+        unchecked_chains: rows
+            .iter()
+            .filter(|row| !row.status.was_probed())
+            .map(|row| row.chain.label())
+            .collect(),
     }
 }
 

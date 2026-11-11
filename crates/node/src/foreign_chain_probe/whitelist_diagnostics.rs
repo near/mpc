@@ -142,7 +142,7 @@ fn compare_chain(
     diagnostics
 }
 
-pub(super) fn log(diagnostic: &Diagnostic) {
+pub(super) fn log_diagnostic(diagnostic: &Diagnostic) {
     let chain = diagnostic.chain.label();
     let local_provider = diagnostic.local_name.as_deref();
     match &diagnostic.kind {
@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     #[traced_test]
-    fn log__should_keep_configured_urls_and_tokens_out_of_logs() {
+    fn log_diagnostic__should_keep_configured_urls_and_tokens_out_of_logs() {
         // Given
         let header = AuthConfig::Header {
             name: "x-token".parse().expect("a test header name parses"),
@@ -522,7 +522,7 @@ mod tests {
         ]);
 
         // When
-        compare(&local, &whitelist).iter().for_each(log);
+        compare(&local, &whitelist).iter().for_each(log_diagnostic);
 
         // Then
         assert!(logs_contain("provider differs from its whitelist entry"));
