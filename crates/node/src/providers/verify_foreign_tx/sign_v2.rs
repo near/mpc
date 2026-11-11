@@ -128,6 +128,40 @@ impl VerifyForeignTxProvider {
         Ok(candidates)
     }
 
+    /// Waits for a triple pair from `triples` for an attempt at `request`, while the request is
+    /// open. A free pair without any of `avoid` comes first. The candidates follow the current
+    /// indexer heights.
+    async fn take_v2_triples(
+        &self,
+        request: &VerifyForeignTxRequestV2,
+        triples: &TripleStorage,
+        avoid: &BTreeSet<ParticipantId>,
+    ) -> anyhow::Result<OwnedAsset<PairedTriple>> {
+        let requested_chain = request.request.request.chain();
+        let store: &DistributedAssetStorage<PairedTriple> = triples;
+        let mut reported_wait = false;
+        loop {
+            anyhow::ensure!(
+                self.v2.open_requests.get(request.id).is_some(),
+                "the V2 request closed before a triple pair was free"
+            );
+            let candidates = self.v2_attempt_candidates(requested_chain)?;
+            if let Some(pair) =
+                take_owned_avoiding(store, candidates, avoid, ASSET_RECHECK_INTERVAL).await
+            {
+                return Ok(pair);
+            }
+            if !reported_wait {
+                reported_wait = true;
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_TRIPLE_WAITS.inc();
+                tracing::warn!(
+                    ?requested_chain,
+                    "no triple pair of V2 capable chain supporters available, waiting"
+                );
+            }
+        }
+    }
+
     /// Inspects `request` as the leader of `attempt`, and keeps the signed node outcome as
     /// evidence. The inspection outlives the attempt, so its outcome joins the evidence after the
     /// attempt ended.
@@ -281,39 +315,13 @@ impl LeadV2Attempt for V2Leader {
     type Asset = OwnedAsset<PairedTriple>;
     type Signed = SignedVerdict;
 
-    /// Waits for a triple pair while the request is open. The candidates follow the current
-    /// indexer heights.
     async fn take_asset(
         &self,
         avoid: &BTreeSet<ParticipantId>,
     ) -> anyhow::Result<OwnedAsset<PairedTriple>> {
-        let requested_chain = self.request.request.request.chain();
-        let mut reported_wait = false;
-        loop {
-            anyhow::ensure!(
-                self.provider
-                    .v2
-                    .open_requests
-                    .get(self.request.id)
-                    .is_some(),
-                "the V2 request closed before a triple pair was free"
-            );
-            let candidates = self.provider.v2_attempt_candidates(requested_chain)?;
-            let store: &DistributedAssetStorage<PairedTriple> = &self.triples;
-            if let Some(triples) =
-                take_owned_avoiding(store, candidates, avoid, ASSET_RECHECK_INTERVAL).await
-            {
-                return Ok(triples);
-            }
-            if !reported_wait {
-                reported_wait = true;
-                metrics::MPC_NUM_VERIFY_FOREIGN_TX_TRIPLE_WAITS.inc();
-                tracing::warn!(
-                    ?requested_chain,
-                    "no triple pair of V2 capable chain supporters available, waiting"
-                );
-            }
-        }
+        self.provider
+            .take_v2_triples(&self.request, &self.triples, avoid)
+            .await
     }
 
     async fn run_attempt(

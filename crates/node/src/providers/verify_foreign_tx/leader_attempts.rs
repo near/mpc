@@ -24,6 +24,18 @@ pub(crate) trait LeadV2Attempt {
     async fn run_attempt(&self, asset: Self::Asset) -> Result<Self::Signed, AttemptFailure>;
 }
 
+/// The reason a leader stops leading a V2 request without a signature. The request then times out
+/// unless another leader answers it.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum LeaderStop {
+    #[error("no asset for the next V2 attempt: {0:#}")]
+    NoAsset(anyhow::Error),
+    #[error("the nodes disagree: {0}")]
+    Disagreement(AttemptEnd),
+    #[error("all {MAX_ATTEMPTS_PER_LEADER} V2 attempts failed, the last one with: {0}")]
+    AttemptsExhausted(AttemptFailure),
+}
+
 /// The reason a V2 attempt failed. It decides the leader's next step.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum AttemptFailure {
@@ -41,18 +53,6 @@ pub(crate) enum AttemptFailure {
     /// Any other problem within the cluster, for example a share that does not combine.
     #[error(transparent)]
     Cluster(anyhow::Error),
-}
-
-/// The reason a leader stops leading a V2 request without a signature. The request then times out
-/// unless another leader answers it.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum LeaderStop {
-    #[error("no asset for the next V2 attempt: {0:#}")]
-    NoAsset(anyhow::Error),
-    #[error("the nodes disagree: {0}")]
-    Disagreement(AttemptEnd),
-    #[error("all {MAX_ATTEMPTS_PER_LEADER} V2 attempts failed, the last one with: {0}")]
-    AttemptsExhausted(AttemptFailure),
 }
 
 impl AttemptFailure {

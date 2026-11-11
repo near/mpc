@@ -267,19 +267,23 @@ enum ComputationProgressStatus {
     NewAttempt,
     Pending,
     MaxAttemptsExceeded,
+    StoppedLeading,
 }
 
 impl<ChainRespondArgsType: ChainRespondArgs> ComputationProgress<ChainRespondArgsType> {
-    /// If [`Self::attempts`] is less than `max_attempts` and this node did not stop leading, then
-    /// increments [`Self::attempts`] by one and returns [`ComputationProgressStatus::NewAttempt`].
+    /// If [`Self::attempts`] is less than `max_attempts`, then increments
+    /// [`Self::attempts`] by one and returns [`ComputationProgressStatus::NewAttempt`].
     /// Otherwise returns [`ComputationProgressStatus::MaxAttemptsExceeded`] or
-    /// [`ComputationProgressStatus::Pending`].
+    /// [`ComputationProgressStatus::Pending`]. Once this node stopped leading, returns
+    /// [`ComputationProgressStatus::StoppedLeading`].
     fn update_computation_progress(
         &mut self,
         now: near_time::Instant,
         max_attempts: u64,
     ) -> ComputationProgressStatus {
-        if self.stopped_leading || self.attempts >= max_attempts {
+        if self.stopped_leading {
+            ComputationProgressStatus::StoppedLeading
+        } else if self.attempts >= max_attempts {
             ComputationProgressStatus::MaxAttemptsExceeded
         } else if self
             .last_response_submission
@@ -502,6 +506,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     }
                     ComputationProgressStatus::Pending => {
                         RequestStatus::Wait("pending computation")
+                    }
+                    // Stays queued until it expires, so the request is not indexed anew with a
+                    // fresh attempt budget.
+                    ComputationProgressStatus::StoppedLeading => {
+                        RequestStatus::Wait("this node stopped leading")
                     }
                     ComputationProgressStatus::NewAttempt => {
                         if rank > 0 {
@@ -1328,10 +1337,10 @@ mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn pending_requests__should_not_attempt_a_request_again_once_the_leader_stopped() {
+    fn pending_requests__should_keep_a_request_without_attempts_once_the_leader_stopped() {
         // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
-        setup.add_request_leader();
+        let request = setup.add_request_leader();
         setup.update(&mut pending_requests);
         let to_attempt = pending_requests.get_requests_to_attempt();
         to_attempt[0]
@@ -1347,6 +1356,7 @@ mod tests {
 
         // Then
         assert!(to_attempt.is_empty());
+        assert!(pending_requests.requests.contains_key(&request.id));
     }
 
     #[test_log::test]

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::call_args as contract_args;
@@ -10,7 +10,7 @@ use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainSendTransactionRequest, VerifyForeignTransactionRespondV2ArgsExt,
 };
-use crate::requests::queue::{GenerationAttempt, PendingRequests};
+use crate::requests::queue::{ComputationProgress, GenerationAttempt, PendingRequests};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::types::{RequestsUpdate, VerifyForeignTxRequestV2};
 
@@ -85,12 +85,11 @@ impl MpcClient {
         let response = match existing_response {
             Some(response) => response,
             None => {
-                let response = self
-                    .compute_verify_foreign_tx_v2_response(&attempt.request)
-                    .await
-                    .inspect_err(|_| {
-                        attempt.computation_progress.lock().unwrap().stopped_leading = true;
-                    })?;
+                let response = stop_leading_on_failure(
+                    &attempt.computation_progress,
+                    self.compute_verify_foreign_tx_v2_response(&attempt.request),
+                )
+                .await?;
                 attempt
                     .computation_progress
                     .lock()
@@ -131,5 +130,50 @@ impl MpcClient {
             }
             None => anyhow::bail!("Signature scheme is not found for domain: {domain_id:?}"),
         }
+    }
+}
+
+/// Runs `lead`, and marks in `progress` that this node stopped leading the request when `lead`
+/// fails. The queue then gives this node no further attempt at the request.
+async fn stop_leading_on_failure<T>(
+    progress: &Mutex<ComputationProgress<contract_args::VerifyForeignTransactionRespondV2Args>>,
+    lead: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    lead.await
+        .inspect_err(|_| progress.lock().unwrap().stopped_leading = true)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn stop_leading_on_failure__should_stop_leading_when_the_lead_fails() {
+        // Given
+        let progress = Mutex::new(ComputationProgress::default());
+
+        // When
+        let led = stop_leading_on_failure(&progress, async {
+            anyhow::Result::<()>::Err(anyhow::anyhow!("all V2 attempts failed"))
+        })
+        .await;
+
+        // Then
+        led.unwrap_err();
+        assert!(progress.lock().unwrap().stopped_leading);
+    }
+
+    #[tokio::test]
+    async fn stop_leading_on_failure__should_keep_leading_when_the_lead_succeeds() {
+        // Given
+        let progress = Mutex::new(ComputationProgress::default());
+
+        // When
+        let led = stop_leading_on_failure(&progress, async { anyhow::Ok(()) }).await;
+
+        // Then
+        led.unwrap();
+        assert!(!progress.lock().unwrap().stopped_leading);
     }
 }

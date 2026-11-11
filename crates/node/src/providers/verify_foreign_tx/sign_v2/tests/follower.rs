@@ -351,3 +351,64 @@ async fn v2_attempt_candidates__should_leave_out_participants_without_the_v2_mes
     // Then
     assert_eq!(candidates.unwrap(), participants[..2]);
 }
+
+#[tokio::test]
+async fn v2_attempt_candidates__should_leave_out_participants_more_than_five_blocks_behind() {
+    // Given
+    let participants: Vec<_> = (0..3).map(ParticipantId::from_raw).collect();
+    let (client, _transport) = new_test_client_with_versions(
+        participants.clone(),
+        participants[0],
+        crate::network::testing::current_protocol_versions(&participants),
+    );
+    client.update_indexer_height(100);
+    client.set_peer_indexer_height(participants[1], 95);
+    client.set_peer_indexer_height(participants[2], 94);
+    let node = TestProvider::new(client, "http://127.0.0.1:1", open_requests_with(request()));
+
+    // When
+    let candidates = node
+        .provider
+        .v2_attempt_candidates(dtos::ForeignChain::Ethereum);
+
+    // Then
+    assert_eq!(candidates.unwrap(), participants[..2]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn take_v2_triples__should_stop_waiting_when_the_request_closes() {
+    // Given
+    let participants = vec![ParticipantId::from_raw(0)];
+    let client = crate::network::testing::new_test_client(participants.clone(), participants[0]);
+    let open_requests = open_requests_with(request());
+    let node = TestProvider::new(client.clone(), "http://127.0.0.1:1", open_requests.clone());
+    let db_dir = tempfile::tempdir().unwrap();
+    let triples = TripleStorage::new(
+        near_time::FakeClock::default().clock(),
+        SecretDB::new(db_dir.path(), [1; 16]).unwrap(),
+        client,
+        mpc_primitives::ReconstructionThreshold::new(1),
+    )
+    .unwrap();
+    let request = request();
+    let avoid = BTreeSet::new();
+    let wait_before_close = Duration::from_secs(5);
+    let started = tokio::time::Instant::now();
+
+    // When
+    let (taken, ()) = tokio::join!(
+        node.provider.take_v2_triples(&request, &triples, &avoid),
+        async {
+            tokio::time::sleep(wait_before_close).await;
+            complete(&open_requests, request.id);
+        }
+    );
+
+    // Then
+    let error = taken.err().unwrap();
+    assert!(
+        error.to_string().contains("the V2 request closed"),
+        "{error:#}"
+    );
+    assert!(started.elapsed() >= wait_before_close);
+}
