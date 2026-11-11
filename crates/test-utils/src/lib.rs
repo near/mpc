@@ -8,7 +8,7 @@ pub mod sandbox;
 /// Single source of truth shared by the e2e-tests crate and the contract test crates.
 /// `scripts/check-sandbox-image-version.sh` enforces that this stays in lockstep with
 /// the workspace's nearcore tag.
-pub const DEFAULT_SANDBOX_VERSION: &str = "2.14.0";
+pub const DEFAULT_SANDBOX_VERSION: &str = "2.14.1";
 
 /// Protocol version mainnet runs. It can lag behind [`DEFAULT_SANDBOX_VERSION`]'s
 /// protocol until validators vote the upgrade in.
