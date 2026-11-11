@@ -120,6 +120,13 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                     < config.concurrency * 2 * *config.batch_size
             {
+                // todo: replace the selection below with
+                // random_participant_clique.select_participants(
+                //     reconstruction_threshold.value(),
+                //     &running_participants,
+                //     mpc_config.my_participant_id,
+                //     ComputationDuration::HalfMinute,
+                // )
                 let participants = match client.select_random_active_participants_including_me(
                     reconstruction_threshold.value(),
                     &running_participants,

@@ -42,6 +42,13 @@ impl CKDProvider {
             .map(|p| p.id)
             .collect();
 
+        // todo: replace the selection below with
+        // self.random_participant_clique.select_participants(
+        //     reconstruction_threshold.value(),
+        //     &running_participants,
+        //     self.mpc_config.my_participant_id,
+        //     ComputationDuration::Seconds,
+        // )
         let participants = self
             .client
             .select_random_active_participants_including_me(
