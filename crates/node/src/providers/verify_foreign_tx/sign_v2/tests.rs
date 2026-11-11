@@ -65,13 +65,17 @@ fn request() -> VerifyForeignTxRequestV2 {
         receipt_id: CryptoHash([2; 32]),
         yield_id: dtos::YieldId([3; 32]),
         request_block_height: REQUEST_HEIGHT,
-        request: dtos::VerifyForeignTransactionRequestV2 {
+        request: ethereum_request(),
+        domain_id: DomainId(0),
+        expected_values_hash: dtos::VerifyForeignTransactionRequestV2 {
             request: ethereum_request(),
             domain_id: DomainId(0),
             expected_values: vec![dtos::ExtractedValue::EvmExtractedValue(
                 dtos::EvmExtractedValue::BlockHash(dtos::Hash256(MOCK_BLOCK_HASH)),
             )],
-        },
+        }
+        .expected_values_hash()
+        .unwrap(),
         entropy: [0; 32],
         timestamp_nanosec: 0,
     }

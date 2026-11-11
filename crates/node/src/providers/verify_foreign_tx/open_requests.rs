@@ -80,15 +80,13 @@ mod tests {
             receipt_id: CryptoHash([0; 32]),
             yield_id: dtos::YieldId([id; 32]),
             request_block_height: REQUEST_HEIGHT,
-            request: dtos::VerifyForeignTransactionRequestV2 {
-                request: dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
-                    tx_id: dtos::BitcoinTxId([0; 32]),
-                    confirmations: dtos::BlockConfirmations(1),
-                    extractors: [dtos::BitcoinExtractor::BlockHash].into(),
-                }),
-                domain_id: DomainId(0),
-                expected_values: vec![],
-            },
+            request: dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
+                tx_id: dtos::BitcoinTxId([0; 32]),
+                confirmations: dtos::BlockConfirmations(1),
+                extractors: [dtos::BitcoinExtractor::BlockHash].into(),
+            }),
+            domain_id: DomainId(0),
+            expected_values_hash: dtos::Hash256([id; 32]),
             entropy: [0; 32],
             timestamp_nanosec: 0,
         }

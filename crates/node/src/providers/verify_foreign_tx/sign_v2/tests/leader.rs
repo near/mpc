@@ -78,7 +78,7 @@ async fn run_follower(
             let NodeOutcome::Verdict(verdict) = outcome else {
                 return Ok(());
             };
-            let payload_hash = request().sign_payload(verdict.into())?.compute_msg_hash()?;
+            let payload_hash = request().sign_payload(verdict.into()).compute_msg_hash()?;
             let (keygen_out, triples) = shares;
             OnlinePresignSignComputation {
                 keygen_out,
@@ -235,7 +235,6 @@ async fn v2_leader_computation__should_sign_the_payload_when_every_participant_a
         assert_eq!(signed.verdict, not_found);
         let expected_hash = request()
             .sign_payload(not_found.into())
-            .unwrap()
             .compute_msg_hash()
             .unwrap();
         assert_eq!(signed.payload_hash, expected_hash);

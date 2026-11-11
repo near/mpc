@@ -15,8 +15,10 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::wire_format::VerifyForeignTxTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel, PeerNodeOutcomes};
 use crate::primitives::{ParticipantId, UniqueId};
+use crate::protocol_version::V2_FOREIGN_TX_MIN_PROTOCOL_VERSION;
 use crate::providers::ecdsa::OnlinePresignSignComputation;
 use crate::providers::ecdsa::triple::{PairedTriple, participants_from_triples};
+use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::verify_foreign_tx::attempt_evidence::{AttemptEvidence, LedAttempt};
 use crate::providers::verify_foreign_tx::attempt_outcomes::{AttemptOutcomes, AttemptStatus};
 use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
@@ -25,9 +27,6 @@ use crate::providers::verify_foreign_tx::node_outcome_statement::{
 };
 use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
 use crate::providers::verify_foreign_tx::sign::{TRIPLE_TAKE_GRACE_PERIOD, await_with_slow_hook};
-use crate::providers::verify_foreign_tx::{
-    V2_FOREIGN_TX_MIN_PROTOCOL_VERSION, VerifyForeignTxProvider,
-};
 use crate::types::{SignatureRequest, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
 /// The time a follower waits for its own indexer to report the request of a Start.
@@ -67,12 +66,10 @@ impl VerifyForeignTxProvider {
             .open_requests
             .get(id)
             .context("the V2 request is not open")?;
-        let requested_chain = request.request.request.chain();
+        let requested_chain = request.request.chain();
         let eligible = self.v2_attempt_candidates(requested_chain)?;
 
-        let keyshare = self
-            .ecdsa_signature_provider
-            .keyshare(request.request.domain_id)?;
+        let keyshare = self.ecdsa_signature_provider.keyshare(request.domain_id)?;
         // TODO(#5125): take only a triple pair whose participants are within the indexer margin.
         let (paired_triple_id, triples) = await_with_slow_hook(
             TRIPLE_TAKE_GRACE_PERIOD,
@@ -177,7 +174,7 @@ impl VerifyForeignTxProvider {
             tracing::info!(?outcome, "reported no verdict for a V2 foreign tx attempt");
             return Ok(());
         };
-        let payload_hash = request.sign_payload(verdict.into())?.compute_msg_hash()?;
+        let payload_hash = request.sign_payload(verdict.into()).compute_msg_hash()?;
         self.ecdsa_signature_provider
             .make_online_presign_signature_follower_given_request(
                 channel,
@@ -212,7 +209,9 @@ impl VerifyForeignTxProvider {
         leader: ParticipantId,
         attempt: AttemptId,
     ) -> anyhow::Result<SignedNodeOutcome> {
-        let outcome = self.reach_node_outcome(&request.request).await?;
+        let outcome = self
+            .reach_node_outcome(&request.request, &request.expected_values_hash)
+            .await?;
         anyhow::ensure!(
             self.v2.open_requests.get(request.id).is_some(),
             "the V2 request closed during the inspection"
@@ -303,7 +302,7 @@ impl MpcLeaderCentricComputation<SignedVerdict> for V2LeaderComputation {
 
         let payload_hash = self
             .request
-            .sign_payload(verdict.into())?
+            .sign_payload(verdict.into())
             .compute_msg_hash()?;
         let (signature, public_key) = OnlinePresignSignComputation {
             keygen_out: self.keygen_out,
@@ -343,6 +342,6 @@ fn sign_request(
         tweak: Tweak::new([0; 32]),
         entropy: request.entropy,
         timestamp_nanosec: request.timestamp_nanosec,
-        domain: request.request.domain_id,
+        domain: request.domain_id,
     }
 }

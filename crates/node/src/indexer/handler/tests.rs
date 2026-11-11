@@ -8,11 +8,11 @@ use near_mpc_contract_interface::call_args::{
     ReadRpcArgs, RequestAppPrivateKeyArgs, SignArgs as SignCallArgs, VerifyForeignTransactionArgs,
 };
 use near_mpc_contract_interface::events::{
-    MPC_CONTRACT_EVENT_STANDARD, VerifyForeignTxV2YieldCreated,
+    EVENT_JSON_PREFIX, MPC_CONTRACT_EVENT_STANDARD, VerifyForeignTxV2YieldCreated,
 };
 use near_mpc_contract_interface::types::{
     BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, CKDAppPublicKey, ExtractedValue,
-    ForeignChainRpcRequest, ForeignTxPayloadVersion,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestV2, YieldId,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -110,7 +110,7 @@ fn yield_created_log(yield_id: YieldId) -> String {
         "event": VerifyForeignTxV2YieldCreated::EVENT,
         "data": VerifyForeignTxV2YieldCreated { yield_id },
     });
-    format!("EVENT_JSON:{event}")
+    format!("{EVENT_JSON_PREFIX}{event}")
 }
 
 #[test]
@@ -137,8 +137,30 @@ fn try_index_request__should_index_a_read_rpc_call_with_its_yield_id_and_block_h
             receipt_id: RECEIPT_ID,
             yield_id,
             request_block_height: BLOCK_HEIGHT,
-            request: read_rpc_request(),
+            request: bitcoin_request(),
+            domain_id: DomainId::default(),
+            expected_values_hash: read_rpc_request().expected_values_hash().unwrap(),
         }
+    );
+}
+
+#[test]
+fn try_index_request__should_count_a_skipped_read_rpc_call() {
+    // Given
+    let receipt = function_call_receipt(READ_RPC, ReadRpcArgs::new(read_rpc_request()));
+    let outcome = succeeded(vec![
+        yield_created_log(YieldId([1; 32])),
+        yield_created_log(YieldId([2; 32])),
+    ]);
+    let skipped_before = metrics::MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_SKIPPED.get();
+
+    // When
+    try_index_request(&receipt, &outcome, &mpc_contract_id(), BLOCK_HEIGHT);
+
+    // Then
+    assert_eq!(
+        metrics::MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_SKIPPED.get(),
+        skipped_before + 1
     );
 }
 

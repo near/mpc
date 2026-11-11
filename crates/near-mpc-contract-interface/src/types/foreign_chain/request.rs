@@ -141,10 +141,16 @@ impl VerifyForeignTransactionRequestV2 {
     /// SHA-256 of the Borsh encoded [`Self::expected_values`], as
     /// [`ForeignTxSignPayloadV2::expected_values_hash`](super::ForeignTxSignPayloadV2::expected_values_hash) carries it.
     pub fn expected_values_hash(&self) -> std::io::Result<Hash256> {
-        let mut hasher = sha2::Sha256::new();
-        borsh::BorshSerialize::serialize(&self.expected_values, &mut hasher)?;
-        Ok(Hash256(hasher.finalize().into()))
+        extracted_values_hash(&self.expected_values)
     }
+}
+
+/// SHA-256 of the Borsh encoded `values`, the same hash
+/// [`VerifyForeignTransactionRequestV2::expected_values_hash`] gives for equal values.
+pub fn extracted_values_hash(values: &[ExtractedValue]) -> std::io::Result<Hash256> {
+    let mut hasher = sha2::Sha256::new();
+    borsh::BorshSerialize::serialize(values, &mut hasher)?;
+    Ok(Hash256(hasher.finalize().into()))
 }
 
 #[derive(
@@ -206,6 +212,29 @@ mod tests {
     use rstest::rstest;
     use serde_json::json;
     use std::assert_matches;
+
+    #[test]
+    fn extracted_values_hash__should_equal_the_expected_values_hash_of_the_same_values() {
+        // Given
+        let values = vec![ExtractedValue::EvmExtractedValue(
+            crate::types::EvmExtractedValue::BlockHash(Hash256([0xef; 32])),
+        )];
+        let request = VerifyForeignTransactionRequestV2 {
+            request: ForeignChainRpcRequest::Ethereum(crate::types::EvmRpcRequest {
+                tx_id: crate::types::EvmTxId([0xab; 32]),
+                extractors: [crate::types::EvmExtractor::BlockHash].into(),
+                finality: crate::types::EvmFinality::Finalized,
+            }),
+            domain_id: DomainId(0),
+            expected_values: values.clone(),
+        };
+
+        // When
+        let hash = extracted_values_hash(&values).unwrap();
+
+        // Then
+        assert_eq!(hash, request.expected_values_hash().unwrap());
+    }
 
     #[rstest]
     #[case(ForeignTxPayloadVersion::V1, 1)]

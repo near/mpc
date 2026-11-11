@@ -117,7 +117,7 @@ impl MpcClient {
         &self,
         request: &VerifyForeignTxRequestV2,
     ) -> anyhow::Result<contract_args::VerifyForeignTransactionRespondV2Args> {
-        let domain_id = request.request.domain_id;
+        let domain_id = request.domain_id;
         match self.domain_to_protocol.get(&domain_id) {
             Some(Protocol::CaitSith) => {
                 let signed_verdict = self

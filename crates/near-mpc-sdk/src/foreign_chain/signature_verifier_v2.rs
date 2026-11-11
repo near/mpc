@@ -9,15 +9,22 @@ use super::{VerifyForeignChainError, verify_signed_payload_hash};
 /// [`VerifyForeignTransactionRequestV2`] it answers.
 ///
 /// The verifier rebuilds the signed [`ForeignTxSignPayload::V2`] from the request and from the
-/// response fields.
+/// response fields. It takes the yield id and the request block height from the response, so a
+/// response to an earlier identical request also passes. A caller must:
+///
+/// - pass the root public key of the request's [`VerifyForeignTransactionRequestV2::domain_id`],
+/// - accept each [`VerifiedForeignTxResponseV2::yield_id`] only once, and store the ids it
+///   consumed,
+/// - accept a negative outcome only when [`VerifiedForeignTxResponseV2::request_block_height`] is
+///   at or above a NEAR block height the caller obtained independently of the response.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ForeignChainSignatureVerifierV2 {
     request: VerifyForeignTransactionRequestV2,
 }
 
 /// A [`VerifyForeignTransactionResponseV2`] whose signature
-/// [`ForeignChainSignatureVerifierV2::verify_signature`] accepted.
-#[must_use = "a verified response can still carry a negative or inconclusive outcome, or answer an earlier request"]
+/// [`ForeignChainSignatureVerifierV2`] accepted.
+#[must_use = "a verified response can still answer an earlier request: check its yield id"]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VerifiedForeignTxResponseV2 {
     request_block_height: BlockHeight,
@@ -30,15 +37,30 @@ impl ForeignChainSignatureVerifierV2 {
         Self { request }
     }
 
-    /// Fails if the response answers another request, or if the network did not sign the
-    /// response fields under `public_key`.
-    ///
-    /// `Ok` only proves that the network signed these fields. It does not mean the transaction
-    /// checked out: check [`VerifiedForeignTxResponseV2::outcome`]. The verifier takes the yield
-    /// id and the request block height from the response, so a response to an earlier identical
-    /// request also passes. Compare [`VerifiedForeignTxResponseV2::yield_id`] and
-    /// [`VerifiedForeignTxResponseV2::request_block_height`] with the values you expect.
+    /// Succeeds only if the network signed a [`ForeignTxVerificationOutcome::Verified`] answer to
+    /// the request under `public_key`. A signed negative or inconclusive outcome is an error.
+    /// See [`Self`] for the checks left to the caller.
     pub fn verify_signature(
+        &self,
+        response: &VerifyForeignTransactionResponseV2,
+        // TODO(#2232): don't use interface API types for public keys
+        public_key: &PublicKey,
+    ) -> Result<VerifiedForeignTxResponseV2, VerifyForeignChainError> {
+        let verified = self.verify_signed_outcome(response, public_key)?;
+        match verified.outcome {
+            ForeignTxVerificationOutcome::Verified {} => Ok(verified),
+            ForeignTxVerificationOutcome::Negative { verdict } => {
+                Err(VerifyForeignChainError::NegativeOutcome { verdict })
+            }
+            ForeignTxVerificationOutcome::Inconclusive {} => {
+                Err(VerifyForeignChainError::InconclusiveOutcome)
+            }
+        }
+    }
+
+    /// Succeeds for any outcome the network signed as an answer to the request under
+    /// `public_key`. See [`Self`] for the checks left to the caller.
+    pub fn verify_signed_outcome(
         &self,
         response: &VerifyForeignTransactionResponseV2,
         // TODO(#2232): don't use interface API types for public keys
@@ -85,6 +107,8 @@ impl VerifiedForeignTxResponseV2 {
         self.yield_id
     }
 
+    /// Only [`ForeignTxVerificationOutcome::Verified`] means the extracted values equal the
+    /// expected ones.
     pub fn outcome(&self) -> &ForeignTxVerificationOutcome {
         &self.outcome
     }
@@ -206,7 +230,7 @@ mod tests {
     #[case::non_canonical_block(negative(ForeignTxVerificationNegativeVerdict::NonCanonicalBlock))]
     #[case::values_mismatch(negative(ForeignTxVerificationNegativeVerdict::ValuesMismatch))]
     #[case::inconclusive(ForeignTxVerificationOutcome::Inconclusive {})]
-    fn verify_signature__should_accept_a_response_to_its_request(
+    fn verify_signed_outcome__should_accept_a_response_to_its_request(
         #[case] outcome: ForeignTxVerificationOutcome,
     ) {
         // Given
@@ -218,7 +242,9 @@ mod tests {
         let response = signed_response(&request(), fields);
 
         // When
-        let verified = verifier.verify_signature(&response, &public_key()).unwrap();
+        let verified = verifier
+            .verify_signed_outcome(&response, &public_key())
+            .unwrap();
 
         // Then
         assert_eq!(verified.outcome(), &outcome);
@@ -227,6 +253,67 @@ mod tests {
             verified.request_block_height(),
             signed_fields().request_block_height
         );
+    }
+
+    #[test]
+    fn verify_signature__should_accept_a_verified_outcome() {
+        // Given
+        let verifier = ForeignChainSignatureVerifierV2::new(request());
+        let response = signed_response(&request(), signed_fields());
+
+        // When
+        let verified = verifier.verify_signature(&response, &public_key()).unwrap();
+
+        // Then
+        assert_eq!(
+            verified.outcome(),
+            &ForeignTxVerificationOutcome::Verified {}
+        );
+    }
+
+    #[rstest]
+    #[case::transaction_failed(ForeignTxVerificationNegativeVerdict::TransactionFailed)]
+    #[case::log_index_out_of_bounds(ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds)]
+    #[case::transaction_not_found(ForeignTxVerificationNegativeVerdict::TransactionNotFound)]
+    #[case::account_not_found(ForeignTxVerificationNegativeVerdict::AccountNotFound)]
+    #[case::non_canonical_block(ForeignTxVerificationNegativeVerdict::NonCanonicalBlock)]
+    #[case::values_mismatch(ForeignTxVerificationNegativeVerdict::ValuesMismatch)]
+    fn verify_signature__should_reject_a_signed_negative_outcome(
+        #[case] verdict: ForeignTxVerificationNegativeVerdict,
+    ) {
+        // Given
+        let verifier = ForeignChainSignatureVerifierV2::new(request());
+        let fields = SignedFields {
+            outcome: negative(verdict),
+            ..signed_fields()
+        };
+        let response = signed_response(&request(), fields);
+
+        // When
+        let result = verifier.verify_signature(&response, &public_key());
+
+        // Then
+        assert_matches!(
+            result,
+            Err(VerifyForeignChainError::NegativeOutcome { verdict: rejected }) if rejected == verdict
+        );
+    }
+
+    #[test]
+    fn verify_signature__should_reject_a_signed_inconclusive_outcome() {
+        // Given
+        let verifier = ForeignChainSignatureVerifierV2::new(request());
+        let fields = SignedFields {
+            outcome: ForeignTxVerificationOutcome::Inconclusive {},
+            ..signed_fields()
+        };
+        let response = signed_response(&request(), fields);
+
+        // When
+        let result = verifier.verify_signature(&response, &public_key());
+
+        // Then
+        assert_matches!(result, Err(VerifyForeignChainError::InconclusiveOutcome));
     }
 
     fn other_request() -> VerifyForeignTransactionRequestV2 {
@@ -300,6 +387,41 @@ mod tests {
         assert_matches!(
             result,
             Err(VerifyForeignChainError::SignatureVerificationFailed)
+        );
+    }
+
+    #[rstest]
+    #[case::other_yield_id(SignedFields {
+        yield_id: YieldId([0x02; 32]),
+        ..signed_fields()
+    })]
+    #[case::other_block_height(SignedFields {
+        request_block_height: BlockHeight::new(1_001),
+        ..signed_fields()
+    })]
+    #[case::other_outcome(SignedFields {
+        outcome: negative(ForeignTxVerificationNegativeVerdict::TransactionNotFound),
+        ..signed_fields()
+    })]
+    fn verify_signed_outcome__should_reject_altered_fields_under_the_original_payload_hash(
+        #[case] altered_fields: SignedFields,
+    ) {
+        // Given
+        let verifier = ForeignChainSignatureVerifierV2::new(request());
+        let response = VerifyForeignTransactionResponseV2 {
+            request_block_height: altered_fields.request_block_height,
+            yield_id: altered_fields.yield_id,
+            outcome: altered_fields.outcome,
+            ..signed_response(&request(), signed_fields())
+        };
+
+        // When
+        let result = verifier.verify_signed_outcome(&response, &public_key());
+
+        // Then
+        assert_matches!(
+            result,
+            Err(VerifyForeignChainError::IncorrectPayloadSigned { .. })
         );
     }
 

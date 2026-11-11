@@ -205,7 +205,10 @@ async fn reach_node_outcome__should_retry_a_transient_error_within_the_inspectio
     let node = TestProvider::new(client, &rpc_mock.base_url(), open_requests_with(request()));
 
     // When
-    let outcome = node.provider.reach_node_outcome(&request().request).await;
+    let outcome = node
+        .provider
+        .reach_node_outcome(&request().request, &request().expected_values_hash)
+        .await;
 
     // Then
     assert_eq!(outcome.unwrap(), VERIFIED);
