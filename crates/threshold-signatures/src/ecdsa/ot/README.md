@@ -22,7 +22,7 @@ Extends a small number of base OTs into many via the \[[KOS15](https://eprint.ia
 
 ### `extension/amended_kos15/correlated.rs`
 
-Builds correlated OT from random OT extension, producing correlated pairs for use in MTA.
+The inner step of the extension, called by `random.rs`. It stretches the base OT keys with a PRG: the receiver inputs a matrix `X` and learns a random `T`, and the sender learns `Q = T + X·Δ`. It has no consistency check of its own.
 
 ### `bits.rs`
 
