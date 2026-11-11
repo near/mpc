@@ -1,5 +1,5 @@
 use borsh::BorshSerialize;
-use ed25519_dalek::{Signature, Signer as _, SigningKey};
+use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
 use near_mpc_contract_interface::types::YieldId;
 
 use crate::config::{ParticipantsConfig, PersistentSecrets};
@@ -33,8 +33,9 @@ pub(crate) struct NodeOutcomeStatement {
     pub(crate) outcome: NodeOutcome,
 }
 
-/// The [`ChannelId`] the leader opens for the attempt. Channel ids are unique across
-/// participants and time, so no two attempts share one.
+/// The [`ChannelId`] the leader opens for the attempt. It names the leader, and the leader picks
+/// a new one for each channel. An id repeats only if the leader restarts within the second of an
+/// earlier id, or its clock goes back across a restart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize)]
 pub(crate) struct AttemptId(pub(crate) ChannelId);
 
@@ -50,6 +51,8 @@ pub(crate) enum NodeOutcomeVerificationError {
     SignerNotParticipant(ParticipantId),
     #[error("node outcome signature does not match the key of its signer")]
     BadSignature,
+    #[error("node outcome attempt does not belong to its leader {0}")]
+    AttemptOfAnotherLeader(ParticipantId),
     #[error("failed to encode the node outcome statement")]
     Encoding(#[from] std::io::Error),
 }
@@ -69,15 +72,22 @@ impl SignedNodeOutcome {
         self,
         participants: &ParticipantsConfig,
     ) -> Result<VerifiedNodeOutcome, NodeOutcomeVerificationError> {
-        let signer = self.statement.signer;
-        let signer_key = &participants
-            .get_info(signer)
-            .ok_or(NodeOutcomeVerificationError::SignerNotParticipant(signer))?
-            .p2p_public_key;
+        let NodeOutcomeStatement { leader, signer, .. } = self.statement;
+        let signer_key = NodeOutcomeSigningKey::public_key(participants, signer)
+            .ok_or(NodeOutcomeVerificationError::SignerNotParticipant(signer))?;
         signer_key
             .verify_strict(&signed_bytes(&self.statement)?, &self.signature)
             .map_err(|_| NodeOutcomeVerificationError::BadSignature)?;
+        if self.statement.attempt.leader() != leader {
+            return Err(NodeOutcomeVerificationError::AttemptOfAnotherLeader(leader));
+        }
         Ok(VerifiedNodeOutcome(self))
+    }
+}
+
+impl AttemptId {
+    fn leader(self) -> ParticipantId {
+        self.0.0.participant_id()
     }
 }
 
@@ -99,6 +109,15 @@ impl NodeOutcomeSigningKey {
             statement,
             signature,
         })
+    }
+
+    fn public_key(
+        participants: &ParticipantsConfig,
+        participant: ParticipantId,
+    ) -> Option<&VerifyingKey> {
+        participants
+            .get_info(participant)
+            .map(|info| &info.p2p_public_key)
     }
 }
 
@@ -154,7 +173,11 @@ mod tests {
     }
 
     fn attempt(counter: u32) -> AttemptId {
-        AttemptId(ChannelId(UniqueId::new(LEADER, 1_700_000_000, counter)))
+        attempt_of(LEADER, counter)
+    }
+
+    fn attempt_of(leader: ParticipantId, counter: u32) -> AttemptId {
+        AttemptId(ChannelId(UniqueId::new(leader, 1_700_000_000, counter)))
     }
 
     fn statement() -> NodeOutcomeStatement {
@@ -214,6 +237,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn signed_node_outcome__should_reject_an_attempt_of_another_leader() {
+        // Given
+        let statement = NodeOutcomeStatement {
+            attempt: attempt_of(OTHER_PARTICIPANT, 0),
+            ..statement()
+        };
+        let signed = signing_key(SIGNER).sign(statement).unwrap();
+
+        // When
+        let result = signed.verify(&participants());
+
+        // Then
+        assert_matches!(
+            result,
+            Err(NodeOutcomeVerificationError::AttemptOfAnotherLeader(LEADER))
+        );
+    }
+
     #[rstest]
     #[case::yield_id(NodeOutcomeStatement { yield_id: YieldId([0xcd; 32]), ..statement() })]
     #[case::leader(NodeOutcomeStatement { leader: OTHER_PARTICIPANT, ..statement() })]
@@ -264,15 +306,36 @@ mod tests {
         assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));
     }
 
-    #[test]
-    fn signed_bytes__should_keep_their_encoding() {
+    #[rstest]
+    #[case::verified("signed_bytes_verified", NodeOutcome::Verdict(NodeVerdict::Verified))]
+    #[case::negative(
+        "signed_bytes_negative",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::TransactionNotFound
+        ))
+    )]
+    #[case::transient(
+        "signed_bytes_transient",
+        NodeOutcome::NoVerdict(NoVerdictReason::Transient)
+    )]
+    #[case::inspectors_disagree(
+        "signed_bytes_inspectors_disagree",
+        NodeOutcome::NoVerdict(NoVerdictReason::InspectorsDisagree)
+    )]
+    fn signed_bytes__should_keep_their_encoding(
+        #[case] snapshot: &str,
+        #[case] outcome: NodeOutcome,
+    ) {
         // Given
-        let statement = statement();
+        let statement = NodeOutcomeStatement {
+            outcome,
+            ..statement()
+        };
 
         // When
         let bytes = signed_bytes(&statement).unwrap();
 
         // Then
-        insta::assert_snapshot!(hex::encode(bytes));
+        insta::assert_snapshot!(snapshot, hex::encode(bytes));
     }
 }
