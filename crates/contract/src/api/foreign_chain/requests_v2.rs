@@ -22,10 +22,12 @@ impl MpcContract {
     /// times out like a V1 request.
     #[payable]
     pub fn read_rpc(&mut self, request: dtos::VerifyForeignTransactionRequestV2) {
+        // The expected values have no size cap, and NEAR caps the log bytes of a call.
         log!(
-            "read_rpc: predecessor={:?}, request={:?}",
+            "read_rpc: predecessor={:?}, request={:?}, domain_id={:?}",
             env::predecessor_account_id(),
-            request
+            request.request,
+            request.domain_id
         );
 
         self.check_request_preconditions(
@@ -114,6 +116,8 @@ mod tests {
     use rand::SeedableRng;
 
     const EVENT_JSON_PREFIX: &str = "EVENT_JSON:";
+    /// NEAR's `max_total_log_length` for one function call.
+    const MAX_TOTAL_LOG_BYTES: usize = 16 * 1024;
 
     fn setup_with_bitcoin_available() -> MpcContract {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -180,6 +184,30 @@ mod tests {
                 expected_values_hash: request.expected_values_hash().unwrap(),
                 request_block_height: dtos::BlockHeight::new(block_height),
             })
+        );
+    }
+
+    #[test]
+    fn read_rpc__should_accept_expected_values_larger_than_the_log_limit() {
+        // Given
+        let mut contract = setup_with_bitcoin_available();
+        let mut request = bitcoin_request();
+        request.expected_values = vec![request.expected_values[0].clone(); 1_000];
+        assert!(serde_json::to_vec(&request.expected_values).unwrap().len() > MAX_TOTAL_LOG_BYTES);
+
+        // When
+        contract.read_rpc(request.clone());
+
+        // Then
+        let [yield_id] = announced_yield_ids()[..] else {
+            panic!("expected exactly one yield created event");
+        };
+        assert_eq!(
+            contract
+                .pending_verify_foreign_tx_v2_requests
+                .get(&yield_id)
+                .map(|stored| stored.expected_values_hash.clone()),
+            Some(request.expected_values_hash().unwrap())
         );
     }
 
