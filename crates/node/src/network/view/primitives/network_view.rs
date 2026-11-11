@@ -9,7 +9,6 @@ use crate::network::view::primitives::{
 
 // the consumer will need to implement this.
 pub trait InferConnectionStatusFromLinkHealth {
-    // todo: different LinkStatus?
     type ConnectionStatus;
     fn infer_connection_status(
         a: Option<Self>,
@@ -19,24 +18,25 @@ pub trait InferConnectionStatusFromLinkHealth {
         Self: Sized;
 }
 
-pub struct NetworkConnectionsHealthTracker<N, S, L> {
+pub struct NetworkConnectionsHealthTracker<N, C, L> {
     // a link is a directed connection node A --> B,
     // each link is measured, such that we can infer link quality from the measurements.
     measured_links: MeasuredNetworkLinks<N, L>,
     // a connection between two nodes is as good as the worse of the two links between them
-    connection_status: LiveNetworkConnections<N, S>,
+    connection_status: LiveNetworkConnections<N, C>,
 }
-impl<N: Ord + Clone, S, L, O> NetworkConnectionsHealthTracker<N, S, L>
+impl<N: Ord + Clone, C, L, O> NetworkConnectionsHealthTracker<N, C, L>
 where
     N: Ord + Clone,
-    L: ObserveLinkHealth<Observation = O, LinkStatus = S> + Default + Clone,
-    S: InferConnectionStatusFromLinkHealth<ConnectionStatus = S> + PartialEq + Clone,
+    L: ObserveLinkHealth<Observation = O> + Default + Clone,
+    L::LinkStatus: InferConnectionStatusFromLinkHealth<ConnectionStatus = C>,
+    C: PartialEq + Clone,
 {
     pub fn update_with_observation(
         &mut self,
         observation: LinkObservation<N, O>,
         now: Instant,
-    ) -> Result<UpdateResult<InferredConnection<S>>, UnknownNodeError<N>> {
+    ) -> Result<UpdateResult<InferredConnection<C>>, UnknownNodeError<N>> {
         let LinkObservation { link, observation } = observation;
         let update_result = self
             .measured_links
@@ -46,7 +46,7 @@ where
             UpdateResult::StatusChanged(new_status) => {
                 let other_direction = self.measured_links.status(&link.reversed())?;
                 let connection_satus =
-                    S::infer_connection_status(Some(new_status), other_direction);
+                    L::LinkStatus::infer_connection_status(Some(new_status), other_direction);
                 self.connection_status
                     .update_connection(&link.into(), connection_satus)
             }

@@ -26,19 +26,19 @@ pub trait IntoLinkObservation<N, U>: Sized {
     ) -> Vec<LinkObservation<N, Self>>;
 }
 
-struct NetworkViewManager<N, S, L> {
+struct NetworkViewManager<N, C, S, L> {
     // state
     clock: Clock,
     report_interval: Duration,
     first_hand_heights: FirstHandIndexerHeights<N>,
-    network_connection_health_tracker: NetworkConnectionsHealthTracker<N, S, L>,
+    network_connection_health_tracker: NetworkConnectionsHealthTracker<N, C, L>,
 
     // everything we receive from other components
     observations: mpsc::Receiver<NetworkViewUpdate<N>>,
 
     // everything we send to other components
     /// as soon as a connection changes its status, this is updated
-    connections: watch::Sender<Arc<LiveNetworkConnections<N, S>>>,
+    connections: watch::Sender<Arc<LiveNetworkConnections<N, C>>>,
     /// updated on every height update
     heights: watch::Sender<FirstHandIndexerHeights<N>>,
 
@@ -52,12 +52,14 @@ trait ApplyNetworkViewUpdate<N, U> {
     fn apply(&mut self, update: U) -> Result<(), NetworkViewUpdateError<N>>;
 }
 
-impl<N, S, L> ApplyNetworkViewUpdate<N, IndexerHeightReport<N>> for NetworkViewManager<N, S, L>
+impl<N, C, S, L> ApplyNetworkViewUpdate<N, IndexerHeightReport<N>>
+    for NetworkViewManager<N, C, S, L>
 where
     N: Ord + Clone + std::fmt::Display,
     L: ObserveLinkHealth<LinkStatus = S> + Default + Clone,
     L::Observation: IntoLinkObservation<N, IndexerHeightReport<N>>,
-    S: InferConnectionStatusFromLinkHealth<ConnectionStatus = S> + PartialEq + Clone,
+    S: InferConnectionStatusFromLinkHealth<ConnectionStatus = C>,
+    C: PartialEq + Clone,
 {
     fn apply(&mut self, update: IndexerHeightReport<N>) -> Result<(), NetworkViewUpdateError<N>> {
         let own_height = *update.indexer_heights.get(&update.reporter).ok_or(

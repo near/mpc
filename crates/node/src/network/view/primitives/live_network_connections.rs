@@ -91,7 +91,6 @@ where
 
 /// can be used to estimate whether a connection is suffienct for a specific computation duration
 pub trait ReportConnectionHealth {
-    type LinkStatus;
     fn connection_supports(&self, duration: ComputationDuration) -> ComputationSupported;
 }
 
