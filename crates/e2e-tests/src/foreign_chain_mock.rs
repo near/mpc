@@ -99,41 +99,53 @@ pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usi
     let mock_id = server
         .mock(|when, then| {
             auth.apply(when.method(POST));
-            then.respond_with(move |req: &HttpMockRequest| {
-                let body: serde_json::Value =
-                    serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
-                let id = body["id"].clone();
-                let method = body["method"].as_str().expect("method field");
-
-                let result = match method {
-                    "getrawtransaction" => serde_json::json!({
-                        "blockhash": MOCK_BLOCK_HASH,
-                        "confirmations": MOCK_BITCOIN_CONFIRMATIONS,
-                    }),
-                    "getblockheader" => serde_json::json!({
-                        "hash": MOCK_BLOCK_HASH,
-                        "height": MOCK_BLOCK_HEIGHT,
-                    }),
-                    "getblockhash" => serde_json::Value::String(MOCK_BLOCK_HASH.to_string()),
-                    other => return jsonrpc_error(id, other),
-                };
-
-                let response_body = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "result": result,
-                    "id": id,
-                });
-
-                HttpMockResponse::builder()
-                    .status(200)
-                    .header("content-type", "application/json")
-                    .body(serde_json::to_string(&response_body).unwrap())
-                    .build()
-            });
+            then.respond_with(|req: &HttpMockRequest| bitcoin_rpc_response(req, MOCK_BLOCK_HASH));
         })
         .id();
     register_unauthorized_catch_all(server, &auth);
     mock_id
+}
+
+/// Serves on `path` a Bitcoin transaction in the block with the hex hash `block_hash`.
+pub fn setup_bitcoin_mock_at(server: &MockServer, path: &str, block_hash: &'static str) -> usize {
+    server
+        .mock(|when, then| {
+            when.method(POST).path(path);
+            then.respond_with(move |req: &HttpMockRequest| bitcoin_rpc_response(req, block_hash));
+        })
+        .id()
+}
+
+fn bitcoin_rpc_response(req: &HttpMockRequest, block_hash: &str) -> HttpMockResponse {
+    let body: serde_json::Value =
+        serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
+    let id = body["id"].clone();
+    let method = body["method"].as_str().expect("method field");
+
+    let result = match method {
+        "getrawtransaction" => serde_json::json!({
+            "blockhash": block_hash,
+            "confirmations": MOCK_BITCOIN_CONFIRMATIONS,
+        }),
+        "getblockheader" => serde_json::json!({
+            "hash": block_hash,
+            "height": MOCK_BLOCK_HEIGHT,
+        }),
+        "getblockhash" => serde_json::Value::String(block_hash.to_string()),
+        other => return jsonrpc_error(id, other),
+    };
+
+    let response_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "result": result,
+        "id": id,
+    });
+
+    HttpMockResponse::builder()
+        .status(200)
+        .header("content-type", "application/json")
+        .body(serde_json::to_string(&response_body).unwrap())
+        .build()
 }
 
 pub fn setup_evm_chain_id_mock(server: &MockServer, chain_id: u64) -> usize {
