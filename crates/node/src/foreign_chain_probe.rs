@@ -75,7 +75,7 @@ fn finish_round(
     whitelist_differences
         .iter()
         .flatten()
-        .for_each(whitelist_diagnostics::log);
+        .for_each(whitelist_diagnostics::log_diagnostic);
     let whitelist_state = match whitelist_differences.map(|differences| differences.len()) {
         None => WHITELIST_NOT_READ.to_string(),
         Some(0) => WHITELIST_MATCHES.to_string(),
@@ -109,7 +109,6 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
             Ok(()) = whitelist_rx.changed() => {}
         }
 
-        tracing::info!("probing foreign-chain RPC providers");
         let report = probe().await;
         let whitelist = whitelist_rx.borrow_and_update().clone();
         finish_round(&report, whitelist.as_ref());
