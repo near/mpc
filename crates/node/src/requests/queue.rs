@@ -45,7 +45,7 @@ const MAX_ATTEMPTS_PER_REQUEST_AS_FAILOVER_LEADER: u64 = 5;
 pub const LEADER_FAILOVER_INTERVAL: Duration = Duration::seconds(10);
 /// The max number of participants that act as leaders for one request. Purely a cap on
 /// assets burnt on a cluster-wide-failing request.
-const MAX_LEADER_FAILOVER_DEPTH: usize = 4;
+pub(crate) const MAX_LEADER_FAILOVER_DEPTH: usize = 4;
 
 /// Narrows the eligible-leader set for a specific request (e.g. to the participants
 /// supporting the request's foreign chain).
@@ -300,8 +300,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         all_participants: &[ParticipantId],
         time_indexed: near_time::Instant,
     ) -> Self {
-        let leader_selection_order =
-            Self::leader_selection_order(all_participants, request.get_id());
+        let leader_selection_order = leader_selection_order(all_participants, request.get_id());
         tracing::debug!(target: "request", "Leader selection order for request {:?} from block {}: {:?}", request.get_id(), block_height, leader_selection_order);
 
         Self {
@@ -317,31 +316,6 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         }
     }
 
-    /// Computes the leader selection order for a given request.
-    /// This will be a different pseudorandom order for each request.
-    fn leader_selection_order(
-        participants: &[ParticipantId],
-        request_id: CryptoHash,
-    ) -> Vec<ParticipantId> {
-        let mut leader_selection_hashes = participants
-            .iter()
-            .map(|p| (Self::leader_selection_hash(p, request_id), *p))
-            .collect::<Vec<_>>();
-        leader_selection_hashes.sort();
-        leader_selection_hashes
-            .into_iter()
-            .map(|(_, p)| p)
-            .collect()
-    }
-
-    fn leader_selection_hash(participant_id: &ParticipantId, request_id: CryptoHash) -> u64 {
-        let mut h = Sha256::new();
-        h.update(participant_id.raw().to_le_bytes());
-        h.update(request_id.0);
-        let hash: [u8; 32] = h.finalize().into();
-        u64::from_le_bytes(hash[0..8].try_into().unwrap())
-    }
-
     /// Decides whether we should lead this request now, and who we currently consider its
     /// leader (ourselves when we lead), kept in [`ComputationProgress::presumed_leader`]
     /// for debugging. `None` when no eligible leader exists.
@@ -352,20 +326,22 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         now: near_time::Instant,
     ) -> Option<(ParticipantId, LeaderDecision)> {
         let leader = self.current_leader(eligible_leaders)?;
-        let Some(rank) = self.my_leader_rank(eligible_leaders, my_participant_id) else {
+        let Some(rank) = leader_rank(
+            &self.leader_selection_order,
+            eligible_leaders,
+            my_participant_id,
+        ) else {
             return Some((
                 leader,
                 LeaderDecision::Wait("we are not an eligible leader"),
             ));
         };
-        if rank >= MAX_LEADER_FAILOVER_DEPTH {
+        let Some(failover_slot_delay) = leader_turn_start(rank) else {
             return Some((
                 leader,
                 LeaderDecision::Wait("past maximum leader failover depth"),
             ));
-        }
-        let failover_slot_delay =
-            LEADER_FAILOVER_INTERVAL.saturating_mul(i32::try_from(rank).unwrap_or(i32::MAX));
+        };
         if now.signed_duration_since(self.time_indexed) < failover_slot_delay {
             return Some((
                 leader,
@@ -385,19 +361,6 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             .iter()
             .find(|p| eligible_leaders.contains(p))
             .copied()
-    }
-
-    /// Our position among the eligible participants in the leader selection order, or `None`
-    /// if we are not eligible. Rank 0 is the current leader; rank k acts as the k-th backup.
-    fn my_leader_rank(
-        &self,
-        eligible_leaders: &HashSet<ParticipantId>,
-        my_participant_id: ParticipantId,
-    ) -> Option<usize> {
-        self.leader_selection_order
-            .iter()
-            .filter(|p| eligible_leaders.contains(p))
-            .position(|p| *p == my_participant_id)
     }
 
     /// Returns true if this request is due for another check (i.e. [`Self::next_check_due`] is
@@ -423,6 +386,52 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     fn add_indexed_respond_tx(&mut self, indexed_respond_tx: IndexedRespondTx) {
         self.indexed_respond_txs.add(indexed_respond_tx)
     }
+}
+
+/// Computes the leader selection order for a given request.
+/// This will be a different pseudorandom order for each request.
+pub(crate) fn leader_selection_order(
+    participants: &[ParticipantId],
+    request_id: CryptoHash,
+) -> Vec<ParticipantId> {
+    let mut leader_selection_hashes = participants
+        .iter()
+        .map(|p| (leader_selection_hash(p, request_id), *p))
+        .collect::<Vec<_>>();
+    leader_selection_hashes.sort();
+    leader_selection_hashes
+        .into_iter()
+        .map(|(_, p)| p)
+        .collect()
+}
+
+fn leader_selection_hash(participant_id: &ParticipantId, request_id: CryptoHash) -> u64 {
+    let mut h = Sha256::new();
+    h.update(participant_id.raw().to_le_bytes());
+    h.update(request_id.0);
+    let hash: [u8; 32] = h.finalize().into();
+    u64::from_le_bytes(hash[0..8].try_into().unwrap())
+}
+
+/// The position of `participant` among the eligible participants in the leader selection order,
+/// or `None` if it is not eligible. Rank 0 is the current leader, and rank k acts as the k-th
+/// backup.
+pub(crate) fn leader_rank(
+    leader_selection_order: &[ParticipantId],
+    eligible_leaders: &HashSet<ParticipantId>,
+    participant: ParticipantId,
+) -> Option<usize> {
+    leader_selection_order
+        .iter()
+        .filter(|p| eligible_leaders.contains(p))
+        .position(|p| *p == participant)
+}
+
+/// The delay after a node indexes a request before the eligible leader of `rank` may lead it in
+/// that node's view. `None` past [`MAX_LEADER_FAILOVER_DEPTH`].
+pub(crate) fn leader_turn_start(rank: usize) -> Option<Duration> {
+    (rank < MAX_LEADER_FAILOVER_DEPTH)
+        .then(|| LEADER_FAILOVER_INTERVAL.saturating_mul(i32::try_from(rank).unwrap_or(i32::MAX)))
 }
 
 impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
@@ -558,10 +567,46 @@ impl DropReason {
     }
 }
 
-pub(super) struct EligibleLeadersAndHeights {
+pub(crate) struct EligibleLeadersAndHeights {
     pub eligible_leaders: HashSet<ParticipantId>,
     pub reference_height: BlockHeight,
     pub my_indexer_height: BlockHeight,
+}
+
+/// Returns the set of participants that are eligible to be leaders for the requests,
+/// the reference height their staleness is measured against, and our own indexer height.
+///
+/// The reference height is the height that a majority of alive participants has reached. Peers
+/// self-report their heights, and the majority keeps a minority of them from raising the
+/// reference height so far that every honest participant looks stale. Our own height is only
+/// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
+/// eligible leaders.
+pub(crate) fn eligible_leaders_and_heights<Network: NetworkAPIForRequests + ?Sized>(
+    network_api: &Network,
+    all_participants: &[ParticipantId],
+    my_participant_id: ParticipantId,
+) -> EligibleLeadersAndHeights {
+    let indexer_heights = network_api.indexer_heights();
+    let alive_participants = network_api.alive_participants();
+    let height_of = |participant: &ParticipantId| {
+        BlockHeight::new(indexer_heights.get(participant).copied().unwrap_or(0))
+    };
+    let my_indexer_height = height_of(&my_participant_id);
+    let reference_height =
+        majority_height(alive_participants.iter().map(height_of)).unwrap_or(BlockHeight::new(0));
+    let eligible_leaders = all_participants
+        .iter()
+        .filter(|p| {
+            alive_participants.contains(p)
+                && height_of(p).saturating_add(STALE_PARTICIPANT_THRESHOLD) >= reference_height
+        })
+        .copied()
+        .collect::<HashSet<_>>();
+    EligibleLeadersAndHeights {
+        eligible_leaders,
+        reference_height,
+        my_indexer_height,
+    }
 }
 
 /// Returns the highest height reached by more than half of `heights` (their lower median), or
@@ -686,37 +731,13 @@ where
         }
     }
 
-    /// Returns the set of participants that are eligible to be leaders for the requests,
-    /// the reference height their staleness is measured against, and our own indexer height.
-    ///
-    /// The reference height is the height that a majority of alive participants has reached. Peers
-    /// self-report their heights, and the majority keeps a minority of them from raising the
-    /// reference height so far that every honest participant looks stale. Our own height is only
-    /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
-    /// eligible leaders.
+    /// [`eligible_leaders_and_heights`] in the view of this node.
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
-        let indexer_heights = self.network_api.indexer_heights();
-        let alive_participants = self.network_api.alive_participants();
-        let height_of = |participant: &ParticipantId| {
-            BlockHeight::new(indexer_heights.get(participant).copied().unwrap_or(0))
-        };
-        let my_indexer_height = height_of(&self.my_participant_id);
-        let reference_height = majority_height(alive_participants.iter().map(height_of))
-            .unwrap_or(BlockHeight::new(0));
-        let eligible_leaders = self
-            .all_participants
-            .iter()
-            .filter(|p| {
-                alive_participants.contains(p)
-                    && height_of(p).saturating_add(STALE_PARTICIPANT_THRESHOLD) >= reference_height
-            })
-            .copied()
-            .collect::<HashSet<_>>();
-        EligibleLeadersAndHeights {
-            eligible_leaders,
-            reference_height,
-            my_indexer_height,
-        }
+        eligible_leaders_and_heights(
+            self.network_api.as_ref(),
+            &self.all_participants,
+            self.my_participant_id,
+        )
     }
 
     /// Returns the list of requests that we should attempt to generate a response for,
@@ -906,7 +927,7 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        BlockCount, BlockHeight, NetworkAPIForRequests, PendingRequests, QueuedRequest,
+        BlockCount, BlockHeight, NetworkAPIForRequests, PendingRequests, leader_selection_order,
         majority_height,
     };
     use crate::primitives::ParticipantId;
@@ -949,11 +970,7 @@ mod tests {
                 tweak: Tweak::new([0; 32]),
                 domain: DomainId::legacy_ecdsa_id(),
             };
-            let leader_selection_order =
-                QueuedRequest::<SignatureRequest, TestRequestRespondArgs>::leader_selection_order(
-                    participants,
-                    request.id,
-                );
+            let leader_selection_order = leader_selection_order(participants, request.id);
             if leader_selection_order.starts_with(&desired_leader_order) {
                 return request;
             }
