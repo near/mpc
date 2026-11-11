@@ -102,8 +102,12 @@ struct AttemptRun {
 }
 
 /// Runs one attempt among three participants: the leader finds `leader_outcome`, and each
-/// follower acts as given.
-async fn run_attempt(leader_outcome: NodeOutcome, followers: [Follower; 2]) -> AttemptRun {
+/// follower acts as given. Returns once the leader keeps `kept_outcomes` node outcomes.
+async fn run_attempt(
+    leader_outcome: NodeOutcome,
+    followers: [Follower; 2],
+    kept_outcomes: usize,
+) -> AttemptRun {
     let ts_participants = generate_participants(THRESHOLD);
     let participants = into_participant_ids(&ts_participants);
     let leader = participants[0];
@@ -137,7 +141,7 @@ async fn run_attempt(leader_outcome: NodeOutcome, followers: [Follower; 2]) -> A
             let leader_result = run_leader(&client, &participants, leader_outcome, my_shares).await;
             let elapsed = started.elapsed();
             leader_done.iter().for_each(|done| done.notify_one());
-            let evidence = wait_for_evidence(&client, participants.len()).await;
+            let evidence = wait_for_evidence(&client, kept_outcomes).await;
             Ok(Some(AttemptRun {
                 participants,
                 leader_result,
@@ -158,33 +162,27 @@ async fn run_leader(
     (keygen_out, triples): (KeygenOutput, PairedTriple),
 ) -> anyhow::Result<SignedVerdict> {
     let me = client.my_participant_id();
-    let channel = client.new_channel_for_task(
+    let (channel, attempt) = open_led_attempt(
+        client,
         VerifyForeignTxTaskId::VerifyForeignTxV2 {
             id: request().id,
             paired_triple_id: UniqueId::new(me, 1, 0),
         },
         participants.to_vec(),
+        request().yield_id,
+        keys(participants),
     )?;
-    let attempt = LedAttempt {
-        id: AttemptId(channel.channel_id()),
-        yield_id: request().yield_id,
-        leader: me,
-        participants: participants.to_vec(),
-        keys: keys(participants),
-    };
-    let evidence = client.attempt_evidence().clone();
-    evidence.open(attempt.clone());
+    let signed = signing_key(me).sign(statement(&channel, me, leader_outcome))?;
     let (own_outcome_sender, own_outcome) = oneshot::channel();
     own_outcome_sender
-        .send(
-            signing_key(me)
-                .sign(statement(&channel, me, leader_outcome))
-                .map_err(Into::into),
-        )
+        .send(record_own_outcome(
+            signed,
+            &attempt,
+            client.attempt_evidence(),
+        ))
         .unwrap();
     V2LeaderComputation {
         attempt,
-        evidence,
         own_outcome,
         request: request(),
         keygen_out,
@@ -195,29 +193,25 @@ async fn run_leader(
     .await
 }
 
-/// The statements the leader keeps, once every participant's statement arrived or a short wait
-/// ran out.
+/// The statements the leader keeps, once it keeps `count` of them.
 async fn wait_for_evidence(
     client: &Arc<MeshNetworkClient>,
-    participants: usize,
+    count: usize,
 ) -> Vec<NodeOutcomeStatement> {
-    let collect = || {
-        let mut statements: Vec<_> = client
-            .attempt_evidence()
-            .outcomes_for(request().yield_id)
-            .iter()
-            .map(|outcome| outcome.statement().clone())
-            .collect();
-        statements.sort_by_key(|statement| statement.signer);
-        statements
-    };
-    let _ = timeout(Duration::from_secs(5), async {
-        while collect().len() < participants {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await;
-    collect()
+    let evidence = client.attempt_evidence();
+    timeout(
+        Duration::from_secs(30),
+        evidence.wait_for_outcomes(request().yield_id, count),
+    )
+    .await
+    .expect("the leader keeps every node outcome that reaches it");
+    let mut statements: Vec<_> = evidence
+        .outcomes_for(request().yield_id)
+        .iter()
+        .map(|outcome| outcome.statement().clone())
+        .collect();
+    statements.sort_by_key(|statement| statement.signer);
+    statements
 }
 
 fn signers(evidence: &[NodeOutcomeStatement]) -> Vec<ParticipantId> {
@@ -231,7 +225,7 @@ async fn v2_leader_computation__should_sign_the_payload_when_every_participant_a
         let followers = [Follower::Reports(NOT_FOUND), Follower::Reports(NOT_FOUND)];
 
         // When
-        let run = run_attempt(NOT_FOUND, followers).await;
+        let run = run_attempt(NOT_FOUND, followers, THRESHOLD).await;
 
         // Then
         let signed = run.leader_result.unwrap();
@@ -263,7 +257,7 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_verdicts_dif
         let followers = [Follower::Reports(VERIFIED), Follower::Reports(NOT_FOUND)];
 
         // When
-        let run = run_attempt(VERIFIED, followers).await;
+        let run = run_attempt(VERIFIED, followers, THRESHOLD).await;
 
         // Then
         let error = run.leader_result.err().unwrap();
@@ -272,6 +266,7 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_verdicts_dif
             Some(AttemptEnd::VerdictsDiffer { .. })
         );
         assert!(run.elapsed < FAIL_FAST_BOUND, "took {:?}", run.elapsed);
+        assert_eq!(signers(&run.evidence), run.participants);
     })
     .await;
 }
@@ -284,7 +279,7 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_a_node_has_n
         let followers = [Follower::Reports(VERIFIED), Follower::Reports(no_verdict)];
 
         // When
-        let run = run_attempt(VERIFIED, followers).await;
+        let run = run_attempt(VERIFIED, followers, THRESHOLD).await;
 
         // Then
         let error = run.leader_result.err().unwrap();
@@ -308,7 +303,7 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_a_follower_r
         let followers = [Follower::Reports(VERIFIED), Follower::Refuses];
 
         // When
-        let run = run_attempt(VERIFIED, followers).await;
+        let run = run_attempt(VERIFIED, followers, 2).await;
 
         // Then
         let error = run.leader_result.err().unwrap();
@@ -317,6 +312,7 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_a_follower_r
             "unexpected error: {error:#}"
         );
         assert!(run.elapsed < FAIL_FAST_BOUND, "took {:?}", run.elapsed);
+        assert_eq!(signers(&run.evidence), run.participants[..2]);
     })
     .await;
 }
@@ -332,7 +328,7 @@ async fn v2_leader_computation__should_keep_an_outcome_that_arrives_after_the_at
         let followers = [Follower::Reports(NOT_FOUND), late];
 
         // When
-        let run = run_attempt(VERIFIED, followers).await;
+        let run = run_attempt(VERIFIED, followers, THRESHOLD).await;
 
         // Then
         assert!(run.leader_result.is_err());

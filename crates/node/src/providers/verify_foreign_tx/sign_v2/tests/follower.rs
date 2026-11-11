@@ -3,8 +3,9 @@ use crate::config::MpcConfig;
 use crate::db::SecretDB;
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
-use crate::network::testing::run_test_clients;
+use crate::network::testing::{new_test_client_with_versions, run_test_clients};
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
+use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::{SignRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::testing::start_root_task_with_periodic_dump;
@@ -29,11 +30,18 @@ const ETHEREUM_PROVIDER: &str = "public";
 /// Serves an Ethereum transaction in block 10. The first finality check reports block 5 as
 /// final, a transient error, and every later one block 100.
 fn start_ethereum_rpc_mock_final_on_second_check() -> MockServer {
+    start_ethereum_rpc_mock(|| {})
+}
+
+/// Like [`start_ethereum_rpc_mock_final_on_second_check`], and runs `on_rpc_call` before it
+/// answers each call.
+fn start_ethereum_rpc_mock(on_rpc_call: impl Fn() + Send + Sync + 'static) -> MockServer {
     let server = MockServer::start();
     let finality_checks = Arc::new(AtomicUsize::new(0));
     server.mock(|when, then| {
         when.method(POST);
         then.respond_with(move |req: &HttpMockRequest| {
+            on_rpc_call();
             let body: serde_json::Value = serde_json::from_slice(req.body().as_ref()).unwrap();
             let hash = format!("0x{}", hex::encode(MOCK_BLOCK_HASH));
             let result = match body["method"].as_str().unwrap() {
@@ -295,4 +303,51 @@ async fn make_verify_foreign_tx_v2_follower__should_refuse_a_request_it_has_not_
         assert!(error.contains("Aborted by participant"), "{error}");
     })
     .await;
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn make_verify_foreign_tx_v2_follower__should_refuse_a_request_that_completes_during_the_inspection()
+ {
+    start_root_task_with_periodic_dump(async {
+        // Given
+        let open_requests = open_requests_with(request());
+        let rpc_mock = start_ethereum_rpc_mock({
+            let open_requests = open_requests.clone();
+            move || complete(&open_requests, request().id)
+        });
+
+        // When
+        let received = run_v2_follower(open_requests, rpc_mock.base_url()).await;
+
+        // Then
+        let [MpcMessageKind::Abort(error)] = &received[..] else {
+            panic!("expected the network abort before any outcome, got {received:?}");
+        };
+        assert!(
+            error.contains("the V2 request closed during the inspection"),
+            "{error}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn v2_attempt_candidates__should_leave_out_participants_without_the_v2_messages() {
+    // Given
+    let participants: Vec<_> = (0..3).map(ParticipantId::from_raw).collect();
+    let versions = HashMap::from([
+        (participants[1], NetworkProtocolVersion::Nov2026),
+        (participants[2], NetworkProtocolVersion::Oct2026),
+    ]);
+    let (client, _transport) =
+        new_test_client_with_versions(participants.clone(), participants[0], versions);
+    let node = TestProvider::new(client, "http://127.0.0.1:1", open_requests_with(request()));
+
+    // When
+    let candidates = node
+        .provider
+        .v2_attempt_candidates(dtos::ForeignChain::Ethereum);
+
+    // Then
+    assert_eq!(candidates.unwrap(), participants[..2]);
 }

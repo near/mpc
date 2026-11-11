@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::convert::Infallible;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -61,7 +59,7 @@ impl VerifyForeignTxProvider {
     /// [`AttemptEnd`](crate::providers::verify_foreign_tx::attempt_outcomes::AttemptEnd) when the
     /// node outcomes rule out a signature.
     pub(crate) async fn make_verify_foreign_tx_v2_leader(
-        &self,
+        self: &Arc<Self>,
         id: VerifyForeignTxId,
     ) -> anyhow::Result<SignedVerdict> {
         let request = self
@@ -70,17 +68,7 @@ impl VerifyForeignTxProvider {
             .get(id)
             .context("the V2 request is not open")?;
         let requested_chain = request.request.request.chain();
-        let chain_supporters = self.leader_chain_supporters(requested_chain)?;
-        let v2_participants: HashSet<ParticipantId> = self
-            .v2
-            .network
-            .participants_supporting(V2_FOREIGN_TX_MIN_PROTOCOL_VERSION)
-            .into_iter()
-            .collect();
-        let eligible = chain_supporters
-            .intersection(&v2_participants)
-            .copied()
-            .collect();
+        let eligible = self.v2_attempt_candidates(requested_chain)?;
 
         let keyshare = self
             .ecdsa_signature_provider
@@ -100,29 +88,37 @@ impl VerifyForeignTxProvider {
             },
         )
         .await;
-        let channel = self.ecdsa_signature_provider.new_channel_for_task(
+        let (channel, attempt) = open_led_attempt(
+            &self.v2.network,
             VerifyForeignTxTaskId::VerifyForeignTxV2 {
                 id,
                 paired_triple_id,
             },
             participants_from_triples(&triples.0, &triples.1),
+            request.yield_id,
+            self.v2.participants.clone(),
         )?;
-        let attempt = LedAttempt {
-            id: AttemptId(channel.channel_id()),
-            yield_id: request.yield_id,
-            leader: channel.my_participant_id(),
-            participants: channel.participants().to_vec(),
-            keys: self.v2.participants.clone(),
-        };
-        let evidence = self.v2.network.attempt_evidence().clone();
-        evidence.open(attempt.clone());
 
         let (own_outcome_sender, own_outcome) = oneshot::channel();
-        let computation = V2LeaderComputation {
-            attempt: attempt.clone(),
-            evidence,
+        // Detached, so the leader's own outcome joins the evidence even after the attempt ended.
+        tokio::spawn({
+            let this = self.clone();
+            let request = request.clone();
+            let attempt = attempt.clone();
+            async move {
+                let outcome = this
+                    .signed_node_outcome(&request, attempt.leader, attempt.id)
+                    .await
+                    .and_then(|signed| {
+                        record_own_outcome(signed, &attempt, this.v2.network.attempt_evidence())
+                    });
+                let _ = own_outcome_sender.send(outcome);
+            }
+        });
+        V2LeaderComputation {
+            attempt,
             own_outcome,
-            request: request.clone(),
+            request,
             keygen_out: keyshare.keygen_output,
             reconstruction_threshold: ReconstructionThreshold::from(usize::try_from(
                 keyshare.reconstruction_threshold.value(),
@@ -132,18 +128,26 @@ impl VerifyForeignTxProvider {
         .perform_leader_centric_computation(
             channel,
             Duration::from_secs(self.config.signature.timeout_sec),
-        );
-        let own_inspection = async {
-            let outcome = self
-                .signed_node_outcome(&request, attempt.leader, attempt.id)
-                .await;
-            let _ = own_outcome_sender.send(outcome);
-            std::future::pending::<Infallible>().await
-        };
-        tokio::select! {
-            result = computation => result,
-            never = own_inspection => match never {},
-        }
+        )
+        .await
+    }
+
+    /// The participants a V2 attempt on `requested_chain` may include: chain supporters that
+    /// speak the V2 messages.
+    fn v2_attempt_candidates(
+        &self,
+        requested_chain: dtos::ForeignChain,
+    ) -> anyhow::Result<Vec<ParticipantId>> {
+        let chain_supporters = self.leader_chain_supporters(requested_chain)?;
+        let mut candidates: Vec<ParticipantId> = self
+            .v2
+            .network
+            .participants_supporting(V2_FOREIGN_TX_MIN_PROTOCOL_VERSION)
+            .into_iter()
+            .filter(|participant| chain_supporters.contains(participant))
+            .collect();
+        candidates.sort();
+        Ok(candidates)
     }
 
     /// Takes part in a V2 attempt. A follower that cannot inspect refuses with the network abort.
@@ -220,12 +224,47 @@ impl VerifyForeignTxProvider {
     }
 }
 
+/// Opens the channel of a V2 attempt this node leads. [`AttemptEvidence`] keeps the attempt's
+/// node outcomes from before its Start leaves.
+fn open_led_attempt(
+    network: &MeshNetworkClient,
+    task_id: VerifyForeignTxTaskId,
+    participants: Vec<ParticipantId>,
+    yield_id: dtos::YieldId,
+    keys: Arc<ParticipantsConfig>,
+) -> anyhow::Result<(NetworkTaskChannel, LedAttempt)> {
+    let led_attempt = |channel_id| LedAttempt {
+        id: AttemptId(channel_id),
+        yield_id,
+        leader: network.my_participant_id(),
+        participants: participants.clone(),
+        keys: keys.clone(),
+    };
+    let channel =
+        network.new_channel_for_task_with(task_id, participants.clone(), |channel_id| {
+            network.attempt_evidence().open(led_attempt(channel_id));
+        })?;
+    let attempt = led_attempt(channel.channel_id());
+    Ok((channel, attempt))
+}
+
+/// Keeps the leader's own signed node outcome as evidence of `attempt`.
+fn record_own_outcome(
+    signed: SignedNodeOutcome,
+    attempt: &LedAttempt,
+    evidence: &AttemptEvidence,
+) -> anyhow::Result<NodeOutcome> {
+    let verified = signed.verify(&attempt.keys)?;
+    let outcome = verified.statement().outcome;
+    evidence.record(verified);
+    Ok(outcome)
+}
+
 /// The leader's side of a V2 attempt: it collects every node outcome, its own included, and
-/// signs only when they all agree.
+/// signs only when they all agree. [`AttemptEvidence`] keeps the outcomes as they arrive.
 struct V2LeaderComputation {
     attempt: LedAttempt,
-    evidence: Arc<AttemptEvidence>,
-    own_outcome: oneshot::Receiver<anyhow::Result<SignedNodeOutcome>>,
+    own_outcome: oneshot::Receiver<anyhow::Result<NodeOutcome>>,
     request: VerifyForeignTxRequestV2,
     keygen_out: KeygenOutput,
     reconstruction_threshold: ReconstructionThreshold,
@@ -242,18 +281,13 @@ impl MpcLeaderCentricComputation<SignedVerdict> for V2LeaderComputation {
             let status = tokio::select! {
                 own = &mut own_outcome, if !own_outcome_reported => {
                     own_outcome_reported = true;
-                    let signed = own.context("the leader's inspection stopped")??;
-                    let verified = signed.verify(&self.attempt.keys)?;
-                    let outcome = verified.statement().outcome;
-                    self.evidence.record(verified);
+                    let outcome = own.context("the leader's inspection stopped")??;
                     outcomes.record(self.attempt.leader, outcome)?
                 }
                 received = channel.receive_node_outcomes() => {
                     let PeerNodeOutcomes { from, outcomes: signed } = received?;
                     let verified = self.attempt.accept(from, signed)?;
-                    let outcome = verified.statement().outcome;
-                    self.evidence.record(verified);
-                    outcomes.record(from, outcome)?
+                    outcomes.record(from, verified.statement().outcome)?
                 }
             };
             match status {

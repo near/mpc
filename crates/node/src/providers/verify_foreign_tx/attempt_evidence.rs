@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use lru::LruCache;
 use near_mpc_contract_interface::types::YieldId;
+use tokio::sync::Notify;
 
 use crate::config::ParticipantsConfig;
 use crate::primitives::ParticipantId;
@@ -17,9 +18,10 @@ const MAX_ATTEMPTS_KEPT: NonZeroUsize = NonZeroUsize::new(1024).unwrap();
 
 /// The signed node outcomes of the V2 attempts this node leads. They are the evidence a leader
 /// shows when it asks for an inconclusive. An attempt keeps at most one node outcome per
-/// participant.
+/// participant, from the moment it reaches this node, also after the attempt ended.
 pub(crate) struct AttemptEvidence {
     attempts: Mutex<LruCache<AttemptId, AttemptRecord>>,
+    recorded: Notify,
 }
 
 struct AttemptRecord {
@@ -61,7 +63,7 @@ pub(crate) enum NodeOutcomeRejection {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum LateNodeOutcomeError {
+pub(crate) enum ReceivedNodeOutcomeError {
     #[error("no led attempt {0:?} is kept")]
     UnknownAttempt(AttemptId),
     #[error("a node outcome of participant {0} is already kept")]
@@ -74,10 +76,12 @@ impl AttemptEvidence {
     pub(crate) fn new() -> Self {
         Self {
             attempts: Mutex::new(LruCache::new(MAX_ATTEMPTS_KEPT)),
+            recorded: Notify::new(),
         }
     }
 
-    /// Starts keeping the node outcomes of `attempt`.
+    /// Starts keeping the node outcomes of `attempt`. Call it before the attempt's Start leaves,
+    /// so no node outcome arrives before.
     pub(crate) fn open(&self, attempt: LedAttempt) {
         self.attempts.lock().unwrap().put(
             attempt.id,
@@ -88,30 +92,31 @@ impl AttemptEvidence {
         );
     }
 
-    /// Keeps a node outcome the leader accepted during its attempt.
+    /// Keeps the leader's own node outcome.
     pub(crate) fn record(&self, outcome: VerifiedNodeOutcome) {
         let statement = outcome.statement();
         let (attempt, signer) = (statement.attempt, statement.signer);
         if let Some(record) = self.attempts.lock().unwrap().peek_mut(&attempt) {
             record.outcomes.entry(signer).or_insert(outcome);
         }
+        self.recorded.notify_waiters();
     }
 
-    /// Keeps a node outcome that `from` sent after the attempt's channel closed. A participant
-    /// that already has one kept costs no signature check.
-    pub(crate) fn record_late(
+    /// Keeps a node outcome that `from` sent for `attempt`. A participant that already has one
+    /// kept costs no signature check.
+    pub(crate) fn record_received(
         &self,
         from: ParticipantId,
         attempt: AttemptId,
         outcomes: Vec<SignedNodeOutcome>,
-    ) -> Result<(), LateNodeOutcomeError> {
+    ) -> Result<(), ReceivedNodeOutcomeError> {
         let led_attempt = {
             let attempts = self.attempts.lock().unwrap();
             let record = attempts
                 .peek(&attempt)
-                .ok_or(LateNodeOutcomeError::UnknownAttempt(attempt))?;
+                .ok_or(ReceivedNodeOutcomeError::UnknownAttempt(attempt))?;
             if record.outcomes.contains_key(&from) {
-                return Err(LateNodeOutcomeError::AlreadyKept(from));
+                return Err(ReceivedNodeOutcomeError::AlreadyKept(from));
             }
             record.attempt.clone()
         };
@@ -131,6 +136,21 @@ impl AttemptEvidence {
             .filter(|(_, record)| record.attempt.yield_id == yield_id)
             .flat_map(|(_, record)| record.outcomes.values().cloned())
             .collect()
+    }
+
+    /// Returns once the attempts at `yield_id` keep at least `count` node outcomes.
+    // TODO(#5126): wait for enough evidence of transient errors.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub(crate) async fn wait_for_outcomes(&self, yield_id: YieldId, count: usize) {
+        loop {
+            let recorded = self.recorded.notified();
+            tokio::pin!(recorded);
+            recorded.as_mut().enable();
+            if self.outcomes_for(yield_id).len() >= count {
+                return;
+            }
+            recorded.await;
+        }
     }
 }
 
@@ -370,19 +390,19 @@ mod tests {
     }
 
     #[test]
-    fn attempt_evidence_record_late__should_keep_one_outcome_per_participant() {
+    fn attempt_evidence_record_received__should_keep_one_outcome_per_participant() {
         // Given
         let evidence = AttemptEvidence::new();
         evidence.open(led_attempt(1));
         evidence
-            .record_late(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)])
+            .record_received(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)])
             .unwrap();
 
         // When
-        let second = evidence.record_late(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)]);
+        let second = evidence.record_received(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)]);
 
         // Then
-        assert_matches!(second, Err(LateNodeOutcomeError::AlreadyKept(FOLLOWER)));
+        assert_matches!(second, Err(ReceivedNodeOutcomeError::AlreadyKept(FOLLOWER)));
         let kept: Vec<_> = evidence
             .outcomes_for(YIELD)
             .iter()
@@ -392,31 +412,31 @@ mod tests {
     }
 
     #[test]
-    fn attempt_evidence_record_late__should_reject_an_attempt_it_does_not_keep() {
+    fn attempt_evidence_record_received__should_reject_an_attempt_it_does_not_keep() {
         // Given
         let evidence = AttemptEvidence::new();
 
         // When
-        let recorded = evidence.record_late(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)]);
+        let recorded = evidence.record_received(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)]);
 
         // Then
-        assert_matches!(recorded, Err(LateNodeOutcomeError::UnknownAttempt(_)));
+        assert_matches!(recorded, Err(ReceivedNodeOutcomeError::UnknownAttempt(_)));
         assert!(evidence.outcomes_for(YIELD).is_empty());
     }
 
     #[test]
-    fn attempt_evidence_record_late__should_reject_an_outcome_the_attempt_rejects() {
+    fn attempt_evidence_record_received__should_reject_an_outcome_the_attempt_rejects() {
         // Given
         let evidence = AttemptEvidence::new();
         evidence.open(led_attempt(1));
 
         // When
-        let recorded = evidence.record_late(OUTSIDER, attempt_id(1), vec![signed(OUTSIDER)]);
+        let recorded = evidence.record_received(OUTSIDER, attempt_id(1), vec![signed(OUTSIDER)]);
 
         // Then
         assert_matches!(
             recorded,
-            Err(LateNodeOutcomeError::Rejected(
+            Err(ReceivedNodeOutcomeError::Rejected(
                 NodeOutcomeRejection::NotInAttempt(OUTSIDER)
             ))
         );

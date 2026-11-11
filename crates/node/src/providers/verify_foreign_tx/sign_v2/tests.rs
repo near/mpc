@@ -79,15 +79,28 @@ fn request() -> VerifyForeignTxRequestV2 {
 
 fn open_requests_with(request: VerifyForeignTxRequestV2) -> Arc<OpenVerifyForeignTxRequestsV2> {
     let open_requests = Arc::new(OpenVerifyForeignTxRequestsV2::default());
-    let mut tracker = RecentBlocksTracker::new(crate::requests::queue::REQUEST_EXPIRATION_BLOCKS);
-    let block = TestBlockMaker::new().block(u64::from(REQUEST_HEIGHT));
-    open_requests.notify_new_block(&RequestsUpdate {
-        requests: vec![request],
-        completed_requests: vec![],
-        block_height: REQUEST_HEIGHT,
-        block_status: tracker.add_block(&block.to_block_view()).block_status,
-    });
+    open_requests.notify_new_block(&block_update(REQUEST_HEIGHT, vec![request], vec![]));
     open_requests
+}
+
+fn complete(open_requests: &OpenVerifyForeignTxRequestsV2, id: VerifyForeignTxId) {
+    let next_height = REQUEST_HEIGHT.saturating_add(near_contract_transport::BlockCount::new(1));
+    open_requests.notify_new_block(&block_update(next_height, vec![], vec![id]));
+}
+
+fn block_update(
+    height: BlockHeight,
+    requests: Vec<VerifyForeignTxRequestV2>,
+    completed_requests: Vec<VerifyForeignTxId>,
+) -> RequestsUpdate<VerifyForeignTxRequestV2> {
+    let mut tracker = RecentBlocksTracker::new(crate::requests::queue::REQUEST_EXPIRATION_BLOCKS);
+    let block = TestBlockMaker::new().block(u64::from(height));
+    RequestsUpdate {
+        requests,
+        completed_requests,
+        block_height: height,
+        block_status: tracker.add_block(&block.to_block_view()).block_status,
+    }
 }
 
 fn statement(

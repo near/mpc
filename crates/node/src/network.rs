@@ -173,6 +173,17 @@ impl MeshNetworkClient {
         task_id: impl Into<MpcTaskId>,
         participants: Vec<ParticipantId>,
     ) -> anyhow::Result<NetworkTaskChannel> {
+        self.new_channel_for_task_with(task_id, participants, |_| {})
+    }
+
+    /// Like [`Self::new_channel_for_task`], and calls `before_start` with the new channel's id
+    /// before any participant can receive the Start message.
+    pub(crate) fn new_channel_for_task_with(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+        before_start: impl FnOnce(ChannelId),
+    ) -> anyhow::Result<NetworkTaskChannel> {
         let task_id: MpcTaskId = task_id.into();
         tracing::debug!(
             target: "network",
@@ -190,6 +201,7 @@ impl MeshNetworkClient {
         else {
             anyhow::bail!("Channel already exists");
         };
+        before_start(channel_id);
         for participant in &participants {
             if participant == &self.my_participant_id() {
                 continue;

@@ -20,8 +20,9 @@ impl MeshNetworkClient {
         &self.attempt_evidence
     }
 
-    /// Delivers node outcomes for a channel this node owns: to the channel while it is open, and
-    /// to [`AttemptEvidence`] once it closed, since followers report even after an attempt ends.
+    /// Keeps node outcomes for a channel this node owns in [`AttemptEvidence`] as they arrive,
+    /// and then hands them to the channel while it is open. Followers report even after an
+    /// attempt ends, so an outcome counts as evidence while its channel runs and after.
     /// Returns every other message.
     pub(crate) fn route_node_outcomes(&self, message: MpcPeerMessage) -> Option<MpcPeerMessage> {
         let MpcPeerMessage {
@@ -41,6 +42,12 @@ impl MeshNetworkClient {
                 });
             }
         };
+        if let Err(err) =
+            self.attempt_evidence
+                .record_received(from, AttemptId(channel_id), outcomes.clone())
+        {
+            tracing::debug!(%from, ?channel_id, %err, "node outcomes not kept as evidence");
+        }
         let channels = self.channels.lock().unwrap();
         if let Some(sender) = channels.senders.get(&channel_id) {
             let message = MpcPeerMessage {
@@ -53,14 +60,6 @@ impl MeshNetworkClient {
             if sender.send(message).is_err() {
                 tracing::debug!(%from, ?channel_id, "dropping node outcomes for a closing channel");
             }
-            return None;
-        }
-        drop(channels);
-        if let Err(err) = self
-            .attempt_evidence
-            .record_late(from, AttemptId(channel_id), outcomes)
-        {
-            tracing::warn!(%from, ?channel_id, %err, "rejecting late node outcomes");
         }
         None
     }
@@ -102,5 +101,79 @@ impl NetworkTaskChannelSender {
     /// Ends the computation with the network abort.
     pub(crate) fn abort(&self, err: &anyhow::Error) {
         self.communicate_failure(err);
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::network::testing::new_task_channel_for_test;
+    use crate::network::wire_format::VerifyForeignTxTaskId;
+    use crate::primitives::UniqueId;
+    use near_indexer_primitives::CryptoHash;
+    use std::time::Duration;
+
+    const LEADER: ParticipantId = ParticipantId::from_raw(0);
+    const FOLLOWER: ParticipantId = ParticipantId::from_raw(1);
+    const OTHER_FOLLOWER: ParticipantId = ParticipantId::from_raw(2);
+
+    fn message(from: ParticipantId, kind: MpcMessageKind) -> MpcPeerMessage {
+        MpcPeerMessage {
+            from,
+            message: MpcMessage {
+                channel_id: ChannelId(UniqueId::new(LEADER, 1, 0)),
+                kind,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn network_task_channel_receive__should_replay_computations_that_arrived_before_the_node_outcomes()
+     {
+        // Given
+        let (mut channel, sender) = new_task_channel_for_test(
+            VerifyForeignTxTaskId::VerifyForeignTxV2 {
+                id: CryptoHash::default(),
+                paired_triple_id: UniqueId::new(LEADER, 1, 1),
+            }
+            .into(),
+            LEADER,
+            LEADER,
+            vec![LEADER, FOLLOWER, OTHER_FOLLOWER],
+        );
+        sender
+            .send(message(
+                FOLLOWER,
+                MpcMessageKind::Computation(vec![vec![1]]),
+            ))
+            .unwrap();
+        sender
+            .send(message(
+                OTHER_FOLLOWER,
+                MpcMessageKind::NodeOutcomes(vec![]),
+            ))
+            .unwrap();
+        sender
+            .send(message(
+                OTHER_FOLLOWER,
+                MpcMessageKind::Computation(vec![vec![2]]),
+            ))
+            .unwrap();
+
+        // When
+        let (outcomes, first, second) = tokio::time::timeout(Duration::from_secs(5), async {
+            let outcomes = channel.receive_node_outcomes().await.unwrap();
+            let first = channel.receive().await.unwrap();
+            let second = channel.receive().await.unwrap();
+            (outcomes, first, second)
+        })
+        .await
+        .unwrap();
+
+        // Then
+        assert_eq!(outcomes.from, OTHER_FOLLOWER);
+        assert_eq!((first.from, first.data), (FOLLOWER, vec![vec![1]]));
+        assert_eq!((second.from, second.data), (OTHER_FOLLOWER, vec![vec![2]]));
     }
 }
