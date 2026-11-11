@@ -1,7 +1,8 @@
+pub(crate) mod node_outcome;
+pub(crate) mod node_outcome_statement;
+
 mod inspect_request;
 mod inspection;
-mod node_outcome;
-mod node_outcome_statement;
 mod provider_call_metrics;
 mod sign;
 
@@ -11,6 +12,7 @@ use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeig
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
+use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use foreign_chain_inspector::FanOut;
@@ -40,6 +42,14 @@ use provider_call_metrics::ProviderCallMetrics;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
+
+/// Handshake protocol version from which a peer decodes the V2 foreign tx messages:
+/// [`MpcMessageKind::NodeOutcomes`] and [`VerifyForeignTxTaskId::Inconclusive`]. A V2 attempt or
+/// inconclusive round includes only participants that support it.
+///
+/// [`MpcMessageKind::NodeOutcomes`]: crate::network::wire_format::MpcMessageKind::NodeOutcomes
+pub(crate) const V2_FOREIGN_TX_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
+    NetworkProtocolVersion::Nov2026;
 
 /// Pre-built HTTP clients for each foreign chain, one per configured provider and named by its
 /// [`ProviderId`].

@@ -1,4 +1,4 @@
-use borsh::BorshSerialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
 use near_mpc_contract_interface::types::YieldId;
 
@@ -15,16 +15,21 @@ const NODE_OUTCOME_STATEMENT_PREFIX: &[u8] = b"near-mpc foreign tx v2 node outco
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifiedNodeOutcome(SignedNodeOutcome);
 
-/// A [`NodeOutcomeStatement`] with its signature, not yet verified.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SignedNodeOutcome {
+/// A [`NodeOutcomeStatement`] with its signature, not yet verified. Its Borsh encoding is part of
+/// the P2P wire format.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct SignedNodeOutcome {
     statement: NodeOutcomeStatement,
+    #[borsh(
+        serialize_with = "serialize_signature",
+        deserialize_with = "deserialize_signature"
+    )]
     signature: Signature,
 }
 
 /// The [`NodeOutcome`] of one node in one attempt of a V2 foreign transaction request, in the
 /// form the node signs.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct NodeOutcomeStatement {
     pub(crate) yield_id: YieldId,
     pub(crate) leader: ParticipantId,
@@ -36,7 +41,7 @@ pub(crate) struct NodeOutcomeStatement {
 /// The [`ChannelId`] the leader opens for the attempt. It names the leader, and the leader picks
 /// a new one for each channel. An id repeats only if the leader restarts within the second of an
 /// earlier id, or its clock goes back across a restart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct AttemptId(pub(crate) ChannelId);
 
 /// The key a node signs its [`NodeOutcomeStatement`]s with. It is the node's TLS identity key,
@@ -125,6 +130,18 @@ fn signed_bytes(statement: &NodeOutcomeStatement) -> std::io::Result<Vec<u8>> {
     let mut bytes = NODE_OUTCOME_STATEMENT_PREFIX.to_vec();
     statement.serialize(&mut bytes)?;
     Ok(bytes)
+}
+
+fn serialize_signature<W: borsh::io::Write>(
+    signature: &Signature,
+    writer: &mut W,
+) -> borsh::io::Result<()> {
+    signature.to_bytes().serialize(writer)
+}
+
+fn deserialize_signature<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Signature> {
+    <[u8; Signature::BYTE_SIZE]>::deserialize_reader(reader)
+        .map(|bytes| Signature::from_bytes(&bytes))
 }
 
 #[cfg(test)]
@@ -253,6 +270,23 @@ mod tests {
         assert_matches!(
             result,
             Err(NodeOutcomeVerificationError::AttemptOfAnotherLeader(LEADER))
+        );
+    }
+
+    #[test]
+    fn signed_node_outcome__should_still_verify_after_a_borsh_round_trip() {
+        // Given
+        let signed = signing_key(SIGNER).sign(statement()).unwrap();
+
+        // When
+        let decoded: SignedNodeOutcome =
+            borsh::from_slice(&borsh::to_vec(&signed).unwrap()).unwrap();
+
+        // Then
+        assert_eq!(decoded, signed);
+        assert_eq!(
+            decoded.verify(&participants()).unwrap().statement(),
+            &statement()
         );
     }
 
