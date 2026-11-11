@@ -8,10 +8,12 @@ use crate::primitives::{
     ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
 };
 use crate::protocol_version::NetworkProtocolVersion;
+use crate::providers::verify_foreign_tx::V2_FOREIGN_TX_MIN_PROTOCOL_VERSION;
+use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
-use near_mpc_contract_interface::types::KeyEventId;
+use near_mpc_contract_interface::types::{KeyEventId, YieldId};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -28,9 +30,8 @@ impl Packet {
     /// Lowest handshake version that can parse this packet.
     pub fn min_protocol_version(&self) -> NetworkProtocolVersion {
         match self {
-            Packet::Ping | Packet::MpcMessage(_) | Packet::IndexerHeight(_) => {
-                NetworkProtocolVersion::Dec2025
-            }
+            Packet::MpcMessage(message) => message.kind.min_protocol_version(),
+            Packet::Ping | Packet::IndexerHeight(_) => NetworkProtocolVersion::Dec2025,
             Packet::ConnectedPeersInfo(_) => NetworkProtocolVersion::Oct2026,
         }
     }
@@ -44,6 +45,10 @@ pub enum MpcMessageKind {
     Computation(Vec<Vec<u8>>) = 1,
     Abort(String) = 2,
     Success = 3,
+    /// Signed node outcomes of a V2 foreign tx request. A follower sends its own outcome of an
+    /// attempt before its share, and also after the attempt ended. The leader of a
+    /// [`VerifyForeignTxTaskId::Inconclusive`] round sends its evidence right after the Start.
+    NodeOutcomes(Vec<SignedNodeOutcome>) = 4,
 }
 
 impl MpcMessageKind {
@@ -53,6 +58,22 @@ impl MpcMessageKind {
             MpcMessageKind::Computation(_) => "Computation",
             MpcMessageKind::Abort(_) => "Abort",
             MpcMessageKind::Success => "Success",
+            MpcMessageKind::NodeOutcomes(_) => "NodeOutcomes",
+        }
+    }
+
+    fn min_protocol_version(&self) -> NetworkProtocolVersion {
+        match self {
+            MpcMessageKind::Start(MpcStartMessage {
+                task_id:
+                    MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::Inconclusive { .. }),
+                ..
+            })
+            | MpcMessageKind::NodeOutcomes(_) => V2_FOREIGN_TX_MIN_PROTOCOL_VERSION,
+            MpcMessageKind::Start(_)
+            | MpcMessageKind::Computation(_)
+            | MpcMessageKind::Abort(_)
+            | MpcMessageKind::Success => NetworkProtocolVersion::Dec2025,
         }
     }
 }
@@ -74,6 +95,9 @@ impl Debug for MpcMessageKind {
                 .finish(),
             MpcMessageKind::Abort(err) => f.debug_tuple("Abort").field(err).finish(),
             MpcMessageKind::Success => write!(f, "Success"),
+            MpcMessageKind::NodeOutcomes(outcomes) => {
+                f.debug_tuple("NodeOutcomes").field(outcomes).finish()
+            }
         }
     }
 }
@@ -194,6 +218,12 @@ pub enum VerifyForeignTxTaskId {
         id: VerifyForeignTxId,
         paired_triple_id: UniqueId,
     } = 1,
+    /// A round that signs an inconclusive outcome for the V2 request waiting on `yield_id`.
+    /// Each round uses its own triple pair, so `paired_triple_id` makes the id unique per round.
+    Inconclusive {
+        yield_id: YieldId,
+        paired_triple_id: UniqueId,
+    } = 2,
 }
 
 impl From<VerifyForeignTxTaskId> for MpcTaskId {
@@ -206,18 +236,28 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcMessageKind, MpcTaskId, Packet, RobustEcdsaTaskId,
-        VerifyForeignTxTaskId,
+        CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcMessageKind, MpcTaskId, NetworkProtocolVersion,
+        Packet, RobustEcdsaTaskId, VerifyForeignTxTaskId,
     };
+    use crate::config::PersistentSecrets;
     use crate::primitives::{
         ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage,
         ParticipantId, UniqueId,
     };
+    use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
+    use crate::providers::verify_foreign_tx::node_outcome_statement::{
+        self, NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome,
+    };
     use borsh::BorshSerialize;
+    use ed25519_dalek::SigningKey;
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
-    use near_mpc_contract_interface::types::KeyEventId;
+    use near_mpc_contract_interface::types::{
+        ForeignTxVerificationNegativeVerdict, KeyEventId, YieldId,
+    };
+    use rstest::rstest;
+    use std::assert_matches;
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 
@@ -231,6 +271,36 @@ mod tests {
 
     fn key_event() -> KeyEventId {
         KeyEventId::new(EpochId::new(1), DomainId(2), AttemptId(3))
+    }
+
+    fn signed_node_outcome() -> SignedNodeOutcome {
+        let signing_key = NodeOutcomeSigningKey::from(&PersistentSecrets {
+            p2p_private_key: SigningKey::from_bytes(&[8; 32]),
+            near_signer_key: SigningKey::from_bytes(&[9; 32]),
+        });
+        signing_key
+            .sign(NodeOutcomeStatement {
+                yield_id: YieldId([6; 32]),
+                leader: ParticipantId::from_raw(5),
+                attempt: node_outcome_statement::AttemptId(ChannelId(UniqueId::new(
+                    ParticipantId::from_raw(5),
+                    1,
+                    1,
+                ))),
+                signer: ParticipantId::from_raw(7),
+                outcome: NodeOutcome::Verdict(NodeVerdict::Negative(
+                    ForeignTxVerificationNegativeVerdict::TransactionNotFound,
+                )),
+            })
+            .unwrap()
+    }
+
+    fn inconclusive_task_id() -> MpcTaskId {
+        VerifyForeignTxTaskId::Inconclusive {
+            yield_id: YieldId([6; 32]),
+            paired_triple_id: uid(2),
+        }
+        .into()
     }
 
     /// Fixed inputs are chosen so that neighbouring fields encode to visibly distinct bytes.
@@ -281,6 +351,7 @@ mod tests {
                 MpcMessageKind::Computation(vec![vec![1, 2, 3]]),
                 MpcMessageKind::Abort("err".to_owned()),
                 MpcMessageKind::Success,
+                MpcMessageKind::NodeOutcomes(vec![signed_node_outcome()]),
             ]),
             rows(&[
                 EcdsaTaskId::KeyGeneration {
@@ -347,11 +418,75 @@ mod tests {
                     id: hash(1),
                     paired_triple_id: uid(2),
                 }),
+                inconclusive_task_id(),
             ]),
         ]
         .join("\n\n");
 
         insta::assert_snapshot!(table);
+    }
+
+    #[rstest]
+    #[case::node_outcomes(MpcMessageKind::NodeOutcomes(vec![signed_node_outcome()]))]
+    #[case::inconclusive_start(MpcMessageKind::Start(MpcStartMessage {
+        task_id: inconclusive_task_id(),
+        participants: vec![ParticipantId::from_raw(5), ParticipantId::from_raw(7)],
+    }))]
+    fn packet__should_decode_a_v2_foreign_tx_message_to_the_message_it_encodes(
+        #[case] kind: MpcMessageKind,
+    ) {
+        // Given
+        let message = MpcMessage {
+            channel_id: ChannelId(uid(1)),
+            kind,
+        };
+        let bytes = borsh::to_vec(&Packet::MpcMessage(message.clone())).unwrap();
+
+        // When
+        let decoded: Packet = borsh::from_slice(&bytes).unwrap();
+
+        // Then
+        assert_matches!(decoded, Packet::MpcMessage(decoded) if decoded == message);
+    }
+
+    #[rstest]
+    #[case::node_outcomes(MpcMessageKind::NodeOutcomes(vec![signed_node_outcome()]), NetworkProtocolVersion::Nov2026)]
+    #[case::inconclusive_start(
+        MpcMessageKind::Start(MpcStartMessage {
+            task_id: inconclusive_task_id(),
+            participants: vec![ParticipantId::from_raw(5)],
+        }),
+        NetworkProtocolVersion::Nov2026
+    )]
+    #[case::other_start(
+        MpcMessageKind::Start(MpcStartMessage {
+            task_id: EcdsaTaskId::Signature {
+                id: hash(1),
+                presignature_id: uid(2),
+            }
+            .into(),
+            participants: vec![ParticipantId::from_raw(5)],
+        }),
+        NetworkProtocolVersion::Dec2025
+    )]
+    #[case::computation(MpcMessageKind::Computation(vec![vec![1]]), NetworkProtocolVersion::Dec2025)]
+    #[case::abort(MpcMessageKind::Abort("err".to_owned()), NetworkProtocolVersion::Dec2025)]
+    #[case::success(MpcMessageKind::Success, NetworkProtocolVersion::Dec2025)]
+    fn packet_min_protocol_version__should_require_nov2026_only_for_v2_foreign_tx_messages(
+        #[case] kind: MpcMessageKind,
+        #[case] expected: NetworkProtocolVersion,
+    ) {
+        // Given
+        let packet = Packet::MpcMessage(MpcMessage {
+            channel_id: ChannelId(uid(1)),
+            kind,
+        });
+
+        // When
+        let version = packet.min_protocol_version();
+
+        // Then
+        assert_eq!(version, expected);
     }
 
     #[test]

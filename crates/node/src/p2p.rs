@@ -193,6 +193,7 @@ impl Packet {
                 MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
                 MpcMessageKind::Abort(_) => networking_metrics::MPC_ABORT_MESSAGE,
                 MpcMessageKind::Success => networking_metrics::MPC_SUCCESS_MESSAGE,
+                MpcMessageKind::NodeOutcomes(_) => networking_metrics::MPC_NODE_OUTCOMES_MESSAGE,
             },
         }
     }
@@ -1191,7 +1192,7 @@ mod tests {
         config::MpcConfig,
         network::{
             conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity},
-            wire_format::{EcdsaTaskId, MpcTaskId, Packet},
+            wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet, VerifyForeignTxTaskId},
             {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
         },
         p2p::testing::{generate_test_p2p_configs, port_seed},
@@ -1205,6 +1206,7 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
+    use near_mpc_contract_interface::types::YieldId;
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use rstest::rstest;
     use rustls::ClientConfig;
@@ -1509,25 +1511,10 @@ mod tests {
         #[case] expected_sent: bool,
     ) {
         // Given
-        let (sender, mut packets) = mpsc::unbounded_channel();
-        let connection = Arc::new(OutgoingConnection {
-            sender,
-            _sender_task: tokio::spawn(std::future::pending()).into(),
-            _keepalive_task: tokio::spawn(std::future::pending()).into(),
-            closed: CancellationToken::new(),
-            peer_network_protocol_version: peer_version,
-        });
-        let connectivity =
-            Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
-        connectivity.set_outgoing_connection(&connection);
-        let persistent_connection = PersistentConnection {
-            target_participant_id: ParticipantId::from_raw(1),
-            connectivity,
-            _task: tokio::spawn(std::future::pending()).into(),
-        };
+        let mut peer = ConnectedPeer::on(peer_version);
 
         // When
-        let result = persistent_connection.send(
+        let result = peer.persistent_connection.send(
             Packet::ConnectedPeersInfo(ConnectedPeersInfo {
                 peers: BTreeMap::from([(ParticipantId::from_raw(2), 7)]),
             }),
@@ -1536,8 +1523,94 @@ mod tests {
 
         // Then
         assert_eq!(result.is_ok(), expected_sent);
-        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
+        let sent = matches!(peer.packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
         assert_eq!(sent, expected_sent);
+    }
+
+    #[rstest]
+    #[case::node_outcomes_to_older_peer(node_outcomes(), NetworkProtocolVersion::Oct2026, false)]
+    #[case::node_outcomes_to_current_peer(node_outcomes(), NetworkProtocolVersion::Nov2026, true)]
+    #[case::node_outcomes_to_newer_peer(node_outcomes(), NetworkProtocolVersion::Unknown(42), true)]
+    #[case::inconclusive_start_to_older_peer(
+        inconclusive_start(),
+        NetworkProtocolVersion::Oct2026,
+        false
+    )]
+    #[case::inconclusive_start_to_current_peer(
+        inconclusive_start(),
+        NetworkProtocolVersion::Nov2026,
+        true
+    )]
+    #[tokio::test]
+    async fn persistent_connection__should_send_v2_foreign_tx_messages_only_to_peers_negotiating_nov2026(
+        #[case] kind: MpcMessageKind,
+        #[case] peer_version: NetworkProtocolVersion,
+        #[case] expected_sent: bool,
+    ) {
+        // Given
+        let mut peer = ConnectedPeer::on(peer_version);
+        let message = MpcMessage {
+            channel_id: ChannelId(UniqueId::new(ParticipantId::from_raw(0), 1, 1)),
+            kind,
+        };
+
+        // When
+        let result = peer
+            .persistent_connection
+            .send(Packet::MpcMessage(message), None);
+
+        // Then
+        assert_eq!(result.is_ok(), expected_sent);
+        assert_eq!(peer.packets.try_recv().is_ok(), expected_sent);
+    }
+
+    fn node_outcomes() -> MpcMessageKind {
+        MpcMessageKind::NodeOutcomes(Vec::new())
+    }
+
+    fn inconclusive_start() -> MpcMessageKind {
+        MpcMessageKind::Start(MpcStartMessage {
+            task_id: VerifyForeignTxTaskId::Inconclusive {
+                yield_id: YieldId([6; 32]),
+                paired_triple_id: UniqueId::new(ParticipantId::from_raw(0), 1, 2),
+            }
+            .into(),
+            participants: vec![ParticipantId::from_raw(0), ParticipantId::from_raw(1)],
+        })
+    }
+
+    /// A peer on `peer_version`, with the packets sent to it.
+    struct ConnectedPeer {
+        persistent_connection: PersistentConnection,
+        /// Keeps the connection alive, since `persistent_connection` only holds a weak reference.
+        _outgoing: Arc<OutgoingConnection>,
+        packets: mpsc::UnboundedReceiver<Packet>,
+    }
+
+    impl ConnectedPeer {
+        fn on(peer_version: NetworkProtocolVersion) -> Self {
+            let (sender, packets) = mpsc::unbounded_channel();
+            let outgoing = Arc::new(OutgoingConnection {
+                sender,
+                _sender_task: tokio::spawn(std::future::pending()).into(),
+                _keepalive_task: tokio::spawn(std::future::pending()).into(),
+                closed: CancellationToken::new(),
+                peer_network_protocol_version: peer_version,
+            });
+            let connectivity =
+                Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
+            connectivity.set_outgoing_connection(&outgoing);
+            let persistent_connection = PersistentConnection {
+                target_participant_id: ParticipantId::from_raw(1),
+                connectivity,
+                _task: tokio::spawn(std::future::pending()).into(),
+            };
+            Self {
+                persistent_connection,
+                _outgoing: outgoing,
+                packets,
+            }
+        }
     }
 
     #[tokio::test]

@@ -20,17 +20,24 @@ pub mod starknet;
 pub mod svm;
 pub mod validation;
 
+mod signature_verifier_v2;
+
+pub use signature_verifier_v2::{ForeignChainSignatureVerifierV2, VerifiedForeignTxResponseV2};
+
 use near_mpc_contract_interface::types::PublicKey;
 // response types
 pub use near_mpc_contract_interface::types::{
-    Hash256, SignatureResponse, VerifyForeignTransactionResponse,
+    BlockHeight, ForeignTxVerificationNegativeVerdict, ForeignTxVerificationOutcome, Hash256,
+    SignatureResponse, VerifyForeignTransactionResponse, VerifyForeignTransactionResponseV2,
+    YieldId,
 };
 
 // raw request arg type
 pub use near_mpc_contract_interface::types::{
     BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainRpcRequest,
-    ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+    ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1, ForeignTxSignPayloadV2,
     MAX_EXTRACTORS_PER_REQUEST, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionRequestV2,
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
@@ -39,6 +46,7 @@ pub struct ForeignChainSignatureVerifier {
     request: ForeignChainRpcRequest,
 }
 
+#[derive(Debug)]
 pub enum VerifyForeignChainError {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
@@ -57,39 +65,51 @@ impl ForeignChainSignatureVerifier {
             expected_payload_hash(self.request, self.expected_extracted_values)
                 .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
 
-        let payload_is_correct = expected_payload_hash == response.payload_hash;
-
-        if !payload_is_correct {
-            return Err(VerifyForeignChainError::IncorrectPayloadSigned {
-                got: response.payload_hash.clone(),
-                expected: expected_payload_hash,
-            });
-        }
-        let verification_result = match (public_key, &response.signature) {
-            (
-                PublicKey::Secp256k1(secp256k1_public_key),
-                SignatureResponse::Secp256k1(k256_signature),
-            ) => near_mpc_signature_verifier::verify_ecdsa_signature(
-                k256_signature,
-                &expected_payload_hash,
-                secp256k1_public_key,
-            ),
-            (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
-                near_mpc_signature_verifier::verify_eddsa_signature(
-                    signature,
-                    expected_payload_hash.as_slice(),
-                    ed25519_public_key,
-                )
-            }
-            // TODO(#2234): improve types so these errors can't happen
-            (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
-                return Err(VerifyForeignChainError::UnexpectedSignatureScheme);
-            }
-            _ => return Err(VerifyForeignChainError::UnexpectedSignatureScheme),
-        };
-
-        verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)
+        verify_signed_payload_hash(
+            expected_payload_hash,
+            &response.payload_hash,
+            &response.signature,
+            public_key,
+        )
     }
+}
+
+fn verify_signed_payload_hash(
+    expected_payload_hash: Hash256,
+    payload_hash: &Hash256,
+    signature: &SignatureResponse,
+    public_key: &PublicKey,
+) -> Result<(), VerifyForeignChainError> {
+    if expected_payload_hash != *payload_hash {
+        return Err(VerifyForeignChainError::IncorrectPayloadSigned {
+            got: payload_hash.clone(),
+            expected: expected_payload_hash,
+        });
+    }
+    let verification_result = match (public_key, signature) {
+        (
+            PublicKey::Secp256k1(secp256k1_public_key),
+            SignatureResponse::Secp256k1(k256_signature),
+        ) => near_mpc_signature_verifier::verify_ecdsa_signature(
+            k256_signature,
+            &expected_payload_hash,
+            secp256k1_public_key,
+        ),
+        (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
+            near_mpc_signature_verifier::verify_eddsa_signature(
+                signature,
+                expected_payload_hash.as_slice(),
+                ed25519_public_key,
+            )
+        }
+        // TODO(#2234): improve types so these errors can't happen
+        (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
+            return Err(VerifyForeignChainError::UnexpectedSignatureScheme);
+        }
+        _ => return Err(VerifyForeignChainError::UnexpectedSignatureScheme),
+    };
+
+    verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)
 }
 
 pub const DEFAULT_PAYLOAD_VERSION: ForeignTxPayloadVersion = ForeignTxPayloadVersion::V1;
