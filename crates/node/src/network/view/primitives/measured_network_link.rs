@@ -8,9 +8,7 @@ use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_time::Instant;
 use petgraph::Directed;
 
-use crate::network::view::primitives::adjacency_matrix::{
-    AdjacencyMatrix, AdjacencyMatrixError, UnknownNodeError,
-};
+use crate::network::view::primitives::{adjacency_matrix::AdjacencyMatrix, errors::NodePairError};
 
 pub struct NetworkLinkStatuses<N, S>(BTreeMap<(N, N), S>);
 impl<N: Ord, S> FromIterator<((N, N), S)> for NetworkLinkStatuses<N, S> {
@@ -31,6 +29,7 @@ impl<N: Ord + Clone, L> MeasuredNetworkLinks<N, L> {
     }
 }
 
+// todo: should we make this a different type, with (from, to) an directed edge?
 pub struct LinkObservation<N, O> {
     pub from: N,
     pub to: N,
@@ -50,7 +49,7 @@ where
         to: &N,
         observation: O,
         now: Instant,
-    ) -> Result<UpdateResult<S>, MeasuredNetworkLinkError<N>> {
+    ) -> Result<UpdateResult<S>, NodePairError<N>> {
         let update_result = match self.measured_network_links.edge_mut(from, to)? {
             Some(link) => link.update_with_observation(observation, now),
             None => {
@@ -64,7 +63,7 @@ where
     }
     /// `None` if the link has no observations yet; errors if from == to or if the nodes are not in
     /// the graph.
-    pub fn status(&self, from: &N, to: &N) -> Result<Option<S>, MeasuredNetworkLinkError<N>> {
+    pub fn status(&self, from: &N, to: &N) -> Result<Option<S>, NodePairError<N>> {
         Ok(self
             .measured_network_links
             .edge(from, to)?
@@ -93,23 +92,6 @@ pub trait ObserveLinkHealth {
         at: Instant,
     ) -> UpdateResult<Self::LinkStatus>;
     fn link_status(&self) -> Self::LinkStatus;
-}
-
-/// Why an operation on a measured network link could not be carried out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum MeasuredNetworkLinkError<N> {
-    #[error(transparent)]
-    UnknownNodeError(#[from] UnknownNodeError<N>),
-    #[error("node {0:?} can't link to itself")]
-    Loop(N),
-}
-impl<N> From<AdjacencyMatrixError<N>> for MeasuredNetworkLinkError<N> {
-    fn from(err: AdjacencyMatrixError<N>) -> Self {
-        match err {
-            AdjacencyMatrixError::UnknownNodeError(n) => Self::UnknownNodeError(n),
-            AdjacencyMatrixError::Loop(n) => Self::Loop(n),
-        }
-    }
 }
 
 //// todo: tests

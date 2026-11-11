@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use petgraph::Undirected;
 
-use crate::network::view::primitives::adjacency_matrix::UnknownNodeError;
-use crate::network::view::primitives::adjacency_matrix::{AdjacencyMatrix, AdjacencyMatrixError};
+use crate::network::view::primitives::adjacency_matrix::AdjacencyMatrix;
+use crate::network::view::primitives::errors::{NodePairError, UnknownNodeError};
 use crate::network::view::primitives::measured_network_link::UpdateResult;
 use crate::providers::traits::{CheckReadiness, ComputationDuration, NotReadyError};
 
@@ -38,7 +38,7 @@ where
         a: &N,
         b: &N,
         status: S,
-    ) -> Result<UpdateResult<S>, LiveNetworkConnectionTrackerError<N>> {
+    ) -> Result<UpdateResult<S>, NodePairError<N>> {
         let previous = self.connections.set_edge(a, b, status.clone())?;
         if previous.as_ref() == Some(&status) {
             Ok(UpdateResult::StatusRemained)
@@ -90,24 +90,4 @@ pub enum ComputationSupported {
     No,
 }
 
-// todo: naming should be consistent
-/// Why an operation on an `AdjacencyMatrix` could not be carried out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum LiveNetworkConnectionTrackerError<N> {
-    #[error(transparent)]
-    UnknownNodeError(#[from] UnknownNodeError<N>),
-    #[error("Nodes should not connect with themselves (node {0:?})")]
-    Loop(N),
-}
-
-impl<N> From<AdjacencyMatrixError<N>> for LiveNetworkConnectionTrackerError<N> {
-    fn from(value: AdjacencyMatrixError<N>) -> Self {
-        match value {
-            AdjacencyMatrixError::UnknownNodeError(node) => {
-                LiveNetworkConnectionTrackerError::UnknownNodeError(node)
-            }
-            AdjacencyMatrixError::Loop(node) => LiveNetworkConnectionTrackerError::Loop(node),
-        }
-    }
-}
 //// todo: tests

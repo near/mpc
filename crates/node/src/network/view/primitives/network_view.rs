@@ -1,14 +1,10 @@
-use std::collections::BTreeMap;
-
 use near_time::Instant;
 
 use crate::network::view::primitives::{
     LinkObservation,
-    adjacency_matrix::UnknownNodeError,
-    live_network_connections::{LiveNetworkConnectionTrackerError, LiveNetworkConnections},
-    measured_network_link::{
-        MeasuredNetworkLinkError, MeasuredNetworkLinks, ObserveLinkHealth, UpdateResult,
-    },
+    errors::NodePairError,
+    live_network_connections::LiveNetworkConnections,
+    measured_network_link::{MeasuredNetworkLinks, ObserveLinkHealth, UpdateResult},
 };
 
 // the consumer will need to implement this.
@@ -37,7 +33,7 @@ where
         &mut self,
         observation: LinkObservation<N, O>,
         now: Instant,
-    ) -> Result<UpdateResult<S>, MeasuredNetworkConnectionsError<N>> {
+    ) -> Result<UpdateResult<S>, NodePairError<N>> {
         let LinkObservation {
             from,
             to,
@@ -56,33 +52,6 @@ where
                     .connection_status
                     .update_connection(&from, &to, connection_satus)?)
             }
-        }
-    }
-}
-
-/// Why an operation on an `AdjacencyMatrix` could not be carried out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum MeasuredNetworkConnectionsError<N> {
-    #[error(transparent)]
-    UnknownNodeError(#[from] UnknownNodeError<N>),
-    #[error("Nodes should not connect with themselves (node {0:?})")]
-    Loop(N),
-}
-
-impl<N> From<MeasuredNetworkLinkError<N>> for MeasuredNetworkConnectionsError<N> {
-    fn from(value: MeasuredNetworkLinkError<N>) -> Self {
-        match value {
-            MeasuredNetworkLinkError::Loop(n) => Self::Loop(n),
-            MeasuredNetworkLinkError::UnknownNodeError(n) => Self::UnknownNodeError(n),
-        }
-    }
-}
-
-impl<N> From<LiveNetworkConnectionTrackerError<N>> for MeasuredNetworkConnectionsError<N> {
-    fn from(value: LiveNetworkConnectionTrackerError<N>) -> Self {
-        match value {
-            LiveNetworkConnectionTrackerError::Loop(n) => Self::Loop(n),
-            LiveNetworkConnectionTrackerError::UnknownNodeError(n) => Self::UnknownNodeError(n),
         }
     }
 }

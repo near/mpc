@@ -2,59 +2,17 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use near_time::{Clock, Duration, Instant};
+use near_time::{Clock, Duration};
 use tokio::sync::{mpsc, watch};
-use tokio_util::sync::CancellationToken;
 
-use crate::{
-    network::{
-        constants::NETWORK_VIEW_UPDATES_BUFFERED_PER_PARTICIPANT,
-        view::{
-            first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
-            primitives::{
-                InferConnectionStatusFromLinkHealth, LinkObservation, LiveNetworkConnections,
-                MeasuredNetworkConnectionsError, NetworkConnectionsHealthTracker,
-                NetworkLinkStatuses,
-                ObserveLinkHealth, UnknownNodeError, UpdateResult,
-            },
-        },
+use crate::network::view::{
+    errors::NetworkViewUpdateError,
+    first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
+    primitives::{
+        InferConnectionStatusFromLinkHealth, LinkObservation, LiveNetworkConnections,
+        NetworkConnectionsHealthTracker, NetworkLinkStatuses, ObserveLinkHealth,
     },
-    primitives::{ConnectedPeersInfo, ParticipantId, PeerConnectedPeersInfo},
 };
-
-//enum IndexerHeightLag {
-//    Present(BlockCount),
-//    Absent,
-//}
-//
-//impl IndexerHeightLag {
-//    fn new(
-//        first_hand_indexer_height: ReportedIndexerHeight,
-//        peer_reported_height: Option<ReportedIndexerHeight>,
-//    ) -> Option<Self> {
-//        let Some(peer_reported) = peer_reported_height else {
-//            return Some(IndexerHeightLag::Absent);
-//        };
-//        match (first_hand_indexer_height, peer_reported) {
-//            (ReportedIndexerHeight::Unknown, _) => None,
-//            (_, ReportedIndexerHeight::Unknown) => None,
-//            (
-//                ReportedIndexerHeight::Known(first_hand),
-//                ReportedIndexerHeight::Known(peer_reported),
-//            ) => {
-//                let count = first_hand.blocks_since(peer_reported);
-//                Some(IndexerHeightLag::Present(count))
-//            }
-//        }
-//    }
-//}
-
-//pub struct LinkObservation<N, O> {
-//    pub from: N,
-//    pub to: N,
-//    pub observation: O,
-//}
 
 pub struct ObservationContext<'a, N> {
     pub first_hand_indexer_heights: &'a FirstHandIndexerHeights<N>,
@@ -116,31 +74,55 @@ where
             self.network_connection_health_tracker
                 .update_with_observation(observation, self.clock.now())?;
         }
-        //for (origin, first_hand) in self.first_hand_heights.iter() {
-        //    if *origin == update.reporter {
-        //        continue;
-        //    }
-        //    let reported = indexer_heights.get(origin);
-        //    //match reported {
-        //    //    None => {
-        //    //        self.network_connection_health_tracker
-        //    //            .update_with_observation(
-        //    //                origin,
-        //    //                &reporter,
-        //    //                LinkObservation::Absent,
-        //    //                self.clock.now(),
-        //    //            )?;
-        //    //    }
-        //    //    reported_height => LinkObservation::Present(reported_height),
-        //    //};
-        //    //self.network_connection_health_tracker
-        //    //    .update_with_observation
-        //}
-        // self.measurement
-        //     .record_report(&report, &self.first_hand_heights, self.clock.now())?
         Ok(())
     }
 }
+pub struct IndexerHeightReport<N> {
+    pub reporter: N,
+    pub indexer_heights: BTreeMap<N, ReportedIndexerHeight>,
+}
+// todo: think if you really need this, we can deprecate..
+pub struct LegacyIndexerHeightReport<N> {
+    pub reporter: N,
+    pub indexer_height: ReportedIndexerHeight,
+}
+pub enum NetworkViewUpdate<N> {
+    LegacyIndexerHeightReport(LegacyIndexerHeightReport<N>),
+    IndexerHeightReport(IndexerHeightReport<N>),
+}
+//enum IndexerHeightLag {
+//    Present(BlockCount),
+//    Absent,
+//}
+//
+//impl IndexerHeightLag {
+//    fn new(
+//        first_hand_indexer_height: ReportedIndexerHeight,
+//        peer_reported_height: Option<ReportedIndexerHeight>,
+//    ) -> Option<Self> {
+//        let Some(peer_reported) = peer_reported_height else {
+//            return Some(IndexerHeightLag::Absent);
+//        };
+//        match (first_hand_indexer_height, peer_reported) {
+//            (ReportedIndexerHeight::Unknown, _) => None,
+//            (_, ReportedIndexerHeight::Unknown) => None,
+//            (
+//                ReportedIndexerHeight::Known(first_hand),
+//                ReportedIndexerHeight::Known(peer_reported),
+//            ) => {
+//                let count = first_hand.blocks_since(peer_reported);
+//                Some(IndexerHeightLag::Present(count))
+//            }
+//        }
+//    }
+//}
+
+//pub struct LinkObservation<N, O> {
+//    pub from: N,
+//    pub to: N,
+//    pub observation: O,
+//}
+
 //
 ///// Latency of `origin --> reporter`, approximated as
 ///// `(origin --> us) - (origin --> reporter --> us)`, saturating at zero.
@@ -235,44 +217,7 @@ where
 //    //}
 //}
 //
-pub struct IndexerHeightReport<N> {
-    pub reporter: N,
-    pub indexer_heights: BTreeMap<N, ReportedIndexerHeight>,
-}
-// todo: think if you really need this, we can deprecate..
-pub struct LegacyIndexerHeightReport<N> {
-    pub reporter: N,
-    pub indexer_height: ReportedIndexerHeight,
-}
-pub enum NetworkViewUpdate<N> {
-    LegacyIndexerHeightReport(LegacyIndexerHeightReport<N>),
-    IndexerHeightReport(IndexerHeightReport<N>),
-}
 //
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum NetworkViewUpdateError<N> {
-    #[error("{0:?} is not a participant")]
-    UnknownParticipant(N),
-    #[error("message from {0:?} does not report its own block height")]
-    OwnHeightMissing(N),
-    #[error("a link needs two distinct participants, got {0:?} twice")]
-    SelfLink(N),
-}
-
-impl<N> From<UnknownNodeError<N>> for NetworkViewUpdateError<N> {
-    fn from(UnknownNodeError(node): UnknownNodeError<N>) -> Self {
-        Self::UnknownParticipant(node)
-    }
-}
-
-impl<N> From<MeasuredNetworkConnectionsError<N>> for NetworkViewUpdateError<N> {
-    fn from(error: MeasuredNetworkConnectionsError<N>) -> Self {
-        match error {
-            MeasuredNetworkConnectionsError::UnknownNodeError(error) => error.into(),
-            MeasuredNetworkConnectionsError::Loop(node) => Self::SelfLink(node),
-        }
-    }
-}
 //
 ///// What a participant reports about the peers it is connected to: each with the indexer height
 ///// it has for that peer, itself included. The wire encodes an unknown height as `0`.
