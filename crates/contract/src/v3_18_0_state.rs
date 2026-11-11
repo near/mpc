@@ -7,7 +7,10 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    iter,
+};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{
@@ -25,6 +28,7 @@ use crate::{
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, EpochId, KeyForDomain, Keyset},
+        participants::Participants,
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
     },
@@ -111,6 +115,11 @@ impl From<MpcContract> for crate::MpcContract {
         let OldProtocolContractState::Running(running_state) = old.protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
         };
+        assert_participants_own_their_tls_keys(
+            running_state.parameters.participants(),
+            &old.tee_state,
+            &old.node_migrations,
+        );
 
         crate::MpcContract {
             protocol_state: ProtocolContractState::Running(running_state.into()),
@@ -131,17 +140,42 @@ impl From<MpcContract> for crate::MpcContract {
     }
 }
 
+fn assert_participants_own_their_tls_keys(
+    participants: &Participants,
+    tee_state: &TeeState,
+    node_migrations: &NodeMigrations,
+) {
+    for (account_id, _, participant_info) in participants.participants() {
+        let migration_destination = node_migrations
+            .ongoing_migration(account_id)
+            .map(|migration| &migration.destination_node_info.tls_public_key);
+        for tls_public_key in
+            iter::once(&participant_info.tls_public_key).chain(migration_destination)
+        {
+            if tee_state.node_of(account_id, tls_public_key).is_none() {
+                env::panic_str(&format!(
+                    "Participant {account_id} has no node under the TLS key {tls_public_key:?} it uses."
+                ));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::state::test_utils::gen_running_state;
-    use crate::storage_keys::StorageKey;
+    use crate::{
+        api::test_utils::destination_of, primitives::test_utils::node_for,
+        state::test_utils::gen_running_state, storage_keys::StorageKey,
+    };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    fn old_contract(protocol_state: OldProtocolContractState) -> MpcContract {
+    fn old_contract(running_state: OldRunningContractState) -> MpcContract {
+        let tee_state =
+            TeeState::with_mocked_participant_attestations(running_state.parameters.participants());
         MpcContract {
-            protocol_state,
+            protocol_state: OldProtocolContractState::Running(running_state),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
@@ -149,7 +183,7 @@ mod tests {
             ),
             contract_update_votes: ContractUpdateVotes::default(),
             config: Config::default(),
-            tee_state: TeeState::default(),
+            tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             foreign_chains: Lazy::new(
@@ -172,7 +206,7 @@ mod tests {
         let voter = AuthenticatedAccountId::new(participants).unwrap();
         let proposal =
             ProposedGovernanceThresholdParameters::new(running.parameters.clone(), BTreeMap::new());
-        let old = old_contract(OldProtocolContractState::Running(OldRunningContractState {
+        let old = old_contract(OldRunningContractState {
             domains: running.domains.clone(),
             keyset: running.keyset.clone(),
             parameters: running.parameters.clone(),
@@ -182,7 +216,7 @@ mod tests {
             add_domains_votes: running.add_domains_votes.clone(),
             previously_cancelled_resharing_epoch_id: running
                 .previously_cancelled_resharing_epoch_id,
-        }));
+        });
 
         // When
         let migrated: crate::MpcContract = old.into();
@@ -193,5 +227,48 @@ mod tests {
             migrated.protocol_state,
             ProtocolContractState::Running(running)
         );
+    }
+
+    fn old_running_state() -> OldRunningContractState {
+        let running = gen_running_state(1);
+        OldRunningContractState {
+            domains: running.domains,
+            keyset: running.keyset,
+            parameters: running.parameters,
+            parameters_votes: OldGovernanceThresholdParametersVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
+            add_domains_votes: running.add_domains_votes,
+            previously_cancelled_resharing_epoch_id: running
+                .previously_cancelled_resharing_epoch_id,
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "has no node under the TLS key")]
+    fn from__should_panic_when_a_participant_has_no_node() {
+        // Given
+        let running_state = old_running_state();
+        let (_, _, participant_info) =
+            running_state.parameters.participants().participants()[0].clone();
+        let mut old = old_contract(running_state);
+        old.tee_state.nodes.remove(&participant_info.tls_public_key);
+
+        // When, Then
+        let _: crate::MpcContract = old.into();
+    }
+
+    #[test]
+    #[should_panic(expected = "has no node under the TLS key")]
+    fn from__should_panic_when_a_migration_destination_has_no_node() {
+        // Given
+        let running_state = old_running_state();
+        let (account_id, _, _) = running_state.parameters.participants().participants()[0].clone();
+        let mut old = old_contract(running_state);
+        old.node_migrations
+            .set_destination_node_info(account_id.clone(), destination_of(&node_for(&account_id)));
+
+        // When, Then
+        let _: crate::MpcContract = old.into();
     }
 }

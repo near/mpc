@@ -206,10 +206,12 @@ pub mod tests {
                 ProposedGovernanceThresholdParameters,
             },
         },
-        state::test_utils::{gen_resharing_state, gen_running_state_with_params},
+        state::test_utils::{
+            RunningStateParams, gen_resharing_state, gen_running_state_with_params,
+        },
     };
     use near_account_id::AccountId;
-    use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
+    use near_mpc_contract_interface::types::{BlockCount, DomainId, ReconstructionThreshold};
     use rstest::rstest;
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -251,19 +253,22 @@ pub mod tests {
                 if *c != leader.0 {
                     let _ = state
                         .resharing_key
-                        .start(first_key_event_id, 1)
+                        .start(first_key_event_id, BlockCount::from(1))
                         .unwrap_err();
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
                     let _ = state
                         .resharing_key
-                        .start(first_key_event_id.next_attempt(), 1)
+                        .start(first_key_event_id.next_attempt(), BlockCount::from(1))
                         .unwrap_err();
                 }
             }
             // start the resharing; verify that the resharing is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            state.resharing_key.start(first_key_event_id, 0).unwrap();
+            state
+                .resharing_key
+                .start(first_key_event_id, BlockCount::from(0))
+                .unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
@@ -288,7 +293,7 @@ pub mod tests {
             env.set_signer(&leader.0);
             state
                 .resharing_key
-                .start(first_key_event_id.next_attempt(), 0)
+                .start(first_key_event_id.next_attempt(), BlockCount::from(0))
                 .unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             let bad_key_events = [
@@ -322,7 +327,7 @@ pub mod tests {
             env.set_signer(&leader.0);
             state
                 .resharing_key
-                .start(key_event.next_attempt(), 0)
+                .start(key_event.next_attempt(), BlockCount::from(0))
                 .unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
@@ -333,7 +338,7 @@ pub mod tests {
             env.set_signer(&leader.0);
             state
                 .resharing_key
-                .start(key_event.next_attempt(), 0)
+                .start(key_event.next_attempt(), BlockCount::from(0))
                 .unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             for (i, c) in candidates.clone().into_iter().enumerate() {
@@ -386,7 +391,10 @@ pub mod tests {
                 .id,
             epoch_id: state.prospective_epoch_id(),
         };
-        state.resharing_key.start(first_key_event_id, 0).unwrap();
+        state
+            .resharing_key
+            .start(first_key_event_id, BlockCount::from(0))
+            .unwrap();
 
         let old_participants = state
             .previous_running_state
@@ -515,7 +523,11 @@ pub mod tests {
         // Given a CaitSith domain at the default threshold 2 and a key-refresh proposal
         // moving it to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
-        let mut running = gen_running_state_with_params(1, 5, 4);
+        let mut running = gen_running_state_with_params(RunningStateParams {
+            num_domains: 1,
+            num_participants: 5,
+            governance_threshold: GovernanceThreshold::new(4),
+        });
         let current_params = running.parameters.clone();
         let domain_id = running.domains.domains()[0].id;
         let original_threshold = running.domains.domains()[0].reconstruction_threshold;
@@ -547,7 +559,10 @@ pub mod tests {
             domain_id,
             epoch_id: state.prospective_epoch_id(),
         };
-        state.resharing_key.start(key_event_id, 0).unwrap();
+        state
+            .resharing_key
+            .start(key_event_id, BlockCount::from(0))
+            .unwrap();
         let mut new_running = None;
         let candidates: Vec<_> = state
             .resharing_key
@@ -582,7 +597,11 @@ pub mod tests {
         // Given CaitSith (index 0) and Frost (index 1) at default threshold 2, and a
         // proposal moving only Frost to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
-        let mut running = gen_running_state_with_params(2, 5, 4);
+        let mut running = gen_running_state_with_params(RunningStateParams {
+            num_domains: 2,
+            num_participants: 5,
+            governance_threshold: GovernanceThreshold::new(4),
+        });
         let current_params = running.parameters.clone();
         let caitsith_id = running.domains.domains()[0].id;
         let frost_id = running.domains.domains()[1].id;
@@ -630,7 +649,10 @@ pub mod tests {
                 domain_id,
                 epoch_id: state.prospective_epoch_id(),
             };
-            state.resharing_key.start(key_event_id, 0).unwrap();
+            state
+                .resharing_key
+                .start(key_event_id, BlockCount::from(0))
+                .unwrap();
             for account in &candidates {
                 env.set_signer(account);
                 new_running = state.vote_reshared(key_event_id).unwrap();

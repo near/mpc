@@ -114,8 +114,7 @@ Reading the numbers:
   counter stays at zero, suspect a disagreeing provider and compare the node
   logs.
 * Every configured provider's series appears, at zero, as soon as the node
-  serves requests, so an idle node reports zero rather than nothing. Solana can
-  be configured but is not checked, so it never appears.
+  serves requests, so an idle node reports zero rather than nothing.
 * With no traffic, all series stay flat whether providers are healthy or down.
   On a quiet node, the probe below is the health signal.
 * Every participating node checks for itself: one user request produces one
@@ -125,9 +124,9 @@ Reading the numbers:
 
 ### The hourly probe
 
-Once per hour, whether or not any traffic exists, the node asks each configured
-provider which network it is serving and compares the answer with the chain's
-`expected_network_fingerprint` from your config:
+At startup and then once per hour, whether or not any traffic exists, the node
+asks each configured provider which network it is serving and compares the
+answer with the chain's `expected_network_fingerprint` from your config:
 
 | Metric | What it tracks |
 | --- | --- |
@@ -137,8 +136,30 @@ provider which network it is serving and compares the answer with the chain's
 `healthy` should equal `configured`. Anything less is a provider the probe
 could not confirm: unreachable, refusing, too slow, serving a different
 network, or a chain configured without an `expected_network_fingerprint`,
-which the probe cannot check. Solana has no probe and is left out of both
-gauges.
+which the probe cannot check.
+
+After each round the node also compares the configured providers with the
+provider whitelist. A round runs at startup, every hour, and as soon as the
+whitelist is read or changes. So a wrong config is reported until it is fixed.
+
+Each round logs:
+
+* A warning for each unhealthy provider.
+* A line for each difference from the whitelist. A difference you must fix is
+  a warning or an error. Two differences are normal and are logged as info: a
+  chain that is not whitelisted yet, and an extra provider.
+* One `foreign chain probe round complete` line at the end, with these fields:
+
+| Field | What it tells you |
+| --- | --- |
+| `healthy` | providers that passed the probe |
+| `probed` | providers of a chain that has a probe |
+| `unchecked` | providers of a chain that has no probe |
+| `unchecked_chains` | the chains that have no probe |
+| `whitelist` | `not read yet`, `matches the local config`, or the number of differences logged above |
+
+The whitelist is `not read yet` until the node has synced and read it from the
+contract.
 
 ### Whitelist and quorum
 
@@ -156,7 +177,7 @@ participant:
 `whitelisted` must reach `required`. Anything less means the chain is
 configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
-asks. The node logs the differing provider at startup and on every whitelist change.
+asks. The probe logs the differing provider each round, as described above.
 
 ## Recommended alerts
 
@@ -229,12 +250,13 @@ time() - mpc_last_backup_served_timestamp_seconds > 86400  for 2h
 mpc_last_backup_served_epoch < mpc_current_epoch_id  for 2h
 
 # Warn: no attestation has landed in three resubmission intervals. This fires
-# within hours; the expiry alerts below only fire days later.
+# within hours; the expiry alerts below can fire weeks later.
 mpc_indexer_latest_block_timestamp_seconds - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
 
-# Page: under three days of attestation runway left. Backstop for the alert
-# above; reached about four days after submissions stop landing. `> 0` keeps
-# the sentinel values out.
+# Page: under three days of attestation runway left. The attestation expires
+# with the collateral it was submitted with, so this is a backstop for the alert
+# above, and also fires for a node that keeps submitting nearly stale
+# collateral. `> 0` keeps the sentinel values out.
 mpc_attestation_expiry_timestamp_seconds > 0
   and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
       < 3 * 86400  for 15m

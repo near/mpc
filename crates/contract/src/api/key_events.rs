@@ -246,13 +246,13 @@ const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 30;
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::api::test_utils::forwarded_participant_call_contract;
+    use crate::api::test_utils::running_contract_called_by_participant_via_forwarder;
     use near_mpc_contract_interface::types::DomainId;
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn vote_cancel_resharing__should_panic_when_predecessor_differs_from_signer() {
-        let mut contract = forwarded_participant_call_contract();
+        let mut contract = running_contract_called_by_participant_via_forwarder();
         contract
             .vote_cancel_resharing()
             .expect("expected panic when predecessor != signer");
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn vote_cancel_keygen__should_panic_when_predecessor_differs_from_signer() {
-        let mut contract = forwarded_participant_call_contract();
+        let mut contract = running_contract_called_by_participant_via_forwarder();
         contract
             .vote_cancel_keygen(DomainId(0))
             .expect("expected panic when predecessor != signer");

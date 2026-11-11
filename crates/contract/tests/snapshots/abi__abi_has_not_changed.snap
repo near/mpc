@@ -452,14 +452,14 @@ expression: abi
       },
       {
         "name": "get_tee_accounts",
-        "doc": " Returns the id of every stored node, including nodes of accounts that are not participants.",
+        "doc": " Returns every stored node, including nodes of accounts that are not participants.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/NodeId"
+              "$ref": "#/definitions/NodeInfo"
             }
           }
         }
@@ -880,7 +880,7 @@ expression: abi
                       "[u8; 48]"
                     ]
                   },
-                  "NodeId": {
+                  "NodeInfo": {
                     "Struct": [
                       [
                         "account_id",
@@ -980,8 +980,8 @@ expression: abi
                   "VerificationContext": {
                     "Struct": [
                       [
-                        "node_id",
-                        "NodeId"
+                        "node",
+                        "NodeInfo"
                       ],
                       [
                         "tcb_info",
@@ -1024,8 +1024,36 @@ expression: abi
           {
             "serialization_type": "borsh",
             "type_schema": {
-              "declaration": "VerificationResult",
+              "declaration": "VerificationResultWithCollateralDates",
               "definitions": {
+                "CollateralDates": {
+                  "Struct": [
+                    [
+                      "earliest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "latest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "earliest_expiration_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_earliest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_latest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_earliest_expiration_date",
+                      "u64"
+                    ]
+                  ]
+                },
                 "EnclaveReport": {
                   "Struct": [
                     [
@@ -1374,31 +1402,38 @@ expression: abi
                     "elements": "u8"
                   }
                 },
-                "VerificationResult": {
+                "VerificationResultWithCollateralDates": {
                   "Enum": {
                     "tag_width": 1,
                     "variants": [
                       [
                         0,
                         "Verified",
-                        "VerificationResult__Verified"
+                        "VerificationResultWithCollateralDates__Verified"
                       ],
                       [
                         1,
                         "Rejected",
-                        "VerificationResult__Rejected"
+                        "VerificationResultWithCollateralDates__Rejected"
                       ]
                     ]
                   }
                 },
-                "VerificationResult__Rejected": {
+                "VerificationResultWithCollateralDates__Rejected": {
                   "Struct": [
                     "VerifierError"
                   ]
                 },
-                "VerificationResult__Verified": {
+                "VerificationResultWithCollateralDates__Verified": {
                   "Struct": [
-                    "VerifiedReport"
+                    [
+                      "report",
+                      "VerifiedReport"
+                    ],
+                    [
+                      "collateral_dates",
+                      "CollateralDates"
+                    ]
                   ]
                 },
                 "VerifiedReport": {
@@ -1541,6 +1576,9 @@ expression: abi
                 },
                 "u32": {
                   "Primitive": 4
+                },
+                "u64": {
+                  "Primitive": 8
                 },
                 "u8": {
                   "Primitive": 1
@@ -1849,11 +1887,16 @@ expression: abi
               "type_schema": {
                 "declaration": "Update",
                 "definitions": {
+                  "BlockCount": {
+                    "Struct": [
+                      "u64"
+                    ]
+                  },
                   "Config": {
                     "Struct": [
                       [
                         "key_event_timeout_blocks",
-                        "u64"
+                        "BlockCount"
                       ],
                       [
                         "tee_upgrade_deadline_duration_seconds",
@@ -1986,7 +2029,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`] if another account\n holds the TLS key: as a current or proposed participant, as a migration destination, or\n through an attestation stored under it.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`](crate::tee::tee_state::AttestationSubmissionError::TlsKeyOwnedByOtherAccount)\n if the node stored under the TLS key belongs to another account.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2758,6 +2801,18 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "BlockCount": {
+          "description": "A number of blocks: a distance between heights or a timeout measured in blocks.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "BlockHeight": {
+          "description": "Height of a NEAR block. Later blocks compare greater.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "Bls12381G1PublicKey": {
           "type": "string"
         },
@@ -3154,9 +3209,11 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "allOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "How long a launcher hash that no current participant uses stays allowed after its last vote or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is never removed automatically.",
@@ -3207,7 +3264,7 @@ expression: abi
               "minimum": 0.0
             },
             "verifier_tera_gas": {
-              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
+              "description": "Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3837,12 +3894,14 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "TTL for launcher hashes no current participant uses; see [`Config::launcher_hash_unused_ttl_seconds`].",
@@ -3917,7 +3976,7 @@ expression: abi
               "minimum": 0.0
             },
             "verifier_tera_gas": {
-              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
+              "description": "Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.",
               "type": [
                 "integer",
                 "null"
@@ -4062,9 +4121,7 @@ expression: abi
               "uniqueItems": true
             },
             "expires_on": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             },
             "public_key": {
               "anyOf": [
@@ -4077,9 +4134,7 @@ expression: abi
               ]
             },
             "started_in": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             }
           }
         },
@@ -4263,7 +4318,8 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "NodeId": {
+        "NodeInfo": {
+          "description": "A node the contract stores under its TLS key. Its attestation is a separate [`StoredAttestation`](crate::types::StoredAttestation).",
           "type": "object",
           "required": [
             "account_id",

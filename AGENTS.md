@@ -51,7 +51,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 1. **NEAR Indexer**: Monitors the signer contract (`v1.signer` on mainnet) for incoming `sign` requests
 2. **MPC Signing**: Threshold ECDSA based on cait-sith library with:
    - Background Beaver triple generation (up to 1M per node)
-   - Signature generation: presign-and-sign in one computation over a pair of triples
+   - Signature generation: one online computation over a pair of triples
 
 ### Key Crates
 
@@ -62,6 +62,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 | `near-mpc-contract-interface` | DTOs for contract communication and typed contract calls; plain data carriers |
 | `near-mpc-sdk` | Client SDK: request builders, response verification; owns validation shared between consumers of the contract-interface crate |
 | `mpc-primitives` | Core domain types (domain IDs, signature schemes) |
+| `near-block-primitives` | NEAR block height newtypes, free of MPC concepts |
 | `mpc-tls` | TLS transport for secure P2P communication |
 | `test-utils` | Testing utilities for integration tests |
 
