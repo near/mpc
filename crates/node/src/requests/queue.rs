@@ -15,6 +15,19 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
+pub trait ReadAliveParticipants {
+    /// Returns the participants that are currently connected to us, including us.
+    fn alive_participants(&self) -> HashSet<ParticipantId>;
+}
+
+pub trait ReadIndexerHeights {
+    /// Returns the height of each indexer, including us. This must return all
+    /// participants, even those who are never connected.
+    fn indexer_heights(&self) -> HashMap<ParticipantId, u64>;
+}
+
+// todo: replace this trait with `ReadAliveParticipants` and `ReadIndexerHeights`, implemented by
+// one type that the queue holds as a type parameter.
 /// Thin API that the queue needs from the network.
 pub trait NetworkAPIForRequests: Send + Sync + 'static {
     /// Returns the participants that are currently connected to us.
@@ -103,6 +116,10 @@ pub struct PendingRequests<RequestType, ChainRespondArgsType, Refiner = NoRefine
     /// from this map. This is the "queue".
     pub(super) requests: HashMap<RequestId, QueuedRequest<RequestType, ChainRespondArgsType>>,
 
+    // todo: hold the network as a type parameter of the struct:
+    // pub struct PendingRequests<RequestType, ChainRespondArgsType, Network, Refiner = NoRefinement>
+    // pub(super) network: Network,
+    // with `Network: ReadAliveParticipants + ReadIndexerHeights` on the impl blocks that read it.
     /// Provides information about connectivity and indexer heights.
     pub(super) network_api: Arc<dyn NetworkAPIForRequests>,
 
@@ -691,6 +708,10 @@ where
     /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
     /// eligible leaders.
     pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
+        // todo: read through the new traits, in an impl block bounded by
+        // `Network: ReadAliveParticipants + ReadIndexerHeights`:
+        // let indexer_heights = self.network.indexer_heights();
+        // let alive_participants = self.network.alive_participants();
         let indexer_heights = self.network_api.indexer_heights();
         let alive_participants = self.network_api.alive_participants();
         let height_of =
