@@ -68,6 +68,11 @@ impl PendingVerifyForeignTxRequestsV2 {
     pub(crate) fn get(&self, yield_id: &YieldId) -> Option<&PendingVerifyForeignTxRequestV2> {
         self.by_yield_id.get(yield_id)
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_next_yield_counter(&mut self, counter: u64) {
+        self.next_yield_counter = counter;
+    }
 }
 
 #[cfg(feature = "foreign-tx-v2")]
@@ -102,6 +107,7 @@ mod tests {
         insta::assert_debug_snapshot!(schema);
     }
 
+    #[cfg(feature = "foreign-tx-v2")]
     #[test]
     fn take_next_yield_id__should_hash_the_prefix_and_the_counter() {
         // Given
@@ -119,6 +125,7 @@ mod tests {
         assert_eq!(requests.next_yield_counter, 8);
     }
 
+    #[cfg(feature = "foreign-tx-v2")]
     #[test]
     fn take_next_yield_id__should_never_repeat_an_id() {
         // Given
@@ -132,6 +139,7 @@ mod tests {
         assert_eq!(ids.len(), 100);
     }
 
+    #[cfg(feature = "foreign-tx-v2")]
     #[test]
     #[should_panic(expected = "the yield counter overflowed")]
     fn take_next_yield_id__should_panic_when_the_counter_overflows() {

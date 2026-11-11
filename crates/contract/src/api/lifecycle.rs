@@ -209,3 +209,37 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
         .map(|data| T::try_from_slice(&data))
         .transpose()
 }
+
+#[cfg(all(test, feature = "foreign-tx-v2"))]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::state::test_utils::gen_running_state;
+
+    #[test]
+    fn migrate__should_keep_the_foreign_tx_v2_yield_counter() {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(ProtocolContractState::Running(
+            gen_running_state(1),
+        ));
+        for _ in 0..3 {
+            contract
+                .pending_verify_foreign_tx_v2_requests
+                .take_next_yield_id();
+        }
+        env::state_write(&contract);
+
+        // When
+        let mut migrated = MpcContract::migrate().unwrap();
+
+        // Then
+        assert_eq!(
+            migrated
+                .pending_verify_foreign_tx_v2_requests
+                .take_next_yield_id(),
+            contract
+                .pending_verify_foreign_tx_v2_requests
+                .take_next_yield_id()
+        );
+    }
+}

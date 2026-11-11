@@ -46,12 +46,22 @@ pub struct ForeignChainSignatureVerifier {
     request: ForeignChainRpcRequest,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum VerifyForeignChainError {
+    #[error("failed to compute the hash of the signed payload")]
     FailedToComputeMsgHash,
+    #[error("the response signs payload hash {got:?}, expected {expected:?}")]
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
+    #[error("the signature scheme does not match the public key")]
     UnexpectedSignatureScheme,
+    #[error("the signature does not verify under the public key")]
     SignatureVerificationFailed,
+    #[error("the network signed the negative verdict {verdict:?}")]
+    NegativeOutcome {
+        verdict: ForeignTxVerificationNegativeVerdict,
+    },
+    #[error("the network signed an inconclusive outcome")]
+    InconclusiveOutcome,
 }
 
 impl ForeignChainSignatureVerifier {

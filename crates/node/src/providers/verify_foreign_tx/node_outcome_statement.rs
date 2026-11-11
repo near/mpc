@@ -11,7 +11,9 @@ use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 const NODE_OUTCOME_STATEMENT_PREFIX: &[u8] = b"near-mpc foreign tx v2 node outcome";
 
 /// A [`SignedNodeOutcome`] whose signature matches the key that the participant set records for
-/// its signer.
+/// its signer, and whose attempt belongs to the leader it names. It proves nothing else. A
+/// consumer still checks that the leader is the node asking, that the yield is the one it serves,
+/// and that the signer took part in the attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifiedNodeOutcome(SignedNodeOutcome);
 
@@ -92,7 +94,8 @@ impl SignedNodeOutcome {
 
 impl AttemptId {
     fn leader(self) -> ParticipantId {
-        self.0.0.participant_id()
+        let ChannelId(id) = self.0;
+        id.participant_id()
     }
 }
 
@@ -342,10 +345,40 @@ mod tests {
 
     #[rstest]
     #[case::verified("signed_bytes_verified", NodeOutcome::Verdict(NodeVerdict::Verified))]
-    #[case::negative(
-        "signed_bytes_negative",
+    #[case::transaction_failed(
+        "signed_bytes_transaction_failed",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::TransactionFailed
+        ))
+    )]
+    #[case::log_index_out_of_bounds(
+        "signed_bytes_log_index_out_of_bounds",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds
+        ))
+    )]
+    #[case::transaction_not_found(
+        "signed_bytes_transaction_not_found",
         NodeOutcome::Verdict(NodeVerdict::Negative(
             ForeignTxVerificationNegativeVerdict::TransactionNotFound
+        ))
+    )]
+    #[case::account_not_found(
+        "signed_bytes_account_not_found",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::AccountNotFound
+        ))
+    )]
+    #[case::non_canonical_block(
+        "signed_bytes_non_canonical_block",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::NonCanonicalBlock
+        ))
+    )]
+    #[case::values_mismatch(
+        "signed_bytes_values_mismatch",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::ValuesMismatch
         ))
     )]
     #[case::transient(
