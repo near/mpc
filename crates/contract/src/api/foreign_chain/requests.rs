@@ -201,8 +201,6 @@ mod tests {
     };
 
     use dtos::{DomainId, ForeignTxSignPayload, Protocol};
-    use k256::ecdsa::SigningKey;
-    use k256::{self, Secp256k1, elliptic_curve};
 
     use near_mpc_contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
@@ -281,18 +279,10 @@ mod tests {
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
             )],
         });
-        let payload_hash_arr = payload.compute_msg_hash().unwrap().0;
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let signing_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
-        let (signature, recovery_id) = signing_key
-            .sign_prehash_recoverable(&payload_hash_arr)
-            .unwrap();
+        let payload_hash = payload.compute_msg_hash().unwrap();
         let response = dtos::VerifyForeignTransactionResponse {
-            payload_hash: payload.compute_msg_hash().unwrap(),
-            signature: dtos::SignatureResponse::Secp256k1(
-                dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
-            ),
+            signature: sign_payload_hash(&secret_key, &payload_hash),
+            payload_hash,
         };
 
         with_active_participant_and_attested_context(&contract);
