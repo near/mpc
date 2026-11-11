@@ -1,12 +1,19 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, UpperBoundedVec};
+use near_mpc_bounded_collections::UpperBoundedVec;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
-use std::collections::{BTreeMap, BTreeSet};
 
+use crate::types::SignatureResponse;
 use crate::types::primitives::DomainId;
-use crate::types::{Ed25519PublicKey, SignatureResponse};
+
+mod hashes;
+mod providers;
+mod support;
+
+pub use hashes::*;
+pub use providers::*;
+pub use support::*;
 
 /// Maximum number of significant data bits a TON Cell may hold.
 ///
@@ -1352,138 +1359,6 @@ pub enum StarknetExtractedValue {
 
 #[derive(
     Debug,
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-#[non_exhaustive]
-pub enum ForeignChain {
-    Solana,
-    Bitcoin,
-    Ethereum,
-    Base,
-    Bnb,
-    Arbitrum,
-    Abstract,
-    Starknet,
-    Polygon,
-    HyperEvm,
-    Ton,
-    Aptos,
-    Sui,
-    Avalanche,
-    Adi,
-    Fogo,
-}
-
-impl ForeignChain {
-    /// The chain's key in an operator's `foreign_chains` config, also used as its metric label.
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Solana => "solana",
-            Self::Bitcoin => "bitcoin",
-            Self::Ethereum => "ethereum",
-            Self::Base => "base",
-            Self::Bnb => "bnb",
-            Self::Arbitrum => "arbitrum",
-            Self::Abstract => "abstract",
-            Self::Starknet => "starknet",
-            Self::Polygon => "polygon",
-            Self::HyperEvm => "hyper_evm",
-            Self::Ton => "ton",
-            Self::Aptos => "aptos",
-            Self::Sui => "sui",
-            Self::Avalanche => "avalanche",
-            Self::Adi => "adi",
-            Self::Fogo => "fogo",
-        }
-    }
-}
-
-/// Set of foreign chains a node reports it can serve; aggregated into [`AvailableForeignChains`] by the contract.
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Deref,
-    derive_more::DerefMut,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ForeignChainsConfig(BTreeSet<ForeignChain>);
-
-/// Per-node foreign-chain configs, keyed by each node's TLS public key.
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Deref,
-    derive_more::DerefMut,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ForeignChainsConfigs(BTreeMap<Ed25519PublicKey, ForeignChainsConfig>);
-
-/// The set of foreign chains available across the threshold of active participants. Returned by
-/// `get_available_foreign_chains`; computed from the per-node [`ForeignChainsConfig`] reports.
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Deref,
-    derive_more::DerefMut,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
-
-#[derive(
-    Debug,
     Clone,
     Eq,
     PartialEq,
@@ -1503,54 +1378,6 @@ pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct BlockConfirmations(pub u64);
-
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-    derive_more::Deref,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
-
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Deref,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct Hash160(#[serde_as(as = "Hex")] pub [u8; 20]);
 
 #[serde_as]
 #[derive(
@@ -1768,113 +1595,6 @@ impl ForeignTxSignPayload {
         borsh::BorshSerialize::serialize(self, &mut hasher)?;
         Ok(Hash256(hasher.finalize().into()))
     }
-}
-
-/// Stable label for an RPC provider entry (e.g. `"alchemy"`, `"ankr"`, `"drpc"`).
-/// Unique within a chain in the on-chain foreign-chain RPC whitelist.
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Display,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ProviderId(pub String);
-
-/// Where the operator's API key/token gets injected into the assembled RPC URL.
-/// Lives on the contract (not in operator yaml) so the operator can't pick a custom
-/// auth shape that lets them inject extra path or query components.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-#[non_exhaustive]
-pub enum AuthScheme {
-    /// Token sent in an HTTP header (e.g. `Authorization: Bearer <token>`).
-    Header {
-        name: String,
-        scheme: Option<String>,
-    },
-    /// Token substituted into a `{placeholder}` in the URL path.
-    Path { placeholder: String },
-    /// Token sent as a query parameter (`?<name>=<token>`).
-    Query { name: String },
-    /// Public endpoint, no auth.
-    None,
-}
-
-/// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
-/// modelled as an enum so a vote can't accidentally produce an "all three" shape.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-#[non_exhaustive]
-pub enum ChainRouting {
-    /// Chain identity already encoded in `base_url` (subdomain or path prefix).
-    /// E.g. Alchemy's `eth-mainnet.g.alchemy.com`, Infura's `mainnet.infura.io`, or
-    /// any chain-dedicated endpoint.
-    Embedded,
-    /// Append `segment` after `base_url`'s path. E.g. Ankr Ethereum: `"eth"`.
-    /// `segment` MUST NOT contain `/` (validated when a vote applies).
-    PathSegment { segment: String },
-    /// Merge a single chain-identifying query param into the URL. E.g. dRPC Ethereum:
-    /// `{ name: "network", value: "ethereum" }`.
-    /// When `AuthScheme::Query { name: auth_name }` is used, `name` here MUST differ
-    /// from `auth_name` (validated when a vote applies).
-    QueryParam { name: String, value: String },
-}
-
-/// One provider's per-chain configuration, stored as a value in `ChainEntry.providers`
-/// (keyed by [`ProviderId`]). Read by nodes at startup to assemble the actual RPC URL
-/// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ProviderConfig {
-    /// Provider's stable base. When `chain_routing == Embedded`, the chain identifier
-    /// is already inside `base_url` (subdomain or path prefix). Otherwise `base_url`
-    /// is chain-agnostic and `chain_routing` carries the chain marker.
-    ///
-    /// A single `{}` allows per-operator slug (e.g. QuickNode's
-    /// `https://{}.sui-testnet.quiknode.pro`); nodes match it against exactly one
-    /// label of the local URL, keeping the rest of the host pinned.
-    pub base_url: String,
-    pub auth_scheme: AuthScheme,
-    pub chain_routing: ChainRouting,
-}
-
-/// Stored state for one chain in the on-chain whitelist: a non-empty map from
-/// [`ProviderId`] to that provider's per-chain configuration, plus the voted RPC
-/// response quorum. Returned by the
-/// `allowed_foreign_chain_providers` view fn. [`NonEmptyBTreeMap`] enforces a non-empty
-/// provider set and at-most-one entry per [`ProviderId`] at deserialize time,
-/// and the map iterates in [`ProviderId`] order — so the canonical hash matches across
-/// voters without an explicit sort step.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ChainEntry {
-    pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
-    /// How many whitelisted providers must agree before a node accepts a verdict.
-    pub quorum: u64,
 }
 
 #[cfg(test)]
