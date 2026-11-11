@@ -3,7 +3,7 @@ mod indexer_height_lag;
 
 pub use indexer_height_lag::{IndexerHeightLag, IndexerHeightReport, LegacyIndexerHeightReport};
 
-use crate::network::view::{
+use crate::network::connectivity::{
     first_hand_indexer_heights::FirstHandIndexerHeights, health::LinkObservation,
 };
 
@@ -11,15 +11,16 @@ pub struct ObservationContext<'a, N> {
     pub first_hand_indexer_heights: &'a FirstHandIndexerHeights<N>,
 }
 
-/// Implemented by an observation type: how to read it out of an update.
-pub trait IntoLinkObservation<N, U>: Sized {
-    fn into_link_observation(
-        update: &U,
+/// Implemented by a report type: the link observations derived from it.
+pub trait DeriveLinkObservations<N> {
+    type Observation;
+    fn derive_link_observations(
+        &self,
         context: &ObservationContext<'_, N>,
-    ) -> Vec<LinkObservation<N, Self>>;
+    ) -> Vec<LinkObservation<N, Self::Observation>>;
 }
 
-pub enum NetworkViewUpdate<N> {
+pub enum PeerReport<N> {
     LegacyIndexerHeightReport(LegacyIndexerHeightReport<N>),
     IndexerHeightReport(IndexerHeightReport<N>),
 }

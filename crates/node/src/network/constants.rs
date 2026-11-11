@@ -20,7 +20,7 @@ pub const RECENT_DELAY_SAMPLES: NonZeroUsize =
     NonZeroUsize::new(60).expect("literal must be non-zero");
 ///// Largest moving-average gossip delay, in blocks, at which a link still counts as online: the
 ///// liveness lag plus a buffer for the extra gossip hop in the measurement.
-//// todo: uncalibrated; see the todo on `RecentBlockLags`' `GradeLink` impl
+// todo: uncalibrated; see the todo on `RecentBlockLags`' `GradeLink` impl
 //pub const MAX_ONLINE_DELAY_BLOCKS: MeanBlockLag =
 //    MeanBlockLag::new(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF + 10);
 /// Uninterrupted presence behind the `Seconds` and `HalfMinute` uptimes.

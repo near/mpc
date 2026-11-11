@@ -8,7 +8,7 @@ use petgraph::{
     visit::IntoEdgeReferences,
 };
 
-use crate::network::view::graph::{edge::UndirectedEdge, errors::UnknownNodeError};
+use crate::network::connectivity::graph::{edge::UndirectedEdge, errors::UnknownNodeError};
 
 // todo: make a trait for the stuff our consumer needs.
 

@@ -1,49 +1,58 @@
 use near_time::Instant;
 
-use crate::network::view::{
+use crate::network::connectivity::{
     graph::UnknownNodeError,
     health::{
-        connections::{ConnectionChanged, LiveNetworkConnections},
-        links::{
-            InferConnectionStatus, LinkObservation, MeasuredNetworkLinks, UpdateLinkStatus,
-            UpdateResult,
-        },
+        connections::{ConnectionChanged, EstablishedConnections, InferredConnection},
+        links::{LinkMeasurements, LinkObservation, LinkStatusChange, UpdateLinkStatus},
     },
 };
 
-pub struct NetworkConnectionsHealthTracker<N, C, L> {
+pub struct ConnectionTracker<N, C, L> {
     // a link is a directed connection node A --> B,
     // each link is measured, such that we can infer link quality from the measurements.
-    measured_links: MeasuredNetworkLinks<N, L>,
+    link_measurements: LinkMeasurements<N, L>,
     // a connection between two nodes is as good as the worse of the two links between them
-    connection_status: LiveNetworkConnections<N, C>,
+    established_connections: EstablishedConnections<N, C>,
 }
 
-impl<N: Ord + Clone, C, L> NetworkConnectionsHealthTracker<N, C, L> {
-    pub fn update_with_observation<U>(
+impl<N: Ord + Clone, C, L> ConnectionTracker<N, C, L> {
+    pub fn update_with_observation<O>(
         &mut self,
-        observation: LinkObservation<N, L::Observation>,
+        observation: LinkObservation<N, O>,
         now: Instant,
     ) -> Result<ConnectionChanged, UnknownNodeError<N>>
     where
-        L: UpdateLinkStatus<U> + InferConnectionStatus<ConnectionStatus = C>,
+        L: UpdateLinkStatus<O>,
+        L::LinkStatus: InferConnection<ConnectionStatus = C>,
         C: PartialEq,
     {
         let LinkObservation { link, observation } = observation;
-        let update_result = self
-            .measured_links
-            .record_observation::<U>(&link, observation, now)?;
-        match update_result {
-            UpdateResult::StatusRemained => Ok(ConnectionChanged::No),
-            UpdateResult::StatusChanged(new_status) => {
-                let other_direction = self.measured_links.status(&link.reversed())?;
-                let connection_satus =
-                    L::infer_connection_status(Some(new_status), other_direction);
-                self.connection_status
-                    .update_connection(&link.into(), connection_satus)
+        let status_change = self
+            .link_measurements
+            .record_observation(&link, observation, now)?;
+        match status_change {
+            LinkStatusChange::Unchanged => Ok(ConnectionChanged::No),
+            LinkStatusChange::Changed(new_status) => {
+                let other_direction = self.link_measurements.status(&link.reversed())?;
+                let inferred_connection =
+                    L::LinkStatus::infer_connection(Some(new_status), other_direction);
+                self.established_connections
+                    .update_connection(&link.into(), inferred_connection)
             }
         }
     }
+}
+
+/// Implemented by a link status type.
+pub trait InferConnection: Sized {
+    type ConnectionStatus;
+    /// The connection that the two links between a pair of nodes add up to. A link is `None`
+    /// while it has no observations.
+    fn infer_connection(
+        a: Option<Self>,
+        b: Option<Self>,
+    ) -> InferredConnection<Self::ConnectionStatus>;
 }
 
 //pub trait ReportConnectionHealth {
@@ -236,7 +245,7 @@ impl<N: Ord + Clone, C, L> NetworkConnectionsHealthTracker<N, C, L> {
 //    ///
 //    /// Panics if there are more nodes than `NodeIndex` can address (65,535).
 //    pub fn new(nodes: &NonEmptyBTreeSet<N>, unmeasured: S) -> Self {
-//        let measured_links = MeasuredNetworkLinks::new(nodes, unmeasured);
+//        let measured_links = LinkMeasurements::new(nodes, unmeasured);
 //        let connections = UsableNetworkConnections::new(nodes);
 //        Self {
 //            measured_links,
@@ -246,7 +255,7 @@ impl<N: Ord + Clone, C, L> NetworkConnectionsHealthTracker<N, C, L> {
 //}
 
 //// Every directed link's [`LinkStatus`], stored as an adjacency matrix.
-//impl<N: Ord + Clone, S> MeasuredNetworkLinks<N, S> {
+//impl<N: Ord + Clone, S> LinkMeasurements<N, S> {
 //    pub fn report(&self, now: Instant) -> LinkReport<N, S>
 //    where
 //        S: Clone,

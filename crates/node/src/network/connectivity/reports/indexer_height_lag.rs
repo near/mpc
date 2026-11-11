@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use near_block_primitives::BlockCount;
 
-use crate::network::view::{
+use crate::network::connectivity::{
     first_hand_indexer_heights::ReportedIndexerHeight,
     graph::DirectedEdge,
     health::LinkObservation,
-    updates::{IntoLinkObservation, ObservationContext},
+    reports::{DeriveLinkObservations, ObservationContext},
 };
 
 /// How far a reporter's height for a peer trails our first-hand height for that peer, or
@@ -52,15 +52,17 @@ impl IndexerHeightLag {
     }
 }
 
-impl<N: Ord + Clone> IntoLinkObservation<N, IndexerHeightReport<N>> for IndexerHeightLag {
-    fn into_link_observation(
-        update: &IndexerHeightReport<N>,
+impl<N: Ord + Clone> DeriveLinkObservations<N> for IndexerHeightReport<N> {
+    type Observation = IndexerHeightLag;
+
+    fn derive_link_observations(
+        &self,
         context: &ObservationContext<'_, N>,
-    ) -> Vec<LinkObservation<N, Self>> {
+    ) -> Vec<LinkObservation<N, IndexerHeightLag>> {
         let IndexerHeightReport {
             reporter,
             indexer_heights,
-        } = update;
+        } = self;
         let mut res = Vec::new();
         for (my_peer, &first_hand) in context.first_hand_indexer_heights.iter() {
             let Ok(link) = DirectedEdge::new(my_peer.clone(), reporter.clone()) else {

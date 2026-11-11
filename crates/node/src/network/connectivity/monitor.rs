@@ -5,58 +5,62 @@ use std::sync::Arc;
 use near_time::{Clock, Duration};
 use tokio::sync::{mpsc, watch};
 
-use crate::network::view::{
-    errors::NetworkViewUpdateError,
+use crate::network::connectivity::{
+    errors::PeerReportError,
     first_hand_indexer_heights::FirstHandIndexerHeights,
     graph::UnknownNodeError,
     health::{
-        ConnectionChanged, InferConnectionStatus, LiveNetworkConnections,
-        NetworkConnectionsHealthTracker, NetworkLinkStatuses, UpdateLinkStatus,
+        ConnectionChanged, InferConnection, EstablishedConnections,
+        ConnectionTracker, LinkStatuses, UpdateLinkStatus,
     },
-    updates::{IndexerHeightReport, IntoLinkObservation, NetworkViewUpdate, ObservationContext},
+    reports::{
+        DeriveLinkObservations, IndexerHeightLag, IndexerHeightReport, ObservationContext,
+        PeerReport,
+    },
 };
 
-struct NetworkViewManager<N, C, S, L> {
+struct ConnectivityMonitor<N, C, S, L> {
     // state
     clock: Clock,
     report_interval: Duration,
     first_hand_heights: FirstHandIndexerHeights<N>,
-    network_connection_health_tracker: NetworkConnectionsHealthTracker<N, C, L>,
+    connection_tracker: ConnectionTracker<N, C, L>,
 
     // everything we receive from other components
-    observations: mpsc::Receiver<NetworkViewUpdate<N>>,
+    peer_reports: mpsc::Receiver<PeerReport<N>>,
 
     // everything we send to other components
     /// as soon as a connection changes its status, this is updated
-    connections: watch::Sender<Arc<LiveNetworkConnections<N, C>>>,
+    connections: watch::Sender<Arc<EstablishedConnections<N, C>>>,
     /// updated on every height update
     heights: watch::Sender<FirstHandIndexerHeights<N>>,
 
     /// update every report_interval
     // todo: metrics task on this watch: mean lag and uptime per link, status per pair, as gauges,
     // to learn the healthy lag distribution and its tail
-    link_report: watch::Sender<NetworkLinkStatuses<N, S>>,
+    link_statuses: watch::Sender<LinkStatuses<N, S>>,
 }
 
-trait ApplyNetworkViewUpdate<N, U> {
-    fn apply(&mut self, update: U) -> Result<ConnectionsChanged, NetworkViewUpdateError<N>>;
+trait ApplyPeerReport<N, R> {
+    fn apply(&mut self, report: R) -> Result<ConnectionsChanged, PeerReportError<N>>;
 }
 
-/// Whether applying an update changed any connection.
+/// Whether applying a report changed any connection.
 enum ConnectionsChanged {
     Yes,
     No,
 }
 
-impl<N: Ord + Clone, C, S, L> NetworkViewManager<N, C, S, L> {
-    /// Reads the link observations out of `update` and feeds them to the tracker.
-    fn process_link_observations<U>(
+impl<N: Ord + Clone, C, S, L> ConnectivityMonitor<N, C, S, L> {
+    /// Derives the link observations from `report` and feeds them to the tracker.
+    fn update_connections<R>(
         &mut self,
-        update: &U,
+        report: &R,
     ) -> Result<ConnectionsChanged, UnknownNodeError<N>>
     where
-        L: UpdateLinkStatus<U> + InferConnectionStatus<ConnectionStatus = C>,
-        L::Observation: IntoLinkObservation<N, U>,
+        R: DeriveLinkObservations<N>,
+        L: UpdateLinkStatus<R::Observation>,
+        L::LinkStatus: InferConnection<ConnectionStatus = C>,
         C: PartialEq,
     {
         let context = ObservationContext {
@@ -64,10 +68,10 @@ impl<N: Ord + Clone, C, S, L> NetworkViewManager<N, C, S, L> {
         };
         let now = self.clock.now();
         let mut connections_changed = ConnectionsChanged::No;
-        for observation in L::Observation::into_link_observation(update, &context) {
+        for observation in report.derive_link_observations(&context) {
             let connection_changed = self
-                .network_connection_health_tracker
-                .update_with_observation::<U>(observation, now)?;
+                .connection_tracker
+                .update_with_observation(observation, now)?;
             if let ConnectionChanged::Yes = connection_changed {
                 connections_changed = ConnectionsChanged::Yes;
             }
@@ -76,24 +80,24 @@ impl<N: Ord + Clone, C, S, L> NetworkViewManager<N, C, S, L> {
     }
 }
 
-impl<N, C, S, L> ApplyNetworkViewUpdate<N, IndexerHeightReport<N>>
-    for NetworkViewManager<N, C, S, L>
+impl<N, C, S, L> ApplyPeerReport<N, IndexerHeightReport<N>>
+    for ConnectivityMonitor<N, C, S, L>
 where
     N: Ord + Clone + std::fmt::Display,
-    L: UpdateLinkStatus<IndexerHeightReport<N>> + InferConnectionStatus<ConnectionStatus = C>,
-    L::Observation: IntoLinkObservation<N, IndexerHeightReport<N>>,
+    L: UpdateLinkStatus<IndexerHeightLag>,
+    L::LinkStatus: InferConnection<ConnectionStatus = C>,
     C: PartialEq,
 {
     fn apply(
         &mut self,
-        update: IndexerHeightReport<N>,
-    ) -> Result<ConnectionsChanged, NetworkViewUpdateError<N>> {
-        let own_height = *update.indexer_heights.get(&update.reporter).ok_or(
-            NetworkViewUpdateError::OwnHeightMissing(update.reporter.clone()),
+        report: IndexerHeightReport<N>,
+    ) -> Result<ConnectionsChanged, PeerReportError<N>> {
+        let own_height = *report.indexer_heights.get(&report.reporter).ok_or(
+            PeerReportError::OwnHeightMissing(report.reporter.clone()),
         )?;
         self.first_hand_heights
-            .set(update.reporter.clone(), own_height)?;
-        Ok(self.process_link_observations(&update)?)
+            .set(report.reporter.clone(), own_height)?;
+        Ok(self.update_connections(&report)?)
     }
 }
 //enum IndexerHeightLag {

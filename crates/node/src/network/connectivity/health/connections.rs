@@ -4,16 +4,16 @@ use std::collections::BTreeSet;
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 
-use crate::network::view::graph::{AdjacencyMatrix, UndirectedEdge, UnknownNodeError};
+use crate::network::connectivity::graph::{AdjacencyMatrix, UndirectedEdge, UnknownNodeError};
 use crate::providers::traits::{CheckReadiness, ComputationDuration, NotReadyError};
 
 /// Keeps track of bidirectional connections in the network
 #[derive(Clone)]
-pub struct LiveNetworkConnections<N, S> {
+pub struct EstablishedConnections<N, S> {
     connections: AdjacencyMatrix<N, S, UndirectedEdge<N>>,
 }
 
-impl<N: Ord + Clone, S> LiveNetworkConnections<N, S> {
+impl<N: Ord + Clone, S> EstablishedConnections<N, S> {
     /// No connection is established yet.
     pub fn new(nodes: &NonEmptyBTreeSet<N>) -> Self {
         Self {
@@ -22,7 +22,7 @@ impl<N: Ord + Clone, S> LiveNetworkConnections<N, S> {
     }
 }
 
-impl<N, S> LiveNetworkConnections<N, S>
+impl<N, S> EstablishedConnections<N, S>
 where
     N: Ord + Clone,
     S: PartialEq,
@@ -68,10 +68,10 @@ impl<S> InferredConnection<S> {
     }
 }
 
-impl<N, S> CheckReadiness for LiveNetworkConnections<N, S>
+impl<N, S> CheckReadiness for EstablishedConnections<N, S>
 where
     N: Ord + Clone,
-    S: ReportConnectionHealth,
+    S: CheckComputationSupport,
 {
     type Node = N;
 
@@ -94,7 +94,7 @@ where
 }
 
 /// can be used to estimate whether a connection is suffienct for a specific computation duration
-pub trait ReportConnectionHealth {
+pub trait CheckComputationSupport {
     fn connection_supports(&self, duration: ComputationDuration) -> ComputationSupported;
 }
 

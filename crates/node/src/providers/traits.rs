@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::network::view::UndirectedEdge;
+use crate::network::connectivity::UndirectedEdge;
 
 pub trait CheckReadiness {
     type Node: Ord + Clone;
