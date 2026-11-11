@@ -11,6 +11,7 @@ pub fn ensure_chain_matches_contract(
     contract_id: &AccountId,
     genesis_hash: CryptoHash,
 ) -> anyhow::Result<()> {
+    // TODO(#5101): take the expected genesis hash from the measured compose instead of this table
     let expected_genesis_hash = match contract_id.as_str() {
         "v1.signer" => MAINNET_GENESIS_HASH,
         "v1.signer-prod.testnet" => TESTNET_GENESIS_HASH,
