@@ -5,7 +5,7 @@
 
 use crate::MpcContract;
 use crate::dto_mapping::IntoInterfaceType as _;
-use crate::primitives::test_utils::{gen_account_id, gen_seed};
+use crate::primitives::test_utils::{bogus_genesis_hash, gen_account_id, gen_seed};
 use crate::tee::tee_state::TeeState;
 use mpc_attestation::attestation::dev_measurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
@@ -134,8 +134,13 @@ pub fn whitelist_dstack_measurements(
     launcher: LauncherImageHash,
     compose_hash: Option<LauncherDockerComposeHash>,
 ) {
-    tee_state.whitelist_tee_proposal(image, Duration::MAX);
-    tee_state.add_launcher_image(launcher, Duration::MAX, Duration::MAX);
+    tee_state.whitelist_tee_proposal(image, &bogus_genesis_hash(), Duration::MAX);
+    tee_state.add_launcher_image(
+        launcher,
+        &bogus_genesis_hash(),
+        Duration::MAX,
+        Duration::MAX,
+    );
     tee_state.add_measurement(dev_measurements().into_dto_type());
     if let Some(compose_hash) = compose_hash {
         tee_state

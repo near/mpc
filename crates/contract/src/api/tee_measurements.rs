@@ -40,8 +40,11 @@ impl MpcContract {
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
         if self.threshold()?.is_met_by(votes) {
-            self.tee_state
-                .whitelist_tee_proposal(mpc_node_manifest_digest, tee_upgrade_deadline_duration);
+            self.tee_state.whitelist_tee_proposal(
+                mpc_node_manifest_digest,
+                &self.genesis_hash,
+                tee_upgrade_deadline_duration,
+            );
         }
 
         Ok(())
@@ -79,6 +82,7 @@ impl MpcContract {
         if self.threshold()?.is_met_by(votes) {
             let outcome = self.tee_state.add_launcher_image(
                 launcher_hash,
+                &self.genesis_hash,
                 tee_upgrade_deadline_duration,
                 launcher_unused_ttl,
             );
@@ -841,12 +845,15 @@ mod tests {
         );
 
         let compose_hashes = contract.allowed_launcher_compose_hashes();
-        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m1)));
-        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m2)));
-        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m3)));
-        assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m2)));
-        assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m3)));
-        assert!(!compose_hashes.contains(&get_docker_compose_hash(&l2, &m1)));
+        let compose_hash = |launcher, mpc_hash| {
+            get_docker_compose_hash(launcher, mpc_hash, &contract.genesis_hash)
+        };
+        assert!(compose_hashes.contains(&compose_hash(&l1, &m1)));
+        assert!(compose_hashes.contains(&compose_hash(&l1, &m2)));
+        assert!(compose_hashes.contains(&compose_hash(&l1, &m3)));
+        assert!(compose_hashes.contains(&compose_hash(&l2, &m2)));
+        assert!(compose_hashes.contains(&compose_hash(&l2, &m3)));
+        assert!(!compose_hashes.contains(&compose_hash(&l2, &m1)));
     }
 
     fn make_measurement(byte: u8) -> dtos::ExpectedMeasurements {

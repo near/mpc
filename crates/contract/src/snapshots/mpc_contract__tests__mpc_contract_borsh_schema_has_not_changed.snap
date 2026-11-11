@@ -357,6 +357,13 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "GenesisHash": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
         "GovernanceThreshold": Struct {
             fields: UnnamedFields(
                 [
@@ -618,6 +625,10 @@ BorshSchemaContainer {
                     (
                         "parameters_votes",
                         "GovernanceThresholdParametersVotes",
+                    ),
+                    (
+                        "genesis_hash",
+                        "GenesisHash",
                     ),
                 ],
             ),

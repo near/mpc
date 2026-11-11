@@ -451,6 +451,7 @@ mod tests {
                 concurrency: 1.try_into().unwrap(),
                 finality: Finality::Final,
                 mpc_contract_id: "mpc.test.near".parse().unwrap(),
+                genesis_hash: None,
                 port_override: None,
                 wipe_near_data_token: 0,
                 sync_mode: SyncMode::Latest,

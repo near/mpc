@@ -23,6 +23,7 @@ All arguments are read from environment variables (set via docker-compose `envir
 | `DOCKER_CONTENT_TRUST` | Yes | Must be `1` |
 | `DEFAULT_IMAGE_DIGEST` | Yes | Fallback `sha256:...` digest when the approved-hashes file is absent |
 | `MPC_CONTRACT_ID` | Yes | Account id of the MPC contract the node serves |
+| `NEAR_GENESIS_HASH` | Yes | Genesis hash of the chain the MPC contract runs on |
 
 ## Configuration (TOML)
 
@@ -39,8 +40,9 @@ port_mappings = [
 ]
 
 # MPC node configuration. The launcher passes these fields through and adds
-# `tee`, `home_dir` and `node.indexer.mpc_contract_id`, rejecting a config that
-# already sets any of them. The result is re-serialized to TOML and written to
+# `tee`, `home_dir`, `node.indexer.mpc_contract_id` and
+# `node.indexer.genesis_hash`, rejecting a config that already sets any of
+# them. The result is re-serialized to TOML and written to
 # /mnt/shared/mpc-config.toml, on a volume shared with the MPC container, for
 # the MPC binary to consume via `start-with-config-file`.
 [mpc_node_config]
@@ -57,7 +59,7 @@ port_mappings = [
 
 ### `[mpc_node_config]`
 
-Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section, `home_dir` and `node.indexer.mpc_contract_id`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that already sets any of them is rejected.
+Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section, `home_dir`, `node.indexer.mpc_contract_id` and `node.indexer.genesis_hash`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that already sets any of them is rejected.
 
 ## Supported Registries
 

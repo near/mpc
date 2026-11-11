@@ -1416,7 +1416,12 @@ async fn init_contract(
     let outcome = match init_format {
         ContractInitFormat::Current => {
             mpc_contract_handle
-                .init(params, tee_verifier_account_id, Some(init_config))
+                .init(
+                    params,
+                    tee_verifier_account_id,
+                    blockchain.genesis_hash().await?,
+                    Some(init_config),
+                )
                 .await?
         }
     };

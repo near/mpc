@@ -509,10 +509,10 @@ timeout_sec = 60
         .unwrap();
         mpc_node_config.insert("tee".into(), tee.into());
         mpc_node_config.insert("home_dir".into(), "/data".into());
-        mpc_node_config["node"]["indexer"]
-            .as_table_mut()
-            .unwrap()
-            .insert("mpc_contract_id".into(), "v1.signer-prod.testnet".into());
+        let testnet_genesis_hash = "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b";
+        let indexer = mpc_node_config["node"]["indexer"].as_table_mut().unwrap();
+        indexer.insert("mpc_contract_id".into(), "v1.signer-prod.testnet".into());
+        indexer.insert("genesis_hash".into(), testnet_genesis_hash.into());
 
         // When
         let config: StartConfig = mpc_node_config.try_into().unwrap();
@@ -522,6 +522,10 @@ timeout_sec = 60
         assert_eq!(
             config.node.my_near_account_id.as_str(),
             "your-mpc-account.testnet"
+        );
+        assert_eq!(
+            config.node.indexer.genesis_hash,
+            Some(testnet_genesis_hash.parse().unwrap())
         );
     }
 }

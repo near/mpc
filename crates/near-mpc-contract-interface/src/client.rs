@@ -50,13 +50,13 @@ use crate::types::{
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
     CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
-    InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes,
-    LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo, ParticipantUrl,
-    ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
-    Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse, YieldIndex,
+    ForeignChainsConfigs, GenesisHash, GovernanceThresholdParameters,
+    GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
+    LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
+    ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState,
+    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation,
+    TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -124,17 +124,20 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         parameters: GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
         init_config: Option<InitConfig>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&InitArgs::new(
             parameters,
             tee_verifier_account_id,
+            genesis_hash,
             init_config,
         ))?;
         self.call(FunctionCallArgs::no_deposit(INIT, args, MAX_GAS))
             .await
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub async fn init_running(
         &self,
         domains: Vec<DomainConfig>,
@@ -142,6 +145,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         keyset: Keyset,
         parameters: GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
         init_config: Option<InitConfig>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&InitRunningArgs::new(
@@ -150,6 +154,7 @@ impl<C: CallContract> MpcContractHandle<C> {
             keyset,
             parameters,
             tee_verifier_account_id,
+            genesis_hash,
             init_config,
         ))?;
         self.call(FunctionCallArgs::no_deposit(INIT_RUNNING, args, MAX_GAS))
@@ -775,9 +780,9 @@ mod tests {
         BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV,
         CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ExpectedMeasurements,
-        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GovernanceThreshold,
-        GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint, K256Scalar,
-        K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
+        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GenesisHash,
+        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
+        K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
         MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
         ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
@@ -860,6 +865,7 @@ mod tests {
                 )],
             },
         };
+        let genesis_hash = GenesisHash::from([7u8; 32]);
         let key_event_id = KeyEventId::new(EpochId::new(7), DomainId(0), AttemptId(0));
         let signature_response = SignatureResponse::Secp256k1(K256Signature {
             big_r: K256AffinePoint {
@@ -883,6 +889,7 @@ mod tests {
             .init(
                 governance_threshold_parameters.clone(),
                 "tee-verifier.near".parse().unwrap(),
+                genesis_hash,
                 Some(InitConfig::default()),
             )
             .await
@@ -894,6 +901,7 @@ mod tests {
                 Keyset::new(EpochId::new(7), Vec::new()),
                 governance_threshold_parameters.clone(),
                 "tee-verifier.near".parse().unwrap(),
+                genesis_hash,
                 Some(InitConfig::default()),
             )
             .await

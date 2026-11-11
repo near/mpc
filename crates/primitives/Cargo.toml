@@ -9,6 +9,7 @@ abi = ["borsh/unstable__schema", "schemars"]
 
 [dependencies]
 borsh = { workspace = true }
+bs58 = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 near-account-id = { workspace = true, features = ["borsh", "serde"] }

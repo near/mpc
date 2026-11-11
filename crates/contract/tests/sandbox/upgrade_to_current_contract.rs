@@ -21,7 +21,7 @@ use crate::sandbox::{
 use mpc_contract::primitives::{
     key_state::EpochId,
     participants::Participants,
-    test_utils::bogus_tee_verifier_account_id,
+    test_utils::{bogus_genesis_hash, bogus_tee_verifier_account_id},
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
@@ -66,7 +66,12 @@ async fn init_old_contract(
             .unwrap()
             .into();
     contract
-        .init(threshold_parameters, bogus_tee_verifier_account_id(), None)
+        .init(
+            threshold_parameters,
+            bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
+            None,
+        )
         .await?
         .into_result()?;
     Ok((accounts, participants))
@@ -638,6 +643,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
             dtos::Keyset::new(EpochId::new(2), vec![]),
             threshold_parameters,
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .await

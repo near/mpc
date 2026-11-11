@@ -8,11 +8,12 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
     CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
-    AccountId, require,
+    AccountId, env, require,
     store::{IterableMap, Lazy, LookupMap},
 };
 
@@ -69,6 +70,80 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: old.parameters_votes,
+            genesis_hash: known_genesis_hash(),
         }
+    }
+}
+
+/// The `3.19.0` contract does not store the genesis hash of its chain, which is known only for the
+/// production contracts. Any other contract gets a hash no chain has, so TEE nodes refuse to serve
+/// it until it is redeployed.
+fn known_genesis_hash() -> GenesisHash {
+    let genesis_hash = match env::current_account_id().as_str() {
+        "v1.signer" => "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H",
+        "v1.signer-prod.testnet" => "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
+        _ => return GenesisHash::from([0; 32]),
+    };
+    genesis_hash
+        .parse()
+        .expect("the production genesis hashes are valid")
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::{state::test_utils::gen_running_state, storage_keys::StorageKey};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
+    use rstest::rstest;
+
+    fn old_contract() -> MpcContract {
+        MpcContract {
+            protocol_state: ProtocolContractState::Running(gen_running_state(1)),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequestsV3,
+            ),
+            contract_update_votes: ContractUpdateVotes::default(),
+            config: Config::default(),
+            tee_state: TeeState::default(),
+            accept_requests: true,
+            node_migrations: NodeMigrations::default(),
+            foreign_chains: Lazy::new(
+                StorageKey::ForeignChainMetadata,
+                ForeignChainsMetadata::default(),
+            ),
+            tee_verifier_account_id: "verifier.near".parse().unwrap(),
+            tee_verifier_votes: TeeVerifierVotes::default(),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
+        }
+    }
+
+    #[rstest]
+    #[case::mainnet("v1.signer", "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H")]
+    #[case::testnet(
+        "v1.signer-prod.testnet",
+        "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b"
+    )]
+    #[case::other_contract("mpc.sandbox", "11111111111111111111111111111111")]
+    fn from__should_take_the_genesis_hash_of_the_production_contract_s_chain(
+        #[case] contract_id: &str,
+        #[case] genesis_hash: &str,
+    ) {
+        // Given
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_id.parse().unwrap())
+                .build()
+        );
+        let old = old_contract();
+
+        // When
+        let migrated: crate::MpcContract = old.into();
+
+        // Then
+        assert_eq!(migrated.genesis_hash, genesis_hash.parse().unwrap());
     }
 }

@@ -146,10 +146,12 @@ pub fn spawn_real_indexer(
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
 
-            indexer_state
-                .ensure_chain_matches_contract()
-                .await
-                .expect("the node must follow its contract's chain");
+            if let Some(genesis_hash) = mpc_indexer_config.genesis_hash {
+                indexer_state
+                    .ensure_chain_matches_contract(genesis_hash)
+                    .await
+                    .expect("the node must follow its contract's chain");
+            }
 
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 
