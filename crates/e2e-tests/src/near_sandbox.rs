@@ -6,6 +6,7 @@ use near_sandbox::{Sandbox, SandboxConfig};
 
 use test_port_allocator::{E2eTestPorts, TestPorts};
 
+const CONFIG_FILE: &str = "config.json";
 const GENESIS_FILE: &str = "genesis.json";
 const NODE_KEY_FILE: &str = "node_key.json";
 
@@ -92,6 +93,10 @@ impl NearSandbox {
 
     pub fn rpc_url(&self) -> String {
         self.sandbox.rpc_addr.clone()
+    }
+
+    pub fn config_path(&self) -> PathBuf {
+        self.sandbox.home_dir.path().join(CONFIG_FILE)
     }
 
     pub fn genesis_path(&self) -> PathBuf {

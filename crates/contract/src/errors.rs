@@ -66,6 +66,8 @@ pub enum RequestError {
         "Pending-request queue is full for this request key (limit: {limit}). Try again once an in-flight response or timeout has cleared room."
     )]
     PendingRequestQueueFull { limit: u8 },
+    #[error("The yield id {yield_id:?} is already pending. This is a bug in the contract.")]
+    YieldIdCollision { yield_id: dtos::YieldId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

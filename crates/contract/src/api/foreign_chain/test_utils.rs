@@ -1,8 +1,14 @@
 use crate::MpcContract;
 use crate::api::test_utils::{must_get_attested_signer_key, participant_account_ids};
 use crate::tee::test_utils::Environment;
+use k256::ecdsa::SigningKey;
+use k256::{Secp256k1, elliptic_curve};
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+#[cfg(feature = "foreign-tx-v2")]
+use near_mpc_contract_interface::events::{
+    MPC_CONTRACT_EVENT_STANDARD, VerifyForeignTxV2YieldCreated,
+};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::testing_env;
@@ -52,4 +58,71 @@ pub(super) fn register_foreign_chains_config_for(
     contract
         .register_foreign_chains_config(foreign_chains_config)
         .expect("register should succeed");
+}
+
+/// Whitelists the chains and registers them for all participants, making them available.
+pub(super) fn make_chains_available(
+    contract: &mut MpcContract,
+    chains: impl IntoIterator<Item = dtos::ForeignChain>,
+) {
+    let chains: Vec<_> = chains.into_iter().collect();
+    for chain in &chains {
+        whitelist_chain(contract, *chain);
+    }
+    for account_id in participant_account_ids(contract) {
+        register_foreign_chains_config_for(contract, &account_id, chains.iter().copied());
+    }
+}
+
+/// Signs `payload_hash` with a secp256k1 root secret key, as the MPC network does.
+pub(crate) fn sign_payload_hash(
+    secret_key: &k256::Scalar,
+    payload_hash: &dtos::Hash256,
+) -> dtos::SignatureResponse {
+    let secret_key: elliptic_curve::SecretKey<Secp256k1> =
+        elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+    let signing_key = SigningKey::from_bytes(&secret_key.to_bytes()).unwrap();
+    let (signature, recovery_id) = signing_key
+        .sign_prehash_recoverable(&payload_hash.0)
+        .unwrap();
+    dtos::SignatureResponse::Secp256k1(dtos::K256Signature::from_ecdsa_recoverable(
+        &signature,
+        recovery_id,
+    ))
+}
+
+#[cfg(feature = "foreign-tx-v2")]
+pub(crate) fn bitcoin_request_v2() -> dtos::VerifyForeignTransactionRequestV2 {
+    dtos::VerifyForeignTransactionRequestV2 {
+        request: dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
+            tx_id: [7u8; 32].into(),
+            confirmations: 2.into(),
+            extractors: [dtos::BitcoinExtractor::BlockHash].into(),
+        }),
+        domain_id: dtos::DomainId::default(),
+        expected_values: vec![dtos::ExtractedValue::BitcoinExtractedValue(
+            dtos::BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+        )],
+    }
+}
+
+/// The yield ids of the [`VerifyForeignTxV2YieldCreated`] events logged so far.
+#[cfg(feature = "foreign-tx-v2")]
+pub(crate) fn announced_yield_ids() -> Vec<dtos::YieldId> {
+    const EVENT_JSON_PREFIX: &str = "EVENT_JSON:";
+    near_sdk::test_utils::get_logs()
+        .iter()
+        .filter_map(|line| line.strip_prefix(EVENT_JSON_PREFIX))
+        .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap())
+        .filter(|event| {
+            event["standard"] == MPC_CONTRACT_EVENT_STANDARD
+                && event["event"] == VerifyForeignTxV2YieldCreated::EVENT
+                && event["version"] == VerifyForeignTxV2YieldCreated::VERSION
+        })
+        .map(|event| {
+            serde_json::from_value::<VerifyForeignTxV2YieldCreated>(event["data"].clone())
+                .unwrap()
+                .yield_id
+        })
+        .collect()
 }
