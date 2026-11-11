@@ -129,6 +129,8 @@ impl VerifyForeignTxProvider {
             .keyshare(foreign_tx_request.domain_id)?;
         let (paired_triple_id, triples) = await_with_slow_hook(
             TRIPLE_TAKE_GRACE_PERIOD,
+            // todo: pass the participants that do not support the chain:
+            // .take_owned_matching(Excluded::participants(non_supporters)),
             self.ecdsa_signature_provider
                 .triple_store_for_t(keyshare.reconstruction_threshold)?
                 .take_owned_matching(chain_supporters.iter().copied().collect()),

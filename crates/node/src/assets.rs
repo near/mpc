@@ -5,13 +5,15 @@ pub mod test_utils;
 
 use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
+use crate::network::connectivity::UndirectedEdge;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
+use crate::providers::participant_selection::ComputationDuration;
 use borsh::BorshDeserialize;
 use near_time::Clock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 /// The cold queue contains a collection of assets and a condition function.
@@ -59,8 +61,6 @@ struct ColdQueue<T, CondVal> {
 impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
     pub(self) fn new(
         clock: Clock,
-        // todo: at call-site, replace this with a call to CheckReadyness, declaring the required
-        // computation duration (different for triples, presignatures and signatures
         condition: fn(&CondVal, &T) -> bool,
         condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
     ) -> Self {
@@ -422,6 +422,23 @@ where
     }
 }
 
+pub trait ReadUnready {
+    /// The participants and connections that cannot be relied on for `duration` right now.
+    fn unready(&self, duration: ComputationDuration) -> Excluded;
+}
+
+/// Participants and connections an asset must not depend on.
+// todo: add
+// pub fn participants(participants: impl IntoIterator<Item = ParticipantId>) -> Self
+// pub fn affects(&self, participants: &[ParticipantId]) -> bool
+// `affects` is true if `participants` contains an excluded participant or both ends of an
+// excluded connection. Needs `Ord` on `UndirectedEdge`.
+#[derive(Default, PartialEq, Eq)]
+pub struct Excluded {
+    participants: BTreeSet<ParticipantId>,
+    connections: BTreeSet<UndirectedEdge<ParticipantId>>,
+}
+
 /// Persistent storage for a single type of asset (e.g. triples).
 /// The storage is distributed across all participants, with each participant
 /// owning some of the assets. Each asset has exactly one owner.
@@ -490,9 +507,10 @@ where
         col: DBCol,
         prefix: Vec<u8>,
         my_participant_id: ParticipantId,
-        // todo: or this one?
+        // todo: both parameters switch to `Excluded`:
+        // condition: fn(&Excluded, &T) -> bool,
+        // unready_query: Arc<dyn Fn() -> Excluded + Send + Sync>,
         condition: fn(&Vec<ParticipantId>, &T) -> bool,
-        // todo: probably this one?
         alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
     ) -> anyhow::Result<Self> {
         let owned_queue = DoubleQueue::new(clock, condition, alive_participant_ids_query);
@@ -657,6 +675,8 @@ where
     /// the supplied `eligible` set. Blocks indefinitely if none becomes
     /// available.
     /// Callers are expected to enforce their own timeout.
+    // todo: take what to avoid instead of who is eligible:
+    // pub async fn take_owned_matching(&self, excluded: Excluded) -> (UniqueId, T)
     pub async fn take_owned_matching(&self, eligible: Vec<ParticipantId>) -> (UniqueId, T) {
         let (id, val) = self.owned_queue.take_owned_matching(eligible).await;
         let mut update = self.db.update();

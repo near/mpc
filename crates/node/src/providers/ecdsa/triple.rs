@@ -67,9 +67,10 @@ impl TripleStorage {
             DBCol::TripleV2,
             reconstruction_threshold.value().to_be_bytes().to_vec(),
             client.my_participant_id(),
-            // todo: here, need to change
+            // todo: replace the two arguments below with
+            // |excluded, pair| !excluded.affects(&participants_from_triples(&pair.0, &pair.1)),
+            // Arc::new(move || connectivity.unready(ComputationDuration::Seconds)),
             |participants, pair| pair.is_subset_of_active_participants(participants),
-            // todo: and here
             Arc::new(move || client.all_alive_participant_ids()),
         )?))
     }
