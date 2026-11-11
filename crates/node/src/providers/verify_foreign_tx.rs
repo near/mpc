@@ -3,9 +3,11 @@ pub(crate) mod node_outcome;
 pub(crate) mod node_outcome_statement;
 pub(crate) mod open_requests;
 
+mod attempt_assets;
 mod attempt_outcomes;
 mod inspect_request;
 mod inspection;
+mod leader_attempts;
 mod provider_call_metrics;
 mod sign;
 mod sign_v2;

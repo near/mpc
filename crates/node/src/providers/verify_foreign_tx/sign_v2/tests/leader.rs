@@ -1,6 +1,7 @@
 use super::*;
 use crate::network::testing::run_test_clients;
 use crate::providers::verify_foreign_tx::attempt_outcomes::AttemptEnd;
+use crate::providers::verify_foreign_tx::leader_attempts::AttemptFailure;
 use crate::providers::verify_foreign_tx::node_outcome::NoVerdictReason;
 use crate::tests::into_participant_ids;
 use crate::tracking::testing::start_root_task_with_periodic_dump;
@@ -15,8 +16,8 @@ use threshold_signatures::participants::Participant;
 use threshold_signatures::test_utils::{deal_triple, generate_participants, run_keygen};
 use tokio::sync::Notify;
 
-/// Far below the deadline of [`run_leader`], so finishing within it means the attempt failed fast.
-const FAIL_FAST_BOUND: Duration = Duration::from_secs(20);
+/// Below [`ATTEMPT_DEADLINE`], so finishing within it means the attempt failed fast.
+const FAIL_FAST_BOUND: Duration = Duration::from_secs(10);
 
 /// A key and a triple pair dealt to every participant, so the clients only run the attempt.
 struct DealtShares {
@@ -53,6 +54,8 @@ enum Follower {
     Refuses,
     /// Reports `outcome` only after the leader's attempt ended.
     ReportsLate(NodeOutcome, Arc<Notify>),
+    /// Sends nothing until the leader's attempt ended.
+    Silent(Arc<Notify>),
 }
 
 async fn run_follower(
@@ -65,6 +68,11 @@ async fn run_follower(
     match behaviour {
         Follower::Refuses => {
             sender.abort(&anyhow::anyhow!("the request is not open"));
+            Ok(())
+        }
+        Follower::Silent(leader_done) => {
+            let _channel = channel;
+            leader_done.notified().await;
             Ok(())
         }
         Follower::ReportsLate(outcome, leader_done) => {
@@ -96,7 +104,7 @@ async fn run_follower(
 
 struct AttemptRun {
     participants: Vec<ParticipantId>,
-    leader_result: anyhow::Result<SignedVerdict>,
+    leader_result: Result<SignedVerdict, AttemptFailure>,
     elapsed: Duration,
     evidence: Vec<NodeOutcomeStatement>,
 }
@@ -117,7 +125,7 @@ async fn run_attempt(
     let leader_done: Vec<Arc<Notify>> = behaviours
         .values()
         .filter_map(|behaviour| match behaviour {
-            Follower::ReportsLate(_, done) => Some(done.clone()),
+            Follower::ReportsLate(_, done) | Follower::Silent(done) => Some(done.clone()),
             _ => None,
         })
         .collect();
@@ -160,7 +168,7 @@ async fn run_leader(
     participants: &[ParticipantId],
     leader_outcome: NodeOutcome,
     (keygen_out, triples): (KeygenOutput, PairedTriple),
-) -> anyhow::Result<SignedVerdict> {
+) -> Result<SignedVerdict, AttemptFailure> {
     let me = client.my_participant_id();
     let (channel, attempt) = open_led_attempt(
         client,
@@ -171,8 +179,11 @@ async fn run_leader(
         participants.to_vec(),
         request().yield_id,
         keys(participants),
-    )?;
-    let signed = signing_key(me).sign(statement(&channel, me, leader_outcome))?;
+    )
+    .unwrap();
+    let signed = signing_key(me)
+        .sign(statement(&channel, me, leader_outcome))
+        .unwrap();
     let (own_outcome_sender, own_outcome) = oneshot::channel();
     own_outcome_sender
         .send(record_own_outcome(
@@ -189,7 +200,7 @@ async fn run_leader(
         reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
         triples,
     }
-    .perform_leader_centric_computation(channel, Duration::from_mins(1))
+    .run(channel, client.attempt_evidence())
     .await
 }
 
@@ -260,10 +271,11 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_verdicts_dif
         let run = run_attempt(VERIFIED, followers, THRESHOLD).await;
 
         // Then
-        let error = run.leader_result.err().unwrap();
         assert_matches!(
-            error.downcast_ref::<AttemptEnd>(),
-            Some(AttemptEnd::VerdictsDiffer { .. })
+            run.leader_result.err(),
+            Some(AttemptFailure::Disagreement(
+                AttemptEnd::VerdictsDiffer { .. }
+            ))
         );
         assert!(run.elapsed < FAIL_FAST_BOUND, "took {:?}", run.elapsed);
         assert_eq!(signers(&run.evidence), run.participants);
@@ -282,13 +294,9 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_a_node_has_n
         let run = run_attempt(VERIFIED, followers, THRESHOLD).await;
 
         // Then
-        let error = run.leader_result.err().unwrap();
         assert_matches!(
-            error.downcast_ref::<AttemptEnd>(),
-            Some(AttemptEnd::NoVerdict {
-                reason: NoVerdictReason::Transient,
-                ..
-            })
+            run.leader_result.err(),
+            Some(AttemptFailure::Transient { participant }) if participant == run.participants[2]
         );
         assert!(run.elapsed < FAIL_FAST_BOUND, "took {:?}", run.elapsed);
         assert_eq!(signers(&run.evidence), run.participants);
@@ -306,10 +314,9 @@ async fn v2_leader_computation__should_end_the_attempt_at_once_when_a_follower_r
         let run = run_attempt(VERIFIED, followers, 2).await;
 
         // Then
-        let error = run.leader_result.err().unwrap();
-        assert!(
-            error.to_string().contains("Aborted by participant"),
-            "unexpected error: {error:#}"
+        assert_matches!(
+            run.leader_result.err(),
+            Some(AttemptFailure::Aborted(aborted)) if aborted.participant == run.participants[2]
         );
         assert!(run.elapsed < FAIL_FAST_BOUND, "took {:?}", run.elapsed);
         assert_eq!(signers(&run.evidence), run.participants[..2]);
@@ -338,6 +345,30 @@ async fn v2_leader_computation__should_keep_an_outcome_that_arrives_after_the_at
             late_statement.outcome,
             NodeOutcome::NoVerdict(NoVerdictReason::Transient)
         );
+    })
+    .await;
+}
+
+#[test_log::test(tokio::test(start_paused = true))]
+async fn v2_leader_computation__should_fail_thirteen_seconds_after_start_when_a_follower_stays_silent()
+ {
+    start_root_task_with_periodic_dump(async {
+        // Given
+        let followers = [
+            Follower::Reports(VERIFIED),
+            Follower::Silent(Arc::new(Notify::new())),
+        ];
+
+        // When
+        let run = run_attempt(VERIFIED, followers, 2).await;
+
+        // Then
+        assert_matches!(
+            run.leader_result.err(),
+            Some(AttemptFailure::DeadlineExceeded { silent })
+                if silent == BTreeSet::from([run.participants[2]])
+        );
+        assert_eq!(run.elapsed, Duration::from_secs(13));
     })
     .await;
 }

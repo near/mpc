@@ -237,6 +237,9 @@ pub struct ComputationProgress<ChainRespondArgsType> {
     /// Number of attempts that have been made to generate the request.
     /// This is used to abort after too many attempts.
     pub attempts: u64,
+    /// Set when this node stops leading the request without a response. It then makes no further
+    /// attempt, and the request times out unless another leader answers it.
+    pub stopped_leading: bool,
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.
     pub computed_response: Option<ChainRespondArgsType>,
@@ -252,6 +255,7 @@ impl<ChainRespondArgsType: ChainRespondArgs> Default for ComputationProgress<Cha
     fn default() -> Self {
         Self {
             attempts: Default::default(),
+            stopped_leading: Default::default(),
             computed_response: Default::default(),
             presumed_leader: Default::default(),
             last_response_submission: Default::default(),
@@ -266,8 +270,8 @@ enum ComputationProgressStatus {
 }
 
 impl<ChainRespondArgsType: ChainRespondArgs> ComputationProgress<ChainRespondArgsType> {
-    /// If [`Self::attempts`] is less than `max_attempts`, then increments
-    /// [`Self::attempts`] by one and returns [`ComputationProgressStatus::NewAttempt`].
+    /// If [`Self::attempts`] is less than `max_attempts` and this node did not stop leading, then
+    /// increments [`Self::attempts`] by one and returns [`ComputationProgressStatus::NewAttempt`].
     /// Otherwise returns [`ComputationProgressStatus::MaxAttemptsExceeded`] or
     /// [`ComputationProgressStatus::Pending`].
     fn update_computation_progress(
@@ -275,7 +279,7 @@ impl<ChainRespondArgsType: ChainRespondArgs> ComputationProgress<ChainRespondArg
         now: near_time::Instant,
         max_attempts: u64,
     ) -> ComputationProgressStatus {
-        if self.attempts >= max_attempts {
+        if self.stopped_leading || self.attempts >= max_attempts {
             ComputationProgressStatus::MaxAttemptsExceeded
         } else if self
             .last_response_submission
@@ -1320,6 +1324,29 @@ mod tests {
             setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         }
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn pending_requests__should_not_attempt_a_request_again_once_the_leader_stopped() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        setup.add_request_leader();
+        setup.update(&mut pending_requests);
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        to_attempt[0]
+            .computation_progress
+            .lock()
+            .unwrap()
+            .stopped_leading = true;
+        drop(to_attempt);
+
+        // When
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert!(to_attempt.is_empty());
     }
 
     #[test_log::test]

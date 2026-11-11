@@ -495,6 +495,14 @@ pub enum InvalidChannelId {
     NoOpenChannel(ChannelId),
 }
 
+/// A follower aborted a computation this node leads.
+#[derive(Debug, thiserror::Error)]
+#[error("Aborted by participant {participant}: {reason}")]
+pub(crate) struct AbortedByParticipant {
+    pub(crate) participant: ParticipantId,
+    pub(crate) reason: String,
+}
+
 /// Reason why the participant set of an [`MpcStartMessage`] was rejected.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum InvalidStartMessage {
@@ -981,7 +989,11 @@ impl NetworkTaskChannel {
                     err
                 );
                 if self.sender.is_leader() {
-                    anyhow::bail!("Aborted by participant {}: {}", message.from, err);
+                    return Err(AbortedByParticipant {
+                        participant: message.from,
+                        reason: err,
+                    }
+                    .into());
                 } else {
                     anyhow::bail!("Aborted by leader: {}", err);
                 }

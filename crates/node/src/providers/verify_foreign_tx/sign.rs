@@ -23,7 +23,7 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
-pub(crate) const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
+const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -54,7 +54,7 @@ fn build_signature_request(
 
 // Awaits on the future for specified grace duration, and calls on_slow
 // if grace period expires.
-pub(crate) async fn await_with_slow_hook<F: Future>(
+async fn await_with_slow_hook<F: Future>(
     grace: Duration,
     fut: F,
     on_slow: impl FnOnce(),

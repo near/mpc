@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
@@ -123,6 +123,23 @@ impl AttemptEvidence {
         let outcome = led_attempt.accept(from, outcomes)?;
         self.record(outcome);
         Ok(())
+    }
+
+    /// The participants of `attempt`, its leader aside, without a kept node outcome.
+    pub(crate) fn silent_followers(&self, attempt: AttemptId) -> BTreeSet<ParticipantId> {
+        let attempts = self.attempts.lock().unwrap();
+        let Some(record) = attempts.peek(&attempt) else {
+            return BTreeSet::new();
+        };
+        record
+            .attempt
+            .participants
+            .iter()
+            .filter(|participant| {
+                **participant != record.attempt.leader && !record.outcomes.contains_key(participant)
+            })
+            .copied()
+            .collect()
     }
 
     /// The node outcomes kept for the attempts at `yield_id`.
@@ -441,5 +458,24 @@ mod tests {
             ))
         );
         assert!(evidence.outcomes_for(YIELD).is_empty());
+    }
+
+    #[test]
+    fn attempt_evidence_silent_followers__should_name_the_followers_without_a_kept_outcome() {
+        // Given
+        let evidence = AttemptEvidence::new();
+        evidence.open(LedAttempt {
+            participants: vec![LEADER, FOLLOWER, OUTSIDER],
+            ..led_attempt(1)
+        });
+        evidence
+            .record_received(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)])
+            .unwrap();
+
+        // When
+        let silent = evidence.silent_followers(attempt_id(1));
+
+        // Then
+        assert_eq!(silent, BTreeSet::from([OUTSIDER]));
     }
 }

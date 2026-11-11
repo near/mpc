@@ -3,15 +3,13 @@ use std::sync::Arc;
 use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_time::Clock;
-use tokio::time::Duration;
 
-use super::{MpcClient, run_led_computation};
+use super::MpcClient;
 use crate::foreign_chain_policy::ForeignChainLeadersRefiner;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainSendTransactionRequest, VerifyForeignTransactionRespondV2ArgsExt,
 };
-use crate::metrics;
 use crate::requests::queue::{GenerationAttempt, PendingRequests};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::types::{RequestsUpdate, VerifyForeignTxRequestV2};
@@ -87,13 +85,12 @@ impl MpcClient {
         let response = match existing_response {
             Some(response) => response,
             None => {
-                // TODO(#5125): give V2 attempts their own deadline and retries.
-                let response = run_led_computation(
-                    &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
-                    Duration::from_secs(self.config.signature.timeout_sec),
-                    self.compute_verify_foreign_tx_v2_response(&attempt.request),
-                )
-                .await?;
+                let response = self
+                    .compute_verify_foreign_tx_v2_response(&attempt.request)
+                    .await
+                    .inspect_err(|_| {
+                        attempt.computation_progress.lock().unwrap().stopped_leading = true;
+                    })?;
                 attempt
                     .computation_progress
                     .lock()
