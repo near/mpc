@@ -56,6 +56,12 @@ impl<N: Ord + Clone, E, K: AddressEdge<N>> AdjacencyMatrix<N, E, K> {
         Ok(self.matrix.update_edge(i, j, weight))
     }
 
+    /// Removes the edge; returns its weight, if there was one.
+    pub fn remove_edge(&mut self, edge: &K) -> Result<Option<E>, UnknownNodeError<N>> {
+        let (i, j) = self.node_indices(edge)?;
+        Ok(self.matrix.try_remove_edge(i, j))
+    }
+
     /// Every node sharing an edge with `node`, with that edge's weight.
     pub fn edges_from(
         &self,
@@ -85,23 +91,6 @@ impl<N, E, K: EdgeType> AdjacencyMatrix<N, E, K> {
 }
 
 impl<N: Ord + Clone, E> AdjacencyMatrix<N, E, UndirectedEdge<N>> {
-    /// Every pair of nodes connected with `weight`. Panics above 65,535 nodes.
-    pub fn complete(nodes: &NonEmptyBTreeSet<N>, weight: E) -> Self
-    where
-        E: Clone,
-    {
-        let mut this = Self::new(nodes);
-        let indices: Vec<NodeIndex> = this.nodes.values().copied().collect();
-        let mut rest = indices.as_slice();
-        while let Some((&i, tail)) = rest.split_first() {
-            for &j in tail {
-                this.matrix.update_edge(i, j, weight.clone());
-            }
-            rest = tail;
-        }
-        this
-    }
-
     /// Every edge among `nodes`, with its weight (`None` for no edge).
     /// Errors if any node is not in the graph.
     pub fn pairs_within<'a>(

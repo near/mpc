@@ -3,7 +3,7 @@ use near_time::Instant;
 use crate::network::view::primitives::{
     LinkObservation,
     errors::UnknownNodeError,
-    live_network_connections::LiveNetworkConnections,
+    live_network_connections::{InferredConnection, LiveNetworkConnections},
     measured_network_link::{MeasuredNetworkLinks, ObserveLinkHealth, UpdateResult},
 };
 
@@ -11,7 +11,10 @@ use crate::network::view::primitives::{
 pub trait InferConnectionStatusFromLinkHealth {
     // todo: different LinkStatus?
     type ConnectionStatus;
-    fn infer_connection_status(a: Option<Self>, b: Option<Self>) -> Self::ConnectionStatus
+    fn infer_connection_status(
+        a: Option<Self>,
+        b: Option<Self>,
+    ) -> InferredConnection<Self::ConnectionStatus>
     where
         Self: Sized;
 }
@@ -33,7 +36,7 @@ where
         &mut self,
         observation: LinkObservation<N, O>,
         now: Instant,
-    ) -> Result<UpdateResult<S>, UnknownNodeError<N>> {
+    ) -> Result<UpdateResult<InferredConnection<S>>, UnknownNodeError<N>> {
         let LinkObservation { link, observation } = observation;
         let update_result = self
             .measured_links
