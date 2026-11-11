@@ -7,7 +7,9 @@ mod network_view;
 
 pub use edge::{DirectedEdge, UndirectedEdge};
 pub use errors::UnknownNodeError;
-pub use live_network_connections::{InferredConnection, LiveNetworkConnections};
+pub use live_network_connections::{
+    ConnectionChanged, InferredConnection, LiveNetworkConnections,
+};
 pub use measured_network_link::{
     InferConnectionStatus, LinkObservation, MeasuredNetworkLinks, NetworkLinkStatuses,
     ReportLinkStatus, UpdateLinkStatus, UpdateResult,

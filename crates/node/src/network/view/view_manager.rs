@@ -9,9 +9,8 @@ use crate::network::view::{
     errors::NetworkViewUpdateError,
     first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
     primitives::{
-        InferConnectionStatus, LinkObservation, LiveNetworkConnections,
+        ConnectionChanged, InferConnectionStatus, LinkObservation, LiveNetworkConnections,
         NetworkConnectionsHealthTracker, NetworkLinkStatuses, UnknownNodeError, UpdateLinkStatus,
-        UpdateResult,
     },
 };
 
@@ -68,7 +67,7 @@ impl<N: Ord + Clone, C, S, L> NetworkViewManager<N, C, S, L> {
     where
         L: UpdateLinkStatus<U> + InferConnectionStatus<ConnectionStatus = C>,
         L::Observation: IntoLinkObservation<N, U>,
-        C: PartialEq + Clone,
+        C: PartialEq,
     {
         let context = ObservationContext {
             first_hand_indexer_heights: &self.first_hand_heights,
@@ -76,10 +75,10 @@ impl<N: Ord + Clone, C, S, L> NetworkViewManager<N, C, S, L> {
         let now = self.clock.now();
         let mut connections_changed = ConnectionsChanged::No;
         for observation in L::Observation::into_link_observation(update, &context) {
-            let update_result = self
+            let connection_changed = self
                 .network_connection_health_tracker
                 .update_with_observation::<U>(observation, now)?;
-            if let UpdateResult::StatusChanged(_) = update_result {
+            if let ConnectionChanged::Yes = connection_changed {
                 connections_changed = ConnectionsChanged::Yes;
             }
         }
@@ -93,7 +92,7 @@ where
     N: Ord + Clone + std::fmt::Display,
     L: UpdateLinkStatus<IndexerHeightReport<N>> + InferConnectionStatus<ConnectionStatus = C>,
     L::Observation: IntoLinkObservation<N, IndexerHeightReport<N>>,
-    C: PartialEq + Clone,
+    C: PartialEq,
 {
     fn apply(
         &mut self,
@@ -103,7 +102,7 @@ where
             NetworkViewUpdateError::OwnHeightMissing(update.reporter.clone()),
         )?;
         self.first_hand_heights
-            .record(update.reporter.clone(), own_height)?;
+            .set(update.reporter.clone(), own_height)?;
         Ok(self.process_link_observations(&update)?)
     }
 }

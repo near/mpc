@@ -27,9 +27,7 @@ where
         }
     }
 
-    /// Records what `participant` reported for itself. Errors if it is not a participant, so the
-    /// set never grows; `Unknown` leaves the record untouched.
-    pub fn record(
+    pub fn set(
         &mut self,
         participant: N,
         height: ReportedIndexerHeight,

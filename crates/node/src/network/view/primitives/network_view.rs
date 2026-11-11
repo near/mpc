@@ -3,7 +3,7 @@ use near_time::Instant;
 use crate::network::view::primitives::{
     LinkObservation,
     errors::UnknownNodeError,
-    live_network_connections::{InferredConnection, LiveNetworkConnections},
+    live_network_connections::{ConnectionChanged, LiveNetworkConnections},
     measured_network_link::{
         InferConnectionStatus, MeasuredNetworkLinks, UpdateLinkStatus, UpdateResult,
     },
@@ -16,22 +16,23 @@ pub struct NetworkConnectionsHealthTracker<N, C, L> {
     // a connection between two nodes is as good as the worse of the two links between them
     connection_status: LiveNetworkConnections<N, C>,
 }
+
 impl<N: Ord + Clone, C, L> NetworkConnectionsHealthTracker<N, C, L> {
     pub fn update_with_observation<U>(
         &mut self,
         observation: LinkObservation<N, L::Observation>,
         now: Instant,
-    ) -> Result<UpdateResult<InferredConnection<C>>, UnknownNodeError<N>>
+    ) -> Result<ConnectionChanged, UnknownNodeError<N>>
     where
         L: UpdateLinkStatus<U> + InferConnectionStatus<ConnectionStatus = C>,
-        C: PartialEq + Clone,
+        C: PartialEq,
     {
         let LinkObservation { link, observation } = observation;
         let update_result = self
             .measured_links
             .record_observation::<U>(&link, observation, now)?;
         match update_result {
-            UpdateResult::StatusRemained => Ok(UpdateResult::StatusRemained),
+            UpdateResult::StatusRemained => Ok(ConnectionChanged::No),
             UpdateResult::StatusChanged(new_status) => {
                 let other_direction = self.measured_links.status(&link.reversed())?;
                 let connection_satus =

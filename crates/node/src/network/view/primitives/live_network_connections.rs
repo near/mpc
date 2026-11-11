@@ -7,7 +7,6 @@ use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use crate::network::view::primitives::adjacency_matrix::AdjacencyMatrix;
 use crate::network::view::primitives::edge::UndirectedEdge;
 use crate::network::view::primitives::errors::UnknownNodeError;
-use crate::network::view::primitives::measured_network_link::UpdateResult;
 use crate::providers::traits::{CheckReadiness, ComputationDuration, NotReadyError};
 
 /// Keeps track of bidirectional connections in the network
@@ -28,25 +27,32 @@ impl<N: Ord + Clone, S> LiveNetworkConnections<N, S> {
 impl<N, S> LiveNetworkConnections<N, S>
 where
     N: Ord + Clone,
-    S: PartialEq + Clone,
+    S: PartialEq,
 {
     pub fn update_connection(
         &mut self,
         connection: &UndirectedEdge<N>,
         inferred: InferredConnection<S>,
-    ) -> Result<UpdateResult<InferredConnection<S>>, UnknownNodeError<N>> {
-        let previous = match &inferred {
-            InferredConnection::Established(status) => {
-                self.connections.set_edge(connection, status.clone())?
-            }
-            InferredConnection::NotEstablished => self.connections.remove_edge(connection)?,
-        };
-        if previous.as_ref() == inferred.status() {
-            Ok(UpdateResult::StatusRemained)
-        } else {
-            Ok(UpdateResult::StatusChanged(inferred))
+    ) -> Result<ConnectionChanged, UnknownNodeError<N>> {
+        if self.connections.edge(connection)? == inferred.status() {
+            return Ok(ConnectionChanged::No);
         }
+        match inferred {
+            InferredConnection::Established(status) => {
+                self.connections.set_edge(connection, status)?;
+            }
+            InferredConnection::NotEstablished => {
+                self.connections.remove_edge(connection)?;
+            }
+        }
+        Ok(ConnectionChanged::Yes)
     }
+}
+
+/// Whether an update changed the connection it was applied to.
+pub enum ConnectionChanged {
+    Yes,
+    No,
 }
 
 /// What two link statuses add up to: a connection with a status, or no connection.
