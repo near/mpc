@@ -8,12 +8,14 @@ const TEE_VERIFIER_MANIFEST: &str = "crates/tee-verifier/Cargo.toml";
 const MPC_CONTRACT_OUT_DIR: &str = "target/near/contract-noabi";
 const MPC_CONTRACT_BENCH_OUT_DIR: &str = "target/near/contract-noabi-bench";
 const MPC_CONTRACT_SANDBOX_OUT_DIR: &str = "target/near/contract-noabi-sandbox";
+const MPC_CONTRACT_FOREIGN_TX_V2_OUT_DIR: &str = "target/near/contract-noabi-foreign-tx-v2";
 const MPC_CONTRACT_PINNED_CLOCK_OUT_DIR: &str = "target/near/contract-noabi-pinned-clock";
 const TEE_VERIFIER_PINNED_CLOCK_OUT_DIR: &str = "target/near/tee-verifier-pinned-clock";
 
 static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static CONTRACT_WITH_BENCH_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
 static CONTRACT_WITH_SANDBOX_TEST_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
+static CONTRACT_WITH_FOREIGN_TX_V2: OnceLock<Vec<u8>> = OnceLock::new();
 static CONTRACT_WITH_PINNED_CLOCK: OnceLock<Vec<u8>> = OnceLock::new();
 static MIGRATION_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static PARALLEL_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
@@ -49,6 +51,17 @@ pub fn current_contract_with_sandbox_test_methods() -> &'static [u8] {
         ContractBuilder::new(MPC_CONTRACT_MANIFEST)
             .out_dir(MPC_CONTRACT_SANDBOX_OUT_DIR)
             .features(&["sandbox-test-methods"])
+            .build()
+    })
+}
+
+/// Returns the current contract WASM with the V2 foreign transaction methods.
+/// The release build leaves them out.
+pub fn current_contract_with_foreign_tx_v2() -> &'static [u8] {
+    CONTRACT_WITH_FOREIGN_TX_V2.get_or_init(|| {
+        ContractBuilder::new(MPC_CONTRACT_MANIFEST)
+            .out_dir(MPC_CONTRACT_FOREIGN_TX_V2_OUT_DIR)
+            .features(&["foreign-tx-v2"])
             .build()
     })
 }

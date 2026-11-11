@@ -10,6 +10,15 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{CryptoHash, Gas, NearToken, PromiseError, PromiseOrValue, env, log, near, require};
 
+impl MpcContract {
+    pub(crate) fn require_foreign_chain_available(&self, requested: dtos::ForeignChain) {
+        require!(
+            self.get_available_foreign_chains().contains(&requested),
+            InvalidParameters::ForeignChainNotAvailable { requested }.to_string()
+        );
+    }
+}
+
 #[near]
 impl MpcContract {
     fn add_verify_foreign_tx_request(
@@ -46,15 +55,7 @@ impl MpcContract {
             NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
 
-        let requested_chain = request.request.chain();
-        let available_chains = self.get_available_foreign_chains();
-        require!(
-            available_chains.contains(&requested_chain),
-            InvalidParameters::ForeignChainNotAvailable {
-                requested: requested_chain,
-            }
-            .to_string()
-        );
+        self.require_foreign_chain_available(request.request.chain());
 
         let callback_gas = Gas::from_tgas(
             self.config
@@ -191,7 +192,7 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::foreign_chain::test_utils::{
-        register_foreign_chains_config_for, whitelist_chain,
+        make_chains_available, register_foreign_chains_config_for, whitelist_chain,
     };
     use crate::api::test_utils::{
         SharedSecretKey, basic_setup_with_protocol, participant_account_ids,
@@ -213,20 +214,6 @@ mod tests {
     use rstest::rstest;
     use std::str::FromStr;
     use std::{assert_matches, panic};
-
-    /// Whitelists the chains and registers them for all participants, making them available.
-    fn make_chains_available(
-        contract: &mut MpcContract,
-        chains: impl IntoIterator<Item = dtos::ForeignChain>,
-    ) {
-        let chains: Vec<_> = chains.into_iter().collect();
-        for chain in &chains {
-            whitelist_chain(contract, *chain);
-        }
-        for account_id in participant_account_ids(contract) {
-            register_foreign_chains_config_for(contract, &account_id, chains.iter().copied());
-        }
-    }
 
     #[test]
     fn verify_foreign_transaction__should_queue_duplicates_from_different_callers() {
