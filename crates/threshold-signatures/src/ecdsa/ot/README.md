@@ -22,7 +22,7 @@ Extends a small number of base OTs into many via the \[[KOS15](https://eprint.ia
 
 ### `extension/kos15_roy22/correlated.rs`
 
-The inner step of the extension, called by `random.rs`. It stretches the base OT keys with a PRG: the receiver inputs a matrix `X` and learns a random `T`, and the sender learns `Q = T + X·Δ`. It has no consistency check of its own.
+The inner step of the extension, called by `random.rs`. It stretches the base OT keys with a PRG: the receiver inputs a bit matrix `X` and learns a random bit matrix `T`, and the sender learns `Q_ij = T_ij + X_ij·Δ_j`. It has no consistency check of its own.
 
 ### `bits.rs`
 
