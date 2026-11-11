@@ -13,7 +13,7 @@ pub(crate) enum NodeOutcome {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NodeVerdict {
-    /// The extracted values equal the expected ones.
+    /// The hash of the extracted values equals the expected values hash.
     Verified,
     Negative(ForeignTxVerificationNegativeVerdict),
 }
@@ -28,9 +28,15 @@ pub(crate) enum NoVerdictReason {
 }
 
 impl NodeOutcome {
-    pub(crate) fn new(inspection: Inspection, expected_values: &[dtos::ExtractedValue]) -> Self {
+    pub(crate) fn new(inspection: Inspection, expected_values_hash: &dtos::Hash256) -> Self {
         match inspection {
-            Ok(verdict) => Self::Verdict(NodeVerdict::new(verdict, expected_values)),
+            Ok(verdict) => match NodeVerdict::new(verdict, expected_values_hash) {
+                Ok(verdict) => Self::Verdict(verdict),
+                Err(error) => {
+                    tracing::error!(%error, "could not hash the extracted values");
+                    Self::NoVerdict(NoVerdictReason::Transient)
+                }
+            },
             Err(ForeignChainInspectionError::InspectorResponseMismatch) => {
                 Self::NoVerdict(NoVerdictReason::InspectorsDisagree)
             }
@@ -45,10 +51,14 @@ impl NodeOutcome {
 impl NodeVerdict {
     fn new(
         verdict: Verdict<dtos::ExtractedValue>,
-        expected_values: &[dtos::ExtractedValue],
-    ) -> Self {
+        expected_values_hash: &dtos::Hash256,
+    ) -> std::io::Result<Self> {
         let negative = match verdict {
-            Verdict::Extracted(values) if values == expected_values => return Self::Verified,
+            Verdict::Extracted(values)
+                if dtos::extracted_values_hash(&values)? == *expected_values_hash =>
+            {
+                return Ok(Self::Verified);
+            }
             Verdict::Extracted(_) => ForeignTxVerificationNegativeVerdict::ValuesMismatch,
             Verdict::TransactionFailed => ForeignTxVerificationNegativeVerdict::TransactionFailed,
             Verdict::TransactionNotFound => {
@@ -77,7 +87,7 @@ impl NodeVerdict {
             ?negative,
             "foreign chain inspection reached a negative verdict"
         );
-        Self::Negative(negative)
+        Ok(Self::Negative(negative))
     }
 }
 
@@ -103,6 +113,10 @@ mod tests {
         )))
     }
 
+    fn values_hash(values: &[dtos::ExtractedValue]) -> dtos::Hash256 {
+        dtos::extracted_values_hash(values).unwrap()
+    }
+
     fn non_canonical_block() -> Verdict<dtos::ExtractedValue> {
         Verdict::NonCanonicalBlock {
             block_number: 7,
@@ -117,7 +131,7 @@ mod tests {
         let inspection = Ok(Verdict::Extracted(vec![block_hash(1), block_hash(2)]));
 
         // When
-        let outcome = NodeOutcome::new(inspection, &[block_hash(1), block_hash(2)]);
+        let outcome = NodeOutcome::new(inspection, &values_hash(&[block_hash(1), block_hash(2)]));
 
         // Then
         assert_eq!(outcome, NodeOutcome::Verdict(NodeVerdict::Verified));
@@ -135,7 +149,7 @@ mod tests {
         let inspection = Ok(Verdict::Extracted(extracted));
 
         // When
-        let outcome = NodeOutcome::new(inspection, &[block_hash(1), block_hash(2)]);
+        let outcome = NodeOutcome::new(inspection, &values_hash(&[block_hash(1), block_hash(2)]));
 
         // Then
         assert_eq!(
@@ -172,7 +186,7 @@ mod tests {
         #[case] expected: dtos::ForeignTxVerificationNegativeVerdict,
     ) {
         // When
-        let outcome = NodeOutcome::new(Ok(verdict), &[block_hash(1)]);
+        let outcome = NodeOutcome::new(Ok(verdict), &values_hash(&[block_hash(1)]));
 
         // Then
         assert_eq!(
@@ -216,7 +230,7 @@ mod tests {
         #[case] error: ForeignChainInspectionError,
     ) {
         // When
-        let outcome = NodeOutcome::new(Err(error), &[block_hash(1)]);
+        let outcome = NodeOutcome::new(Err(error), &values_hash(&[block_hash(1)]));
 
         // Then
         assert_eq!(outcome, NodeOutcome::NoVerdict(NoVerdictReason::Transient));
@@ -228,7 +242,7 @@ mod tests {
         let inspection = Err(ForeignChainInspectionError::InspectorResponseMismatch);
 
         // When
-        let outcome = NodeOutcome::new(inspection, &[block_hash(1)]);
+        let outcome = NodeOutcome::new(inspection, &values_hash(&[block_hash(1)]));
 
         // Then
         assert_eq!(
