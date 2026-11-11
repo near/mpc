@@ -100,21 +100,25 @@ impl VerifyForeignTxProvider {
         )?;
 
         let (own_outcome_sender, own_outcome) = oneshot::channel();
-        // Detached, so the leader's own outcome joins the evidence even after the attempt ended.
-        tokio::spawn({
-            let this = self.clone();
-            let request = request.clone();
-            let attempt = attempt.clone();
-            async move {
-                let outcome = this
-                    .signed_node_outcome(&request, attempt.leader, attempt.id)
-                    .await
-                    .and_then(|signed| {
-                        record_own_outcome(signed, &attempt, this.v2.network.attempt_evidence())
-                    });
-                let _ = own_outcome_sender.send(outcome);
-            }
-        });
+        // Outlives the attempt, so the leader's own outcome joins the evidence after it ended.
+        self.own_inspections.lock().unwrap().spawn_checked(
+            &format!("own inspection of V2 attempt {:?}", attempt.id),
+            {
+                let this = self.clone();
+                let request = request.clone();
+                let attempt = attempt.clone();
+                async move {
+                    let outcome = this
+                        .signed_node_outcome(&request, attempt.leader, attempt.id)
+                        .await
+                        .and_then(|signed| {
+                            record_own_outcome(signed, &attempt, this.v2.network.attempt_evidence())
+                        });
+                    let _ = own_outcome_sender.send(outcome);
+                    anyhow::Ok(())
+                }
+            },
+        );
         V2LeaderComputation {
             attempt,
             own_outcome,

@@ -20,6 +20,7 @@ use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
 use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
+use crate::tracking::AutoAbortTaskCollection;
 use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
 use foreign_chain_inspector::adi::inspector::AdiInspector;
@@ -223,6 +224,8 @@ pub struct VerifyForeignTxProvider {
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     v2: VerifyForeignTxV2Context,
+    /// The leader's own inspections of V2 attempts, which may outlive their attempt.
+    own_inspections: std::sync::Mutex<AutoAbortTaskCollection<()>>,
 }
 
 impl VerifyForeignTxProvider {
@@ -245,6 +248,7 @@ impl VerifyForeignTxProvider {
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
             v2,
+            own_inspections: std::sync::Mutex::new(AutoAbortTaskCollection::new()),
         })
     }
 

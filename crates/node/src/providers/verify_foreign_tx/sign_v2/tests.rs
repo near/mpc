@@ -84,7 +84,7 @@ fn open_requests_with(request: VerifyForeignTxRequestV2) -> Arc<OpenVerifyForeig
 }
 
 fn complete(open_requests: &OpenVerifyForeignTxRequestsV2, id: VerifyForeignTxId) {
-    let next_height = REQUEST_HEIGHT.saturating_add(near_contract_transport::BlockCount::new(1));
+    let next_height = REQUEST_HEIGHT + near_contract_transport::BlockCount::new(1);
     open_requests.notify_new_block(&block_update(next_height, vec![], vec![id]));
 }
 
