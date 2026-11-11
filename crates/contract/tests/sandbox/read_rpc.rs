@@ -99,7 +99,6 @@ async fn read_rpc__should_return_the_signed_outcome_of_respond_verify_foreign_tx
     let rpc_request = bitcoin_request();
     let setup = SandboxTestSetup::builder()
         .with_foreign_tx_domain()
-        .with_foreign_tx_v2()
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
@@ -179,7 +178,6 @@ async fn read_rpc__should_announce_one_yield_id_and_time_out_without_a_response(
     let rpc_request = bitcoin_request();
     let setup = SandboxTestSetup::builder()
         .with_foreign_tx_domain()
-        .with_foreign_tx_v2()
         .build()
         .await;
     make_foreign_chain_available(
@@ -214,69 +212,5 @@ async fn read_rpc__should_announce_one_yield_id_and_time_out_without_a_response(
     assert!(
         failure.contains(&RequestError::Timeout.to_string()),
         "the request should time out, got: {failure}"
-    );
-}
-
-#[tokio::test]
-async fn read_rpc__should_not_exist_in_the_release_build() {
-    // Given
-    let setup = SandboxTestSetup::builder()
-        .with_foreign_tx_domain()
-        .build()
-        .await;
-    let user = setup.worker.dev_create_account().await.unwrap();
-    let request = VerifyForeignTransactionRequestV2 {
-        request: bitcoin_request(),
-        domain_id: dtos::DomainId(setup.foreign_tx_key().domain_id().0),
-        expected_values: bitcoin_extracted_values(),
-    };
-
-    // When
-    let result = user
-        .call_mpc(setup.contract.id())
-        .read_rpc(request)
-        .await
-        .unwrap()
-        .into_result();
-
-    // Then
-    let failure = result.unwrap_err().to_string();
-    assert!(
-        failure.contains("MethodNotFound"),
-        "the release build must not have read_rpc, got: {failure}"
-    );
-}
-
-#[tokio::test]
-async fn respond_verify_foreign_tx_v2__should_not_exist_in_the_release_build() {
-    // Given
-    let setup = SandboxTestSetup::builder()
-        .with_foreign_tx_domain()
-        .build()
-        .await;
-
-    // When
-    let result = setup.mpc_signer_accounts[0]
-        .call_mpc(setup.contract.id())
-        .respond_verify_foreign_tx_v2(
-            dtos::YieldId([7u8; 32]),
-            ForeignTxVerificationOutcome::Inconclusive {},
-            dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
-                big_r: dtos::K256AffinePoint {
-                    affine_point: [7u8; 33],
-                },
-                s: dtos::K256Scalar { scalar: [7u8; 32] },
-                recovery_id: 0,
-            }),
-        )
-        .await
-        .unwrap()
-        .into_result();
-
-    // Then
-    let failure = result.unwrap_err().to_string();
-    assert!(
-        failure.contains("MethodNotFound"),
-        "the release build must not have respond_verify_foreign_tx_v2, got: {failure}"
     );
 }

@@ -2,17 +2,13 @@
 //! contract picks for each one.
 
 use near_mpc_contract_interface::types::{
-    BlockHeight, DomainId, ForeignChainRpcRequest, Hash256, YieldId,
-};
-#[cfg(feature = "foreign-tx-v2")]
-use near_mpc_contract_interface::types::{
-    ForeignTxSignPayload, ForeignTxSignPayloadV2, ForeignTxVerificationOutcome,
+    BlockHeight, DomainId, ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV2,
+    ForeignTxVerificationOutcome, Hash256, YieldId,
 };
 use near_sdk::{near, store::LookupMap};
 
 use crate::storage_keys::StorageKey;
 
-#[cfg(feature = "foreign-tx-v2")]
 const YIELD_ID_PREFIX: &[u8] = b"verify_foreign_tx_v2";
 
 #[near(serializers=[borsh])]
@@ -44,7 +40,6 @@ impl Default for PendingVerifyForeignTxRequestsV2 {
     }
 }
 
-#[cfg(feature = "foreign-tx-v2")]
 impl PendingVerifyForeignTxRequestsV2 {
     /// Returns a yield id no earlier call returned:
     /// `sha256(YIELD_ID_PREFIX || next_yield_counter)`, with the counter in little endian.
@@ -70,7 +65,6 @@ impl PendingVerifyForeignTxRequestsV2 {
     }
 }
 
-#[cfg(feature = "foreign-tx-v2")]
 impl PendingVerifyForeignTxRequestV2 {
     /// The payload the MPC network signs to answer the request stored under
     /// `yield_id` with `outcome`.

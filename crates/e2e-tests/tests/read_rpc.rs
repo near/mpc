@@ -107,7 +107,6 @@ async fn must_setup_read_rpc_cluster_with(
     let available_chains: BTreeSet<_> = whitelist.keys().copied().collect();
 
     let (cluster, _running) = common::must_setup_cluster(port_seed, |c| {
-        c.contract_wasm = common::must_load_contract_wasm_with_foreign_tx_v2();
         c.num_nodes = 2;
         c.threshold = 2;
         c.domains = vec![DomainConfig {
