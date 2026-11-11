@@ -9,7 +9,7 @@ use near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::events::VerifyForeignTxV2YieldCreated;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::{Gas, GasWeight, NearToken, PromiseError, PromiseOrValue, env, log, near};
+use near_sdk::{Gas, GasWeight, NearToken, PromiseError, PromiseOrValue, env, log, near, require};
 
 #[near]
 impl MpcContract {
@@ -37,6 +37,16 @@ impl MpcContract {
             NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
         self.require_foreign_chain_available(request.request.chain());
+        let extractors = request.request.extractor_count();
+        let expected_values = request.expected_values.len();
+        require!(
+            extractors == expected_values,
+            RequestError::ExpectedValuesCountMismatch {
+                extractors,
+                expected_values,
+            }
+            .to_string()
+        );
 
         let expected_values_hash = request
             .expected_values_hash()
@@ -107,23 +117,29 @@ mod tests {
     use crate::api::foreign_chain::test_utils::make_chains_available;
     use crate::api::test_utils::basic_setup_with_protocol;
     use dtos::{
-        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, DomainId, ExtractedValue,
-        Protocol,
+        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, DomainId, EvmExtractedValue,
+        EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue, Hash160,
+        Hash256, Protocol,
     };
-    use near_mpc_contract_interface::events::MPC_CONTRACT_EVENT_STANDARD;
     use near_sdk::test_utils::get_logs;
     use near_sdk::testing_env;
     use rand::SeedableRng;
+    use rstest::rstest;
 
-    const EVENT_JSON_PREFIX: &str = "EVENT_JSON:";
     /// NEAR's `max_total_log_length` for one function call.
     const MAX_TOTAL_LOG_BYTES: usize = 16 * 1024;
 
     fn setup_with_bitcoin_available() -> MpcContract {
+        setup_with_chains_available([dtos::ForeignChain::Bitcoin])
+    }
+
+    fn setup_with_chains_available(
+        chains: impl IntoIterator<Item = dtos::ForeignChain>,
+    ) -> MpcContract {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _secret_key) =
             basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
-        make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        make_chains_available(&mut contract, chains);
         testing_env!(context);
         contract
     }
@@ -142,21 +158,37 @@ mod tests {
         }
     }
 
+    fn ethereum_log_request_with_data_bytes(
+        data_bytes: usize,
+    ) -> dtos::VerifyForeignTransactionRequestV2 {
+        dtos::VerifyForeignTransactionRequestV2 {
+            request: dtos::ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId([7u8; 32]),
+                extractors: [EvmExtractor::Log { log_index: 0 }].into(),
+                finality: EvmFinality::Finalized,
+            }),
+            domain_id: DomainId::default(),
+            expected_values: vec![ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(
+                EvmLog {
+                    removed: false,
+                    log_index: 0,
+                    transaction_index: 0,
+                    transaction_hash: Hash256([7u8; 32]),
+                    block_hash: Hash256([7u8; 32]),
+                    block_number: 0,
+                    address: Hash160([7u8; 20]),
+                    data: "a".repeat(data_bytes),
+                    topics: Vec::new(),
+                },
+            ))],
+        }
+    }
+
     fn announced_yield_ids() -> Vec<dtos::YieldId> {
         get_logs()
             .iter()
-            .filter_map(|line| line.strip_prefix(EVENT_JSON_PREFIX))
-            .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap())
-            .filter(|event| {
-                event["standard"] == MPC_CONTRACT_EVENT_STANDARD
-                    && event["event"] == VerifyForeignTxV2YieldCreated::EVENT
-                    && event["version"] == VerifyForeignTxV2YieldCreated::VERSION
-            })
-            .map(|event| {
-                serde_json::from_value::<VerifyForeignTxV2YieldCreated>(event["data"].clone())
-                    .unwrap()
-                    .yield_id
-            })
+            .filter_map(|line| VerifyForeignTxV2YieldCreated::from_log_line(line))
+            .map(|event| event.yield_id)
             .collect()
     }
 
@@ -190,10 +222,8 @@ mod tests {
     #[test]
     fn read_rpc__should_accept_expected_values_larger_than_the_log_limit() {
         // Given
-        let mut contract = setup_with_bitcoin_available();
-        let mut request = bitcoin_request();
-        request.expected_values = vec![request.expected_values[0].clone(); 1_000];
-        assert!(serde_json::to_vec(&request.expected_values).unwrap().len() > MAX_TOTAL_LOG_BYTES);
+        let mut contract = setup_with_chains_available([dtos::ForeignChain::Ethereum]);
+        let request = ethereum_log_request_with_data_bytes(MAX_TOTAL_LOG_BYTES + 1);
 
         // When
         contract.read_rpc(request.clone());
@@ -209,6 +239,36 @@ mod tests {
                 .map(|stored| stored.expected_values_hash.clone()),
             Some(request.expected_values_hash().unwrap())
         );
+    }
+
+    #[rstest]
+    #[case::too_few(0)]
+    #[case::too_many(2)]
+    #[should_panic(expected = "expected values. It needs one expected value per extractor.")]
+    fn read_rpc__should_reject_an_expected_values_count_that_differs_from_the_extractor_count(
+        #[case] expected_values: usize,
+    ) {
+        // Given
+        let mut contract = setup_with_bitcoin_available();
+        let mut request = bitcoin_request();
+        request.expected_values = vec![request.expected_values[0].clone(); expected_values];
+
+        // When
+        contract.read_rpc(request);
+    }
+
+    #[test]
+    #[should_panic(expected = "is already pending. This is a bug in the contract.")]
+    fn read_rpc__should_fail_when_the_yield_id_is_still_pending() {
+        // Given
+        let mut contract = setup_with_bitcoin_available();
+        contract.read_rpc(bitcoin_request());
+        contract
+            .pending_verify_foreign_tx_v2_requests
+            .set_next_yield_counter(0);
+
+        // When
+        contract.read_rpc(bitcoin_request());
     }
 
     #[test]
