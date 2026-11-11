@@ -11,6 +11,8 @@ use crate::metrics;
 use crate::primitives::ParticipantId;
 use crate::providers::ecdsa::triple::participants_from_triples;
 use crate::providers::verify_foreign_tx::inspect_request::inspect_request;
+use crate::providers::verify_foreign_tx::inspection::{Inspection, TransientErrors};
+use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
@@ -21,7 +23,6 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
-pub(crate) const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
@@ -204,17 +205,10 @@ impl VerifyForeignTxProvider {
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        // Check that the requested chain is still available when this
-        // point is reached.
-        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request.chain())
-            .inspect_err(|_| {
-                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
-            })?;
-        let quorum = self
-            .rpc_quorum(request.chain())
-            .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc())?;
-
-        let values = inspect_request(&self.inspectors, &quorum, request).await?;
+        let verdict = self
+            .inspect_foreign_chain_request(request, TransientErrors::Fail)
+            .await??;
+        let values = require_extracted(verdict)?;
         let payload = match payload_version {
             dtos::ForeignTxPayloadVersion::V1 => {
                 dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
@@ -225,6 +219,39 @@ impl VerifyForeignTxProvider {
             _ => bail!("unsupported payload_version"),
         };
         Ok(payload)
+    }
+
+    /// Inspects the foreign transaction and checks the extracted values against the expected
+    /// ones. An error means this node could not inspect. That is a refusal, not a
+    /// [`NodeOutcome`].
+    // TODO(#5123): call from the V2 signing flow.
+    #[expect(dead_code)]
+    pub(crate) async fn reach_node_outcome(
+        &self,
+        request: &dtos::VerifyForeignTransactionRequestV2,
+    ) -> anyhow::Result<NodeOutcome> {
+        let inspection = self
+            .inspect_foreign_chain_request(&request.request, TransientErrors::Retry)
+            .await?;
+        Ok(NodeOutcome::new(inspection, &request.expected_values))
+    }
+
+    async fn inspect_foreign_chain_request(
+        &self,
+        request: &dtos::ForeignChainRpcRequest,
+        transient_errors: TransientErrors,
+    ) -> anyhow::Result<Inspection> {
+        // Check that the requested chain is still available when this
+        // point is reached.
+        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request.chain())
+            .inspect_err(|_| {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
+            })?;
+        let quorum = self
+            .rpc_quorum(request.chain())
+            .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc())?;
+
+        inspect_request(&self.inspectors, &quorum, request, transient_errors).await
     }
 }
 
@@ -266,7 +293,7 @@ fn ensure_chain_is_available(
     }
 }
 
-pub(crate) fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
+fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
     verdict
         .into_extracted()
         .map_err(|failing| anyhow::anyhow!("the transaction failed verification: {failing}"))

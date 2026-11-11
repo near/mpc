@@ -16,19 +16,19 @@ use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
 use foreign_chain_inspector::{EthereumFinality, RpcQuorum};
 use near_mpc_contract_interface::types as dtos;
-use tokio_util::time::FutureExt;
 
-use crate::providers::verify_foreign_tx::sign::require_extracted;
-use crate::providers::verify_foreign_tx::{
-    FOREIGN_CHAIN_INSPECTION_TIMEOUT, ForeignChainInspectors, MeasuredFanOut,
-};
+use crate::providers::verify_foreign_tx::inspection::{Inspection, TransientErrors, inspect};
+use crate::providers::verify_foreign_tx::{ForeignChainInspectors, MeasuredFanOut};
 
+/// An error means the request cannot be inspected at all, for example because this node has no
+/// inspector for its chain.
 pub(crate) async fn inspect_request(
     inspectors: &ForeignChainInspectors<HttpClient>,
     quorum: &RpcQuorum,
     request: &dtos::ForeignChainRpcRequest,
-) -> anyhow::Result<Vec<dtos::ExtractedValue>> {
-    let values: Vec<dtos::ExtractedValue> = match request {
+    transient_errors: TransientErrors,
+) -> anyhow::Result<Inspection> {
+    let inspection = match request {
         dtos::ForeignChainRpcRequest::Ethereum(request) => {
             let inspector = inspectors
                 .ethereum
@@ -43,28 +43,29 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Solana(request) => {
             let inspector = inspectors
                 .solana
                 .as_ref()
                 .context("no inspector configured for Solana")?;
-            execute_svm_request(inspector, quorum, request).await?
+            execute_svm_request(inspector, quorum, request, transient_errors).await?
         }
         dtos::ForeignChainRpcRequest::Fogo(request) => {
             let inspector = inspectors
                 .fogo
                 .as_ref()
                 .context("no inspector configured for Fogo")?;
-            execute_svm_request(inspector, quorum, request).await?
+            execute_svm_request(inspector, quorum, request, transient_errors).await?
         }
         dtos::ForeignChainRpcRequest::Bitcoin(request) => {
             let inspector = inspectors
@@ -79,14 +80,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let extracted_values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, block_confirmations, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            extracted_values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                block_confirmations,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Abstract(request) => {
             let inspector = inspectors
@@ -102,14 +104,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Bnb(request) => {
             let inspector = inspectors
@@ -125,14 +128,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Base(request) => {
             let inspector = inspectors
@@ -148,14 +152,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Arbitrum(request) => {
             let inspector = inspectors
@@ -171,14 +176,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::HyperEvm(request) => {
             let inspector = inspectors
@@ -194,14 +200,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Polygon(request) => {
             let inspector = inspectors
@@ -217,14 +224,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Avalanche(request) => {
             let inspector = inspectors
@@ -240,14 +248,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Adi(request) => {
             let inspector = inspectors
@@ -263,14 +272,15 @@ pub(crate) async fn inspect_request(
                 .cloned()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
-            let values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-            values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Starknet(request) => {
             let inspector = inspectors
@@ -287,15 +297,15 @@ pub(crate) async fn inspect_request(
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
 
-            let extracted_values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-
-            extracted_values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                transaction_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Ton(_request) => {
             bail!("ForeignChainRpcRequest::Ton is unsupported")
@@ -315,15 +325,15 @@ pub(crate) async fn inspect_request(
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
 
-            let extracted_values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, tx_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-
-            extracted_values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                tx_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         dtos::ForeignChainRpcRequest::Sui(request) => {
             let inspector = inspectors
@@ -340,26 +350,27 @@ pub(crate) async fn inspect_request(
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?;
 
-            let extracted_values = require_extracted(
-                inspector
-                    .extract_with_quorum(quorum, tx_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??,
-            )?;
-
-            extracted_values.into_iter().map(Into::into).collect()
+            inspect(
+                inspector,
+                quorum,
+                tx_id,
+                finality,
+                extractors,
+                transient_errors,
+            )
+            .await
         }
         _ => bail!("unsupported foreign chain request"),
     };
-    Ok(values)
+    Ok(inspection)
 }
 
 async fn execute_svm_request<Chain>(
     inspector: &MeasuredFanOut<SvmInspector<HttpClient, Chain>>,
     quorum: &RpcQuorum,
     request: &dtos::SvmRpcRequest,
-) -> anyhow::Result<Vec<dtos::ExtractedValue>>
+    transient_errors: TransientErrors,
+) -> anyhow::Result<Inspection>
 where
     Chain: SvmChain + Clone + Send + Sync + 'static,
 {
@@ -372,13 +383,13 @@ where
         .map(TryInto::try_into)
         .collect::<Result<_, _>>()?;
 
-    let values = require_extracted(
-        inspector
-            .extract_with_quorum(quorum, tx_id, finality, extractors)
-            .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-            .await
-            .context("timed out during execution of foreign chain request")??,
-    )?;
-
-    Ok(values.into_iter().map(Into::into).collect())
+    Ok(inspect(
+        inspector,
+        quorum,
+        tx_id,
+        finality,
+        extractors,
+        transient_errors,
+    )
+    .await)
 }

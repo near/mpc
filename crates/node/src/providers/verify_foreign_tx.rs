@@ -1,8 +1,10 @@
 mod inspect_request;
+mod inspection;
+mod node_outcome;
 mod provider_call_metrics;
 mod sign;
 
-pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
+pub(crate) use inspection::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
