@@ -143,8 +143,6 @@ impl AttemptEvidence {
     }
 
     /// The node outcomes kept for the attempts at `yield_id`.
-    // TODO(#5126): read as the evidence of an inconclusive.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn outcomes_for(&self, yield_id: YieldId) -> Vec<VerifiedNodeOutcome> {
         self.attempts
             .lock()
@@ -155,16 +153,19 @@ impl AttemptEvidence {
             .collect()
     }
 
-    /// Returns once the attempts at `yield_id` keep at least `count` node outcomes.
-    // TODO(#5126): wait for enough evidence of transient errors.
-    #[cfg_attr(not(test), expect(dead_code))]
-    pub(crate) async fn wait_for_outcomes(&self, yield_id: YieldId, count: usize) {
+    /// Returns the first value `find` returns for the node outcomes kept for the attempts at
+    /// `yield_id`. `find` runs again on every node outcome this node keeps.
+    pub(crate) async fn wait_for<T>(
+        &self,
+        yield_id: YieldId,
+        find: impl Fn(&[VerifiedNodeOutcome]) -> Option<T>,
+    ) -> T {
         loop {
             let recorded = self.recorded.notified();
             tokio::pin!(recorded);
             recorded.as_mut().enable();
-            if self.outcomes_for(yield_id).len() >= count {
-                return;
+            if let Some(found) = find(&self.outcomes_for(yield_id)) {
+                return found;
             }
             recorded.await;
         }

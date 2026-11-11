@@ -6,15 +6,19 @@ pub(crate) mod open_requests;
 mod acting_leader;
 mod attempt_assets;
 mod attempt_outcomes;
+mod inconclusive_evidence;
+mod inconclusive_round;
 mod inspect_request;
 mod inspection;
 mod leader_attempts;
+mod outcome_signing;
 mod provider_call_metrics;
 mod sign;
 mod sign_v2;
 
 pub(crate) use inspection::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
-pub(crate) use sign_v2::{SignedVerdict, VerifyForeignTxV2Context};
+pub(crate) use outcome_signing::SignedOutcome;
+pub(crate) use sign_v2::VerifyForeignTxV2Context;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
@@ -55,6 +59,10 @@ use tokio::sync::watch;
 /// The number of attempts one leader makes at a V2 request, and the number of attempts of one
 /// leader a follower joins per request. It bounds the assets one leader can use up on a request.
 pub(crate) const MAX_ATTEMPTS_PER_LEADER: usize = 3;
+
+/// The number of inconclusive rounds one leader runs for a V2 request, and the number of rounds
+/// of one leader a node joins per request.
+pub(crate) const MAX_INCONCLUSIVE_ROUNDS_PER_LEADER: usize = 3;
 
 /// Handshake protocol version from which a peer decodes the V2 foreign tx messages:
 /// [`MpcMessageKind::NodeOutcomes`] and [`VerifyForeignTxTaskId::Inconclusive`]. A V2 attempt or
@@ -283,6 +291,17 @@ impl VerifyForeignTxProvider {
             }) => {
                 self.make_verify_foreign_tx_v2_follower(channel, id, paired_triple_id)
                     .await?;
+            }
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::Inconclusive {
+                yield_id,
+                paired_triple_id,
+            }) => {
+                self.make_verify_foreign_tx_inconclusive_follower(
+                    channel,
+                    yield_id,
+                    paired_triple_id,
+                )
+                .await?;
             }
             MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
                 anyhow::bail!("Retired stored-presignature task rejected");

@@ -20,7 +20,6 @@ pub(crate) enum AttemptStatus {
 }
 
 /// The finding that ends an attempt before it signs.
-// TODO(#5126): end the request with an inconclusive on a disagreement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum AttemptEnd {
     #[error("participant {participant} reached no verdict: {reason:?}")]

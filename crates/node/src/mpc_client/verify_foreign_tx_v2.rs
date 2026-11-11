@@ -116,13 +116,13 @@ impl MpcClient {
         let domain_id = request.request.domain_id;
         match self.domain_to_protocol.get(&domain_id) {
             Some(Protocol::CaitSith) => {
-                let signed_verdict = self
+                let signed_outcome = self
                     .verify_foreign_tx_provider
                     .make_verify_foreign_tx_v2_leader(request.id)
                     .await?;
-                contract_args::VerifyForeignTransactionRespondV2Args::from_signed_verdict(
+                contract_args::VerifyForeignTransactionRespondV2Args::from_signed_outcome(
                     request.yield_id,
-                    signed_verdict,
+                    signed_outcome,
                 )
             }
             Some(Protocol::ConfidentialKeyDerivation | Protocol::RobustEcdsa | Protocol::Frost) => {

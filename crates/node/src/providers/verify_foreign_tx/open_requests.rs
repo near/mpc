@@ -4,11 +4,14 @@ use std::time::Duration;
 
 use anyhow::Context;
 use near_contract_transport::BlockHeight;
+use near_mpc_contract_interface::types::YieldId;
 use near_time::{Clock, Instant};
 use tokio::sync::Notify;
 
 use crate::primitives::ParticipantId;
-use crate::providers::verify_foreign_tx::MAX_ATTEMPTS_PER_LEADER;
+use crate::providers::verify_foreign_tx::{
+    MAX_ATTEMPTS_PER_LEADER, MAX_INCONCLUSIVE_ROUNDS_PER_LEADER,
+};
 use crate::requests::queue::REQUEST_EXPIRATION_BLOCKS;
 use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
@@ -28,6 +31,8 @@ struct OpenRequest {
     indexed_at: Instant,
     /// The number of attempts this node joined, per leader.
     joined_attempts: HashMap<ParticipantId, usize>,
+    /// The number of inconclusive rounds this node joined, per leader.
+    joined_inconclusive_rounds: HashMap<ParticipantId, usize>,
 }
 
 impl Default for OpenVerifyForeignTxRequestsV2 {
@@ -58,6 +63,7 @@ impl OpenVerifyForeignTxRequestsV2 {
                     request: request.clone(),
                     indexed_at: now,
                     joined_attempts: HashMap::new(),
+                    joined_inconclusive_rounds: HashMap::new(),
                 });
         }
         for completed in &update.completed_requests {
@@ -90,14 +96,44 @@ impl OpenVerifyForeignTxRequestsV2 {
         id: VerifyForeignTxId,
         leader: ParticipantId,
     ) -> anyhow::Result<()> {
+        self.join(id, leader, MAX_ATTEMPTS_PER_LEADER, "attempts", |open| {
+            &mut open.joined_attempts
+        })
+    }
+
+    /// Counts an inconclusive round of `leader` for the open request `id` that this node joins.
+    /// Fails when the request is closed, or when this node already joined
+    /// [`MAX_INCONCLUSIVE_ROUNDS_PER_LEADER`] rounds of `leader` for it.
+    pub(crate) fn join_inconclusive_round(
+        &self,
+        id: VerifyForeignTxId,
+        leader: ParticipantId,
+    ) -> anyhow::Result<()> {
+        self.join(
+            id,
+            leader,
+            MAX_INCONCLUSIVE_ROUNDS_PER_LEADER,
+            "inconclusive rounds",
+            |open| &mut open.joined_inconclusive_rounds,
+        )
+    }
+
+    fn join(
+        &self,
+        id: VerifyForeignTxId,
+        leader: ParticipantId,
+        limit: usize,
+        joined_kind: &str,
+        joined_per_leader: impl FnOnce(&mut OpenRequest) -> &mut HashMap<ParticipantId, usize>,
+    ) -> anyhow::Result<()> {
         let mut requests = self.requests.lock().unwrap();
         let open = requests
             .get_mut(&id)
             .context("the V2 request is not open")?;
-        let joined = open.joined_attempts.entry(leader).or_default();
+        let joined = joined_per_leader(open).entry(leader).or_default();
         anyhow::ensure!(
-            *joined < MAX_ATTEMPTS_PER_LEADER,
-            "already joined {MAX_ATTEMPTS_PER_LEADER} attempts of leader {leader} at the V2 request"
+            *joined < limit,
+            "already joined {limit} {joined_kind} of leader {leader} at the V2 request"
         );
         *joined = joined.saturating_add(1);
         Ok(())
@@ -106,11 +142,31 @@ impl OpenVerifyForeignTxRequestsV2 {
     /// Returns the request once it is open. A peer may start an attempt before this node indexed
     /// the request, so callers bound the wait.
     pub(crate) async fn wait_for(&self, id: VerifyForeignTxId) -> VerifyForeignTxRequestV2 {
+        self.wait_until(|| self.get(id)).await
+    }
+
+    /// Returns the request waiting on `yield_id` once it is open. Callers bound the wait.
+    pub(crate) async fn wait_for_yield(&self, yield_id: YieldId) -> VerifyForeignTxRequestV2 {
+        self.wait_until(|| {
+            self.requests
+                .lock()
+                .unwrap()
+                .values()
+                .find(|open| open.request.yield_id == yield_id)
+                .map(|open| open.request.clone())
+        })
+        .await
+    }
+
+    async fn wait_until(
+        &self,
+        find: impl Fn() -> Option<VerifyForeignTxRequestV2>,
+    ) -> VerifyForeignTxRequestV2 {
         loop {
             let added = self.added.notified();
             tokio::pin!(added);
             added.as_mut().enable();
-            if let Some(request) = self.get(id) {
+            if let Some(request) = find() {
                 return request;
             }
             added.await;
@@ -297,6 +353,53 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("not open"), "{error}");
+    }
+
+    #[test]
+    fn open_requests_join_inconclusive_round__should_refuse_a_fourth_round_of_one_leader() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        open.notify_new_block(&update(REQUEST_HEIGHT, vec![request(1)], vec![]));
+        let leader = ParticipantId::from_raw(1);
+        for _ in 0..3 {
+            open.join_attempt(request(1).id, leader).unwrap();
+        }
+
+        // When
+        let joined: Vec<_> = (0..3)
+            .map(|_| open.join_inconclusive_round(request(1).id, leader))
+            .collect();
+        let fourth = open.join_inconclusive_round(request(1).id, leader);
+
+        // Then
+        assert!(joined.iter().all(Result::is_ok), "{joined:?}");
+        let error = fourth.unwrap_err().to_string();
+        assert!(
+            error.contains("already joined 3 inconclusive rounds"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn open_requests_wait_for_yield__should_return_the_request_waiting_on_the_yield() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let waiting = open.wait_for_yield(request(2).yield_id);
+
+        // When
+        let (found, ()) = tokio::join!(
+            tokio::time::timeout(Duration::from_secs(5), waiting),
+            async {
+                open.notify_new_block(&update(
+                    REQUEST_HEIGHT,
+                    vec![request(1), request(2)],
+                    vec![],
+                ))
+            }
+        );
+
+        // Then
+        assert_eq!(found.unwrap(), request(2));
     }
 
     #[tokio::test]

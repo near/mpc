@@ -8,32 +8,67 @@ use rstest::rstest;
 use std::assert_matches;
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use tokio::sync::watch;
 use tokio::time::{Duration, Instant};
 
 const LEADER: ParticipantId = ParticipantId::from_raw(1);
 const FOLLOWER: ParticipantId = ParticipantId::from_raw(2);
 const OTHER_FOLLOWER: ParticipantId = ParticipantId::from_raw(3);
 const SIGNED: &str = "signed";
+const SIGNED_INCONCLUSIVE: &str = "signed inconclusive";
+const EVIDENCE: &str = "evidence";
 
 type AttemptResult = Result<&'static str, AttemptFailure>;
+type RoundResult = anyhow::Result<&'static str>;
 
-/// A leader whose attempts end as scripted, in order. It records the nodes each asset take
-/// avoids.
+/// A leader whose attempts and inconclusive rounds end as scripted, in order. It records the
+/// nodes each asset take avoids.
 struct ScriptedLeader {
-    results: Mutex<VecDeque<AttemptResult>>,
+    attempts: Mutex<VecDeque<AttemptResult>>,
+    rounds: Mutex<VecDeque<RoundResult>>,
     /// The wait for each asset, or `None` when no asset comes.
     asset_wait: Option<Duration>,
+    /// The time each attempt runs before it ends as scripted.
+    attempt_duration: Duration,
+    /// The number of the attempt that leaves the evidence of an inconclusive behind.
+    evidence_after_attempt: Option<usize>,
+    /// The time from the start until the evidence proves an inconclusive.
+    evidence_at: Option<Duration>,
+    evidence: watch::Sender<Option<&'static str>>,
     avoided: Mutex<Vec<BTreeSet<ParticipantId>>>,
+    round_avoided: Mutex<Vec<BTreeSet<ParticipantId>>>,
     attempts_run: Mutex<usize>,
+    rounds_run: Mutex<usize>,
 }
 
 impl ScriptedLeader {
-    fn new(results: impl IntoIterator<Item = AttemptResult>) -> Self {
+    fn new(attempts: impl IntoIterator<Item = AttemptResult>) -> Self {
         Self {
-            results: Mutex::new(results.into_iter().collect()),
+            attempts: Mutex::new(attempts.into_iter().collect()),
+            rounds: Mutex::new(VecDeque::new()),
             asset_wait: Some(Duration::ZERO),
+            attempt_duration: Duration::ZERO,
+            evidence_after_attempt: None,
+            evidence_at: None,
+            evidence: watch::Sender::new(None),
             avoided: Mutex::new(Vec::new()),
+            round_avoided: Mutex::new(Vec::new()),
             attempts_run: Mutex::new(0),
+            rounds_run: Mutex::new(0),
+        }
+    }
+
+    fn with_rounds(self, rounds: impl IntoIterator<Item = RoundResult>) -> Self {
+        Self {
+            rounds: Mutex::new(rounds.into_iter().collect()),
+            ..self
+        }
+    }
+
+    fn with_evidence_after_attempt(self, attempt: usize) -> Self {
+        Self {
+            evidence_after_attempt: Some(attempt),
+            ..self
         }
     }
 
@@ -41,29 +76,87 @@ impl ScriptedLeader {
         self.avoided.lock().unwrap().clone()
     }
 
+    fn round_avoided(&self) -> Vec<BTreeSet<ParticipantId>> {
+        self.round_avoided.lock().unwrap().clone()
+    }
+
     fn attempts_run(&self) -> usize {
         *self.attempts_run.lock().unwrap()
     }
-}
 
-impl LeadV2Attempt for ScriptedLeader {
-    type Asset = ();
-    type Signed = &'static str;
+    fn rounds_run(&self) -> usize {
+        *self.rounds_run.lock().unwrap()
+    }
 
-    async fn take_asset(&self, avoid: &BTreeSet<ParticipantId>) -> anyhow::Result<()> {
-        self.avoided.lock().unwrap().push(avoid.clone());
+    async fn wait_for_asset(&self) -> anyhow::Result<()> {
+        tokio::task::yield_now().await;
         let wait = self.asset_wait.context("the request closed")?;
         tokio::time::sleep(wait).await;
         Ok(())
     }
+}
+
+impl LeadV2Request for ScriptedLeader {
+    type Asset = ();
+    type Signed = &'static str;
+    type Evidence = &'static str;
+
+    async fn take_attempt_asset(&self, avoid: &BTreeSet<ParticipantId>) -> anyhow::Result<()> {
+        self.avoided.lock().unwrap().push(avoid.clone());
+        self.wait_for_asset().await
+    }
 
     async fn run_attempt(&self, (): ()) -> AttemptResult {
-        *self.attempts_run.lock().unwrap() += 1;
-        self.results
+        tokio::time::sleep(self.attempt_duration).await;
+        let attempt = {
+            let mut attempts_run = self.attempts_run.lock().unwrap();
+            *attempts_run += 1;
+            *attempts_run
+        };
+        if self.evidence_after_attempt == Some(attempt) {
+            self.evidence.send_replace(Some(EVIDENCE));
+        }
+        self.attempts
             .lock()
             .unwrap()
             .pop_front()
             .expect("the leader runs no attempt beyond the script")
+    }
+
+    async fn wait_for_inconclusive_evidence(&self) -> &'static str {
+        let mut evidence = self.evidence.subscribe();
+        let scripted = async {
+            *evidence
+                .wait_for(Option::is_some)
+                .await
+                .unwrap()
+                .as_ref()
+                .unwrap()
+        };
+        match self.evidence_at {
+            Some(at) => {
+                tokio::select! {
+                    found = scripted => found,
+                    () = tokio::time::sleep(at) => EVIDENCE,
+                }
+            }
+            None => scripted.await,
+        }
+    }
+
+    async fn take_round_asset(&self, avoid: &BTreeSet<ParticipantId>) -> anyhow::Result<()> {
+        self.round_avoided.lock().unwrap().push(avoid.clone());
+        self.wait_for_asset().await
+    }
+
+    async fn run_inconclusive_round(&self, (): (), evidence: &&'static str) -> RoundResult {
+        assert_eq!(*evidence, EVIDENCE);
+        *self.rounds_run.lock().unwrap() += 1;
+        self.rounds
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("the leader runs no round beyond the script")
     }
 }
 
@@ -251,5 +344,135 @@ fn attempt_failure_new__should_sort_the_error_that_ended_the_attempt(
     assert_eq!(
         std::mem::discriminant(&failure),
         std::mem::discriminant(&expected)
+    );
+}
+
+#[rstest]
+#[case::verdicts_differ(verdicts_differ())]
+#[case::inspectors_disagree(no_verdict(NoVerdictReason::InspectorsDisagree))]
+#[tokio::test]
+async fn lead_request__should_sign_an_inconclusive_after_a_disagreement(#[case] end: AttemptEnd) {
+    // Given
+    let leader = ScriptedLeader::new([Err(AttemptFailure::Disagreement(end))])
+        .with_evidence_after_attempt(1)
+        .with_rounds([Ok(SIGNED_INCONCLUSIVE)]);
+
+    // When
+    let signed = lead_request(&leader).await;
+
+    // Then
+    assert_eq!(signed.unwrap(), SIGNED_INCONCLUSIVE);
+    assert_eq!(leader.attempts_run(), 1);
+    assert_eq!(leader.rounds_run(), 1);
+}
+
+#[tokio::test]
+async fn lead_request__should_stop_after_a_disagreement_without_evidence() {
+    // Given
+    let leader = ScriptedLeader::new([Err(AttemptFailure::Disagreement(verdicts_differ()))]);
+
+    // When
+    let stop = lead_request(&leader).await;
+
+    // Then
+    assert_matches!(stop, Err(LeaderStop::Disagreement(_)));
+    assert_eq!(leader.rounds_run(), 0);
+}
+
+#[tokio::test]
+async fn lead_request__should_sign_an_inconclusive_once_the_evidence_holds_enough_transient_errors()
+{
+    // Given
+    let transient = || AttemptFailure::Transient {
+        participant: FOLLOWER,
+    };
+    let leader = ScriptedLeader::new([Err(transient()), Err(transient()), Ok(SIGNED)])
+        .with_evidence_after_attempt(2)
+        .with_rounds([Ok(SIGNED_INCONCLUSIVE)]);
+
+    // When
+    let signed = lead_request(&leader).await;
+
+    // Then
+    assert_eq!(signed.unwrap(), SIGNED_INCONCLUSIVE);
+    assert_eq!(leader.attempts_run(), 2);
+}
+
+#[tokio::test]
+async fn lead_request__should_stop_when_the_attempts_leave_no_evidence() {
+    // Given
+    let leader = ScriptedLeader::new([
+        Err(AttemptFailure::Transient {
+            participant: FOLLOWER,
+        }),
+        Err(cluster_problem()),
+        Err(AttemptFailure::Aborted(aborted_by(OTHER_FOLLOWER))),
+    ]);
+
+    // When
+    let stop = lead_request(&leader).await;
+
+    // Then
+    assert_matches!(stop, Err(LeaderStop::AttemptsExhausted(_)));
+    assert_eq!(leader.rounds_run(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn lead_request__should_start_the_inconclusive_as_soon_as_the_evidence_proves_it() {
+    // Given
+    let evidence_at = Duration::from_secs(2);
+    let leader = ScriptedLeader {
+        attempt_duration: Duration::from_secs(13),
+        evidence_at: Some(evidence_at),
+        ..ScriptedLeader::new([Ok(SIGNED)]).with_rounds([Ok(SIGNED_INCONCLUSIVE)])
+    };
+    let started = Instant::now();
+
+    // When
+    let signed = lead_request(&leader).await;
+
+    // Then
+    assert_eq!(signed.unwrap(), SIGNED_INCONCLUSIVE);
+    assert_eq!(started.elapsed(), evidence_at);
+}
+
+#[tokio::test]
+async fn lead_request__should_stop_after_three_failed_inconclusive_rounds() {
+    // Given
+    let leader = ScriptedLeader::new([Err(AttemptFailure::Disagreement(verdicts_differ()))])
+        .with_evidence_after_attempt(1)
+        .with_rounds([
+            Err(anyhow::anyhow!("a share does not combine")),
+            Err(anyhow::anyhow!("a share does not combine")),
+            Err(anyhow::anyhow!("a share does not combine")),
+            Ok(SIGNED_INCONCLUSIVE),
+        ]);
+
+    // When
+    let stop = lead_request(&leader).await;
+
+    // Then
+    assert_matches!(stop, Err(LeaderStop::RoundsExhausted(_)));
+    assert_eq!(leader.rounds_run(), 3);
+}
+
+#[tokio::test]
+async fn lead_request__should_retry_a_round_with_an_asset_that_avoids_the_node_that_refused() {
+    // Given
+    let leader = ScriptedLeader::new([Err(AttemptFailure::Disagreement(verdicts_differ()))])
+        .with_evidence_after_attempt(1)
+        .with_rounds([
+            Err(anyhow::Error::new(aborted_by(OTHER_FOLLOWER)).context("the round failed")),
+            Ok(SIGNED_INCONCLUSIVE),
+        ]);
+
+    // When
+    let signed = lead_request(&leader).await;
+
+    // Then
+    assert_eq!(signed.unwrap(), SIGNED_INCONCLUSIVE);
+    assert_eq!(
+        leader.round_avoided(),
+        vec![BTreeSet::new(), BTreeSet::from([OTHER_FOLLOWER])]
     );
 }

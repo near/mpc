@@ -98,6 +98,24 @@ impl NetworkTaskChannelSender {
         )
     }
 
+    /// Sends the evidence of an inconclusive round to every other participant. The leader sends
+    /// it right after the Start.
+    pub(crate) fn send_evidence(&self, outcomes: Vec<SignedNodeOutcome>) -> anyhow::Result<()> {
+        for participant in &self.participants {
+            if *participant == self.my_participant_id {
+                continue;
+            }
+            self.send_raw(
+                *participant,
+                MpcMessage {
+                    channel_id: self.channel_id,
+                    kind: MpcMessageKind::NodeOutcomes(outcomes.clone()),
+                },
+            )?;
+        }
+        Ok(())
+    }
+
     /// Ends the computation with the network abort.
     pub(crate) fn abort(&self, err: &anyhow::Error) {
         self.communicate_failure(err);

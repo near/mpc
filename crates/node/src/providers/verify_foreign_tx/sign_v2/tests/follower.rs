@@ -139,8 +139,8 @@ fn whitelist(rpc_url: &str) -> ForeignChainWhitelist {
 }
 
 /// A provider for `client` with no keyshares.
-struct TestProvider {
-    provider: VerifyForeignTxProvider,
+pub(crate) struct TestProvider {
+    pub(crate) provider: VerifyForeignTxProvider,
     _db_dir: tempfile::TempDir,
 }
 
@@ -155,7 +155,7 @@ impl TestProvider {
         Self::with_ethereum_supporters(client, rpc_url, open_requests, &ethereum_supporters)
     }
 
-    fn with_ethereum_supporters(
+    pub(crate) fn with_ethereum_supporters(
         client: Arc<MeshNetworkClient>,
         rpc_url: &str,
         open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
@@ -223,12 +223,12 @@ async fn reach_node_outcome__should_retry_a_transient_error_within_the_inspectio
     assert_eq!(outcome.unwrap(), VERIFIED);
 }
 
-fn attempt_participants() -> Vec<ParticipantId> {
+pub(crate) fn attempt_participants() -> Vec<ParticipantId> {
     vec![ParticipantId::from_raw(0), ParticipantId::from_raw(1)]
 }
 
 /// The participant of `rank` in the leader selection order of `request()`.
-fn leader_of_rank(rank: usize) -> ParticipantId {
+pub(crate) fn leader_of_rank(rank: usize) -> ParticipantId {
     leader_selection_order(&attempt_participants(), request().id)[rank]
 }
 
@@ -528,7 +528,7 @@ async fn v2_attempt_candidates__should_leave_out_participants_without_the_v2_mes
     // When
     let candidates = node
         .provider
-        .v2_attempt_candidates(dtos::ForeignChain::Ethereum);
+        .v2_asset_candidates(dtos::ForeignChain::Ethereum, V2AssetUse::Attempt);
 
     // Then
     assert_eq!(candidates.unwrap(), participants[..2]);
@@ -551,10 +551,41 @@ async fn v2_attempt_candidates__should_leave_out_participants_more_than_five_blo
     // When
     let candidates = node
         .provider
-        .v2_attempt_candidates(dtos::ForeignChain::Ethereum);
+        .v2_asset_candidates(dtos::ForeignChain::Ethereum, V2AssetUse::Attempt);
 
     // Then
     assert_eq!(candidates.unwrap(), participants[..2]);
+}
+
+#[rstest::rstest]
+#[case::attempt(V2AssetUse::Attempt, 2)]
+#[case::inconclusive_round(V2AssetUse::InconclusiveRound, 3)]
+#[tokio::test]
+async fn v2_asset_candidates__should_require_chain_support_only_for_an_attempt(
+    #[case] asset_use: V2AssetUse,
+    #[case] candidate_count: usize,
+) {
+    // Given
+    let participants: Vec<_> = (0..3).map(ParticipantId::from_raw).collect();
+    let (client, _transport) = new_test_client_with_versions(
+        participants.clone(),
+        participants[0],
+        crate::network::testing::current_protocol_versions(&participants),
+    );
+    let node = TestProvider::with_ethereum_supporters(
+        client,
+        "http://127.0.0.1:1",
+        open_requests_with(request()),
+        &participants[..2],
+    );
+
+    // When
+    let candidates = node
+        .provider
+        .v2_asset_candidates(dtos::ForeignChain::Ethereum, asset_use);
+
+    // Then
+    assert_eq!(candidates.unwrap(), participants[..candidate_count]);
 }
 
 #[tokio::test(start_paused = true)]
@@ -580,7 +611,8 @@ async fn take_v2_triples__should_stop_waiting_when_the_request_closes() {
     // When
     let (taken, ()) = timeout(Duration::from_mins(1), async {
         tokio::join!(
-            node.provider.take_v2_triples(&request, &triples, &avoid),
+            node.provider
+                .take_v2_triples(&request, &triples, V2AssetUse::Attempt, &avoid),
             async {
                 tokio::time::sleep(wait_before_close).await;
                 complete(&open_requests, request.id);

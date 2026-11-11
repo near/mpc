@@ -1022,7 +1022,6 @@ impl NetworkTaskChannel {
                 // any `Start` messages.
                 anyhow::bail!("Unexpected Start message: {:?}", mpc_start_message);
             }
-            // TODO(#5126): hand the evidence to the followers of an inconclusive round.
             MpcMessageKind::NodeOutcomes(outcomes) => {
                 return Ok(Some(ReceivedMessage::NodeOutcomes(PeerNodeOutcomes {
                     from: message.from,

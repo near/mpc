@@ -1,25 +1,50 @@
 use std::collections::BTreeSet;
 
+use futures::FutureExt as _;
+
 use crate::network::AbortedByParticipant;
 use crate::network::computation::ComputationTimeout;
 use crate::primitives::ParticipantId;
-use crate::providers::verify_foreign_tx::MAX_ATTEMPTS_PER_LEADER;
 use crate::providers::verify_foreign_tx::attempt_evidence::AttemptEvidence;
 use crate::providers::verify_foreign_tx::attempt_outcomes::AttemptEnd;
 use crate::providers::verify_foreign_tx::node_outcome::NoVerdictReason;
 use crate::providers::verify_foreign_tx::node_outcome_statement::AttemptId;
+use crate::providers::verify_foreign_tx::{
+    MAX_ATTEMPTS_PER_LEADER, MAX_INCONCLUSIVE_ROUNDS_PER_LEADER,
+};
 
-/// Leads the V2 attempts at one request: takes the asset of each attempt and runs it.
-pub(crate) trait LeadV2Attempt {
+/// Leads one V2 request: takes the asset of each attempt or inconclusive round and runs it.
+pub(crate) trait LeadV2Request {
     type Asset;
     type Signed;
+    type Evidence;
 
     /// Waits for the asset of the next attempt, before its Start. A free asset without any of
     /// `avoid` comes first.
-    async fn take_asset(&self, avoid: &BTreeSet<ParticipantId>) -> anyhow::Result<Self::Asset>;
+    async fn take_attempt_asset(
+        &self,
+        avoid: &BTreeSet<ParticipantId>,
+    ) -> anyhow::Result<Self::Asset>;
 
     /// Runs one attempt, from its Start to the signature.
     async fn run_attempt(&self, asset: Self::Asset) -> Result<Self::Signed, AttemptFailure>;
+
+    /// Returns once the node outcomes of the attempts prove a cause for an inconclusive.
+    async fn wait_for_inconclusive_evidence(&self) -> Self::Evidence;
+
+    /// Waits for the asset of the next inconclusive round, before its Start. A free asset
+    /// without any of `avoid` comes first.
+    async fn take_round_asset(
+        &self,
+        avoid: &BTreeSet<ParticipantId>,
+    ) -> anyhow::Result<Self::Asset>;
+
+    /// Runs one inconclusive round that shows `evidence`, from its Start to the signature.
+    async fn run_inconclusive_round(
+        &self,
+        asset: Self::Asset,
+        evidence: &Self::Evidence,
+    ) -> anyhow::Result<Self::Signed>;
 }
 
 /// The reason a leader stops leading a V2 request without a signature. The request then times out
@@ -32,6 +57,11 @@ pub(crate) enum LeaderStop {
     Disagreement(AttemptEnd),
     #[error("all {MAX_ATTEMPTS_PER_LEADER} V2 attempts failed, the last one with: {0}")]
     AttemptsExhausted(AttemptFailure),
+    #[error(
+        "all {MAX_INCONCLUSIVE_ROUNDS_PER_LEADER} inconclusive rounds failed, the last one with: \
+         {0:#}"
+    )]
+    RoundsExhausted(anyhow::Error),
 }
 
 /// The reason a V2 attempt failed. It decides the leader's next step.
@@ -93,15 +123,35 @@ impl From<AttemptEnd> for AttemptFailure {
     }
 }
 
+/// Leads one V2 request and returns the first signature. The leader runs attempts, see
+/// [`lead_attempts`], until the node outcomes of its attempts prove a cause for an inconclusive.
+/// It then runs inconclusive rounds instead, see [`lead_inconclusive_rounds`].
+pub(crate) async fn lead_request<L: LeadV2Request>(leader: &L) -> Result<L::Signed, LeaderStop> {
+    let attempts_stop = tokio::select! {
+        biased;
+        evidence = leader.wait_for_inconclusive_evidence() => {
+            return lead_inconclusive_rounds(leader, &evidence).await;
+        }
+        led = lead_attempts(leader) => match led {
+            Ok(signed) => return Ok(signed),
+            Err(stop) => stop,
+        },
+    };
+    match leader.wait_for_inconclusive_evidence().now_or_never() {
+        Some(evidence) => lead_inconclusive_rounds(leader, &evidence).await,
+        None => Err(attempts_stop),
+    }
+}
+
 /// Leads up to [`MAX_ATTEMPTS_PER_LEADER`] attempts at one V2 request and returns the first
 /// signature. After a failure other than a disagreement, the leader retries at once. The wait for
 /// an asset does not use up an attempt.
-pub(crate) async fn lead_attempts<L: LeadV2Attempt>(leader: &L) -> Result<L::Signed, LeaderStop> {
+async fn lead_attempts<L: LeadV2Request>(leader: &L) -> Result<L::Signed, LeaderStop> {
     let mut avoid = BTreeSet::new();
     let mut attempts_left = MAX_ATTEMPTS_PER_LEADER;
     loop {
         let asset = leader
-            .take_asset(&avoid)
+            .take_attempt_asset(&avoid)
             .await
             .map_err(LeaderStop::NoAsset)?;
         attempts_left = attempts_left.saturating_sub(1);
@@ -110,8 +160,6 @@ pub(crate) async fn lead_attempts<L: LeadV2Attempt>(leader: &L) -> Result<L::Sig
             Err(failure) => failure,
         };
         tracing::info!(%failure, attempts_left, "a V2 foreign tx attempt failed");
-        // TODO(#5126): start the inconclusive after a disagreement, and once the attempt evidence
-        // holds transient errors from s − t + 1 nodes.
         let next_avoid = match &failure {
             AttemptFailure::Disagreement(end) => return Err(LeaderStop::Disagreement(*end)),
             AttemptFailure::Transient { participant } => BTreeSet::from([*participant]),
@@ -123,6 +171,36 @@ pub(crate) async fn lead_attempts<L: LeadV2Attempt>(leader: &L) -> Result<L::Sig
             return Err(LeaderStop::AttemptsExhausted(failure));
         }
         avoid = next_avoid;
+    }
+}
+
+/// Leads up to [`MAX_INCONCLUSIVE_ROUNDS_PER_LEADER`] inconclusive rounds that show `evidence`,
+/// and returns the first signature. After a failure the leader retries at once, with an asset
+/// without a follower that refused. The wait for an asset does not use up a round.
+async fn lead_inconclusive_rounds<L: LeadV2Request>(
+    leader: &L,
+    evidence: &L::Evidence,
+) -> Result<L::Signed, LeaderStop> {
+    let mut avoid = BTreeSet::new();
+    let mut rounds_left = MAX_INCONCLUSIVE_ROUNDS_PER_LEADER;
+    loop {
+        let asset = leader
+            .take_round_asset(&avoid)
+            .await
+            .map_err(LeaderStop::NoAsset)?;
+        rounds_left = rounds_left.saturating_sub(1);
+        let error = match leader.run_inconclusive_round(asset, evidence).await {
+            Ok(signed) => return Ok(signed),
+            Err(error) => error,
+        };
+        tracing::info!(error = %format!("{error:#}"), rounds_left, "an inconclusive round failed");
+        if rounds_left == 0 {
+            return Err(LeaderStop::RoundsExhausted(error));
+        }
+        avoid = error
+            .downcast_ref::<AbortedByParticipant>()
+            .map(|aborted| BTreeSet::from([aborted.participant]))
+            .unwrap_or_default();
     }
 }
 

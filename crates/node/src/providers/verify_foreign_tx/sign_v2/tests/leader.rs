@@ -1,5 +1,6 @@
 use super::*;
 use crate::network::testing::run_test_clients;
+use crate::providers::ecdsa::OnlinePresignSignComputation;
 use crate::providers::verify_foreign_tx::attempt_outcomes::AttemptEnd;
 use crate::providers::verify_foreign_tx::leader_attempts::AttemptFailure;
 use crate::providers::verify_foreign_tx::node_outcome::NoVerdictReason;
@@ -7,6 +8,7 @@ use crate::tests::into_participant_ids;
 use crate::tracking::testing::start_root_task_with_periodic_dump;
 use k256::Scalar;
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::types::Tweak;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::assert_matches;
@@ -20,12 +22,12 @@ use tokio::sync::Notify;
 const FAIL_FAST_BOUND: Duration = Duration::from_secs(10);
 
 /// A key and a triple pair dealt to every participant, so the clients only run the attempt.
-struct DealtShares {
-    by_participant: HashMap<ParticipantId, (KeygenOutput, PairedTriple)>,
+pub(crate) struct DealtShares {
+    pub(crate) by_participant: HashMap<ParticipantId, (KeygenOutput, PairedTriple)>,
 }
 
 impl DealtShares {
-    fn new(participants: &[Participant]) -> Self {
+    pub(crate) fn new(participants: &[Participant]) -> Self {
         let mut rng = StdRng::seed_from_u64(42);
         let keys: HashMap<Participant, KeygenOutput> =
             run_keygen::<Secp256K1Sha256, _>(participants, THRESHOLD, &mut rng)
@@ -104,7 +106,7 @@ async fn run_follower(
 
 struct AttemptRun {
     participants: Vec<ParticipantId>,
-    leader_result: Result<SignedVerdict, AttemptFailure>,
+    leader_result: Result<SignedOutcome, AttemptFailure>,
     elapsed: Duration,
     evidence: Vec<NodeOutcomeStatement>,
 }
@@ -168,7 +170,7 @@ async fn run_leader(
     participants: &[ParticipantId],
     leader_outcome: NodeOutcome,
     (keygen_out, triples): (KeygenOutput, PairedTriple),
-) -> Result<SignedVerdict, AttemptFailure> {
+) -> Result<SignedOutcome, AttemptFailure> {
     let me = client.my_participant_id();
     let (channel, attempt) = open_led_attempt(
         client,
@@ -195,10 +197,12 @@ async fn run_leader(
     V2LeaderComputation {
         attempt,
         own_outcome,
-        request: request(),
-        keygen_out,
-        reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
-        triples,
+        signing: OutcomeSigning {
+            request: request(),
+            keygen_out,
+            reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
+            triples,
+        },
     }
     .run(channel, client.attempt_evidence())
     .await
@@ -212,7 +216,9 @@ async fn wait_for_evidence(
     let evidence = client.attempt_evidence();
     timeout(
         Duration::from_secs(30),
-        evidence.wait_for_outcomes(request().yield_id, count),
+        evidence.wait_for(request().yield_id, |outcomes| {
+            (outcomes.len() >= count).then_some(())
+        }),
     )
     .await
     .expect("the leader keeps every node outcome that reaches it");
@@ -243,7 +249,7 @@ async fn v2_leader_computation__should_sign_the_payload_when_every_participant_a
         let NodeOutcome::Verdict(not_found) = NOT_FOUND else {
             unreachable!()
         };
-        assert_eq!(signed.verdict, not_found);
+        assert_eq!(signed.outcome, not_found.into());
         let expected_hash = request()
             .sign_payload(not_found.into())
             .unwrap()

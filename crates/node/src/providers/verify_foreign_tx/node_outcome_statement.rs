@@ -66,6 +66,10 @@ impl VerifiedNodeOutcome {
     pub(crate) fn statement(&self) -> &NodeOutcomeStatement {
         &self.0.statement
     }
+
+    pub(crate) fn into_signed(self) -> SignedNodeOutcome {
+        self.0
+    }
 }
 
 impl SignedNodeOutcome {

@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::{ParticipantInfo, PersistentSecrets};
+use crate::providers::verify_foreign_tx::node_outcome::NodeVerdict;
 use crate::types::RequestsUpdate;
 use chain_gateway::event_subscriber::recent_blocks_tracker::RecentBlocksTracker;
 use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
@@ -11,6 +12,7 @@ use near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict;
 use near_time::FakeClock;
 
 mod follower;
+mod inconclusive;
 mod leader;
 
 const THRESHOLD: usize = 3;
