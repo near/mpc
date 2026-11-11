@@ -342,6 +342,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
+      - name: Build mpc-contract with the V2 foreign tx methods
+        run: nix develop --command cargo make build-mpc-contract-foreign-tx-v2-optimized
+
       - name: Build tee-verifier
         run: nix develop --command cargo make build-tee-verifier-optimized
 

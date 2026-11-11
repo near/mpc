@@ -344,10 +344,11 @@ so any nextest filter or flag works (substring filters, `-E` expressions,
 runs with the `ci-e2e` profile. Do not put flags after a `--` separator: it is
 forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 
-The task runner builds five things before tests run: the mpc-node binary with
-the `network-hardship-simulation` feature, the MPC contract WASM, the
-tee-verifier WASM, the test parallel contract WASM, and the backup CLI. WASM
-paths are passed to tests via the `MPC_CONTRACT_WASM`,
+The task runner builds six things before tests run: the mpc-node binary with
+the `network-hardship-simulation` feature, the MPC contract WASM, the MPC
+contract WASM with the `foreign-tx-v2` feature, the tee-verifier WASM, the test
+parallel contract WASM, and the backup CLI. WASM paths are passed to tests via
+the `MPC_CONTRACT_WASM`, `MPC_CONTRACT_FOREIGN_TX_V2_WASM`,
 `MPC_TEE_VERIFIER_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment
 variables, read by the `must_load_*` helpers in `tests/common.rs`; if the
 env var is unset and no pre-built WASM is found,
