@@ -38,6 +38,11 @@ port_mappings = [
   { host = 2200, container = 2200 },
 ]
 
+# MPC node configuration. The launcher passes these fields through and adds
+# `tee`, `home_dir` and `node.indexer.mpc_contract_id`, rejecting a config that
+# already sets any of them. The result is re-serialized to TOML and written to
+# /mnt/shared/mpc-config.toml, on a volume shared with the MPC container, for
+# the MPC binary to consume via `start-with-config-file`.
 [mpc_node_config]
 # ... any fields the MPC node expects
 ```
