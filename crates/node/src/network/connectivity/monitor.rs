@@ -41,6 +41,14 @@ struct ConnectivityMonitor<N, C, S, L> {
     link_statuses: watch::Sender<LinkStatuses<N, S>>,
 }
 
+// todo: add `ConnectivityMonitorHandle`, the read side of the monitor. It must implement the traits
+// its consumers define:
+// - `crate::providers::participant_selection::SelectParticipants`, for the providers that choose
+//   the participants of what they lead;
+// - `crate::assets::ReadUnready`, for the asset store;
+// - `crate::requests::queue::ReadAliveParticipants` and
+//   `crate::requests::queue::ReadIndexerHeights`, for the request queue.
+
 trait ApplyPeerReport<N, R> {
     fn apply(&mut self, report: R) -> Result<ConnectionsChanged, PeerReportError<N>>;
 }
