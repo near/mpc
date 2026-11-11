@@ -9,15 +9,14 @@
 pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
+pub mod participant_selection;
 pub mod robust_ecdsa;
-pub mod traits;
 pub mod verify_foreign_tx;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::MpcTaskId;
 use crate::primitives::ParticipantId;
-use crate::providers::traits::ComputationDuration;
 use crate::types::SignatureId;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
@@ -103,24 +102,6 @@ pub trait SignatureProvider {
 /// This trait helps check whether the current set of participants contains `A`.
 pub trait HasParticipants {
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool;
-}
-
-/// Picks the participant set for a computation we lead.
-pub trait SelectParticipants {
-    /// `total` participants including us, pairwise ready for a computation of `duration`,
-    /// taken from `candidates`.
-    fn select_participants(
-        &self,
-        total: usize,
-        candidates: &[ParticipantId],
-        duration: ComputationDuration,
-    ) -> Result<Vec<ParticipantId>, SelectParticipantsError>;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum SelectParticipantsError {
-    #[error("not enough alive participants: need {needed}, got {available}")]
-    NotEnoughParticipants { needed: usize, available: usize },
 }
 
 /// Helper functions to convert back and forth public key types

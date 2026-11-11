@@ -10,8 +10,8 @@ use crate::network::connectivity::{
     first_hand_indexer_heights::FirstHandIndexerHeights,
     graph::UnknownNodeError,
     health::{
-        ConnectionChanged, InferConnection, EstablishedConnections,
-        ConnectionTracker, LinkStatuses, UpdateLinkStatus,
+        ConnectionChanged, ConnectionTracker, EstablishedConnections, InferConnection,
+        LinkStatuses, UpdateLinkStatus,
     },
     reports::{
         DeriveLinkObservations, IndexerHeightLag, IndexerHeightReport, ObservationContext,
@@ -80,8 +80,7 @@ impl<N: Ord + Clone, C, S, L> ConnectivityMonitor<N, C, S, L> {
     }
 }
 
-impl<N, C, S, L> ApplyPeerReport<N, IndexerHeightReport<N>>
-    for ConnectivityMonitor<N, C, S, L>
+impl<N, C, S, L> ApplyPeerReport<N, IndexerHeightReport<N>> for ConnectivityMonitor<N, C, S, L>
 where
     N: Ord + Clone + std::fmt::Display,
     L: UpdateLinkStatus<IndexerHeightLag>,
@@ -92,47 +91,15 @@ where
         &mut self,
         report: IndexerHeightReport<N>,
     ) -> Result<ConnectionsChanged, PeerReportError<N>> {
-        let own_height = *report.indexer_heights.get(&report.reporter).ok_or(
-            PeerReportError::OwnHeightMissing(report.reporter.clone()),
-        )?;
+        let own_height = *report
+            .indexer_heights
+            .get(&report.reporter)
+            .ok_or(PeerReportError::OwnHeightMissing(report.reporter.clone()))?;
         self.first_hand_heights
             .set(report.reporter.clone(), own_height)?;
         Ok(self.update_connections(&report)?)
     }
 }
-//enum IndexerHeightLag {
-//    Present(BlockCount),
-//    Absent,
-//}
-//
-//impl IndexerHeightLag {
-//    fn new(
-//        first_hand_indexer_height: ReportedIndexerHeight,
-//        peer_reported_height: Option<ReportedIndexerHeight>,
-//    ) -> Option<Self> {
-//        let Some(peer_reported) = peer_reported_height else {
-//            return Some(IndexerHeightLag::Absent);
-//        };
-//        match (first_hand_indexer_height, peer_reported) {
-//            (ReportedIndexerHeight::Unknown, _) => None,
-//            (_, ReportedIndexerHeight::Unknown) => None,
-//            (
-//                ReportedIndexerHeight::Known(first_hand),
-//                ReportedIndexerHeight::Known(peer_reported),
-//            ) => {
-//                let count = first_hand.blocks_since(peer_reported);
-//                Some(IndexerHeightLag::Present(count))
-//            }
-//        }
-//    }
-//}
-
-//pub struct LinkObservation<N, O> {
-//    pub from: N,
-//    pub to: N,
-//    pub observation: O,
-//}
-
 //
 ///// Latency of `origin --> reporter`, approximated as
 ///// `(origin --> us) - (origin --> reporter --> us)`, saturating at zero.

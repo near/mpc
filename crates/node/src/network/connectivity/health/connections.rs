@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 
 use crate::network::connectivity::graph::{AdjacencyMatrix, UndirectedEdge, UnknownNodeError};
-use crate::providers::traits::{CheckReadiness, ComputationDuration, NotReadyError};
+use crate::providers::participant_selection::{
+    CheckReadiness, ComputationDuration, NotReadyError,
+};
 
 /// Keeps track of bidirectional connections in the network
 #[derive(Clone)]

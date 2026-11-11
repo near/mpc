@@ -1,6 +1,26 @@
 use std::collections::BTreeSet;
 
 use crate::network::connectivity::UndirectedEdge;
+use crate::primitives::ParticipantId;
+
+/// Picks the participant set for a computation we lead.
+pub trait SelectParticipants {
+    /// `participant_count` participants taken from `eligible`, one of them `must_include`,
+    /// pairwise ready for a computation of `duration`.
+    fn select_participants(
+        &self,
+        participant_count: usize,
+        eligible: &[ParticipantId],
+        must_include: ParticipantId,
+        duration: ComputationDuration,
+    ) -> Result<Vec<ParticipantId>, SelectParticipantsError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum SelectParticipantsError {
+    #[error("not enough alive participants: need {needed}, got {available}")]
+    NotEnoughParticipants { needed: usize, available: usize },
+}
 
 pub trait CheckReadiness {
     type Node: Ord + Clone;

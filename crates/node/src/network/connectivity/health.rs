@@ -1,11 +1,10 @@
-
 mod connections;
 mod links;
 mod tracker;
 
-pub use connections::{ConnectionChanged, InferredConnection, EstablishedConnections};
+pub use connections::{ConnectionChanged, EstablishedConnections, InferredConnection};
 pub use links::{
-    LinkObservation, LinkMeasurements, LinkStatuses,
-    ReportLinkStatus, UpdateLinkStatus, LinkStatusChange,
+    LinkMeasurements, LinkObservation, LinkStatusChange, LinkStatuses, ReportLinkStatus,
+    UpdateLinkStatus,
 };
 pub use tracker::{ConnectionTracker, InferConnection};
