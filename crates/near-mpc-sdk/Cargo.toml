@@ -26,7 +26,10 @@ sha2 = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+ed25519-dalek = { workspace = true }
 hex = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["ed25519-dalek"] }
+rstest = { workspace = true }
 test-utils = { workspace = true }
 
 [lints]
