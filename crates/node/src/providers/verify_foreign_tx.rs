@@ -1,12 +1,17 @@
+pub(crate) mod attempt_evidence;
 pub(crate) mod node_outcome;
 pub(crate) mod node_outcome_statement;
+pub(crate) mod open_requests;
 
+mod attempt_outcomes;
 mod inspect_request;
 mod inspection;
 mod provider_call_metrics;
 mod sign;
+mod sign_v2;
 
 pub(crate) use inspection::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
+pub(crate) use sign_v2::{SignedVerdict, VerifyForeignTxV2Context};
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
@@ -217,16 +222,18 @@ pub struct VerifyForeignTxProvider {
     foreign_tx_required_active_signers: Option<u64>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+    v2: VerifyForeignTxV2Context,
 }
 
 impl VerifyForeignTxProvider {
-    pub fn new(
+    pub(crate) fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
         foreign_chain_whitelist: watch::Receiver<ForeignChainWhitelist>,
         foreign_tx_required_active_signers: Option<u64>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+        v2: VerifyForeignTxV2Context,
     ) -> anyhow::Result<Self> {
         let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
         Ok(Self {
@@ -237,6 +244,7 @@ impl VerifyForeignTxProvider {
             foreign_tx_required_active_signers,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
+            v2,
         })
     }
 
@@ -256,6 +264,13 @@ impl VerifyForeignTxProvider {
                 },
             ) => {
                 self.make_verify_foreign_tx_online_presign_follower(channel, id, paired_triple_id)
+                    .await?;
+            }
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTxV2 {
+                id,
+                paired_triple_id,
+            }) => {
+                self.make_verify_foreign_tx_v2_follower(channel, id, paired_triple_id)
                     .await?;
             }
             MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {

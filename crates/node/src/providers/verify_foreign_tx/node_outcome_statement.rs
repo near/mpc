@@ -41,7 +41,7 @@ pub(crate) struct NodeOutcomeStatement {
 /// The [`ChannelId`] the leader opens for the attempt. It names the leader, and the leader picks
 /// a new one for each channel. An id repeats only if the leader restarts within the second of an
 /// earlier id, or its clock goes back across a restart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub(crate) struct AttemptId(pub(crate) ChannelId);
 
 /// The key a node signs its [`NodeOutcomeStatement`]s with. It is the node's TLS identity key,
@@ -63,16 +63,18 @@ pub(crate) enum NodeOutcomeVerificationError {
 }
 
 impl VerifiedNodeOutcome {
-    // TODO(#5123): read when the leader counts node outcomes.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn statement(&self) -> &NodeOutcomeStatement {
         &self.0.statement
     }
 }
 
 impl SignedNodeOutcome {
-    // TODO(#5123): verify the node outcomes of followers.
-    #[cfg_attr(not(test), expect(dead_code))]
+    /// The statement before its signature is checked: only good for cheap checks that reject a
+    /// statement before [`Self::verify`].
+    pub(crate) fn unverified_statement(&self) -> &NodeOutcomeStatement {
+        &self.statement
+    }
+
     pub(crate) fn verify(
         self,
         participants: &ParticipantsConfig,
@@ -103,8 +105,6 @@ impl From<&PersistentSecrets> for NodeOutcomeSigningKey {
 }
 
 impl NodeOutcomeSigningKey {
-    // TODO(#5123): sign the node outcome of each attempt.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn sign(
         &self,
         statement: NodeOutcomeStatement,

@@ -5,6 +5,8 @@ pub mod handshake;
 pub mod indexer_heights;
 pub mod wire_format;
 
+mod node_outcomes;
+
 use crate::metrics::networking_metrics;
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
@@ -14,14 +16,16 @@ use crate::primitives::{
     MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
 };
 use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
+use crate::providers::verify_foreign_tx::attempt_evidence::AttemptEvidence;
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
 use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
+pub(crate) use node_outcomes::PeerNodeOutcomes;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -104,6 +108,7 @@ pub struct MeshNetworkClient {
     indexer_heights: Arc<IndexerHeightTracker>,
     /// Helper data to ensure [`ChannelId`] uniqueness.
     last_id: Arc<Mutex<UniqueId>>,
+    attempt_evidence: Arc<AttemptEvidence>,
 }
 
 impl NetworkAPIForRequests for MeshNetworkClient {
@@ -148,6 +153,7 @@ impl MeshNetworkClient {
             channels,
             indexer_heights,
             last_id,
+            attempt_evidence: Arc::new(AttemptEvidence::new()),
         }
     }
 
@@ -389,6 +395,7 @@ impl MeshNetworkClient {
                         transport_sender: self.transport_sender.clone(),
                     }),
                     successful_participants: HashSet::new(),
+                    deferred_computations: VecDeque::new(),
                     receiver: incomplete_channel.receiver,
                     drop: Some(Box::new(drop_fn)),
                 };
@@ -498,6 +505,9 @@ async fn run_receive_message(
     let message = receiver.receive().await?;
     match message {
         PeerMessage::Mpc(message) => {
+            let Some(message) = client.route_node_outcomes(message) else {
+                return Ok(());
+            };
             let from = message.from;
             let channel_id = message.message.channel_id;
             let start_msg = match &message.message.kind {
@@ -672,6 +682,9 @@ pub struct NetworkTaskChannel {
     receiver: tokio::sync::mpsc::UnboundedReceiver<MpcPeerMessage>,
     /// The set of participants who sent us a Success message; for leader only.
     successful_participants: HashSet<ParticipantId>,
+    /// Computation messages that arrived while the leader waited for node outcomes, in arrival
+    /// order. [`Self::receive`] returns them first.
+    deferred_computations: VecDeque<TaskChannelComputationData>,
     /// Function to clean up relevant data structures in the network transport implementation.
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
@@ -700,6 +713,12 @@ pub struct NetworkTaskChannelSender {
 pub struct TaskChannelComputationData {
     pub from: ParticipantId,
     pub data: Vec<Vec<u8>>,
+}
+
+/// A message of the channel's computation that [`NetworkTaskChannel::receive_one`] hands on.
+enum ReceivedMessage {
+    Computation(TaskChannelComputationData),
+    NodeOutcomes(PeerNodeOutcomes),
 }
 
 impl Drop for NetworkTaskChannel {
@@ -917,7 +936,7 @@ impl NetworkTaskChannel {
     /// A message from outside the channel's participant set is dropped rather than turned into an
     /// error: letting it fail the computation would hand any excluded node the power to abort a
     /// computation (and burn its triple pair) with a single message.
-    async fn receive_one(&mut self) -> anyhow::Result<Option<TaskChannelComputationData>> {
+    async fn receive_one(&mut self) -> anyhow::Result<Option<ReceivedMessage>> {
         let message = self.receive_raw().await?;
         if !self.sender.participants.contains(&message.from) {
             tracing::warn!(
@@ -933,10 +952,12 @@ impl NetworkTaskChannel {
         }
         match message.message.kind {
             MpcMessageKind::Computation(data) => {
-                return Ok(Some(TaskChannelComputationData {
-                    from: message.from,
-                    data,
-                }));
+                return Ok(Some(ReceivedMessage::Computation(
+                    TaskChannelComputationData {
+                        from: message.from,
+                        data,
+                    },
+                )));
             }
             MpcMessageKind::Abort(err) => {
                 tracing::debug!(
@@ -972,14 +993,12 @@ impl NetworkTaskChannel {
                 // any `Start` messages.
                 anyhow::bail!("Unexpected Start message: {:?}", mpc_start_message);
             }
-            // TODO(#5123): hand node outcomes to the leader of a V2 attempt.
             // TODO(#5126): hand the evidence to the followers of an inconclusive round.
             MpcMessageKind::NodeOutcomes(outcomes) => {
-                anyhow::bail!(
-                    "Unexpected node outcomes message from participant {} with {} outcomes",
-                    message.from,
-                    outcomes.len()
-                );
+                return Ok(Some(ReceivedMessage::NodeOutcomes(PeerNodeOutcomes {
+                    from: message.from,
+                    outcomes,
+                })));
             }
         }
         Ok(None)
@@ -991,9 +1010,19 @@ impl NetworkTaskChannel {
     ///   - The computation is aborted by a follower (if we're the leader) or the leader
     ///     (if we're a follower).
     pub async fn receive(&mut self) -> anyhow::Result<TaskChannelComputationData> {
+        if let Some(data) = self.deferred_computations.pop_front() {
+            return Ok(data);
+        }
         loop {
-            if let Some(data) = self.receive_one().await? {
-                return Ok(data);
+            match self.receive_one().await? {
+                Some(ReceivedMessage::Computation(data)) => return Ok(data),
+                Some(ReceivedMessage::NodeOutcomes(PeerNodeOutcomes { from, outcomes })) => {
+                    anyhow::bail!(
+                        "Unexpected node outcomes message from participant {from} with {} outcomes",
+                        outcomes.len()
+                    );
+                }
+                None => {}
             }
         }
     }
@@ -1319,6 +1348,7 @@ pub mod testing {
                 transport_sender,
             }),
             successful_participants: HashSet::new(),
+            deferred_computations: std::collections::VecDeque::new(),
             receiver,
             drop: None,
         };

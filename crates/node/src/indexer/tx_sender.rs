@@ -203,6 +203,9 @@ async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
 
             Ok(transaction_status)
         }
+        // The contract has no view of pending V2 requests. The queue learns of the answer from
+        // the indexed completion.
+        VerifyForeignTransactionRespondV2(_) => Ok(TransactionStatus::Unknown),
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
         | StartReshare(_)

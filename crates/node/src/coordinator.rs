@@ -28,7 +28,9 @@ use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::triple;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
-use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
+use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeSigningKey;
+use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
+use crate::providers::verify_foreign_tx::{VerifyForeignTxProvider, VerifyForeignTxV2Context};
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
@@ -531,6 +533,7 @@ where
             })
         });
         let p2p_public_key = p2p_key.verifying_key();
+        let node_outcome_signing_key = NodeOutcomeSigningKey::from(&secrets.persistent_secrets);
 
         let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
             "running mpc job",
@@ -592,6 +595,8 @@ where
                 let verify_foreign_tx_request_store = Arc::new(
                     VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
                 );
+                let verify_foreign_tx_v2_requests =
+                    Arc::new(OpenVerifyForeignTxRequestsV2::default());
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
@@ -739,6 +744,12 @@ where
                     foreign_tx_required_active_signers,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
+                    VerifyForeignTxV2Context {
+                        open_requests: verify_foreign_tx_v2_requests.clone(),
+                        signing_key: node_outcome_signing_key,
+                        participants: Arc::new(running_mpc_config.participants.clone()),
+                        network: network_client.clone(),
+                    },
                 )?);
 
                 let mpc_client = Arc::new(MpcClient::new(
@@ -747,6 +758,7 @@ where
                     sign_request_store,
                     ckd_request_store,
                     verify_foreign_tx_request_store,
+                    verify_foreign_tx_v2_requests,
                     ecdsa_signature_provider,
                     robust_ecdsa_signature_provider,
                     eddsa_signature_provider,

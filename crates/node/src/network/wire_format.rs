@@ -66,7 +66,10 @@ impl MpcMessageKind {
         match self {
             MpcMessageKind::Start(MpcStartMessage {
                 task_id:
-                    MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::Inconclusive { .. }),
+                    MpcTaskId::VerifyForeignTxTaskId(
+                        VerifyForeignTxTaskId::Inconclusive { .. }
+                        | VerifyForeignTxTaskId::VerifyForeignTxV2 { .. },
+                    ),
                 ..
             })
             | MpcMessageKind::NodeOutcomes(_) => V2_FOREIGN_TX_MIN_PROTOCOL_VERSION,
@@ -224,6 +227,12 @@ pub enum VerifyForeignTxTaskId {
         yield_id: YieldId,
         paired_triple_id: UniqueId,
     } = 2,
+    /// An attempt at a V2 request: each node inspects the transaction and signs its node outcome,
+    /// and the shares follow only if every node finds the same verdict.
+    VerifyForeignTxV2 {
+        id: VerifyForeignTxId,
+        paired_triple_id: UniqueId,
+    } = 3,
 }
 
 impl From<VerifyForeignTxTaskId> for MpcTaskId {
@@ -298,6 +307,14 @@ mod tests {
     fn inconclusive_task_id() -> MpcTaskId {
         VerifyForeignTxTaskId::Inconclusive {
             yield_id: YieldId([6; 32]),
+            paired_triple_id: uid(2),
+        }
+        .into()
+    }
+
+    fn v2_attempt_task_id() -> MpcTaskId {
+        VerifyForeignTxTaskId::VerifyForeignTxV2 {
+            id: hash(1),
             paired_triple_id: uid(2),
         }
         .into()
@@ -419,6 +436,7 @@ mod tests {
                     paired_triple_id: uid(2),
                 }),
                 inconclusive_task_id(),
+                v2_attempt_task_id(),
             ]),
         ]
         .join("\n\n");
@@ -430,6 +448,10 @@ mod tests {
     #[case::node_outcomes(MpcMessageKind::NodeOutcomes(vec![signed_node_outcome()]))]
     #[case::inconclusive_start(MpcMessageKind::Start(MpcStartMessage {
         task_id: inconclusive_task_id(),
+        participants: vec![ParticipantId::from_raw(5), ParticipantId::from_raw(7)],
+    }))]
+    #[case::v2_attempt_start(MpcMessageKind::Start(MpcStartMessage {
+        task_id: v2_attempt_task_id(),
         participants: vec![ParticipantId::from_raw(5), ParticipantId::from_raw(7)],
     }))]
     fn packet__should_decode_a_v2_foreign_tx_message_to_the_message_it_encodes(
@@ -454,6 +476,13 @@ mod tests {
     #[case::inconclusive_start(
         MpcMessageKind::Start(MpcStartMessage {
             task_id: inconclusive_task_id(),
+            participants: vec![ParticipantId::from_raw(5)],
+        }),
+        NetworkProtocolVersion::Nov2026
+    )]
+    #[case::v2_attempt_start(
+        MpcMessageKind::Start(MpcStartMessage {
+            task_id: v2_attempt_task_id(),
             participants: vec![ParticipantId::from_raw(5)],
         }),
         NetworkProtocolVersion::Nov2026

@@ -148,6 +148,15 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED: LazyLock<prometheus::IntC
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_v2_requests_indexed",
+            "Number of V2 verify foreign tx requests seen by the indexer"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
     prometheus::IntCounter,
 > = LazyLock::new(|| {
@@ -200,6 +209,16 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED: LazyLock<prometheus::Int
         prometheus::register_int_counter!(
             "mpc_num_verify_foreign_tx_responses_indexed",
             "Number of verify foreign tx responses seen by the indexer"
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_VERIFY_FOREIGN_TX_V2_COMPLETIONS_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_v2_completions_indexed",
+            "Number of V2 verify foreign tx requests seen by the indexer to complete, with a \
+             response or a timeout"
         )
         .unwrap()
     });
@@ -558,7 +577,10 @@ impl MpcTaskId {
                 match task {
                     VerifyForeignTxTaskId::VerifyForeignTx { .. }
                     | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. }
-                    | VerifyForeignTxTaskId::Inconclusive { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
+                    | VerifyForeignTxTaskId::Inconclusive { .. }
+                    | VerifyForeignTxTaskId::VerifyForeignTxV2 { .. } => {
+                        VERIFY_FOREIGN_TX_TASK_LABEL
+                    }
                 },
             ),
         };

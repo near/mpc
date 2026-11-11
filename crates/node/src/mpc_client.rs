@@ -1,3 +1,5 @@
+mod verify_foreign_tx_v2;
+
 use crate::assets::metrics::{ASSET_METRICS_REPORTING_INTERVAL, ClearOwnedAssetGaugesOnDrop};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
@@ -11,6 +13,7 @@ use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
+use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
     CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
@@ -21,7 +24,7 @@ use crate::storage::{
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
-use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
+use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest, VerifyForeignTxRequestV2};
 use crate::web::{DebugRequest, DebugRequestKind};
 use chain_gateway::event_subscriber::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use mpc_node_config::ConfigFile;
@@ -54,6 +57,7 @@ pub struct MpcClient {
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
+    verify_foreign_tx_v2_requests: Arc<OpenVerifyForeignTxRequestsV2>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
@@ -117,6 +121,7 @@ impl MpcClient {
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
+        verify_foreign_tx_v2_requests: Arc<OpenVerifyForeignTxRequestsV2>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
@@ -131,6 +136,7 @@ impl MpcClient {
             sign_request_store,
             ckd_request_store,
             verify_foreign_tx_request_store,
+            verify_foreign_tx_v2_requests,
             ecdsa_signature_provider,
             robust_ecdsa_signature_provider,
             eddsa_signature_provider,
@@ -286,6 +292,8 @@ impl MpcClient {
                 .new_eligible_leaders_refiner(),
         );
 
+        let mut pending_verify_foreign_tx_v2s = self.new_pending_verify_foreign_tx_v2s();
+
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();
         loop {
@@ -329,6 +337,17 @@ impl MpcClient {
                     }
 
                     pending_ckds.notify_new_block(ckd_requests);
+
+                    let verify_foreign_tx_v2_requests: RequestsUpdate<VerifyForeignTxRequestV2> = RequestsUpdate::from_chain(
+                        &block_update.block,
+                        block_status.clone(),
+                        block_update.verify_foreign_tx_v2_requests,
+                        block_update.completed_verify_foreign_tx_v2s,
+                    );
+                    self.notify_verify_foreign_tx_v2_block(
+                        &mut pending_verify_foreign_tx_v2s,
+                        verify_foreign_tx_v2_requests,
+                    );
 
                     let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
@@ -523,6 +542,12 @@ impl MpcClient {
                     },
                 );
             }
+
+            self.spawn_verify_foreign_tx_v2_attempts(
+                &mut pending_verify_foreign_tx_v2s,
+                &mut tasks,
+                &chain_txn_sender,
+            );
         }
     }
 
@@ -821,6 +846,14 @@ mod tests {
             ),
             (
                 VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+                    id: CryptoHash::default(),
+                    paired_triple_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                VerifyForeignTxTaskId::VerifyForeignTxV2 {
                     id: CryptoHash::default(),
                     paired_triple_id: uid(),
                 }
