@@ -3,10 +3,10 @@
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
     DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements,
-    ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
-    NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    ForeignChain, GenesisHash, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
+    LauncherImageHash, NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters,
+    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash,
+    UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub struct InitArgs {
     pub parameters: GovernanceThresholdParameters,
     pub tee_verifier_account_id: AccountId,
+    pub genesis_hash: GenesisHash,
     pub init_config: Option<InitConfig>,
 }
 
@@ -26,6 +27,7 @@ pub struct InitRunningArgs {
     pub keyset: Keyset,
     pub parameters: GovernanceThresholdParameters,
     pub tee_verifier_account_id: AccountId,
+    pub genesis_hash: GenesisHash,
     pub init_config: Option<InitConfig>,
 }
 

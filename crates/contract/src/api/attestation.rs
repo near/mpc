@@ -1005,12 +1005,15 @@ mod tests {
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
         let never_adopted = LauncherImageHash::from([2u8; 32]);
+        let genesis_hash = contract.genesis_hash;
 
         set_block_secs(ADOPTED_ADDED_AT_SECS);
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(adopted, &[mpc_hash], ttl);
+        contract.tee_state.allowed_launcher_images.add_or_refresh(
+            adopted,
+            &[mpc_hash],
+            &genesis_hash,
+            ttl,
+        );
         contract
             .tee_state
             .verify_and_store_mock(
@@ -1018,7 +1021,9 @@ mod tests {
                 MpcMockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
                     launcher_docker_compose_hash: Some(get_docker_compose_hash(
-                        &adopted, &mpc_hash,
+                        &adopted,
+                        &mpc_hash,
+                        &genesis_hash,
                     )),
                     expiry_timestamp_seconds: None,
                     expected_measurements: None,
@@ -1027,10 +1032,12 @@ mod tests {
             )
             .unwrap();
         set_block_secs(NEVER_ADOPTED_ADDED_AT_SECS);
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(never_adopted, &[mpc_hash], ttl);
+        contract.tee_state.allowed_launcher_images.add_or_refresh(
+            never_adopted,
+            &[mpc_hash],
+            &genesis_hash,
+            ttl,
+        );
 
         testing_env!(
             VMContextBuilder::new()

@@ -7,8 +7,9 @@ use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
 use crate::primitives::participants::Participants;
 use crate::primitives::test_utils::{
-    NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_tee_verifier_account_id,
-    gen_participant_url, gen_participants, infer_purpose_from_protocol, node_for,
+    NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_genesis_hash,
+    bogus_tee_verifier_account_id, gen_participant_url, gen_participants,
+    infer_purpose_from_protocol, node_for,
 };
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
@@ -145,6 +146,7 @@ pub(crate) fn basic_setup_with_protocol(
         (&keyset).into_dto_type(),
         (&parameters).into_dto_type(),
         bogus_tee_verifier_account_id(),
+        bogus_genesis_hash(),
         None,
     )
     .unwrap();
@@ -182,6 +184,7 @@ pub(crate) fn init_running_with_domain(
         (&keyset).into_dto_type(),
         parameters.into_dto_type(),
         bogus_tee_verifier_account_id(),
+        bogus_genesis_hash(),
         None,
     )
     .unwrap()
@@ -287,6 +290,7 @@ pub(crate) fn setup_tee_test_contract(
     let mut contract = MpcContract::init(
         (&parameters).into_dto_type(),
         bogus_tee_verifier_account_id(),
+        bogus_genesis_hash(),
         None,
     )
     .unwrap();
@@ -403,6 +407,7 @@ impl MpcContract {
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: Default::default(),
+            genesis_hash: bogus_genesis_hash(),
         }
     }
 }

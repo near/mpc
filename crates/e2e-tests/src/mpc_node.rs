@@ -470,6 +470,7 @@ impl MpcNodeSetup {
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),
                     mpc_contract_id: mpc_contract,
+                    genesis_hash: None,
                     finality: Finality::None,
                     sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                     port_override: None,

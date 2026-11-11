@@ -13,6 +13,7 @@ use std::{
 };
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
     self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
@@ -136,8 +137,23 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            genesis_hash: known_genesis_hash(),
         }
     }
+}
+
+/// The `3.18.0` contract does not store the genesis hash of its chain, which is known only for the
+/// production contracts. Any other contract gets a hash no chain has, so TEE nodes refuse to serve
+/// it until it is redeployed.
+fn known_genesis_hash() -> GenesisHash {
+    let genesis_hash = match env::current_account_id().as_str() {
+        "v1.signer" => "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H",
+        "v1.signer-prod.testnet" => "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
+        _ => return GenesisHash::from([0; 32]),
+    };
+    genesis_hash
+        .parse()
+        .expect("the production genesis hashes are valid")
 }
 
 fn assert_participants_own_their_tls_keys(
@@ -170,6 +186,7 @@ mod tests {
         state::test_utils::gen_running_state, storage_keys::StorageKey,
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
+    use rstest::rstest;
 
     fn old_contract(running_state: OldRunningContractState) -> MpcContract {
         let tee_state =
@@ -242,6 +259,32 @@ mod tests {
             previously_cancelled_resharing_epoch_id: running
                 .previously_cancelled_resharing_epoch_id,
         }
+    }
+
+    #[rstest]
+    #[case::mainnet("v1.signer", "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H")]
+    #[case::testnet(
+        "v1.signer-prod.testnet",
+        "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b"
+    )]
+    #[case::other_contract("mpc.sandbox", "11111111111111111111111111111111")]
+    fn from__should_take_the_genesis_hash_of_the_production_contract_s_chain(
+        #[case] contract_id: &str,
+        #[case] genesis_hash: &str,
+    ) {
+        // Given
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_id.parse().unwrap())
+                .build()
+        );
+        let old = old_contract(old_running_state());
+
+        // When
+        let migrated: crate::MpcContract = old.into();
+
+        // Then
+        assert_eq!(migrated.genesis_hash, genesis_hash.parse().unwrap());
     }
 
     #[test]

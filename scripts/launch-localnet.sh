@@ -211,9 +211,11 @@ EOF
     wait "$pid"
   done
 
-  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" '
+  genesis_hash=$(curl -s localhost:3030/status | jq -r .genesis_hash)
+  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" --arg genesis_hash "$genesis_hash" '
   {
     tee_verifier_account_id: $tee_verifier_account,
+    genesis_hash: $genesis_hash,
     parameters: {
       threshold: ($threshold | tonumber),
       participants: {

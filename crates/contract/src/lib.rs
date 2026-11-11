@@ -35,6 +35,7 @@ use crate::{
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
 use config::Config;
+use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
     CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
@@ -69,6 +70,9 @@ pub struct MpcContract {
     available_attestation_grants: IterableMap<AccountId, u32>,
     /// Pending votes for new parameters; storage-backed, so kept outside [`ProtocolContractState`].
     parameters_votes: GovernanceThresholdParametersVotes,
+    /// Genesis hash of the chain this contract runs on, which a contract cannot read from its
+    /// environment. The launcher compose carries it, so that TEE nodes follow no other chain.
+    genesis_hash: GenesisHash,
 }
 
 impl Default for MpcContract {

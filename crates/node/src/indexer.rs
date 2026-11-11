@@ -1,7 +1,7 @@
 use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -10,7 +10,9 @@ use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
 use near_client::{RpcHandlerActor, Status, client_actor::ClientActor};
-use near_indexer::near_primitives::{transaction::SignedTransaction, views::StatusResponse};
+use near_indexer::near_primitives::{
+    hash::CryptoHash, transaction::SignedTransaction, views::StatusResponse,
+};
 use near_indexer_primitives::types::BlockHeight;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
@@ -21,7 +23,6 @@ use tokio::sync::{
 };
 use types::ChainSendTransactionRequest;
 
-pub mod chain_binding;
 pub mod configs;
 pub mod foreign_chain;
 pub mod handler;
@@ -68,13 +69,19 @@ impl IndexerState {
         }
     }
 
-    async fn ensure_chain_matches_contract(&self) -> anyhow::Result<()> {
+    async fn ensure_chain_matches_contract(&self, genesis_hash: CryptoHash) -> anyhow::Result<()> {
         let status = self
             .client
             .status()
             .await
             .context("querying nearcore status")?;
-        chain_binding::ensure_chain_matches_contract(&self.mpc_contract_id, status.genesis_hash)
+        ensure!(
+            status.genesis_hash == genesis_hash,
+            "the contract runs on the chain with genesis {genesis_hash}, \
+             but this node follows the chain with genesis {}",
+            status.genesis_hash
+        );
+        Ok(())
     }
 }
 

@@ -1,16 +1,18 @@
 use launcher_interface::types::TeeConfig;
+use mpc_primitives::hash::GenesisHash;
 use near_account_id::AccountId;
 
 use crate::{constants::MPC_HOME_DIR, error::LauncherError};
 
 /// Inject the launcher-controlled keys into the user-provided MPC node config: the `tee`
-/// section, the contract id measured into the launcher compose, and the home directory, so
-/// that the node always starts from the chain data already on the disk. Fails if the user
-/// config sets any of them.
+/// section, the contract id and its chain's genesis hash measured into the launcher compose, and
+/// the home directory, so that the node always starts from the chain data already on the disk.
+/// Fails if the user config sets any of them.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
     mpc_contract_id: &AccountId,
+    genesis_hash: &GenesisHash,
 ) -> Result<toml::Table, LauncherError> {
     insert_reserved(
         &mut node_config,
@@ -24,6 +26,12 @@ pub fn intercept_node_config(
         &["node", "indexer"],
         "mpc_contract_id",
         mpc_contract_id.as_str().into(),
+    )?;
+    insert_reserved(
+        &mut node_config,
+        &["node", "indexer"],
+        "genesis_hash",
+        genesis_hash.to_string().into(),
     )?;
 
     Ok(node_config)
@@ -108,10 +116,6 @@ mod tests {
         digest('a')
     }
 
-    fn sample_contract_id() -> AccountId {
-        "v1.signer".parse().unwrap()
-    }
-
     fn sample_tee_config() -> TeeConfig {
         TeeConfig {
             authority: TeeAuthorityConfig::Dstack {
@@ -120,6 +124,20 @@ mod tests {
             image_hash: sample_digest(),
             latest_allowed_hash_file_path: "/mnt/shared/image-digest.bin".into(),
         }
+    }
+
+    fn intercept(
+        config: toml::Table,
+        tee_config: &TeeConfig,
+    ) -> Result<toml::Table, LauncherError> {
+        intercept_node_config(
+            config,
+            tee_config,
+            &"v1.signer".parse().unwrap(),
+            &"EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H"
+                .parse()
+                .unwrap(),
+        )
     }
 
     #[test]
@@ -134,15 +152,16 @@ mod tests {
         .unwrap();
 
         // When
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
+        let result = intercept(config, &sample_tee_config()).unwrap();
 
         // Then
         let mut expected: toml::Table = toml::from_str(
             r#"
             port = 8080
             home_dir = "/data"
-            node.indexer = { sync_mode = "Latest", mpc_contract_id = "v1.signer" }
+            node.indexer.sync_mode = "Latest"
+            node.indexer.mpc_contract_id = "v1.signer"
+            node.indexer.genesis_hash = "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H"
             "#,
         )
         .unwrap();
@@ -161,6 +180,7 @@ mod tests {
         r#"node.indexer.mpc_contract_id = "other.near""#,
         "node.indexer.mpc_contract_id"
     )]
+    #[case::genesis_hash(r#"node.indexer.genesis_hash = "other""#, "node.indexer.genesis_hash")]
     #[case::non_table_parent(r#"node.indexer = "sneaky""#, "node.indexer.mpc_contract_id")]
     fn intercept_node_config__should_reject_a_user_config_that_sets_a_reserved_key(
         #[case] user_config: &str,
@@ -170,7 +190,7 @@ mod tests {
         let config: toml::Table = toml::from_str(user_config).unwrap();
 
         // When
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_contract_id());
+        let result = intercept(config, &sample_tee_config());
 
         // Then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == reserved_key);
@@ -189,7 +209,7 @@ mod tests {
         };
 
         // when
-        let result = intercept_node_config(config, &tee, &sample_contract_id()).unwrap();
+        let result = intercept(config, &tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -208,7 +228,7 @@ mod tests {
         };
 
         // when
-        let result = intercept_node_config(config, &tee, &sample_contract_id()).unwrap();
+        let result = intercept(config, &tee).unwrap();
 
         // then — Local variant is a unit variant; just verify the key exists
         assert!(result.contains_key("tee"));
@@ -230,7 +250,7 @@ mod tests {
         };
 
         // when
-        let result = intercept_node_config(config, &tee, &sample_contract_id()).unwrap();
+        let result = intercept(config, &tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -247,8 +267,7 @@ mod tests {
         let config: toml::Table = toml::from_str("port = 8080").unwrap();
 
         // when
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_contract_id()).unwrap();
+        let result = intercept(config, &sample_tee_config()).unwrap();
         let toml_str = toml::to_string(&result).unwrap();
 
         // then — the output can be parsed back

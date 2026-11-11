@@ -11,7 +11,7 @@ pub use start::{
 
 use anyhow::Context;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
+use near_indexer_primitives::{CryptoHash, types::Finality};
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs};
 
@@ -126,6 +126,9 @@ pub struct IndexerConfig {
     pub concurrency: std::num::NonZeroU16,
     /// MPC contract id
     pub mpc_contract_id: AccountId,
+    /// Genesis hash of the chain the MPC contract runs on. If set, the node refuses to follow any
+    /// other chain.
+    pub genesis_hash: Option<CryptoHash>,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
     /// Wipe token for the nearcore data dir (`home_dir/data`). On startup, whenever

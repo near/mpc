@@ -4,8 +4,9 @@ use std::time::Duration;
 use near_contract_transport::{
     CallContract, FunctionCallArgs, NearGas, NearKitCaller, PollInterval,
 };
-use near_kit::rpc::FinalExecutionOutcome;
+use near_kit::rpc::{FinalExecutionOutcome, StatusResponse};
 use near_kit::transaction::{ExecutedOptimistic, Final};
+use near_mpc_contract_interface::types::GenesisHash;
 
 use crate::conversions::ToNearKey;
 
@@ -120,13 +121,21 @@ impl NearBlockchain {
     }
 
     pub async fn protocol_version(&self) -> anyhow::Result<u32> {
-        let status = self
-            .root_client
+        Ok(self.status().await?.protocol_version)
+    }
+
+    pub async fn genesis_hash(&self) -> anyhow::Result<GenesisHash> {
+        Ok(GenesisHash::from(
+            *self.status().await?.genesis_hash.as_bytes(),
+        ))
+    }
+
+    async fn status(&self) -> anyhow::Result<StatusResponse> {
+        self.root_client
             .rpc()
             .status()
             .await
-            .map_err(|e| anyhow::anyhow!("failed to query node status: {e}"))?;
-        Ok(status.protocol_version)
+            .map_err(|e| anyhow::anyhow!("failed to query node status: {e}"))
     }
 
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
