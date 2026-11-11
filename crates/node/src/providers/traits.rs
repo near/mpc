@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use crate::network::view::UndirectedEdge;
+
 pub trait CheckReadiness {
     type Node: Ord + Clone;
 
@@ -23,8 +25,8 @@ pub enum ComputationDuration {
 pub enum NotReadyError<N> {
     #[error("node {0:?} is not in the network")]
     UnknownNode(N),
-    #[error("nodes {a:?} and {b:?} are not connected")]
-    NotConnected { a: N, b: N },
-    #[error("connection between {a:?} and {b:?} is too degraded for this computation")]
-    Degraded { a: N, b: N },
+    #[error("connection {0} is not established")]
+    NotConnected(UndirectedEdge<N>),
+    #[error("connection {0} is too degraded for this computation")]
+    Degraded(UndirectedEdge<N>),
 }

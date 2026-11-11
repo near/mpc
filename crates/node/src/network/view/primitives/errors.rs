@@ -3,9 +3,5 @@
 pub struct UnknownNodeError<N>(pub N);
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum NodePairError<N> {
-    #[error(transparent)]
-    UnknownNode(#[from] UnknownNodeError<N>),
-    #[error("expected two distinct nodes, got {0:?} twice")]
-    SameNode(N),
-}
+#[error("expected two distinct nodes, got {0:?} twice")]
+pub struct SameNodeError<N>(pub N);

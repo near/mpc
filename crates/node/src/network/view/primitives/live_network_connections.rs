@@ -3,17 +3,17 @@
 use std::collections::BTreeSet;
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use petgraph::Undirected;
 
 use crate::network::view::primitives::adjacency_matrix::AdjacencyMatrix;
-use crate::network::view::primitives::errors::{NodePairError, UnknownNodeError};
+use crate::network::view::primitives::edge::UndirectedEdge;
+use crate::network::view::primitives::errors::UnknownNodeError;
 use crate::network::view::primitives::measured_network_link::UpdateResult;
 use crate::providers::traits::{CheckReadiness, ComputationDuration, NotReadyError};
 
 /// Keeps track of bidirectional connections in the network
 #[derive(Clone)]
 pub struct LiveNetworkConnections<N, S> {
-    connections: AdjacencyMatrix<N, S, Undirected>,
+    connections: AdjacencyMatrix<N, S, UndirectedEdge<N>>,
 }
 
 impl<N, S> LiveNetworkConnections<N, S>
@@ -35,11 +35,10 @@ where
 {
     pub fn update_connection(
         &mut self,
-        a: &N,
-        b: &N,
+        connection: &UndirectedEdge<N>,
         status: S,
-    ) -> Result<UpdateResult<S>, NodePairError<N>> {
-        let previous = self.connections.set_edge(a, b, status.clone())?;
+    ) -> Result<UpdateResult<S>, UnknownNodeError<N>> {
+        let previous = self.connections.set_edge(connection, status.clone())?;
         if previous.as_ref() == Some(&status) {
             Ok(UpdateResult::StatusRemained)
         } else {
@@ -63,19 +62,13 @@ where
         self.connections
             .pairs_within(nodes)
             .map_err(|UnknownNodeError(node)| NotReadyError::UnknownNode(node))?
-            .try_for_each(
-                |(a, b, status)| match status.map(|s| s.connection_supports(duration)) {
+            .try_for_each(|(connection, status)| {
+                match status.map(|s| s.connection_supports(duration)) {
                     Some(ComputationSupported::Yes) => Ok(()),
-                    Some(ComputationSupported::No) => Err(NotReadyError::Degraded {
-                        a: a.clone(),
-                        b: b.clone(),
-                    }),
-                    None => Err(NotReadyError::NotConnected {
-                        a: a.clone(),
-                        b: b.clone(),
-                    }),
-                },
-            )
+                    Some(ComputationSupported::No) => Err(NotReadyError::Degraded(connection)),
+                    None => Err(NotReadyError::NotConnected(connection)),
+                }
+            })
     }
 }
 

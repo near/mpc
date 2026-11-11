@@ -2,7 +2,7 @@ use near_block_primitives::BlockCount;
 
 use crate::network::view::{
     first_hand_indexer_heights::ReportedIndexerHeight,
-    primitives::LinkObservation,
+    primitives::{DirectedEdge, LinkObservation},
     view_manager::{IndexerHeightReport, IntoLinkObservation, ObservationContext},
 };
 
@@ -44,20 +44,16 @@ impl<N: Ord + Clone> IntoLinkObservation<N, IndexerHeightReport<N>> for IndexerH
         } = update;
         let mut res = Vec::new();
         for (my_peer, &first_hand) in context.first_hand_indexer_heights.iter() {
-            if my_peer == reporter {
+            let Ok(link) = DirectedEdge::new(my_peer.clone(), reporter.clone()) else {
                 continue;
-            }
+            };
             let peer_reported_height = indexer_heights.get(my_peer);
             let Some(observation) =
                 IndexerHeightLag::new(first_hand, peer_reported_height.copied())
             else {
                 continue;
             };
-            res.push(LinkObservation {
-                from: my_peer.clone(),
-                to: reporter.clone(),
-                observation,
-            });
+            res.push(LinkObservation { link, observation });
         }
         res
     }

@@ -6,3 +6,5 @@ pub mod network_link_latency;
 pub mod network_link_uptime;
 mod primitives;
 pub mod view_manager;
+
+pub use primitives::UndirectedEdge;

@@ -1,10 +1,12 @@
 mod adjacency_matrix;
+mod edge;
 mod errors;
 mod live_network_connections;
 mod measured_network_link;
 mod network_view;
 
-pub use errors::{NodePairError, UnknownNodeError};
+pub use edge::{DirectedEdge, UndirectedEdge};
+pub use errors::UnknownNodeError;
 pub use live_network_connections::LiveNetworkConnections;
 pub use measured_network_link::{
     LinkObservation, MeasuredNetworkLinks, NetworkLinkStatuses, ObserveLinkHealth, UpdateResult,

@@ -2,7 +2,7 @@ use near_time::Instant;
 
 use crate::network::view::primitives::{
     LinkObservation,
-    errors::NodePairError,
+    errors::UnknownNodeError,
     live_network_connections::LiveNetworkConnections,
     measured_network_link::{MeasuredNetworkLinks, ObserveLinkHealth, UpdateResult},
 };
@@ -33,24 +33,19 @@ where
         &mut self,
         observation: LinkObservation<N, O>,
         now: Instant,
-    ) -> Result<UpdateResult<S>, NodePairError<N>> {
-        let LinkObservation {
-            from,
-            to,
-            observation,
-        } = observation;
+    ) -> Result<UpdateResult<S>, UnknownNodeError<N>> {
+        let LinkObservation { link, observation } = observation;
         let update_result = self
             .measured_links
-            .record_observation(&from, &to, observation, now)?;
+            .record_observation(&link, observation, now)?;
         match update_result {
             UpdateResult::StatusRemained => Ok(UpdateResult::StatusRemained),
             UpdateResult::StatusChanged(new_status) => {
-                let other_direction = self.measured_links.status(&to, &from)?;
+                let other_direction = self.measured_links.status(&link.reversed())?;
                 let connection_satus =
                     S::infer_connection_status(Some(new_status), other_direction);
-                Ok(self
-                    .connection_status
-                    .update_connection(&from, &to, connection_satus)?)
+                self.connection_status
+                    .update_connection(&link.into(), connection_satus)
             }
         }
     }

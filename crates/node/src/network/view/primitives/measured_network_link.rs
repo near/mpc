@@ -6,9 +6,10 @@ use std::collections::BTreeMap;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 
 use near_time::Instant;
-use petgraph::Directed;
 
-use crate::network::view::primitives::{adjacency_matrix::AdjacencyMatrix, errors::NodePairError};
+use crate::network::view::primitives::{
+    adjacency_matrix::AdjacencyMatrix, edge::DirectedEdge, errors::UnknownNodeError,
+};
 
 pub struct NetworkLinkStatuses<N, S>(BTreeMap<(N, N), S>);
 impl<N: Ord, S> FromIterator<((N, N), S)> for NetworkLinkStatuses<N, S> {
@@ -18,7 +19,7 @@ impl<N: Ord, S> FromIterator<((N, N), S)> for NetworkLinkStatuses<N, S> {
 }
 
 pub struct MeasuredNetworkLinks<N, L> {
-    measured_network_links: AdjacencyMatrix<N, L, Directed>,
+    measured_network_links: AdjacencyMatrix<N, L, DirectedEdge<N>>,
 }
 
 impl<N: Ord + Clone, L> MeasuredNetworkLinks<N, L> {
@@ -29,10 +30,8 @@ impl<N: Ord + Clone, L> MeasuredNetworkLinks<N, L> {
     }
 }
 
-// todo: should we make this a different type, with (from, to) an directed edge?
 pub struct LinkObservation<N, O> {
-    pub from: N,
-    pub to: N,
+    pub link: DirectedEdge<N>,
     pub observation: O,
 }
 
@@ -41,33 +40,28 @@ where
     N: Ord + Clone,
     L: ObserveLinkHealth<Observation = O, LinkStatus = S> + Default + Clone,
 {
-    /// errors if from == to or if the nodes are not in the graph
+    /// errors if the nodes are not in the graph
     /// todo: rename to record_link_observation
     pub fn record_observation(
         &mut self,
-        from: &N,
-        to: &N,
+        link: &DirectedEdge<N>,
         observation: O,
         now: Instant,
-    ) -> Result<UpdateResult<S>, NodePairError<N>> {
-        let update_result = match self.measured_network_links.edge_mut(from, to)? {
-            Some(link) => link.update_with_observation(observation, now),
+    ) -> Result<UpdateResult<S>, UnknownNodeError<N>> {
+        let update_result = match self.measured_network_links.edge_mut(link)? {
+            Some(measured_link) => measured_link.update_with_observation(observation, now),
             None => {
-                let mut link = L::default();
-                let new_status = link.update_with_observation(observation, now);
-                self.measured_network_links.set_edge(from, to, link)?;
+                let mut measured_link = L::default();
+                let new_status = measured_link.update_with_observation(observation, now);
+                self.measured_network_links.set_edge(link, measured_link)?;
                 new_status
             }
         };
         Ok(update_result)
     }
-    /// `None` if the link has no observations yet; errors if from == to or if the nodes are not in
-    /// the graph.
-    pub fn status(&self, from: &N, to: &N) -> Result<Option<S>, NodePairError<N>> {
-        Ok(self
-            .measured_network_links
-            .edge(from, to)?
-            .map(L::link_status))
+    /// `None` if the link has no observations yet; errors if the nodes are not in the graph.
+    pub fn status(&self, link: &DirectedEdge<N>) -> Result<Option<S>, UnknownNodeError<N>> {
+        Ok(self.measured_network_links.edge(link)?.map(L::link_status))
     }
     fn report_link_statuses(&self) -> NetworkLinkStatuses<N, S> {
         self.measured_network_links
