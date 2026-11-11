@@ -3,13 +3,11 @@ use std::collections::BTreeSet;
 use crate::network::AbortedByParticipant;
 use crate::network::computation::ComputationTimeout;
 use crate::primitives::ParticipantId;
+use crate::providers::verify_foreign_tx::MAX_ATTEMPTS_PER_LEADER;
 use crate::providers::verify_foreign_tx::attempt_evidence::AttemptEvidence;
 use crate::providers::verify_foreign_tx::attempt_outcomes::AttemptEnd;
 use crate::providers::verify_foreign_tx::node_outcome::NoVerdictReason;
 use crate::providers::verify_foreign_tx::node_outcome_statement::AttemptId;
-
-/// The number of attempts one leader makes at a V2 request.
-const MAX_ATTEMPTS_PER_LEADER: usize = 3;
 
 /// Leads the V2 attempts at one request: takes the asset of each attempt and runs it.
 pub(crate) trait LeadV2Attempt {

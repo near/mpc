@@ -1,9 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::Duration;
 
+use anyhow::Context;
 use near_contract_transport::BlockHeight;
+use near_time::{Clock, Instant};
 use tokio::sync::Notify;
 
+use crate::primitives::ParticipantId;
+use crate::providers::verify_foreign_tx::MAX_ATTEMPTS_PER_LEADER;
 use crate::requests::queue::REQUEST_EXPIRATION_BLOCKS;
 use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
@@ -12,30 +17,90 @@ use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
 ///
 /// The requests live in memory: after a restart the node knows only the requests it indexes
 /// again.
-#[derive(Default)]
 pub(crate) struct OpenVerifyForeignTxRequestsV2 {
-    requests: Mutex<HashMap<VerifyForeignTxId, VerifyForeignTxRequestV2>>,
+    clock: Clock,
+    requests: Mutex<HashMap<VerifyForeignTxId, OpenRequest>>,
     added: Notify,
 }
 
+struct OpenRequest {
+    request: VerifyForeignTxRequestV2,
+    indexed_at: Instant,
+    /// The number of attempts this node joined, per leader.
+    joined_attempts: HashMap<ParticipantId, usize>,
+}
+
+impl Default for OpenVerifyForeignTxRequestsV2 {
+    fn default() -> Self {
+        Self::new(Clock::real())
+    }
+}
+
 impl OpenVerifyForeignTxRequestsV2 {
+    pub(crate) fn new(clock: Clock) -> Self {
+        Self {
+            clock,
+            requests: Mutex::default(),
+            added: Notify::new(),
+        }
+    }
+
     /// Adds the requests of a newly indexed block, and drops the ones that completed or expired
-    /// at its height.
+    /// at its height. A request indexed again keeps its first index time.
     pub(crate) fn notify_new_block(&self, update: &RequestsUpdate<VerifyForeignTxRequestV2>) {
+        let now = self.clock.now();
         let mut requests = self.requests.lock().unwrap();
         for request in &update.requests {
-            requests.insert(request.id, request.clone());
+            requests
+                .entry(request.id)
+                .and_modify(|open| open.request = request.clone())
+                .or_insert_with(|| OpenRequest {
+                    request: request.clone(),
+                    indexed_at: now,
+                    joined_attempts: HashMap::new(),
+                });
         }
         for completed in &update.completed_requests {
             requests.remove(completed);
         }
-        requests.retain(|_, request| is_open_at(request, update.block_height));
+        requests.retain(|_, open| is_open_at(&open.request, update.block_height));
         drop(requests);
         self.added.notify_waiters();
     }
 
     pub(crate) fn get(&self, id: VerifyForeignTxId) -> Option<VerifyForeignTxRequestV2> {
-        self.requests.lock().unwrap().get(&id).cloned()
+        self.requests
+            .lock()
+            .unwrap()
+            .get(&id)
+            .map(|open| open.request.clone())
+    }
+
+    /// The time since this node indexed the open request `id`.
+    pub(crate) fn time_since_indexed(&self, id: VerifyForeignTxId) -> Option<Duration> {
+        let indexed_at = self.requests.lock().unwrap().get(&id)?.indexed_at;
+        Some(self.clock.now().saturating_duration_since(indexed_at))
+    }
+
+    /// Counts an attempt of `leader` at the open request `id` that this node joins. Fails when
+    /// the request is closed, or when this node already joined
+    /// [`MAX_ATTEMPTS_PER_LEADER`] attempts of `leader` at it.
+    pub(crate) fn join_attempt(
+        &self,
+        id: VerifyForeignTxId,
+        leader: ParticipantId,
+    ) -> anyhow::Result<()> {
+        let mut requests = self.requests.lock().unwrap();
+        let open = requests
+            .get_mut(&id)
+            .context("the V2 request is not open")?;
+        let joined = open.joined_attempts.entry(leader).or_default();
+        anyhow::ensure!(
+            *joined < MAX_ATTEMPTS_PER_LEADER,
+            "already joined {MAX_ATTEMPTS_PER_LEADER} attempts of leader {leader} at the V2 request"
+        );
+        *joined = joined.saturating_add(1);
+        Ok(())
     }
 
     /// Returns the request once it is open. A peer may start an attempt before this node indexed
@@ -70,7 +135,7 @@ mod tests {
     use near_contract_transport::BlockCount;
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types as dtos;
-    use std::time::Duration;
+    use near_time::FakeClock;
 
     const REQUEST_HEIGHT: BlockHeight = BlockHeight::new(1000);
 
@@ -164,6 +229,74 @@ mod tests {
         // Then
         assert_eq!(open_in_last_block, Some(request(1)));
         assert_eq!(open.get(request(1).id), None);
+    }
+
+    #[test]
+    fn open_requests_time_since_indexed__should_count_from_the_first_index() {
+        // Given
+        let clock = FakeClock::default();
+        let open = OpenVerifyForeignTxRequestsV2::new(clock.clock());
+        open.notify_new_block(&update(REQUEST_HEIGHT, vec![request(1)], vec![]));
+        clock.advance(near_time::Duration::seconds(4));
+
+        // When
+        open.notify_new_block(&update(
+            REQUEST_HEIGHT + BlockCount::new(1),
+            vec![request(1)],
+            vec![],
+        ));
+        clock.advance(near_time::Duration::seconds(1));
+
+        // Then
+        assert_eq!(
+            open.time_since_indexed(request(1).id),
+            Some(Duration::from_secs(5))
+        );
+    }
+
+    #[test]
+    fn open_requests_join_attempt__should_refuse_an_attempt_past_the_limit_per_leader() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        open.notify_new_block(&update(REQUEST_HEIGHT, vec![request(1)], vec![]));
+        let leader = ParticipantId::from_raw(1);
+        let other_leader = ParticipantId::from_raw(2);
+
+        // When
+        let joined: Vec<_> = (0..3)
+            .map(|_| open.join_attempt(request(1).id, leader))
+            .collect();
+        let past_the_limit = open.join_attempt(request(1).id, leader);
+        let other = open.join_attempt(request(1).id, other_leader);
+
+        // Then
+        assert!(joined.iter().all(Result::is_ok), "{joined:?}");
+        let error = past_the_limit.unwrap_err().to_string();
+        assert!(error.contains("already joined 3 attempts"), "{error}");
+        other.unwrap();
+    }
+
+    #[test]
+    fn open_requests_join_attempt__should_refuse_a_completed_request() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        open.notify_new_block(&update(REQUEST_HEIGHT, vec![request(1)], vec![]));
+        let leader = ParticipantId::from_raw(1);
+        open.join_attempt(request(1).id, leader).unwrap();
+
+        // When
+        open.notify_new_block(&update(
+            REQUEST_HEIGHT + BlockCount::new(1),
+            vec![],
+            vec![request(1).id],
+        ));
+
+        // Then
+        let error = open
+            .join_attempt(request(1).id, leader)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("not open"), "{error}");
     }
 
     #[tokio::test]

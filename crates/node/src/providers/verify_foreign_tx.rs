@@ -3,6 +3,7 @@ pub(crate) mod node_outcome;
 pub(crate) mod node_outcome_statement;
 pub(crate) mod open_requests;
 
+mod acting_leader;
 mod attempt_assets;
 mod attempt_outcomes;
 mod inspect_request;
@@ -50,6 +51,10 @@ use provider_call_metrics::ProviderCallMetrics;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
+
+/// The number of attempts one leader makes at a V2 request, and the number of attempts of one
+/// leader a follower joins per request. It bounds the assets one leader can use up on a request.
+pub(crate) const MAX_ATTEMPTS_PER_LEADER: usize = 3;
 
 /// Handshake protocol version from which a peer decodes the V2 foreign tx messages:
 /// [`MpcMessageKind::NodeOutcomes`] and [`VerifyForeignTxTaskId::Inconclusive`]. A V2 attempt or
