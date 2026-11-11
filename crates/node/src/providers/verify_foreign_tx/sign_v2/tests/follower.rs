@@ -396,13 +396,17 @@ async fn take_v2_triples__should_stop_waiting_when_the_request_closes() {
     let started = tokio::time::Instant::now();
 
     // When
-    let (taken, ()) = tokio::join!(
-        node.provider.take_v2_triples(&request, &triples, &avoid),
-        async {
-            tokio::time::sleep(wait_before_close).await;
-            complete(&open_requests, request.id);
-        }
-    );
+    let (taken, ()) = timeout(Duration::from_mins(1), async {
+        tokio::join!(
+            node.provider.take_v2_triples(&request, &triples, &avoid),
+            async {
+                tokio::time::sleep(wait_before_close).await;
+                complete(&open_requests, request.id);
+            }
+        )
+    })
+    .await
+    .expect("the wait for a triple pair ends once the request closes");
 
     // Then
     let error = taken.err().unwrap();
