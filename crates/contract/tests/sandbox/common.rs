@@ -221,6 +221,12 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Deploys [`contract_build::current_contract_with_foreign_tx_v2`].
+    pub fn with_foreign_tx_v2(mut self) -> Self {
+        self.contract_wasm = contract_build::current_contract_with_foreign_tx_v2;
+        self
+    }
+
     /// Runs the sandbox at `protocol_version` instead of its binary's latest.
     pub fn at_protocol_version(mut self, protocol_version: u32) -> Self {
         self.protocol_version = Some(protocol_version);
@@ -706,22 +712,27 @@ pub fn sign_foreign_tx_response(
         request: request.clone(),
         values: extracted_values,
     });
-    let payload_hash = payload.compute_msg_hash().unwrap();
+    let response = VerifyForeignTransactionResponse {
+        payload_hash: payload.compute_msg_hash().unwrap(),
+        signature: sign_foreign_tx_payload(&payload, sk),
+    };
+    (payload, response)
+}
 
+/// Signs the hash of `payload` with the root secret key.
+pub fn sign_foreign_tx_payload(
+    payload: &ForeignTxSignPayload,
+    sk: &threshold_signatures::ecdsa::KeygenOutput,
+) -> near_mpc_contract_interface::types::SignatureResponse {
+    let payload_hash = payload.compute_msg_hash().unwrap();
     let signing_key = SigningKey::from_bytes(&sk.private_share.to_scalar().into()).unwrap();
     let (signature, recovery_id) = signing_key.sign_prehash(&payload_hash.0).unwrap();
-    let signature_response = near_mpc_contract_interface::types::SignatureResponse::Secp256k1(
+    near_mpc_contract_interface::types::SignatureResponse::Secp256k1(
         near_mpc_contract_interface::types::K256Signature::from_ecdsa_recoverable(
             &signature,
             recovery_id,
         ),
-    );
-
-    let response = VerifyForeignTransactionResponse {
-        payload_hash,
-        signature: signature_response,
-    };
-    (payload, response)
+    )
 }
 
 pub async fn generate_participant_and_submit_attestation(
