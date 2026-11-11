@@ -8,16 +8,15 @@ use zeroize::ZeroizeOnDrop;
 
 type Secp256 = Secp256K1Sha256;
 
-/// The arguments needed to create a presignature.
+/// The arguments needed to create a signature.
 ///
 /// Each of [`triple0`](Self::triple0) and [`triple1`](Self::triple1) must be an unmodified output
 /// of [`generate_triple`](super::triples::generate_triple) or
 /// [`generate_triple_many`](super::triples::generate_triple_many), used at most once: in one slot
-/// of one run of [`presign_and_sign`](super::presign_and_sign::presign_and_sign),
-/// aborted runs included. A reused or modified triple leaks the private key, and no participant
-/// can detect this.
+/// of one run of [`sign`](super::sign::sign), aborted runs included. A reused or modified triple
+/// leaks the private key, and no participant can detect this.
 #[derive(Debug, Clone)]
-pub struct PresignArguments {
+pub struct SignArguments {
     /// The first triple's public information, and our share.
     pub triple0: (TripleShare, TriplePub),
     /// Ditto, for the second triple.
@@ -25,16 +24,16 @@ pub struct PresignArguments {
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
     /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
     pub keygen_out: KeygenOutput,
-    /// The desired threshold for the presignature, which must match the original threshold
+    /// The desired threshold for the signature, which must match the original threshold
     pub threshold: ReconstructionThreshold,
 }
 
-/// The output of the presigning rounds.
+/// The output of the nonce generation rounds.
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
 #[derive(ZeroizeOnDrop)]
-pub struct PresignOutput {
+pub struct NonceGenerationOutput {
     /// The public nonce commitment.
     #[zeroize(skip)]
     pub big_r: AffinePoint,
@@ -44,10 +43,10 @@ pub struct PresignOutput {
     pub sigma: Scalar,
 }
 
-impl PresignOutput {
-    /// The same presignature under the key derived with `tweak`: `sigma' = sigma + tweak * k`.
+impl NonceGenerationOutput {
+    /// The same output under the key derived with `tweak`: `sigma' = sigma + tweak * k`.
     ///
-    /// Only sound when the presignature is consumed by the computation that produced it.
+    /// Only sound when the output is consumed by the computation that produced it.
     pub(crate) fn with_tweak(&self, tweak: &Tweak) -> Self {
         Self {
             big_r: self.big_r,
@@ -58,10 +57,10 @@ impl PresignOutput {
 }
 
 /// Checks the participant set against `args` and returns it as a [`ParticipantList`].
-pub fn validate_presign_arguments(
+pub fn validate_sign_arguments(
     participants: &[Participant],
     me: Participant,
-    args: &PresignArguments,
+    args: &SignArguments,
 ) -> Result<ParticipantList, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -100,14 +99,14 @@ pub fn validate_presign_arguments(
     Ok(participants)
 }
 
-/// The two presigning rounds, run on a caller-owned channel so that a longer protocol can
-/// continue on the same channel with further waitpoints.
-pub async fn presign_rounds(
+/// The two nonce generation rounds, run on a caller-owned channel so that a longer protocol
+/// can continue on the same channel with further waitpoints.
+pub async fn nonce_generation_rounds(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     me: Participant,
-    args: PresignArguments,
-) -> Result<PresignOutput, ProtocolError> {
+    args: SignArguments,
+) -> Result<NonceGenerationOutput, ProtocolError> {
     // Round 1
     // Extracting triples private variables (ai, bi, ci)
     let a_i = args.triple1.0.a;
@@ -219,7 +218,7 @@ pub async fn presign_rounds(
     // Spec 2.7
     let sigma_i = alpha * private_share - (beta * a_i - c_i);
 
-    Ok(PresignOutput {
+    Ok(NonceGenerationOutput {
         big_r,
         k: k_i,
         sigma: sigma_i,
@@ -238,7 +237,7 @@ mod test {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let k = frost_core::random_nonzero::<Secp256, _>(&mut rng);
-        let presignature = PresignOutput {
+        let nonce_package = NonceGenerationOutput {
             big_r: (ProjectivePoint::GENERATOR * k.invert().unwrap()).into(),
             k,
             sigma: frost_core::random_nonzero::<Secp256, _>(&mut rng),
@@ -246,11 +245,11 @@ mod test {
         let tweak = Tweak::new(frost_core::random_nonzero::<Secp256, _>(&mut rng));
 
         // When
-        let tweaked = presignature.with_tweak(&tweak);
+        let tweaked = nonce_package.with_tweak(&tweak);
 
         // Then
-        assert_eq!(tweaked.big_r, presignature.big_r);
-        assert_eq!(tweaked.k, presignature.k);
-        assert_eq!(tweaked.sigma - presignature.sigma, tweak.value() * k);
+        assert_eq!(tweaked.big_r, nonce_package.big_r);
+        assert_eq!(tweaked.k, nonce_package.k);
+        assert_eq!(tweaked.sigma - nonce_package.sigma, tweak.value() * k);
     }
 }

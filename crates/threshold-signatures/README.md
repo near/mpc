@@ -184,7 +184,7 @@ cargo bench
 Some benchmarks accept additional features that one can fix such as the maximum number of malicious parties `MAX_MALICIOUS`, the number of iterations to be executed `SAMPLE_SIZE`, and the network latency `LATENCY`. All three variables have to be added as environment variables. Example:
 
 ```sh
-MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- ot_ecdsa_presign_and_sign_advanced
+MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- ot_ecdsa_sign_advanced
 ```
 
 By default, the maximum number of malicious parties is 6, the latency is 0 milliseconds and the number of iterations is 15.

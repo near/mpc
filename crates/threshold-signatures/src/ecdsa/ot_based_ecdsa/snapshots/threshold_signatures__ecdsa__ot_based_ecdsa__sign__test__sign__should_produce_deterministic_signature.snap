@@ -1,5 +1,5 @@
 ---
-source: crates/threshold-signatures/src/ecdsa/ot_based_ecdsa/presign_and_sign.rs
+source: crates/threshold-signatures/src/ecdsa/ot_based_ecdsa/sign.rs
 expression: to_k256_signature(&signature)
 ---
 "03267CAF5AE4A0D9B435CDE352D1121CE4E1738CF28E440D26FC44048E50393273427287A905720594E780C58AF4259ED808BEC3F59F96B9C6067845A825ADBB"

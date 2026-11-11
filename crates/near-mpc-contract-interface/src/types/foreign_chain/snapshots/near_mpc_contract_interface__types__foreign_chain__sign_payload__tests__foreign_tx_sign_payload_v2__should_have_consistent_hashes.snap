@@ -1,5 +1,5 @@
 ---
-source: crates/near-mpc-contract-interface/src/types/foreign_chain.rs
+source: crates/near-mpc-contract-interface/src/types/foreign_chain/sign_payload.rs
 expression: hashes
 ---
 {

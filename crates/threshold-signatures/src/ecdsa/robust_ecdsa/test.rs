@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use super::{PresignArguments, presign_and_sign};
+use super::{SignArguments, sign};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
 use crate::ecdsa::{KeygenOutput, Secp256K1Sha256, SignatureOption, Tweak, x_coordinate};
@@ -32,11 +32,11 @@ pub fn run_sign_and_verify(
 
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
     for (p, keygen_out) in key_packages {
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &participants,
             coordinator,
             *p,
-            PresignArguments {
+            SignArguments {
                 keygen_out: keygen_out.clone(),
                 max_malicious: max_malicious.into(),
             },
