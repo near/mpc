@@ -11,4 +11,4 @@ pub use live_network_connections::{InferredConnection, LiveNetworkConnections};
 pub use measured_network_link::{
     LinkObservation, MeasuredNetworkLinks, NetworkLinkStatuses, ObserveLinkHealth, UpdateResult,
 };
-pub use network_view::{InferConnectionStatusFromLinkHealth, NetworkConnectionsHealthTracker};
+pub use network_view::NetworkConnectionsHealthTracker;

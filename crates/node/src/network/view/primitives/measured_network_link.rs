@@ -9,6 +9,7 @@ use near_time::Instant;
 
 use crate::network::view::primitives::{
     adjacency_matrix::AdjacencyMatrix, edge::DirectedEdge, errors::UnknownNodeError,
+    live_network_connections::InferredConnection,
 };
 
 pub struct NetworkLinkStatuses<N, S>(BTreeMap<(N, N), S>);
@@ -38,7 +39,7 @@ pub struct LinkObservation<N, O> {
 impl<N: Ord + Clone, L, O, S> MeasuredNetworkLinks<N, L>
 where
     N: Ord + Clone,
-    L: ObserveLinkHealth<Observation = O, LinkStatus = S> + Default + Clone,
+    L: ObserveLinkHealth<Observation = O, LinkStatus = S>,
 {
     /// errors if the nodes are not in the graph
     /// todo: rename to record_link_observation
@@ -77,15 +78,22 @@ pub enum UpdateResult<S> {
     StatusRemained,
 }
 
-pub trait ObserveLinkHealth {
+pub trait ObserveLinkHealth: Default {
     type Observation;
     type LinkStatus;
+    type ConnectionStatus;
     fn update_with_observation(
         &mut self,
         observation: Self::Observation,
         at: Instant,
     ) -> UpdateResult<Self::LinkStatus>;
     fn link_status(&self) -> Self::LinkStatus;
+    /// The connection that the two links between a pair of nodes add up to. A link is `None`
+    /// while it has no observations.
+    fn infer_connection_status(
+        a: Option<Self::LinkStatus>,
+        b: Option<Self::LinkStatus>,
+    ) -> InferredConnection<Self::ConnectionStatus>;
 }
 
 //// todo: tests

@@ -7,17 +7,6 @@ use crate::network::view::primitives::{
     measured_network_link::{MeasuredNetworkLinks, ObserveLinkHealth, UpdateResult},
 };
 
-// the consumer will need to implement this.
-pub trait InferConnectionStatusFromLinkHealth {
-    type ConnectionStatus;
-    fn infer_connection_status(
-        a: Option<Self>,
-        b: Option<Self>,
-    ) -> InferredConnection<Self::ConnectionStatus>
-    where
-        Self: Sized;
-}
-
 pub struct NetworkConnectionsHealthTracker<N, C, L> {
     // a link is a directed connection node A --> B,
     // each link is measured, such that we can infer link quality from the measurements.
@@ -28,8 +17,7 @@ pub struct NetworkConnectionsHealthTracker<N, C, L> {
 impl<N: Ord + Clone, C, L, O> NetworkConnectionsHealthTracker<N, C, L>
 where
     N: Ord + Clone,
-    L: ObserveLinkHealth<Observation = O> + Default + Clone,
-    L::LinkStatus: InferConnectionStatusFromLinkHealth<ConnectionStatus = C>,
+    L: ObserveLinkHealth<Observation = O, ConnectionStatus = C>,
     C: PartialEq + Clone,
 {
     pub fn update_with_observation(
@@ -46,7 +34,7 @@ where
             UpdateResult::StatusChanged(new_status) => {
                 let other_direction = self.measured_links.status(&link.reversed())?;
                 let connection_satus =
-                    L::LinkStatus::infer_connection_status(Some(new_status), other_direction);
+                    L::infer_connection_status(Some(new_status), other_direction);
                 self.connection_status
                     .update_connection(&link.into(), connection_satus)
             }

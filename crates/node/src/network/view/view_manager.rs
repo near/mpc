@@ -9,8 +9,8 @@ use crate::network::view::{
     errors::NetworkViewUpdateError,
     first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
     primitives::{
-        InferConnectionStatusFromLinkHealth, LinkObservation, LiveNetworkConnections,
-        NetworkConnectionsHealthTracker, NetworkLinkStatuses, ObserveLinkHealth,
+        LinkObservation, LiveNetworkConnections, NetworkConnectionsHealthTracker,
+        NetworkLinkStatuses, ObserveLinkHealth,
     },
 };
 
@@ -56,9 +56,8 @@ impl<N, C, S, L> ApplyNetworkViewUpdate<N, IndexerHeightReport<N>>
     for NetworkViewManager<N, C, S, L>
 where
     N: Ord + Clone + std::fmt::Display,
-    L: ObserveLinkHealth<LinkStatus = S> + Default + Clone,
+    L: ObserveLinkHealth<LinkStatus = S, ConnectionStatus = C>,
     L::Observation: IntoLinkObservation<N, IndexerHeightReport<N>>,
-    S: InferConnectionStatusFromLinkHealth<ConnectionStatus = C>,
     C: PartialEq + Clone,
 {
     fn apply(&mut self, update: IndexerHeightReport<N>) -> Result<(), NetworkViewUpdateError<N>> {
