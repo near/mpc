@@ -18,9 +18,9 @@ The triple generation protocol builds on the OT primitives in [`src/ecdsa/ot/`](
 ```
 Batch Random OT          (ot/base/co15.rs)              -- [CO15]
        |
-Random OT Extension      (ot/extension/amended_kos15/random.rs) -- [KOS15] / SoftspokenOT variant
-       |
 Correlated OT Extension  (ot/extension/amended_kos15/correlated.rs)
+       |
+Random OT Extension      (ot/extension/amended_kos15/random.rs) -- [KOS15] / SoftspokenOT variant
        |
 MTA (Multiplicative-to-Additive)  (mta.rs)           -- [HMRT21]
        |
