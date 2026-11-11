@@ -18,7 +18,10 @@ const NODE_OUTCOME_STATEMENT_PREFIX: &[u8] = b"near-mpc foreign tx v2 node outco
 pub(crate) struct VerifiedNodeOutcome(SignedNodeOutcome);
 
 /// A [`NodeOutcomeStatement`] with its signature, not yet verified. Its Borsh encoding is part of
-/// the P2P wire format.
+/// the P2P wire format. That encoding includes [`ForeignTxVerificationNegativeVerdict`] from the
+/// contract interface, so a change to that enum is a wire change.
+///
+/// [`ForeignTxVerificationNegativeVerdict`]: near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct SignedNodeOutcome {
     statement: NodeOutcomeStatement,

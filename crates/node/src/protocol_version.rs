@@ -4,6 +4,15 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 /// the current protocol version
 pub const CURRENT_PROTOCOL_VERSION: NetworkProtocolVersion = NetworkProtocolVersion::Nov2026;
 
+/// Handshake protocol version from which a peer decodes the V2 foreign tx messages:
+/// [`MpcMessageKind::NodeOutcomes`] and [`VerifyForeignTxTaskId::Inconclusive`]. A V2 attempt or
+/// inconclusive round includes only participants that support it.
+///
+/// [`MpcMessageKind::NodeOutcomes`]: crate::network::wire_format::MpcMessageKind::NodeOutcomes
+/// [`VerifyForeignTxTaskId::Inconclusive`]: crate::network::wire_format::VerifyForeignTxTaskId::Inconclusive
+pub(crate) const V2_FOREIGN_TX_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
+    NetworkProtocolVersion::Nov2026;
+
 /// This must be extended every time we introduce an incompatible protocol
 /// change.
 #[derive(Debug, Copy, Clone, IntoPrimitive, FromPrimitive, PartialEq, Display)]
