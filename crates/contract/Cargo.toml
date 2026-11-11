@@ -64,6 +64,9 @@ bench-contract-methods = []
 # length of a fan-out queue). Distinct from `bench-contract-methods` because these are
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
+# The methods of V2 foreign transaction requests: `read_rpc` and
+# `respond_verify_foreign_tx_v2`. Off in the release build until V2 ships.
+foreign-tx-v2 = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 abi = [
     "borsh/unstable__schema",
@@ -126,6 +129,7 @@ ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = [
+    "foreign-tx-v2",
     "sandbox-test-methods",
     "test-utils",
 ] }

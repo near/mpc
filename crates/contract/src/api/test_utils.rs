@@ -403,6 +403,7 @@ impl MpcContract {
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: Default::default(),
+            pending_verify_foreign_tx_v2_requests: Default::default(),
         }
     }
 }

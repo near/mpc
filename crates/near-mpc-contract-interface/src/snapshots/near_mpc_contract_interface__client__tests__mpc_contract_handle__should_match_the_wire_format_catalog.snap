@@ -69,6 +69,18 @@ deposit:  0 NEAR
 args:     {"request":{"request":{"Bitcoin":{"tx_id":"0707070707070707070707070707070707070707070707070707070707070707","confirmations":1,"extractors":["BlockHash"]}},"domain_id":0,"payload_version":1},"response":{"payload_hash":"0707070707070707070707070707070707070707070707070707070707070707","signature":{"scheme":"Secp256k1","big_r":{"affine_point":"070707070707070707070707070707070707070707070707070707070707070707"},"s":{"scalar":"0707070707070707070707070707070707070707070707070707070707070707"},"recovery_id":0}}}
 
 contract: mpc.near
+method:   respond_verify_foreign_tx_v2
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"yield_id":"0707070707070707070707070707070707070707070707070707070707070707","outcome":{"Negative":{"verdict":"TransactionNotFound"}},"signature":{"scheme":"Secp256k1","big_r":{"affine_point":"070707070707070707070707070707070707070707070707070707070707070707"},"s":{"scalar":"0707070707070707070707070707070707070707070707070707070707070707"},"recovery_id":0}}
+
+contract: mpc.near
+method:   read_rpc
+gas:      15.0 Tgas
+deposit:  1 yoctoNEAR
+args:     {"request":{"request":{"Bitcoin":{"tx_id":"0707070707070707070707070707070707070707070707070707070707070707","confirmations":1,"extractors":["BlockHash"]}},"domain_id":0,"expected_values":[{"BitcoinExtractedValue":{"BlockHash":"0707070707070707070707070707070707070707070707070707070707070707"}}]}}
+
+contract: mpc.near
 method:   submit_contract_update
 gas:      300.0 Tgas
 deposit:  1 yoctoNEAR

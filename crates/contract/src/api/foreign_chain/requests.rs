@@ -10,6 +10,40 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{CryptoHash, Gas, NearToken, PromiseError, PromiseOrValue, env, log, near, require};
 
+impl MpcContract {
+    pub(crate) fn require_foreign_chain_available(&self, requested: dtos::ForeignChain) {
+        require!(
+            self.get_available_foreign_chains().contains(&requested),
+            InvalidParameters::ForeignChainNotAvailable { requested }.to_string()
+        );
+    }
+
+    /// Checks `signature` over `payload_hash` against the root public key of `domain_id`.
+    pub(crate) fn verify_foreign_tx_signature(
+        &self,
+        domain_id: dtos::DomainId,
+        payload_hash: &dtos::Hash256,
+        signature: &dtos::SignatureResponse,
+    ) -> Result<(), Error> {
+        match (signature, self.public_key_extended(domain_id)?) {
+            (
+                dtos::SignatureResponse::Secp256k1(signature),
+                PublicKeyExtended::Secp256k1 { near_public_key },
+            ) => near_mpc_signature_verifier::verify_ecdsa_signature(
+                signature,
+                &payload_hash.0,
+                &near_public_key,
+            )
+            .map_err(|_| RespondError::InvalidSignature.into()),
+            (signature, public_key) => Err(RespondError::SignatureSchemeMismatch {
+                mpc_scheme: Box::new(signature.clone()),
+                user_scheme: Box::new(public_key),
+            }
+            .into()),
+        }
+    }
+}
+
 #[near]
 impl MpcContract {
     fn add_verify_foreign_tx_request(
@@ -46,15 +80,7 @@ impl MpcContract {
             NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
 
-        let requested_chain = request.request.chain();
-        let available_chains = self.get_available_foreign_chains();
-        require!(
-            available_chains.contains(&requested_chain),
-            InvalidParameters::ForeignChainNotAvailable {
-                requested: requested_chain,
-            }
-            .to_string()
-        );
+        self.require_foreign_chain_available(request.request.chain());
 
         let callback_gas = Gas::from_tgas(
             self.config
@@ -101,36 +127,11 @@ impl MpcContract {
             return Err(RespondError::UnexpectedPayloadHash.into());
         }
 
-        let domain = request.domain_id;
-        let public_key = self.public_key_extended(domain.0.into())?;
-
-        let signature_is_valid = match (&response.signature, public_key) {
-            (
-                dtos::SignatureResponse::Secp256k1(signature_response),
-                PublicKeyExtended::Secp256k1 { near_public_key },
-            ) => {
-                let payload_hash: [u8; 32] = response.payload_hash.0;
-
-                // Check the signature is correct against the root public key
-                near_mpc_signature_verifier::verify_ecdsa_signature(
-                    signature_response,
-                    &payload_hash,
-                    &near_public_key,
-                )
-                .is_ok()
-            }
-            (signature_response, public_key_requested) => {
-                return Err(RespondError::SignatureSchemeMismatch {
-                    mpc_scheme: Box::new(signature_response.clone()),
-                    user_scheme: Box::new(public_key_requested),
-                }
-                .into());
-            }
-        };
-
-        if !signature_is_valid {
-            return Err(RespondError::InvalidSignature.into());
-        }
+        self.verify_foreign_tx_signature(
+            request.domain_id,
+            &response.payload_hash,
+            &response.signature,
+        )?;
 
         pending_requests::resolve_yields_for(
             &mut self.pending_verify_foreign_tx_requests,
@@ -191,7 +192,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::foreign_chain::test_utils::{
-        register_foreign_chains_config_for, whitelist_chain,
+        make_chains_available, register_foreign_chains_config_for, sign_payload_hash,
+        whitelist_chain,
     };
     use crate::api::test_utils::{
         SharedSecretKey, basic_setup_with_protocol, participant_account_ids,
@@ -213,20 +215,6 @@ mod tests {
     use rstest::rstest;
     use std::str::FromStr;
     use std::{assert_matches, panic};
-
-    /// Whitelists the chains and registers them for all participants, making them available.
-    fn make_chains_available(
-        contract: &mut MpcContract,
-        chains: impl IntoIterator<Item = dtos::ForeignChain>,
-    ) {
-        let chains: Vec<_> = chains.into_iter().collect();
-        for chain in &chains {
-            whitelist_chain(contract, *chain);
-        }
-        for account_id in participant_account_ids(contract) {
-            register_foreign_chains_config_for(contract, &account_id, chains.iter().copied());
-        }
-    }
 
     #[test]
     fn verify_foreign_transaction__should_queue_duplicates_from_different_callers() {
@@ -527,15 +515,7 @@ mod tests {
         payload: &ForeignTxSignPayload,
     ) -> dtos::VerifyForeignTransactionResponse {
         let payload_hash = payload.compute_msg_hash().unwrap();
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
-        let (signature, recovery_id) = secret_key
-            .sign_prehash_recoverable(&payload_hash.0)
-            .unwrap();
-        let signature = dtos::SignatureResponse::Secp256k1(
-            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
-        );
+        let signature = sign_payload_hash(secret_key, &payload_hash);
         dtos::VerifyForeignTransactionResponse {
             payload_hash,
             signature,
