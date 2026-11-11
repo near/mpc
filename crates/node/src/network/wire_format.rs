@@ -460,9 +460,9 @@ mod tests {
     )]
     #[case::other_start(
         MpcMessageKind::Start(MpcStartMessage {
-            task_id: VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+            task_id: EcdsaTaskId::Signature {
                 id: hash(1),
-                paired_triple_id: uid(2),
+                presignature_id: uid(2),
             }
             .into(),
             participants: vec![ParticipantId::from_raw(5)],

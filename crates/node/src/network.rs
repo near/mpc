@@ -975,7 +975,11 @@ impl NetworkTaskChannel {
             // TODO(#5123): hand node outcomes to the leader of a V2 attempt.
             // TODO(#5126): hand the evidence to the followers of an inconclusive round.
             MpcMessageKind::NodeOutcomes(outcomes) => {
-                anyhow::bail!("Unexpected node outcomes message: {:?}", outcomes);
+                anyhow::bail!(
+                    "Unexpected node outcomes message from participant {} with {} outcomes",
+                    message.from,
+                    outcomes.len()
+                );
             }
         }
         Ok(None)
