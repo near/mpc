@@ -28,7 +28,11 @@ thiserror = { workspace = true }
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
-near-mpc-contract-interface = { workspace = true, features = ["ed25519-dalek"] }
+k256 = { workspace = true, features = ["ecdsa"] }
+near-mpc-contract-interface = { workspace = true, features = [
+    "ed25519-dalek",
+    "k256",
+] }
 rstest = { workspace = true }
 test-utils = { workspace = true }
 

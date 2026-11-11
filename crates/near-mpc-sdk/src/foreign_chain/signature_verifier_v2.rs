@@ -9,10 +9,7 @@ use super::{VerifyForeignChainError, verify_signed_payload_hash};
 /// [`VerifyForeignTransactionRequestV2`] it answers.
 ///
 /// The verifier rebuilds the signed [`ForeignTxSignPayload::V2`] from the request and from the
-/// response fields. It takes the yield id and the request block height from the response, so a
-/// response to an earlier identical request also passes. After a successful check, compare
-/// [`VerifiedForeignTxResponseV2::yield_id`] and
-/// [`VerifiedForeignTxResponseV2::request_block_height`] with the values you expect.
+/// response fields.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ForeignChainSignatureVerifierV2 {
     request: VerifyForeignTransactionRequestV2,
@@ -20,6 +17,7 @@ pub struct ForeignChainSignatureVerifierV2 {
 
 /// A [`VerifyForeignTransactionResponseV2`] whose signature
 /// [`ForeignChainSignatureVerifierV2::verify_signature`] accepted.
+#[must_use = "a verified response can still carry a negative or inconclusive outcome, or answer an earlier request"]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VerifiedForeignTxResponseV2 {
     request_block_height: BlockHeight,
@@ -34,6 +32,12 @@ impl ForeignChainSignatureVerifierV2 {
 
     /// Fails if the response answers another request, or if the network did not sign the
     /// response fields under `public_key`.
+    ///
+    /// `Ok` only proves that the network signed these fields. It does not mean the transaction
+    /// checked out: check [`VerifiedForeignTxResponseV2::outcome`]. The verifier takes the yield
+    /// id and the request block height from the response, so a response to an earlier identical
+    /// request also passes. Compare [`VerifiedForeignTxResponseV2::yield_id`] and
+    /// [`VerifiedForeignTxResponseV2::request_block_height`] with the values you expect.
     pub fn verify_signature(
         &self,
         response: &VerifyForeignTransactionResponseV2,
@@ -94,7 +98,8 @@ mod tests {
     use near_mpc_contract_interface::types::{
         DomainId, Ed25519PublicKey, Ed25519Signature, EvmExtractedValue, EvmExtractor, EvmFinality,
         EvmRpcRequest, EvmTxId, ExtractedValue, ForeignChainRpcRequest,
-        ForeignTxVerificationNegativeVerdict, Hash256, SignatureResponse,
+        ForeignTxVerificationNegativeVerdict, Hash256, K256Signature, Secp256k1PublicKey,
+        SignatureResponse,
     };
     use rstest::rstest;
     use std::assert_matches;
@@ -111,6 +116,30 @@ mod tests {
 
     fn public_key() -> PublicKey {
         PublicKey::Ed25519(Ed25519PublicKey::from(&signing_key().verifying_key()))
+    }
+
+    fn secp256k1_signing_key() -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[7; 32].into()).unwrap()
+    }
+
+    fn secp256k1_public_key() -> PublicKey {
+        let public_key = k256::PublicKey::from(secp256k1_signing_key().verifying_key());
+        PublicKey::Secp256k1(Secp256k1PublicKey::from(&public_key))
+    }
+
+    fn with_secp256k1_signature(
+        response: VerifyForeignTransactionResponseV2,
+    ) -> VerifyForeignTransactionResponseV2 {
+        let (signature, recovery_id) = secp256k1_signing_key()
+            .sign_prehash_recoverable(response.payload_hash.as_slice())
+            .unwrap();
+        VerifyForeignTransactionResponseV2 {
+            signature: SignatureResponse::Secp256k1(K256Signature::from_ecdsa_recoverable(
+                &signature,
+                recovery_id,
+            )),
+            ..response
+        }
     }
 
     fn request() -> VerifyForeignTransactionRequestV2 {
@@ -291,6 +320,37 @@ mod tests {
         assert_matches!(
             result,
             Err(VerifyForeignChainError::SignatureVerificationFailed)
+        );
+    }
+
+    #[test]
+    fn verify_signature__should_accept_a_secp256k1_signature() {
+        // Given
+        let verifier = ForeignChainSignatureVerifierV2::new(request());
+        let response = with_secp256k1_signature(signed_response(&request(), signed_fields()));
+
+        // When
+        let verified = verifier
+            .verify_signature(&response, &secp256k1_public_key())
+            .unwrap();
+
+        // Then
+        assert_eq!(verified.outcome(), &signed_fields().outcome);
+    }
+
+    #[test]
+    fn verify_signature__should_reject_a_signature_of_another_scheme() {
+        // Given
+        let verifier = ForeignChainSignatureVerifierV2::new(request());
+        let response = with_secp256k1_signature(signed_response(&request(), signed_fields()));
+
+        // When
+        let result = verifier.verify_signature(&response, &public_key());
+
+        // Then
+        assert_matches!(
+            result,
+            Err(VerifyForeignChainError::UnexpectedSignatureScheme)
         );
     }
 }
