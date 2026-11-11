@@ -6,6 +6,9 @@ port_mappings = [
     { host = 13001, container = 13001 },
 ]
 
+[mpc_node_config]
+home_dir = "/data"
+
 [mpc_node_config.log]
 format = "plain"
 filter = "info"

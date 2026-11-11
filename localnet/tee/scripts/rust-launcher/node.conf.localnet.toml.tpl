@@ -6,6 +6,9 @@ pull_max_delay_secs = 60
 port_mappings = [
 ${PORTS_TOML}]
 
+[mpc_node_config]
+home_dir = "/data"
+
 [mpc_node_config.log]
 format = "plain"
 filter = "info"
