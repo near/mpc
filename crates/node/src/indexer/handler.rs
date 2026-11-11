@@ -3,6 +3,8 @@
 mod tests;
 mod verify_foreign_tx_v2;
 
+pub use verify_foreign_tx_v2::VerifyForeignTxRequestV2FromChain;
+
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::types::CKDId;
@@ -29,7 +31,6 @@ use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::types::Payload;
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
-use near_mpc_contract_interface::types::{VerifyForeignTransactionRequestV2, YieldId};
 use near_mpc_crypto_types::ckd::CKDRequest;
 use near_mpc_crypto_types::sign::SignRequestArgs;
 use serde::{Deserialize, Serialize};
@@ -94,17 +95,6 @@ pub struct VerifyForeignTxRequestFromChain {
     pub verify_foreign_tx_id: VerifyForeignTxId,
     pub receipt_id: CryptoHash,
     pub request: VerifyForeignTransactionRequestArgs,
-}
-
-/// A V2 foreign transaction request, with the [`YieldId`] and the block height
-/// that the contract stored with it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerifyForeignTxRequestV2FromChain {
-    pub verify_foreign_tx_id: VerifyForeignTxId,
-    pub receipt_id: CryptoHash,
-    pub yield_id: YieldId,
-    pub request_block_height: BlockHeight,
-    pub request: VerifyForeignTransactionRequestV2,
 }
 
 #[derive(Clone)]
