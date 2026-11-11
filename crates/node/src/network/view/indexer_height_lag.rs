@@ -6,6 +6,12 @@ use crate::network::view::{
     view_manager::{IndexerHeightReport, IntoLinkObservation, ObservationContext},
 };
 
+/// How far a reporter's height for a peer trails our first-hand height for that peer, or
+/// `Absent` if the reporter does not list the peer.
+///
+/// Measures delay only between peers we still hear from. Once a peer's own reports stop
+/// reaching us, our first-hand height for it freezes and the lag reads as zero, so a silent
+/// peer looks healthy here.
 pub enum IndexerHeightLag {
     Present(BlockCount),
     Absent,
