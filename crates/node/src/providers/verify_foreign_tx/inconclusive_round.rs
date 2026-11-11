@@ -237,3 +237,108 @@ impl InconclusiveLabels {
         }
     }
 }
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::config::PersistentSecrets;
+    use crate::network::testing::new_task_channel_for_test;
+    use crate::network::wire_format::{MpcMessageKind, VerifyForeignTxTaskId};
+    use crate::primitives::{ChannelId, MpcMessage, MpcPeerMessage};
+    use crate::providers::verify_foreign_tx::node_outcome::{NoVerdictReason, NodeOutcome};
+    use crate::providers::verify_foreign_tx::node_outcome_statement::{
+        AttemptId, NodeOutcomeSigningKey, NodeOutcomeStatement,
+    };
+    use ed25519_dalek::SigningKey;
+    use rstest::rstest;
+
+    const LEADER: ParticipantId = ParticipantId::from_raw(1);
+    const SIGNER: ParticipantId = ParticipantId::from_raw(2);
+    const OTHER_SIGNER: ParticipantId = ParticipantId::from_raw(3);
+
+    #[rstest]
+    #[case::verdicts_differ_in_descending_order(
+        InconclusiveCause::VerdictsDiffer { first: OTHER_SIGNER, second: SIGNER },
+        VERDICTS_DIFFER_CAUSE_LABEL,
+        "2",
+        "3",
+    )]
+    #[case::inspectors_disagree(
+        InconclusiveCause::InspectorsDisagree { participant: OTHER_SIGNER },
+        INSPECTORS_DISAGREE_CAUSE_LABEL,
+        "3",
+        "",
+    )]
+    #[case::transient(InconclusiveCause::Transient, TRANSIENT_CAUSE_LABEL, "", "")]
+    fn inconclusive_labels__should_name_the_cause_and_the_nodes_in_ascending_order(
+        #[case] cause: InconclusiveCause,
+        #[case] cause_label: &str,
+        #[case] first_node: &str,
+        #[case] second_node: &str,
+    ) {
+        // When
+        let labels = InconclusiveLabels::new(cause);
+
+        // Then
+        assert_eq!(
+            (
+                labels.cause,
+                labels.first_node.as_str(),
+                labels.second_node.as_str()
+            ),
+            (cause_label, first_node, second_node)
+        );
+    }
+
+    fn evidence_signed_by(signer: ParticipantId) -> Vec<SignedNodeOutcome> {
+        let signing_key = NodeOutcomeSigningKey::from(&PersistentSecrets {
+            p2p_private_key: SigningKey::from_bytes(&[8; 32]),
+            near_signer_key: SigningKey::from_bytes(&[9; 32]),
+        });
+        let statement = NodeOutcomeStatement {
+            yield_id: YieldId([6; 32]),
+            leader: LEADER,
+            attempt: AttemptId(ChannelId(UniqueId::new(LEADER, 1, 0))),
+            signer,
+            outcome: NodeOutcome::NoVerdict(NoVerdictReason::InspectorsDisagree),
+        };
+        vec![signing_key.sign(statement).unwrap()]
+    }
+
+    #[tokio::test]
+    async fn receive_evidence__should_drop_node_outcomes_from_anyone_but_the_leader() {
+        // Given
+        let channel_id = ChannelId(UniqueId::new(LEADER, 1, 1));
+        let (mut channel, sender) = new_task_channel_for_test(
+            VerifyForeignTxTaskId::Inconclusive {
+                yield_id: YieldId([6; 32]),
+                paired_triple_id: UniqueId::new(LEADER, 1, 2),
+            }
+            .into(),
+            LEADER,
+            SIGNER,
+            vec![LEADER, SIGNER, OTHER_SIGNER],
+        );
+        for (from, outcomes) in [
+            (OTHER_SIGNER, evidence_signed_by(OTHER_SIGNER)),
+            (LEADER, evidence_signed_by(SIGNER)),
+        ] {
+            sender
+                .send(MpcPeerMessage {
+                    from,
+                    message: MpcMessage {
+                        channel_id,
+                        kind: MpcMessageKind::NodeOutcomes(outcomes),
+                    },
+                })
+                .unwrap();
+        }
+
+        // When
+        let received = timeout(Duration::from_secs(5), receive_evidence(&mut channel)).await;
+
+        // Then
+        assert_eq!(received.unwrap().unwrap(), evidence_signed_by(SIGNER));
+    }
+}

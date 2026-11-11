@@ -1,7 +1,6 @@
 use super::*;
 use crate::config::{ParticipantInfo, PersistentSecrets};
 use crate::primitives::{ChannelId, UniqueId};
-use crate::providers::verify_foreign_tx::attempt_evidence::{AttemptEvidence, LedAttempt};
 use crate::providers::verify_foreign_tx::node_outcome::NodeVerdict;
 use crate::providers::verify_foreign_tx::node_outcome_statement::{
     AttemptId, NodeOutcomeSigningKey, NodeOutcomeStatement,
@@ -10,8 +9,6 @@ use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict;
 use rstest::rstest;
 use std::assert_matches;
-use std::sync::Arc;
-use std::time::Duration;
 
 const LEADER: ParticipantId = ParticipantId::from_raw(1);
 const FOLLOWER: ParticipantId = ParticipantId::from_raw(2);
@@ -300,56 +297,4 @@ fn inconclusive_evidence_find__should_show_one_transient_outcome_per_node_up_to_
             outcomes: vec![outcomes[0].clone(), outcomes[2].clone()],
         })
     );
-}
-
-fn led_attempt(counter: u32) -> LedAttempt {
-    LedAttempt {
-        id: attempt_of(LEADER, counter),
-        yield_id: YIELD,
-        leader: LEADER,
-        participants: vec![LEADER, FOLLOWER, OTHER_FOLLOWER],
-        keys: Arc::new(participants()),
-    }
-}
-
-#[tokio::test]
-async fn attempt_evidence_wait_for__should_count_a_transient_report_that_arrives_after_its_attempt()
-{
-    // Given
-    let evidence = AttemptEvidence::new();
-    evidence.open(led_attempt(1));
-    evidence
-        .record_received(
-            FOLLOWER,
-            attempt_of(LEADER, 1),
-            vec![signed(FOLLOWER, 1, TRANSIENT)],
-        )
-        .unwrap();
-    evidence.open(led_attempt(2));
-    let waiting = evidence.wait_for(YIELD, |outcomes| {
-        InconclusiveEvidence::find(outcomes, QUORUM_OF_TWO)
-    });
-
-    // When
-    let (found, late) = tokio::join!(
-        tokio::time::timeout(Duration::from_secs(5), waiting),
-        async {
-            evidence.record_received(
-                OTHER_FOLLOWER,
-                attempt_of(LEADER, 1),
-                vec![signed(OTHER_FOLLOWER, 1, TRANSIENT)],
-            )
-        }
-    );
-
-    // Then
-    late.unwrap();
-    let found = found.expect("the late report completes the evidence");
-    assert_eq!(found.cause, InconclusiveCause::Transient);
-    let signers: Vec<_> = found
-        .outcomes
-        .iter()
-        .map(|outcome| outcome.statement().signer)
-        .collect();
-    assert_eq!(signers, [FOLLOWER, OTHER_FOLLOWER]);
 }

@@ -7,6 +7,7 @@ use crate::network::testing::{new_test_client_with_versions, run_test_clients};
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
+use crate::providers::ecdsa::EcdsaKeyshare;
 use crate::requests::queue::{LEADER_FAILOVER_INTERVAL, leader_selection_order};
 use crate::storage::{SignRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::testing::start_root_task_with_periodic_dump;
@@ -161,6 +162,22 @@ impl TestProvider {
         open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
         ethereum_supporters: &[ParticipantId],
     ) -> Self {
+        Self::with_keyshares(
+            client,
+            rpc_url,
+            open_requests,
+            ethereum_supporters,
+            HashMap::new(),
+        )
+    }
+
+    pub(crate) fn with_keyshares(
+        client: Arc<MeshNetworkClient>,
+        rpc_url: &str,
+        open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
+        ethereum_supporters: &[ParticipantId],
+        keyshares: HashMap<DomainId, EcdsaKeyshare>,
+    ) -> Self {
         let participants = client.all_participant_ids();
         let me = client.my_participant_id();
         let config = Arc::new(config(rpc_url));
@@ -178,7 +195,7 @@ impl TestProvider {
                 Clock::real(),
                 db.clone(),
                 Arc::new(SignRequestStorage::new(db.clone()).unwrap()),
-                HashMap::new(),
+                keyshares,
             )
             .unwrap(),
         );

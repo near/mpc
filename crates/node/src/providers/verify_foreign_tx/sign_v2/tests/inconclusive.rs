@@ -5,18 +5,23 @@ use crate::network::computation::ComputationTimeout;
 use crate::network::testing::run_test_clients;
 use crate::network::wire_format::MpcTaskId;
 use crate::primitives::ChannelId;
-use crate::providers::ecdsa::OnlinePresignSignComputation;
+use crate::providers::ecdsa::{EcdsaKeyshare, OnlinePresignSignComputation};
 use crate::providers::verify_foreign_tx::inconclusive_evidence::{
     InconclusiveCause, InconclusiveEvidence,
 };
 use crate::providers::verify_foreign_tx::inconclusive_round::InconclusiveRoundComputation;
+use crate::providers::verify_foreign_tx::node_outcome::NoVerdictReason;
 use crate::tests::into_participant_ids;
 use crate::tracking::testing::start_root_task_with_periodic_dump;
 use k256::Scalar;
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::Tweak;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use std::collections::HashMap;
-use threshold_signatures::test_utils::generate_participants;
+use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
+use threshold_signatures::participants::Participant;
+use threshold_signatures::test_utils::{generate_participants, run_keygen};
 use tokio::sync::Notify;
 
 /// Evidence that the first two of `participants` found different verdicts in an attempt of
@@ -56,7 +61,7 @@ fn inconclusive_payload_hash() -> dtos::Hash256 {
         .unwrap()
 }
 
-/// What a simulated signer does once it receives the Start of an inconclusive round.
+/// The behaviour of a simulated signer once it receives the Start of an inconclusive round.
 #[derive(Clone)]
 enum Signer {
     Signs,
@@ -206,6 +211,22 @@ async fn inconclusive_round_computation__should_fail_five_seconds_after_start_wh
     .await;
 }
 
+/// A key share of the domain of `request()` for each of `participants`.
+fn foreign_tx_keyshares(participants: &[ParticipantId]) -> HashMap<ParticipantId, EcdsaKeyshare> {
+    let ts_participants: Vec<Participant> = participants.iter().copied().map(Into::into).collect();
+    let threshold = participants.len();
+    run_keygen::<Secp256K1Sha256, _>(&ts_participants, threshold, &mut StdRng::seed_from_u64(7))
+        .into_iter()
+        .map(|(participant, keygen_output)| {
+            let keyshare = EcdsaKeyshare::new(
+                keygen_output,
+                mpc_primitives::ReconstructionThreshold::new(u64::try_from(threshold).unwrap()),
+            );
+            (participant.into(), keyshare)
+        })
+        .collect()
+}
+
 /// The Start of an inconclusive round at `request()` between the [`attempt_participants`], seen
 /// from the signer.
 struct InconclusiveFollowerRun {
@@ -213,6 +234,8 @@ struct InconclusiveFollowerRun {
     open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
     /// The participant whose triple pair the round names, the leader when `None`.
     triple_owner: Option<ParticipantId>,
+    /// The node outcomes the leader shows.
+    evidence: Vec<SignedNodeOutcome>,
 }
 
 impl InconclusiveFollowerRun {
@@ -221,6 +244,7 @@ impl InconclusiveFollowerRun {
             leader_rank: 0,
             open_requests,
             triple_owner: None,
+            evidence: Vec::new(),
         }
     }
 
@@ -230,12 +254,16 @@ impl InconclusiveFollowerRun {
             leader_rank,
             open_requests,
             triple_owner,
+            evidence,
         } = self;
         let participants = attempt_participants();
         let leader = leader_of_rank(leader_rank);
+        let keyshares = Arc::new(foreign_tx_keyshares(&participants));
         let results = run_test_clients(participants.clone(), move |client, mut receiver| {
             let participants = participants.clone();
             let open_requests = open_requests.clone();
+            let evidence = evidence.clone();
+            let keyshares = keyshares.clone();
             async move {
                 let me = client.my_participant_id();
                 if me == leader {
@@ -246,7 +274,7 @@ impl InconclusiveFollowerRun {
                         },
                         participants,
                     )?;
-                    channel.sender().send_evidence(Vec::new())?;
+                    channel.sender().send_evidence(evidence)?;
                     let refusal = match channel.receive().await {
                         Ok(_) => "the signer did not refuse".to_string(),
                         Err(err) => err.to_string(),
@@ -261,11 +289,13 @@ impl InconclusiveFollowerRun {
                 else {
                     anyhow::bail!("unexpected task {:?}", channel.task_id());
                 };
-                let node = TestProvider::with_ethereum_supporters(
+                let keyshare = keyshares[&client.my_participant_id()].clone();
+                let node = TestProvider::with_keyshares(
                     client,
                     "http://127.0.0.1:1",
                     open_requests,
                     &attempt_participants(),
+                    HashMap::from([(request().request.domain_id, keyshare)]),
                 );
                 let _ = node
                     .provider
@@ -346,6 +376,56 @@ async fn make_verify_foreign_tx_inconclusive_follower__should_refuse_a_triple_pa
 
         // Then
         assert!(refusal.contains("belongs to participant"), "{refusal}");
+    })
+    .await;
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn make_verify_foreign_tx_inconclusive_follower__should_refuse_an_acting_leader_without_valid_evidence()
+ {
+    start_root_task_with_periodic_dump(async {
+        // When
+        let refusal = InconclusiveFollowerRun::new(open_requests_with(request()))
+            .refusal()
+            .await;
+
+        // Then
+        assert!(
+            refusal.contains("the evidence shows no disagreement"),
+            "{refusal}"
+        );
+    })
+    .await;
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn make_verify_foreign_tx_inconclusive_follower__should_refuse_evidence_that_names_another_leader()
+ {
+    start_root_task_with_periodic_dump(async {
+        // Given
+        let signer = leader_of_rank(1);
+        let statement = NodeOutcomeStatement {
+            yield_id: request().yield_id,
+            leader: signer,
+            attempt: AttemptId(ChannelId(UniqueId::new(signer, 1, 0))),
+            signer,
+            outcome: NodeOutcome::NoVerdict(NoVerdictReason::InspectorsDisagree),
+        };
+        let evidence = vec![signing_key(signer).sign(statement).unwrap()];
+
+        // When
+        let refusal = InconclusiveFollowerRun {
+            evidence,
+            ..InconclusiveFollowerRun::new(open_requests_with(request()))
+        }
+        .refusal()
+        .await;
+
+        // Then
+        assert!(
+            refusal.contains(&format!("names another leader {signer}")),
+            "{refusal}"
+        );
     })
     .await;
 }

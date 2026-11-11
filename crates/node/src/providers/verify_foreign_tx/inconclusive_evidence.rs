@@ -36,7 +36,7 @@ pub(crate) enum InconclusiveCause {
     Transient,
 }
 
-/// What a signer of an inconclusive round requires of the evidence it receives.
+/// The requirements a signer of an inconclusive round places on the evidence it receives.
 pub(crate) struct EvidenceRequirements<'a> {
     /// The node that asks for the inconclusive.
     pub(crate) leader: ParticipantId,

@@ -19,7 +19,8 @@ pub(crate) struct SignedOutcome {
     pub(crate) public_key: VerifyingKey,
 }
 
-/// What the leader of a V2 attempt or inconclusive round signs the payload with.
+/// The key share and triple pair the leader of a V2 attempt or inconclusive round signs the
+/// payload with.
 pub(crate) struct OutcomeSigning {
     pub(crate) request: VerifyForeignTxRequestV2,
     pub(crate) keygen_out: KeygenOutput,

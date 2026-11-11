@@ -211,7 +211,12 @@ mod tests {
     use super::*;
     use crate::config::{ParticipantInfo, PersistentSecrets};
     use crate::primitives::{ChannelId, UniqueId};
-    use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
+    use crate::providers::verify_foreign_tx::inconclusive_evidence::{
+        InconclusiveCause, InconclusiveEvidence, TransientQuorum,
+    };
+    use crate::providers::verify_foreign_tx::node_outcome::{
+        NoVerdictReason, NodeOutcome, NodeVerdict,
+    };
     use crate::providers::verify_foreign_tx::node_outcome_statement::{
         NodeOutcomeSigningKey, NodeOutcomeStatement,
     };
@@ -478,5 +483,50 @@ mod tests {
 
         // Then
         assert_eq!(silent, BTreeSet::from([OUTSIDER]));
+    }
+
+    #[tokio::test]
+    async fn attempt_evidence_wait_for__should_count_a_transient_report_that_arrives_after_its_attempt()
+     {
+        // Given
+        let transient = |signer| {
+            signed_by(
+                signer,
+                NodeOutcomeStatement {
+                    outcome: NodeOutcome::NoVerdict(NoVerdictReason::Transient),
+                    ..statement(signer)
+                },
+            )
+        };
+        let quorum_of_two = TransientQuorum::new(3, 2);
+        let evidence = AttemptEvidence::new();
+        evidence.open(LedAttempt {
+            participants: vec![LEADER, FOLLOWER, OUTSIDER],
+            ..led_attempt(1)
+        });
+        evidence
+            .record_received(FOLLOWER, attempt_id(1), vec![transient(FOLLOWER)])
+            .unwrap();
+        evidence.open(led_attempt(2));
+        let waiting = evidence.wait_for(YIELD, |outcomes| {
+            InconclusiveEvidence::find(outcomes, quorum_of_two)
+        });
+
+        // When
+        let (found, late) = tokio::join!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), waiting),
+            async { evidence.record_received(OUTSIDER, attempt_id(1), vec![transient(OUTSIDER)]) }
+        );
+
+        // Then
+        late.unwrap();
+        let found = found.expect("the late report completes the evidence");
+        assert_eq!(found.cause, InconclusiveCause::Transient);
+        let signers: Vec<_> = found
+            .outcomes
+            .iter()
+            .map(|outcome| outcome.statement().signer)
+            .collect();
+        assert_eq!(signers, [FOLLOWER, OUTSIDER]);
     }
 }
