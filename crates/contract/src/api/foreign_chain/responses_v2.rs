@@ -77,18 +77,27 @@ mod tests {
         announced_yield_ids, bitcoin_request_v2, make_chains_available, sign_payload_hash,
     };
     use crate::api::test_utils::{
-        SharedSecretKey, basic_setup_with_protocol, with_active_participant_and_attested_context,
+        SharedSecretKey, basic_setup_with_protocol, make_public_key_for_curve,
+        participant_account_ids, prepay_and_attest_all_participants,
+        with_active_participant_and_attested_context,
     };
+    use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::RespondError;
+    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
+    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
+    use crate::state::ProtocolContractState;
     use dtos::{
-        BlockHeight, ForeignTxSignPayloadV2, ForeignTxVerificationNegativeVerdict,
-        ForeignTxVerificationOutcome, Protocol, YieldId,
+        BlockHeight, Curve, DomainConfig, DomainId, DomainPurpose, ForeignTxSignPayloadV2,
+        ForeignTxVerificationNegativeVerdict, ForeignTxVerificationOutcome, Protocol,
+        ReconstructionThreshold, YieldId,
     };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, PromiseError, PromiseOrValue, testing_env};
     use rand::SeedableRng;
     use rstest::rstest;
     use std::assert_matches;
+    use std::collections::BTreeMap;
     use std::str::FromStr;
 
     const VERIFIED: ForeignTxVerificationOutcome = ForeignTxVerificationOutcome::Verified {};
@@ -114,6 +123,91 @@ mod tests {
             contract,
             secret_key,
         }
+    }
+
+    struct TwoDomainSetup {
+        contract: MpcContract,
+        secret_keys: BTreeMap<DomainId, k256::Scalar>,
+    }
+
+    /// Like [`setup_with_an_attested_participant_calling`], with two ForeignTx
+    /// domains, each under its own key.
+    fn setup_with_two_foreign_tx_domains() -> TwoDomainSetup {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let domains = [DomainId(0), DomainId(1)].map(|id| DomainConfig {
+            id,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
+            purpose: DomainPurpose::ForeignTx,
+        });
+        let mut secret_keys = BTreeMap::new();
+        let mut keys = vec![];
+        for domain in &domains {
+            let (public_key, secret_key) = make_public_key_for_curve(Curve::Secp256k1, &mut rng);
+            let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+                unreachable!();
+            };
+            secret_keys.insert(domain.id, secret_key);
+            keys.push(KeyForDomain {
+                domain_id: domain.id,
+                key: public_key.try_into().unwrap(),
+                attempt: AttemptId::new(),
+            });
+        }
+        let parameters =
+            GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
+                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains.to_vec(),
+            DomainId(2),
+            (&Keyset::new(EpochId::new(0), keys)).into_dto_type(),
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
+        .unwrap();
+        prepay_and_attest_all_participants(&mut contract);
+        make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        with_active_participant_and_attested_context(&contract);
+        TwoDomainSetup {
+            contract,
+            secret_keys,
+        }
+    }
+
+    fn submit_request_to(contract: &mut MpcContract, domain_id: DomainId) -> YieldId {
+        contract.read_rpc(dtos::VerifyForeignTransactionRequestV2 {
+            domain_id,
+            ..bitcoin_request_v2()
+        });
+        let [yield_id] = announced_yield_ids()[..] else {
+            panic!("expected exactly one yield created event");
+        };
+        yield_id
+    }
+
+    /// Moves the contract from Running to Initializing with every
+    /// participant's vote for a new domain.
+    fn start_adding_a_domain(contract: &mut MpcContract) {
+        let new_domain = DomainConfig {
+            id: DomainId(1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
+            purpose: DomainPurpose::Sign,
+        };
+        for account_id in participant_account_ids(contract) {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id)
+                    .build()
+            );
+            contract.vote_add_domains(vec![new_domain.clone()]).unwrap();
+        }
+        assert_matches!(
+            contract.protocol_state,
+            ProtocolContractState::Initializing(_)
+        );
     }
 
     fn submit_requests<const N: usize>(contract: &mut MpcContract) -> [YieldId; N] {
@@ -232,6 +326,120 @@ mod tests {
 
         // Then
         assert_matches!(result, Err(Error::Respond(RespondError::InvalidSignature)));
+        assert!(is_open(&contract, &yield_id));
+    }
+
+    #[rstest]
+    #[case::first_domain(DomainId(0))]
+    #[case::second_domain(DomainId(1))]
+    fn respond_verify_foreign_tx_v2__should_accept_a_signature_under_the_key_of_the_request_domain(
+        #[case] request_domain: DomainId,
+    ) {
+        // Given
+        let TwoDomainSetup {
+            mut contract,
+            secret_keys,
+        } = setup_with_two_foreign_tx_domains();
+        let yield_id = submit_request_to(&mut contract, request_domain);
+        let signature = sign(
+            &secret_keys[&request_domain],
+            payload_for(yield_id, VERIFIED),
+        );
+
+        // When
+        let result = contract.respond_verify_foreign_tx_v2(yield_id, VERIFIED, signature);
+
+        // Then
+        assert_matches!(result, Ok(()));
+        assert!(!is_open(&contract, &yield_id));
+    }
+
+    #[rstest]
+    #[case::first_domain_signed_by_the_second(DomainId(0), DomainId(1))]
+    #[case::second_domain_signed_by_the_first(DomainId(1), DomainId(0))]
+    fn respond_verify_foreign_tx_v2__should_reject_a_signature_under_the_key_of_another_domain(
+        #[case] request_domain: DomainId,
+        #[case] signing_domain: DomainId,
+    ) {
+        // Given
+        let TwoDomainSetup {
+            mut contract,
+            secret_keys,
+        } = setup_with_two_foreign_tx_domains();
+        let yield_id = submit_request_to(&mut contract, request_domain);
+        let signature = sign(
+            &secret_keys[&signing_domain],
+            payload_for(yield_id, VERIFIED),
+        );
+
+        // When
+        let result = contract.respond_verify_foreign_tx_v2(yield_id, VERIFIED, signature);
+
+        // Then
+        assert_matches!(result, Err(Error::Respond(RespondError::InvalidSignature)));
+        assert!(is_open(&contract, &yield_id));
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx_v2__should_reject_a_signature_of_another_scheme() {
+        // Given
+        let RespondSetup { mut contract, .. } = setup_with_an_attested_participant_calling();
+        let [yield_id] = submit_requests(&mut contract);
+        let signature = dtos::SignatureResponse::Ed25519 {
+            signature: dtos::Ed25519Signature::from([7u8; 64]),
+        };
+
+        // When
+        let result = contract.respond_verify_foreign_tx_v2(yield_id, VERIFIED, signature);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::Respond(RespondError::SignatureSchemeMismatch { .. }))
+        );
+        assert!(is_open(&contract, &yield_id));
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx_v2__should_reject_a_response_while_the_protocol_is_not_running() {
+        // Given
+        let RespondSetup {
+            mut contract,
+            secret_key,
+        } = setup_with_an_attested_participant_calling();
+        let [yield_id] = submit_requests(&mut contract);
+        let signature = sign(&secret_key, payload_for(yield_id, VERIFIED));
+        start_adding_a_domain(&mut contract);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let result = contract.respond_verify_foreign_tx_v2(yield_id, VERIFIED, signature);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::InvalidState(InvalidState::ProtocolStateNotRunning))
+        );
+        assert!(is_open(&contract, &yield_id));
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx_v2__should_reject_a_response_while_the_contract_does_not_accept_requests()
+     {
+        // Given
+        let RespondSetup {
+            mut contract,
+            secret_key,
+        } = setup_with_an_attested_participant_calling();
+        let [yield_id] = submit_requests(&mut contract);
+        let signature = sign(&secret_key, payload_for(yield_id, VERIFIED));
+        contract.accept_requests = false;
+
+        // When
+        let result = contract.respond_verify_foreign_tx_v2(yield_id, VERIFIED, signature);
+
+        // Then
+        assert_matches!(result, Err(Error::TeeError(TeeError::TeeValidationFailed)));
         assert!(is_open(&contract, &yield_id));
     }
 
