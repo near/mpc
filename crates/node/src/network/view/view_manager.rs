@@ -9,8 +9,9 @@ use crate::network::view::{
     errors::NetworkViewUpdateError,
     first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
     primitives::{
-        LinkObservation, LiveNetworkConnections, NetworkConnectionsHealthTracker,
-        NetworkLinkStatuses, ObserveLinkHealth,
+        InferConnectionStatus, LinkObservation, LiveNetworkConnections,
+        NetworkConnectionsHealthTracker, NetworkLinkStatuses, UnknownNodeError, UpdateLinkStatus,
+        UpdateResult,
     },
 };
 
@@ -49,33 +50,61 @@ struct NetworkViewManager<N, C, S, L> {
 }
 
 trait ApplyNetworkViewUpdate<N, U> {
-    fn apply(&mut self, update: U) -> Result<(), NetworkViewUpdateError<N>>;
+    fn apply(&mut self, update: U) -> Result<ConnectionsChanged, NetworkViewUpdateError<N>>;
+}
+
+/// Whether applying an update changed any connection.
+enum ConnectionsChanged {
+    Yes,
+    No,
+}
+
+impl<N: Ord + Clone, C, S, L> NetworkViewManager<N, C, S, L> {
+    /// Reads the link observations out of `update` and feeds them to the tracker.
+    fn process_link_observations<U>(
+        &mut self,
+        update: &U,
+    ) -> Result<ConnectionsChanged, UnknownNodeError<N>>
+    where
+        L: UpdateLinkStatus<U> + InferConnectionStatus<ConnectionStatus = C>,
+        L::Observation: IntoLinkObservation<N, U>,
+        C: PartialEq + Clone,
+    {
+        let context = ObservationContext {
+            first_hand_indexer_heights: &self.first_hand_heights,
+        };
+        let now = self.clock.now();
+        let mut connections_changed = ConnectionsChanged::No;
+        for observation in L::Observation::into_link_observation(update, &context) {
+            let update_result = self
+                .network_connection_health_tracker
+                .update_with_observation::<U>(observation, now)?;
+            if let UpdateResult::StatusChanged(_) = update_result {
+                connections_changed = ConnectionsChanged::Yes;
+            }
+        }
+        Ok(connections_changed)
+    }
 }
 
 impl<N, C, S, L> ApplyNetworkViewUpdate<N, IndexerHeightReport<N>>
     for NetworkViewManager<N, C, S, L>
 where
     N: Ord + Clone + std::fmt::Display,
-    L: ObserveLinkHealth<LinkStatus = S, ConnectionStatus = C>,
+    L: UpdateLinkStatus<IndexerHeightReport<N>> + InferConnectionStatus<ConnectionStatus = C>,
     L::Observation: IntoLinkObservation<N, IndexerHeightReport<N>>,
     C: PartialEq + Clone,
 {
-    fn apply(&mut self, update: IndexerHeightReport<N>) -> Result<(), NetworkViewUpdateError<N>> {
+    fn apply(
+        &mut self,
+        update: IndexerHeightReport<N>,
+    ) -> Result<ConnectionsChanged, NetworkViewUpdateError<N>> {
         let own_height = *update.indexer_heights.get(&update.reporter).ok_or(
             NetworkViewUpdateError::OwnHeightMissing(update.reporter.clone()),
         )?;
         self.first_hand_heights
             .record(update.reporter.clone(), own_height)?;
-        let context = ObservationContext {
-            first_hand_indexer_heights: &self.first_hand_heights,
-        };
-
-        let observations = L::Observation::into_link_observation(&update, &context);
-        for observation in observations {
-            self.network_connection_health_tracker
-                .update_with_observation(observation, self.clock.now())?;
-        }
-        Ok(())
+        Ok(self.process_link_observations(&update)?)
     }
 }
 pub struct IndexerHeightReport<N> {

@@ -4,7 +4,9 @@ use crate::network::view::primitives::{
     LinkObservation,
     errors::UnknownNodeError,
     live_network_connections::{InferredConnection, LiveNetworkConnections},
-    measured_network_link::{MeasuredNetworkLinks, ObserveLinkHealth, UpdateResult},
+    measured_network_link::{
+        InferConnectionStatus, MeasuredNetworkLinks, UpdateLinkStatus, UpdateResult,
+    },
 };
 
 pub struct NetworkConnectionsHealthTracker<N, C, L> {
@@ -14,21 +16,20 @@ pub struct NetworkConnectionsHealthTracker<N, C, L> {
     // a connection between two nodes is as good as the worse of the two links between them
     connection_status: LiveNetworkConnections<N, C>,
 }
-impl<N: Ord + Clone, C, L, O> NetworkConnectionsHealthTracker<N, C, L>
-where
-    N: Ord + Clone,
-    L: ObserveLinkHealth<Observation = O, ConnectionStatus = C>,
-    C: PartialEq + Clone,
-{
-    pub fn update_with_observation(
+impl<N: Ord + Clone, C, L> NetworkConnectionsHealthTracker<N, C, L> {
+    pub fn update_with_observation<U>(
         &mut self,
-        observation: LinkObservation<N, O>,
+        observation: LinkObservation<N, L::Observation>,
         now: Instant,
-    ) -> Result<UpdateResult<InferredConnection<C>>, UnknownNodeError<N>> {
+    ) -> Result<UpdateResult<InferredConnection<C>>, UnknownNodeError<N>>
+    where
+        L: UpdateLinkStatus<U> + InferConnectionStatus<ConnectionStatus = C>,
+        C: PartialEq + Clone,
+    {
         let LinkObservation { link, observation } = observation;
         let update_result = self
             .measured_links
-            .record_observation(&link, observation, now)?;
+            .record_observation::<U>(&link, observation, now)?;
         match update_result {
             UpdateResult::StatusRemained => Ok(UpdateResult::StatusRemained),
             UpdateResult::StatusChanged(new_status) => {

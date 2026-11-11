@@ -36,19 +36,18 @@ pub struct LinkObservation<N, O> {
     pub observation: O,
 }
 
-impl<N: Ord + Clone, L, O, S> MeasuredNetworkLinks<N, L>
-where
-    N: Ord + Clone,
-    L: ObserveLinkHealth<Observation = O, LinkStatus = S>,
-{
+impl<N: Ord + Clone, L> MeasuredNetworkLinks<N, L> {
     /// errors if the nodes are not in the graph
     /// todo: rename to record_link_observation
-    pub fn record_observation(
+    pub fn record_observation<U>(
         &mut self,
         link: &DirectedEdge<N>,
-        observation: O,
+        observation: L::Observation,
         now: Instant,
-    ) -> Result<UpdateResult<S>, UnknownNodeError<N>> {
+    ) -> Result<UpdateResult<L::LinkStatus>, UnknownNodeError<N>>
+    where
+        L: UpdateLinkStatus<U>,
+    {
         let update_result = match self.measured_network_links.edge_mut(link)? {
             Some(measured_link) => measured_link.update_with_observation(observation, now),
             None => {
@@ -61,10 +60,19 @@ where
         Ok(update_result)
     }
     /// `None` if the link has no observations yet; errors if the nodes are not in the graph.
-    pub fn status(&self, link: &DirectedEdge<N>) -> Result<Option<S>, UnknownNodeError<N>> {
+    pub fn status(
+        &self,
+        link: &DirectedEdge<N>,
+    ) -> Result<Option<L::LinkStatus>, UnknownNodeError<N>>
+    where
+        L: ReportLinkStatus,
+    {
         Ok(self.measured_network_links.edge(link)?.map(L::link_status))
     }
-    fn report_link_statuses(&self) -> NetworkLinkStatuses<N, S> {
+    fn report_link_statuses(&self) -> NetworkLinkStatuses<N, L::LinkStatus>
+    where
+        L: ReportLinkStatus,
+    {
         self.measured_network_links
             .edges()
             .map(|(from, to, link)| ((from.clone(), to.clone()), link.link_status()))
@@ -78,22 +86,29 @@ pub enum UpdateResult<S> {
     StatusRemained,
 }
 
-pub trait ObserveLinkHealth: Default {
+/// Implemented once per kind of update `U` a link can take evidence from.
+pub trait UpdateLinkStatus<U>: ReportLinkStatus + Default {
     type Observation;
-    type LinkStatus;
-    type ConnectionStatus;
     fn update_with_observation(
         &mut self,
         observation: Self::Observation,
         at: Instant,
     ) -> UpdateResult<Self::LinkStatus>;
-    fn link_status(&self) -> Self::LinkStatus;
+}
+
+pub trait InferConnectionStatus: ReportLinkStatus {
+    type ConnectionStatus;
     /// The connection that the two links between a pair of nodes add up to. A link is `None`
     /// while it has no observations.
     fn infer_connection_status(
         a: Option<Self::LinkStatus>,
         b: Option<Self::LinkStatus>,
     ) -> InferredConnection<Self::ConnectionStatus>;
+}
+
+pub trait ReportLinkStatus {
+    type LinkStatus;
+    fn link_status(&self) -> Self::LinkStatus;
 }
 
 //// todo: tests
