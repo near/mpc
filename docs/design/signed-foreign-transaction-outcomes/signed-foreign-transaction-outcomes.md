@@ -237,10 +237,12 @@ retries transient provider errors within its 5 second inspection cap, signs its 
 once, and sends it to every other participant. The leader inspects too, and its outcome counts
 like any other.
 
-**Outcome keys.** Every node holds a dedicated Ed25519 key pair for node outcomes, its
-**outcome key**. The public key is stored on chain in the node's participant info, next to its
-TLS key, so every node can check every other node's outcomes. Nodes don't sign outcomes with
-their TLS key, so that one key never signs for two purposes.
+**Outcome keys.** Every node generates a dedicated Ed25519 key pair for node outcomes, its
+**outcome key**, separate from and independent of its TLS key pair. The node registers the
+public key with the contract, in a call signed with its attested account key, the same check
+the respond methods use. So only the attested node can set it. The contract keeps one outcome
+key per participant account, and a node registers again to replace it, for example after a
+node migration. Every node reads the keys from the contract to check other nodes' outcomes.
 
 ```rust
 struct NodeOutcomeStatement {
@@ -411,8 +413,9 @@ and a larger signing set would need triples for more nodes.
 - **A. The TLS key.** Already on chain, but one key would then sign for two purposes.
 - **B. The node's share of a threshold key.** Needs each node's public key share, which the
   current DKG doesn't keep, and uses that key for a second purpose too.
-- **C. A dedicated Ed25519 key per node, on chain next to the TLS key (chosen).** The same
-  plain signature scheme as TLS, with no cryptography changes.
+- **C. A dedicated Ed25519 key pair per node, registered with the contract (chosen).** The
+  same plain signature scheme as TLS, with no cryptography changes, and no change to
+  participant info or attestations.
 
 ### How does V2 behave when the leader changes?
 
@@ -431,8 +434,8 @@ evidence as the leader and signs without inspecting again. This has two costs.
 
 V1 stays untouched, so no upgrade order breaks existing callers.
 
-- **Outcome keys come first.** Participant info gets the outcome key, and every node registers
-  one before V2 is enabled.
+- **Outcome keys come first.** The contract gets the method to register outcome keys, and
+  every node registers one before V2 is enabled.
 - **P2P needs one protocol version bump**, for the signed node outcome as a new message kind,
   and for the signing round with evidence as a new task kind. Aborts reuse the existing
   message.
