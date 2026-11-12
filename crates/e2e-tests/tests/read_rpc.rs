@@ -300,13 +300,20 @@ async fn read_rpc__should_answer_a_disagreement_with_a_signed_inconclusive() {
         answered.request_block_height
     );
     assert_eq!(answered.response.yield_id(), answered.announced_yield_id);
+    let series = format!(
+        r#"{}{{cause="verdicts_differ",chain="bitcoin"}}"#,
+        metrics::VERIFY_FOREIGN_TX_INCONCLUSIVES
+    );
     let inconclusives: i64 = env
         .cluster
-        .get_metric_all_nodes(metrics::VERIFY_FOREIGN_TX_INCONCLUSIVES)
+        .get_metric_all_nodes(&series)
         .await
         .expect("failed to read the node metrics")
         .into_iter()
         .flatten()
         .sum();
-    assert!(inconclusives >= 1, "no node counted the inconclusive");
+    assert!(
+        inconclusives >= 1,
+        "no node counted the inconclusive as verdicts_differ on bitcoin"
+    );
 }

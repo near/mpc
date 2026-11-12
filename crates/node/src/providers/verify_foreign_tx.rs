@@ -13,13 +13,14 @@ mod sign;
 mod sign_v2;
 
 pub(crate) use inspection::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
-pub(crate) use sign_v2::{RoundsEnd, SignedVerdict, StopLeading, VerifyForeignTxV2Context};
+pub(crate) use sign_v2::{RoundsEnd, SignedOutcome, StopLeading, VerifyForeignTxV2Context};
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
 use crate::providers::EcdsaSignatureProvider;
+use crate::providers::verify_foreign_tx::counting_rule::InconclusiveCause;
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
@@ -229,6 +230,12 @@ impl VerifyForeignTxProvider {
         v2: VerifyForeignTxV2Context,
     ) -> anyhow::Result<Self> {
         let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
+        for (chain, _) in config.foreign_chains.iter_chains() {
+            for cause in InconclusiveCause::ALL {
+                crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_INCONCLUSIVES
+                    .with_label_values(&[cause.label(), chain.label()]);
+            }
+        }
         Ok(Self {
             config,
             inspectors,

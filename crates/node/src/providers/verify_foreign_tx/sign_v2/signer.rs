@@ -11,7 +11,7 @@ use super::ROUND_DEADLINE;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
-use crate::providers::verify_foreign_tx::counting_rule::Tally;
+use crate::providers::verify_foreign_tx::counting_rule::{Decision, Tally};
 use crate::providers::verify_foreign_tx::node_outcome::{NodeVerdict, RoundOutcome};
 use crate::providers::verify_foreign_tx::node_outcome_statement::{
     NodeOutcomeVerificationError, OutcomePublicKeys, SignedNodeOutcome, VerifiedNodeOutcome,
@@ -25,14 +25,8 @@ const ROUND_SETUP_WAIT: Duration = Duration::from_secs(3);
 /// The reasons a signer refuses a V2 signing round.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum RoundRefusal {
-    // TODO(#5126): join inconclusive rounds.
-    #[error("inconclusive signing rounds are not supported yet")]
-    Inconclusive,
-    #[error("the evidence holds {statements} statements, more than the {supporters} supporters")]
-    TooManyStatements {
-        statements: usize,
-        supporters: usize,
-    },
+    #[error("the evidence holds {statements} statements, more than the {max} a round needs")]
+    TooManyStatements { statements: usize, max: usize },
     #[error("the evidence holds a statement for another yield")]
     OtherYield,
     #[error("the evidence holds a statement that does not verify")]
@@ -47,15 +41,23 @@ pub(crate) enum RoundRefusal {
         backers: usize,
         threshold: usize,
     },
+    #[error(
+        "a verdict can still reach the signing threshold, so the evidence proves no inconclusive"
+    )]
+    VerdictCanReachThreshold,
+    #[error("the evidence holds no single outcome of round participant {0}")]
+    ParticipantNotHeard(ParticipantId),
     #[error("the V2 request closed before this node joined the round")]
     RequestClosed,
 }
 
-/// The values a signer checks the evidence of a round for a verdict against.
-struct VerdictCheck<'a> {
+/// The values a signer checks the evidence of a round against.
+struct EvidenceCheck<'a> {
     me: ParticipantId,
     yield_id: YieldId,
-    verdict: NodeVerdict,
+    outcome: RoundOutcome,
+    /// The participants of the round, this node and the leader included.
+    participants: &'a [ParticipantId],
     outcome_keys: &'a OutcomePublicKeys,
     supporters: &'a BTreeSet<ParticipantId>,
     threshold: usize,
@@ -72,14 +74,14 @@ impl VerifyForeignTxProvider {
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
         let sender = channel.sender();
-        let (request, verdict) = match self.check_round(&mut channel, yield_id, outcome).await {
+        let request = match self.check_round(&mut channel, yield_id, outcome).await {
             Ok(checked) => checked,
             Err(refusal) => {
                 sender.communicate_failure(&refusal);
                 return Err(refusal.context("refused a V2 signing round"));
             }
         };
-        let payload_hash = request.sign_payload(verdict.into()).compute_msg_hash()?;
+        let payload_hash = request.sign_payload(outcome.into()).compute_msg_hash()?;
         self.ecdsa_signature_provider
             .make_online_presign_signature_follower_given_request(
                 channel,
@@ -95,10 +97,7 @@ impl VerifyForeignTxProvider {
         channel: &mut NetworkTaskChannel,
         yield_id: YieldId,
         outcome: RoundOutcome,
-    ) -> anyhow::Result<(VerifyForeignTxRequestV2, NodeVerdict)> {
-        let RoundOutcome::Verdict(verdict) = outcome else {
-            return Err(RoundRefusal::Inconclusive.into());
-        };
+    ) -> anyhow::Result<VerifyForeignTxRequestV2> {
         // TODO(#5124): refuse a leader that is not an acting leader of the request, or that
         // already ran three rounds with this node.
         let (request, evidence) = timeout(ROUND_SETUP_WAIT, async {
@@ -110,44 +109,66 @@ impl VerifyForeignTxProvider {
         .with_context(|| {
             format!("no open V2 request or no evidence within {ROUND_SETUP_WAIT:?} of Start")
         })??;
-        let me = self.ecdsa_signature_provider.my_participant_id();
         let keyshare = self.ecdsa_signature_provider.keyshare(request.domain_id)?;
-        let node_outcomes = self.v2.network.node_outcomes();
-        let own: Vec<VerifiedNodeOutcome> = node_outcomes
-            .outcomes_of(yield_id)
-            .into_iter()
-            .filter(|outcome| outcome.statement().signer == me)
-            .collect();
-        VerdictCheck {
-            me,
-            yield_id,
-            verdict,
-            outcome_keys: &node_outcomes.outcome_keys(),
-            supporters: &self.v2_chain_supporters(request.request.chain()),
-            threshold: usize::try_from(keyshare.reconstruction_threshold.value())?,
-        }
-        .check(evidence, &own)?;
+        let threshold = usize::try_from(keyshare.reconstruction_threshold.value())?;
+        self.check_evidence(
+            &request,
+            channel.participants(),
+            outcome,
+            evidence,
+            threshold,
+        )?;
         if self.v2.open_requests.get(request.id).is_none() {
             return Err(RoundRefusal::RequestClosed.into());
         }
-        Ok((request, verdict))
+        Ok(request)
+    }
+
+    /// Checks that `evidence` proves `outcome` for `request` under the counting rule, with this
+    /// node's own statements counted too.
+    fn check_evidence(
+        &self,
+        request: &VerifyForeignTxRequestV2,
+        participants: &[ParticipantId],
+        outcome: RoundOutcome,
+        evidence: Vec<SignedNodeOutcome>,
+        threshold: usize,
+    ) -> Result<(), RoundRefusal> {
+        let me = self.ecdsa_signature_provider.my_participant_id();
+        let node_outcomes = self.v2.network.node_outcomes();
+        let own: Vec<VerifiedNodeOutcome> = node_outcomes
+            .outcomes_of(request.yield_id)
+            .into_iter()
+            .filter(|outcome| outcome.statement().signer == me)
+            .collect();
+        EvidenceCheck {
+            me,
+            yield_id: request.yield_id,
+            outcome,
+            participants,
+            outcome_keys: &node_outcomes.outcome_keys(),
+            supporters: &self.v2_chain_supporters(request.request.chain()),
+            threshold,
+        }
+        .check(evidence, &own)
     }
 }
 
-impl VerdictCheck<'_> {
-    /// Checks that `evidence` holds a verified statement of this node and that t supporters
-    /// signed the verdict. Evidence with more statements than supporters is refused before any
-    /// signature check, since the leader sends one statement per backer. This node's `own` statements count too, so a node that signed
-    /// another outcome before a restart backs no verdict.
+impl EvidenceCheck<'_> {
+    /// Checks that `evidence` holds a verified statement of this node and meets the counting
+    /// rule for the outcome. This node's `own` statements count too, so a node that signed
+    /// another outcome before a restart takes part in no round. Evidence longer than
+    /// [`Self::max_statements`] is refused before any signature check.
     fn check(
         &self,
         evidence: Vec<SignedNodeOutcome>,
         own: &[VerifiedNodeOutcome],
     ) -> Result<(), RoundRefusal> {
-        if evidence.len() > self.supporters.len() {
+        let max = self.max_statements();
+        if evidence.len() > max {
             return Err(RoundRefusal::TooManyStatements {
                 statements: evidence.len(),
-                supporters: self.supporters.len(),
+                max,
             });
         }
         let verified = evidence
@@ -165,23 +186,57 @@ impl VerdictCheck<'_> {
         {
             return Err(RoundRefusal::WithoutOwnStatement);
         }
-        let backers = verified
+        let tally = verified
             .iter()
             .chain(own)
             .map(VerifiedNodeOutcome::statement)
-            .collect::<Tally>()
-            .backers_of(self.verdict, self.supporters);
+            .collect::<Tally>();
+        match self.outcome {
+            RoundOutcome::Verdict(verdict) => self.check_verdict(&tally, verdict),
+            RoundOutcome::Inconclusive => self.check_inconclusive(&tally),
+        }
+    }
+
+    /// The most statements a leader needs to prove the outcome: one per supporter for a
+    /// verdict, and for an inconclusive two per supporter, since two different statements show
+    /// a supporter that counts for no verdict.
+    fn max_statements(&self) -> usize {
+        match self.outcome {
+            RoundOutcome::Verdict(_) => self.supporters.len(),
+            RoundOutcome::Inconclusive => self.supporters.len().saturating_mul(2),
+        }
+    }
+
+    fn check_verdict(&self, tally: &Tally, verdict: NodeVerdict) -> Result<(), RoundRefusal> {
+        let backers = tally.backers_of(verdict, self.supporters);
         if !backers.contains(&self.me) {
-            return Err(RoundRefusal::NotABacker(self.verdict));
+            return Err(RoundRefusal::NotABacker(verdict));
         }
         if backers.len() < self.threshold {
             return Err(RoundRefusal::BelowThreshold {
-                verdict: self.verdict,
+                verdict,
                 backers: backers.len(),
                 threshold: self.threshold,
             });
         }
         Ok(())
+    }
+
+    /// Checks that no verdict can reach t, even counting every supporter the evidence does not
+    /// name, and that every round participant signed exactly one outcome.
+    fn check_inconclusive(&self, tally: &Tally) -> Result<(), RoundRefusal> {
+        let Decision::Inconclusive { heard, .. } = tally.decide(self.supporters, self.threshold)
+        else {
+            return Err(RoundRefusal::VerdictCanReachThreshold);
+        };
+        match self
+            .participants
+            .iter()
+            .find(|participant| !heard.contains(participant))
+        {
+            Some(participant) => Err(RoundRefusal::ParticipantNotHeard(*participant)),
+            None => Ok(()),
+        }
     }
 }
 
