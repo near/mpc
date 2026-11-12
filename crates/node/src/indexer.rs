@@ -1,7 +1,7 @@
 use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
-use anyhow::{Context, ensure};
+use anyhow::Context;
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -23,6 +23,7 @@ use tokio::sync::{
 };
 use types::ChainSendTransactionRequest;
 
+pub mod chain_binding;
 pub mod configs;
 pub mod foreign_chain;
 pub mod handler;
@@ -69,19 +70,16 @@ impl IndexerState {
         }
     }
 
-    async fn ensure_chain_matches_contract(&self, genesis_hash: CryptoHash) -> anyhow::Result<()> {
+    async fn ensure_chain_matches_contract(
+        &self,
+        expected_genesis_hash: Option<CryptoHash>,
+    ) -> anyhow::Result<()> {
         let status = self
             .client
             .status()
             .await
             .context("querying nearcore status")?;
-        ensure!(
-            status.genesis_hash == genesis_hash,
-            "the contract runs on the chain with genesis {genesis_hash}, \
-             but this node follows the chain with genesis {}",
-            status.genesis_hash
-        );
-        Ok(())
+        chain_binding::ensure_chain_matches_contract(expected_genesis_hash, status.genesis_hash)
     }
 }
 
