@@ -50,6 +50,8 @@ The contract tracks the following information:
 
 Participants vote on contract updates (code or configuration changes). They do so by voting on the hash of the contract code or config they want to include (via `vote_contract_update`). Once a hash has received sufficient votes, any participant can submit the matching code or config (via `submit_contract_update`).
 
+The first release with `read_rpc` is deployed only once every participant runs a node release that serves it and has registered an outcome key, so that `outcome_keys` lists a key for every participant account.
+
 ## Usage
 
 ### Deposit requirement
@@ -120,13 +122,15 @@ Recovery returns some key even for forged signatures, so a signature is only val
 
 `read_rpc` asks the MPC network to check a transaction on a foreign chain against the values you expect. Unlike `verify_foreign_transaction`, which only signs a transaction that checks out, `read_rpc` returns a signed answer when the check fails too.
 
+A `verify_foreign_transaction` response signs the values the nodes extracted, whatever they are. A caller of `verify_foreign_transaction` that knows the values to expect sets `expected_payload_hash`, so the contract rejects a response over other values, or checks the `payload_hash` of the response itself. `read_rpc` checks the values for you.
+
 The call requires a **deposit of 1 yoctonear** (see [Deposit requirement](#deposit-requirement)) and at least `sign_call_gas_attachment_requirement_tera_gas` of attached gas (15 Tgas by default, see `config`). The chain must be one that `get_available_foreign_chains` returns.
 
 It takes one argument, `request`, with these fields:
 
-- `request`: the foreign chain, the transaction and the extractors, in the same form as for `verify_foreign_transaction`.
+- `request`: the foreign chain, the transaction and the extractors, in the same form as for `verify_foreign_transaction`. The [localnet arguments](../../docs/development/localnet/args/) hold examples.
 - `domain_id` (integer): a domain with purpose `ForeignTx`. Its key signs the answer.
-- `expected_values`: one extracted value per extractor, in extractor order.
+- `expected_values`: one extracted value per extractor, in extractor order. The call fails when the number of expected values differs from the number of extractors.
 
 ```Json
 {
@@ -165,6 +169,13 @@ The response has these fields:
 - `request_block_height` (integer): the NEAR block the request was made in.
 - `yield_id`: the hex encoded id the contract picked for the request.
 - `outcome`: the answer.
+
+#### How the network answers
+
+1. Every node that supports the chain inspects the transaction once the block of the request is final. It signs what it found, its node outcome, with its outcome key and sends it to the other nodes. A node registers its outcome key with the contract by itself, and `outcome_keys` lists them.
+2. Once t nodes, where t is the signing threshold, signed the same verdict, the leader of the request runs a signing round for that verdict with nodes among those t. Once no verdict can reach t, even with the nodes not heard from yet, it runs one for an inconclusive. Until then it waits for more node outcomes.
+3. The nodes that sign with the leader first check the signed node outcomes it sends. With fewer than t malicious nodes, a leader therefore cannot get a verdict or an inconclusive signed that the node outcomes do not support.
+4. A signing round that fails is retried with other nodes, up to three rounds per leader. If too many nodes stay silent for any answer, the request times out.
 
 #### One answer per request
 
