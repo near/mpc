@@ -147,6 +147,9 @@ If type `A` references type `B`, declare `A` before `B`. This applies to new cod
 
 See `docs/development/engineering-standards.md` §Declare referencing types first.
 
+### File Size
+Aim for less than 500 lines per hand-written source file, and never go past 1,000. Generated files, snapshots and lockfiles are exempt. When a change would take a file over 1,000 lines, split the file by topic first. If a file you work on is already over 1,000 lines, point it out to the engineer, but do not split it unless asked.
+
 ### Current Rust Features
 Where they make the code simpler, prefer the newest language features and std APIs of the toolchain pinned in `rust-toolchain.toml` over older idioms or third-party crates, e.g. `Duration::from_hours(1)` over `Duration::from_secs(3600)`, or a let chain over nested `if let`s.
 

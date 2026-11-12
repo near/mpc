@@ -12,8 +12,15 @@ pub(crate) enum NodeOutcome {
     NoVerdict(NoVerdictReason),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub(crate) enum NodeVerdict {
+/// The outcome a V2 signing round signs. Its Borsh encoding is part of the P2P wire format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+pub enum RoundOutcome {
+    Verdict(NodeVerdict),
+    Inconclusive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+pub enum NodeVerdict {
     /// The hash of the extracted values equals the expected values hash.
     Verified,
     Negative(ForeignTxVerificationNegativeVerdict),

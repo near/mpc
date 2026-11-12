@@ -8,6 +8,7 @@ use crate::primitives::{
     ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
 };
 use crate::protocol_version::{NetworkProtocolVersion, V2_FOREIGN_TX_MIN_PROTOCOL_VERSION};
+use crate::providers::verify_foreign_tx::node_outcome::RoundOutcome;
 use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -23,6 +24,9 @@ pub enum Packet {
     MpcMessage(MpcMessage) = 1,
     IndexerHeight(IndexerHeightMessage) = 2,
     ConnectedPeersInfo(ConnectedPeersInfo) = 3,
+    /// The signed node outcome of a V2 foreign tx request. Every node sends its own to every other
+    /// participant.
+    NodeOutcome(SignedNodeOutcome) = 4,
 }
 
 impl Packet {
@@ -32,6 +36,7 @@ impl Packet {
             Packet::MpcMessage(message) => message.kind.min_protocol_version(),
             Packet::Ping | Packet::IndexerHeight(_) => NetworkProtocolVersion::Dec2025,
             Packet::ConnectedPeersInfo(_) => NetworkProtocolVersion::Oct2026,
+            Packet::NodeOutcome(_) => V2_FOREIGN_TX_MIN_PROTOCOL_VERSION,
         }
     }
 }
@@ -44,10 +49,9 @@ pub enum MpcMessageKind {
     Computation(Vec<Vec<u8>>) = 1,
     Abort(String) = 2,
     Success = 3,
-    /// Signed node outcomes of a V2 foreign tx request. A follower sends its own outcome of an
-    /// attempt before its share, and also after the attempt ended. The leader of a
-    /// [`VerifyForeignTxTaskId::Inconclusive`] round sends its evidence right after the Start.
-    NodeOutcomes(Vec<SignedNodeOutcome>) = 4,
+    /// The signed node outcomes that back the outcome of a
+    /// [`VerifyForeignTxTaskId::SignOutcome`] round. The leader sends them right after the Start.
+    Evidence(Vec<SignedNodeOutcome>) = 4,
 }
 
 impl MpcMessageKind {
@@ -57,18 +61,17 @@ impl MpcMessageKind {
             MpcMessageKind::Computation(_) => "Computation",
             MpcMessageKind::Abort(_) => "Abort",
             MpcMessageKind::Success => "Success",
-            MpcMessageKind::NodeOutcomes(_) => "NodeOutcomes",
+            MpcMessageKind::Evidence(_) => "Evidence",
         }
     }
 
     fn min_protocol_version(&self) -> NetworkProtocolVersion {
         match self {
             MpcMessageKind::Start(MpcStartMessage {
-                task_id:
-                    MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::Inconclusive { .. }),
+                task_id: MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::SignOutcome { .. }),
                 ..
             })
-            | MpcMessageKind::NodeOutcomes(_) => V2_FOREIGN_TX_MIN_PROTOCOL_VERSION,
+            | MpcMessageKind::Evidence(_) => V2_FOREIGN_TX_MIN_PROTOCOL_VERSION,
             MpcMessageKind::Start(_)
             | MpcMessageKind::Computation(_)
             | MpcMessageKind::Abort(_)
@@ -79,7 +82,7 @@ impl MpcMessageKind {
 
 /// Redacts the raw bytes in Computation messages.
 /// These bytes contain serialized protocol round data (commitments, encrypted shares, proofs)
-/// which must not be leaked to logs. NodeOutcomes shows only its length, because a peer can fill a
+/// which must not be leaked to logs. Evidence shows only its length, because a peer can fill a
 /// whole frame with outcomes and every received message is logged.
 impl Debug for MpcMessageKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -95,8 +98,8 @@ impl Debug for MpcMessageKind {
                 .finish(),
             MpcMessageKind::Abort(err) => f.debug_tuple("Abort").field(err).finish(),
             MpcMessageKind::Success => write!(f, "Success"),
-            MpcMessageKind::NodeOutcomes(outcomes) => f
-                .debug_tuple("NodeOutcomes")
+            MpcMessageKind::Evidence(outcomes) => f
+                .debug_tuple("Evidence")
                 .field(&format_args!("[{} outcomes]", outcomes.len()))
                 .finish(),
         }
@@ -219,10 +222,11 @@ pub enum VerifyForeignTxTaskId {
         id: VerifyForeignTxId,
         paired_triple_id: UniqueId,
     } = 1,
-    /// A round that signs an inconclusive outcome for the V2 request waiting on `yield_id`.
-    /// Each round uses its own triple pair, so `paired_triple_id` makes the id unique per round.
-    Inconclusive {
+    /// A round that signs `outcome` for the V2 request waiting on `yield_id`. Each round uses
+    /// its own triple pair, so `paired_triple_id` makes the id unique per round.
+    SignOutcome {
         yield_id: YieldId,
+        outcome: RoundOutcome,
         paired_triple_id: UniqueId,
     } = 2,
 }

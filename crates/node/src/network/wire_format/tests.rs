@@ -2,19 +2,15 @@ use super::{
     CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcMessageKind, MpcTaskId, NetworkProtocolVersion, Packet,
     RobustEcdsaTaskId, VerifyForeignTxTaskId,
 };
-use crate::config::PersistentSecrets;
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage,
     ParticipantId, UniqueId,
 };
 use crate::providers::verify_foreign_tx::node_outcome::{
-    NoVerdictReason, NodeOutcome, NodeVerdict,
+    NoVerdictReason, NodeOutcome, NodeVerdict, RoundOutcome,
 };
-use crate::providers::verify_foreign_tx::node_outcome_statement::{
-    self, NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome,
-};
+use crate::providers::verify_foreign_tx::node_outcome_statement::{SignedNodeOutcome, testing};
 use borsh::BorshSerialize;
-use ed25519_dalek::SigningKey;
 use mpc_primitives::domain::DomainId;
 use mpc_primitives::{AttemptId, EpochId};
 use near_indexer_primitives::CryptoHash;
@@ -39,7 +35,7 @@ fn key_event() -> KeyEventId {
 }
 
 fn signed_node_outcome() -> SignedNodeOutcome {
-    signed_node_outcome_of(not_found())
+    testing::signed_node_outcome(not_found())
 }
 
 fn not_found() -> NodeOutcome {
@@ -48,32 +44,44 @@ fn not_found() -> NodeOutcome {
     ))
 }
 
-fn signed_node_outcome_of(outcome: NodeOutcome) -> SignedNodeOutcome {
-    let signing_key = NodeOutcomeSigningKey::from(&PersistentSecrets {
-        p2p_private_key: SigningKey::from_bytes(&[8; 32]),
-        near_signer_key: SigningKey::from_bytes(&[9; 32]),
-    });
-    signing_key
-        .sign(NodeOutcomeStatement {
-            yield_id: YieldId([6; 32]),
-            leader: ParticipantId::from_raw(5),
-            attempt: node_outcome_statement::AttemptId(ChannelId(UniqueId::new(
-                ParticipantId::from_raw(5),
-                1,
-                1,
-            ))),
-            signer: ParticipantId::from_raw(7),
-            outcome,
-        })
-        .unwrap()
+const NEGATIVE_VERDICTS: [ForeignTxVerificationNegativeVerdict; 6] = [
+    ForeignTxVerificationNegativeVerdict::TransactionFailed,
+    ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds,
+    ForeignTxVerificationNegativeVerdict::TransactionNotFound,
+    ForeignTxVerificationNegativeVerdict::AccountNotFound,
+    ForeignTxVerificationNegativeVerdict::NonCanonicalBlock,
+    ForeignTxVerificationNegativeVerdict::ValuesMismatch,
+];
+
+fn round_outcomes() -> Vec<RoundOutcome> {
+    std::iter::once(RoundOutcome::Verdict(NodeVerdict::Verified))
+        .chain(
+            NEGATIVE_VERDICTS
+                .into_iter()
+                .map(|verdict| RoundOutcome::Verdict(NodeVerdict::Negative(verdict))),
+        )
+        .chain(std::iter::once(RoundOutcome::Inconclusive))
+        .collect()
 }
 
-fn inconclusive_task_id() -> MpcTaskId {
-    VerifyForeignTxTaskId::Inconclusive {
+fn sign_outcome_task_id(outcome: RoundOutcome) -> MpcTaskId {
+    VerifyForeignTxTaskId::SignOutcome {
         yield_id: YieldId([6; 32]),
+        outcome,
         paired_triple_id: uid(2),
     }
     .into()
+}
+
+fn sign_verified_task_id() -> MpcTaskId {
+    sign_outcome_task_id(RoundOutcome::Verdict(NodeVerdict::Verified))
+}
+
+fn mpc_message(kind: MpcMessageKind) -> Packet {
+    Packet::MpcMessage(MpcMessage {
+        channel_id: ChannelId(uid(1)),
+        kind,
+    })
 }
 
 /// Fixed inputs are chosen so that neighbouring fields encode to visibly distinct bytes.
@@ -111,6 +119,7 @@ fn wire_format__should_stay_stable() {
                     (ParticipantId::from_raw(7), 20),
                 ]),
             }),
+            Packet::NodeOutcome(signed_node_outcome()),
         ]),
         rows(&[
             MpcMessageKind::Start(MpcStartMessage {
@@ -124,7 +133,7 @@ fn wire_format__should_stay_stable() {
             MpcMessageKind::Computation(vec![vec![1, 2, 3]]),
             MpcMessageKind::Abort("err".to_owned()),
             MpcMessageKind::Success,
-            MpcMessageKind::NodeOutcomes(vec![signed_node_outcome()]),
+            MpcMessageKind::Evidence(vec![signed_node_outcome()]),
         ]),
         rows(&[
             EcdsaTaskId::KeyGeneration {
@@ -191,13 +200,20 @@ fn wire_format__should_stay_stable() {
                 id: hash(1),
                 paired_triple_id: uid(2),
             }),
-            inconclusive_task_id(),
         ]),
+        rows(
+            &round_outcomes()
+                .into_iter()
+                .map(sign_outcome_task_id)
+                .collect::<Vec<_>>(),
+        ),
         rows(&[
-            signed_node_outcome_of(NodeOutcome::Verdict(NodeVerdict::Verified)),
-            signed_node_outcome_of(not_found()),
-            signed_node_outcome_of(NodeOutcome::NoVerdict(NoVerdictReason::Transient)),
-            signed_node_outcome_of(NodeOutcome::NoVerdict(NoVerdictReason::InspectorsDisagree)),
+            testing::signed_node_outcome(NodeOutcome::Verdict(NodeVerdict::Verified)),
+            testing::signed_node_outcome(not_found()),
+            testing::signed_node_outcome(NodeOutcome::NoVerdict(NoVerdictReason::Transient)),
+            testing::signed_node_outcome(NodeOutcome::NoVerdict(
+                NoVerdictReason::InspectorsDisagree,
+            )),
         ]),
     ]
     .join("\n\n");
@@ -206,9 +222,9 @@ fn wire_format__should_stay_stable() {
 }
 
 #[rstest]
-#[case::node_outcomes(MpcMessageKind::NodeOutcomes(vec![signed_node_outcome()]))]
-#[case::inconclusive_start(MpcMessageKind::Start(MpcStartMessage {
-    task_id: inconclusive_task_id(),
+#[case::evidence(MpcMessageKind::Evidence(vec![signed_node_outcome()]))]
+#[case::sign_outcome_start(MpcMessageKind::Start(MpcStartMessage {
+    task_id: sign_verified_task_id(),
     participants: vec![ParticipantId::from_raw(5), ParticipantId::from_raw(7)],
 }))]
 fn packet__should_decode_a_v2_foreign_tx_message_to_the_message_it_encodes(
@@ -228,39 +244,60 @@ fn packet__should_decode_a_v2_foreign_tx_message_to_the_message_it_encodes(
     assert_matches!(decoded, Packet::MpcMessage(decoded) if decoded == message);
 }
 
+#[test]
+fn packet__should_decode_a_node_outcome_to_the_outcome_it_encodes() {
+    // Given
+    let outcome = signed_node_outcome();
+    let bytes = borsh::to_vec(&Packet::NodeOutcome(outcome.clone())).unwrap();
+
+    // When
+    let decoded: Packet = borsh::from_slice(&bytes).unwrap();
+
+    // Then
+    assert_matches!(decoded, Packet::NodeOutcome(decoded) if decoded == outcome);
+}
+
 #[rstest]
-#[case::node_outcomes(MpcMessageKind::NodeOutcomes(vec![signed_node_outcome()]), NetworkProtocolVersion::Nov2026)]
-#[case::inconclusive_start(
-    MpcMessageKind::Start(MpcStartMessage {
-        task_id: inconclusive_task_id(),
+#[case::node_outcome(
+    Packet::NodeOutcome(signed_node_outcome()),
+    NetworkProtocolVersion::Nov2026
+)]
+#[case::evidence(
+    mpc_message(MpcMessageKind::Evidence(vec![signed_node_outcome()])),
+    NetworkProtocolVersion::Nov2026
+)]
+#[case::sign_verified_start(
+    mpc_message(MpcMessageKind::Start(MpcStartMessage {
+        task_id: sign_verified_task_id(),
         participants: vec![ParticipantId::from_raw(5)],
-    }),
+    })),
+    NetworkProtocolVersion::Nov2026
+)]
+#[case::sign_inconclusive_start(
+    mpc_message(MpcMessageKind::Start(MpcStartMessage {
+        task_id: sign_outcome_task_id(RoundOutcome::Inconclusive),
+        participants: vec![ParticipantId::from_raw(5)],
+    })),
     NetworkProtocolVersion::Nov2026
 )]
 #[case::other_start(
-    MpcMessageKind::Start(MpcStartMessage {
+    mpc_message(MpcMessageKind::Start(MpcStartMessage {
         task_id: EcdsaTaskId::Signature {
             id: hash(1),
             presignature_id: uid(2),
         }
         .into(),
         participants: vec![ParticipantId::from_raw(5)],
-    }),
+    })),
     NetworkProtocolVersion::Dec2025
 )]
-#[case::computation(MpcMessageKind::Computation(vec![vec![1]]), NetworkProtocolVersion::Dec2025)]
-#[case::abort(MpcMessageKind::Abort("err".to_owned()), NetworkProtocolVersion::Dec2025)]
-#[case::success(MpcMessageKind::Success, NetworkProtocolVersion::Dec2025)]
+#[case::computation(mpc_message(MpcMessageKind::Computation(vec![vec![1]])), NetworkProtocolVersion::Dec2025)]
+#[case::abort(mpc_message(MpcMessageKind::Abort("err".to_owned())), NetworkProtocolVersion::Dec2025)]
+#[case::success(mpc_message(MpcMessageKind::Success), NetworkProtocolVersion::Dec2025)]
 fn packet_min_protocol_version__should_require_nov2026_only_for_v2_foreign_tx_messages(
-    #[case] kind: MpcMessageKind,
+    #[case] packet: Packet,
     #[case] expected: NetworkProtocolVersion,
 ) {
-    // Given
-    let packet = Packet::MpcMessage(MpcMessage {
-        channel_id: ChannelId(uid(1)),
-        kind,
-    });
-
     // When
     let version = packet.min_protocol_version();
 
@@ -296,15 +333,15 @@ fn mpc_message_kind_debug__should_redact_computation_payload() {
 }
 
 #[test]
-fn mpc_message_kind_debug__should_show_only_the_number_of_node_outcomes() {
+fn mpc_message_kind_debug__should_show_only_the_number_of_outcomes_in_evidence() {
     // Given
-    let kind = MpcMessageKind::NodeOutcomes(vec![signed_node_outcome(), signed_node_outcome()]);
+    let kind = MpcMessageKind::Evidence(vec![signed_node_outcome(), signed_node_outcome()]);
 
     // When
     let debug_output = format!("{kind:?}");
 
     // Then
-    assert_eq!(debug_output, "NodeOutcomes([2 outcomes])");
+    assert_eq!(debug_output, "Evidence([2 outcomes])");
 }
 
 #[test]
