@@ -10,8 +10,9 @@ pub mod client;
 pub mod method_names;
 pub mod types {
     pub use attestation::{
-        Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation, TcbInfo,
-        VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
+        Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation,
+        StoredAttestation, TcbInfo, VerifiedAttestation, VerifiedDstackAttestation,
+        VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;
@@ -24,26 +25,24 @@ pub mod types {
     pub use near_mpc_crypto_types::ckd::CKDRequest;
 
     pub use near_mpc_crypto_types::kdf;
-    pub use node_migrations::{BackupServiceInfo, DestinationNodeInfo};
+    pub use node_migrations::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo};
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
-        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
-        DomainConfig, DomainPurpose, DomainRegistry, EpochId, GovernanceThreshold,
-        GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
+        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, BlockCount,
+        BlockHeight, Curve, DomainConfig, DomainPurpose, DomainRegistry, EpochId,
+        GovernanceThreshold, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
         InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
+        ParticipantCount, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
         ReconstructionThreshold, ResharingContractState, RunningContractState,
         protocol_state_to_string,
     };
     pub use tee::{
         AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherHashVotes,
-        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
+        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeInfo,
     };
 
-    pub use updates::{
-        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, Update, UpdateHash, UpdateId,
-    };
+    pub use updates::{Update, UpdateHash};
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
@@ -80,7 +79,7 @@ pub use near_mpc_crypto_types::near_sdk;
 #[cfg(feature = "k256")]
 pub use near_mpc_crypto_types::k256;
 
-#[cfg(feature = "ed25519-dalek")]
+#[cfg(feature = "curve25519-dalek")]
 pub use near_mpc_crypto_types::curve25519_dalek;
 #[cfg(feature = "ed25519-dalek")]
 pub use near_mpc_crypto_types::ed25519_dalek;

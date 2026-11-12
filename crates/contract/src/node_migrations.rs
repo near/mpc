@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo};
 use near_sdk::{near, store::IterableMap};
 
 use crate::storage_keys::StorageKey;
@@ -44,6 +44,10 @@ impl NodeMigrations {
         self.ongoing_migrations.remove(account_id);
     }
 
+    pub fn ongoing_migration(&self, account_id: &AccountId) -> Option<&DestinationNodeInfo> {
+        self.ongoing_migrations.get(account_id)
+    }
+
     pub fn remove_migration(&mut self, account_id: &AccountId) -> Option<DestinationNodeInfo> {
         self.ongoing_migrations.remove(account_id)
     }
@@ -63,13 +67,8 @@ impl NodeMigrations {
         )
     }
 
-    pub fn get_all(
-        &self,
-    ) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
-        let mut combined: BTreeMap<
-            AccountId,
-            (Option<BackupServiceInfo>, Option<DestinationNodeInfo>),
-        > = BTreeMap::new();
+    pub fn get_all(&self) -> MigrationInfo {
+        let mut combined = BTreeMap::new();
 
         for (id, backup_serivce_info) in self.backup_services_info.iter() {
             combined.insert(id.clone(), (Some(backup_serivce_info.clone()), None));
@@ -82,7 +81,7 @@ impl NodeMigrations {
                 .or_insert((None, Some(destination_node_info.clone())));
         }
 
-        combined
+        combined.into()
     }
 }
 
@@ -91,11 +90,12 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+    use near_mpc_contract_interface::types::BackupServiceInfo;
 
     use crate::{
+        api::test_utils::destination_of,
         node_migrations::NodeMigrations,
-        primitives::test_utils::{bogus_ed25519_public_key, gen_account_id, gen_participant},
+        primitives::test_utils::{bogus_ed25519_public_key, gen_account_id, node_for},
     };
 
     #[test]
@@ -127,7 +127,7 @@ mod tests {
             (account_id.clone(), Some(info.clone()), None)
         );
         assert_eq!(
-            migrations.get_all(),
+            *migrations.get_all(),
             BTreeMap::from([(account_id.clone(), (Some(info.clone()), None))])
         );
     }
@@ -135,11 +135,8 @@ mod tests {
     #[test]
     fn test_ongoing_migrations() {
         let mut migrations = NodeMigrations::default();
-        let (account_id, participant_info) = gen_participant(0);
-        let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: bogus_ed25519_public_key(),
-            destination_node_info: participant_info.into(),
-        };
+        let account_id = gen_account_id();
+        let destination_node_info = destination_of(&node_for(&account_id));
         // sanity checks
         assert!(migrations.ongoing_migrations.get(&account_id).is_none());
         assert!(migrations.remove_migration(&account_id).is_none());
@@ -164,7 +161,7 @@ mod tests {
             )
         );
         assert_eq!(
-            migrations.get_all(),
+            *migrations.get_all(),
             BTreeMap::from([(
                 account_id.clone(),
                 (None, Some(destination_node_info.clone()))
@@ -190,17 +187,14 @@ mod tests {
     #[test]
     fn test_remove_account_data() {
         let mut migrations = NodeMigrations::default();
-        let (account_id, participant_info) = gen_participant(0);
+        let account_id = gen_account_id();
         let backup_service_pk = bogus_ed25519_public_key();
 
         let info = BackupServiceInfo {
             public_key: backup_service_pk,
         };
 
-        let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: bogus_ed25519_public_key(),
-            destination_node_info: participant_info.into(),
-        };
+        let destination_node_info = destination_of(&node_for(&account_id));
 
         // sanity checks
         assert!(migrations.ongoing_migrations.get(&account_id).is_none());
@@ -229,7 +223,7 @@ mod tests {
             )
         );
         assert_eq!(
-            migrations.get_all(),
+            *migrations.get_all(),
             BTreeMap::from([(
                 account_id.clone(),
                 (Some(info.clone()), Some(destination_node_info.clone()))

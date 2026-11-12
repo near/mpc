@@ -165,78 +165,70 @@ async fn handle_request(
         ("GET", "/hello") => Ok(Response::new(Full::new(Bytes::from_static(
             b"Hello, world!",
         )))),
-        ("GET", "/get_keyshares") => {
-            tracing::info!("received get_keyshares request");
-            let whole_body = req.into_body().collect().await.map(|body| body.to_bytes());
-            match whole_body {
-                Ok(bytes) => match serde_json::from_slice::<Keyset>(&bytes) {
-                    Ok(keyset) => {
-                        let keyshares = match state
-                            .keyshare_storage
-                            .read()
-                            .await
-                            .get_keyshares(&keyset)
-                            .await
-                        {
-                            Ok(keyshares) => keyshares,
-                            Err(err) => {
-                                let msg = err.to_string();
-                                tracing::error!(msg);
-                                return Ok(Response::builder()
-                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Full::new(Bytes::from_static(b"Failed to get keyshares")))
-                                    .unwrap());
-                            }
-                        };
-                        match serialize_and_encrypt_keyshares(
-                            &keyshares,
-                            &state.backup_encryption_key,
-                        ) {
-                            Ok(encrypted_keyshares) => {
-                                let response = json_response(encrypted_keyshares);
-                                // A domain-less keyset yields no keyshares: nothing was backed up.
-                                if !keyshares.is_empty()
-                                    && let Err(err) = record_backup_served(&keyset)
-                                {
-                                    tracing::error!(?err, "failed to record served backup");
-                                }
-                                Ok(response)
-                            }
-                            Err(err) => {
-                                tracing::error!(?err, "serialization or encryption error");
-                                Ok(json_response(
-                                    "internal error serializing or encrypting keyshares"
-                                        .to_string(),
-                                ))
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(?err, "received invalid keyset");
-                        Ok(Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(Full::new(Bytes::from(format!("Invalid keyset: {err}"))))
-                            .unwrap())
-                    }
-                },
-                Err(err) => {
-                    tracing::error!(?err, "failed to read body");
-                    Ok(Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Full::new(Bytes::from(format!(
-                            "Failed to read body: {err}"
-                        ))))
-                        .unwrap())
-                }
-            }
-        }
+        ("GET", "/get_keyshares") => Ok(handle_get_keyshares(req.into_body(), &state).await),
         ("PUT", "/set_keyshares") => Ok(handle_set_keyshares(req.into_body(), &state).await),
-        _ => {
-            let mut not_found = Response::new(Full::new(Bytes::from_static(b"Not Found")));
-            *not_found.status_mut() = StatusCode::NOT_FOUND;
-            Ok(not_found)
-        }
+        _ => Ok(error_response(StatusCode::NOT_FOUND, "Not Found")),
     }
+}
+
+async fn handle_get_keyshares<B>(body: B, state: &WebServerState) -> Response<Full<Bytes>>
+where
+    B: hyper::body::Body,
+    B::Error: std::fmt::Debug + std::fmt::Display,
+{
+    tracing::info!("received get_keyshares request");
+    if !*state.onboarded.borrow() {
+        tracing::warn!("get_keyshares rejected: node is not onboarded");
+        return error_response(StatusCode::FORBIDDEN, "Node is not onboarded");
+    }
+    let bytes = match body.collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(err) => {
+            tracing::error!(?err, "get_keyshares: failed to read body");
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Failed to read body: {err}"),
+            );
+        }
+    };
+    let keyset: Keyset = match serde_json::from_slice(&bytes) {
+        Ok(keyset) => keyset,
+        Err(err) => {
+            tracing::error!(?err, "get_keyshares rejected: invalid keyset");
+            return error_response(StatusCode::BAD_REQUEST, format!("Invalid keyset: {err}"));
+        }
+    };
+    let keyshares = match state
+        .keyshare_storage
+        .read()
+        .await
+        .get_keyshares(&keyset)
+        .await
+    {
+        Ok(keyshares) => keyshares,
+        Err(err) => {
+            tracing::error!(?err, "failed to get keyshares");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to get keyshares");
+        }
+    };
+    let encrypted_keyshares =
+        match serialize_and_encrypt_keyshares(&keyshares, &state.backup_encryption_key) {
+            Ok(encrypted_keyshares) => encrypted_keyshares,
+            Err(err) => {
+                tracing::error!(?err, "serialization or encryption error");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to serialize or encrypt keyshares",
+                );
+            }
+        };
+    // A domain-less keyset yields no keyshares: nothing was backed up.
+    if !keyshares.is_empty()
+        && let Err(err) = record_backup_served(&keyset)
+    {
+        tracing::error!(?err, "failed to record served backup");
+    }
+    json_response(encrypted_keyshares)
 }
 
 /// Hands received keyshares to the onboarding loop, logging each outcome.
@@ -250,7 +242,10 @@ where
         Ok(body) => body.to_bytes(),
         Err(err) => {
             tracing::error!(?err, "set_keyshares: failed to read body");
-            return bad_request(format!("Failed to read body: {err}"));
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Failed to read body: {err}"),
+            );
         }
     };
 
@@ -258,7 +253,10 @@ where
         Ok(keyshares) => keyshares,
         Err(err) => {
             tracing::error!(?err, "set_keyshares rejected: invalid json or encryption");
-            return bad_request(format!("Invalid Json or encryption: {err}"));
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Invalid Json or encryption: {err}"),
+            );
         }
     };
 
@@ -268,30 +266,24 @@ where
 
     let num_keyshares = keyshares.len();
     if state.import_keyshares_sender.send(keyshares).is_err() {
-        let msg = "keyshares receiver channel is closed".to_string();
+        let msg = "keyshares receiver channel is closed";
         tracing::error!(msg);
-        return internal_server_error(msg);
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, msg);
     }
 
     tracing::info!(num_keyshares, "set_keyshares accepted keyshares");
     Response::new(Full::new(Bytes::from_static(b"Keyshares received.")))
 }
 
-fn bad_request(msg: String) -> Response<Full<Bytes>> {
+fn error_response(status: StatusCode, msg: impl Into<Bytes>) -> Response<Full<Bytes>> {
     Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Full::new(Bytes::from(msg)))
-        .unwrap()
-}
-
-fn internal_server_error(msg: String) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Full::new(Bytes::from(msg)))
+        .status(status)
+        .body(Full::new(msg.into()))
         .unwrap()
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::keyshare::{Keyshare, generate_key_storage_config, test_utils::KeysetBuilder};
     use crate::metrics;
@@ -300,13 +292,12 @@ mod tests {
         web::{
             serialization::serialize_and_encrypt_keyshares,
             server::{
-                RecordBackupServedError, WebServerState, handle_set_keyshares,
-                record_backup_served, spawn_expected_peer_info_monitoring,
+                RecordBackupServedError, WebServerState, handle_get_keyshares,
+                handle_set_keyshares, record_backup_served, spawn_expected_peer_info_monitoring,
             },
         },
     };
 
-    use assert_matches::assert_matches;
     use bytes::Bytes;
     use ed25519_dalek::SigningKey;
     use http_body_util::Full;
@@ -316,8 +307,9 @@ mod tests {
     use near_mpc_crypto_types::Keyset;
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
+    use rstest::rstest;
     use serial_test::serial;
-    use std::sync::Arc;
+    use std::{assert_matches, sync::Arc};
     use tokio::sync::{RwLock, watch};
 
     const BACKUP_ENCRYPTION_KEY: [u8; 32] = [7u8; 32];
@@ -339,6 +331,7 @@ mod tests {
                 import_keyshares_sender,
                 keyshare_storage: Arc::new(RwLock::new(keyshare_storage)),
                 backup_encryption_key: BACKUP_ENCRYPTION_KEY,
+                onboarded: watch::channel(false).1,
             },
             import_keyshares_receiver,
             tempdir,
@@ -395,7 +388,6 @@ mod tests {
 
     #[serial(backup_metrics)]
     #[test]
-    #[expect(non_snake_case)]
     fn record_backup_served__should_fail_and_leave_gauges_untouched_for_an_unrepresentable_epoch() {
         // Given
         let keyset = Keyset::new(EpochId::new(u64::MAX), Vec::new());
@@ -417,8 +409,27 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::before_onboarding(false, StatusCode::FORBIDDEN)]
+    #[case::after_onboarding(true, StatusCode::OK)]
     #[tokio::test]
-    #[expect(non_snake_case)]
+    async fn handle_get_keyshares__should_export_keyshares_only_once_onboarded(
+        #[case] onboarded: bool,
+        #[case] expected_status: StatusCode,
+    ) {
+        // Given
+        let (mut state, _receiver, _tempdir) = web_server_state().await;
+        state.onboarded = watch::channel(onboarded).1;
+        let body = serde_json::to_string(&KeysetBuilder::new(1).keyset()).unwrap();
+
+        // When
+        let response = handle_get_keyshares(full_body(body), &state).await;
+
+        // Then
+        assert_eq!(response.status(), expected_status);
+    }
+
+    #[tokio::test]
     async fn handle_set_keyshares__should_forward_the_received_keyshares() {
         // Given
         let mut rng = StdRng::seed_from_u64(42);
@@ -435,7 +446,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn handle_set_keyshares__should_accept_a_request_carrying_no_keyshares() {
         // Given
         let (state, receiver, _tempdir) = web_server_state().await;
@@ -450,7 +460,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn handle_set_keyshares__should_reject_an_undecryptable_body() {
         // Given
         let (state, receiver, _tempdir) = web_server_state().await;
@@ -465,7 +474,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[expect(non_snake_case)]
     async fn handle_set_keyshares__should_fail_when_the_import_receiver_is_gone() {
         // Given
         let mut rng = StdRng::seed_from_u64(42);

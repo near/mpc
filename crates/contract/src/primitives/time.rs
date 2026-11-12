@@ -1,3 +1,4 @@
+use mpc_attestation::attestation::UnixSeconds;
 use std::time::Duration;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -13,17 +14,27 @@ impl Timestamp {
         duration_since_unix_epoch: Duration::MAX,
     };
 
+    /// Returns the block time. Sandbox tests can build the contract with a fixed time
+    /// instead: disable the default `block-clock` feature and set
+    /// `MPC_CONTRACT_PINNED_NOW_SECONDS` (Unix seconds) at compile time. Either one
+    /// alone keeps block time. The fixed time keeps the checked-in attestation fixture
+    /// inside its collateral's validity window.
+    // TODO(#4222): drop the pin once sandbox block time can be controlled from tests.
     pub(crate) fn now() -> Self {
+        #[cfg(not(feature = "block-clock"))]
+        if let Some(pinned) = option_env!("MPC_CONTRACT_PINNED_NOW_SECONDS") {
+            return Self {
+                duration_since_unix_epoch: Duration::from_secs(
+                    pinned
+                        .parse()
+                        .expect("MPC_CONTRACT_PINNED_NOW_SECONDS must be Unix seconds"),
+                ),
+            };
+        }
         let block_time_nano_seconds = near_sdk::env::block_timestamp();
 
         Self {
             duration_since_unix_epoch: Duration::from_nanos(block_time_nano_seconds),
-        }
-    }
-
-    pub(crate) fn from_secs(secs: u64) -> Self {
-        Self {
-            duration_since_unix_epoch: Duration::from_secs(secs),
         }
     }
 
@@ -38,6 +49,12 @@ impl Timestamp {
 
     pub(crate) fn as_secs(self) -> u64 {
         self.duration_since_unix_epoch.as_secs()
+    }
+}
+
+impl From<Timestamp> for UnixSeconds {
+    fn from(timestamp: Timestamp) -> Self {
+        UnixSeconds(timestamp.as_secs())
     }
 }
 

@@ -15,7 +15,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_16_0_state;
+pub mod v3_18_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -30,8 +30,9 @@ mod sandbox_test_methods;
 pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
-    foreign_chains_metadata::ForeignChainsMetadata, tee::tee_state::TeeState,
-    tee::verifier_votes::TeeVerifierVotes, update::ProposedUpdates,
+    foreign_chains_metadata::ForeignChainsMetadata,
+    primitives::threshold_votes::GovernanceThresholdParametersVotes, tee::tee_state::TeeState,
+    tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
 use config::Config;
 use near_mpc_contract_interface::types::{
@@ -53,7 +54,7 @@ pub struct MpcContract {
     pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
-    proposed_updates: ProposedUpdates,
+    contract_update_votes: ContractUpdateVotes,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -66,6 +67,8 @@ pub struct MpcContract {
     tee_verifier_votes: TeeVerifierVotes,
     /// A row is removed at zero, so the map holds no entry for an account with none.
     available_attestation_grants: IterableMap<AccountId, u32>,
+    /// Pending votes for new parameters; storage-backed, so kept outside [`ProtocolContractState`].
+    parameters_votes: GovernanceThresholdParametersVotes,
 }
 
 impl Default for MpcContract {

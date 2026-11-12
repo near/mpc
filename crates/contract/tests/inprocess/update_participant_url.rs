@@ -6,21 +6,22 @@ use super::common::{
 };
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidCandidateSet, InvalidState},
+    errors::{Error, InvalidState},
     primitives::{
-        participants::MAX_PARTICIPANT_URL_BYTES,
         test_utils::gen_participants,
         thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    ParticipantInfo as DtoParticipantInfo, ProtocolContractState,
+    ParticipantInfo as DtoParticipantInfo, ParticipantUrl, ProtocolContractState,
 };
 use near_sdk::{NearToken, testing_env};
-use std::str::FromStr;
+use std::{assert_matches, str::FromStr};
 
-use assert_matches::assert_matches;
+fn relocated_url() -> ParticipantUrl {
+    "https://relocated.example.com:9000".try_into().unwrap()
+}
 
 fn participant_info(contract: &MpcContract, account_id: &AccountId) -> DtoParticipantInfo {
     let ProtocolContractState::Running(running) = contract.state() else {
@@ -46,8 +47,8 @@ fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     let mut contract = init_contract(&parameters, None);
     let (account_id, _, original_info) = participant_list[0].clone();
     let (other_account, _, other_info) = participant_list[1].clone();
-    let new_url = "https://relocated.example.com:9000".to_string();
-    assert_ne!(original_info.url.to_string(), new_url);
+    let new_url = relocated_url();
+    assert_ne!(original_info.url, new_url);
 
     // When
     testing_env!(participant_context_with_deposit(
@@ -61,7 +62,7 @@ fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     assert_eq!(updated.url, new_url);
     assert_eq!(updated.tls_public_key, original_info.tls_public_key);
     let other = participant_info(&contract, &other_account);
-    assert_eq!(other.url, other_info.url.to_string());
+    assert_eq!(other.url, other_info.url);
 }
 
 #[test]
@@ -78,37 +79,7 @@ fn update_participant_url__should_reject_when_no_deposit_attached() {
     // panics via `require_deposit` before the URL is updated
     // When, Then
     testing_env!(participant_context(&account_id));
-    let _ = contract.update_participant_url("https://relocated.example.com:9000".to_string());
-}
-
-#[test]
-fn update_participant_url__should_reject_a_url_over_the_byte_limit() {
-    // Given
-    let participants = gen_participants(3);
-    let participant_list = participants.participants().clone();
-    let parameters =
-        GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
-    let mut contract = init_contract(&parameters, None);
-    let (account_id, _, original_info) = participant_list[0].clone();
-
-    // When
-    testing_env!(participant_context_with_deposit(
-        &account_id,
-        NearToken::from_yoctonear(1)
-    ));
-    let result = contract.update_participant_url("u".repeat(MAX_PARTICIPANT_URL_BYTES + 1));
-
-    // Then the call is rejected and the registered url is unchanged
-    assert_matches!(
-        result,
-        Err(Error::InvalidCandidateSet(
-            InvalidCandidateSet::ParticipantUrlTooLong { .. }
-        ))
-    );
-    assert_eq!(
-        participant_info(&contract, &account_id).url,
-        original_info.url.to_string()
-    );
+    let _ = contract.update_participant_url(relocated_url());
 }
 
 #[test]
@@ -122,7 +93,7 @@ fn update_participant_url__should_reject_non_participant() {
 
     // When
     testing_env!(participant_context(&outsider));
-    let result = contract.update_participant_url("https://outsider.example.com:9000".to_string());
+    let result = contract.update_participant_url(relocated_url());
 
     // Then
     assert_matches!(
@@ -144,7 +115,7 @@ fn update_participant_url__should_reject_when_not_running() {
 
     // When
     testing_env!(participant_context(&account_id));
-    let result = contract.update_participant_url("https://relocated.example.com:9000".to_string());
+    let result = contract.update_participant_url(relocated_url());
 
     // Then
     assert_matches!(

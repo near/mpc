@@ -1,29 +1,22 @@
 use crate::common;
 
-use std::collections::BTreeMap;
-
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::{
-    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
+    Attestation, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
+    MockAttestation, ParticipantInfo,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-/// Per-account migration entry: (backup_service_info, destination_node_info).
-type AccountEntry = (Option<BackupServiceInfo>, Option<DestinationNodeInfo>);
-
-/// Full migration state as returned by the contract's `migration_info` view.
-type MigrationState = BTreeMap<String, AccountEntry>;
 
 /// Verify the `/debug/migrations` endpoint tracks migration state in lockstep
 /// with the contract. The scenario is a chain of Given/When/Then steps:
 ///
 /// 1. Given a fresh cluster → Then migration state is empty on both sides.
 /// 2. When a backup service is registered → Then contract + endpoint reflect it.
-/// 3. When node migration is started → Then contract + endpoint reflect the
-///    destination entry.
+/// 3. When a destination node is attested and node migration to it is started → Then
+///    contract + endpoint reflect the destination entry.
 ///
 /// The chain is replayed for every node so each registration builds on the
 /// prior node's final state.
@@ -35,7 +28,7 @@ async fn migration_endpoint__should_track_migration_state() {
         common::must_setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |_| {}).await;
 
     let client = reqwest::Client::new();
-    let mut expected_migrations = MigrationState::new();
+    let mut expected_migrations = MigrationInfo::default();
     let mut rng = StdRng::seed_from_u64(0);
 
     for (i, node_state) in cluster.nodes.iter().enumerate() {
@@ -44,7 +37,7 @@ async fn migration_endpoint__should_track_migration_state() {
             _ => panic!("node {i} is not running"),
         };
         let web_addr = node.web_address();
-        let account_id = node_state.account_id().to_string();
+        let account_id = node_state.account_id().clone();
 
         // Given: the migration state carried over from prior iterations
         //         (empty on the first iteration).
@@ -79,12 +72,29 @@ async fn migration_endpoint__should_track_migration_state() {
             .await
             .expect("endpoint state mismatch after backup registration");
 
+        cluster
+            .prepay_attestation_grant(i)
+            .await
+            .expect("failed to prepay the destination node's attestation grant");
         let destination_tls_public_key =
             Ed25519PublicKey::from(&SigningKey::generate(&mut rng).verifying_key());
+        let outcome = cluster
+            .submit_participant_info(
+                i,
+                Attestation::Mock(MockAttestation::Valid),
+                destination_tls_public_key.clone(),
+            )
+            .await
+            .expect("failed to attest the destination node");
+        assert!(
+            outcome.is_success(),
+            "submit_participant_info failed: {:?}",
+            outcome.failure_message()
+        );
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: node_state.p2p_public_key(),
+            signer_account_pk: Ed25519PublicKey::from(&cluster.operator_keys[i].verifying_key()),
             destination_node_info: ParticipantInfo {
-                url: "http://bogus:1234".to_string(),
+                url: "http://bogus:1234".try_into().unwrap(),
                 tls_public_key: destination_tls_public_key,
             },
         };
@@ -109,19 +119,10 @@ async fn migration_endpoint__should_track_migration_state() {
     }
 }
 
-async fn get_contract_migrations(
-    cluster: &e2e_tests::MpcCluster,
-) -> anyhow::Result<MigrationState> {
-    cluster
-        .view_migration_info::<MigrationState>()
-        .await
-        .context("failed to view migration info")
-}
-
 async fn get_debug_migrations(
     client: &reqwest::Client,
     web_addr: &str,
-) -> anyhow::Result<(u64, MigrationState)> {
+) -> anyhow::Result<(u64, MigrationInfo)> {
     let resp = client
         .get(format!("http://{web_addr}/debug/migrations"))
         .send()
@@ -131,7 +132,7 @@ async fn get_debug_migrations(
     if status != reqwest::StatusCode::OK {
         bail!("unexpected /debug/migrations status: {status}");
     }
-    resp.json::<(u64, MigrationState)>()
+    resp.json::<(u64, MigrationInfo)>()
         .await
         .context("failed to parse migration response")
 }
@@ -140,24 +141,13 @@ async fn get_debug_migrations(
 /// Retries to absorb indexer lag, then returns an error on timeout.
 async fn ensure_contract_matches(
     cluster: &e2e_tests::MpcCluster,
-    expected: &MigrationState,
+    expected: &MigrationInfo,
 ) -> anyhow::Result<()> {
-    let expected = expected.clone();
-    (|| async {
-        let actual = get_contract_migrations(cluster).await?;
-        anyhow::ensure!(
-            actual == expected,
-            "contract migration state mismatch: expected {expected:?}, got {actual:?}"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(20),
-    )
-    .await
-    .context("timed out waiting for contract migration state to match")
+    cluster
+        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |actual| actual == expected)
+        .await
+        .with_context(|| format!("contract migration state did not reach {expected:?}"))?;
+    Ok(())
 }
 
 /// Ensure the node's `/debug/migrations` endpoint eventually equals `expected`.
@@ -165,7 +155,7 @@ async fn ensure_contract_matches(
 async fn ensure_endpoint_matches(
     client: &reqwest::Client,
     web_addr: &str,
-    expected: &MigrationState,
+    expected: &MigrationInfo,
 ) -> anyhow::Result<()> {
     let expected = expected.clone();
     (|| async {

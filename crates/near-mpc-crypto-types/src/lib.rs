@@ -29,7 +29,7 @@ pub use near_sdk;
 #[cfg(feature = "k256")]
 pub use k256;
 
-#[cfg(feature = "ed25519-dalek")]
+#[cfg(feature = "curve25519-dalek")]
 pub use curve25519_dalek;
 #[cfg(feature = "ed25519-dalek")]
 pub use ed25519_dalek;

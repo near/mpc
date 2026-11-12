@@ -1,16 +1,21 @@
 use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
-use crate::ecdsa::ot_based_ecdsa::triples::bits::{BitVector, ChoiceVector, SEC_PARAM_64};
-use crate::ecdsa::ot_based_ecdsa::triples::random_ot_extension::random_ot_extension_sender_helper;
 use crate::{
     crypto::hash::{HashOutput, hash},
     ecdsa::{
         Scalar,
-        ot_based_ecdsa::triples::{
-            batch_random_ot::{
-                batch_random_ot_receiver_random_helper, batch_random_ot_sender_helper,
+        ot::{
+            base::co15::{
+                batch_random_ot_receiver, batch_random_ot_receiver_random_helper,
+                batch_random_ot_sender, batch_random_ot_sender_helper,
             },
-            mta::{mta_receiver_random_helper, mta_sender_random_helper},
+            bits::{BitVector, ChoiceVector, SEC_PARAM_64},
+            extension::kos15_roy22::random::{
+                RandomOtExtensionParams, random_ot_extension_receiver,
+                random_ot_extension_receiver_helper, random_ot_extension_sender,
+                random_ot_extension_sender_helper,
+            },
         },
+        ot_based_ecdsa::triples::mta::{mta_receiver_random_helper, mta_sender_random_helper},
     },
     errors::ProtocolError,
     participants::{Participant, ParticipantList},
@@ -21,14 +26,7 @@ use rand_core::CryptoRngCore;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use super::{
-    batch_random_ot::{batch_random_ot_receiver, batch_random_ot_sender},
-    mta::{mta_receiver, mta_sender},
-    random_ot_extension::{
-        RandomOtExtensionParams, random_ot_extension_receiver, random_ot_extension_receiver_helper,
-        random_ot_extension_sender,
-    },
-};
+use super::mta::{mta_receiver, mta_sender};
 use std::collections::VecDeque;
 
 #[derive(derive_more::Constructor)]
@@ -168,7 +166,9 @@ fn get_multiplication_inputs<'a>(
     Ok((sid_i, av_i, bv_i))
 }
 
-pub(super) async fn multiplication_many<const N: usize>(
+/// Runs one multiplication per entry of the input vectors, which must all be the same non-empty
+/// length: that length is the batch size.
+pub(super) async fn multiplication_many(
     comms: Comms,
     sid: Vec<HashOutput>,
     participants: ParticipantList,
@@ -177,15 +177,15 @@ pub(super) async fn multiplication_many<const N: usize>(
     bv_iv: Vec<Scalar>,
     mut rng: impl CryptoRngCore,
 ) -> Result<Vec<Scalar>, ProtocolError> {
-    if N == 0 {
+    let batch_size = sid.len();
+    if batch_size == 0 {
         return Err(ProtocolError::AssertionFailed(
-            "N must be greater than 0".to_string(),
+            "batch size must be greater than 0".to_string(),
         ));
     }
-    if sid.len() != N || av_iv.len() != N || bv_iv.len() != N {
+    if av_iv.len() != batch_size || bv_iv.len() != batch_size {
         return Err(ProtocolError::AssertionFailed(format!(
-            "input vectors must have length N={N}, got sid={}, av_iv={}, bv_iv={}",
-            sid.len(),
+            "input vectors must have length {batch_size}, got av_iv={}, bv_iv={}",
             av_iv.len(),
             bv_iv.len(),
         )));
@@ -194,7 +194,7 @@ pub(super) async fn multiplication_many<const N: usize>(
     let av_iv_arc = Arc::new(av_iv);
     let bv_iv_arc = Arc::new(bv_iv);
     let mut tasks = Vec::with_capacity(participants.len() - 1);
-    for i in 0..N {
+    for i in 0..batch_size {
         let order_key_me = hash(&(i, me))?;
         for p in participants.others(me) {
             let sid_arc = sid_arc.clone();
@@ -258,7 +258,7 @@ pub(super) async fn multiplication_many<const N: usize>(
         .into_iter()
         .collect::<VecDeque<_>>();
 
-    for oi in outs.iter_mut().take(N) {
+    for oi in outs.iter_mut().take(batch_size) {
         for _ in participants.others(me) {
             if let Some(result) = results.pop_front() {
                 *oi += result;
@@ -335,7 +335,7 @@ mod test {
 
             let prot = make_protocol(
                 ctx.clone(),
-                multiplication_many::<N>(
+                multiplication_many(
                     ctx,
                     sids.clone(),
                     ParticipantList::new(&participants).unwrap(),

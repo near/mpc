@@ -197,21 +197,24 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     pub fn outgoing_connection_asserting(
         &self,
         expected: ConnectionVersion,
-    ) -> anyhow::Result<Arc<I>> {
+    ) -> Result<Arc<I>, ConnectionError> {
         let current = self.outgoing_receiver.borrow().clone();
         if current.version != expected.outgoing {
-            anyhow::bail!(
-                "Connection was reset (expected version {} but got {})",
-                expected.outgoing,
-                current.version
-            );
+            return Err(ConnectionError::Reset {
+                expected: expected.outgoing,
+                actual: current.version,
+            });
         }
-        let Some(conn) = current.connection.upgrade() else {
-            anyhow::bail!("Connection was dropped");
-        };
-
-        Ok(conn)
+        current.connection.upgrade().ok_or(ConnectionError::Dropped)
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectionError {
+    #[error("reset: expected version {expected}, got {actual}")]
+    Reset { expected: usize, actual: usize },
+    #[error("dropped")]
+    Dropped,
 }
 
 pub trait SenderConnectionId {

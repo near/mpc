@@ -242,12 +242,12 @@ pub fn verify_signature(
 
     // Concatenate the master public key (96 bytes) in the hash computation
     // H(pk || app_id) when H is a random oracle
-    let base1 = hash_app_id_with_pk(verifying_key, msg).into();
-    let base2 =
-        <<BLS12381SHA256 as frost_core::Ciphersuite>::Group as frost_core::Group>::generator()
-            .into();
+    let hash_point = hash_app_id_with_pk(verifying_key, msg);
 
-    if blstrs::pairing(&base1, &element2).eq(&blstrs::pairing(&element1, &base2)) {
+    if pairing_eq(
+        &(hash_point, verifying_key.to_element()),
+        &(*signature, ElementG2::generator()),
+    ) {
         Ok(())
     } else {
         Err(frost_core::Error::InvalidSignature)
@@ -288,6 +288,11 @@ pub(crate) fn multi_miller_loop(points: &[(ElementG1, ElementG2)]) -> bool {
         .final_exponentiation()
         .is_identity()
         .into()
+}
+
+/// Checks that `e(lhs.0, lhs.1) = e(rhs.0, rhs.1)`.
+pub(crate) fn pairing_eq(lhs: &(ElementG1, ElementG2), rhs: &(ElementG1, ElementG2)) -> bool {
+    multi_miller_loop(&[*lhs, (-rhs.0, rhs.1)])
 }
 
 #[cfg(test)]
@@ -371,5 +376,22 @@ mod tests {
             verify_signature(&VerifyingKey::new(g2x), b"hello world", &sigma).unwrap_err(),
             frost_core::Error::InvalidSignature
         );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn verify_signature__should_reject_signature_under_another_key() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::random(&mut rng);
+        let y = Scalar::random(&mut rng);
+        let verifying_key = VerifyingKey::new(ElementG2::generator() * x);
+        let sigma = hash_app_id_with_pk(&verifying_key, b"hello world") * y;
+
+        // When
+        let result = verify_signature(&verifying_key, b"hello world", &sigma);
+
+        // Then
+        assert_eq!(result.unwrap_err(), frost_core::Error::InvalidSignature);
     }
 }

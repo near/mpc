@@ -124,25 +124,16 @@ impl NearBlockchain {
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
 client. It exposes `account_id()`, `client()`, `call` (signed by the contract
-account), `call_from_with_deposit` (untyped escape hatch for calls with no typed
-method yet), `view`, and `state()` (parsed `ProtocolContractState`).
+account), `view`, and `state()`.
 
-#### `NearKitCaller<T>` — signer-bound caller (`caller` module)
+#### `NearKitCaller<T>` — signer-bound caller (`near-contract-transport`, feature `near-kit`)
 
-Binds a signer to a non-contract account (nodes voting, users submitting sign
-requests) and implements the `CallContract` transport trait, s.t. typed calls can go
-through `MpcContractHandle`
-The `T` parameter is the wait level: how far a call waits
-before returning (e.g. `Final`, `ExecutedOptimistic`,...).
-Finality influences the return type (`T::Response`).
+Binds a signer to an account and implements the `CallContract` and `ViewContract` transport
+traits, s.t. typed calls and views go through `MpcContractHandle`.
 
 ```rust
 pub trait CallMpc: Sized {
     fn call_mpc(self, contract_id: &AccountId) -> MpcContractHandle<Self>;
-}
-
-pub trait WithWaitLevel {
-    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
 }
 ```
 
@@ -203,15 +194,17 @@ The returned cluster exposes:
 - **Node lifecycle:** `kill_nodes`, `start_nodes`, `reset_and_start_nodes`
   (wipe + start + wait for health), `kill_all`.
 - **Contract state:** `get_contract_state`, `wait_for_state`,
-  `wait_for_node_healthy`, `get_tee_accounts`.
+  `wait_for_migration_info` (one subscription per view, shared by every wait;
+  `state` is subscribed when the cluster is created, `migration_info` on first
+  use), `wait_for_node_healthy`; other views via `cluster.mpc_contract_handle`,
+  waited on with `.subscribe().await.wait_for(..)`.
 - **Resharing:** `start_resharing`, `start_resharing_and_wait`,
   `vote_cancel_resharing_from`, `add_domains_and_wait`, `start_add_domains`.
 - **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.
 - **Data management:** `wipe_db`, `set_block_ingestion`.
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
   `send_verify_foreign_transaction`.
-- **Foreign chains:** `view_available_foreign_chains`, `view_foreign_chains_configs`,
-  `view_allowed_foreign_chain_providers`, `whitelist_foreign_chains`,
+- **Foreign chains:** `view_allowed_foreign_chain_providers`, `whitelist_foreign_chains`,
   `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
@@ -229,13 +222,14 @@ pub struct MpcClusterConfig {
     pub tee_verifier_wasm: Vec<u8>,             // pre-compiled by the test
     pub port_seed: u16,
     pub triples_to_buffer: usize,
-    pub presignatures_to_buffer: usize,
     pub sandbox_version: String,
+    pub sandbox_protocol_version: Option<u32>, // None = the binary's latest
     pub home_base: Option<PathBuf>,
     pub initial_participant_indices: Vec<usize>,
     pub migration_targets: Vec<usize>,          // source node indices
     pub init_format: ContractInitFormat,
     pub foreign_chains: ForeignChainsClusterConfig,
+    pub tls_trust_roots: Option<PathBuf>,       // nodes' TLS roots, via SSL_CERT_FILE
 }
 
 pub struct ForeignChainsClusterConfig {
@@ -290,7 +284,7 @@ URLs into the per-node `ForeignChainsConfig` via
 
 Tests live under `crates/e2e-tests/tests/<feature>.rs` and must be declared as
 a module from `tests/e2e.rs`. `tests/common.rs` provides helpers used by most
-tests (`must_setup_cluster`, `wait_for_presignatures`, `must_load_contract_wasm`,
+tests (`must_setup_cluster`, `wait_for_triples`, `must_load_contract_wasm`,
 `send_sign_request`, etc.).
 
 ```rust
@@ -309,8 +303,8 @@ async fn request_lifecycle__signature_request_succeeds() {
 ```
 
 `must_setup_cluster` builds the default 3-node / 2-of-3 / 3-domain cluster, waits
-for `Running`, and blocks until presignatures are buffered. Pass a closure to
-override fields on `MpcClusterConfig`.
+for `Running`, and, if a domain uses CaitSith, blocks until triples are
+buffered. Pass a closure to override fields on `MpcClusterConfig`.
 
 ---
 
@@ -362,6 +356,10 @@ local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
 
+The `mainnet_protocol` test, which runs the cluster at
+`test_utils::MAINNET_PROTOCOL_VERSION`, is `#[ignore]`d. CI runs it in the
+non-required `mainnet-protocol-tests` job; locally, pass `--run-ignored only -E 'test(/mainnet_protocol/)'`.
+
 ---
 
 ## Debugging a failure
@@ -395,7 +393,7 @@ logs, stderr.log any panic)
 - Reserve a unique `port_seed` constant in `tests/common.rs` before adding a
   new test. Don't reuse someone else's seed, even if the test is short.
 - Prefer `common::must_setup_cluster` over calling `MpcCluster::start` directly;
-  it initialises `tracing_subscriber` and waits for presignatures.
+  it initialises `tracing_subscriber` and waits for signing assets to buffer.
 - Tests must be deterministic across parallel execution. Use the port
   allocator, the per-cluster artifact directory (`cluster.test_dir`), and the
   deterministic key generation rather than creating state outside the cluster.

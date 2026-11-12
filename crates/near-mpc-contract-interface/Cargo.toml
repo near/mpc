@@ -11,6 +11,7 @@ readme = "README.md"
 abi = [
     "borsh/unstable__schema",
     "mpc-primitives/abi",
+    "near-block-primitives/abi",
     "near-mpc-bounded-collections/abi",
     "near-mpc-crypto-types/abi",
     "schemars",
@@ -21,7 +22,8 @@ call-args = []
 # The typed client (`MpcContractHandle`) over the transport traits. Pulls in
 # the transport crate.
 client = ["call-args", "dep:near-contract-transport", "near-contract-transport/traits"]
-ed25519-dalek = ["near-mpc-crypto-types/ed25519-dalek"]
+curve25519-dalek = ["near-mpc-crypto-types/curve25519-dalek"]
+ed25519-dalek = ["curve25519-dalek", "near-mpc-crypto-types/ed25519-dalek"]
 k256 = ["near-mpc-crypto-types/k256"]
 near = ["near-mpc-crypto-types/near"]
 
@@ -29,6 +31,7 @@ near = ["near-mpc-crypto-types/near"]
 borsh = { workspace = true }
 derive_more = { workspace = true }
 mpc-primitives = { workspace = true }
+near-block-primitives = { workspace = true }
 near-contract-transport = { workspace = true, optional = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-crypto-types = { workspace = true }
@@ -43,7 +46,6 @@ thiserror = { workspace = true }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 borsh = { workspace = true }
 hex = { workspace = true }
 insta = { workspace = true }

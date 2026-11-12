@@ -5,7 +5,7 @@ use elliptic_curve::{
     scalar::IsHigh,
 };
 
-use k256::{AffinePoint, ProjectivePoint};
+use k256::{AffinePoint, ProjectivePoint, ecdsa::RecoveryId};
 
 use super::Scalar;
 
@@ -32,7 +32,9 @@ pub struct Signature {
 }
 
 impl Signature {
-    // This verification tests the signature including whether s has been normalized
+    /// Verifies the signature, including whether `s` has been normalized.
+    ///
+    /// Runs in variable time (early returns, [`Invert::invert_vartime`]).
     pub fn verify(&self, public_key: &AffinePoint, msg_hash: &Scalar) -> bool {
         let r: Scalar = x_coordinate(&self.big_r);
         if r.is_zero().into() || self.s.is_zero().into() {
@@ -48,6 +50,16 @@ impl Signature {
             + (ProjectivePoint::from(*public_key) * (r * s_inv));
         x_coordinate(&reproduced.into()) == r
     }
+
+    pub fn recovery_id(
+        &self,
+        public_key: &AffinePoint,
+        msg_hash: &[u8; 32],
+    ) -> Result<RecoveryId, k256::ecdsa::Error> {
+        let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(&self.big_r), self.s)?;
+        let public_key = k256::ecdsa::VerifyingKey::from_affine(*public_key)?;
+        RecoveryId::trial_recovery_from_prehash(&public_key, msg_hash, &signature)
+    }
 }
 
 /// None for participants and Some for coordinator
@@ -61,11 +73,12 @@ mod test {
     use crate::test_utils::MockCryptoRng;
 
     use elliptic_curve::ops::{Invert, LinearCombination, Reduce};
+    use elliptic_curve::{PrimeField, point::DecompressPoint};
     use k256::{
-        ProjectivePoint, Secp256k1,
+        AffinePoint, ProjectivePoint, Secp256k1,
         ecdsa::{SigningKey, signature::Verifier},
     };
-    use rand::SeedableRng;
+    use rand::{RngCore, SeedableRng};
     use sha2::{Digest, Sha256, digest::FixedOutput};
 
     #[test]
@@ -99,5 +112,60 @@ mod test {
         let is_verified = full_sig.verify(&pk.to_affine(), &z);
         // Should always be ok as signature contains Uint i.e. normalized elements
         assert!(is_verified);
+    }
+
+    #[test]
+    fn recovery_id__should_match_recovery_id_from_k256_signing() {
+        for seed in 0..256 {
+            // Given
+            // generate a pair of ecdsa keys
+            let mut rng = MockCryptoRng::seed_from_u64(seed);
+            let signing_key = SigningKey::random(&mut rng);
+
+            // compute a signature with recovery id
+            let mut prehash = [0u8; 32];
+            rng.fill_bytes(&mut prehash);
+            let (signature, expected_recovery_id) =
+                signing_key.sign_prehash_recoverable(&prehash).unwrap();
+            let (r, s) = signature.split_scalars();
+
+            // Create a full signature
+            // any big_r creation works here as we only need its x coordinate (big_r.x())
+            let hypothetical_big_r = AffinePoint::decompress(&r.to_repr(), 0.into()).unwrap();
+            let full_sig = Signature {
+                big_r: hypothetical_big_r,
+                s: *s.as_ref(),
+            };
+
+            // When
+            // compute recovery_id using our function
+            let recovery_id = full_sig
+                .recovery_id(signing_key.verifying_key().as_affine(), &prehash)
+                .unwrap();
+
+            // Then
+            assert_eq!(recovery_id, expected_recovery_id);
+        }
+    }
+
+    #[test]
+    fn recovery_id__should_fail_for_public_key_of_another_signer() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let signing_key = SigningKey::random(&mut rng);
+        let other_public_key = *SigningKey::random(&mut rng).verifying_key().as_affine();
+        let prehash = [7u8; 32];
+        let (signature, _) = signing_key.sign_prehash_recoverable(&prehash).unwrap();
+        let (r, s) = signature.split_scalars();
+        let full_sig = Signature {
+            big_r: AffinePoint::decompress(&r.to_repr(), 0.into()).unwrap(),
+            s: *s.as_ref(),
+        };
+
+        // When
+        let result = full_sig.recovery_id(&other_public_key, &prehash);
+
+        // Then
+        assert!(result.is_err());
     }
 }

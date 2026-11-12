@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 /// Capabilities:
 /// - Subscribes to changes in allowed image and launcher hashes.
 /// - Submits attestations.
-/// - Triggers on-chain re-validation of stored attestations.
+/// - Triggers on-chain re-validation of the participants' attestations.
 pub struct TeeContext<S> {
     /// Allowed TEE hashes from the governance contract.
     allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
@@ -90,7 +90,7 @@ where
             .map_err(Into::into)
     }
 
-    /// Triggers on-chain re-validation of all stored attestations.
+    /// Triggers on-chain re-validation of the participants' attestations.
     pub async fn verify_tee(&self) -> Result<(), TeeContextError> {
         self.mpc_contract_handle
             .verify_tee()
@@ -183,7 +183,6 @@ async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 
 #[cfg(test)]
 mod tests {
     use super::{AllowedTeeHashes, TeeContext, TeeContextError, watch_hashes};
-    use assert_matches::assert_matches;
     use chain_gateway::{
         errors::ChainGatewayError,
         mock::{MockChainState, MockChainStateBuilder, MockError},
@@ -200,6 +199,7 @@ mod tests {
     use near_mpc_contract_interface::types::{
         AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey, MockAttestation,
     };
+    use std::assert_matches;
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
     /// Block height returned by [`MockChainState`] view responses.

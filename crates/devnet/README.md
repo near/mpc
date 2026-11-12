@@ -109,14 +109,8 @@ you might get errors when creating and funding accounts.
 export MPC_NETWORK_NAME=yourusername-test
 mpc-devnet mpc $MPC_NETWORK_NAME new \
   --num-participants 2 \
-  --num-responding-access-keys 8 \
-  --near-per-responding-account 1
   [--ssd] # use only if you don't plan to run this for a long period, as it is more expensive
 ```
-
-Increasing the number of responding access keys can be very helpful in
-increasing the throughput of the MPC node, as each key has an
-independent nonce.
 
 Then, deploy the contract.
 
@@ -172,6 +166,12 @@ Finally, initialize the contract
 ```shell
 mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2 --tee-verifier-account-id <tee-verifier-account>
 ```
+
+`init-contract` also prepays one attestation-storage grant for every participant of the
+network, including those beyond `--init-participants`, so each node can store its first
+attestation. The contract account pays the fee, which it reads from the contract's `config()`.
+A participant created with `update` after `init-contract` gets no grant; prepay one by hand as
+described in [Prepay Your Node's Attestation Storage](../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepay-your-nodes-attestation-storage).
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
@@ -277,20 +277,21 @@ This will kick off a resharing operation to reshare all keys.
 
 #### Upgrading the contract
 
-To upgrade the contract, first propose the upgrade (suppose we wish to use the newly compiled
-contract code for the upgrade):
+To upgrade the contract, first have the participants vote for the hash of the new contract
+code (suppose we wish to use the newly compiled contract code for the upgrade):
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME propose-update-contract --path ../../target/near/mpc_contract/mpc_contract.wasm
+mpc-devnet mpc $MPC_NETWORK_NAME vote-update --path ../../target/near/mpc_contract/mpc_contract.wasm
 ```
 
-This will print out a command to run for voting for the upgrade:
+Once the hash is approved (a governance threshold of participants voted for it), submit the
+code:
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-update --update-id=0
+mpc-devnet mpc $MPC_NETWORK_NAME submit-update --path ../../target/near/mpc_contract/mpc_contract.wasm
 ```
 
-That will trigger a migration to use the new contract.
+That will deploy the new contract and trigger its migration.
 
 #### Using a different MPC node binary
 
@@ -477,7 +478,7 @@ export MPC_NETWORK_NAME=yourusername-test
 1. Register the network. On localnet this does not fund anything yet:
 
    ```shell
-   mpc-devnet mpc $MPC_NETWORK_NAME new --num-participants 2 --num-responding-access-keys 8
+   mpc-devnet mpc $MPC_NETWORK_NAME new --num-participants 2
    ```
 
 2. Provision the cluster (including the validator machine). This prints the validator's RPC URL;

@@ -252,9 +252,6 @@ Each node exposes its keys via:
 export FRODO_PUBKEY=$(curl -s http://$SERVER_IP_1:18081/public_data | jq -r ".near_signer_public_key")
 export SAM_PUBKEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r ".near_signer_public_key")
 
-export FRODO_RESPONDER_KEY=$(curl -s http://$SERVER_IP_1:18081/public_data | jq -r ".near_responder_public_keys[0]")
-export SAM_RESPONDER_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r ".near_responder_public_keys[0]")
-
 export FRODO_P2P_KEY=$(curl -s http://$SERVER_IP_1:18081/public_data | jq -r '.near_p2p_public_key')
 export SAM_P2P_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r '.near_p2p_public_key')
 ```
@@ -271,17 +268,9 @@ near account add-key $FRODO_ACCOUNT grant-function-call-access \
   --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$FRODO_PUBKEY" network-config testnet sign-with-keychain send
 
-near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
-  use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config testnet sign-with-keychain send
-
 near account add-key $SAM_ACCOUNT grant-function-call-access \
   --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$SAM_PUBKEY" network-config testnet sign-with-keychain send
-
-near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
-  use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config testnet sign-with-keychain send
 ```
 
 ---
@@ -456,12 +445,11 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_launcher_
 
 ## Step 9: Vote OS Measurements on Contract
 
-OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Both participants must vote for each measurement set. The values can be found in `crates/mpc-attestation/assets/tcb_info.json` and `tcb_info_dev.json`.
+OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Both participants must vote for the measurement set of the production OS image, found in `crates/mpc-attestation/assets/tcb_info.json`.
 
-Extract the measurement values from a `tcb_info.json` file:
+Extract the measurement values from it:
 
 ```bash
-# Extract from tcb_info.json (repeat for tcb_info_dev.json)
 TCB_FILE=crates/mpc-attestation/assets/tcb_info.json
 MRTD=$(jq -r '.mrtd' $TCB_FILE)
 RTMR0=$(jq -r '.rtmr0' $TCB_FILE)
@@ -503,7 +491,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
   sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
 ```
 
-*Note:* If attestation public key is **null**, the contract uses the default mock attestation.
+*Note:* If a node's `account_public_key` equals its `tls_public_key`, the contract uses the default mock attestation.
 
 *Note:* After attestation succeeds, both nodes spam logs aggressively (bug to fix).
 

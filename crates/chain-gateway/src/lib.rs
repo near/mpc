@@ -9,5 +9,7 @@ pub mod transaction_sender;
 pub mod types;
 
 mod near_internals_wrapper;
+mod node_config;
 
 pub use chain_gateway::{ChainGateway, NodeHandle};
+pub use node_config::NodeConfig;

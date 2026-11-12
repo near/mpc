@@ -1,27 +1,29 @@
-use super::foreign_chain::monitor_foreign_chain_supporters;
+use super::foreign_chain::{
+    ForeignChainWhitelist, monitor_foreign_chain_registrations, monitor_foreign_chain_whitelist,
+};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader};
-use crate::config::RespondConfig;
+use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
-    monitor_allowed_launcher_compose_hashes,
+    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes,
+    monitor_allowed_os_measurements, monitor_my_attestation,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
+use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
 use near_indexer::Indexer;
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::{Ed25519PublicKey, ProtocolContractState};
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -61,28 +63,29 @@ pub fn spawn_real_indexer(
     mpc_indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SigningKey,
-    respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
+    probe_whitelist_sender: watch::Sender<Option<ForeignChainWhitelist>>,
     tls_public_key: VerifyingKey,
-    foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
 ) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
-    let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
+    let (foreign_chain_registrations_sender_oneshot, foreign_chain_registrations_receiver_oneshot) =
         oneshot::channel();
-    let (attestation_reader_sender, attestation_reader_receiver) = oneshot::channel();
+    let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
+        oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
+    let (allowed_os_measurements_sender, allowed_os_measurements_receiver) = watch::channel(vec![]);
+    let (my_attestation_sender, my_attestation_receiver) = watch::channel(None);
 
     let my_near_account_id_clone = my_near_account_id.clone();
-    let respond_config_clone = respond_config.clone();
 
     let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
 
@@ -133,10 +136,11 @@ pub fn spawn_real_indexer(
             .await
             .expect("near node has started");
 
+            let gateway = ChainGateway::from_near_node(&near_node, &near_config);
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
             let indexer_state = Arc::new(IndexerState::new(
-                near_node.view_client,
+                gateway,
                 near_node.client,
                 near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
@@ -164,28 +168,15 @@ pub fn spawn_real_indexer(
             // to the chain tip rather than genesis.
             let stream = indexer.streamer();
 
-            let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
+            let txn_sender = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
                 account_secret_key.clone(),
-                respond_config_clone,
                 Arc::clone(&indexer_state),
                 tx_logger,
             );
 
-            let Ok(txn_sender) = txn_sender_result else {
-                tracing::error!("Failed to start transaction processor. Exiting indexer.");
-                let _ = indexer_exit_sender.send(txn_sender_result.map(|_| ()));
-                return;
-            };
-
             if txn_sender_sender.send(txn_sender).is_err() {
                 tracing::error!("Failed to send txn_sender back to main thread.")
-            };
-
-            let attestation_reader: std::sync::Arc<dyn super::ReadAttestationExpiry> =
-                std::sync::Arc::new(RealAttestationExpiryReader::new(indexer_state.clone()));
-            if attestation_reader_sender.send(attestation_reader).is_err() {
-                tracing::error!("failed to send attestation reader back to main thread")
             };
 
             #[cfg(feature = "network-hardship-simulation")]
@@ -199,39 +190,54 @@ pub fn spawn_real_indexer(
 
             tokio::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
             ));
 
             tokio::spawn(monitor_allowed_launcher_compose_hashes(
                 allowed_launcher_compose_sender,
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
             ));
 
-            let foreign_chain_supporters_receiver =
-                monitor_foreign_chain_supporters(indexer_state.clone()).await;
-            if foreign_chain_supporters_sender_oneshot
-                .send(foreign_chain_supporters_receiver)
+            tokio::spawn(monitor_allowed_os_measurements(
+                allowed_os_measurements_sender,
+                indexer_state.contract.clone(),
+            ));
+
+            tokio::spawn(monitor_my_attestation(
+                my_attestation_sender,
+                indexer_state.contract.clone(),
+                Ed25519PublicKey::from(&tls_public_key),
+            ));
+
+            let foreign_chain_registrations =
+                monitor_foreign_chain_registrations(indexer_state.contract.clone()).await;
+            if foreign_chain_registrations_sender_oneshot
+                .send(foreign_chain_registrations)
                 .is_err()
             {
                 tracing::error!(
-                    "Indexer thread could not send foreign chain supporters receiver back to main driver."
+                    "Indexer thread could not send foreign chain registrations receivers back to main driver."
                 )
             };
 
-            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
-                watch::channel(std::collections::BTreeMap::new());
-            tokio::spawn(monitor_allowed_foreign_chain_providers(
-                foreign_chain_whitelist_sender,
-                indexer_state.clone(),
-            ));
-            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
-                foreign_chain_whitelist_receiver,
-                foreign_chains.clone(),
-            ));
+            let foreign_chain_whitelist_receiver =
+                monitor_foreign_chain_whitelist(
+                    indexer_state.contract.clone(),
+                    probe_whitelist_sender,
+                )
+                .await;
+            if foreign_chain_whitelist_sender_oneshot
+                .send(foreign_chain_whitelist_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain whitelist receiver back to main driver."
+                )
+            };
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
                 mpc_indexer_config.port_override,
                 protocol_state_sender,
             )
@@ -247,7 +253,7 @@ pub fn spawn_real_indexer(
             };
 
             let my_migration_info_receiver = monitor_migrations(
-                indexer_state.clone(),
+                indexer_state.contract.clone(),
                 migration_state_sender,
                 my_near_account_id,
                 tls_public_key,
@@ -268,9 +274,8 @@ pub fn spawn_real_indexer(
             // race it against `shutdown_token.cancelled()`: when the parent
             // cancels the token, the select! arm completes, `block_on`
             // returns, the indexer's tokio runtime drops, and every
-            // `tokio::spawn`'d monitor task (each holding
-            // `Arc<IndexerState>` → `Arc<RocksDB>`) is aborted as the
-            // runtime is dropped. That's what lets
+            // `tokio::spawn`'d monitor task (each holding handles into
+            // neard) is aborted as the runtime is dropped. That's what lets
             // `RocksDB::block_until_all_instances_are_dropped()` in `run.rs`
             // actually return on the SIGTERM path.
             #[cfg(feature = "network-hardship-simulation")]
@@ -322,13 +327,13 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("Migraration info receiver must be returned by indexer.");
 
-    let foreign_chain_supporters_receiver = foreign_chain_supporters_receiver_oneshot
+    let foreign_chain_registrations = foreign_chain_registrations_receiver_oneshot
         .blocking_recv()
-        .expect("foreign chain supporters receiver must be returned by indexer");
+        .expect("foreign chain registrations receivers must be returned by indexer");
 
-    let attestation_reader = attestation_reader_receiver
+    let foreign_chain_whitelist_receiver = foreign_chain_whitelist_receiver_oneshot
         .blocking_recv()
-        .expect("attestation reader must be returned by indexer");
+        .expect("foreign chain whitelist receiver must be returned by indexer");
 
     IndexerAPI {
         contract_state_receiver,
@@ -336,9 +341,12 @@ pub fn spawn_real_indexer(
         txn_sender,
         allowed_docker_images_receiver,
         allowed_launcher_compose_receiver,
+        allowed_os_measurements_receiver,
         my_migration_info_receiver,
-        foreign_chain_supporters_receiver,
-        attestation_reader,
+        my_attestation_receiver,
+        foreign_chain_supporters_receiver: foreign_chain_registrations.supporters,
+        foreign_chain_whitelist_receiver,
+        foreign_chains_configs_receiver: foreign_chain_registrations.configs,
     }
 }
 

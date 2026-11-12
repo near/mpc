@@ -1,11 +1,13 @@
 pub mod contract_configuration;
 pub mod duplicate_requests_fan_out;
 pub mod foreign_chain_request;
+pub mod mainnet_protocol;
 pub mod participants_gas;
 pub mod sign;
 pub mod tee;
 pub mod tee_cleanup_after_resharing;
 pub mod tee_verifier;
+pub mod update_participant_url;
 pub mod update_votes_cleanup_after_resharing;
 pub mod upgrade_from_current_contract;
 pub mod upgrade_to_current_contract;

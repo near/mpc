@@ -3,7 +3,7 @@ use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
-        participants::{ParticipantInfo, Participants},
+        participants::{ParticipantInfo, ParticipantUrl, Participants},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
             ProposedGovernanceThresholdParameters, governance_threshold_lower_relative_bound,
@@ -14,13 +14,12 @@ use crate::{
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, NodeId, Protocol,
+    self as dtos, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, Protocol,
     ReconstructionThreshold,
 };
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 use std::collections::BTreeMap;
-// Re-export for convenience
 
 const ALL_PROTOCOLS: [Protocol; 4] = [
     Protocol::CaitSith,
@@ -50,7 +49,7 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
             purpose: infer_purpose_from_protocol(protocol),
         });
     }
-    DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
+    DomainRegistry::from_raw_validated(domains, DomainId(num_domains as u64 * 2)).unwrap()
 }
 
 /// Generates a valid list of domains to add to the given registry.
@@ -59,7 +58,7 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
     for i in 0..num_domains {
         let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
         new_domains.push(DomainConfig {
-            id: DomainId(registry.next_domain_id() + i as u64),
+            id: DomainId(registry.next_domain_id().0 + i as u64),
             protocol,
             reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
             purpose: infer_purpose_from_protocol(protocol),
@@ -125,11 +124,15 @@ fn test_random_account_id() {
     assert_ne!(acc1, acc2, "Random keys should be different");
 }
 
+pub fn gen_participant_url(i: usize) -> ParticipantUrl {
+    format!("https://www.near{}.com", i).try_into().unwrap()
+}
+
 pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: format!("https://www.near{}.com", i).try_into().unwrap(),
+            url: gen_participant_url(i),
             tls_public_key: bogus_ed25519_public_key(),
         },
     )
@@ -148,16 +151,16 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
-pub fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
-    NodeId {
+pub fn create_node(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> dtos::NodeInfo {
+    dtos::NodeInfo {
         account_id: account_id.clone(),
         tls_public_key: tls_public_key.clone(),
         account_public_key: bogus_ed25519_public_key(),
     }
 }
 
-pub fn node_id_for(account_id: &AccountId) -> NodeId {
-    create_node_id(account_id, &bogus_ed25519_public_key())
+pub fn node_for(account_id: &AccountId) -> dtos::NodeInfo {
+    create_node(account_id, &bogus_ed25519_public_key())
 }
 
 pub fn authenticate_as(

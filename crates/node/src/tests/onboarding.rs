@@ -1,7 +1,6 @@
-use assert_matches::assert_matches;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
+use std::{assert_matches, net::SocketAddr};
 
 use crate::config::{AesKey256, NodeStatus, ParticipantInfo, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
@@ -136,7 +135,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user0",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()
@@ -190,7 +189,7 @@ async fn test_onboarding() {
                         backup_service_info.is_some() && destination_node_info.is_some()
                     })
             },
-            Duration::from_secs(60),
+            Duration::from_mins(1),
         )
         .await
         .unwrap();
@@ -229,6 +228,9 @@ async fn test_onboarding() {
 
     {
         tracing::info!("Sending keyshares to onboarding node");
+        // Holding the contract keeps the migration from concluding, so the onboarding node imports
+        // the keyshares without being onboarded
+        let _contract = setup.indexer.contract_mut().await;
         let mut request_sender = migration_service::web::client::connect_to_web_server(
             &backup_service_key,
             onboarding_node.migration_service_addr,
@@ -244,6 +246,31 @@ async fn test_onboarding() {
         .await
         .unwrap();
         tracing::info!("Sent keyshares to onboarding node");
+
+        let imported_keyshares = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
+            loop {
+                if let Ok(keyshares) = get_keyshares(
+                    onboarding_node.home_dir.clone(),
+                    onboarding_node.storage_key,
+                    &keyset,
+                )
+                .await
+                {
+                    break keyshares;
+                }
+                tokio::time::sleep(DEFAULT_BLOCK_TIME).await;
+            }
+        })
+        .await
+        .expect("timeout waiting for the onboarding node to import the keyshares");
+        assert_eq!(imported_keyshares, received_keyshares);
+        migration_service::web::client::make_keyshare_get_request(
+            &mut request_sender,
+            &keyset,
+            &onboarding_node.backup_service_key,
+        )
+        .await
+        .expect_err("a node must not export keyshares before it is onboarded");
     }
 
     setup
@@ -258,21 +285,10 @@ async fn test_onboarding() {
                     ParticipantStatus::Active(NodeStatus::Active)
                 )
             },
-            Duration::from_secs(60),
+            Duration::from_mins(1),
         )
         .await
         .expect("onboarding must succeed");
-    {
-        tracing::info!("verifying keyshares on disk match expected value");
-        let found = get_keyshares(
-            onboarding_node.home_dir,
-            onboarding_node.storage_key,
-            &keyset,
-        )
-        .await
-        .unwrap();
-        assert_eq!(received_keyshares, found);
-    }
 
     let ProtocolContractState::Running(running) = setup.indexer.contract_mut().await.state.clone()
     else {
@@ -295,7 +311,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user1",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()
@@ -306,7 +322,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user2",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()
@@ -317,7 +333,7 @@ async fn test_onboarding() {
             &mut setup.indexer,
             "user3",
             &domain,
-            std::time::Duration::from_secs(60)
+            std::time::Duration::from_mins(1)
         )
         .await
         .is_some()

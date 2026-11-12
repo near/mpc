@@ -14,12 +14,11 @@ use mpc_attestation::{
     collateral::Collateral,
 };
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::env::sha256_array;
 
 use crate::{
     config::Config,
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
-    errors::{ConversionError, Error, InvalidCandidateSet},
+    errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
@@ -35,8 +34,7 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
-    update::{ProposedUpdates, Update, UpdateId},
+    tee::tee_state::Node,
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -187,35 +185,25 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
     }
 }
 
-impl TryIntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
-    type Error = Error;
-
-    fn try_into_contract_type(self) -> Result<ParticipantInfo, Self::Error> {
-        let len = self.url.len();
-        Ok(ParticipantInfo {
-            url: dtos::ParticipantUrl::new(self.url).map_err(|_| {
-                InvalidCandidateSet::ParticipantUrlTooLong {
-                    len,
-                    max: dtos::MAX_PARTICIPANT_URL_BYTES,
-                }
-            })?,
+impl IntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
+    fn into_contract_type(self) -> ParticipantInfo {
+        ParticipantInfo {
+            url: self.url,
             tls_public_key: self.tls_public_key,
-        })
+        }
     }
 }
 
-impl TryIntoContractType<Participants> for dtos::Participants {
-    type Error = Error;
-
-    fn try_into_contract_type(self) -> Result<Participants, Self::Error> {
+impl IntoContractType<Participants> for dtos::Participants {
+    fn into_contract_type(self) -> Participants {
         let participants = self
             .participants
             .into_iter()
             .map(|(account_id, participant_id, info)| {
-                Ok((account_id, participant_id, info.try_into_contract_type()?))
+                (account_id, participant_id, info.into_contract_type())
             })
-            .collect::<Result<Vec<_>, Self::Error>>()?;
-        Ok(Participants::init(self.next_id, participants))
+            .collect();
+        Participants::init(self.next_id, participants)
     }
 }
 
@@ -224,10 +212,7 @@ impl TryIntoContractType<GovernanceThresholdParameters> for dtos::GovernanceThre
 
     fn try_into_contract_type(self) -> Result<GovernanceThresholdParameters, Self::Error> {
         // Validate eagerly at the DTO boundary so invalid proposal parameters are rejected here.
-        GovernanceThresholdParameters::new(
-            self.participants.try_into_contract_type()?,
-            self.threshold,
-        )
+        GovernanceThresholdParameters::new(self.participants.into_contract_type(), self.threshold)
     }
 }
 
@@ -267,6 +252,25 @@ impl TryIntoContractType<EventLog> for dtos::EventLog {
             event,
             event_payload,
         })
+    }
+}
+
+impl IntoInterfaceType<dtos::NodeInfo> for &Node {
+    fn into_dto_type(self) -> dtos::NodeInfo {
+        dtos::NodeInfo {
+            account_id: self.owner.clone(),
+            tls_public_key: self.tls_public_key.clone(),
+            account_public_key: self.signer_public_key.clone(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::StoredAttestation> for &Node {
+    fn into_dto_type(self) -> dtos::StoredAttestation {
+        dtos::StoredAttestation {
+            attestation: self.attestation.clone().into_dto_type(),
+            accepted_at_seconds: self.attestation_accepted_at_seconds,
+        }
     }
 }
 
@@ -443,39 +447,12 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::UpdateId> for UpdateId {
-    fn into_dto_type(self) -> dtos::UpdateId {
-        dtos::UpdateId(self.0)
-    }
-}
-
-impl IntoContractType<UpdateId> for dtos::UpdateId {
-    fn into_contract_type(self) -> UpdateId {
-        UpdateId(self.0)
-    }
-}
-
-impl IntoInterfaceType<dtos::UpdateHash> for &Update {
-    fn into_dto_type(self) -> dtos::UpdateHash {
-        match self {
-            Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code).into()),
-            Update::Config(config) => dtos::UpdateHash::Config(
-                sha256_array(
-                    serde_json::to_vec(&config.into_dto_type())
-                        .expect("serde serialization must succeed"),
-                )
-                .into(),
-            ),
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::Config> for &Config {
     fn into_dto_type(self) -> dtos::Config {
         dtos::Config {
             key_event_timeout_blocks: self.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: self.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: self.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: self.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: self
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: self
@@ -503,26 +480,6 @@ impl IntoInterfaceType<dtos::Config> for &Config {
     }
 }
 
-impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
-    fn into_dto_type(self) -> dtos::ProposedUpdates {
-        let all = self.all_updates();
-
-        let votes = all
-            .votes
-            .into_iter()
-            .map(|(account, update_id)| (account, update_id.into_dto_type()))
-            .collect();
-
-        let updates = all
-            .updates
-            .into_iter()
-            .map(|(update_id, update)| (update_id.into_dto_type(), update))
-            .collect();
-
-        dtos::ProposedUpdates { votes, updates }
-    }
-}
-
 impl From<near_mpc_contract_interface::types::InitConfig> for Config {
     fn from(config_ext: near_mpc_contract_interface::types::InitConfig) -> Self {
         let mut config = super::Config::default();
@@ -533,8 +490,8 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.tee_upgrade_deadline_duration_seconds {
             config.tee_upgrade_deadline_duration_seconds = v;
         }
-        if let Some(v) = config_ext.contract_upgrade_deposit_tera_gas {
-            config.contract_upgrade_deposit_tera_gas = v;
+        if let Some(v) = config_ext.apply_contract_update_tera_gas {
+            config.apply_contract_update_tera_gas = v;
         }
         if let Some(v) = config_ext.sign_call_gas_attachment_requirement_tera_gas {
             config.sign_call_gas_attachment_requirement_tera_gas = v;
@@ -594,7 +551,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
         near_mpc_contract_interface::types::Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: value.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: value
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: value
@@ -627,7 +584,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
         Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            apply_contract_update_tera_gas: value.apply_contract_update_tera_gas,
             sign_call_gas_attachment_requirement_tera_gas: value
                 .sign_call_gas_attachment_requirement_tera_gas,
             ckd_call_gas_attachment_requirement_tera_gas: value
@@ -665,7 +622,10 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 // Gated behind `test-utils` so they stay out of the production/WASM surface.
 #[cfg(feature = "test-utils")]
 mod test_conversions {
-    use super::*;
+    use super::{
+        GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, Keyset,
+        ParticipantInfo, ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
+    };
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
@@ -694,7 +654,7 @@ mod test_conversions {
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
-                url: info.url.into(),
+                url: info.url,
                 tls_public_key: info.tls_public_key,
             }
         }
@@ -702,8 +662,7 @@ mod test_conversions {
 
     impl From<dtos::ParticipantInfo> for ParticipantInfo {
         fn from(info: dtos::ParticipantInfo) -> Self {
-            info.try_into_contract_type()
-                .expect("test fixture url must fit the bound")
+            info.into_contract_type()
         }
     }
 }
@@ -820,7 +779,7 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
                     account_id.clone(),
                     dtos::ParticipantId(participant_id.get()),
                     dtos::ParticipantInfo {
-                        url: info.url.to_string(),
+                        url: info.url.clone(),
                         tls_public_key: info.tls_public_key.clone(),
                     },
                 )
@@ -855,21 +814,6 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 // --- Voting types ---
 
-impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
-    for &GovernanceThresholdParametersVotes
-{
-    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotes {
-        let proposal_by_account = self
-            .proposal_by_account
-            .iter()
-            .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
-            .collect();
-        dtos::GovernanceThresholdParametersVotes {
-            proposal_by_account,
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     fn into_dto_type(self) -> dtos::AddDomainsVotes {
         dtos::AddDomainsVotes {
@@ -882,27 +826,44 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     }
 }
 
-impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
-    fn into_dto_type(self) -> dtos::MeasurementVotes {
-        dtos::MeasurementVotes {
-            vote_by_account: self
-                .vote_by_account
-                .iter()
-                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
+    for &GovernanceThresholdParametersVotes
+{
+    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotes {
+        dtos::GovernanceThresholdParametersVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
                 .collect(),
-        }
+        )
     }
 }
 
-impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
-    fn into_dto_type(self) -> dtos::LauncherHashVotes {
-        dtos::LauncherHashVotes {
-            vote_by_account: self
-                .vote_by_account
-                .iter()
-                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+impl IntoInterfaceType<dtos::MeasurementVotes> for &Votes<AuthenticatedAccountId> {
+    fn into_dto_type(self) -> dtos::MeasurementVotes {
+        dtos::MeasurementVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
                 .collect(),
-        }
+        )
+    }
+}
+
+impl IntoInterfaceType<dtos::LauncherHashVotes> for &Votes<AuthenticatedAccountId> {
+    fn into_dto_type(self) -> dtos::LauncherHashVotes {
+        dtos::LauncherHashVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
+                .collect(),
+        )
     }
 }
 
@@ -1028,7 +989,6 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            parameters_votes: (&self.parameters_votes).into_dto_type(),
             add_domains_votes: (&self.add_domains_votes).into_dto_type(),
             previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }
@@ -1096,9 +1056,9 @@ mod tests {
         bogus_ed25519_public_key, bogus_ed25519_public_key_extended, gen_participants,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
-    use assert_matches::assert_matches;
     use rand::rngs::OsRng;
     use rstest::rstest;
+    use std::assert_matches;
 
     #[rstest]
     #[case(dtos::Curve::Secp256k1)]

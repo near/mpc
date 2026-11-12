@@ -1,14 +1,13 @@
 use crate::{
     config::{
-        PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk,
+        PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
         start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
     home_paths::assets_dir,
     indexer::{IndexerAPI, real::spawn_real_indexer, tx_sender::TransactionSender},
-    keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
+    keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
     tracing::init_logging,
@@ -26,12 +25,13 @@ use crate::{
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use mpc_attestation::report_data::ReportDataV1;
-use mpc_node_config::{ConfigFile, StartConfig};
+use mpc_node_config::{
+    ConfigFile, ForeignChainsConfig, StartConfig, foreign_chains::resolve_with_embedded,
+};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
 use std::{
-    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
@@ -47,9 +47,24 @@ use crate::tee::{
     remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
 };
 
-pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
-pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
+pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
+
+fn resolve_foreign_chains(config: &StartConfig) -> anyhow::Result<ForeignChainsConfig> {
+    let resolved = resolve_with_embedded(&config.node.foreign_chains)
+        .context("failed to resolve the foreign chain config")?;
+    for diagnostic in &resolved.diagnostics {
+        if diagnostic.is_warning() {
+            tracing::warn!("foreign chain config: {diagnostic}");
+        } else {
+            tracing::info!("foreign chain config: {diagnostic}");
+        }
+    }
+    Ok(resolved.config)
+}
+
+pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
+    config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
     // after `init_logging` so its logs are emitted. No-op for the `start` path.
@@ -106,16 +121,10 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
-    let persistent_secrets = PersistentSecrets::generate_or_get_existing(
-        &config.home_dir,
-        node_config.number_of_responder_keys,
-    )?;
+    let persistent_secrets = PersistentSecrets::generate_or_get_existing(&config.home_dir)?;
 
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
-
-    // TODO(#2102): Decide if the MPC responder account is actually needed
-    let respond_config = RespondConfig::from_parts(&node_config, &persistent_secrets);
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
         Some(key) => key.clone(),
@@ -177,7 +186,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let (protocol_state_sender, protocol_state_receiver) =
         watch::channel(ProtocolContractState::NotInitialized);
 
-    let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+    let (migration_state_sender, migration_state_receiver) =
+        watch::channel((0, Default::default()));
 
     // Buffer behind the recent-transactions debug page. The indexer forwards
     // records over `recent_tx_sender`; the drain task records them into the
@@ -203,9 +213,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
 
+    let (probe_whitelist_sender, probe_whitelist_receiver) = watch::channel(None);
     // Detached: the report is diagnostic, nothing downstream waits on it.
     root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
         node_config.foreign_chains.clone(),
+        probe_whitelist_receiver,
         tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
     ));
 
@@ -222,12 +234,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
         persistent_secrets.near_signer_key.clone(),
-        respond_config,
         indexer_exit_sender,
         protocol_state_sender,
         migration_state_sender,
+        probe_whitelist_sender,
         *tls_public_key,
-        node_config.foreign_chains.clone(),
         RecentTransactionsLogger::new(recent_tx_sender),
         indexer_shutdown_token.clone(),
     );
@@ -252,10 +263,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         image_hash_shutdown_sender,
     ));
 
-    let home_dir = config.home_dir.clone();
     let root_future = create_root_future(
-        config,
-        home_dir.clone(),
+        config.home_dir,
         node_config.clone(),
         secrets.clone(),
         indexer_api,
@@ -307,8 +316,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Cancel the indexer's terminal `listen_blocks` race; that lets the
     // indexer thread's `block_on` return, its tokio runtime drop, and every
-    // spawned monitor task (each holding `Arc<IndexerState>` →
-    // `Arc<RocksDB>`) be aborted with the runtime.
+    // spawned monitor task (each holding handles into neard) be aborted
+    // with the runtime.
     info!("Cancelling indexer shutdown token.");
     indexer_shutdown_token.cancel();
 
@@ -323,9 +332,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     exit_reason
 }
 
-#[expect(clippy::too_many_arguments)]
 async fn create_root_future<TransactionSenderImpl>(
-    start_config: StartConfig,
     home_dir: PathBuf,
     config: ConfigFile,
     secrets: SecretsConfig,
@@ -355,10 +362,6 @@ where
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
         local_encryption_key: secrets.local_storage_aes_key,
-        gcp: start_config.gcp.map(|gcp| GcpPermanentKeyStorageConfig {
-            project_id: gcp.project_id,
-            secret_id: gcp.keyshare_secret_id,
-        }),
     };
 
     let submitter = AttestationSubmitter {
@@ -368,7 +371,8 @@ where
         account_public_key,
         allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        attestation_reader: indexer_api.attestation_reader.clone(),
+        allowed_os_measurements: indexer_api.allowed_os_measurements_receiver.clone(),
+        stored_attestation: indexer_api.my_attestation_receiver.clone(),
     };
     tokio::spawn(run_periodic_attestation_submission(submitter));
 

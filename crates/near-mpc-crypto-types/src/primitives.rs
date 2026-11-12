@@ -127,6 +127,15 @@ impl Payload {
     }
 }
 
+/// Response to a CKD request: the derived key, ElGamal-encrypted to the
+/// request's app public key (`pk1` in the publicly-verifiable variant).
+///
+/// For an app key pair `(a, A = a·G1)` and an ephemeral scalar `y` chosen by
+/// the MPC network, `big_y` holds `Y = y·G1` and `big_c` holds
+/// `C = derived_key + y·A`; decrypt with `derived_key = C - a·Y`. The
+/// derived key is a BLS signature on the app id under the domain's public
+/// key; verify it as such before use. Neither field is a public key: the
+/// field type is reused for its 48-byte compressed G1 point encoding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

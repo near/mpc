@@ -25,7 +25,6 @@ async fn test_request_during_resharing() {
             c.initial_participant_indices = (0..5).collect();
             c.threshold = 5;
             c.triples_to_buffer = 2;
-            c.presignatures_to_buffer = 2;
             c.domains
                 .push(robust_ecdsa_domain(c.domains.len() as u64, 3));
         })

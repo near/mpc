@@ -1,7 +1,7 @@
 // These are temporary conversions to avoid breaking the contract API.
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
-use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
+use mpc_contract::primitives::participants::Participants;
 use near_mpc_contract_interface::types::{self as dtos};
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -10,20 +10,14 @@ pub(crate) trait IntoContractType<ContractType> {
 
 impl IntoContractType<Participants> for &dtos::Participants {
     fn into_contract_type(self) -> Participants {
-        let mut participants = Participants::new();
-        for (account_id, participant_id, info) in &self.participants {
-            participants
-                .insert_with_id(
-                    account_id.clone(),
-                    ParticipantInfo {
-                        url: info.url.clone().try_into().unwrap(),
-                        tls_public_key: info.tls_public_key.clone(),
-                    },
-                    mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-                )
-                .unwrap();
-        }
-        participants
+        let participants = self
+            .participants
+            .iter()
+            .map(|(account_id, participant_id, info)| {
+                (account_id.clone(), *participant_id, info.clone().into())
+            })
+            .collect();
+        Participants::init(self.next_id, participants)
     }
 }
 

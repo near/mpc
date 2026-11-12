@@ -6,16 +6,19 @@ use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
-use crate::primitives::domain::{AddDomainsVotes, DomainRegistry, max_reconstruction_threshold};
+use crate::primitives::domain::{
+    AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
+};
 use crate::primitives::key_state::{EpochId, Keyset};
+use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
 use crate::state::running::RunningContractState;
 use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
-use crate::update::ProposedUpdates;
-use crate::{MpcContract, MpcContractExt, v3_16_0_state};
+use crate::update::ContractUpdateVotes;
+use crate::{MpcContract, MpcContractExt, v3_18_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
@@ -35,7 +38,7 @@ impl MpcContract {
         log!(
             "init: signer={}, num_participants={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
             env::signer_account_id(),
-            parameters.participants().len(),
+            parameters.participants().count(),
             params_hash,
             tee_verifier_account_id,
             init_config,
@@ -61,7 +64,7 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: ProposedUpdates::default(),
+            contract_update_votes: ContractUpdateVotes::default(),
             config,
             tee_state,
             accept_requests: true,
@@ -73,6 +76,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 
@@ -82,7 +86,7 @@ impl MpcContract {
     #[handle_result]
     pub fn init_running(
         domains: Vec<dtos::DomainConfig>,
-        next_domain_id: u64,
+        next_domain_id: dtos::DomainId,
         keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
@@ -97,7 +101,7 @@ impl MpcContract {
             env::signer_account_id(),
             domains,
             keyset,
-            parameters.participants().len(),
+            parameters.participants().count(),
             parameters.threshold().value(),
             params_hash,
             tee_verifier_account_id,
@@ -105,18 +109,11 @@ impl MpcContract {
         );
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
-        let num_participants = parameters.participants().len() as u64;
-        for domain in domains.domains() {
-            crate::primitives::domain::validate_domain_reconstruction_threshold(
-                domain,
-                num_participants,
-            )?;
-        }
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
-        GovernanceThresholdParameters::validate_governance_against_reconstruction(
-            num_participants,
+        validate_domains_against_governance(
+            domains.domains(),
+            parameters.participants().count(),
             parameters.threshold(),
-            max_reconstruction_threshold(domains.domains()),
         )?;
 
         // Check that the domains match exactly those in the keyset.
@@ -148,7 +145,7 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
-            proposed_updates: Default::default(),
+            contract_update_votes: Default::default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -159,6 +156,7 @@ impl MpcContract {
             tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
         })
     }
 
@@ -174,11 +172,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_16_0_state::MpcContract>() {
+        match try_state_read::<v3_18_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.16.0 state: {:?}", err);
+                log!("failed to deserialize state into 3.18.0 state: {:?}", err);
             }
         };
 

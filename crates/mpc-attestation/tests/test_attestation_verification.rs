@@ -2,17 +2,17 @@
 //! requires the off-chain `local-verify` feature.
 #![cfg(feature = "local-verify")]
 
-use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
 use attestation::{ExpectedMeasurements, Measurements};
 use mpc_attestation::attestation::{
-    AcceptedAttestation, Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation,
-    VerifiedAttestation, default_measurements,
+    AcceptedAttestation, Attestation, MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation,
+    VerifiedAttestation, dev_measurements,
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
+use std::assert_matches;
 use test_utils::attestation::{
-    VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-    mock_dstack_attestation, p2p_tls_key,
+    VALID_ATTESTATION_TIMESTAMP, account_key, collateral_dates, image_digest,
+    launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
 };
 
 #[test]
@@ -36,7 +36,7 @@ fn valid_mock_attestation_succeeds_verification() {
                 expected_measurements: None,
             }),
             advisory_ids,
-        }) if advisory_ids.is_empty() && expiry == timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS
+        }) if advisory_ids.is_empty() && expiry == timestamp_s + MOCK_EXPIRATION_DURATION_SECONDS
     );
 }
 
@@ -72,17 +72,17 @@ fn validated_dstack_attestation_can_be_reverified() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification failed")
         .attestation;
 
     // when
     let re_verification_result = validated.re_verify(
-        timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS,
+        collateral_dates().earliest_expiration_date,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
-        default_measurements(),
+        &[dev_measurements()],
     );
 
     // then
@@ -106,17 +106,17 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification failed")
         .attestation;
 
     // when
     let re_verification_result = validated.re_verify(
-        timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS + 1,
+        collateral_dates().earliest_expiration_date + 1,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
-        default_measurements(),
+        &[dev_measurements()],
     );
 
     // then
@@ -160,7 +160,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -172,7 +172,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
         creation_time,
         &new_allowed_mpc_docker_image_hashes,
         &allowed_launcher_hashes,
-        default_measurements(),
+        &[dev_measurements()],
     );
 
     assert_matches!(
@@ -199,7 +199,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -243,7 +243,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -277,7 +277,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            &[dev_measurements()],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -291,7 +291,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
         },
         key_provider_event_digest: [0xEE; 48],
     };
-    let mut superset: Vec<ExpectedMeasurements> = default_measurements().to_vec();
+    let mut superset: Vec<ExpectedMeasurements> = vec![dev_measurements()];
     superset.push(extra_measurement);
 
     // when

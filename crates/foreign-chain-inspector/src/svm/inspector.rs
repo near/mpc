@@ -461,8 +461,8 @@ fn decode_base58_32(s: &str) -> Result<[u8; 32], String> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     const SYSTEM_PROGRAM_BASE58: &str = "11111111111111111111111111111111";
 

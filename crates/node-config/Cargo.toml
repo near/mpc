@@ -18,8 +18,12 @@ near-mpc-contract-interface = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 serde_yaml = { workspace = true }
+thiserror = { workspace = true }
 toml = { workspace = true }
 url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+rstest = { workspace = true }
 
 [lints]
 workspace = true

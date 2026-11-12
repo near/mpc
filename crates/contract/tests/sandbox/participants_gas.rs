@@ -12,7 +12,11 @@
 
 use crate::sandbox::{
     common::{candidates, init_contract, init_contract_running, make_threshold_params},
-    utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
+    utils::{
+        contract_build::current_contract_with_bench_methods,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
+        shared_key_utils::new_secp256k1,
+    },
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
@@ -20,7 +24,7 @@ use near_mpc_contract_interface::types::{
     ReconstructionThreshold,
 };
 use near_sdk::Gas;
-use near_workspaces::{Account, Contract};
+use near_workspaces::Account;
 use rstest::rstest;
 use serde::Deserialize;
 use serde_json::json;
@@ -95,7 +99,7 @@ impl GasThresholdsConfig {
 /// Test environment for a specific participant count.
 struct TestEnv {
     /// The deployed MPC signer contract instance.
-    contract: Contract,
+    contract: SandboxMpcContract,
     /// Single real account used to make all benchmark calls.
     caller: Account,
     /// Fake participant account IDs for lookup benchmarks (first/middle/last).
@@ -260,6 +264,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
     let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
+    let contract = SandboxMpcContract::from_deployed(&worker, contract);
     let account_ids: Vec<AccountId> = (0..n_participants)
         .map(|i| format!("node-{i}.test.near").parse().unwrap())
         .collect();
@@ -283,7 +288,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         };
         let keyset = Keyset::new(EpochId::new(1), vec![key]);
         let domains = vec![domain];
-        let next_domain_id = domains.len() as u64 + 1;
+        let next_domain_id = DomainId(domains.len() as u64 + 1);
         init_contract_running(
             &contract,
             domains,

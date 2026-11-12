@@ -1,94 +1,69 @@
 # Auto-Removal of Unused Launcher Image Hashes
 
 **Status:** ARCHIVED
-**Implemented:** [#3564](https://github.com/near/mpc/pull/3564)
+**Implemented:** [#3564](https://github.com/near/mpc/pull/3564), reworked in [#4527](https://github.com/near/mpc/pull/4527) and [#4572](https://github.com/near/mpc/pull/4572)
 **Issue:** [#3381](https://github.com/near/mpc/issues/3381)
-**Related:** [Securing MPC with TEE](../../design/securing-mpc-with-tee/securing-mpc-with-tee.md), [TEE Lifecycle](../../design/tee-lifecycle.md)
+**Related:** [Securing MPC with TEE](../../design/securing-mpc-with-tee/securing-mpc-with-tee.md), [TEE Lifecycle](../../design/tee-lifecycle.md), [Certificate-Derived Attestation Expiry](../../design/certificate-derived-attestation-expiry.md)
 
 ## Problem
 
-`allowed_launcher_image_hashes` accumulates entries forever; removal requires a
-**unanimous** vote (`vote_remove_launcher_hash`). MPC Docker image hashes, by
-contrast, auto-expire 7 days after a newer image lands. In practice launcher
-hashes pile up — only the newest is typically in use — with no way to shed the
-old ones short of coordinating a unanimous vote.
+Removing a hash from `allowed_launcher_image_hashes` takes a **unanimous** vote
+(`vote_remove_launcher_hash`). Usually only the newest launcher is in use, so without automatic
+removal the old ones pile up.
 
-The insight: **not using a launcher is itself a vote.** Every node already
-resubmits an attestation hourly (`submit_participant_info`), proving which
-launcher it runs. The contract can observe disuse and evict stale hashes
-without any vote.
+The insight: **not using a launcher is itself a vote.** Every participant's stored attestation
+records which launcher it runs, so the contract can see which hashes are unused and retire them
+without a vote.
 
-## Proposal
+## Design
+
+`verify_tee` scans the launcher hashes and removes those no current participant has used for
+roughly 14 days (the TTL) since they were voted in or last seen in use.
 
 ```rust
 pub struct AllowedLauncherImage {
     launcher_hash: LauncherImageHash,
     compose_hashes: Vec<LauncherDockerComposeHash>,
-    expires_at: Timestamp,  // NEW: stamped `now + TTL` when voted in / re-voted, and
-                            // restamped on each attestation by a *current participant*.
+    retain_until: Timestamp, // `now + TTL` at the last vote, or at the last
+                             // `verify_tee` that found it in use.
 }
 ```
 
-An entry is **expired** when `expires_at < now`. The expiry is computed once at write
-time (`expires_at = now + TTL`, saturating on overflow) — mirroring how attestations store
-their own expiry — so reads are a plain `expires_at < now` comparison and the TTL is only
-needed at the write sites (vote-in, refresh, migration), not threaded through every read.
-A consequence: changing the TTL config applies to an entry on its *next* stamp (a node
-resubmits hourly), not retroactively.
-TTL is a new config field `launcher_hash_unused_ttl_seconds`, default **14 days**.
-Config validation enforces `launcher_hash_unused_ttl_seconds >=
-mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS` (the
-attestation validity window, currently 7 days) — see Safety invariants. Note
-this is the *attestation validity* constant, not
-`DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS` (the MPC docker-image grace
-period, 7 days).
+The TTL is the config field `launcher_hash_unused_ttl_seconds`, default **14 days**.
 
-Three parts:
+1. **Stamp on vote.** When `vote_add_launcher_hash` reaches the threshold, it sets
+   `retain_until = now + TTL`. Re-voting a hash already in the list restamps it.
+2. **Remove in `verify_tee`.** Before re-verifying participants, `verify_tee` restamps every entry
+   used by a current participant's stored attestation, then drops the entries whose
+   `retain_until` has passed. The most recently stamped entry is always kept.
+3. **Reads are plain membership.** Every entry in the list is accepted; nothing filters by time.
+   Submissions (`submit_participant_info`) do not touch launcher state.
 
-1. **Refresh on use** — after a successful verify in `submit_participant_info`
-   (hourly per node), the contract restamps `expires_at = now + TTL` on the entry
-   owning the validated compose hash. No node-side changes.
-   **Only a current participant's submission refreshes the timestamp.**
-   `submit_participant_info` is also callable by prospective (non-participant)
-   nodes; letting them refresh would let any outside node keep a stale launcher
-   alive indefinitely, so the refresh is gated on the caller being a current
-   participant.
-2. **Read-time filtering** — all reads of the allowed set (verify, re-verify,
-   views) skip expired entries, so an expired hash is rejected the moment its
-   TTL lapses. If *all* entries are expired, the newest is still returned
-   (disaster-recovery fallback, mirrors `AllowedDockerImageHashes`).
-3. **Inline eviction** — `reverify_and_cleanup_participants` (the body of
-   `verify_tee`) deletes expired entries right after the analogous eviction of
-   the MPC docker-image hashes. The allowed set is a small, operator-curated
-   in-memory `Vec`, so eviction is a plain `retain` (no extra storage reads, no
-   separate receipt) that always keeps at least the newest entry. **No new
-   public API and no extra config.**
-
-Stamping `expires_at = now + TTL` at vote-in means a hash voted in but **never adopted**
-(e.g. a newly voted launcher image no node ever migrated to) also expires after
-one TTL window. Recovery: `vote_add_launcher_hash` for an already-present entry
-restamps its `expires_at` (threshold vote, not unanimity).
+Only current participants count. A joining node or a migration destination is not yet a
+participant, so a hash used only by such a node is protected by its vote stamp alone; a threshold
+re-vote restamps it.
 
 ### Safety invariants
 
-- A hash backing a **valid participant attestation is never expired**: a
-  current participant resubmits hourly, so its valid attestation (at most
-  `DEFAULT_EXPIRATION_DURATION_SECONDS`, currently 7 days, old) restamped the
-  entry's `expires_at = now + TTL` that recently, so `expires_at >= now` holds
-  whenever `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS` — regardless of the
-  constant's exact value. Enforced by config validation
-  (`launcher_hash_unused_ttl_seconds >= DEFAULT_EXPIRATION_DURATION_SECONDS`);
-  the 14-day default is `>= DEFAULT_EXPIRATION_DURATION_SECONDS` (the
-  attestation window, currently 7 days), leaving ample margin.
-- The list is **never empty / never fully rejected** (sweep keeps newest,
-  read fallback returns newest).
+- **A hash in use by a current participant is never removed automatically.** `verify_tee`
+  restamps before it removes, so neither the TTL nor the attestation's lifetime matters.
+- **The list never empties.** `verify_tee` keeps the latest stamp, and `vote_remove_launcher_hash`
+  refuses to remove the last entry.
 
-### Out of scope / unchanged
+### Housekeeping, not a security control
 
-- `vote_remove_launcher_hash` (unanimous) stays — manual override for removing
-  a compromised launcher before its TTL lapses.
-- OS measurements keep explicit voting (multiple sets must coexist long-term).
-- MPC Docker image hash expiry, node, and launcher code: unchanged.
+Removing a launcher immediately, for example a compromised one, is the unanimous
+`vote_remove_launcher_hash`. Automatic removal only keeps the list short, so it may lag the TTL:
+
+- An unused hash past its stamp stays accepted until the next `verify_tee`. A current participant
+  that submits with it in that window makes it in use again.
+- Entries tied at the latest stamp are all kept.
+- After the TTL is lowered, a re-vote can move a stamp earlier.
+
+### Out of scope
+
+- OS measurements keep explicit voting (several sets must coexist long-term).
+- MPC Docker image hash expiry, node and launcher code: unchanged.
 
 ## Lifecycle
 
@@ -99,54 +74,40 @@ sequenceDiagram
     participant N as Nodes
 
     Ops->>C: vote_add_launcher_hash(B), threshold reached
-    Note over C: B.expires_at = now + 14d, adoption clock starts
-    N->>C: hourly submit_participant_info with launcher A
-    Note over C: A.expires_at restamped hourly (now + 14d)
-    N->>C: hourly submit_participant_info with launcher B (after migration)
-    Note over C: B restamped. A freezes once the last node leaves it
-    Note over C: A.expires_at passes. A is rejected by all reads
-    Ops->>C: verify_tee (routine)
-    Note over C: evicts A from storage inline (same receipt)
+    Note over C: B.retain_until = now + 14d
+    N->>C: verify_tee (participants on A)
+    Note over C: A restamped (now + 14d)
+    N->>C: submit_participant_info with launcher B (after migration)
+    N->>C: verify_tee (participants on B)
+    Note over C: B restamped. A is unused, so not restamped
+    N->>C: verify_tee after A.retain_until
+    Note over C: A removed
 ```
 
 ### Operator scenarios
 
 | Scenario | Behavior |
 |---|---|
-| **Normal rotation** | Vote in `B`, migrate nodes. 14 days after the last node leaves `A`, it is auto-evicted. No removal vote. |
-| **Rollback** | `B` broken; revert to `A` within 14 days — still valid, refreshes resume. `B` ages out. |
-| **Slow rollout** (vote → migration > 14d) | `B` expires unused; re-vote it (threshold) to reset the clock. Rule of thumb: vote within 14 days of migrating. |
-| **Node offline > 14d on an old launcher** | Its hash may age out (its attestation already lapsed at the attestation validity window). Recover by upgrading or re-voting the hash. |
-| **Network outage > 14d** | All entries expire; newest still honored via fallback, others re-votable. |
-| **Compromised launcher** | Unanimous `vote_remove_launcher_hash`, as today. |
-
-## Migration
-
-New borsh field ⇒ state migration: existing entries get
-`expires_at = migration time + TTL` — every current hash starts a fresh 14-day
-clock; stale testnet hashes age out with no further action. The 3.13.0 migration
-also stamps an expiry on legacy `MockAttestation::Valid` entries (from #3785) so
-they become cleanable; the two steps run together.
+| **Normal rotation** | Vote in `B`, migrate nodes. `A` is removed at the first `verify_tee` after its `retain_until` (the last `verify_tee` that saw a participant on it, plus the TTL). No removal vote. |
+| **Rollback** | `B` broken; revert to `A` while it is still in the list. `B` is then removed like any unused hash. |
+| **Slow rollout** (vote → migration > 14d) | `B` may be removed before anyone uses it, unless it holds the latest stamp. Re-vote it (threshold) to restamp. |
+| **Participant offline on an old launcher** | Its stored attestation counts while it is a participant, so its hash stays. |
+| **No `verify_tee` for a long time** | Nothing is removed; every hash stays accepted. |
+| **Compromised launcher** | Unanimous `vote_remove_launcher_hash`. |
 
 ## Alternatives considered
 
-- **Instant eviction when no participant references a hash** — no rollback
-  window; a broken new launcher would need a re-vote under incident pressure.
-- **Exempting never-used hashes** — a forgotten/mistaken vote would linger
-  forever, the very problem being solved.
-- **Detached-promise sweep** — evict in a `#[private]` self-call spawned by
-  `verify_tee` (gas via a dedicated config field), so a failed/out-of-gas sweep
-  can't fail the host transaction, matching the post-resharing cleanups in
-  `vote_reshared`. Rejected: the allowed set is a tiny in-memory `Vec` with no
-  real failure mode, and the MPC docker-image hashes are already evicted inline
-  in the same method — inline (chosen above) is simpler, consistent, and drops
-  a `#[private]` method plus a gas config field.
-- **Public cleanup method** (the issue AC also suggests this) — rejected to
-  avoid growing the already-large public API; inline eviction covers the same
-  need with no new API.
-
-## Decisions
-
-- **TTL = 14 days** (`launcher_hash_unused_ttl_seconds`, operator-configurable).
-  This implies *vote a launcher in at most 14 days before migrating to it*;
-  if a hash expires unused, re-voting it (threshold) resets the clock.
+- **Refresh on submission, filter on read**, the original design ([#3564](https://github.com/near/mpc/pull/3564)),
+  later extended to the attestation's expiry ([#4527](https://github.com/near/mpc/pull/4527)). Each
+  current participant's submission restamped its launcher, and every read skipped entries past their
+  stamp. It works, but the stamp carries two meanings, every read has to filter, and the refresh
+  has to be wired into each submission path. Without the extension, certificate-derived expiry
+  ([#1639](https://github.com/near/mpc/issues/1639)) would also let a 14-day stamp kick a node whose
+  attestation is still valid.
+- **Instant removal when no participant uses a hash.** No rollback window; a broken new launcher
+  would need a re-vote under incident pressure.
+- **Exempting never-used hashes.** A forgotten or mistaken vote would linger forever, the very
+  problem being solved.
+- **Detached-promise sweep** in a `#[private]` self-call. The list is a tiny in-memory `Vec` with no
+  real failure mode, so inline removal is simpler and needs no gas config.
+- **Public cleanup method.** Grows the public API; `verify_tee` already runs routinely.

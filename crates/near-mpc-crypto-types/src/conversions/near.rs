@@ -110,8 +110,8 @@ impl K256Signature {
 mod tests {
     use super::*;
     use crate::crypto::Bls12381G2PublicKey;
-    use assert_matches::assert_matches;
     use rstest::rstest;
+    use std::assert_matches;
 
     const ED25519_PUBLIC_KEY_SIZE: usize = 32;
     const SECP256K1_PUBLIC_KEY_SIZE: usize = 64;

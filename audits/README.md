@@ -9,3 +9,4 @@ independently audited.
 | [PedPop+](2025-05-15-trail-of-bits-pedpop-plus.pdf) | 2025-05-15 |
 | [Confidential Key Derivation](2025-12-23-trail-of-bits-confidential-key-derivation.pdf) | 2025-12-23 |
 | [Robust ECDSA](2026-02-10-trail-of-bits-robust-ecdsa.pdf) | 2026-02-10 |
+| [Foreign Transaction Validation](2026-06-nearone-foreigntransactionvalidation-securityreview.pdf) | 2026-06-01 |

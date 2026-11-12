@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use crate::indexer::IndexerState;
+use chain_gateway::primitives::FetchLatestFinalBlockInfo;
+use near_contract_transport::{BlockCount, BlockHeight};
 
 #[derive(Debug, Clone)]
 pub(crate) struct IndexerStats {
-    pub block_heights_processing: std::collections::BTreeSet<u64>,
+    pub block_heights_processing: std::collections::BTreeSet<BlockHeight>,
     pub blocks_processed_count: u64,
-    pub last_processed_block_height: u64,
+    pub last_processed_block_height: BlockHeight,
 }
 
 impl IndexerStats {
@@ -14,7 +16,7 @@ impl IndexerStats {
         Self {
             block_heights_processing: std::collections::BTreeSet::new(),
             blocks_processed_count: 0,
-            last_processed_block_height: 0,
+            last_processed_block_height: BlockHeight::new(0),
         }
     }
 }
@@ -33,24 +35,18 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
             - prev_blocks_processed_count) as f64)
             / (interval_secs as f64);
 
-        let time_to_catch_the_tip_duration = if block_processing_speed > 0.0 {
-            match indexer_state
-                .view_client
-                .latest_final_block()
-                .await
-                .map(|block| block.header.height)
-            {
-                Ok(block_height) => {
-                    // 0 when we're ahead of the chain tip — no catching up needed.
-                    let blocks_behind =
-                        block_height.saturating_sub(stats_copy.last_processed_block_height);
+        let time_to_catch_the_tip_duration = if block_processing_speed > 0.0
+            && let Ok(info) = indexer_state.gateway.fetch_latest_final_block_info().await
+        {
+            // 0 when we're ahead of the chain tip — no catching up needed.
+            let blocks_behind = info
+                .observed_at
+                .blocks_since(stats_copy.last_processed_block_height)
+                .unwrap_or(BlockCount::new(0));
 
-                    Some(std::time::Duration::from_millis(
-                        ((blocks_behind as f64 / block_processing_speed) * 1000f64) as u64,
-                    ))
-                }
-                _ => None,
-            }
+            Some(std::time::Duration::from_millis(
+                ((u64::from(blocks_behind) as f64 / block_processing_speed) * 1000f64) as u64,
+            ))
         } else {
             None
         };

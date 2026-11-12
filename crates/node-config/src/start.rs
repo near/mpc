@@ -1,4 +1,5 @@
 use super::ConfigFile;
+use crate::foreign_chains::RpcPreset;
 use anyhow::Context;
 use clap::ValueEnum;
 use launcher_interface::types::PccsEndpointConfig;
@@ -17,8 +18,6 @@ pub struct StartConfig {
     pub secrets: SecretsStartConfig,
     /// TEE authority and image hash monitoring settings.
     pub tee: launcher_interface::types::TeeConfig,
-    /// GCP keyshare storage settings. Optional — omit if not using GCP.
-    pub gcp: Option<GcpStartConfig>,
     /// NEAR node initialization settings. Required for `start-with-config-file`
     /// so the node can self-initialize when `config.json` is absent.
     /// When using the legacy `start` command (behind `start.sh`), this is
@@ -41,6 +40,19 @@ pub struct StartConfig {
     pub pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
 }
 
+fn ensure_rpc_preset_matches(
+    rpc_preset: Option<RpcPreset>,
+    chain_id: Option<&ChainId>,
+) -> anyhow::Result<()> {
+    if let (Some(preset), Some(chain_id)) = (rpc_preset, chain_id) {
+        anyhow::ensure!(
+            preset.supports(chain_id),
+            "foreign_chains.rpc_preset `{preset}` is not supported for near_init.chain_id: `{chain_id}`"
+        );
+    }
+    Ok(())
+}
+
 pub fn default_pccs_endpoints() -> NonEmptyVec<PccsEndpointConfig> {
     let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
@@ -55,11 +67,18 @@ impl StartConfig {
             .with_context(|| format!("failed to read config file: {}", path.display()))?;
         let config: Self = toml::from_str(&content)
             .with_context(|| format!("failed to parse config file: {}", path.display()))?;
-        config
-            .node
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.node
             .validate()
             .context("invalid node config in config file")?;
-        Ok(config)
+        ensure_rpc_preset_matches(
+            self.node.foreign_chains.rpc_preset,
+            self.near_init.as_ref().map(|near_init| &near_init.chain_id),
+        )
     }
 }
 
@@ -143,15 +162,6 @@ impl std::fmt::Debug for SecretsStartConfig {
     }
 }
 
-/// GCP keyshare storage configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GcpStartConfig {
-    /// GCP secret ID for storing the root keyshare.
-    pub keyshare_secret_id: String,
-    /// GCP project ID.
-    pub project_id: String,
-}
-
 /// NEAR chain / network identifier.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -200,25 +210,34 @@ pub enum DownloadConfigType {
 mod tests {
     use super::*;
     use launcher_interface::types::PccsTlsTrust;
+    use std::assert_matches;
 
-    /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
-    /// string "gcp" (see crates/tee-launcher/src/config.rs).
-    /// This test ensures the TOML field name for GCP config is still "gcp".
-    /// If this field is renamed, update the launcher's blocked key list too.
+    #[rstest::rstest]
+    #[case(Some(RpcPreset::Testnet), Some(ChainId::Testnet))]
+    #[case(Some(RpcPreset::Mainnet), None)]
+    #[case(None, Some(ChainId::Localnet))]
+    fn ensure_rpc_preset_matches__should_accept_consistent_or_unknown_preset(
+        #[case] rpc_preset: Option<RpcPreset>,
+        #[case] chain_id: Option<ChainId>,
+    ) {
+        // When
+        let result = ensure_rpc_preset_matches(rpc_preset, chain_id.as_ref());
+
+        // Then
+        result.expect("preset should be accepted");
+    }
+
     #[test]
-    fn gcp_toml_field_name_is_gcp() {
-        let gcp = GcpStartConfig {
-            keyshare_secret_id: "test".into(),
-            project_id: "test".into(),
-        };
-        let mut table = toml::Table::new();
-        table.insert("gcp".to_string(), toml::Value::try_from(&gcp).unwrap());
-        let toml_str = toml::to_string(&table).unwrap();
-        let parsed: toml::Table = toml::from_str(&toml_str).unwrap();
-        assert!(
-            parsed.contains_key("gcp"),
-            "GCP field name changed — update tee-launcher's TEE-restricted key list"
-        );
+    fn ensure_rpc_preset_matches__should_reject_a_different_chain_id() {
+        // Given
+        let rpc_preset = Some(RpcPreset::Mainnet);
+        let chain_id = ChainId::Testnet;
+
+        // When
+        let result = ensure_rpc_preset_matches(rpc_preset, Some(&chain_id));
+
+        // Then
+        assert_matches!(result, Err(_));
     }
 
     /// A single bare-URL entry (no `tls` override) parses as a one-element
@@ -319,6 +338,64 @@ mod tests {
         assert_eq!(entries, expected);
     }
 
+    const START_CONFIG_TOML: &str = r#"
+home_dir = "/data"
+
+[secrets]
+secret_store_key_hex = "00000000000000000000000000000000"
+
+[tee]
+image_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+latest_allowed_hash_file_path = "/data/latest_allowed_hash"
+
+[tee.authority]
+type = "local"
+
+[log]
+format = "plain"
+
+[node]
+my_near_account_id = "test.near"
+web_ui = "127.0.0.1:8082"
+migration_web_ui = "127.0.0.1:8078"
+
+[node.indexer]
+validate_genesis = false
+sync_mode = "Latest"
+concurrency = 1
+mpc_contract_id = "mpc-contract.test.near"
+finality = "optimistic"
+
+[node.triple]
+concurrency = 1
+desired_triples_to_buffer = 1
+timeout_sec = 60
+parallel_triple_generation_stagger_time_sec = 1
+
+[node.signature]
+timeout_sec = 60
+
+[node.ckd]
+timeout_sec = 60
+"#;
+
+    #[test]
+    fn start_config__should_ignore_retired_presignature_fields() {
+        // Given
+        let config_with_retired_fields = START_CONFIG_TOML.replace(
+            "[node.signature]\ntimeout_sec = 60\n",
+            "[node.presignature]\nconcurrency = 16\ndesired_presignatures_to_buffer = 8192\n\
+             timeout_sec = 60\n\n[node.signature]\ntimeout_sec = 60\nonline_presign = false\n",
+        );
+
+        // When
+        let config: StartConfig = toml::from_str(&config_with_retired_fields).unwrap();
+
+        // Then
+        let current: StartConfig = toml::from_str(START_CONFIG_TOML).unwrap();
+        assert_eq!(config.node, current.node);
+    }
+
     /// Helper: parse [`NearInitConfig`] from a TOML fragment that only sets
     /// `chain_id` and the field under test. Reduces noise in the address
     /// validation tests.
@@ -403,5 +480,43 @@ mod tests {
         assert_eq!(parsed.rpc_addr, None);
         assert_eq!(parsed.network_addr, None);
         assert_eq!(parsed.tier3_public_addr, None);
+    }
+
+    #[test]
+    fn start_config__should_parse_operator_template_with_legacy_responder_fields() {
+        // Given
+        let user_config: toml::Table = toml::from_str(include_str!(
+            "../../../deployment/cvm-deployment/user-config.toml"
+        ))
+        .unwrap();
+        let mut mpc_node_config = user_config["mpc_node_config"].as_table().unwrap().clone();
+        assert!(
+            mpc_node_config["node"]
+                .as_table()
+                .unwrap()
+                .contains_key("near_responder_account_id")
+        );
+        // Replace the operator placeholder, and inject `tee` like the launcher does.
+        mpc_node_config["near_init"]["tier3_public_addr"] = "203.0.113.1:24567".into();
+        let tee: toml::Table = toml::from_str(&format!(
+            r#"
+            image_hash = "sha256:{}"
+            latest_allowed_hash_file_path = "/tmp/hash"
+            authority = {{ type = "local" }}
+            "#,
+            "0".repeat(64)
+        ))
+        .unwrap();
+        mpc_node_config.insert("tee".into(), tee.into());
+
+        // When
+        let config: StartConfig = mpc_node_config.try_into().unwrap();
+
+        // Then
+        config.validate().unwrap();
+        assert_eq!(
+            config.node.my_near_account_id.as_str(),
+            "your-mpc-account.testnet"
+        );
     }
 }
