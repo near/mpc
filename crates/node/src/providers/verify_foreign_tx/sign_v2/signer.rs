@@ -45,7 +45,7 @@ pub(crate) enum RoundRefusal {
     RequestClosed,
 }
 
-/// What a signer checks the evidence of a round for a verdict against.
+/// The values a signer checks the evidence of a round for a verdict against.
 struct VerdictCheck<'a> {
     me: ParticipantId,
     yield_id: YieldId,

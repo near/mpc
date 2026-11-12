@@ -26,7 +26,7 @@ pub(crate) const ROUND_DEADLINE: Duration = Duration::from_secs(5);
 /// peer that connects late, or that reads an outcome key late, still gets it.
 const OUTCOME_RESEND_INTERVAL: Duration = Duration::from_secs(2);
 
-/// What a node needs, beyond the V1 flow, to answer V2 requests.
+/// The state a node needs, beyond the V1 flow, to answer V2 requests.
 pub(crate) struct VerifyForeignTxV2Context {
     pub(crate) open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
     pub(crate) signing_key: NodeOutcomeSigningKey,

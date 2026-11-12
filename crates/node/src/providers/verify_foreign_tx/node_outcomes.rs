@@ -1,3 +1,4 @@
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
@@ -226,11 +227,7 @@ impl State {
     }
 }
 
-fn merge(
-    entry: std::collections::btree_map::Entry<'_, ParticipantId, Held>,
-    outcome: VerifiedNodeOutcome,
-) {
-    use std::collections::btree_map::Entry;
+fn merge(entry: Entry<'_, ParticipantId, Held>, outcome: VerifiedNodeOutcome) {
     match entry {
         Entry::Vacant(vacant) => {
             vacant.insert(Held::One(outcome));

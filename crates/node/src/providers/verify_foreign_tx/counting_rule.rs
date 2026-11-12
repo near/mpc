@@ -4,7 +4,7 @@ use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
 use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeStatement;
 
-/// What an acting leader does with the node outcomes it holds for one request.
+/// The step an acting leader takes with the node outcomes it holds for one request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Decision {
     /// At least t supporters signed `verdict`, and `backers` are all of them.

@@ -2118,7 +2118,11 @@ mod tests {
             .unwrap();
 
         // Then
-        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("does not lead"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[tokio::test]

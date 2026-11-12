@@ -238,3 +238,45 @@ async fn node_outcomes_changed__should_complete_once_an_outcome_is_kept() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn follow_outcome_keys__should_rebuild_the_keys_on_each_change_of_the_registered_keys() {
+    // Given
+    let account: dtos::AccountId = "signer.near".parse().unwrap();
+    let participants = ParticipantsConfig {
+        threshold: 1,
+        participants: vec![crate::config::ParticipantInfo {
+            id: SIGNER,
+            address: "127.0.0.1".to_string(),
+            port: 3000,
+            p2p_public_key: ed25519_dalek::SigningKey::from_bytes(&[1; 32]).verifying_key(),
+            near_account_id: account.clone(),
+        }],
+    };
+    let registered_key = dtos::Ed25519PublicKey::from(
+        &ed25519_dalek::SigningKey::from_bytes(&[2; 32]).verifying_key(),
+    );
+    let registered: dtos::OutcomeKeys = BTreeMap::from([(account, registered_key)]).into();
+    let (sender, receiver) = watch::channel(dtos::OutcomeKeys::default());
+    let store = Arc::new(NodeOutcomes::new());
+    let following = tokio::spawn(follow_outcome_keys(
+        store.clone(),
+        participants.clone(),
+        receiver,
+    ));
+
+    // When
+    sender.send(registered.clone()).unwrap();
+    drop(sender);
+    tokio::time::timeout(Duration::from_secs(5), following)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Then
+    assert_eq!(
+        *store.outcome_keys(),
+        OutcomePublicKeys::new(&participants, &registered)
+    );
+    assert_ne!(*store.outcome_keys(), OutcomePublicKeys::default());
+}
