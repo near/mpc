@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.18.0",
+    "version": "3.19.0",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -123,7 +123,7 @@ expression: abi
       },
       {
         "name": "clean_foreign_chain_data",
-        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
+        "doc": " Private endpoint to clean up foreign chain policy votes, node configurations and\n outcome keys for non-participants after resharing.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -190,7 +190,7 @@ expression: abi
       },
       {
         "name": "conclude_node_migration",
-        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`NodeMigrationError::DestinationNodeNotFound`](crate::errors::NodeMigrationError::DestinationNodeNotFound): if the caller has no node stored under\n   the destination TLS public key\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if the destination node's attestation is\n   not valid\n - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed): if the destination node's TLS\n   public key belongs to another account\n - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged): if the destination node reuses the\n   caller's current TLS public key\n - [`NodeMigrationError::DestinationSignerKeyMismatch`](crate::errors::NodeMigrationError::DestinationSignerKeyMismatch): if the destination signer key\n   differs from the one the destination node attested with",
+        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node, and the account's outcome key is dropped. The new\n node registers its own with [`Self::register_outcome_key`].\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`NodeMigrationError::DestinationNodeNotFound`](crate::errors::NodeMigrationError::DestinationNodeNotFound): if the caller has no node stored under\n   the destination TLS public key\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if the destination node's attestation is\n   not valid\n - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed): if the destination node's TLS\n   public key belongs to another account\n - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged): if the destination node reuses the\n   caller's current TLS public key\n - [`NodeMigrationError::DestinationSignerKeyMismatch`](crate::errors::NodeMigrationError::DestinationSignerKeyMismatch): if the destination signer key\n   differs from the one the destination node attested with",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -636,6 +636,17 @@ expression: abi
         }
       },
       {
+        "name": "outcome_keys",
+        "doc": " The outcome key of each account that registered one. A key of an account that is not a\n current participant may remain after a cancelled resharing or keygen, so readers use only\n the keys of current participants.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/OutcomeKeys"
+          }
+        }
+      },
+      {
         "name": "parameters_votes",
         "doc": " Returns the pending `vote_new_parameters` votes, keyed by proposal hash.",
         "kind": "view",
@@ -761,6 +772,22 @@ expression: abi
           "type_schema": {
             "type": "null"
           }
+        }
+      },
+      {
+        "name": "register_outcome_key",
+        "doc": " Sets the outcome key of the caller's account, replacing the one it had. Only the\n account's attested node can call it, with its attested account key.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "outcome_key",
+              "type_schema": {
+                "$ref": "#/definitions/Ed25519PublicKey"
+              }
+            }
+          ]
         }
       },
       {
@@ -4361,6 +4388,13 @@ expression: abi
           "minProperties": 1,
           "additionalProperties": {
             "$ref": "#/definitions/ProviderConfig"
+          }
+        },
+        "OutcomeKeys": {
+          "description": "The outcome key each participant account registered. A node signs its node outcomes for V2 foreign transaction requests with this key, and other nodes check them against it.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Ed25519PublicKey"
           }
         },
         "ParticipantId": {

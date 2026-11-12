@@ -86,7 +86,7 @@ async fn read_registrations<C: ViewContract + Clone + Send + 'static>(
     })
 }
 
-fn send_if_changed<T: PartialEq>(sender: &watch::Sender<T>, latest: T) {
+pub(crate) fn send_if_changed<T: PartialEq>(sender: &watch::Sender<T>, latest: T) {
     sender.send_if_modified(|previous| {
         if *previous == latest {
             false

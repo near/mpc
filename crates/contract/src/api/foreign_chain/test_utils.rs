@@ -6,9 +6,7 @@ use k256::{Secp256k1, elliptic_curve};
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 #[cfg(feature = "foreign-tx-v2")]
-use near_mpc_contract_interface::events::{
-    MPC_CONTRACT_EVENT_STANDARD, VerifyForeignTxV2YieldCreated,
-};
+use near_mpc_contract_interface::events::VerifyForeignTxV2YieldCreated;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::testing_env;
@@ -109,20 +107,9 @@ pub(crate) fn bitcoin_request_v2() -> dtos::VerifyForeignTransactionRequestV2 {
 /// The yield ids of the [`VerifyForeignTxV2YieldCreated`] events logged so far.
 #[cfg(feature = "foreign-tx-v2")]
 pub(crate) fn announced_yield_ids() -> Vec<dtos::YieldId> {
-    const EVENT_JSON_PREFIX: &str = "EVENT_JSON:";
     near_sdk::test_utils::get_logs()
         .iter()
-        .filter_map(|line| line.strip_prefix(EVENT_JSON_PREFIX))
-        .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap())
-        .filter(|event| {
-            event["standard"] == MPC_CONTRACT_EVENT_STANDARD
-                && event["event"] == VerifyForeignTxV2YieldCreated::EVENT
-                && event["version"] == VerifyForeignTxV2YieldCreated::VERSION
-        })
-        .map(|event| {
-            serde_json::from_value::<VerifyForeignTxV2YieldCreated>(event["data"].clone())
-                .unwrap()
-                .yield_id
-        })
+        .filter_map(|line| VerifyForeignTxV2YieldCreated::from_log_line(line))
+        .map(|event| event.yield_id)
         .collect()
 }

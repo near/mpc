@@ -11,11 +11,12 @@ pub(crate) const OUTGOING_CONNECTION: &str = "outgoing";
 pub(crate) const PING_MESSAGE: &str = "ping";
 pub(crate) const INDEXER_HEIGHT_MESSAGE: &str = "indexer_height";
 pub(crate) const CONNECTED_PEERS_MESSAGE: &str = "connected_peers";
+pub(crate) const NODE_OUTCOME_MESSAGE: &str = "node_outcome";
 pub(crate) const MPC_START_MESSAGE: &str = "mpc_start";
 pub(crate) const MPC_COMPUTATION_MESSAGE: &str = "mpc_computation";
 pub(crate) const MPC_ABORT_MESSAGE: &str = "mpc_abort";
 pub(crate) const MPC_SUCCESS_MESSAGE: &str = "mpc_success";
-pub(crate) const MPC_NODE_OUTCOMES_MESSAGE: &str = "mpc_node_outcomes";
+pub(crate) const MPC_EVIDENCE_MESSAGE: &str = "mpc_evidence";
 
 // TODO(#1852): remove this label. Don't reuse for new metrics.
 const LABEL_MY_PARTICIPANT_ID: &str = "my_participant_id";

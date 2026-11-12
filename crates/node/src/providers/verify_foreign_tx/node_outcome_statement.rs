@@ -1,22 +1,28 @@
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
-use near_mpc_contract_interface::types::YieldId;
+use near_mpc_contract_interface::types::{self as dtos, YieldId};
 
 use crate::config::{ParticipantsConfig, PersistentSecrets};
-use crate::primitives::{ChannelId, ParticipantId};
+use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 
 /// Starts every signed [`NodeOutcomeStatement`], so that a signature over a statement cannot
 /// stand for any other message signed with the same key.
 const NODE_OUTCOME_STATEMENT_PREFIX: &[u8] = b"near-mpc foreign tx v2 node outcome";
 
-/// A [`SignedNodeOutcome`] whose signature matches the key that the participant set records for
-/// its signer.
+/// A [`SignedNodeOutcome`] whose signature matches the outcome key its signer registered with
+/// the contract. It proves nothing else. A consumer still checks that the yield is the one it
+/// serves.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifiedNodeOutcome(SignedNodeOutcome);
 
 /// A [`NodeOutcomeStatement`] with its signature, not yet verified. Its Borsh encoding is part of
-/// the P2P wire format.
+/// the P2P wire format. That encoding includes [`ForeignTxVerificationNegativeVerdict`] from the
+/// contract interface, so a change to that enum is a wire change.
+///
+/// [`ForeignTxVerificationNegativeVerdict`]: near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct SignedNodeOutcome {
     statement: NodeOutcomeStatement,
@@ -27,37 +33,29 @@ pub struct SignedNodeOutcome {
     signature: Signature,
 }
 
-/// The [`NodeOutcome`] of one node in one attempt of a V2 foreign transaction request, in the
-/// form the node signs.
+/// The [`NodeOutcome`] of one node for one V2 foreign transaction request, in the form the node
+/// signs.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct NodeOutcomeStatement {
     pub(crate) yield_id: YieldId,
-    pub(crate) leader: ParticipantId,
-    pub(crate) attempt: AttemptId,
     pub(crate) signer: ParticipantId,
     pub(crate) outcome: NodeOutcome,
 }
 
-/// The [`ChannelId`] the leader opens for the attempt. It names the leader, and the leader picks
-/// a new one for each channel. An id repeats only if the leader restarts within the second of an
-/// earlier id, or its clock goes back across a restart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub(crate) struct AttemptId(pub(crate) ChannelId);
+/// The outcome key of each participant that registered a valid one with the contract.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct OutcomePublicKeys(BTreeMap<ParticipantId, VerifyingKey>);
 
-/// The key a node signs its [`NodeOutcomeStatement`]s with. It is the node's TLS identity key,
-/// so peers verify a statement against the key in the signer's [`ParticipantInfo`].
-///
-/// [`ParticipantInfo`]: crate::config::ParticipantInfo
+/// The key a node signs its [`NodeOutcomeStatement`]s with. It is independent of the node's TLS
+/// key, and peers verify a statement against the [`OutcomePublicKeys`] on chain.
 pub(crate) struct NodeOutcomeSigningKey(SigningKey);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum NodeOutcomeVerificationError {
-    #[error("node outcome signer {0} is not a participant")]
-    SignerNotParticipant(ParticipantId),
-    #[error("node outcome signature does not match the key of its signer")]
+    #[error("node outcome signer {0} has no registered outcome key")]
+    NoOutcomeKey(ParticipantId),
+    #[error("node outcome signature does not match the outcome key of its signer")]
     BadSignature,
-    #[error("node outcome attempt does not belong to its leader {0}")]
-    AttemptOfAnotherLeader(ParticipantId),
     #[error("failed to encode the node outcome statement")]
     Encoding(#[from] std::io::Error),
 }
@@ -65,6 +63,10 @@ pub(crate) enum NodeOutcomeVerificationError {
 impl VerifiedNodeOutcome {
     pub(crate) fn statement(&self) -> &NodeOutcomeStatement {
         &self.0.statement
+    }
+
+    pub(crate) fn signed(&self) -> &SignedNodeOutcome {
+        &self.0
     }
 }
 
@@ -77,30 +79,48 @@ impl SignedNodeOutcome {
 
     pub(crate) fn verify(
         self,
-        participants: &ParticipantsConfig,
+        outcome_keys: &OutcomePublicKeys,
     ) -> Result<VerifiedNodeOutcome, NodeOutcomeVerificationError> {
-        let NodeOutcomeStatement { leader, signer, .. } = self.statement;
-        let signer_key = NodeOutcomeSigningKey::public_key(participants, signer)
-            .ok_or(NodeOutcomeVerificationError::SignerNotParticipant(signer))?;
+        let signer = self.statement.signer;
+        let signer_key = outcome_keys
+            .0
+            .get(&signer)
+            .ok_or(NodeOutcomeVerificationError::NoOutcomeKey(signer))?;
         signer_key
             .verify_strict(&signed_bytes(&self.statement)?, &self.signature)
             .map_err(|_| NodeOutcomeVerificationError::BadSignature)?;
-        if self.statement.attempt.leader() != leader {
-            return Err(NodeOutcomeVerificationError::AttemptOfAnotherLeader(leader));
-        }
         Ok(VerifiedNodeOutcome(self))
     }
 }
 
-impl AttemptId {
-    fn leader(self) -> ParticipantId {
-        self.0.0.participant_id()
+impl OutcomePublicKeys {
+    /// Keeps the keys of `participants` only, and drops a key that is not a valid Ed25519
+    /// public key, so that its owner's statements do not verify.
+    pub(crate) fn new(participants: &ParticipantsConfig, registered: &dtos::OutcomeKeys) -> Self {
+        let keys = participants
+            .participants
+            .iter()
+            .filter_map(|participant| {
+                let key = registered.get(&participant.near_account_id)?;
+                VerifyingKey::try_from(key)
+                    .inspect_err(|error| {
+                        tracing::warn!(
+                            participant = %participant.id,
+                            %error,
+                            "ignoring a registered outcome key that is not a valid Ed25519 public key"
+                        );
+                    })
+                    .ok()
+                    .map(|key| (participant.id, key))
+            })
+            .collect();
+        Self(keys)
     }
 }
 
 impl From<&PersistentSecrets> for NodeOutcomeSigningKey {
     fn from(secrets: &PersistentSecrets) -> Self {
-        Self(secrets.p2p_private_key.clone())
+        Self(secrets.outcome_signing_key.clone())
     }
 }
 
@@ -114,15 +134,6 @@ impl NodeOutcomeSigningKey {
             statement,
             signature,
         })
-    }
-
-    fn public_key(
-        participants: &ParticipantsConfig,
-        participant: ParticipantId,
-    ) -> Option<&VerifyingKey> {
-        participants
-            .get_info(participant)
-            .map(|info| &info.p2p_public_key)
     }
 }
 
@@ -145,42 +156,112 @@ fn deserialize_signature<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Resul
 }
 
 #[cfg(test)]
+pub(crate) mod testing {
+    use ed25519_dalek::SigningKey;
+    use near_mpc_contract_interface::types::YieldId;
+
+    use super::{
+        NodeOutcomeSigningKey, NodeOutcomeStatement, OutcomePublicKeys, SignedNodeOutcome,
+    };
+    use crate::primitives::ParticipantId;
+    use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
+
+    /// The outcome key of `participant`, the same in every test.
+    pub(crate) fn outcome_signing_key(participant: ParticipantId) -> NodeOutcomeSigningKey {
+        let mut seed = [0x55; 32];
+        seed[..4].copy_from_slice(&participant.raw().to_le_bytes());
+        NodeOutcomeSigningKey(SigningKey::from_bytes(&seed))
+    }
+
+    /// The keys of [`outcome_signing_key`] for `participants`.
+    pub(crate) fn outcome_public_keys(participants: &[ParticipantId]) -> OutcomePublicKeys {
+        OutcomePublicKeys(
+            participants
+                .iter()
+                .map(|participant| {
+                    (
+                        *participant,
+                        outcome_signing_key(*participant).0.verifying_key(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// `statement`, signed with the [`outcome_signing_key`] of its signer.
+    pub(crate) fn signed_by_its_signer(statement: NodeOutcomeStatement) -> SignedNodeOutcome {
+        outcome_signing_key(statement.signer)
+            .sign(statement)
+            .unwrap()
+    }
+
+    /// A node outcome signed with a fixed key, so its bytes are stable across runs.
+    pub(crate) fn signed_node_outcome(outcome: NodeOutcome) -> SignedNodeOutcome {
+        NodeOutcomeSigningKey(SigningKey::from_bytes(&[10; 32]))
+            .sign(NodeOutcomeStatement {
+                yield_id: YieldId([6; 32]),
+                signer: ParticipantId::from_raw(7),
+                outcome,
+            })
+            .unwrap()
+    }
+}
+
+#[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::config::{ParticipantInfo, PersistentSecrets};
-    use crate::primitives::UniqueId;
     use crate::providers::verify_foreign_tx::node_outcome::{NoVerdictReason, NodeVerdict};
     use near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict;
     use rstest::rstest;
     use std::assert_matches;
 
-    const LEADER: ParticipantId = ParticipantId::from_raw(1);
-    const SIGNER: ParticipantId = ParticipantId::from_raw(2);
-    const OTHER_PARTICIPANT: ParticipantId = ParticipantId::from_raw(3);
+    const SIGNER: ParticipantId = ParticipantId::from_raw(1);
+    const OTHER_PARTICIPANT: ParticipantId = ParticipantId::from_raw(2);
+    const UNREGISTERED_PARTICIPANT: ParticipantId = ParticipantId::from_raw(3);
     const NON_PARTICIPANT: ParticipantId = ParticipantId::from_raw(4);
 
+    /// Encodes y = 2, and no point on the curve has this y coordinate.
+    const INVALID_POINT: [u8; 32] = {
+        let mut bytes = [0; 32];
+        bytes[0] = 2;
+        bytes
+    };
+
+    fn seed(participant: ParticipantId) -> u8 {
+        u8::try_from(participant.raw()).unwrap()
+    }
+
     fn tls_key(participant: ParticipantId) -> SigningKey {
-        let seed = u8::try_from(participant.raw()).unwrap();
-        SigningKey::from_bytes(&[seed; 32])
+        SigningKey::from_bytes(&[seed(participant); 32])
+    }
+
+    fn outcome_key(participant: ParticipantId) -> SigningKey {
+        SigningKey::from_bytes(&[seed(participant) + 0x80; 32])
     }
 
     fn signing_key(participant: ParticipantId) -> NodeOutcomeSigningKey {
         NodeOutcomeSigningKey::from(&PersistentSecrets {
             p2p_private_key: tls_key(participant),
             near_signer_key: SigningKey::from_bytes(&[0xff; 32]),
+            outcome_signing_key: outcome_key(participant),
         })
     }
 
+    fn account(participant: ParticipantId) -> dtos::AccountId {
+        format!("p{}.near", participant.raw()).parse().unwrap()
+    }
+
     fn participants() -> ParticipantsConfig {
-        let participants = [LEADER, SIGNER, OTHER_PARTICIPANT]
+        let participants = [SIGNER, OTHER_PARTICIPANT, UNREGISTERED_PARTICIPANT]
             .into_iter()
             .map(|id| ParticipantInfo {
                 id,
                 address: "127.0.0.1".to_string(),
                 port: 3000,
                 p2p_public_key: tls_key(id).verifying_key(),
-                near_account_id: format!("p{}.near", id.raw()).parse().unwrap(),
+                near_account_id: account(id),
             })
             .collect();
         ParticipantsConfig {
@@ -189,19 +270,29 @@ mod tests {
         }
     }
 
-    fn attempt(counter: u32) -> AttemptId {
-        attempt_of(LEADER, counter)
+    fn registered(participants: &[ParticipantId]) -> dtos::OutcomeKeys {
+        participants
+            .iter()
+            .map(|participant| {
+                (
+                    account(*participant),
+                    dtos::Ed25519PublicKey::from(&outcome_key(*participant).verifying_key()),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .into()
     }
 
-    fn attempt_of(leader: ParticipantId, counter: u32) -> AttemptId {
-        AttemptId(ChannelId(UniqueId::new(leader, 1_700_000_000, counter)))
+    fn outcome_keys() -> OutcomePublicKeys {
+        OutcomePublicKeys::new(
+            &participants(),
+            &registered(&[SIGNER, OTHER_PARTICIPANT, NON_PARTICIPANT]),
+        )
     }
 
     fn statement() -> NodeOutcomeStatement {
         NodeOutcomeStatement {
             yield_id: YieldId([0xab; 32]),
-            leader: LEADER,
-            attempt: attempt(0),
             signer: SIGNER,
             outcome: NodeOutcome::Verdict(NodeVerdict::Negative(
                 ForeignTxVerificationNegativeVerdict::TransactionNotFound,
@@ -210,15 +301,85 @@ mod tests {
     }
 
     #[test]
-    fn signed_node_outcome__should_verify_against_the_key_of_its_signer() {
+    fn outcome_public_keys_new__should_map_registered_participants_to_their_outcome_keys() {
+        // Given
+        let registered = registered(&[SIGNER, OTHER_PARTICIPANT]);
+
+        // When
+        let keys = OutcomePublicKeys::new(&participants(), &registered);
+
+        // Then
+        assert_eq!(
+            keys,
+            OutcomePublicKeys(BTreeMap::from([
+                (SIGNER, outcome_key(SIGNER).verifying_key()),
+                (
+                    OTHER_PARTICIPANT,
+                    outcome_key(OTHER_PARTICIPANT).verifying_key()
+                ),
+            ]))
+        );
+    }
+
+    #[test]
+    fn outcome_public_keys_new__should_skip_accounts_that_are_not_participants() {
+        // Given
+        let registered = registered(&[NON_PARTICIPANT]);
+
+        // When
+        let keys = OutcomePublicKeys::new(&participants(), &registered);
+
+        // Then
+        assert_eq!(keys, OutcomePublicKeys(BTreeMap::new()));
+    }
+
+    #[test]
+    fn outcome_public_keys_new__should_drop_a_key_that_is_not_a_valid_point() {
+        // Given
+        let mut registered = registered(&[SIGNER]);
+        registered.insert(
+            account(OTHER_PARTICIPANT),
+            dtos::Ed25519PublicKey::from(INVALID_POINT),
+        );
+
+        // When
+        let keys = OutcomePublicKeys::new(&participants(), &registered);
+
+        // Then
+        assert_eq!(
+            keys,
+            OutcomePublicKeys(BTreeMap::from([(
+                SIGNER,
+                outcome_key(SIGNER).verifying_key()
+            )]))
+        );
+    }
+
+    #[test]
+    fn signed_node_outcome__should_verify_against_the_outcome_key_of_its_signer() {
         // Given
         let signed = signing_key(SIGNER).sign(statement()).unwrap();
 
         // When
-        let verified = signed.verify(&participants()).unwrap();
+        let verified = signed.verify(&outcome_keys()).unwrap();
 
         // Then
         assert_eq!(verified.statement(), &statement());
+    }
+
+    #[test]
+    fn signed_node_outcome__should_reject_a_signature_by_the_tls_key_of_its_signer() {
+        // Given
+        let signed = SignedNodeOutcome {
+            statement: statement(),
+            signature: tls_key(SIGNER).sign(&signed_bytes(&statement()).unwrap()),
+        };
+
+        // When
+        let result = signed.verify(&outcome_keys());
+
+        // Then
+        assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));
     }
 
     #[test]
@@ -227,49 +388,32 @@ mod tests {
         let signed = signing_key(OTHER_PARTICIPANT).sign(statement()).unwrap();
 
         // When
-        let result = signed.verify(&participants());
+        let result = signed.verify(&outcome_keys());
 
         // Then
         assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));
     }
 
-    #[test]
-    fn signed_node_outcome__should_reject_a_signer_that_is_not_a_participant() {
+    #[rstest]
+    #[case::unregistered_participant(UNREGISTERED_PARTICIPANT)]
+    #[case::non_participant(NON_PARTICIPANT)]
+    fn signed_node_outcome__should_reject_a_signer_without_an_outcome_key(
+        #[case] signer: ParticipantId,
+    ) {
         // Given
         let statement = NodeOutcomeStatement {
-            signer: NON_PARTICIPANT,
+            signer,
             ..statement()
         };
-        let signed = signing_key(NON_PARTICIPANT).sign(statement).unwrap();
+        let signed = signing_key(signer).sign(statement).unwrap();
 
         // When
-        let result = signed.verify(&participants());
+        let result = signed.verify(&outcome_keys());
 
         // Then
         assert_matches!(
             result,
-            Err(NodeOutcomeVerificationError::SignerNotParticipant(
-                NON_PARTICIPANT
-            ))
-        );
-    }
-
-    #[test]
-    fn signed_node_outcome__should_reject_an_attempt_of_another_leader() {
-        // Given
-        let statement = NodeOutcomeStatement {
-            attempt: attempt_of(OTHER_PARTICIPANT, 0),
-            ..statement()
-        };
-        let signed = signing_key(SIGNER).sign(statement).unwrap();
-
-        // When
-        let result = signed.verify(&participants());
-
-        // Then
-        assert_matches!(
-            result,
-            Err(NodeOutcomeVerificationError::AttemptOfAnotherLeader(LEADER))
+            Err(NodeOutcomeVerificationError::NoOutcomeKey(rejected)) if rejected == signer
         );
     }
 
@@ -285,15 +429,13 @@ mod tests {
         // Then
         assert_eq!(decoded, signed);
         assert_eq!(
-            decoded.verify(&participants()).unwrap().statement(),
+            decoded.verify(&outcome_keys()).unwrap().statement(),
             &statement()
         );
     }
 
     #[rstest]
     #[case::yield_id(NodeOutcomeStatement { yield_id: YieldId([0xcd; 32]), ..statement() })]
-    #[case::leader(NodeOutcomeStatement { leader: OTHER_PARTICIPANT, ..statement() })]
-    #[case::attempt(NodeOutcomeStatement { attempt: attempt(1), ..statement() })]
     #[case::signer(NodeOutcomeStatement { signer: OTHER_PARTICIPANT, ..statement() })]
     #[case::verdict(NodeOutcomeStatement {
         outcome: NodeOutcome::Verdict(NodeVerdict::Verified),
@@ -314,7 +456,34 @@ mod tests {
         };
 
         // When
-        let result = signed.verify(&participants());
+        let result = signed.verify(&outcome_keys());
+
+        // Then
+        assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));
+    }
+
+    #[test]
+    fn signed_node_outcome__should_reject_a_signature_of_another_signer_with_the_same_outcome_key()
+    {
+        // Given
+        let outcome_key = dtos::Ed25519PublicKey::from(&outcome_key(SIGNER).verifying_key());
+        let registered: dtos::OutcomeKeys = BTreeMap::from([
+            (account(SIGNER), outcome_key.clone()),
+            (account(OTHER_PARTICIPANT), outcome_key),
+        ])
+        .into();
+        let keys = OutcomePublicKeys::new(&participants(), &registered);
+        let signature = signing_key(SIGNER).sign(statement()).unwrap().signature;
+        let signed = SignedNodeOutcome {
+            statement: NodeOutcomeStatement {
+                signer: OTHER_PARTICIPANT,
+                ..statement()
+            },
+            signature,
+        };
+
+        // When
+        let result = signed.verify(&keys);
 
         // Then
         assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));
@@ -330,11 +499,11 @@ mod tests {
         // Given
         let signed = SignedNodeOutcome {
             statement: statement(),
-            signature: tls_key(SIGNER).sign(&bytes),
+            signature: outcome_key(SIGNER).sign(&bytes),
         };
 
         // When
-        let result = signed.verify(&participants());
+        let result = signed.verify(&outcome_keys());
 
         // Then
         assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));
@@ -342,10 +511,40 @@ mod tests {
 
     #[rstest]
     #[case::verified("signed_bytes_verified", NodeOutcome::Verdict(NodeVerdict::Verified))]
-    #[case::negative(
-        "signed_bytes_negative",
+    #[case::transaction_failed(
+        "signed_bytes_transaction_failed",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::TransactionFailed
+        ))
+    )]
+    #[case::log_index_out_of_bounds(
+        "signed_bytes_log_index_out_of_bounds",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::LogIndexOutOfBounds
+        ))
+    )]
+    #[case::transaction_not_found(
+        "signed_bytes_transaction_not_found",
         NodeOutcome::Verdict(NodeVerdict::Negative(
             ForeignTxVerificationNegativeVerdict::TransactionNotFound
+        ))
+    )]
+    #[case::account_not_found(
+        "signed_bytes_account_not_found",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::AccountNotFound
+        ))
+    )]
+    #[case::non_canonical_block(
+        "signed_bytes_non_canonical_block",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::NonCanonicalBlock
+        ))
+    )]
+    #[case::values_mismatch(
+        "signed_bytes_values_mismatch",
+        NodeOutcome::Verdict(NodeVerdict::Negative(
+            ForeignTxVerificationNegativeVerdict::ValuesMismatch
         ))
     )]
     #[case::transient(

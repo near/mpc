@@ -22,6 +22,7 @@ use crate::network::wire_format::{EcdsaTaskId, EddsaTaskId, MpcTaskId};
 use crate::network::{
     MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
 };
+use crate::outcome_key_registrar::spawn_outcome_key_registrar;
 use crate::p2p::{new_tls_mesh_network, new_tls_mesh_network_with_address_updates};
 use crate::primitives::ParticipantId;
 use crate::providers::ckd::CKDProvider;
@@ -29,6 +30,7 @@ use crate::providers::ecdsa::triple;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeSigningKey;
+use crate::providers::verify_foreign_tx::node_outcomes::follow_outcome_keys;
 use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
 use crate::providers::verify_foreign_tx::{VerifyForeignTxProvider, VerifyForeignTxV2Context};
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider};
@@ -183,6 +185,7 @@ where
                                 self.indexer.foreign_chain_supporters_receiver.clone(),
                                 self.indexer.foreign_chain_whitelist_receiver.clone(),
                                 self.indexer.foreign_chains_configs_receiver.clone(),
+                                self.indexer.outcome_keys_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -383,6 +386,7 @@ where
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         foreign_chain_whitelist_receiver: watch::Receiver<ForeignChainWhitelist>,
         foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
+        outcome_keys_receiver: watch::Receiver<dtos::OutcomeKeys>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -445,6 +449,17 @@ where
             foreign_chains_configs_receiver,
             dtos::Ed25519PublicKey::from(&p2p_key.verifying_key()),
             config_file.foreign_chains.clone(),
+        );
+        let _outcome_key_registrar = spawn_outcome_key_registrar(
+            chain_txn_sender.clone(),
+            outcome_keys_receiver.clone(),
+            config_file.my_near_account_id.clone(),
+            dtos::Ed25519PublicKey::from(
+                &secrets
+                    .persistent_secrets
+                    .outcome_signing_key
+                    .verifying_key(),
+            ),
         );
 
         let resolve_peer_address =
@@ -596,7 +611,7 @@ where
                     VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
                 );
                 let verify_foreign_tx_v2_requests =
-                    Arc::new(OpenVerifyForeignTxRequestsV2::default());
+                    Arc::new(OpenVerifyForeignTxRequestsV2::new(clock.clone()));
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
@@ -747,10 +762,17 @@ where
                     VerifyForeignTxV2Context {
                         open_requests: verify_foreign_tx_v2_requests.clone(),
                         signing_key: node_outcome_signing_key,
-                        participants: Arc::new(running_mpc_config.participants.clone()),
                         network: network_client.clone(),
                     },
                 )?);
+                let _outcome_keys_follower = tracking::spawn(
+                    "follow the outcome keys of the participants",
+                    follow_outcome_keys(
+                        network_client.node_outcomes().clone(),
+                        running_mpc_config.participants.clone(),
+                        outcome_keys_receiver,
+                    ),
+                );
 
                 let mpc_client = Arc::new(MpcClient::new(
                     config_file.into(),

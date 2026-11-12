@@ -11,17 +11,19 @@ use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::events::VerifyForeignTxV2YieldCreated;
 use near_mpc_contract_interface::types::{
     BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations,
     BlockHeight, DomainConfig, DomainId, DomainPurpose, ExtractedValue, ForeignChainRpcRequest,
     ForeignTxVerificationNegativeVerdict, ForeignTxVerificationOutcome, Hash256, Protocol,
     PublicKey, ReconstructionThreshold, VerifyForeignTransactionRequestV2,
-    VerifyForeignTransactionResponseV2,
+    VerifyForeignTransactionResponseV2, YieldId,
 };
-use near_mpc_sdk::foreign_chain::{ForeignChainSignatureVerifierV2, VerifiedForeignTxResponseV2};
+use near_mpc_sdk::foreign_chain::{
+    ForeignChainSignatureVerifierV2, VerifiedForeignTxResponseV2, VerifyForeignChainError,
+};
 
 const FOREIGN_TX_DOMAIN_ID: DomainId = DomainId(0);
-const EVENT_JSON_PREFIX: &str = "EVENT_JSON:";
 
 struct ReadRpcEnv {
     cluster: e2e_tests::MpcCluster,
@@ -112,12 +114,21 @@ fn mock_block_hash() -> Hash256 {
 struct AnsweredRequest {
     response: VerifiedForeignTxResponseV2,
     request_block_height: BlockHeight,
-    announced_yield_id: String,
+    announced_yield_id: YieldId,
 }
+
+/// The check a caller runs on a response: [`ForeignChainSignatureVerifierV2::verify_signature`]
+/// accepts only a success.
+type VerifyResponse = fn(
+    &ForeignChainSignatureVerifierV2,
+    &VerifyForeignTransactionResponseV2,
+    &PublicKey,
+) -> Result<VerifiedForeignTxResponseV2, VerifyForeignChainError>;
 
 async fn read_rpc(
     env: &ReadRpcEnv,
     request: VerifyForeignTransactionRequestV2,
+    verify: VerifyResponse,
 ) -> anyhow::Result<AnsweredRequest> {
     let user = env.cluster.default_user_account().clone();
     let outcome = env
@@ -134,9 +145,12 @@ async fn read_rpc(
     let response: VerifyForeignTransactionResponseV2 = outcome
         .json()
         .context("failed to parse the read_rpc response")?;
-    let response = ForeignChainSignatureVerifierV2::new(request)
-        .verify_signature(&response, &env.public_key)
-        .map_err(|err| anyhow::anyhow!("the response signature does not check out: {err:?}"))?;
+    let response = verify(
+        &ForeignChainSignatureVerifierV2::new(request),
+        &response,
+        &env.public_key,
+    )
+    .map_err(|err| anyhow::anyhow!("the response signature does not check out: {err:?}"))?;
 
     let (request_receipt, event) = outcome
         .receipts_outcome
@@ -146,15 +160,10 @@ async fn read_rpc(
                 .outcome
                 .logs
                 .iter()
-                .find_map(|line| line.strip_prefix(EVENT_JSON_PREFIX))
+                .find_map(|line| VerifyForeignTxV2YieldCreated::from_log_line(line))
                 .map(|event| (receipt, event))
         })
         .context("no receipt logged the yield created event")?;
-    let event: serde_json::Value = serde_json::from_str(event)?;
-    let announced_yield_id = event["data"]["yield_id"]
-        .as_str()
-        .context("the event has no yield id")?
-        .to_string();
     let request_block_height = env
         .cluster
         .blockchain
@@ -163,7 +172,7 @@ async fn read_rpc(
     Ok(AnsweredRequest {
         response,
         request_block_height: BlockHeight::new(request_block_height),
-        announced_yield_id,
+        announced_yield_id: event.yield_id,
     })
 }
 
@@ -177,12 +186,20 @@ async fn read_rpc__should_answer_with_a_signed_success_and_a_signed_negative_ver
     let env = must_setup_read_rpc_cluster().await;
 
     // When
-    let success = read_rpc(&env, bitcoin_request(mock_block_hash()))
-        .await
-        .expect("the request with the values on chain was not answered");
-    let negative = read_rpc(&env, bitcoin_request(Hash256([0x11; 32])))
-        .await
-        .expect("the request with other values was not answered");
+    let success = read_rpc(
+        &env,
+        bitcoin_request(mock_block_hash()),
+        ForeignChainSignatureVerifierV2::verify_signature,
+    )
+    .await
+    .expect("the request with the values on chain was not answered");
+    let negative = read_rpc(
+        &env,
+        bitcoin_request(Hash256([0x11; 32])),
+        ForeignChainSignatureVerifierV2::verify_signed_outcome,
+    )
+    .await
+    .expect("the request with other values was not answered");
 
     // Then
     assert_eq!(
@@ -200,10 +217,7 @@ async fn read_rpc__should_answer_with_a_signed_success_and_a_signed_negative_ver
             answered.response.request_block_height(),
             answered.request_block_height
         );
-        assert_eq!(
-            hex::encode(answered.response.yield_id().0),
-            answered.announced_yield_id
-        );
+        assert_eq!(answered.response.yield_id(), answered.announced_yield_id);
     }
     assert_ne!(success.response.yield_id(), negative.response.yield_id());
 }
