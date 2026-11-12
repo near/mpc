@@ -1,9 +1,13 @@
 use super::*;
-use crate::config::ParticipantsConfig;
 use crate::network::testing::new_test_client;
-use crate::primitives::{ChannelId, ParticipantId, UniqueId};
-use crate::providers::verify_foreign_tx::attempt_evidence::LedAttempt;
-use crate::providers::verify_foreign_tx::node_outcome_statement::AttemptId;
+use crate::primitives::ParticipantId;
+use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
+use crate::providers::verify_foreign_tx::node_outcome_statement::testing::{
+    outcome_public_keys, signed_by_its_signer,
+};
+use crate::providers::verify_foreign_tx::node_outcome_statement::{
+    NodeOutcomeStatement, SignedNodeOutcome,
+};
 use crate::providers::verify_foreign_tx::open_requests::test_chain::TestChain;
 use crate::requests::metrics::VERIFY_FOREIGN_TX_V2S_REQUEST_RESPONSE_LATENCY_BLOCKS;
 use mpc_primitives::domain::DomainId;
@@ -18,7 +22,7 @@ const ME: ParticipantId = ParticipantId::from_raw(0);
 struct IndexedV2 {
     chain: TestChain,
     open_requests: OpenVerifyForeignTxRequestsV2,
-    evidence: AttemptEvidence,
+    node_outcomes: NodeOutcomes,
     pending: PendingRequests<
         VerifyForeignTxRequestV2,
         contract_args::VerifyForeignTransactionRespondV2Args,
@@ -30,7 +34,11 @@ impl IndexedV2 {
         Self {
             chain: TestChain::starting_at(BlockHeight::new(999)),
             open_requests: OpenVerifyForeignTxRequestsV2::default(),
-            evidence: AttemptEvidence::new(),
+            node_outcomes: {
+                let node_outcomes = NodeOutcomes::new();
+                node_outcomes.set_outcome_keys(outcome_public_keys(&[ME]));
+                node_outcomes
+            },
             pending: PendingRequests::new(
                 Clock::real(),
                 vec![ME],
@@ -49,7 +57,7 @@ impl IndexedV2 {
         let update = self.chain.extend(requests, answered);
         notify_v2_block(
             &self.open_requests,
-            &self.evidence,
+            &self.node_outcomes,
             &mut self.pending,
             update,
             timed_out,
@@ -81,17 +89,12 @@ fn request() -> VerifyForeignTxRequestV2 {
     }
 }
 
-fn led_attempt() -> LedAttempt {
-    LedAttempt {
-        id: AttemptId(ChannelId(UniqueId::new(ME, 1_700_000_000, 1))),
+fn own_outcome() -> SignedNodeOutcome {
+    signed_by_its_signer(NodeOutcomeStatement {
         yield_id: request().yield_id,
-        leader: ME,
-        participants: vec![ME],
-        keys: Arc::new(ParticipantsConfig {
-            threshold: 1,
-            participants: vec![],
-        }),
-    }
+        signer: ME,
+        outcome: NodeOutcome::Verdict(NodeVerdict::Verified),
+    })
 }
 
 #[test]
@@ -130,18 +133,26 @@ fn notify_v2_block__should_keep_a_timeout_out_of_the_latency() {
 }
 
 #[test]
-fn notify_v2_block__should_forget_the_evidence_of_a_request_once_its_completion_is_final() {
+fn notify_v2_block__should_count_the_outcomes_of_a_request_from_its_block_until_it_settles() {
     // Given
     let mut indexed = IndexedV2::new();
+    indexed.node_outcomes.receive(ME, own_outcome()).unwrap();
+    let counted_before_the_request = indexed.node_outcomes.outcomes_of(request().yield_id);
     indexed.index(vec![request()], vec![], &[]);
-    indexed.evidence.open(led_attempt());
+    let counted_once_indexed = indexed.node_outcomes.outcomes_of(request().yield_id);
     indexed.index(vec![], vec![request().id], &[]);
-    let kept_while_not_final = indexed.evidence.attempts_kept_for(request().yield_id);
+    let counted_while_the_completion_is_not_final =
+        indexed.node_outcomes.outcomes_of(request().yield_id);
 
     // When
     indexed.finalize_head();
 
     // Then
-    assert_eq!(kept_while_not_final, 1);
-    assert_eq!(indexed.evidence.attempts_kept_for(request().yield_id), 0);
+    assert_eq!(counted_before_the_request.len(), 0);
+    assert_eq!(counted_once_indexed.len(), 1);
+    assert_eq!(counted_while_the_completion_is_not_final.len(), 1);
+    assert_eq!(
+        indexed.node_outcomes.outcomes_of(request().yield_id).len(),
+        0
+    );
 }

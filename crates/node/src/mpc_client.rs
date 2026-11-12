@@ -734,8 +734,10 @@ mod tests {
     use super::*;
     use crate::network::wire_format::{CKDTaskId, EddsaTaskId, VerifyForeignTxTaskId};
     use crate::primitives::{ParticipantId, UniqueId};
+    use crate::providers::verify_foreign_tx::node_outcome::{NodeVerdict, RoundOutcome};
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types::YieldId;
 
     fn uid() -> UniqueId {
         UniqueId::new(ParticipantId::from_raw(0), 1, 0)
@@ -854,8 +856,9 @@ mod tests {
                 false,
             ),
             (
-                VerifyForeignTxTaskId::VerifyForeignTxV2 {
-                    id: CryptoHash::default(),
+                VerifyForeignTxTaskId::SignOutcome {
+                    yield_id: YieldId([0; 32]),
+                    outcome: RoundOutcome::Verdict(NodeVerdict::Verified),
                     paired_triple_id: uid(),
                 }
                 .into(),

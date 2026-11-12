@@ -30,6 +30,7 @@ use crate::providers::ecdsa::triple;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeSigningKey;
+use crate::providers::verify_foreign_tx::node_outcomes::follow_outcome_keys;
 use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
 use crate::providers::verify_foreign_tx::{VerifyForeignTxProvider, VerifyForeignTxV2Context};
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider};
@@ -451,7 +452,7 @@ where
         );
         let _outcome_key_registrar = spawn_outcome_key_registrar(
             chain_txn_sender.clone(),
-            outcome_keys_receiver,
+            outcome_keys_receiver.clone(),
             config_file.my_near_account_id.clone(),
             dtos::Ed25519PublicKey::from(
                 &secrets
@@ -761,10 +762,17 @@ where
                     VerifyForeignTxV2Context {
                         open_requests: verify_foreign_tx_v2_requests.clone(),
                         signing_key: node_outcome_signing_key,
-                        participants: Arc::new(running_mpc_config.participants.clone()),
                         network: network_client.clone(),
                     },
                 )?);
+                let _outcome_keys_follower = tracking::spawn(
+                    "follow the outcome keys of the participants",
+                    follow_outcome_keys(
+                        network_client.node_outcomes().clone(),
+                        running_mpc_config.participants.clone(),
+                        outcome_keys_receiver,
+                    ),
+                );
 
                 let mpc_client = Arc::new(MpcClient::new(
                     config_file.into(),

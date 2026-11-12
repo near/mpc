@@ -29,6 +29,8 @@ struct IndexedRequest {
     block: BlockStatusHandle,
     /// The blocks of the completions of this request or of another request with its yield id.
     completions: Vec<BlockStatusHandle>,
+    /// Set once [`OpenVerifyForeignTxRequestsV2::take_final_uninspected`] handed the request out.
+    inspected: bool,
 }
 
 impl OpenVerifyForeignTxRequestsV2 {
@@ -46,6 +48,7 @@ impl OpenVerifyForeignTxRequestsV2 {
                     request: request.clone(),
                     block: update.block_status.clone(),
                     completions: Vec::new(),
+                    inspected: false,
                 });
         }
         let completed_yields: Vec<YieldId> = update
@@ -76,8 +79,27 @@ impl OpenVerifyForeignTxRequestsV2 {
     }
 
     /// True while a request with `yield_id` may still open or close.
+    #[cfg(test)]
     pub(crate) fn tracks_yield(&self, yield_id: YieldId) -> bool {
         tracks(&self.requests.lock().unwrap(), yield_id)
+    }
+
+    /// The open requests whose block is final and that no earlier call returned. A node
+    /// inspects each request once, and only once its block is final, so a fork cannot hand two
+    /// requests the same yield id.
+    pub(crate) fn take_final_uninspected(&self) -> Vec<VerifyForeignTxRequestV2> {
+        self.requests
+            .lock()
+            .unwrap()
+            .values_mut()
+            .filter(|indexed| {
+                !indexed.inspected && indexed.is_open() && indexed.block.is_final() == Some(true)
+            })
+            .map(|indexed| {
+                indexed.inspected = true;
+                indexed.request.clone()
+            })
+            .collect()
     }
 
     pub(crate) fn get(&self, id: VerifyForeignTxId) -> Option<VerifyForeignTxRequestV2> {
@@ -89,14 +111,21 @@ impl OpenVerifyForeignTxRequestsV2 {
             .map(|indexed| indexed.request.clone())
     }
 
-    /// Returns the request once it is open. A peer may start an attempt before this node indexed
-    /// the request, so callers bound the wait.
-    pub(crate) async fn wait_for(&self, id: VerifyForeignTxId) -> VerifyForeignTxRequestV2 {
+    /// Returns an open request with `yield_id` once there is one. A peer may start a signing
+    /// round before this node indexed the request, so callers bound the wait.
+    pub(crate) async fn wait_for_yield(&self, yield_id: YieldId) -> VerifyForeignTxRequestV2 {
         loop {
             let changed = self.changed.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
-            if let Some(request) = self.get(id) {
+            let open = self
+                .requests
+                .lock()
+                .unwrap()
+                .values()
+                .find(|indexed| indexed.request.yield_id == yield_id && indexed.is_open())
+                .map(|indexed| indexed.request.clone());
+            if let Some(request) = open {
                 return request;
             }
             changed.await;
@@ -355,12 +384,49 @@ mod tests {
         assert_eq!(settled, vec![request(1).yield_id]);
     }
 
-    #[tokio::test]
-    async fn open_requests_wait_for__should_return_a_request_indexed_after_the_wait_started() {
+    #[test]
+    fn open_requests_take_final_uninspected__should_hand_out_a_request_once_its_block_is_final() {
         // Given
         let open = OpenVerifyForeignTxRequestsV2::default();
         let mut chain = TestChain::starting_at(START_HEIGHT);
-        let waiting = open.wait_for(request(1).id);
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
+        let before_final = open.take_final_uninspected();
+        open.notify_new_block(&chain.extend(vec![], vec![]));
+        open.notify_new_block(&chain.extend(vec![], vec![]));
+
+        // When
+        let once_final = open.take_final_uninspected();
+        let again = open.take_final_uninspected();
+
+        // Then
+        assert_eq!(before_final, vec![]);
+        assert_eq!(once_final, vec![request(1)]);
+        assert_eq!(again, vec![]);
+    }
+
+    #[test]
+    fn open_requests_take_final_uninspected__should_skip_a_closed_request() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
+        open.notify_new_block(&chain.extend(vec![], vec![request(1).id]));
+        open.notify_new_block(&chain.extend(vec![], vec![]));
+
+        // When
+        let to_inspect = open.take_final_uninspected();
+
+        // Then
+        assert_eq!(to_inspect, vec![]);
+    }
+
+    #[tokio::test]
+    async fn open_requests_wait_for_yield__should_return_a_request_indexed_after_the_wait_started()
+    {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        let waiting = open.wait_for_yield(request(1).yield_id);
 
         // When
         let (found, _) = tokio::join!(

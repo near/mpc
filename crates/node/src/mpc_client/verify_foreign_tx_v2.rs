@@ -3,7 +3,6 @@ use std::sync::Arc;
 use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_time::Clock;
-use tokio::time::Duration;
 
 use super::{MpcClient, run_led_computation};
 use crate::foreign_chain_policy::ForeignChainLeadersRefiner;
@@ -12,7 +11,8 @@ use crate::indexer::types::{
     ChainSendTransactionRequest, VerifyForeignTransactionRespondV2ArgsExt,
 };
 use crate::metrics;
-use crate::providers::verify_foreign_tx::attempt_evidence::AttemptEvidence;
+use crate::providers::verify_foreign_tx::ROUND_DEADLINE;
+use crate::providers::verify_foreign_tx::node_outcomes::NodeOutcomes;
 use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
 use crate::requests::queue::{GenerationAttempt, PendingRequests, RefineEligibleLeaders};
 use crate::tracking::AutoAbortTaskCollection;
@@ -39,7 +39,8 @@ impl MpcClient {
     }
 
     /// Opens the V2 requests of a new block, and closes the ones it answers or times out. The
-    /// completed requests of `update` are the answered ones.
+    /// completed requests of `update` are the answered ones. The node outcomes of a request
+    /// count from the moment it opens until it settles.
     pub(crate) fn notify_verify_foreign_tx_v2_block(
         &self,
         pending: &mut PendingVerifyForeignTxV2s,
@@ -48,19 +49,31 @@ impl MpcClient {
     ) {
         notify_v2_block(
             &self.verify_foreign_tx_v2_requests,
-            self.network_client.attempt_evidence(),
+            self.network_client.node_outcomes(),
             pending,
             update,
             &timed_out,
         );
     }
 
+    /// Spawns this node's inspection of each V2 request whose block became final, and the
+    /// leaders of the requests this node leads now.
     pub(crate) fn spawn_verify_foreign_tx_v2_attempts(
         self: &Arc<Self>,
         pending: &mut PendingVerifyForeignTxV2s,
         tasks: &mut AutoAbortTaskCollection<()>,
         chain_txn_sender: &(impl TransactionSender + 'static),
     ) {
+        for request in self.verify_foreign_tx_v2_requests.take_final_uninspected() {
+            let provider = self.verify_foreign_tx_provider.clone();
+            tasks.spawn_checked(
+                &format!(
+                    "inspection of verify_foreign_tx_v2 request {:?}",
+                    request.id
+                ),
+                async move { provider.inspect_and_send_node_outcome(request).await },
+            );
+        }
         for attempt in pending.get_requests_to_attempt() {
             let this = self.clone();
             let chain_txn_sender = chain_txn_sender.clone();
@@ -96,13 +109,9 @@ impl MpcClient {
         let response = match existing_response {
             Some(response) => response,
             None => {
-                // TODO(#5125): give V2 attempts their own deadline and retries.
-                let response = run_led_computation(
-                    &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
-                    Duration::from_secs(self.config.signature.timeout_sec),
-                    self.compute_verify_foreign_tx_v2_response(&attempt.request),
-                )
-                .await?;
+                let response = self
+                    .compute_verify_foreign_tx_v2_response(&attempt.request)
+                    .await?;
                 attempt
                     .computation_progress
                     .lock()
@@ -122,6 +131,8 @@ impl MpcClient {
         Ok(())
     }
 
+    /// Waits for a verdict t nodes signed, and runs one signing round for it. Only the round
+    /// counts as a led computation.
     async fn compute_verify_foreign_tx_v2_response(
         &self,
         request: &VerifyForeignTxRequestV2,
@@ -129,10 +140,15 @@ impl MpcClient {
         let domain_id = request.domain_id;
         match self.domain_to_protocol.get(&domain_id) {
             Some(Protocol::CaitSith) => {
-                let signed_verdict = self
-                    .verify_foreign_tx_provider
-                    .make_verify_foreign_tx_v2_leader(request.id)
-                    .await?;
+                let provider = &self.verify_foreign_tx_provider;
+                let round = provider.prepare_verdict_round(request.id).await?;
+                // TODO(#5125): retry a failed round with a fresh asset.
+                let signed_verdict = run_led_computation(
+                    &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
+                    ROUND_DEADLINE,
+                    provider.run_verdict_round(round),
+                )
+                .await?;
                 contract_args::VerifyForeignTransactionRespondV2Args::from_signed_verdict(
                     request.yield_id,
                     signed_verdict,
@@ -148,7 +164,7 @@ impl MpcClient {
 
 fn notify_v2_block<Refiner: RefineEligibleLeaders<VerifyForeignTxRequestV2>>(
     open_requests: &OpenVerifyForeignTxRequestsV2,
-    evidence: &AttemptEvidence,
+    node_outcomes: &NodeOutcomes,
     pending: &mut PendingRequests<
         VerifyForeignTxRequestV2,
         contract_args::VerifyForeignTransactionRespondV2Args,
@@ -163,7 +179,8 @@ fn notify_v2_block<Refiner: RefineEligibleLeaders<VerifyForeignTxRequestV2>>(
         block_height: update.block_height,
         block_status: update.block_status.clone(),
     };
-    evidence.forget(&open_requests.notify_new_block(&answered_or_timed_out));
+    node_outcomes.index(update.requests.iter().map(|request| request.yield_id));
+    node_outcomes.forget(&open_requests.notify_new_block(&answered_or_timed_out));
     // The latency histograms time answers only, so a timed out request leaves the queue once it
     // expires.
     pending.notify_new_block(update);

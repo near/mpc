@@ -1,9 +1,9 @@
-pub(crate) mod attempt_evidence;
 pub(crate) mod node_outcome;
 pub(crate) mod node_outcome_statement;
+pub(crate) mod node_outcomes;
 pub(crate) mod open_requests;
 
-mod attempt_outcomes;
+mod counting_rule;
 mod inspect_request;
 mod inspection;
 mod provider_call_metrics;
@@ -11,7 +11,7 @@ mod sign;
 mod sign_v2;
 
 pub(crate) use inspection::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
-pub(crate) use sign_v2::{SignedVerdict, VerifyForeignTxV2Context};
+pub(crate) use sign_v2::{ROUND_DEADLINE, SignedVerdict, VerifyForeignTxV2Context};
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
@@ -19,7 +19,6 @@ use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
 use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
-use crate::tracking::AutoAbortTaskCollection;
 use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
 use foreign_chain_inspector::adi::inspector::AdiInspector;
@@ -215,8 +214,6 @@ pub struct VerifyForeignTxProvider {
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     v2: VerifyForeignTxV2Context,
-    /// The leader's own inspections of V2 attempts, which may outlive their attempt.
-    own_inspections: std::sync::Mutex<AutoAbortTaskCollection<()>>,
 }
 
 impl VerifyForeignTxProvider {
@@ -239,7 +236,6 @@ impl VerifyForeignTxProvider {
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
             v2,
-            own_inspections: std::sync::Mutex::new(AutoAbortTaskCollection::new()),
         })
     }
 
@@ -261,19 +257,16 @@ impl VerifyForeignTxProvider {
                 self.make_verify_foreign_tx_online_presign_follower(channel, id, paired_triple_id)
                     .await?;
             }
-            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTxV2 {
-                id,
-                paired_triple_id,
-            }) => {
-                self.make_verify_foreign_tx_v2_follower(channel, id, paired_triple_id)
-                    .await?;
-            }
             MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
                 anyhow::bail!("Retired stored-presignature task rejected");
             }
-            // TODO(#5123): join the signing rounds of V2 requests.
-            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::SignOutcome { .. }) => {
-                anyhow::bail!("V2 signing rounds are not supported yet");
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::SignOutcome {
+                yield_id,
+                outcome,
+                paired_triple_id,
+            }) => {
+                self.make_sign_outcome_follower(channel, yield_id, outcome, paired_triple_id)
+                    .await?;
             }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",
