@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use futures::FutureExt;
-use near_contract_transport::{BlockCount, BlockHeight};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::time::{Duration, timeout};
@@ -9,23 +8,10 @@ use tokio::time::{Duration, timeout};
 use crate::assets::DistributedAssetStorage;
 use crate::primitives::{ParticipantId, UniqueId};
 
-/// The number of blocks a participant's indexer may lag behind the leader's and still join a
-/// V2 attempt. A follower waits for a request about this many blocks after a Start.
-const INDEXER_MARGIN: BlockCount = BlockCount::new(5);
-
 /// An owned asset this node took for an attempt it leads.
 pub(crate) struct OwnedAsset<T> {
     pub(crate) id: UniqueId,
     pub(crate) asset: T,
-}
-
-/// Returns true when a participant whose indexer reached `participant_height` may join a V2
-/// attempt of a leader whose indexer reached `leader_height`.
-pub(crate) fn is_within_indexer_margin(
-    leader_height: BlockHeight,
-    participant_height: BlockHeight,
-) -> bool {
-    participant_height.saturating_add(INDEXER_MARGIN) >= leader_height
 }
 
 /// Takes an owned asset whose participants are all among `candidates`. A free asset without any
@@ -59,7 +45,6 @@ mod tests {
     use super::*;
     use crate::db::{DBCol, SecretDB};
     use near_time::FakeClock;
-    use rstest::rstest;
     use std::sync::Arc;
 
     const LEADER: ParticipantId = ParticipantId::from_raw(1);
@@ -87,25 +72,6 @@ mod tests {
 
     fn asset_id(counter: u32) -> UniqueId {
         UniqueId::new(LEADER, 1_700_000_000, counter)
-    }
-
-    #[rstest]
-    #[case::level(100, true)]
-    #[case::at_the_margin(95, true)]
-    #[case::ahead(110, true)]
-    #[case::beyond_the_margin(94, false)]
-    fn is_within_indexer_margin__should_admit_a_participant_at_most_five_blocks_behind(
-        #[case] participant_height: u64,
-        #[case] admitted: bool,
-    ) {
-        // Given
-        let leader_height = BlockHeight::new(100);
-
-        // When
-        let within = is_within_indexer_margin(leader_height, BlockHeight::new(participant_height));
-
-        // Then
-        assert_eq!(within, admitted);
     }
 
     #[tokio::test]

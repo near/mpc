@@ -157,6 +157,16 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_INDEXED: LazyLock<prometheus::I
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_SKIPPED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_v2_requests_skipped",
+            "Number of successful read_rpc calls the indexer skipped, because their arguments \
+             are invalid or their receipt does not log exactly one yield created event"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
     prometheus::IntCounter,
 > = LazyLock::new(|| {
@@ -577,10 +587,7 @@ impl MpcTaskId {
                 match task {
                     VerifyForeignTxTaskId::VerifyForeignTx { .. }
                     | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. }
-                    | VerifyForeignTxTaskId::Inconclusive { .. }
-                    | VerifyForeignTxTaskId::VerifyForeignTxV2 { .. } => {
-                        VERIFY_FOREIGN_TX_TASK_LABEL
-                    }
+                    | VerifyForeignTxTaskId::SignOutcome { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
                 },
             ),
         };

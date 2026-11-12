@@ -173,7 +173,8 @@ impl MpcContract {
     ///
     /// This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state
     /// and by an existing participant. On success, the participant’s information is
-    /// updated to the new destination node.
+    /// updated to the new destination node, and the account's outcome key is dropped. The new
+    /// node registers its own with [`Self::register_outcome_key`].
     ///
     /// # Errors
     /// Returns the following errors:
@@ -265,7 +266,8 @@ impl MpcContract {
 
         running_state
             .parameters
-            .update_info(account_id, contract_participant_info)?;
+            .update_info(account_id.clone(), contract_participant_info)?;
+        self.outcome_keys.remove(&account_id);
 
         // Safe to drop unconditionally: `assert_migration_destination_allowed` above rejects a
         // destination that reuses `old_key`, so the config removed here is never the new node's.

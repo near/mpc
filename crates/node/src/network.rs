@@ -5,24 +5,22 @@ pub mod handshake;
 pub mod indexer_heights;
 pub mod wire_format;
 
-mod node_outcomes;
-
 use crate::metrics::networking_metrics;
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
-    MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
+    MpcStartMessage, ParticipantId, PeerMessage, PeerNodeOutcome, UniqueId,
 };
 use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
-use crate::providers::verify_foreign_tx::attempt_evidence::AttemptEvidence;
+use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
+use crate::providers::verify_foreign_tx::node_outcomes::NodeOutcomes;
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
 use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
-pub(crate) use node_outcomes::PeerNodeOutcomes;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -108,7 +106,7 @@ pub struct MeshNetworkClient {
     indexer_heights: Arc<IndexerHeightTracker>,
     /// Helper data to ensure [`ChannelId`] uniqueness.
     last_id: Arc<Mutex<UniqueId>>,
-    attempt_evidence: Arc<AttemptEvidence>,
+    node_outcomes: Arc<NodeOutcomes>,
 }
 
 impl NetworkAPIForRequests for MeshNetworkClient {
@@ -153,7 +151,7 @@ impl MeshNetworkClient {
             channels,
             indexer_heights,
             last_id,
-            attempt_evidence: Arc::new(AttemptEvidence::new()),
+            node_outcomes: Arc::new(NodeOutcomes::new()),
         }
     }
 
@@ -173,17 +171,6 @@ impl MeshNetworkClient {
         task_id: impl Into<MpcTaskId>,
         participants: Vec<ParticipantId>,
     ) -> anyhow::Result<NetworkTaskChannel> {
-        self.new_channel_for_task_with(task_id, participants, |_| {})
-    }
-
-    /// Like [`Self::new_channel_for_task`], and calls `before_start` with the new channel's id
-    /// before any participant can receive the Start message.
-    pub(crate) fn new_channel_for_task_with(
-        &self,
-        task_id: impl Into<MpcTaskId>,
-        participants: Vec<ParticipantId>,
-        before_start: impl FnOnce(ChannelId),
-    ) -> anyhow::Result<NetworkTaskChannel> {
         let task_id: MpcTaskId = task_id.into();
         tracing::debug!(
             target: "network",
@@ -201,7 +188,6 @@ impl MeshNetworkClient {
         else {
             anyhow::bail!("Channel already exists");
         };
-        before_start(channel_id);
         for participant in &participants {
             if participant == &self.my_participant_id() {
                 continue;
@@ -215,6 +201,50 @@ impl MeshNetworkClient {
             )?;
         }
         Ok(channel)
+    }
+
+    /// Like [`Self::new_channel_for_task`], and sends `evidence` to every other participant
+    /// right after the Start.
+    pub(crate) fn new_channel_for_task_with_evidence(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+        evidence: Vec<SignedNodeOutcome>,
+    ) -> anyhow::Result<NetworkTaskChannel> {
+        let channel = self.new_channel_for_task(task_id, participants)?;
+        for participant in channel.participants() {
+            if *participant == self.my_participant_id() {
+                continue;
+            }
+            channel.sender.send_raw(
+                *participant,
+                MpcMessage {
+                    channel_id: channel.sender.channel_id,
+                    kind: MpcMessageKind::Evidence(evidence.clone()),
+                },
+            )?;
+        }
+        Ok(channel)
+    }
+
+    /// Sends `outcome` to every connected peer. The transport drops it for a peer whose protocol
+    /// version cannot parse it.
+    pub(crate) fn broadcast_node_outcome(&self, outcome: &SignedNodeOutcome) {
+        let packet = Packet::NodeOutcome(outcome.clone());
+        let me = self.my_participant_id();
+        for peer in self.all_participant_ids() {
+            if peer == me {
+                continue;
+            }
+            if let Err(error) = self.transport_sender.send(peer, packet.clone(), None) {
+                tracing::debug!(%peer, %error, "node outcome not sent");
+            }
+        }
+    }
+
+    /// The verified node outcomes this node received or signed.
+    pub(crate) fn node_outcomes(&self) -> &Arc<NodeOutcomes> {
+        &self.node_outcomes
     }
 
     pub fn my_participant_id(&self) -> ParticipantId {
@@ -407,7 +437,7 @@ impl MeshNetworkClient {
                         transport_sender: self.transport_sender.clone(),
                     }),
                     successful_participants: HashSet::new(),
-                    deferred_computations: VecDeque::new(),
+                    computations_before_evidence: VecDeque::new(),
                     receiver: incomplete_channel.receiver,
                     drop: Some(Box::new(drop_fn)),
                 };
@@ -472,11 +502,6 @@ impl MeshNetworkClient {
     pub fn get_indexer_heights(&self) -> HashMap<ParticipantId, u64> {
         self.indexer_heights.get_heights()
     }
-
-    #[cfg(test)]
-    pub(crate) fn set_peer_indexer_height(&self, participant: ParticipantId, height: u64) {
-        self.indexer_heights.set_height(participant, height);
-    }
 }
 
 struct IncompleteNetworkTaskChannel {
@@ -530,9 +555,6 @@ async fn run_receive_message(
     let message = receiver.receive().await?;
     match message {
         PeerMessage::Mpc(message) => {
-            let Some(message) = client.route_node_outcomes(message) else {
-                return Ok(());
-            };
             let from = message.from;
             let channel_id = message.message.channel_id;
             let start_msg = match &message.message.kind {
@@ -560,6 +582,11 @@ async fn run_receive_message(
             }
             // TODO(#398): store the sender's connected-peers list, so participant selection can
             // avoid pairs that cannot reach each other.
+        }
+        PeerMessage::NodeOutcome(PeerNodeOutcome { from, outcome }) => {
+            if let Err(error) = client.node_outcomes.receive(from, outcome) {
+                tracing::debug!(%from, %error, "node outcome not kept");
+            }
         }
     }
     Ok(())
@@ -707,9 +734,9 @@ pub struct NetworkTaskChannel {
     receiver: tokio::sync::mpsc::UnboundedReceiver<MpcPeerMessage>,
     /// The set of participants who sent us a Success message; for leader only.
     successful_participants: HashSet<ParticipantId>,
-    /// Computation messages that arrived while the leader waited for node outcomes, in arrival
-    /// order. [`Self::receive`] returns them first.
-    deferred_computations: VecDeque<TaskChannelComputationData>,
+    /// Computation messages that arrived before the leader's evidence, in arrival order.
+    /// [`Self::receive`] returns them first.
+    computations_before_evidence: VecDeque<TaskChannelComputationData>,
     /// Function to clean up relevant data structures in the network transport implementation.
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
@@ -740,10 +767,13 @@ pub struct TaskChannelComputationData {
     pub data: Vec<Vec<u8>>,
 }
 
-/// A message of the channel's computation that [`NetworkTaskChannel::receive_one`] hands on.
+/// A message [`NetworkTaskChannel::receive_one`] hands on.
 enum ReceivedMessage {
     Computation(TaskChannelComputationData),
-    NodeOutcomes(PeerNodeOutcomes),
+    Evidence {
+        from: ParticipantId,
+        outcomes: Vec<SignedNodeOutcome>,
+    },
 }
 
 impl Drop for NetworkTaskChannel {
@@ -858,7 +888,7 @@ impl NetworkTaskChannelSender {
 
     /// Sends an Abort message to other parties in the computation. For leader, this is
     /// communicated to all followers; for a follower, this is communicated only to the leader.
-    fn communicate_failure(&self, err: &anyhow::Error) {
+    pub(crate) fn communicate_failure(&self, err: &anyhow::Error) {
         let err_msg = err.to_string();
         if self.is_leader() {
             for participant in &self.participants {
@@ -1022,12 +1052,11 @@ impl NetworkTaskChannel {
                 // any `Start` messages.
                 anyhow::bail!("Unexpected Start message: {:?}", mpc_start_message);
             }
-            // TODO(#5126): hand the evidence to the followers of an inconclusive round.
-            MpcMessageKind::NodeOutcomes(outcomes) => {
-                return Ok(Some(ReceivedMessage::NodeOutcomes(PeerNodeOutcomes {
+            MpcMessageKind::Evidence(outcomes) => {
+                return Ok(Some(ReceivedMessage::Evidence {
                     from: message.from,
                     outcomes,
-                })));
+                }));
             }
         }
         Ok(None)
@@ -1039,17 +1068,34 @@ impl NetworkTaskChannel {
     ///   - The computation is aborted by a follower (if we're the leader) or the leader
     ///     (if we're a follower).
     pub async fn receive(&mut self) -> anyhow::Result<TaskChannelComputationData> {
-        if let Some(data) = self.deferred_computations.pop_front() {
+        if let Some(data) = self.computations_before_evidence.pop_front() {
             return Ok(data);
         }
         loop {
             match self.receive_one().await? {
                 Some(ReceivedMessage::Computation(data)) => return Ok(data),
-                Some(ReceivedMessage::NodeOutcomes(PeerNodeOutcomes { from, outcomes })) => {
-                    anyhow::bail!(
-                        "Unexpected node outcomes message from participant {from} with {} outcomes",
-                        outcomes.len()
-                    );
+                Some(ReceivedMessage::Evidence { from, outcomes }) => anyhow::bail!(
+                    "Unexpected evidence from participant {from} with {} outcomes",
+                    outcomes.len()
+                ),
+                None => {}
+            }
+        }
+    }
+
+    /// Receives the evidence the leader sends right after the Start. Computation messages of
+    /// other participants that arrive first are kept for [`Self::receive`], in order.
+    pub(crate) async fn receive_evidence(&mut self) -> anyhow::Result<Vec<SignedNodeOutcome>> {
+        loop {
+            match self.receive_one().await? {
+                Some(ReceivedMessage::Evidence { from, outcomes }) if from == self.leader() => {
+                    return Ok(outcomes);
+                }
+                Some(ReceivedMessage::Evidence { from, .. }) => {
+                    anyhow::bail!("evidence from participant {from}, who does not lead");
+                }
+                Some(ReceivedMessage::Computation(data)) => {
+                    self.computations_before_evidence.push_back(data);
                 }
                 None => {}
             }
@@ -1087,7 +1133,7 @@ pub mod testing {
     use crate::network::wire_format::{MpcTaskId, Packet};
     use crate::primitives::{
         MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo, PeerIndexerHeightMessage,
-        PeerMessage, UniqueId,
+        PeerMessage, PeerNodeOutcome, UniqueId,
     };
     use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
     use crate::tracking;
@@ -1216,6 +1262,14 @@ pub mod testing {
                 .senders
                 .get(&recipient_id)
                 .ok_or(SendError::PeerNotConnected(recipient_id))?;
+            if let Some(version) = self.transport.protocol_versions.get(&recipient_id)
+                && !version.supports(packet.min_protocol_version())
+            {
+                return Err(SendError::PeerNotSupportingMessage {
+                    peer: recipient_id,
+                    version: *version,
+                });
+            }
             let from = self.my_participant_id;
             let message = match packet.clone() {
                 Packet::Ping => return Ok(()),
@@ -1225,6 +1279,9 @@ pub mod testing {
                 }
                 Packet::ConnectedPeersInfo(info) => {
                     PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo { from, info })
+                }
+                Packet::NodeOutcome(outcome) => {
+                    PeerMessage::NodeOutcome(PeerNodeOutcome { from, outcome })
                 }
             };
             sender
@@ -1377,7 +1434,7 @@ pub mod testing {
                 transport_sender,
             }),
             successful_participants: HashSet::new(),
-            deferred_computations: std::collections::VecDeque::new(),
+            computations_before_evidence: std::collections::VecDeque::new(),
             receiver,
             drop: None,
         };
@@ -1433,15 +1490,26 @@ mod tests {
         TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
         new_test_client_over, new_test_client_with_versions, new_test_transports, run_test_clients,
     };
-    use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet};
+    use crate::network::wire_format::{
+        EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet, VerifyForeignTxTaskId,
+    };
     use crate::primitives::{
         ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, UniqueId,
     };
     use crate::protocol_version::NetworkProtocolVersion;
+    use crate::providers::verify_foreign_tx::node_outcome::{
+        NodeOutcome, NodeVerdict, RoundOutcome,
+    };
+    use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeStatement;
+    use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
+    use crate::providers::verify_foreign_tx::node_outcome_statement::testing::{
+        outcome_public_keys, signed_by_its_signer, signed_node_outcome,
+    };
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
+    use near_mpc_contract_interface::types::YieldId;
     use rstest::rstest;
     use serial_test::serial;
     use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1606,6 +1674,97 @@ mod tests {
         // Then
         let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
         assert_eq!(message.peers, BTreeMap::from([(me, 100), (peer, 90)]));
+    }
+
+    fn node_outcome() -> SignedNodeOutcome {
+        signed_node_outcome(NodeOutcome::Verdict(NodeVerdict::Verified))
+    }
+
+    #[test]
+    fn broadcast_node_outcome__should_send_the_outcome_to_every_peer_that_can_parse_it() {
+        // Given
+        let me = ParticipantId::from_raw(1);
+        let [older_peer, current_peer, newer_peer, half_connected_peer] =
+            [2, 3, 4, 5].map(ParticipantId::from_raw);
+        let participants = vec![
+            me,
+            older_peer,
+            current_peer,
+            newer_peer,
+            half_connected_peer,
+        ];
+        let versions = HashMap::from([
+            (older_peer, NetworkProtocolVersion::Oct2026),
+            (current_peer, NetworkProtocolVersion::Nov2026),
+            (newer_peer, NetworkProtocolVersion::Unknown(42)),
+            (half_connected_peer, NetworkProtocolVersion::Nov2026),
+        ]);
+        let mut transport = TestMeshTransport::all_connected(participants, versions);
+        transport.disconnected = HashSet::from([half_connected_peer]);
+        let (client, transport) = new_test_client_over(transport, me);
+
+        // When
+        client.broadcast_node_outcome(&node_outcome());
+
+        // Then
+        let sent: Vec<_> = transport
+            .take_packets_sent()
+            .into_iter()
+            .map(|(recipient, packet)| match packet {
+                Packet::NodeOutcome(outcome) => (recipient, outcome),
+                other => panic!("unexpected packet {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            sent,
+            vec![
+                (current_peer, node_outcome()),
+                (newer_peer, node_outcome()),
+                (half_connected_peer, node_outcome()),
+            ]
+        );
+    }
+
+    #[test]
+    fn new_channel_for_task_with_evidence__should_send_the_evidence_right_after_the_start() {
+        // Given
+        let [me, first, second] = [1, 2, 3].map(ParticipantId::from_raw);
+        let participants = vec![me, first, second];
+        let versions = current_protocol_versions(&participants);
+        let (client, transport) = new_test_client_with_versions(participants.clone(), me, versions);
+        let task_id = VerifyForeignTxTaskId::SignOutcome {
+            yield_id: YieldId([6; 32]),
+            outcome: RoundOutcome::Verdict(NodeVerdict::Verified),
+            paired_triple_id: UniqueId::new(me, 1, 2),
+        };
+
+        // When
+        let _channel = client
+            .new_channel_for_task_with_evidence(task_id, participants.clone(), vec![node_outcome()])
+            .unwrap();
+
+        // Then
+        let sent: Vec<_> = transport
+            .take_packets_sent()
+            .into_iter()
+            .map(|(recipient, packet)| match packet {
+                Packet::MpcMessage(message) => (recipient, message.kind),
+                other => panic!("unexpected packet {other:?}"),
+            })
+            .collect();
+        let start = MpcMessageKind::Start(MpcStartMessage {
+            task_id: task_id.into(),
+            participants,
+        });
+        let evidence = MpcMessageKind::Evidence(vec![node_outcome()]);
+        let sent_to = |recipient| {
+            sent.iter()
+                .filter(|(sent_to, _)| *sent_to == recipient)
+                .map(|(_, kind)| kind.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(sent_to(first), vec![start.clone(), evidence.clone()]);
+        assert_eq!(sent_to(second), vec![start, evidence]);
     }
 
     #[test]
@@ -1906,6 +2065,109 @@ mod tests {
         assert_eq!(received.data, vec![vec![2u8]]);
     }
 
+    fn evidence_message(channel_id: ChannelId) -> MpcMessage {
+        MpcMessage {
+            channel_id,
+            kind: MpcMessageKind::Evidence(vec![node_outcome()]),
+        }
+    }
+
+    #[tokio::test]
+    async fn network_task_channel_receive_evidence__should_keep_earlier_computations_for_receive() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let channel_id = ChannelId(UniqueId::new(ORIGINATOR, 1, 0));
+        let everyone = vec![ME, ORIGINATOR, THIRD_PARTY];
+        node.receive(ORIGINATOR, start_message_with(everyone))
+            .await
+            .unwrap();
+        let mut channel = node.new_channel().unwrap();
+        node.receive(THIRD_PARTY, computation_message(channel_id, 1))
+            .await
+            .unwrap();
+        node.receive(ORIGINATOR, evidence_message(channel_id))
+            .await
+            .unwrap();
+        node.receive(ORIGINATOR, computation_message(channel_id, 2))
+            .await
+            .unwrap();
+
+        // When
+        let (evidence, first, second) = tokio::time::timeout(Duration::from_secs(5), async {
+            let evidence = channel.receive_evidence().await.unwrap();
+            let first = channel.receive().await.unwrap();
+            let second = channel.receive().await.unwrap();
+            (evidence, first, second)
+        })
+        .await
+        .unwrap();
+
+        // Then
+        assert_eq!(evidence, vec![node_outcome()]);
+        assert_eq!((first.from, first.data), (THIRD_PARTY, vec![vec![1]]));
+        assert_eq!((second.from, second.data), (ORIGINATOR, vec![vec![2]]));
+    }
+
+    #[tokio::test]
+    async fn network_task_channel_receive_evidence__should_refuse_evidence_from_a_follower() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let channel_id = ChannelId(UniqueId::new(ORIGINATOR, 1, 0));
+        node.receive(
+            ORIGINATOR,
+            start_message_with(vec![ME, ORIGINATOR, THIRD_PARTY]),
+        )
+        .await
+        .unwrap();
+        let mut channel = node.new_channel().unwrap();
+        node.receive(THIRD_PARTY, evidence_message(channel_id))
+            .await
+            .unwrap();
+
+        // When
+        let result = tokio::time::timeout(Duration::from_secs(5), channel.receive_evidence())
+            .await
+            .unwrap();
+
+        // Then
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("does not lead"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_receive_message__should_hand_a_node_outcome_to_the_node_outcomes() {
+        // Given
+        let mut node = ReceivingNode::new();
+        let yield_id = YieldId([6; 32]);
+        let outcome = signed_by_its_signer(NodeOutcomeStatement {
+            yield_id,
+            signer: ORIGINATOR,
+            outcome: NodeOutcome::Verdict(NodeVerdict::Verified),
+        });
+        node.client
+            .node_outcomes()
+            .set_outcome_keys(outcome_public_keys(&[ORIGINATOR]));
+        node.client.node_outcomes().index([yield_id]);
+
+        // When
+        node.receive_packet(ORIGINATOR, Packet::NodeOutcome(outcome.clone()))
+            .await
+            .unwrap();
+
+        // Then
+        let kept: Vec<_> = node
+            .client
+            .node_outcomes()
+            .outcomes_of(yield_id)
+            .iter()
+            .map(|kept| kept.signed().clone())
+            .collect();
+        assert_eq!(kept, vec![outcome]);
+    }
+
     #[rstest]
     #[case::owned_by_a_third_party(THIRD_PARTY)]
     #[case::owned_by_us(ME)]
@@ -2067,6 +2329,21 @@ mod tests {
                     Some(ConnectionVersion::default()),
                 )
                 .unwrap();
+            run_receive_message(
+                self.client.clone(),
+                &mut self.my_receiver,
+                &self.new_channel_sender,
+                self.indexer_heights.clone(),
+            )
+            .await
+        }
+
+        async fn receive_packet(
+            &mut self,
+            from: ParticipantId,
+            packet: Packet,
+        ) -> anyhow::Result<()> {
+            self.peer_senders[&from].send(ME, packet, None).unwrap();
             run_receive_message(
                 self.client.clone(),
                 &mut self.my_receiver,

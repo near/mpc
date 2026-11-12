@@ -28,6 +28,8 @@ use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{NearToken, VMContext, env, testing_env};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
+use std::assert_matches;
+use std::collections::BTreeMap;
 use std::{str::FromStr, time::Duration};
 use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_core::Group as _;
@@ -115,40 +117,25 @@ pub(crate) fn basic_setup_with_protocol(
     purpose: DomainPurpose,
     rng: &mut impl CryptoRngCore,
 ) -> (VMContext, MpcContract, SharedSecretKey) {
-    let curve = Curve::from(protocol);
     let domain_id = DomainId::default();
     // RobustEcdsa requires 2t - 1 <= n; with n=4, the max valid t is 2.
     let reconstruction_threshold = match protocol {
         Protocol::RobustEcdsa => ReconstructionThreshold::new(2),
         _ => ReconstructionThreshold::new(3),
     };
-    let domains = vec![DomainConfig {
-        id: domain_id,
-        protocol,
-        reconstruction_threshold,
-        purpose,
-    }];
-    let epoch_id = EpochId::new(0);
-    let (pk, sk) = make_public_key_for_curve(curve, rng);
-    let key_for_domain = KeyForDomain {
-        domain_id,
-        key: pk.try_into().unwrap(),
-        attempt: AttemptId::new(),
-    };
-    let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
-    let parameters =
-        GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
-            .unwrap();
-    let mut contract = MpcContract::init_running(
-        domains,
-        DomainId(1),
-        (&keyset).into_dto_type(),
-        (&parameters).into_dto_type(),
-        bogus_tee_verifier_account_id(),
-        None,
-    )
-    .unwrap();
-    prepay_and_attest_all_participants(&mut contract);
+    let ContractWithKeys {
+        contract,
+        mut secret_keys,
+    } = running_contract_with_domains(
+        vec![DomainConfig {
+            id: domain_id,
+            protocol,
+            reconstruction_threshold,
+            purpose,
+        }],
+        rng,
+    );
+    let sk = secret_keys.remove(&domain_id).unwrap();
 
     let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
     let context = VMContextBuilder::new()
@@ -158,6 +145,80 @@ pub(crate) fn basic_setup_with_protocol(
         .build();
     testing_env!(context.clone());
     (context, contract, sk)
+}
+
+pub(crate) struct ContractWithKeys {
+    pub(crate) contract: MpcContract,
+    pub(crate) secret_keys: BTreeMap<DomainId, SharedSecretKey>,
+}
+
+/// Initializes a Running contract with `domains`, each under a fresh key, and
+/// attests all of its four participants.
+pub(crate) fn running_contract_with_domains(
+    domains: Vec<DomainConfig>,
+    rng: &mut impl CryptoRngCore,
+) -> ContractWithKeys {
+    let mut secret_keys = BTreeMap::new();
+    let mut keys = Vec::new();
+    for domain in &domains {
+        let (pk, sk) = make_public_key_for_curve(Curve::from(domain.protocol), rng);
+        secret_keys.insert(domain.id, sk);
+        keys.push(KeyForDomain {
+            domain_id: domain.id,
+            key: pk.try_into().unwrap(),
+            attempt: AttemptId::new(),
+        });
+    }
+    let next_domain_id = domains
+        .iter()
+        .map(|domain| domain.id.0 + 1)
+        .max()
+        .unwrap_or_default();
+    let parameters =
+        GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
+            .unwrap();
+    let mut contract = MpcContract::init_running(
+        domains,
+        DomainId(next_domain_id),
+        (&Keyset::new(EpochId::new(0), keys)).into_dto_type(),
+        (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
+        None,
+    )
+    .unwrap();
+    prepay_and_attest_all_participants(&mut contract);
+    ContractWithKeys {
+        contract,
+        secret_keys,
+    }
+}
+
+/// Moves the contract from Running to Initializing with every
+/// participant's vote for a new domain.
+pub(crate) fn start_adding_a_domain(contract: &mut MpcContract) {
+    let new_domain = DomainConfig {
+        id: contract
+            .protocol_state
+            .domain_registry()
+            .unwrap()
+            .next_domain_id(),
+        protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
+        purpose: DomainPurpose::Sign,
+    };
+    for account_id in participant_account_ids(contract) {
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id)
+                .build()
+        );
+        contract.vote_add_domains(vec![new_domain.clone()]).unwrap();
+    }
+    assert_matches!(
+        contract.protocol_state,
+        ProtocolContractState::Initializing(_)
+    );
 }
 
 /// Initializes a Running contract with `parameters` and the single `domain`, under a fresh key.
@@ -404,6 +465,7 @@ impl MpcContract {
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: Default::default(),
             pending_verify_foreign_tx_v2_requests: Default::default(),
+            outcome_keys: Default::default(),
         }
     }
 }

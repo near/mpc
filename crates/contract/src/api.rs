@@ -10,6 +10,7 @@ pub mod key_events;
 pub mod keys;
 pub mod lifecycle;
 pub mod node_migration;
+pub mod outcome_keys;
 pub mod sign;
 pub mod tee_measurements;
 pub mod tee_verifier;

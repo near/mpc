@@ -5,16 +5,15 @@ use anyhow::Context;
 
 use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
-use crate::providers::verify_foreign_tx::sign_v2::FOLLOWER_INDEX_WAIT;
 use crate::requests::queue::{
     RefineEligibleLeaders, eligible_leaders_and_heights, leader_rank, leader_selection_order,
     leader_turn_start,
 };
 use crate::types::VerifyForeignTxRequestV2;
 
-/// The margin by which a follower accepts a backup leader before its turn. A backup times its
-/// turn from its own index time, and that may come this much before the follower's.
-const BACKUP_LEADER_EARLY_ACCEPTANCE: Duration = FOLLOWER_INDEX_WAIT;
+/// The margin by which a signer accepts a backup leader before its turn. A backup times its
+/// turn from its own index time, and that may come this much before the signer's.
+const BACKUP_LEADER_EARLY_ACCEPTANCE: Duration = Duration::from_secs(3);
 
 impl VerifyForeignTxProvider {
     /// Fails unless `leader` is an acting leader of the open `request` in the view of this node:
