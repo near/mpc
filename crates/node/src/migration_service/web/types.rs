@@ -10,7 +10,6 @@ use crate::{
     migration_service::types::MigrationInfo,
 };
 
-#[derive(Clone)]
 pub(crate) struct WebServerState {
     pub import_keyshares_sender: watch::Sender<Vec<Keyshare>>,
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
