@@ -20,7 +20,7 @@ use crate::{
     },
     primitives::{
         MpcMessage, MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo,
-        PeerIndexerHeightMessage, PeerMessage,
+        PeerIndexerHeightMessage, PeerMessage, PeerNodeOutcome,
     },
     protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
     tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
@@ -188,12 +188,13 @@ impl Packet {
             Packet::Ping => networking_metrics::PING_MESSAGE,
             Packet::IndexerHeight(_) => networking_metrics::INDEXER_HEIGHT_MESSAGE,
             Packet::ConnectedPeersInfo(_) => networking_metrics::CONNECTED_PEERS_MESSAGE,
+            Packet::NodeOutcome(_) => networking_metrics::NODE_OUTCOME_MESSAGE,
             Packet::MpcMessage(MpcMessage { kind, .. }) => match kind {
                 MpcMessageKind::Start(_) => networking_metrics::MPC_START_MESSAGE,
                 MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
                 MpcMessageKind::Abort(_) => networking_metrics::MPC_ABORT_MESSAGE,
                 MpcMessageKind::Success => networking_metrics::MPC_SUCCESS_MESSAGE,
-                MpcMessageKind::NodeOutcomes(_) => networking_metrics::MPC_NODE_OUTCOMES_MESSAGE,
+                MpcMessageKind::Evidence(_) => networking_metrics::MPC_EVIDENCE_MESSAGE,
             },
         }
     }
@@ -877,6 +878,12 @@ async fn incoming_connection_handler(
                         info,
                     }))?;
                 }
+                Packet::NodeOutcome(outcome) => {
+                    message_sender.send(PeerMessage::NodeOutcome(PeerNodeOutcome {
+                        from: peer_id,
+                        outcome,
+                    }))?;
+                }
             }
 
             let metric_labels = [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
@@ -1201,6 +1208,10 @@ mod tests {
             UniqueId,
         },
         protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
+        providers::verify_foreign_tx::{
+            node_outcome::{NodeOutcome, NodeVerdict, RoundOutcome},
+            node_outcome_statement::testing::signed_node_outcome,
+        },
         tracking::{self, testing::start_root_task_with_periodic_dump},
     };
     use ed25519_dalek::SigningKey;
@@ -1528,54 +1539,64 @@ mod tests {
     }
 
     #[rstest]
-    #[case::node_outcomes_to_older_peer(node_outcomes(), NetworkProtocolVersion::Oct2026, false)]
-    #[case::node_outcomes_to_current_peer(node_outcomes(), NetworkProtocolVersion::Nov2026, true)]
-    #[case::node_outcomes_to_newer_peer(node_outcomes(), NetworkProtocolVersion::Unknown(42), true)]
-    #[case::inconclusive_start_to_older_peer(
-        inconclusive_start(),
+    #[case::node_outcome_to_older_peer(node_outcome(), NetworkProtocolVersion::Oct2026, false)]
+    #[case::node_outcome_to_current_peer(node_outcome(), NetworkProtocolVersion::Nov2026, true)]
+    #[case::node_outcome_to_newer_peer(node_outcome(), NetworkProtocolVersion::Unknown(42), true)]
+    #[case::evidence_to_older_peer(evidence(), NetworkProtocolVersion::Oct2026, false)]
+    #[case::evidence_to_current_peer(evidence(), NetworkProtocolVersion::Nov2026, true)]
+    #[case::sign_outcome_start_to_older_peer(
+        sign_outcome_start(),
         NetworkProtocolVersion::Oct2026,
         false
     )]
-    #[case::inconclusive_start_to_current_peer(
-        inconclusive_start(),
+    #[case::sign_outcome_start_to_current_peer(
+        sign_outcome_start(),
         NetworkProtocolVersion::Nov2026,
         true
     )]
     #[tokio::test]
     async fn persistent_connection__should_send_v2_foreign_tx_messages_only_to_peers_negotiating_nov2026(
-        #[case] kind: MpcMessageKind,
+        #[case] packet: Packet,
         #[case] peer_version: NetworkProtocolVersion,
         #[case] expected_sent: bool,
     ) {
         // Given
         let mut peer = ConnectedPeer::on(peer_version);
-        let message = MpcMessage {
-            channel_id: ChannelId(UniqueId::new(ParticipantId::from_raw(0), 1, 1)),
-            kind,
-        };
 
         // When
-        let result = peer
-            .persistent_connection
-            .send(Packet::MpcMessage(message), None);
+        let result = peer.persistent_connection.send(packet, None);
 
         // Then
         assert_eq!(result.is_ok(), expected_sent);
         assert_eq!(peer.packets.try_recv().is_ok(), expected_sent);
     }
 
-    fn node_outcomes() -> MpcMessageKind {
-        MpcMessageKind::NodeOutcomes(Vec::new())
+    fn node_outcome() -> Packet {
+        Packet::NodeOutcome(signed_node_outcome(NodeOutcome::Verdict(
+            NodeVerdict::Verified,
+        )))
     }
 
-    fn inconclusive_start() -> MpcMessageKind {
-        MpcMessageKind::Start(MpcStartMessage {
-            task_id: VerifyForeignTxTaskId::Inconclusive {
+    fn evidence() -> Packet {
+        mpc_message(MpcMessageKind::Evidence(Vec::new()))
+    }
+
+    fn sign_outcome_start() -> Packet {
+        mpc_message(MpcMessageKind::Start(MpcStartMessage {
+            task_id: VerifyForeignTxTaskId::SignOutcome {
                 yield_id: YieldId([6; 32]),
+                outcome: RoundOutcome::Inconclusive,
                 paired_triple_id: UniqueId::new(ParticipantId::from_raw(0), 1, 2),
             }
             .into(),
             participants: vec![ParticipantId::from_raw(0), ParticipantId::from_raw(1)],
+        }))
+    }
+
+    fn mpc_message(kind: MpcMessageKind) -> Packet {
+        Packet::MpcMessage(MpcMessage {
+            channel_id: ChannelId(UniqueId::new(ParticipantId::from_raw(0), 1, 1)),
+            kind,
         })
     }
 

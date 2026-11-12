@@ -154,6 +154,27 @@ fn deserialize_signature<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Resul
 }
 
 #[cfg(test)]
+pub(crate) mod testing {
+    use ed25519_dalek::SigningKey;
+    use near_mpc_contract_interface::types::YieldId;
+
+    use super::{NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome};
+    use crate::primitives::ParticipantId;
+    use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
+
+    /// A node outcome signed with a fixed key, so its bytes are stable across runs.
+    pub(crate) fn signed_node_outcome(outcome: NodeOutcome) -> SignedNodeOutcome {
+        NodeOutcomeSigningKey(SigningKey::from_bytes(&[10; 32]))
+            .sign(NodeOutcomeStatement {
+                yield_id: YieldId([6; 32]),
+                signer: ParticipantId::from_raw(7),
+                outcome,
+            })
+            .unwrap()
+    }
+}
+
+#[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;

@@ -252,6 +252,10 @@ impl VerifyForeignTxProvider {
             MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
                 anyhow::bail!("Retired stored-presignature task rejected");
             }
+            // TODO(#5123): join the signing rounds of V2 requests.
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::SignOutcome { .. }) => {
+                anyhow::bail!("V2 signing rounds are not supported yet");
+            }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",
                 channel.task_id()

@@ -558,7 +558,7 @@ impl MpcTaskId {
                 match task {
                     VerifyForeignTxTaskId::VerifyForeignTx { .. }
                     | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. }
-                    | VerifyForeignTxTaskId::Inconclusive { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
+                    | VerifyForeignTxTaskId::SignOutcome { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
                 },
             ),
         };
