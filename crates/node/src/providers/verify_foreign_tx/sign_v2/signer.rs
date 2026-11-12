@@ -7,6 +7,7 @@ use near_mpc_contract_interface::types::{
 };
 use tokio::time::{Duration, timeout};
 
+use super::ROUND_DEADLINE;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
@@ -27,6 +28,11 @@ pub(crate) enum RoundRefusal {
     // TODO(#5126): join inconclusive rounds.
     #[error("inconclusive signing rounds are not supported yet")]
     Inconclusive,
+    #[error("the evidence holds {statements} statements, more than the {supporters} supporters")]
+    TooManyStatements {
+        statements: usize,
+        supporters: usize,
+    },
     #[error("the evidence holds a statement for another yield")]
     OtherYield,
     #[error("the evidence holds a statement that does not verify")]
@@ -79,6 +85,7 @@ impl VerifyForeignTxProvider {
                 channel,
                 paired_triple_id,
                 sign_request(&request, payload_hash),
+                ROUND_DEADLINE,
             )
             .await
     }
@@ -129,13 +136,20 @@ impl VerifyForeignTxProvider {
 
 impl VerdictCheck<'_> {
     /// Checks that `evidence` holds a verified statement of this node and that t supporters
-    /// signed the verdict. This node's `own` statements count too, so a node that signed
+    /// signed the verdict. Evidence with more statements than supporters is refused before any
+    /// signature check, since the leader sends one statement per backer. This node's `own` statements count too, so a node that signed
     /// another outcome before a restart backs no verdict.
     fn check(
         &self,
         evidence: Vec<SignedNodeOutcome>,
         own: &[VerifiedNodeOutcome],
     ) -> Result<(), RoundRefusal> {
+        if evidence.len() > self.supporters.len() {
+            return Err(RoundRefusal::TooManyStatements {
+                statements: evidence.len(),
+                supporters: self.supporters.len(),
+            });
+        }
         let verified = evidence
             .into_iter()
             .map(|signed| {

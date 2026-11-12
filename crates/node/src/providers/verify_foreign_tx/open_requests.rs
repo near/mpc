@@ -5,6 +5,7 @@ use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 use near_contract_transport::BlockHeight;
 use near_mpc_contract_interface::types::YieldId;
 use tokio::sync::Notify;
+use tokio::sync::futures::Notified;
 
 use crate::requests::queue::REQUEST_EXPIRATION_BLOCKS;
 use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
@@ -78,6 +79,11 @@ impl OpenVerifyForeignTxRequestsV2 {
         settled
     }
 
+    /// True while the request `id` may still open or close.
+    pub(crate) fn tracks(&self, id: VerifyForeignTxId) -> bool {
+        self.requests.lock().unwrap().contains_key(&id)
+    }
+
     /// True while a request with `yield_id` may still open or close.
     #[cfg(test)]
     pub(crate) fn tracks_yield(&self, yield_id: YieldId) -> bool {
@@ -109,6 +115,12 @@ impl OpenVerifyForeignTxRequestsV2 {
             .get(&id)
             .filter(|indexed| indexed.is_open())
             .map(|indexed| indexed.request.clone())
+    }
+
+    /// Completes after the next indexed block. Call [`Notified::enable`] before reading the
+    /// requests, so no block between the read and the wait gets lost.
+    pub(crate) fn changed(&self) -> Notified<'_> {
+        self.changed.notified()
     }
 
     /// Returns an open request with `yield_id` once there is one. A peer may start a signing

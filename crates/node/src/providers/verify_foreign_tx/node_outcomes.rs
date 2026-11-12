@@ -79,7 +79,7 @@ impl NodeOutcomes {
     }
 
     /// Keeps a node outcome that `from` sent, once its signature verifies. A copy of a kept
-    /// statement costs no signature check.
+    /// statement, or an outcome over the cap of yields not indexed yet, costs no signature check.
     pub(crate) fn receive(
         &self,
         from: ParticipantId,
@@ -90,15 +90,17 @@ impl NodeOutcomes {
         if signer != from {
             return Err(RejectedNodeOutcome::SignedByAnother { from, signer });
         }
+        let now = Instant::now();
         let outcome_keys = {
-            let state = self.state.lock().unwrap();
+            let mut state = self.state.lock().unwrap();
             if state.holds(yield_id, signer, &outcome) {
                 return Ok(());
             }
+            state.make_room(yield_id, signer, now)?;
             state.outcome_keys.clone()
         };
         let verified = outcome.verify(&outcome_keys)?;
-        self.state.lock().unwrap().keep(verified, Instant::now())?;
+        self.state.lock().unwrap().keep(verified, now)?;
         self.changed.notify_waiters();
         Ok(())
     }
@@ -177,6 +179,26 @@ impl State {
         held.is_some_and(|held| held.contains(outcome))
     }
 
+    /// Drops the expired outcomes of `signer` for yields not indexed yet, and fails when an
+    /// outcome for `yield_id` would take it over the cap.
+    fn make_room(
+        &mut self,
+        yield_id: YieldId,
+        signer: ParticipantId,
+        now: Instant,
+    ) -> Result<(), RejectedNodeOutcome> {
+        if self.indexed.contains_key(&yield_id) {
+            return Ok(());
+        }
+        let of_sender = self.unindexed.entry(signer).or_default();
+        of_sender.retain(|_, unindexed| !unindexed.expired_at(now));
+        if !of_sender.contains_key(&yield_id) && of_sender.len() >= MAX_UNINDEXED_YIELDS_PER_SENDER
+        {
+            return Err(RejectedNodeOutcome::TooManyUnindexedYields(signer));
+        }
+        Ok(())
+    }
+
     fn keep(
         &mut self,
         outcome: VerifiedNodeOutcome,
@@ -188,12 +210,8 @@ impl State {
             merge(of_yield.entry(signer), outcome);
             return Ok(());
         }
+        self.make_room(yield_id, signer, now)?;
         let of_sender = self.unindexed.entry(signer).or_default();
-        of_sender.retain(|_, unindexed| !unindexed.expired_at(now));
-        if !of_sender.contains_key(&yield_id) && of_sender.len() >= MAX_UNINDEXED_YIELDS_PER_SENDER
-        {
-            return Err(RejectedNodeOutcome::TooManyUnindexedYields(signer));
-        }
         match of_sender.get_mut(&yield_id) {
             Some(unindexed) => unindexed.held = unindexed.held.clone().with(outcome),
             None => {

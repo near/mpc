@@ -1,5 +1,7 @@
 use super::*;
-use crate::network::testing::{current_protocol_versions, new_test_client_with_versions};
+use crate::network::testing::{
+    TestMeshTransportSender, current_protocol_versions, new_test_client_with_versions,
+};
 use crate::network::wire_format::Packet;
 use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 use crate::providers::verify_foreign_tx::node_outcome_statement::testing::{
@@ -9,6 +11,8 @@ use crate::providers::verify_foreign_tx::open_requests::test_chain::TestChain;
 use mpc_primitives::domain::DomainId;
 use near_contract_transport::BlockHeight;
 use near_indexer_primitives::CryptoHash;
+
+mod inspection;
 
 const ME: ParticipantId = ParticipantId::from_raw(0);
 const PEER: ParticipantId = ParticipantId::from_raw(1);
@@ -40,7 +44,7 @@ fn own_outcome() -> SignedNodeOutcome {
 }
 
 #[tokio::test(start_paused = true)]
-async fn keep_and_send_while_open__should_send_the_outcome_again_until_the_request_closes() {
+async fn keep_and_send_until_settled__should_send_the_outcome_while_open_and_pause_while_closed() {
     // Given
     let participants = vec![ME, PEER];
     let (network, transport) = new_test_client_with_versions(
@@ -55,15 +59,24 @@ async fn keep_and_send_while_open__should_send_the_outcome_again_until_the_reque
     let mut chain = TestChain::starting_at(BlockHeight::new(999));
     open_requests.notify_new_block(&chain.extend(vec![request()], vec![]));
     network.node_outcomes().index([request().yield_id]);
-    let close_after_two_resends = async {
-        tokio::time::sleep(OUTCOME_RESEND_INTERVAL * 2 + Duration::from_millis(1)).await;
+    let fork_point = chain.head.clone();
+    let complete_on_a_losing_fork_then_settle = async {
+        let just_after = |sends: u32| OUTCOME_RESEND_INTERVAL * sends + Duration::from_millis(1);
+        tokio::time::sleep(just_after(1)).await;
         open_requests.notify_new_block(&chain.extend(vec![], vec![request().id]));
+        tokio::time::sleep(just_after(1)).await;
+        let other_fork = fork_point.height() + 2;
+        open_requests.notify_new_block(&chain.add(&fork_point, other_fork, vec![], vec![]));
+        tokio::time::sleep(just_after(1)).await;
+        open_requests.notify_new_block(&chain.extend(vec![], vec![request().id]));
+        open_requests.notify_new_block(&chain.extend(vec![], vec![]));
+        open_requests.notify_new_block(&chain.extend(vec![], vec![]));
     };
 
     // When
     tokio::join!(
-        keep_and_send_while_open(&network, &open_requests, request().id, own_outcome()),
-        close_after_two_resends,
+        keep_and_send_until_settled(&network, &open_requests, request().id, own_outcome()),
+        complete_on_a_losing_fork_then_settle,
     );
 
     // Then
@@ -76,6 +89,7 @@ async fn keep_and_send_while_open__should_send_the_outcome_again_until_the_reque
         })
         .collect();
     assert_eq!(sent, vec![(PEER, own_outcome()); 3]);
+    assert!(!open_requests.tracks(request().id));
     let kept: Vec<_> = network
         .node_outcomes()
         .outcomes_of(request().yield_id)

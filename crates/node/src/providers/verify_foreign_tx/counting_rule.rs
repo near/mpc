@@ -91,6 +91,14 @@ impl Tally {
             .collect()
     }
 
+    /// The verdict `signer` signed, when it signed exactly one outcome and that is a verdict.
+    pub(crate) fn verdict_of(&self, signer: ParticipantId) -> Option<NodeVerdict> {
+        match self.0.get(&signer) {
+            Some(Heard::One(NodeOutcome::Verdict(verdict))) => Some(*verdict),
+            _ => None,
+        }
+    }
+
     fn of<'a>(
         &'a self,
         supporters: &'a BTreeSet<ParticipantId>,

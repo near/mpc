@@ -192,3 +192,26 @@ fn verdict_check__should_not_count_a_signer_that_does_not_support_the_chain() {
         Err(RoundRefusal::BelowThreshold { backers: 2, .. })
     );
 }
+
+#[test]
+fn verdict_check__should_refuse_more_statements_than_supporters_before_verifying_them() {
+    // Given
+    let mut evidence = not_found_by(&[0, 1, 2, 3]);
+    evidence.push(
+        outcome_signing_key(participant(1))
+            .sign(statement(2, NodeOutcome::Verdict(NOT_FOUND)))
+            .unwrap(),
+    );
+
+    // When
+    let checked = check(evidence, &not_found_by(&[0]));
+
+    // Then
+    assert_matches!(
+        checked,
+        Err(RoundRefusal::TooManyStatements {
+            statements: 5,
+            supporters: 4,
+        })
+    );
+}

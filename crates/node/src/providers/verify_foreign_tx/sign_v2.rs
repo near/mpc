@@ -43,7 +43,7 @@ pub(crate) struct SignedVerdict {
 
 impl VerifyForeignTxProvider {
     /// Inspects a V2 request whose block is final, signs this node's outcome and sends it to
-    /// every participant, again and again while the request is open. A node that does not
+    /// every participant, again and again until the request settles. A node that does not
     /// support the chain stays silent.
     pub(crate) async fn inspect_and_send_node_outcome(
         &self,
@@ -64,7 +64,7 @@ impl VerifyForeignTxProvider {
             signer: me,
             outcome,
         })?;
-        keep_and_send_while_open(&self.v2.network, &self.v2.open_requests, request.id, signed)
+        keep_and_send_until_settled(&self.v2.network, &self.v2.open_requests, request.id, signed)
             .await;
         Ok(())
     }
@@ -83,20 +83,24 @@ impl VerifyForeignTxProvider {
 }
 
 /// Keeps this node's own `outcome` and sends it to every participant, again every
-/// [`OUTCOME_RESEND_INTERVAL`] until the request `id` closes. It is kept again each time, since
-/// it verifies only once this node's outcome key is on chain.
-async fn keep_and_send_while_open(
+/// [`OUTCOME_RESEND_INTERVAL`] while the request `id` is open, until it settles. A request that
+/// a completion on a losing fork closed opens again, so the sending only pauses while it is
+/// closed. The outcome is kept again each time, since it verifies only once this node's outcome
+/// key is on chain.
+async fn keep_and_send_until_settled(
     network: &MeshNetworkClient,
     open_requests: &OpenVerifyForeignTxRequestsV2,
     id: VerifyForeignTxId,
     outcome: SignedNodeOutcome,
 ) {
     let me = network.my_participant_id();
-    while open_requests.get(id).is_some() {
-        if let Err(error) = network.node_outcomes().receive(me, outcome.clone()) {
-            tracing::debug!(%error, "own node outcome not kept");
+    while open_requests.tracks(id) {
+        if open_requests.get(id).is_some() {
+            if let Err(error) = network.node_outcomes().receive(me, outcome.clone()) {
+                tracing::debug!(%error, "own node outcome not kept");
+            }
+            network.broadcast_node_outcome(&outcome);
         }
-        network.broadcast_node_outcome(&outcome);
         tokio::time::sleep(OUTCOME_RESEND_INTERVAL).await;
     }
 }

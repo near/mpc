@@ -1,10 +1,11 @@
 use std::collections::{BTreeSet, HashSet};
+use std::future::Future;
 
 use anyhow::Context;
 use near_mpc_contract_interface::types::Tweak;
 use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
-use tokio::time::Duration;
+use tokio::time::Instant;
 
 use super::{ROUND_DEADLINE, SignedVerdict};
 use crate::metrics;
@@ -13,19 +14,17 @@ use crate::network::wire_format::VerifyForeignTxTaskId;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol_version::V2_FOREIGN_TX_MIN_PROTOCOL_VERSION;
 use crate::providers::ecdsa::OnlinePresignSignComputation;
-use crate::providers::ecdsa::triple::{PairedTriple, participants_from_triples};
+use crate::providers::ecdsa::triple::{PairedTriple, TripleStorage, participants_from_triples};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::verify_foreign_tx::counting_rule::{Decision, Tally};
 use crate::providers::verify_foreign_tx::node_outcome::{NodeVerdict, RoundOutcome};
 use crate::providers::verify_foreign_tx::node_outcome_statement::{
     SignedNodeOutcome, VerifiedNodeOutcome,
 };
-use crate::providers::verify_foreign_tx::sign::{TRIPLE_TAKE_GRACE_PERIOD, await_with_slow_hook};
+use crate::providers::verify_foreign_tx::node_outcomes::NodeOutcomes;
+use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
+use crate::providers::verify_foreign_tx::sign::TRIPLE_TAKE_GRACE_PERIOD;
 use crate::types::{VerifyForeignTxId, VerifyForeignTxRequestV2};
-
-/// The interval at which a leader that waits for node outcomes checks that the request is still
-/// open.
-const OPEN_RECHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A signing round for a verdict, ready to start: the asset is taken, and every participant of
 /// the asset signed the verdict.
@@ -54,12 +53,34 @@ pub(crate) enum StopLeading {
     // TODO(#5126): sign an inconclusive instead.
     #[error("no verdict can reach the signing threshold")]
     NoVerdictCanReachThreshold,
-    #[error("the V2 request closed before t nodes signed the same verdict")]
+    #[error("the V2 request closed before its signing round could start")]
     RequestClosed,
 }
 
+/// The owned assets of a leader, each shared with a set of participants.
+trait TakeOwnedMatching {
+    type Asset;
+
+    /// Takes an owned asset whose participants all belong to `eligible`, once one is free.
+    /// Dropping the future before it completes takes nothing.
+    fn take_owned_matching(
+        &self,
+        eligible: Vec<ParticipantId>,
+    ) -> impl Future<Output = (UniqueId, Self::Asset)> + Send;
+}
+
+/// The state a leader waits on before a signing round for a verdict.
+struct RoundWait<'a, Assets> {
+    node_outcomes: &'a NodeOutcomes,
+    open_requests: &'a OpenVerifyForeignTxRequestsV2,
+    assets: &'a Assets,
+    request: &'a VerifyForeignTxRequestV2,
+    me: ParticipantId,
+    threshold: usize,
+}
+
 impl VerifyForeignTxProvider {
-    /// Waits until t supporters signed the same verdict for the open request `id`, then takes an
+    /// Waits until t supporters signed the same verdict for the open request `id`, and takes an
     /// asset whose participants all signed it. Fails with [`StopLeading`] when this node cannot
     /// lead a round for the request.
     pub(crate) async fn prepare_verdict_round(
@@ -75,30 +96,29 @@ impl VerifyForeignTxProvider {
         self.leader_chain_supporters(requested_chain)?;
         let keyshare = self.ecdsa_signature_provider.keyshare(request.domain_id)?;
         let threshold = usize::try_from(keyshare.reconstruction_threshold.value())?;
-        let evidence = self.wait_for_verdict(&request, threshold).await?;
-
-        let v2_capable: HashSet<ParticipantId> = self
-            .v2
-            .network
-            .participants_supporting(V2_FOREIGN_TX_MIN_PROTOCOL_VERSION)
-            .into_iter()
-            .collect();
-        let candidates = round_candidates(&evidence.backers, &v2_capable);
+        let triple_store = self
+            .ecdsa_signature_provider
+            .triple_store_for_t(keyshare.reconstruction_threshold)?;
         // TODO(#5125): take only a triple pair without the nodes that failed an earlier round.
-        let (paired_triple_id, triples) = await_with_slow_hook(
-            TRIPLE_TAKE_GRACE_PERIOD,
-            self.ecdsa_signature_provider
-                .triple_store_for_t(keyshare.reconstruction_threshold)?
-                .take_owned_matching(candidates),
+        let (evidence, paired_triple_id, triples) = RoundWait {
+            node_outcomes: self.v2.network.node_outcomes(),
+            open_requests: &self.v2.open_requests,
+            assets: triple_store.as_ref(),
+            request: &request,
+            me: self.ecdsa_signature_provider.my_participant_id(),
+            threshold,
+        }
+        .verdict_and_asset(
+            || self.v2_chain_supporters(requested_chain),
             || {
-                metrics::MPC_NUM_VERIFY_FOREIGN_TX_TRIPLE_WAITS.inc();
-                tracing::warn!(
-                    ?requested_chain,
-                    "no triple pair among the backers of the verdict available, waiting"
-                )
+                self.v2
+                    .network
+                    .participants_supporting(V2_FOREIGN_TX_MIN_PROTOCOL_VERSION)
+                    .into_iter()
+                    .collect()
             },
         )
-        .await;
+        .await?;
         Ok(VerdictRound {
             request,
             evidence,
@@ -155,51 +175,104 @@ impl VerifyForeignTxProvider {
             public_key,
         })
     }
+}
 
-    async fn wait_for_verdict(
+impl<Assets: TakeOwnedMatching> RoundWait<'_, Assets> {
+    /// Waits until t supporters signed the same verdict and an asset among its current backers
+    /// is free. The backers, the evidence and the candidates follow every new outcome and every
+    /// indexed block, so a backer without a matching asset blocks nothing once other backers
+    /// sign. Fails with [`StopLeading::RequestClosed`] once the request closes, and then takes
+    /// no asset.
+    async fn verdict_and_asset(
         &self,
-        request: &VerifyForeignTxRequestV2,
-        threshold: usize,
-    ) -> anyhow::Result<VerdictEvidence> {
-        let me = self.ecdsa_signature_provider.my_participant_id();
-        let node_outcomes = self.v2.network.node_outcomes();
+        supporters: impl Fn() -> BTreeSet<ParticipantId>,
+        v2_capable: impl Fn() -> HashSet<ParticipantId>,
+    ) -> Result<(VerdictEvidence, UniqueId, Assets::Asset), StopLeading> {
+        let mut asset_wait_started: Option<Instant> = None;
+        let mut slow_asset_wait_reported = false;
         loop {
-            let changed = node_outcomes.changed();
-            tokio::pin!(changed);
-            changed.as_mut().enable();
-            if self.v2.open_requests.get(request.id).is_none() {
-                return Err(StopLeading::RequestClosed.into());
+            let outcome_kept = self.node_outcomes.changed();
+            tokio::pin!(outcome_kept);
+            outcome_kept.as_mut().enable();
+            let block_indexed = self.open_requests.changed();
+            tokio::pin!(block_indexed);
+            block_indexed.as_mut().enable();
+            if self.open_requests.get(self.request.id).is_none() {
+                return Err(StopLeading::RequestClosed);
             }
-            let supporters = self.v2_chain_supporters(request.request.chain());
-            let outcomes = node_outcomes.outcomes_of(request.yield_id);
-            if let Some(evidence) = verdict_to_sign(&outcomes, me, &supporters, threshold)? {
-                return Ok(evidence);
+            let outcomes = self.node_outcomes.outcomes_of(self.request.yield_id);
+            let Some(evidence) =
+                verdict_to_sign(&outcomes, self.me, &supporters(), self.threshold)?
+            else {
+                tokio::select! {
+                    _ = &mut outcome_kept => {}
+                    _ = &mut block_indexed => {}
+                }
+                continue;
+            };
+            let candidates = round_candidates(&evidence.backers, &v2_capable());
+            let slow_at =
+                *asset_wait_started.get_or_insert_with(Instant::now) + TRIPLE_TAKE_GRACE_PERIOD;
+            tokio::select! {
+                biased;
+                _ = &mut block_indexed => {}
+                _ = &mut outcome_kept => {}
+                () = tokio::time::sleep_until(slow_at), if !slow_asset_wait_reported => {
+                    slow_asset_wait_reported = true;
+                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_TRIPLE_WAITS.inc();
+                    tracing::warn!(
+                        chain = ?self.request.request.chain(),
+                        "no triple pair among the backers of the verdict available, waiting"
+                    );
+                }
+                (id, asset) = self.assets.take_owned_matching(candidates) => {
+                    return Ok((evidence, id, asset));
+                }
             }
-            let _ = tokio::time::timeout(OPEN_RECHECK_INTERVAL, changed).await;
         }
     }
 }
 
+impl TakeOwnedMatching for TripleStorage {
+    type Asset = PairedTriple;
+
+    fn take_owned_matching(
+        &self,
+        eligible: Vec<ParticipantId>,
+    ) -> impl Future<Output = (UniqueId, PairedTriple)> + Send {
+        (**self).take_owned_matching(eligible)
+    }
+}
+
 /// Applies the counting rule to the kept `outcomes`. Returns `None` while the leader waits for
-/// more of them.
+/// more of them. When two verdicts reach t, it picks the one `me` signed.
 fn verdict_to_sign(
     outcomes: &[VerifiedNodeOutcome],
     me: ParticipantId,
     supporters: &BTreeSet<ParticipantId>,
     threshold: usize,
 ) -> Result<Option<VerdictEvidence>, StopLeading> {
-    let decision = outcomes
+    let tally = outcomes
         .iter()
         .map(VerifiedNodeOutcome::statement)
-        .collect::<Tally>()
-        .decide(supporters, threshold);
-    match decision {
+        .collect::<Tally>();
+    match tally.decide(supporters, threshold) {
         Decision::Wait => Ok(None),
         Decision::Inconclusive { .. } => Err(StopLeading::NoVerdictCanReachThreshold),
-        Decision::Verdict { verdict, backers } if !backers.contains(&me) => {
-            Err(StopLeading::NotABacker(verdict))
-        }
         Decision::Verdict { verdict, backers } => {
+            let (verdict, backers) = if backers.contains(&me) {
+                (verdict, backers)
+            } else {
+                // Two verdicts can reach t, and signers accept either, so the leader signs the
+                // one it backs.
+                let own = tally
+                    .verdict_of(me)
+                    .map(|own| (own, tally.backers_of(own, supporters)))
+                    .filter(|(_, own_backers)| {
+                        own_backers.contains(&me) && own_backers.len() >= threshold
+                    });
+                own.ok_or(StopLeading::NotABacker(verdict))?
+            };
             let statements = outcomes
                 .iter()
                 .filter(|outcome| backers.contains(&outcome.statement().signer))
