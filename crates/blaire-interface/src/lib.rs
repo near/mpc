@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
-// TODO(#5089): Add snapshot test module for NodeReport and a round-trip tests.
-
 /// Report an MPC node publishes to Blaire at startup.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct NodeReport {
@@ -23,7 +21,7 @@ pub struct Version(pub String);
 /// Built field-by-field from the node's `ForeignChainsConfig` as an allowlist:
 /// a field added upstream is not published until it is added here.
 /// Secrets never leave the node.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RedactedForeignChainsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<RedactedForeignChainConfig>,
@@ -88,4 +86,74 @@ pub enum AuthKind {
     Header,
     Path,
     Query,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::num::NonZeroU64;
+
+    /// A report that exercises every serde attribute of the wire format.
+    fn example_report() -> NodeReport {
+        let providers = BTreeMap::from([
+            provider("public", "https://rpc.example.org", AuthKind::None),
+            provider(
+                "alchemy",
+                "https://eth-mainnet.g.alchemy.com",
+                AuthKind::Header,
+            ),
+            provider("infura", "https://mainnet.infura.io", AuthKind::Path),
+            provider("quicknode", "https://example.quiknode.pro", AuthKind::Query),
+        ]);
+        let chain = RedactedForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).expect("30 is non-zero"),
+            max_retries: NonZeroU64::new(3).expect("3 is non-zero"),
+            expected_network_fingerprint: Some("1".to_string()),
+            providers,
+        };
+        NodeReport {
+            version: Version("3.18.0".to_string()),
+            redacted_config: RedactedForeignChainsConfig {
+                ethereum: Some(chain.clone()),
+                abstract_chain: Some(chain),
+                ..Default::default()
+            },
+        }
+    }
+
+    fn provider(name: &str, origin: &str, auth: AuthKind) -> (String, RedactedProviderConfig) {
+        (
+            name.to_string(),
+            RedactedProviderConfig {
+                rpc_origin: origin.to_string(),
+                auth,
+            },
+        )
+    }
+
+    #[test]
+    fn node_report_serializes_to_expected_json() {
+        // Given
+        let report = example_report();
+
+        // When
+        let json = serde_json::to_value(&report).expect("serialization succeeds");
+
+        // Then
+        insta::assert_json_snapshot!(json);
+    }
+
+    #[test]
+    fn node_report_survives_json_round_trip() {
+        // Given
+        let report = example_report();
+
+        // When
+        let json = serde_json::to_string(&report).expect("serialization succeeds");
+        let parsed: NodeReport = serde_json::from_str(&json).expect("deserialization succeeds");
+
+        // Then
+        assert_eq!(parsed, report);
+    }
 }

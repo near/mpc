@@ -1443,7 +1443,9 @@ dependencies = [
 name = "blaire-interface"
 version = "3.18.0"
 dependencies = [
+ "insta",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
