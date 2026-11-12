@@ -1,84 +1,221 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 use near_contract_transport::BlockHeight;
+use near_mpc_contract_interface::types::YieldId;
 use tokio::sync::Notify;
 
 use crate::requests::queue::REQUEST_EXPIRATION_BLOCKS;
 use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
-/// The V2 requests this node indexed that are still open: not completed and inside the
-/// [`REQUEST_EXPIRATION_BLOCKS`] window of the request. A node signs only for an open request.
+/// The V2 requests this node indexed, to tell the open ones: indexed on the canonical chain,
+/// without a completion on the canonical chain, and inside the [`REQUEST_EXPIRATION_BLOCKS`]
+/// window of the request. A node signs only for an open request.
+///
+/// A completion closes every request with its yield id. A request or completion on a fork that
+/// loses counts only while its block stays canonical.
 ///
 /// The requests live in memory: after a restart the node knows only the requests it indexes
 /// again.
 #[derive(Default)]
 pub(crate) struct OpenVerifyForeignTxRequestsV2 {
-    requests: Mutex<HashMap<VerifyForeignTxId, VerifyForeignTxRequestV2>>,
-    added: Notify,
+    requests: Mutex<HashMap<VerifyForeignTxId, IndexedRequest>>,
+    changed: Notify,
+}
+
+struct IndexedRequest {
+    request: VerifyForeignTxRequestV2,
+    block: BlockStatusHandle,
+    /// The blocks of the completions of this request or of another request with its yield id.
+    completions: Vec<BlockStatusHandle>,
 }
 
 impl OpenVerifyForeignTxRequestsV2 {
-    /// Adds the requests of a newly indexed block, and drops the ones that completed or expired
-    /// at its height.
-    pub(crate) fn notify_new_block(&self, update: &RequestsUpdate<VerifyForeignTxRequestV2>) {
+    /// Adds the requests and completions of a newly indexed block. Returns the yield ids it no
+    /// longer tracks, after a final completion, the end of the window or the pruning of a fork.
+    pub(crate) fn notify_new_block(
+        &self,
+        update: &RequestsUpdate<VerifyForeignTxRequestV2>,
+    ) -> Vec<YieldId> {
         let mut requests = self.requests.lock().unwrap();
         for request in &update.requests {
-            requests.insert(request.id, request.clone());
+            requests
+                .entry(request.id)
+                .or_insert_with(|| IndexedRequest {
+                    request: request.clone(),
+                    block: update.block_status.clone(),
+                    completions: Vec::new(),
+                });
         }
-        for completed in &update.completed_requests {
-            requests.remove(completed);
+        let completed_yields: Vec<YieldId> = update
+            .completed_requests
+            .iter()
+            .filter_map(|id| requests.get(id).map(|indexed| indexed.request.yield_id))
+            .collect();
+        for indexed in requests.values_mut() {
+            if completed_yields.contains(&indexed.request.yield_id) {
+                indexed.completions.push(update.block_status.clone());
+            }
+            indexed
+                .completions
+                .retain(|completion| completion.is_canonical().is_some());
         }
-        requests.retain(|_, request| is_open_at(request, update.block_height));
+        let mut settled = Vec::new();
+        requests.retain(|_, indexed| {
+            let keep = !indexed.is_settled_at(update.block_height);
+            if !keep {
+                settled.push(indexed.request.yield_id);
+            }
+            keep
+        });
+        settled.retain(|yield_id| !tracks(&requests, *yield_id));
         drop(requests);
-        self.added.notify_waiters();
+        self.changed.notify_waiters();
+        settled
+    }
+
+    /// True while a request with `yield_id` may still open or close.
+    pub(crate) fn tracks_yield(&self, yield_id: YieldId) -> bool {
+        tracks(&self.requests.lock().unwrap(), yield_id)
     }
 
     pub(crate) fn get(&self, id: VerifyForeignTxId) -> Option<VerifyForeignTxRequestV2> {
-        self.requests.lock().unwrap().get(&id).cloned()
+        self.requests
+            .lock()
+            .unwrap()
+            .get(&id)
+            .filter(|indexed| indexed.is_open())
+            .map(|indexed| indexed.request.clone())
     }
 
     /// Returns the request once it is open. A peer may start an attempt before this node indexed
     /// the request, so callers bound the wait.
     pub(crate) async fn wait_for(&self, id: VerifyForeignTxId) -> VerifyForeignTxRequestV2 {
         loop {
-            let added = self.added.notified();
-            tokio::pin!(added);
-            added.as_mut().enable();
+            let changed = self.changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
             if let Some(request) = self.get(id) {
                 return request;
             }
-            added.await;
+            changed.await;
         }
     }
 }
 
-fn is_open_at(request: &VerifyForeignTxRequestV2, height: BlockHeight) -> bool {
-    request
-        .request_block_height
-        .saturating_add(REQUEST_EXPIRATION_BLOCKS)
-        > height
+fn tracks(requests: &HashMap<VerifyForeignTxId, IndexedRequest>, yield_id: YieldId) -> bool {
+    requests
+        .values()
+        .any(|indexed| indexed.request.yield_id == yield_id)
+}
+
+impl IndexedRequest {
+    fn is_open(&self) -> bool {
+        self.block.is_canonical() == Some(true)
+            && !self
+                .completions
+                .iter()
+                .any(|completion| completion.is_canonical() == Some(true))
+    }
+
+    /// True once the request can never be open again at `height`.
+    fn is_settled_at(&self, height: BlockHeight) -> bool {
+        let expired = self
+            .request
+            .request_block_height
+            .saturating_add(REQUEST_EXPIRATION_BLOCKS)
+            <= height;
+        let pruned = self.block.is_canonical().is_none();
+        let finally_completed = self
+            .completions
+            .iter()
+            .any(|completion| completion.is_final() == Some(true));
+        expired || pruned || finally_completed
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_chain {
+    use std::sync::Arc;
+
+    use chain_gateway::event_subscriber::recent_blocks_tracker::RecentBlocksTracker;
+    use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::{
+        TestBlock, TestBlockMaker,
+    };
+    use near_contract_transport::BlockHeight;
+
+    use crate::requests::queue::REQUEST_EXPIRATION_BLOCKS;
+    use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
+
+    /// Indexed blocks. A [`RecentBlocksTracker`] keeps their status for as long as the
+    /// chain lives.
+    pub(crate) struct TestChain {
+        tracker: RecentBlocksTracker,
+        pub(crate) head: Arc<TestBlock>,
+    }
+
+    impl TestChain {
+        /// A chain whose first block is at `height`.
+        pub(crate) fn starting_at(height: BlockHeight) -> Self {
+            let mut tracker = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
+            let head = TestBlockMaker::new().block(u64::from(height));
+            tracker.add_block(&head.to_block_view());
+            Self { tracker, head }
+        }
+
+        /// Adds the child of the head as the new head.
+        pub(crate) fn extend(
+            &mut self,
+            requests: Vec<VerifyForeignTxRequestV2>,
+            completed_requests: Vec<VerifyForeignTxId>,
+        ) -> RequestsUpdate<VerifyForeignTxRequestV2> {
+            let parent = self.head.clone();
+            self.add(&parent, parent.height() + 1, requests, completed_requests)
+        }
+
+        /// Adds a block at `height` on top of `parent`. The highest block becomes canonical.
+        pub(crate) fn add(
+            &mut self,
+            parent: &Arc<TestBlock>,
+            height: u64,
+            requests: Vec<VerifyForeignTxRequestV2>,
+            completed_requests: Vec<VerifyForeignTxId>,
+        ) -> RequestsUpdate<VerifyForeignTxRequestV2> {
+            let block = parent.descendant(height);
+            let block_status = self.tracker.add_block(&block.to_block_view()).block_status;
+            if height > self.head.height() {
+                self.head = block;
+            }
+            RequestsUpdate {
+                requests,
+                completed_requests,
+                block_height: BlockHeight::new(height),
+                block_status,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use super::test_chain::TestChain;
     use super::*;
-    use chain_gateway::event_subscriber::recent_blocks_tracker::RecentBlocksTracker;
-    use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
     use mpc_primitives::domain::DomainId;
     use near_contract_transport::BlockCount;
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types as dtos;
     use std::time::Duration;
 
+    const START_HEIGHT: BlockHeight = BlockHeight::new(999);
     const REQUEST_HEIGHT: BlockHeight = BlockHeight::new(1000);
 
-    fn request(id: u8) -> VerifyForeignTxRequestV2 {
+    fn request_with_yield(id: u8, yield_id: u8) -> VerifyForeignTxRequestV2 {
         VerifyForeignTxRequestV2 {
             id: CryptoHash([id; 32]),
             receipt_id: CryptoHash([0; 32]),
-            yield_id: dtos::YieldId([id; 32]),
+            yield_id: dtos::YieldId([yield_id; 32]),
             request_block_height: REQUEST_HEIGHT,
             request: dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
                 tx_id: dtos::BitcoinTxId([0; 32]),
@@ -92,29 +229,18 @@ mod tests {
         }
     }
 
-    fn update(
-        height: BlockHeight,
-        requests: Vec<VerifyForeignTxRequestV2>,
-        completed_requests: Vec<VerifyForeignTxId>,
-    ) -> RequestsUpdate<VerifyForeignTxRequestV2> {
-        let mut tracker = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
-        let block = TestBlockMaker::new().block(u64::from(height));
-        let block_status = tracker.add_block(&block.to_block_view()).block_status;
-        RequestsUpdate {
-            requests,
-            completed_requests,
-            block_height: height,
-            block_status,
-        }
+    fn request(id: u8) -> VerifyForeignTxRequestV2 {
+        request_with_yield(id, id)
     }
 
     #[test]
     fn open_requests__should_keep_an_indexed_request_open() {
         // Given
         let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
 
         // When
-        open.notify_new_block(&update(REQUEST_HEIGHT, vec![request(1)], vec![]));
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
 
         // Then
         assert_eq!(open.get(request(1).id), Some(request(1)));
@@ -124,18 +250,11 @@ mod tests {
     fn open_requests__should_close_a_completed_request() {
         // Given
         let open = OpenVerifyForeignTxRequestsV2::default();
-        open.notify_new_block(&update(
-            REQUEST_HEIGHT,
-            vec![request(1), request(2)],
-            vec![],
-        ));
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1), request(2)], vec![]));
 
         // When
-        open.notify_new_block(&update(
-            REQUEST_HEIGHT + BlockCount::new(1),
-            vec![],
-            vec![request(1).id],
-        ));
+        open.notify_new_block(&chain.extend(vec![], vec![request(1).id]));
 
         // Then
         assert_eq!(open.get(request(1).id), None);
@@ -143,37 +262,110 @@ mod tests {
     }
 
     #[test]
+    fn open_requests__should_settle_a_request_once_its_completion_is_final() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
+        let settled_by_the_completion =
+            open.notify_new_block(&chain.extend(vec![], vec![request(1).id]));
+        let settled_while_not_final = open.notify_new_block(&chain.extend(vec![], vec![]));
+
+        // When
+        let settled_once_final = open.notify_new_block(&chain.extend(vec![], vec![]));
+
+        // Then
+        assert_eq!(settled_by_the_completion, vec![]);
+        assert_eq!(settled_while_not_final, vec![]);
+        assert_eq!(settled_once_final, vec![request(1).yield_id]);
+        assert!(!open.tracks_yield(request(1).yield_id));
+    }
+
+    #[test]
+    fn open_requests__should_close_every_request_with_the_yield_id_of_a_completion() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        let (first, second) = (request_with_yield(1, 9), request_with_yield(2, 9));
+        open.notify_new_block(&chain.extend(vec![first.clone(), second.clone()], vec![]));
+
+        // When
+        open.notify_new_block(&chain.extend(vec![], vec![second.id]));
+
+        // Then
+        assert_eq!(open.get(first.id), None);
+        assert_eq!(open.get(second.id), None);
+    }
+
+    #[test]
+    fn open_requests__should_reopen_a_request_whose_completion_lost_its_fork() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
+        let fork_point = chain.head.clone();
+        open.notify_new_block(&chain.extend(vec![], vec![request(1).id]));
+        let closed_on_the_fork = open.get(request(1).id);
+
+        // When
+        let other_fork_height = fork_point.height() + 2;
+        open.notify_new_block(&chain.add(&fork_point, other_fork_height, vec![], vec![]));
+
+        // Then
+        assert_eq!(closed_on_the_fork, None);
+        assert_eq!(open.get(request(1).id), Some(request(1)));
+    }
+
+    #[test]
+    fn open_requests__should_not_open_a_request_whose_fork_lost() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        let fork_point = chain.head.clone();
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
+        let open_on_the_fork = open.get(request(1).id);
+
+        // When
+        let other_fork_height = fork_point.height() + 2;
+        open.notify_new_block(&chain.add(&fork_point, other_fork_height, vec![], vec![]));
+
+        // Then
+        assert_eq!(open_on_the_fork, Some(request(1)));
+        assert_eq!(open.get(request(1).id), None);
+    }
+
+    #[test]
     fn open_requests__should_close_a_request_once_its_window_ends() {
         // Given
         let open = OpenVerifyForeignTxRequestsV2::default();
-        open.notify_new_block(&update(REQUEST_HEIGHT, vec![request(1)], vec![]));
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
         let last_open_height =
             REQUEST_HEIGHT + BlockCount::new(u64::from(REQUEST_EXPIRATION_BLOCKS) - 1);
+        let fork_point = chain.head.clone();
+        open.notify_new_block(&chain.add(&fork_point, u64::from(last_open_height), vec![], vec![]));
+        let open_in_last_block = open.get(request(1).id);
 
         // When
-        open.notify_new_block(&update(last_open_height, vec![], vec![]));
-        let open_in_last_block = open.get(request(1).id);
-        open.notify_new_block(&update(
-            last_open_height + BlockCount::new(1),
-            vec![],
-            vec![],
-        ));
+        let settled = open.notify_new_block(&chain.extend(vec![], vec![]));
 
         // Then
         assert_eq!(open_in_last_block, Some(request(1)));
         assert_eq!(open.get(request(1).id), None);
+        assert_eq!(settled, vec![request(1).yield_id]);
     }
 
     #[tokio::test]
     async fn open_requests_wait_for__should_return_a_request_indexed_after_the_wait_started() {
         // Given
         let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
         let waiting = open.wait_for(request(1).id);
 
         // When
-        let (found, ()) = tokio::join!(
+        let (found, _) = tokio::join!(
             tokio::time::timeout(Duration::from_secs(5), waiting),
-            async { open.notify_new_block(&update(REQUEST_HEIGHT, vec![request(1)], vec![])) }
+            async { open.notify_new_block(&chain.extend(vec![request(1)], vec![])) }
         );
 
         // Then

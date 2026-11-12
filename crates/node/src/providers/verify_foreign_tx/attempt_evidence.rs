@@ -1,8 +1,6 @@
-use std::collections::BTreeMap;
-use std::num::NonZeroUsize;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
-use lru::LruCache;
 use near_mpc_contract_interface::types::YieldId;
 use tokio::sync::Notify;
 
@@ -12,16 +10,26 @@ use crate::providers::verify_foreign_tx::node_outcome_statement::{
     AttemptId, NodeOutcomeVerificationError, SignedNodeOutcome, VerifiedNodeOutcome,
 };
 
-/// The number of led attempts whose node outcomes [`AttemptEvidence`] keeps. It drops the
-/// attempts it opened first.
-const MAX_ATTEMPTS_KEPT: NonZeroUsize = NonZeroUsize::new(1024).unwrap();
+/// The number of led attempts per yield whose node outcomes [`AttemptEvidence`] keeps, above the
+/// ten attempts a leader makes at one request. It drops the attempts it opened first.
+const MAX_ATTEMPTS_KEPT_PER_YIELD: usize = 16;
 
 /// The signed node outcomes of the V2 attempts this node leads. They are the evidence a leader
 /// shows when it asks for an inconclusive. An attempt keeps at most one node outcome per
 /// participant, from the moment it reaches this node, also after the attempt ended.
+///
+/// The bound is per yield, so many requests cannot push out the evidence of another open
+/// request. [`Self::forget`] drops the evidence of a request that closed.
 pub(crate) struct AttemptEvidence {
-    attempts: Mutex<LruCache<AttemptId, AttemptRecord>>,
+    attempts: Mutex<KeptAttempts>,
     recorded: Notify,
+}
+
+#[derive(Default)]
+struct KeptAttempts {
+    records: HashMap<AttemptId, AttemptRecord>,
+    /// The kept attempts of each yield, oldest first.
+    by_yield: HashMap<YieldId, VecDeque<AttemptId>>,
 }
 
 struct AttemptRecord {
@@ -39,6 +47,16 @@ pub(crate) struct LedAttempt {
     pub(crate) participants: Vec<ParticipantId>,
     /// The participant set that holds the TLS key each node outcome is verified against.
     pub(crate) keys: Arc<ParticipantsConfig>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ReceivedNodeOutcomeError {
+    #[error("no led attempt {0:?} is kept")]
+    UnknownAttempt(AttemptId),
+    #[error("a node outcome of participant {0} is already kept")]
+    AlreadyKept(ParticipantId),
+    #[error(transparent)]
+    Rejected(#[from] NodeOutcomeRejection),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -62,20 +80,10 @@ pub(crate) enum NodeOutcomeRejection {
     Verification(#[from] NodeOutcomeVerificationError),
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ReceivedNodeOutcomeError {
-    #[error("no led attempt {0:?} is kept")]
-    UnknownAttempt(AttemptId),
-    #[error("a node outcome of participant {0} is already kept")]
-    AlreadyKept(ParticipantId),
-    #[error(transparent)]
-    Rejected(#[from] NodeOutcomeRejection),
-}
-
 impl AttemptEvidence {
     pub(crate) fn new() -> Self {
         Self {
-            attempts: Mutex::new(LruCache::new(MAX_ATTEMPTS_KEPT)),
+            attempts: Mutex::new(KeptAttempts::default()),
             recorded: Notify::new(),
         }
     }
@@ -83,20 +91,22 @@ impl AttemptEvidence {
     /// Starts keeping the node outcomes of `attempt`. Call it before the attempt's Start leaves,
     /// so no node outcome arrives before.
     pub(crate) fn open(&self, attempt: LedAttempt) {
-        self.attempts.lock().unwrap().put(
-            attempt.id,
-            AttemptRecord {
-                attempt,
-                outcomes: BTreeMap::new(),
-            },
-        );
+        self.attempts.lock().unwrap().open(attempt);
+    }
+
+    /// Drops the evidence of the requests at `yield_ids`.
+    pub(crate) fn forget(&self, yield_ids: &[YieldId]) {
+        let mut attempts = self.attempts.lock().unwrap();
+        for yield_id in yield_ids {
+            attempts.forget(yield_id);
+        }
     }
 
     /// Keeps the leader's own node outcome.
     pub(crate) fn record(&self, outcome: VerifiedNodeOutcome) {
         let statement = outcome.statement();
         let (attempt, signer) = (statement.attempt, statement.signer);
-        if let Some(record) = self.attempts.lock().unwrap().peek_mut(&attempt) {
+        if let Some(record) = self.attempts.lock().unwrap().records.get_mut(&attempt) {
             record.outcomes.entry(signer).or_insert(outcome);
         }
         self.recorded.notify_waiters();
@@ -113,7 +123,8 @@ impl AttemptEvidence {
         let led_attempt = {
             let attempts = self.attempts.lock().unwrap();
             let record = attempts
-                .peek(&attempt)
+                .records
+                .get(&attempt)
                 .ok_or(ReceivedNodeOutcomeError::UnknownAttempt(attempt))?;
             if record.outcomes.contains_key(&from) {
                 return Err(ReceivedNodeOutcomeError::AlreadyKept(from));
@@ -129,13 +140,25 @@ impl AttemptEvidence {
     // TODO(#5126): read as the evidence of an inconclusive.
     #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn outcomes_for(&self, yield_id: YieldId) -> Vec<VerifiedNodeOutcome> {
+        let attempts = self.attempts.lock().unwrap();
+        attempts
+            .by_yield
+            .get(&yield_id)
+            .into_iter()
+            .flatten()
+            .filter_map(|id| attempts.records.get(id))
+            .flat_map(|record| record.outcomes.values().cloned())
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attempts_kept_for(&self, yield_id: YieldId) -> usize {
         self.attempts
             .lock()
             .unwrap()
-            .iter()
-            .filter(|(_, record)| record.attempt.yield_id == yield_id)
-            .flat_map(|(_, record)| record.outcomes.values().cloned())
-            .collect()
+            .by_yield
+            .get(&yield_id)
+            .map_or(0, VecDeque::len)
     }
 
     /// Returns once the attempts at `yield_id` keep at least `count` node outcomes.
@@ -150,6 +173,31 @@ impl AttemptEvidence {
                 return;
             }
             recorded.await;
+        }
+    }
+}
+
+impl KeptAttempts {
+    fn open(&mut self, attempt: LedAttempt) {
+        let of_yield = self.by_yield.entry(attempt.yield_id).or_default();
+        of_yield.push_back(attempt.id);
+        if of_yield.len() > MAX_ATTEMPTS_KEPT_PER_YIELD
+            && let Some(oldest) = of_yield.pop_front()
+        {
+            self.records.remove(&oldest);
+        }
+        self.records.insert(
+            attempt.id,
+            AttemptRecord {
+                attempt,
+                outcomes: BTreeMap::new(),
+            },
+        );
+    }
+
+    fn forget(&mut self, yield_id: &YieldId) {
+        for id in self.by_yield.remove(yield_id).into_iter().flatten() {
+            self.records.remove(&id);
         }
     }
 }
@@ -189,257 +237,4 @@ impl LedAttempt {
 
 #[cfg(test)]
 #[expect(non_snake_case)]
-mod tests {
-    use super::*;
-    use crate::config::{ParticipantInfo, PersistentSecrets};
-    use crate::primitives::{ChannelId, UniqueId};
-    use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
-    use crate::providers::verify_foreign_tx::node_outcome_statement::{
-        NodeOutcomeSigningKey, NodeOutcomeStatement,
-    };
-    use ed25519_dalek::SigningKey;
-    use rstest::rstest;
-    use std::assert_matches;
-
-    const LEADER: ParticipantId = ParticipantId::from_raw(1);
-    const FOLLOWER: ParticipantId = ParticipantId::from_raw(2);
-    const OUTSIDER: ParticipantId = ParticipantId::from_raw(3);
-    const YIELD: YieldId = YieldId([7; 32]);
-
-    fn tls_key(participant: ParticipantId) -> SigningKey {
-        SigningKey::from_bytes(&[u8::try_from(participant.raw()).unwrap(); 32])
-    }
-
-    fn keys() -> Arc<ParticipantsConfig> {
-        let participants = [LEADER, FOLLOWER, OUTSIDER]
-            .into_iter()
-            .map(|id| ParticipantInfo {
-                id,
-                address: "127.0.0.1".to_string(),
-                port: 3000,
-                p2p_public_key: tls_key(id).verifying_key(),
-                near_account_id: format!("p{}.near", id.raw()).parse().unwrap(),
-            })
-            .collect();
-        Arc::new(ParticipantsConfig {
-            threshold: 2,
-            participants,
-        })
-    }
-
-    fn attempt_id(counter: u32) -> AttemptId {
-        AttemptId(ChannelId(UniqueId::new(LEADER, 1_700_000_000, counter)))
-    }
-
-    fn led_attempt(counter: u32) -> LedAttempt {
-        LedAttempt {
-            id: attempt_id(counter),
-            yield_id: YIELD,
-            leader: LEADER,
-            participants: vec![LEADER, FOLLOWER],
-            keys: keys(),
-        }
-    }
-
-    fn statement(signer: ParticipantId) -> NodeOutcomeStatement {
-        NodeOutcomeStatement {
-            yield_id: YIELD,
-            leader: LEADER,
-            attempt: attempt_id(1),
-            signer,
-            outcome: NodeOutcome::Verdict(NodeVerdict::Verified),
-        }
-    }
-
-    fn signed_by(key_owner: ParticipantId, statement: NodeOutcomeStatement) -> SignedNodeOutcome {
-        NodeOutcomeSigningKey::from(&PersistentSecrets {
-            p2p_private_key: tls_key(key_owner),
-            near_signer_key: SigningKey::from_bytes(&[0xff; 32]),
-        })
-        .sign(statement)
-        .unwrap()
-    }
-
-    fn signed(signer: ParticipantId) -> SignedNodeOutcome {
-        signed_by(signer, statement(signer))
-    }
-
-    #[test]
-    fn led_attempt_accept__should_accept_the_outcome_a_participant_signed_for_this_attempt() {
-        // Given
-        let attempt = led_attempt(1);
-
-        // When
-        let accepted = attempt.accept(FOLLOWER, vec![signed(FOLLOWER)]);
-
-        // Then
-        assert_eq!(accepted.unwrap().statement(), &statement(FOLLOWER));
-    }
-
-    #[rstest]
-    #[case::none(vec![])]
-    #[case::two(vec![signed(FOLLOWER), signed(FOLLOWER)])]
-    fn led_attempt_accept__should_reject_a_message_without_exactly_one_outcome(
-        #[case] outcomes: Vec<SignedNodeOutcome>,
-    ) {
-        // Given
-        let attempt = led_attempt(1);
-
-        // When
-        let accepted = attempt.accept(FOLLOWER, outcomes);
-
-        // Then
-        assert_matches!(accepted, Err(NodeOutcomeRejection::NotExactlyOne(_)));
-    }
-
-    #[test]
-    fn led_attempt_accept__should_reject_an_outcome_from_outside_the_attempt() {
-        // Given
-        let attempt = led_attempt(1);
-
-        // When
-        let accepted = attempt.accept(OUTSIDER, vec![signed(OUTSIDER)]);
-
-        // Then
-        assert_matches!(accepted, Err(NodeOutcomeRejection::NotInAttempt(OUTSIDER)));
-    }
-
-    #[test]
-    fn led_attempt_accept__should_reject_an_outcome_another_participant_signed() {
-        // Given
-        let attempt = led_attempt(1);
-
-        // When
-        let accepted = attempt.accept(FOLLOWER, vec![signed(LEADER)]);
-
-        // Then
-        assert_matches!(
-            accepted,
-            Err(NodeOutcomeRejection::SignedByAnother {
-                from: FOLLOWER,
-                signer: LEADER
-            })
-        );
-    }
-
-    #[test]
-    fn led_attempt_accept__should_reject_an_outcome_for_another_leader() {
-        // Given
-        let attempt = led_attempt(1);
-        let outcome = signed_by(
-            FOLLOWER,
-            NodeOutcomeStatement {
-                leader: OUTSIDER,
-                ..statement(FOLLOWER)
-            },
-        );
-
-        // When
-        let accepted = attempt.accept(FOLLOWER, vec![outcome]);
-
-        // Then
-        assert_matches!(accepted, Err(NodeOutcomeRejection::OtherLeader(OUTSIDER)));
-    }
-
-    #[test]
-    fn led_attempt_accept__should_reject_an_outcome_for_another_attempt() {
-        // Given
-        let attempt = led_attempt(2);
-
-        // When
-        let accepted = attempt.accept(FOLLOWER, vec![signed(FOLLOWER)]);
-
-        // Then
-        assert_matches!(accepted, Err(NodeOutcomeRejection::OtherAttempt));
-    }
-
-    #[test]
-    fn led_attempt_accept__should_reject_an_outcome_for_another_yield() {
-        // Given
-        let attempt = led_attempt(1);
-        let outcome = signed_by(
-            FOLLOWER,
-            NodeOutcomeStatement {
-                yield_id: YieldId([8; 32]),
-                ..statement(FOLLOWER)
-            },
-        );
-
-        // When
-        let accepted = attempt.accept(FOLLOWER, vec![outcome]);
-
-        // Then
-        assert_matches!(accepted, Err(NodeOutcomeRejection::OtherYield));
-    }
-
-    #[test]
-    fn led_attempt_accept__should_reject_a_signature_from_another_key() {
-        // Given
-        let attempt = led_attempt(1);
-
-        // When
-        let accepted = attempt.accept(FOLLOWER, vec![signed_by(LEADER, statement(FOLLOWER))]);
-
-        // Then
-        assert_matches!(
-            accepted,
-            Err(NodeOutcomeRejection::Verification(
-                NodeOutcomeVerificationError::BadSignature
-            ))
-        );
-    }
-
-    #[test]
-    fn attempt_evidence_record_received__should_keep_one_outcome_per_participant() {
-        // Given
-        let evidence = AttemptEvidence::new();
-        evidence.open(led_attempt(1));
-        evidence
-            .record_received(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)])
-            .unwrap();
-
-        // When
-        let second = evidence.record_received(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)]);
-
-        // Then
-        assert_matches!(second, Err(ReceivedNodeOutcomeError::AlreadyKept(FOLLOWER)));
-        let kept: Vec<_> = evidence
-            .outcomes_for(YIELD)
-            .iter()
-            .map(|outcome| outcome.statement().clone())
-            .collect();
-        assert_eq!(kept, vec![statement(FOLLOWER)]);
-    }
-
-    #[test]
-    fn attempt_evidence_record_received__should_reject_an_attempt_it_does_not_keep() {
-        // Given
-        let evidence = AttemptEvidence::new();
-
-        // When
-        let recorded = evidence.record_received(FOLLOWER, attempt_id(1), vec![signed(FOLLOWER)]);
-
-        // Then
-        assert_matches!(recorded, Err(ReceivedNodeOutcomeError::UnknownAttempt(_)));
-        assert!(evidence.outcomes_for(YIELD).is_empty());
-    }
-
-    #[test]
-    fn attempt_evidence_record_received__should_reject_an_outcome_the_attempt_rejects() {
-        // Given
-        let evidence = AttemptEvidence::new();
-        evidence.open(led_attempt(1));
-
-        // When
-        let recorded = evidence.record_received(OUTSIDER, attempt_id(1), vec![signed(OUTSIDER)]);
-
-        // Then
-        assert_matches!(
-            recorded,
-            Err(ReceivedNodeOutcomeError::Rejected(
-                NodeOutcomeRejection::NotInAttempt(OUTSIDER)
-            ))
-        );
-        assert!(evidence.outcomes_for(YIELD).is_empty());
-    }
-}
+mod tests;

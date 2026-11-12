@@ -73,6 +73,10 @@ fn succeeded(logs: Vec<String>) -> ExecutionOutcomeWithIdView {
     execution_outcome(ExecutionStatusView::SuccessReceiptId(NEXT_RECEIPT_ID), logs)
 }
 
+fn answered() -> ExecutionOutcomeWithIdView {
+    execution_outcome(ExecutionStatusView::SuccessValue(b"{}".to_vec()), vec![])
+}
+
 fn panicked(logs: Vec<String>) -> ExecutionOutcomeWithIdView {
     execution_outcome(
         ExecutionStatusView::Failure(TxExecutionError::ActionError(ActionError {
@@ -344,7 +348,7 @@ fn try_index_request__should_skip_a_failed_sign_call() {
 #[rstest::rstest]
 #[case::v2_yield_callback(
     RETURN_VERIFY_FOREIGN_TX_V2_AND_CLEAN_STATE_ON_TIMEOUT,
-    IndexedCompletion::VerifyForeignTxV2(RECEIPT_ID)
+    IndexedCompletion::VerifyForeignTxV2Answered(RECEIPT_ID)
 )]
 #[case::v1_yield_callback(
     RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
@@ -367,10 +371,28 @@ fn try_index_completion__should_complete_the_request_whose_id_is_the_callback_re
     let receipt = function_call_receipt(method_name, json!({}));
 
     // When
-    let completion = try_index_completion(&receipt, &mpc_contract_id());
+    let completion = try_index_completion(&receipt, &answered(), &mpc_contract_id());
 
     // Then
     assert_eq!(completion, Some(expected));
+}
+
+#[test]
+fn try_index_completion__should_report_a_v2_callback_that_fails_the_caller_as_timed_out() {
+    // Given
+    let receipt = function_call_receipt(
+        RETURN_VERIFY_FOREIGN_TX_V2_AND_CLEAN_STATE_ON_TIMEOUT,
+        json!({}),
+    );
+
+    // When
+    let completion = try_index_completion(&receipt, &succeeded(vec![]), &mpc_contract_id());
+
+    // Then
+    assert_eq!(
+        completion,
+        Some(IndexedCompletion::VerifyForeignTxV2TimedOut(RECEIPT_ID))
+    );
 }
 
 #[test]
@@ -383,7 +405,7 @@ fn try_index_completion__should_skip_a_callback_to_another_contract() {
     receipt.receiver_id = "impostor.near".parse().unwrap();
 
     // When
-    let completion = try_index_completion(&receipt, &mpc_contract_id());
+    let completion = try_index_completion(&receipt, &answered(), &mpc_contract_id());
 
     // Then
     assert_eq!(completion, None);

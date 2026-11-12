@@ -12,9 +12,11 @@ use crate::indexer::types::{
     ChainSendTransactionRequest, VerifyForeignTransactionRespondV2ArgsExt,
 };
 use crate::metrics;
-use crate::requests::queue::{GenerationAttempt, PendingRequests};
+use crate::providers::verify_foreign_tx::attempt_evidence::AttemptEvidence;
+use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
+use crate::requests::queue::{GenerationAttempt, PendingRequests, RefineEligibleLeaders};
 use crate::tracking::AutoAbortTaskCollection;
-use crate::types::{RequestsUpdate, VerifyForeignTxRequestV2};
+use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
 pub(crate) type PendingVerifyForeignTxV2s = PendingRequests<
     VerifyForeignTxRequestV2,
@@ -36,14 +38,21 @@ impl MpcClient {
         )
     }
 
-    /// Opens the V2 requests of a new block, and closes the ones it completes or expires.
+    /// Opens the V2 requests of a new block, and closes the ones it answers or times out. The
+    /// completed requests of `update` are the answered ones.
     pub(crate) fn notify_verify_foreign_tx_v2_block(
         &self,
         pending: &mut PendingVerifyForeignTxV2s,
         update: RequestsUpdate<VerifyForeignTxRequestV2>,
+        timed_out: Vec<VerifyForeignTxId>,
     ) {
-        self.verify_foreign_tx_v2_requests.notify_new_block(&update);
-        pending.notify_new_block(update);
+        notify_v2_block(
+            &self.verify_foreign_tx_v2_requests,
+            self.network_client.attempt_evidence(),
+            pending,
+            update,
+            &timed_out,
+        );
     }
 
     pub(crate) fn spawn_verify_foreign_tx_v2_attempts(
@@ -136,3 +145,30 @@ impl MpcClient {
         }
     }
 }
+
+fn notify_v2_block<Refiner: RefineEligibleLeaders<VerifyForeignTxRequestV2>>(
+    open_requests: &OpenVerifyForeignTxRequestsV2,
+    evidence: &AttemptEvidence,
+    pending: &mut PendingRequests<
+        VerifyForeignTxRequestV2,
+        contract_args::VerifyForeignTransactionRespondV2Args,
+        Refiner,
+    >,
+    update: RequestsUpdate<VerifyForeignTxRequestV2>,
+    timed_out: &[VerifyForeignTxId],
+) {
+    let answered_or_timed_out = RequestsUpdate {
+        requests: update.requests.clone(),
+        completed_requests: [update.completed_requests.as_slice(), timed_out].concat(),
+        block_height: update.block_height,
+        block_status: update.block_status.clone(),
+    };
+    evidence.forget(&open_requests.notify_new_block(&answered_or_timed_out));
+    // The latency histograms time answers only, so a timed out request leaves the queue once it
+    // expires.
+    pending.notify_new_block(update);
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests;

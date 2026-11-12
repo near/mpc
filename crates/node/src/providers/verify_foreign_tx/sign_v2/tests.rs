@@ -1,8 +1,6 @@
 use super::*;
 use crate::config::{ParticipantInfo, PersistentSecrets};
-use crate::types::RequestsUpdate;
-use chain_gateway::event_subscriber::recent_blocks_tracker::RecentBlocksTracker;
-use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
+use crate::providers::verify_foreign_tx::open_requests::test_chain::TestChain;
 use ed25519_dalek::SigningKey;
 use mpc_primitives::domain::DomainId;
 use near_contract_transport::BlockHeight;
@@ -81,29 +79,31 @@ fn request() -> VerifyForeignTxRequestV2 {
     }
 }
 
-fn open_requests_with(request: VerifyForeignTxRequestV2) -> Arc<OpenVerifyForeignTxRequestsV2> {
-    let open_requests = Arc::new(OpenVerifyForeignTxRequestsV2::default());
-    open_requests.notify_new_block(&block_update(REQUEST_HEIGHT, vec![request], vec![]));
-    open_requests
+/// The V2 requests a node indexed, on a chain that keeps its block status while this lives.
+struct IndexedRequests {
+    open: Arc<OpenVerifyForeignTxRequestsV2>,
+    chain: std::sync::Mutex<TestChain>,
 }
 
-fn complete(open_requests: &OpenVerifyForeignTxRequestsV2, id: VerifyForeignTxId) {
-    let next_height = REQUEST_HEIGHT + near_contract_transport::BlockCount::new(1);
-    open_requests.notify_new_block(&block_update(next_height, vec![], vec![id]));
-}
+impl IndexedRequests {
+    fn with(request: VerifyForeignTxRequestV2) -> Arc<Self> {
+        let indexed = Self::none();
+        let update = indexed.chain.lock().unwrap().extend(vec![request], vec![]);
+        indexed.open.notify_new_block(&update);
+        indexed
+    }
 
-fn block_update(
-    height: BlockHeight,
-    requests: Vec<VerifyForeignTxRequestV2>,
-    completed_requests: Vec<VerifyForeignTxId>,
-) -> RequestsUpdate<VerifyForeignTxRequestV2> {
-    let mut tracker = RecentBlocksTracker::new(crate::requests::queue::REQUEST_EXPIRATION_BLOCKS);
-    let block = TestBlockMaker::new().block(u64::from(height));
-    RequestsUpdate {
-        requests,
-        completed_requests,
-        block_height: height,
-        block_status: tracker.add_block(&block.to_block_view()).block_status,
+    fn none() -> Arc<Self> {
+        let first_height = BlockHeight::new(u64::from(REQUEST_HEIGHT) - 1);
+        Arc::new(Self {
+            open: Arc::new(OpenVerifyForeignTxRequestsV2::default()),
+            chain: std::sync::Mutex::new(TestChain::starting_at(first_height)),
+        })
+    }
+
+    fn complete(&self, id: VerifyForeignTxId) {
+        let update = self.chain.lock().unwrap().extend(vec![], vec![id]);
+        self.open.notify_new_block(&update);
     }
 }
 

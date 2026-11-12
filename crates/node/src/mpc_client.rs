@@ -342,11 +342,12 @@ impl MpcClient {
                         &block_update.block,
                         block_status.clone(),
                         block_update.verify_foreign_tx_v2_requests,
-                        block_update.completed_verify_foreign_tx_v2s,
+                        block_update.answered_verify_foreign_tx_v2s,
                     );
                     self.notify_verify_foreign_tx_v2_block(
                         &mut pending_verify_foreign_tx_v2s,
                         verify_foreign_tx_v2_requests,
+                        block_update.timed_out_verify_foreign_tx_v2s,
                     );
 
                     let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(

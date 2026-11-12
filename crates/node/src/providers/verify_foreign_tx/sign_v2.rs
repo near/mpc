@@ -32,10 +32,6 @@ use crate::types::{SignatureRequest, VerifyForeignTxId, VerifyForeignTxRequestV2
 /// The time a follower waits for its own indexer to report the request of a Start.
 const FOLLOWER_INDEX_WAIT: Duration = Duration::from_secs(3);
 
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests;
-
 /// What a node needs, beyond the V1 flow, to take part in V2 attempts.
 pub(crate) struct VerifyForeignTxV2Context {
     pub(crate) open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
@@ -87,12 +83,10 @@ impl VerifyForeignTxProvider {
         .await;
         let (channel, attempt) = open_led_attempt(
             &self.v2.network,
-            VerifyForeignTxTaskId::VerifyForeignTxV2 {
-                id,
-                paired_triple_id,
-            },
+            &self.v2.open_requests,
+            &request,
+            paired_triple_id,
             participants_from_triples(&triples.0, &triples.1),
-            request.yield_id,
             self.v2.participants.clone(),
         )?;
 
@@ -227,26 +221,40 @@ impl VerifyForeignTxProvider {
     }
 }
 
-/// Opens the channel of a V2 attempt this node leads. [`AttemptEvidence`] keeps the attempt's
-/// node outcomes from before its Start leaves.
+/// Opens the channel of a V2 attempt this node leads at `request`. [`AttemptEvidence`] keeps the
+/// attempt's node outcomes from before its Start leaves. Fails when the request closed meanwhile,
+/// for example while the leader waited for triples.
 fn open_led_attempt(
     network: &MeshNetworkClient,
-    task_id: VerifyForeignTxTaskId,
+    open_requests: &OpenVerifyForeignTxRequestsV2,
+    request: &VerifyForeignTxRequestV2,
+    paired_triple_id: UniqueId,
     participants: Vec<ParticipantId>,
-    yield_id: dtos::YieldId,
     keys: Arc<ParticipantsConfig>,
 ) -> anyhow::Result<(NetworkTaskChannel, LedAttempt)> {
     let led_attempt = |channel_id| LedAttempt {
         id: AttemptId(channel_id),
-        yield_id,
+        yield_id: request.yield_id,
         leader: network.my_participant_id(),
         participants: participants.clone(),
         keys: keys.clone(),
+    };
+    let task_id = VerifyForeignTxTaskId::VerifyForeignTxV2 {
+        id: request.id,
+        paired_triple_id,
     };
     let channel =
         network.new_channel_for_task_with(task_id, participants.clone(), |channel_id| {
             network.attempt_evidence().open(led_attempt(channel_id));
         })?;
+    // Checked after the evidence opened: the open requests forget the evidence of a yield they
+    // stop tracking later, and this forgets it when they stopped before.
+    if open_requests.get(request.id).is_none() {
+        if !open_requests.tracks_yield(request.yield_id) {
+            network.attempt_evidence().forget(&[request.yield_id]);
+        }
+        anyhow::bail!("the V2 request closed before its attempt started");
+    }
     let attempt = led_attempt(channel.channel_id());
     Ok((channel, attempt))
 }
@@ -345,3 +353,7 @@ fn sign_request(
         domain: request.domain_id,
     }
 }
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests;

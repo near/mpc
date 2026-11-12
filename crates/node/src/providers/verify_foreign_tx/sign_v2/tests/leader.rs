@@ -162,14 +162,13 @@ async fn run_leader(
     (keygen_out, triples): (KeygenOutput, PairedTriple),
 ) -> anyhow::Result<SignedVerdict> {
     let me = client.my_participant_id();
+    let indexed = IndexedRequests::with(request());
     let (channel, attempt) = open_led_attempt(
         client,
-        VerifyForeignTxTaskId::VerifyForeignTxV2 {
-            id: request().id,
-            paired_triple_id: UniqueId::new(me, 1, 0),
-        },
+        &indexed.open,
+        &request(),
+        UniqueId::new(me, 1, 0),
         participants.to_vec(),
-        request().yield_id,
         keys(participants),
     )?;
     let signed = signing_key(me).sign(statement(&channel, me, leader_outcome))?;
@@ -339,4 +338,63 @@ async fn v2_leader_computation__should_keep_an_outcome_that_arrives_after_the_at
         );
     })
     .await;
+}
+
+fn open_led_attempt_at(
+    open_requests: &OpenVerifyForeignTxRequestsV2,
+) -> (anyhow::Result<()>, usize) {
+    let leader = ParticipantId::from_raw(0);
+    let network = crate::network::testing::new_test_client(vec![leader], leader);
+    let opened = open_led_attempt(
+        &network,
+        open_requests,
+        &request(),
+        UniqueId::new(leader, 1_700_000_000, 1),
+        vec![leader],
+        keys(&[leader]),
+    );
+    let kept = network
+        .attempt_evidence()
+        .attempts_kept_for(request().yield_id);
+    (opened.map(|_| ()), kept)
+}
+
+#[tokio::test]
+async fn open_led_attempt__should_open_an_attempt_at_an_open_request() {
+    // Given
+    let indexed = IndexedRequests::with(request());
+
+    // When
+    let (opened, kept) = open_led_attempt_at(&indexed.open);
+
+    // Then
+    opened.unwrap();
+    assert_eq!(kept, 1);
+}
+
+#[tokio::test]
+async fn open_led_attempt__should_refuse_a_request_closed_by_a_completion_that_is_not_final() {
+    // Given
+    let indexed = IndexedRequests::with(request());
+    indexed.complete(request().id);
+
+    // When
+    let (opened, kept) = open_led_attempt_at(&indexed.open);
+
+    // Then
+    assert!(opened.is_err());
+    assert_eq!(kept, 1);
+}
+
+#[tokio::test]
+async fn open_led_attempt__should_forget_the_evidence_of_a_request_no_longer_tracked() {
+    // Given
+    let not_tracked = IndexedRequests::none();
+
+    // When
+    let (opened, kept) = open_led_attempt_at(&not_tracked.open);
+
+    // Then
+    assert!(opened.is_err());
+    assert_eq!(kept, 0);
 }

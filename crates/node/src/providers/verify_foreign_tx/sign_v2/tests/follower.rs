@@ -202,7 +202,8 @@ async fn reach_node_outcome__should_retry_a_transient_error_within_the_inspectio
     let rpc_mock = start_ethereum_rpc_mock_final_on_second_check();
     let participants = vec![ParticipantId::from_raw(0)];
     let client = crate::network::testing::new_test_client(participants.clone(), participants[0]);
-    let node = TestProvider::new(client, &rpc_mock.base_url(), open_requests_with(request()));
+    let indexed = IndexedRequests::with(request());
+    let node = TestProvider::new(client, &rpc_mock.base_url(), indexed.open.clone());
 
     // When
     let outcome = node
@@ -270,7 +271,8 @@ async fn make_verify_foreign_tx_v2_follower__should_send_its_signed_outcome_to_t
         let follower = ParticipantId::from_raw(1);
 
         // When
-        let received = run_v2_follower(open_requests_with(request()), rpc_mock.base_url()).await;
+        let indexed = IndexedRequests::with(request());
+        let received = run_v2_follower(indexed.open.clone(), rpc_mock.base_url()).await;
 
         // Then
         let [MpcMessageKind::NodeOutcomes(outcomes)] = &received[..] else {
@@ -294,7 +296,7 @@ async fn make_verify_foreign_tx_v2_follower__should_send_its_signed_outcome_to_t
 async fn make_verify_foreign_tx_v2_follower__should_refuse_a_request_it_has_not_indexed() {
     start_root_task_with_periodic_dump(async {
         // Given
-        let not_indexed = Arc::new(OpenVerifyForeignTxRequestsV2::default());
+        let not_indexed = IndexedRequests::none().open.clone();
 
         // When
         let received = run_v2_follower(not_indexed, "http://127.0.0.1:1".to_string()).await;
@@ -313,14 +315,14 @@ async fn make_verify_foreign_tx_v2_follower__should_refuse_a_request_that_comple
  {
     start_root_task_with_periodic_dump(async {
         // Given
-        let open_requests = open_requests_with(request());
+        let indexed = IndexedRequests::with(request());
         let rpc_mock = start_ethereum_rpc_mock({
-            let open_requests = open_requests.clone();
-            move || complete(&open_requests, request().id)
+            let indexed = indexed.clone();
+            move || indexed.complete(request().id)
         });
 
         // When
-        let received = run_v2_follower(open_requests, rpc_mock.base_url()).await;
+        let received = run_v2_follower(indexed.open.clone(), rpc_mock.base_url()).await;
 
         // Then
         let [MpcMessageKind::Abort(error)] = &received[..] else {
@@ -344,7 +346,8 @@ async fn v2_attempt_candidates__should_leave_out_participants_without_the_v2_mes
     ]);
     let (client, _transport) =
         new_test_client_with_versions(participants.clone(), participants[0], versions);
-    let node = TestProvider::new(client, "http://127.0.0.1:1", open_requests_with(request()));
+    let indexed = IndexedRequests::with(request());
+    let node = TestProvider::new(client, "http://127.0.0.1:1", indexed.open.clone());
 
     // When
     let candidates = node
