@@ -282,7 +282,7 @@ sequenceDiagram
 4. **Operator**: Restarts the CVM (see _Node Boot Flow_ for details).
 5. **MPC Node → Contract**:
    - If the node sends an updated remote attestation **within the required time period**, the contract validates and updates the node's attestation info.
-   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node, but only if the remaining participants still meet the threshold and every domain's signing protocol (robust ECDSA needs `2t - 1` participants).
+   - Otherwise, if the node does not comply, the contract stops accepting signature requests until the node attests again or a vote removes it from the participant set.
 
 ## Adding a New Participant
 
@@ -377,14 +377,10 @@ pub struct Contract {
     ///     by the DAO and verified by the TEE.
     pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedMpcDockerImageHash>
 
-    /// Verifies if all current participants have an accepted TEE state.
-    /// Automatically enters a resharing, in case one or more participants do not have an accepted
-    /// TEE state.
-    /// Returns `false` and stops the contract from accepting new signature requests or responses,
-    /// in case the participants running in an accepted TEE State are too few for the
-    /// GovernanceThreshold or for any domain's signing protocol.
-    /// While the contract is not accepting requests, as after `init` and `init_running`, it
-    /// kicks out no one and returns `false` until every participant has an accepted TEE state.
+    /// Verifies whether every current participant has an accepted TEE state and returns the
+    /// result. While one does not, the contract stops accepting new signature requests or
+    /// responses. No participant is removed: requests resume once every participant has an
+    /// accepted TEE state again, or once a vote replaces the participant set.
     pub fn verify_tee(&mut self) -> Result<bool, Error>
 }
 ```
@@ -606,7 +602,7 @@ Follow the launcher approach specified in <https://phalanetwork.notion.site/NEAR
   - Extends RTMR3 with the new `new_docker_image_hash`
   - Launches the MPC docker image
 
-## Kicking out nodes with invalid attestation
+## Participants with invalid attestation
 
 After a new MPC docker image hash has been successfully voted by Threshold participants.
 The old MPC docker image hash will still be valid for 7 days.
@@ -614,8 +610,7 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 
 _Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
-If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
-Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out; instead the contract stops accepting signing requests until every participant attestation is valid again or a vote replaces the participant set.
+If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), the contract stops accepting signing requests. No participant is removed automatically: requests resume once every participant attestation is valid again, or once a vote replaces the participant set.
 
 # CVM Upgrades
 

@@ -9,7 +9,7 @@
 use crate::sandbox::{
     common::{
         SandboxTestSetup, gen_accounts, gen_participant_info, init_contract_running,
-        init_with_wasm, make_threshold_params, prepay_and_submit_attestations,
+        make_threshold_params, prepay_and_submit_attestations,
     },
     utils::{
         consts::ALL_PROTOCOLS,
@@ -613,7 +613,11 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
  {
     // Given
     const NUM_PARTICIPANTS: usize = 40;
-    let (worker, contract) = init_with_wasm(current_contract_with_pinned_clock()).await;
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
+    let contract = worker
+        .dev_deploy(current_contract_with_pinned_clock())
+        .await
+        .unwrap();
     let contract = SandboxMpcContract::from_deployed(&worker, contract);
     let (accounts, attested_participants) = gen_accounts(&worker, NUM_PARTICIPANTS - 1).await;
     let submitter = create_fixture_account(&worker, "fixture-node-a").await;

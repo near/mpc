@@ -2149,7 +2149,7 @@ expression: abi
       },
       {
         "name": "verify_tee",
-        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case the participants running in an accepted TEE State are too few for the\n GovernanceThreshold or for any domain's signing protocol.\n While the contract is not accepting requests, it kicks out no one and returns `false`\n until every participant has an accepted TEE state.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
+        "doc": " Verifies whether every current participant has an accepted TEE state and returns the\n result. While one does not, the contract stops accepting new signature requests or\n responses. No participant is removed: requests resume once every participant has an\n accepted TEE state again, or once a vote replaces the participant set.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
         "kind": "call",
         "result": {
           "serialization_type": "json",

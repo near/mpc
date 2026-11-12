@@ -146,9 +146,9 @@ approach instead.*
 
 **2. Launcher-image eviction.** Launcher hashes nobody uses are retired after
 `launcher_hash_unused_ttl_seconds` (14 days). `re_verify` re-checks a stored attestation's launcher
-hash against the current allowed set, so retiring a hash kicks every node whose attestation uses it.
+hash against the current allowed set, so retiring a hash invalidates every node whose attestation uses it.
 Under a plain "unused for 14 days" rule, a node that attests once with 30 days of validity and then
-stops loses its hash on day 14 and is kicked with 16 days left, which turns launcher cleanup into a
+stops loses its hash on day 14 and is invalidated with 16 days left, which turns launcher cleanup into a
 second attestation deadline.
 
 Fix: keep a hash while a current participant uses it, and remove it only in `verify_tee`, which

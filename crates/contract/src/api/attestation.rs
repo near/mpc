@@ -2,10 +2,6 @@
 
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
-use crate::primitives::domain::validate_domains_against_governance;
-use crate::primitives::thresholds::{
-    GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
-};
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
@@ -15,7 +11,6 @@ use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{
     AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, ext_contract, log, near,
 };
-use std::collections::BTreeMap;
 use std::time::Duration;
 use tee_verifier_interface::{
     Collateral, CollateralDates, QuoteBytes, VerificationResultWithCollateralDates, VerifiedReport,
@@ -281,14 +276,10 @@ impl MpcContract {
         self.tee_state.get_tee_accounts()
     }
 
-    /// Verifies if all current participants have an accepted TEE state.
-    /// Automatically enters a resharing, in case one or more participants do not have an accepted
-    /// TEE state.
-    /// Returns `false` and stops the contract from accepting new signature requests or responses,
-    /// in case the participants running in an accepted TEE State are too few for the
-    /// GovernanceThreshold or for any domain's signing protocol.
-    /// While the contract is not accepting requests, it kicks out no one and returns `false`
-    /// until every participant has an accepted TEE state.
+    /// Verifies whether every current participant has an accepted TEE state and returns the
+    /// result. While one does not, the contract stops accepting new signature requests or
+    /// responses. No participant is removed: requests resume once every participant has an
+    /// accepted TEE state again, or once a vote replaces the participant set.
     /// Also retires launcher hashes that no current participant uses (see
     /// [`dtos::Config::launcher_hash_unused_ttl_seconds`]).
     #[handle_result]
@@ -296,86 +287,31 @@ impl MpcContract {
         log!("verify_tee: signer={}", env::signer_account_id());
         // Caller must be a participant (node or operator).
         self.voter_or_panic();
-        let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
-        let current_params = running_state.parameters.clone();
+        let participants = running_state.parameters.participants();
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
         self.tee_state
-            .remove_unused_launchers(current_params.participants(), launcher_unused_ttl);
+            .remove_unused_launchers(participants, launcher_unused_ttl);
 
-        match self.tee_state.reverify_and_cleanup_participants(
-            current_params.participants(),
-            tee_upgrade_deadline_duration,
-        ) {
+        match self
+            .tee_state
+            .reverify_and_cleanup_participants(participants, tee_upgrade_deadline_duration)
+        {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
                 Ok(true)
             }
-            TeeValidationResult::Partial { .. } if !self.accept_requests => {
-                log!(
-                    "Not accepting requests until all participants have an accepted Tee status; kicking out no one"
-                );
+            TeeValidationResult::Partial { .. } => {
+                self.accept_requests = false;
+                log!("Not accepting requests until all participants have an accepted Tee status");
                 Ok(false)
-            }
-            TeeValidationResult::Partial {
-                participants_with_valid_attestation,
-            } => {
-                let remaining = participants_with_valid_attestation.len();
-                // Defense in depth: the surviving participant set must keep the full
-                // threshold relation intact — the GovernanceThreshold must still sit
-                // within its bounds for the smaller set (in particular it must not
-                // exceed the remaining participant count or the upper cap) and must
-                // remain at least every domain's ReconstructionThreshold (the kickout
-                // keeps the existing per-domain thresholds). Each domain must also keep
-                // the participants its protocol needs to sign. Otherwise we refuse and
-                // wait for manual intervention.
-                if let Err(err) = validate_domains_against_governance(
-                    running_state.domains.domains(),
-                    dtos::ParticipantCount::from_len(remaining),
-                    current_params.threshold(),
-                ) {
-                    log!(
-                        "Kicking out participants with an invalid TEE status would leave too few participants for the GovernanceThreshold or a domain's signing protocol ({:?}); {} participants remain with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.",
-                        err,
-                        remaining,
-                    );
-                    self.accept_requests = false;
-                    return Ok(false);
-                }
-
-                // here, we set it to true, because at this point, we have at least `threshold`
-                // number of participants with an accepted Tee status.
-                self.accept_requests = true;
-
-                // do we want to adjust the threshold?
-                //let n_participants_new = new_participants.len();
-                //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
-                //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let threshold_parameters = GovernanceThresholdParameters::new(
-                    participants_with_valid_attestation,
-                    current_params.threshold(),
-                )
-                .expect("Require valid threshold parameters"); // this should never happen.
-                current_params.validate_incoming_proposal(&threshold_parameters)?;
-                // This resharing only changes the participant set, so the
-                // per-domain reconstruction-threshold updates map is empty.
-                let proposed_parameters = ProposedGovernanceThresholdParameters::new(
-                    threshold_parameters,
-                    BTreeMap::new(),
-                );
-                let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
-                self.parameters_votes.clear();
-                if let Some(resharing) = res {
-                    self.protocol_state = ProtocolContractState::Resharing(resharing);
-                }
-
-                Ok(true)
             }
         }
     }
@@ -526,15 +462,12 @@ mod tests {
     };
     use crate::config::Config;
     use crate::dto_mapping::IntoContractType;
-    use crate::primitives::key_state::AuthenticatedAccountId;
     use crate::primitives::participants::{ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key, bogus_tee_verifier_account_id, create_node, gen_account_id,
         gen_participant_url, gen_participants, node_for,
     };
-    use crate::primitives::thresholds::GovernanceThreshold;
-    use crate::state::key_event::KeyEvent;
-    use crate::state::resharing::ResharingContractState;
+    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
     use crate::tee::test_utils::{
@@ -555,8 +488,7 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::OsRng;
     use rstest::rstest;
-    use std::panic;
-    use std::{assert_matches, collections::BTreeSet};
+    use std::assert_matches;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
         launcher_image_hash, mock_expiring_at, mock_tcb_info, verified_report,
@@ -951,39 +883,6 @@ mod tests {
         );
     }
 
-    /// Two of three participants attest, enough for the GovernanceThreshold of two, and one
-    /// of them calls `verify_tee` before the third attests.
-    #[test]
-    fn verify_tee__should_kick_out_no_one_while_not_accepting_requests() {
-        // Given
-        let participants = gen_participants(3);
-        let mut contract = freshly_initialized_contract(&participants, 2);
-        for (account_id, _, info) in participants.participants().iter().take(2) {
-            prepay_and_submit_mock_attestation(
-                &mut contract,
-                account_id,
-                info.tls_public_key.clone(),
-            )
-            .unwrap();
-        }
-        let state_before = contract.state();
-        let (first_account_id, _, _) = &participants.participants()[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(first_account_id.clone())
-                .predecessor_account_id(first_account_id.clone())
-                .build()
-        );
-
-        // When
-        let result = contract.verify_tee();
-
-        // Then
-        assert_matches!(result, Ok(false));
-        assert_eq!(contract.state(), state_before);
-        assert!(!contract.accept_requests);
-    }
-
     #[test]
     fn verify_tee__should_resume_requests_once_every_participant_attested() {
         // Given
@@ -1051,95 +950,63 @@ mod tests {
         contract.assert_caller_is_attested_participant_and_protocol_active();
     }
 
-    /// Tests that [`MpcContract::verify_tee`] triggers resharing and kicks out a participant
-    /// when their attestation is expired.
-    ///
-    /// Verifies the behavior when:
-    /// 1. [`MpcContract::verify_tee`] returns [`TeeValidationResult::Partial`] (some attestations
-    ///    expired/invalid)
-    /// 2. The remaining participants meet threshold requirements
-    /// 3. The contract transitions to [`ProtocolContractState::Resharing`] state
-    /// 4. The participant with expired attestation is excluded from the new parameters
     #[test]
-    fn test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation() {
+    fn verify_tee__should_stop_requests_without_kicking_out_when_an_attestation_expired() {
         // Given
+        let mut contract = running_contract_with_expired_last_attestation();
+        let state_before = contract.state();
+
+        // When
+        let result = contract.verify_tee();
+
+        // Then
+        assert_matches!(result, Ok(false));
+        assert_eq!(contract.state(), state_before);
+        assert!(!contract.accept_requests);
+    }
+
+    #[test]
+    fn submit_participant_info__should_resume_requests_once_the_expired_participant_attests_again()
+    {
+        // Given
+        let mut contract = running_contract_with_expired_last_attestation();
+        assert_matches!(contract.verify_tee(), Ok(false));
+        let (account_id, _, participant_info) =
+            contract.protocol_state.active_participants().participants()[2].clone();
+
+        // When
+        prepay_and_submit_mock_attestation(
+            &mut contract,
+            &account_id,
+            participant_info.tls_public_key,
+        )
+        .unwrap();
+
+        // Then
+        assert!(contract.accept_requests);
+    }
+
+    /// A Running contract with three participants, where the last participant's attestation has
+    /// expired at the block time of a `verify_tee` call by the first participant.
+    fn running_contract_with_expired_last_attestation() -> MpcContract {
+        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
+
+        let participants = gen_participants(3);
+        let parameters =
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap();
         let domain = DomainConfig {
             id: DomainId::default(),
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         };
-        let mut contract = running_contract_with_expired_last_attestation(3, 2, domain.clone());
-        let ProtocolContractState::Running(running_state_before) = contract.protocol_state.clone()
-        else {
-            panic!("expected Running state");
-        };
-        let parameters = &running_state_before.parameters;
-        let expected_resharing_key = KeyEvent::new(
-            running_state_before.keyset.epoch_id.next(),
-            domain,
-            GovernanceThresholdParameters::new(
-                parameters.participants().subset(0..2),
-                parameters.threshold(),
-            )
-            .unwrap(),
-        );
-        // A pending parameter vote must not survive the kickout's transition to Resharing.
-        let voter = AuthenticatedAccountId::new(parameters.participants()).unwrap();
-        let pending_proposal =
-            ProposedGovernanceThresholdParameters::new(parameters.clone(), BTreeMap::new());
-        contract.parameters_votes.vote(&pending_proposal, voter);
-        assert!(!contract.parameters_votes.is_empty());
-
-        // When
-        let result = contract.verify_tee();
-
-        // Then
-        assert_matches!(result, Ok(true));
-        assert!(contract.parameters_votes.is_empty());
-        let ProtocolContractState::Resharing(resharing_state) = &contract.protocol_state else {
-            panic!(
-                "expected Resharing state, got {:?}",
-                contract.protocol_state
-            );
-        };
-        assert_eq!(
-            *resharing_state,
-            ResharingContractState {
-                previous_running_state: running_state_before,
-                reshared_keys: Vec::new(),
-                resharing_key: expected_resharing_key,
-                cancellation_requests: BTreeSet::new(),
-                per_domain_thresholds: BTreeMap::new(),
-            }
-        );
-    }
-
-    /// A Running contract with `participant_count` participants and a single `domain`, where
-    /// the last participant's attestation has expired at the block time of a `verify_tee`
-    /// call by the first participant.
-    fn running_contract_with_expired_last_attestation(
-        participant_count: usize,
-        governance_threshold: u64,
-        domain: DomainConfig,
-    ) -> MpcContract {
-        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
-
-        let participants = gen_participants(participant_count);
-        let parameters = GovernanceThresholdParameters::new(
-            participants.clone(),
-            GovernanceThreshold::new(governance_threshold),
-        )
-        .unwrap();
         let mut contract = init_running_with_domain(&parameters, domain);
         prepay_and_attest_all_participants(&mut contract);
 
-        // Expire the last participant's attestation so a kickout drops the set to
-        // `participant_count - 1`.
         let participant_list: Vec<_> = participants.participants().to_vec();
-        let (target_account_id, _, target_participant_info) =
-            &participant_list[participant_count - 1];
+        let (target_account_id, _, target_participant_info) = &participant_list[2];
         let node = create_node(target_account_id, &target_participant_info.tls_public_key);
         contract
             .tee_state
@@ -1159,39 +1026,6 @@ mod tests {
                 .build()
         );
         contract
-    }
-
-    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE
-    /// kickout would leave fewer participants than the threshold relation requires.
-    /// The contract stays Running and stops accepting requests.
-    #[test]
-    fn verify_tee__should_refuse_kickout_when_remaining_breaks_threshold_relation() {
-        // Given
-        // 5 participants, GovernanceThreshold 5, and one domain whose
-        // reconstruction threshold is 5 (every participant is needed to sign). Dropping
-        // to 4 participants would leave the GovernanceThreshold above the participant
-        // count, breaking the threshold relation.
-        let mut contract = running_contract_with_expired_last_attestation(
-            5,
-            5,
-            DomainConfig {
-                id: DomainId::default(),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(5),
-                purpose: DomainPurpose::Sign,
-            },
-        );
-
-        // When
-        let result = contract.verify_tee();
-
-        // Then
-        // With only 4 surviving participants the GovernanceThreshold of 5 would
-        // exceed the participant count, breaking the threshold relation, so verify_tee
-        // refuses to reshare, stays Running, and stops accepting requests.
-        assert_matches!(result, Ok(false));
-        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
-        assert!(!contract.accept_requests);
     }
 
     #[test]
@@ -1253,33 +1087,6 @@ mod tests {
             contract.tee_state.get_allowed_launcher_hashes(),
             vec![adopted]
         );
-    }
-
-    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE kickout would
-    /// leave a RobustEcdsa domain short of its `2t - 1` signers. With 5 participants,
-    /// GovernanceThreshold 3 and `t = 3`, the 4 survivors still satisfy the
-    /// GovernanceThreshold relation, so only the per-domain bound can refuse the kickout.
-    #[test]
-    fn verify_tee__should_refuse_kickout_when_remaining_cannot_run_robust_ecdsa_domain() {
-        // Given
-        let mut contract = running_contract_with_expired_last_attestation(
-            5,
-            3,
-            DomainConfig {
-                id: DomainId::default(),
-                protocol: Protocol::RobustEcdsa,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-        );
-
-        // When
-        let result = contract.verify_tee();
-
-        // Then
-        assert_matches!(result, Ok(false));
-        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
-        assert!(!contract.accept_requests);
     }
 
     const MAX_HASH: [u8; 32] = [0xff; 32];
