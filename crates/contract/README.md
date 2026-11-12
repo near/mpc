@@ -173,7 +173,7 @@ The response has these fields:
 #### How the network answers
 
 1. Every node that supports the chain inspects the transaction once the block of the request is final. It signs what it found, its node outcome, with its outcome key and sends it to the other nodes. A node registers its outcome key with the contract by itself, and `outcome_keys` lists them.
-2. Once t nodes, where t is the signing threshold, signed the same verdict, the leader of the request runs a signing round for that verdict with nodes among those t. Once no verdict can reach t, even with the nodes not heard from yet, it runs one for an inconclusive. Until then it waits for more node outcomes.
+2. Once t nodes, where t is the signing threshold, signed the same verdict, the leader of the request runs a signing round for that verdict among nodes that signed it. Once no verdict can reach t, even with the nodes not heard from yet, it runs one for an inconclusive. Until then it waits for more node outcomes.
 3. The nodes that sign with the leader first check the signed node outcomes it sends. With fewer than t malicious nodes, a leader therefore cannot get a verdict or an inconclusive signed that the node outcomes do not support.
 4. A signing round that fails is retried with other nodes, up to three rounds per leader. If too many nodes stay silent for any answer, the request times out.
 
@@ -191,10 +191,10 @@ The signature covers the `yield_id` and the `request_block_height`, and the cont
 
 A receiver outside NEAR, such as a contract on another chain, gets the request and the response and checks the signature itself. With the [`near-mpc-sdk`](../near-mpc-sdk/README.md) crate:
 
-```rust
+```rust,ignore
 use near_mpc_sdk::foreign_chain::{ForeignChainSignatureVerifierV2, ForeignTxVerificationOutcome};
 
-let verified = ForeignChainSignatureVerifierV2::new(request).verify_signature(&response, &public_key)?;
+let verified = ForeignChainSignatureVerifierV2::new(request).verify_signed_outcome(&response, &public_key)?;
 // The signature proves only that the network signed these fields, so compare them with yours.
 assert_eq!(verified.yield_id(), expected_yield_id);
 assert!(verified.request_block_height() >= oldest_accepted_height);
