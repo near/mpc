@@ -12,6 +12,10 @@ use tokio::sync::futures::Notified;
 use crate::requests::queue::REQUEST_EXPIRATION_BLOCKS;
 use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
+/// The maximum number of signing rounds a signer joins per request and leader, for verdicts and
+/// inconclusives together. It bounds the assets one leader can use up on a request.
+pub(crate) const MAX_ROUNDS_PER_LEADER: usize = 3;
+
 /// The V2 requests this node indexed, to tell the open ones: indexed on the canonical chain,
 /// without a completion on the canonical chain, and inside the [`REQUEST_EXPIRATION_BLOCKS`]
 /// window of the request. A node signs only for an open request.
@@ -31,6 +35,7 @@ struct IndexedRequest {
     request: VerifyForeignTxRequestV2,
     block: BlockStatusHandle,
     /// The time this node first indexed the request.
+    #[cfg_attr(not(test), expect(dead_code))]
     indexed_at: Instant,
     /// The blocks of the completions of this request or of another request with its yield id.
     completions: Vec<BlockStatusHandle>,
@@ -145,6 +150,7 @@ impl OpenVerifyForeignTxRequestsV2 {
     }
 
     /// The time since this node first indexed the open request `id`.
+    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn time_since_indexed(&self, id: VerifyForeignTxId) -> Option<Duration> {
         let indexed_at = self
             .requests

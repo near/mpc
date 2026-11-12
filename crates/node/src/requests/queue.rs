@@ -238,7 +238,8 @@ pub struct ComputationProgress<ChainRespondArgsType> {
     /// This is used to abort after too many attempts.
     pub attempts: u64,
     /// Set when this node stops leading the request without a response. It then makes no further
-    /// attempt, and the request times out unless another leader answers it.
+    /// attempt, and the request times out unless another leader answers it. Only V2 foreign tx
+    /// requests stop this way.
     pub stopped_leading: bool,
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.

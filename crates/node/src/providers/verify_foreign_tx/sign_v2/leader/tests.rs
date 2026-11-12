@@ -363,3 +363,143 @@ async fn round_wait__should_take_no_asset_for_a_closed_request() {
     assert_matches!(result, Err(StopLeading::RequestClosed));
     assert!(asset.eligible_sets.lock().unwrap().is_empty());
 }
+
+/// Owned assets, each shared with a set of participants. A take removes the first free asset
+/// whose participants are all eligible, and waits for one while there is none.
+#[derive(Default)]
+struct FreeAssets {
+    assets: Mutex<Vec<SharedAsset>>,
+    added: tokio::sync::Notify,
+}
+
+struct SharedAsset {
+    id: UniqueId,
+    participants: BTreeSet<ParticipantId>,
+}
+
+impl FreeAssets {
+    fn add(&self, counter: u32, ids: &[u32]) {
+        self.assets.lock().unwrap().push(SharedAsset {
+            id: UniqueId::new(participant(0), 1, counter),
+            participants: participants(ids),
+        });
+        self.added.notify_waiters();
+    }
+
+    fn take_matching(&self, eligible: &[ParticipantId]) -> Option<SharedAsset> {
+        let mut assets = self.assets.lock().unwrap();
+        let position = assets.iter().position(|asset| {
+            asset
+                .participants
+                .iter()
+                .all(|participant| eligible.contains(participant))
+        })?;
+        Some(assets.remove(position))
+    }
+}
+
+impl TakeOwnedMatching for FreeAssets {
+    type Asset = BTreeSet<ParticipantId>;
+
+    async fn take_owned_matching(
+        &self,
+        eligible: Vec<ParticipantId>,
+    ) -> (UniqueId, BTreeSet<ParticipantId>) {
+        loop {
+            let added = self.added.notified();
+            tokio::pin!(added);
+            added.as_mut().enable();
+            if let Some(asset) = self.take_matching(&eligible) {
+                return (asset.id, asset.participants);
+            }
+            added.await;
+        }
+    }
+}
+
+impl LeaderView {
+    async fn retry_asset(
+        &self,
+        assets: &FreeAssets,
+        avoid: &[u32],
+    ) -> Result<OwnedAsset<BTreeSet<ParticipantId>>, StopLeading> {
+        RetryAssetWait {
+            open_requests: &self.open_requests,
+            assets,
+            request_id: request().id,
+        }
+        .take(
+            || participants(&[0, 1, 2, 3]).into_iter().collect(),
+            &participants(avoid),
+        )
+        .await
+    }
+}
+
+#[tokio::test]
+async fn retry_asset_wait__should_take_a_free_asset_without_the_avoided_signers_first() {
+    // Given
+    let view = LeaderView::new();
+    let assets = FreeAssets::default();
+    assets.add(1, &[0, 1, 3]);
+    assets.add(2, &[0, 1, 2]);
+
+    // When
+    let taken = view.retry_asset(&assets, &[3]).await.unwrap();
+
+    // Then
+    assert_eq!(taken.asset, participants(&[0, 1, 2]));
+    assert_eq!(assets.assets.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn retry_asset_wait__should_take_an_asset_with_an_avoided_signer_when_no_other_is_free() {
+    // Given
+    let view = LeaderView::new();
+    let assets = FreeAssets::default();
+    assets.add(1, &[0, 1, 3]);
+
+    // When
+    let taken = view.retry_asset(&assets, &[3]).await.unwrap();
+
+    // Then
+    assert_eq!(taken.asset, participants(&[0, 1, 3]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_asset_wait__should_wait_past_the_round_deadline_until_an_asset_is_free() {
+    // Given
+    let view = LeaderView::new();
+    let assets = FreeAssets::default();
+    let freed_late = async {
+        tokio::time::sleep(ROUND_DEADLINE * 4).await;
+        assets.add(1, &[0, 1, 2]);
+    };
+
+    // When
+    let (taken, ()) = tokio::join!(view.retry_asset(&assets, &[]), freed_late);
+
+    // Then
+    assert_eq!(taken.unwrap().asset, participants(&[0, 1, 2]));
+}
+
+#[tokio::test]
+async fn retry_asset_wait__should_take_no_asset_outside_the_candidates_and_stop_once_the_request_closes()
+ {
+    // Given
+    let view = LeaderView::new();
+    let assets = FreeAssets::default();
+    assets.add(1, &[0, 1, 5]);
+    let closing = async { view.close() };
+
+    // When
+    let (taken, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(view.retry_asset(&assets, &[]), closing)
+    })
+    .await
+    .unwrap();
+
+    // Then
+    assert_matches!(taken.map(|taken| taken.id), Err(StopLeading::RequestClosed));
+    assert_eq!(assets.assets.lock().unwrap().len(), 1);
+}

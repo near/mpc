@@ -3,8 +3,8 @@ pub(crate) mod node_outcome_statement;
 pub(crate) mod node_outcomes;
 pub(crate) mod open_requests;
 
+#[expect(dead_code)]
 mod acting_leader;
-mod attempt_assets;
 mod counting_rule;
 mod inspect_request;
 mod inspection;
@@ -13,7 +13,7 @@ mod sign;
 mod sign_v2;
 
 pub(crate) use inspection::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
-pub(crate) use sign_v2::{ROUND_DEADLINE, SignedVerdict, VerifyForeignTxV2Context};
+pub(crate) use sign_v2::{RoundsEnd, SignedVerdict, StopLeading, VerifyForeignTxV2Context};
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
