@@ -1,10 +1,11 @@
+pub(crate) mod acting_leader;
 pub(crate) mod node_outcome;
 pub(crate) mod node_outcome_statement;
 pub(crate) mod node_outcomes;
 pub(crate) mod open_requests;
+#[cfg(test)]
+pub(crate) mod testing;
 
-#[expect(dead_code)]
-mod acting_leader;
 mod counting_rule;
 mod inspect_request;
 mod inspection;
