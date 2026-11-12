@@ -1,9 +1,14 @@
 use super::*;
+use crate::network::testing::{new_task_channel_for_test, new_test_client};
+use crate::network::wire_format::{MpcMessageKind, VerifyForeignTxTaskId};
+use crate::primitives::{ChannelId, MpcMessage, MpcPeerMessage};
 use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeStatement;
 use crate::providers::verify_foreign_tx::node_outcome_statement::testing::{
     outcome_public_keys, outcome_signing_key, signed_by_its_signer,
 };
+use crate::providers::verify_foreign_tx::testing::{TestProvider, bitcoin_request};
+use crate::requests::queue::leader_selection_order;
 use near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict;
 use std::assert_matches;
 
@@ -190,5 +195,55 @@ fn verdict_check__should_not_count_a_signer_that_does_not_support_the_chain() {
     assert_matches!(
         checked,
         Err(RoundRefusal::BelowThreshold { backers: 2, .. })
+    );
+}
+
+#[tokio::test]
+async fn check_round__should_refuse_a_sender_that_is_not_an_acting_leader() {
+    // Given
+    let participants: Vec<_> = (0..3).map(participant).collect();
+    let order = leader_selection_order(&participants, bitcoin_request().id);
+    let (backup, me) = (order[1], order[2]);
+    let node = TestProvider::with_open_request(
+        new_test_client(order.clone(), me),
+        near_time::Duration::ZERO,
+        order.iter().copied().collect(),
+    );
+    let round_id = UniqueId::new(backup, 1, 0);
+    let (mut channel, from_peers) = new_task_channel_for_test(
+        VerifyForeignTxTaskId::SignOutcome {
+            yield_id: bitcoin_request().yield_id,
+            outcome: RoundOutcome::Verdict(NOT_FOUND),
+            paired_triple_id: round_id,
+        }
+        .into(),
+        backup,
+        me,
+        order,
+    );
+    from_peers
+        .send(MpcPeerMessage {
+            from: backup,
+            message: MpcMessage {
+                channel_id: ChannelId(round_id),
+                kind: MpcMessageKind::Evidence(Vec::new()),
+            },
+        })
+        .unwrap();
+
+    // When
+    let checked = node
+        .provider
+        .check_round(
+            &mut channel,
+            bitcoin_request().yield_id,
+            RoundOutcome::Verdict(NOT_FOUND),
+        )
+        .await;
+
+    // Then
+    assert_matches!(
+        checked.unwrap_err().downcast_ref::<RoundRefusal>(),
+        Some(RoundRefusal::Leader(LeaderRefusal::NotActing(leader))) if *leader == backup
     );
 }

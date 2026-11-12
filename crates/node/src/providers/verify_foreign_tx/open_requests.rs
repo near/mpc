@@ -8,8 +8,14 @@ use near_mpc_contract_interface::types::YieldId;
 use near_time::{Clock, Instant};
 use tokio::sync::Notify;
 
+use crate::primitives::ParticipantId;
+use crate::providers::verify_foreign_tx::acting_leader::ActingLeader;
 use crate::requests::queue::REQUEST_EXPIRATION_BLOCKS;
 use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
+
+/// The maximum number of signing rounds a signer joins per request and leader, for verdicts and
+/// inconclusives together. It bounds the assets one leader can use up on a request.
+pub(crate) const MAX_ROUNDS_PER_LEADER: usize = 3;
 
 /// The V2 requests this node indexed, to tell the open ones: indexed on the canonical chain,
 /// without a completion on the canonical chain, and inside the [`REQUEST_EXPIRATION_BLOCKS`]
@@ -31,6 +37,8 @@ struct IndexedRequest {
     block: BlockStatusHandle,
     /// The time this node first indexed the request.
     indexed_at: Instant,
+    /// The number of signing rounds this node joined, per leader.
+    joined_rounds: HashMap<ParticipantId, usize>,
     /// The blocks of the completions of this request or of another request with its yield id.
     completions: Vec<BlockStatusHandle>,
     /// Set once [`OpenVerifyForeignTxRequestsV2::take_final_uninspected`] handed the request out.
@@ -68,6 +76,7 @@ impl OpenVerifyForeignTxRequestsV2 {
                     request: request.clone(),
                     block: update.block_status.clone(),
                     indexed_at: now,
+                    joined_rounds: HashMap::new(),
                     completions: Vec::new(),
                     inspected: false,
                 });
@@ -144,6 +153,29 @@ impl OpenVerifyForeignTxRequestsV2 {
         Some(self.clock.now().saturating_duration_since(indexed_at))
     }
 
+    /// Counts a signing round of `leader` for the open request `id` that this node joins. Refuses
+    /// once this node joined [`MAX_ROUNDS_PER_LEADER`] rounds of `leader` for the request.
+    pub(crate) fn join_round(
+        &self,
+        id: VerifyForeignTxId,
+        leader: ActingLeader,
+    ) -> Result<(), JoinRoundRefusal> {
+        let mut requests = self.requests.lock().unwrap();
+        let indexed = requests
+            .get_mut(&id)
+            .filter(|indexed| indexed.is_open())
+            .ok_or(JoinRoundRefusal::RequestClosed)?;
+        let joined = indexed
+            .joined_rounds
+            .entry(leader.participant())
+            .or_default();
+        if *joined >= MAX_ROUNDS_PER_LEADER {
+            return Err(JoinRoundRefusal::RoundLimit(leader.participant()));
+        }
+        *joined = joined.saturating_add(1);
+        Ok(())
+    }
+
     /// Returns an open request with `yield_id` once there is one. A peer may start a signing
     /// round before this node indexed the request, so callers bound the wait.
     pub(crate) async fn wait_for_yield(&self, yield_id: YieldId) -> VerifyForeignTxRequestV2 {
@@ -164,6 +196,15 @@ impl OpenVerifyForeignTxRequestsV2 {
             changed.await;
         }
     }
+}
+
+/// The reasons a signer does not join a V2 signing round it otherwise accepts.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub(crate) enum JoinRoundRefusal {
+    #[error("the V2 request closed before this node joined the round")]
+    RequestClosed,
+    #[error("this node already joined {MAX_ROUNDS_PER_LEADER} rounds of {0} for the V2 request")]
+    RoundLimit(ParticipantId),
 }
 
 fn tracks(requests: &HashMap<VerifyForeignTxId, IndexedRequest>, yield_id: YieldId) -> bool {
@@ -485,6 +526,64 @@ mod tests {
 
         // Then
         assert_eq!(open.time_since_indexed(request(1).id), None);
+    }
+
+    #[test]
+    fn open_requests_join_round__should_refuse_a_round_past_the_limit_per_leader() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
+        let leader = ParticipantId::from_raw(1);
+        let other_leader = ParticipantId::from_raw(2);
+        for _ in 0..MAX_ROUNDS_PER_LEADER {
+            open.join_round(request(1).id, ActingLeader::assumed(leader))
+                .unwrap();
+        }
+
+        // When
+        let past_the_limit = open.join_round(request(1).id, ActingLeader::assumed(leader));
+        let other = open.join_round(request(1).id, ActingLeader::assumed(other_leader));
+
+        // Then
+        assert_eq!(past_the_limit, Err(JoinRoundRefusal::RoundLimit(leader)));
+        assert_eq!(other, Ok(()));
+    }
+
+    #[test]
+    fn open_requests_join_round__should_count_rounds_per_request() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1), request(2)], vec![]));
+        let leader = ActingLeader::assumed(ParticipantId::from_raw(1));
+        for _ in 0..MAX_ROUNDS_PER_LEADER {
+            open.join_round(request(1).id, leader).unwrap();
+        }
+
+        // When
+        let other_request = open.join_round(request(2).id, leader);
+
+        // Then
+        assert_eq!(other_request, Ok(()));
+    }
+
+    #[test]
+    fn open_requests_join_round__should_refuse_a_closed_request() {
+        // Given
+        let open = OpenVerifyForeignTxRequestsV2::default();
+        let mut chain = TestChain::starting_at(START_HEIGHT);
+        open.notify_new_block(&chain.extend(vec![request(1)], vec![]));
+        let leader = ActingLeader::assumed(ParticipantId::from_raw(1));
+
+        // When
+        open.notify_new_block(&chain.extend(vec![], vec![request(1).id]));
+
+        // Then
+        assert_eq!(
+            open.join_round(request(1).id, leader),
+            Err(JoinRoundRefusal::RequestClosed)
+        );
     }
 
     #[tokio::test]

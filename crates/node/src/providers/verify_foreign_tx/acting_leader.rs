@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use anyhow::Context;
-
 use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::requests::queue::{
@@ -15,19 +13,44 @@ use crate::types::VerifyForeignTxRequestV2;
 /// turn from its own index time, and that may come this much before the signer's.
 const BACKUP_LEADER_EARLY_ACCEPTANCE: Duration = Duration::from_secs(3);
 
+/// A participant that [`VerifyForeignTxProvider::ensure_acting_leader`] accepted as an acting
+/// leader of a V2 request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ActingLeader(ParticipantId);
+
+impl ActingLeader {
+    pub(crate) fn participant(self) -> ParticipantId {
+        self.0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn assumed(participant: ParticipantId) -> Self {
+        Self(participant)
+    }
+}
+
+/// The reasons a signer does not accept a participant as the leader of a V2 signing round.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub(crate) enum LeaderRefusal {
+    #[error("the V2 request is not open")]
+    RequestClosed,
+    #[error("{0} is not an acting leader of the V2 request")]
+    NotActing(ParticipantId),
+}
+
 impl VerifyForeignTxProvider {
-    /// Fails unless `leader` is an acting leader of the open `request` in the view of this node:
-    /// the first eligible leader of the request, or a backup whose turn has started.
+    /// Accepts `leader` only when it is an acting leader of the open `request` in the view of
+    /// this node: the first eligible leader of the request, or a backup whose turn has started.
     pub(crate) fn ensure_acting_leader(
         &self,
         request: &VerifyForeignTxRequestV2,
         leader: ParticipantId,
-    ) -> anyhow::Result<()> {
+    ) -> Result<ActingLeader, LeaderRefusal> {
         let since_indexed = self
             .v2
             .open_requests
             .time_since_indexed(request.id)
-            .context("the V2 request is not open")?;
+            .ok_or(LeaderRefusal::RequestClosed)?;
         let network = self.v2.network.as_ref();
         let participants = network.all_participant_ids();
         let eligible_leaders = self.new_eligible_leaders_refiner().refine(
@@ -35,16 +58,16 @@ impl VerifyForeignTxProvider {
             &eligible_leaders_and_heights(network, &participants, network.my_participant_id())
                 .eligible_leaders,
         );
-        anyhow::ensure!(
-            is_acting_leader(
-                leader,
-                &leader_selection_order(&participants, request.id),
-                &eligible_leaders,
-                since_indexed,
-            ),
-            "{leader} is not an acting leader of the V2 request"
-        );
-        Ok(())
+        if is_acting_leader(
+            leader,
+            &leader_selection_order(&participants, request.id),
+            &eligible_leaders,
+            since_indexed,
+        ) {
+            Ok(ActingLeader(leader))
+        } else {
+            Err(LeaderRefusal::NotActing(leader))
+        }
     }
 }
 
@@ -64,114 +87,4 @@ fn is_acting_leader(
 
 #[cfg(test)]
 #[expect(non_snake_case)]
-mod tests {
-    use super::*;
-    use crate::requests::queue::{LEADER_FAILOVER_INTERVAL, MAX_LEADER_FAILOVER_DEPTH};
-
-    fn participants() -> Vec<ParticipantId> {
-        (0..6).map(ParticipantId::from_raw).collect()
-    }
-
-    fn all_eligible() -> HashSet<ParticipantId> {
-        participants().into_iter().collect()
-    }
-
-    fn failover_interval() -> Duration {
-        LEADER_FAILOVER_INTERVAL.unsigned_abs()
-    }
-
-    #[test]
-    fn is_acting_leader__should_accept_the_first_eligible_leader_at_once() {
-        // Given
-        let order = participants();
-        let eligible: HashSet<_> = order[1..].iter().copied().collect();
-
-        // When
-        let acting = is_acting_leader(order[1], &order, &eligible, Duration::ZERO);
-
-        // Then
-        assert!(acting);
-    }
-
-    #[test]
-    fn is_acting_leader__should_refuse_a_participant_that_is_not_eligible() {
-        // Given
-        let order = participants();
-        let eligible: HashSet<_> = order[1..].iter().copied().collect();
-
-        // When
-        let acting = is_acting_leader(order[0], &order, &eligible, 10 * failover_interval());
-
-        // Then
-        assert!(!acting);
-    }
-
-    #[test]
-    fn is_acting_leader__should_refuse_a_backup_more_than_the_margin_before_its_turn() {
-        // Given
-        let order = participants();
-        let since_indexed =
-            failover_interval() - BACKUP_LEADER_EARLY_ACCEPTANCE - Duration::from_millis(1);
-
-        // When
-        let acting = is_acting_leader(order[1], &order, &all_eligible(), since_indexed);
-
-        // Then
-        assert!(!acting);
-    }
-
-    #[test]
-    fn is_acting_leader__should_accept_a_backup_up_to_the_margin_before_its_turn() {
-        // Given
-        let order = participants();
-        let since_indexed = failover_interval() - BACKUP_LEADER_EARLY_ACCEPTANCE;
-
-        // When
-        let acting = is_acting_leader(order[1], &order, &all_eligible(), since_indexed);
-
-        // Then
-        assert!(acting);
-    }
-
-    #[test]
-    fn is_acting_leader__should_accept_a_backup_once_its_turn_started() {
-        // Given
-        let order = participants();
-
-        // When
-        let acting = is_acting_leader(order[2], &order, &all_eligible(), 2 * failover_interval());
-
-        // Then
-        assert!(acting);
-    }
-
-    #[test]
-    fn is_acting_leader__should_time_a_backup_by_its_rank_among_eligible_leaders() {
-        // Given
-        let order = participants();
-        let eligible: HashSet<_> = order[1..].iter().copied().collect();
-
-        // When
-        let acting = is_acting_leader(order[2], &order, &eligible, failover_interval());
-
-        // Then
-        assert!(acting);
-    }
-
-    #[test]
-    fn is_acting_leader__should_refuse_a_participant_past_the_failover_depth() {
-        // Given
-        let order = participants();
-
-        // When
-        let acting = is_acting_leader(
-            order[MAX_LEADER_FAILOVER_DEPTH],
-            &order,
-            &all_eligible(),
-            10 * failover_interval(),
-        );
-
-        // Then
-        assert!(!acting);
-    }
-}
+mod tests;
