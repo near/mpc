@@ -1,5 +1,6 @@
 {
   "tee_verifier_account_id": "$TEE_VERIFIER_ACCOUNT",
+  "genesis_hash": "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
   "parameters": {
     "threshold": 2,
     "participants": {

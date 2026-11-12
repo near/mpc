@@ -147,7 +147,7 @@ pub fn spawn_real_indexer(
             ));
 
             indexer_state
-                .ensure_chain_matches_contract()
+                .ensure_chain_matches_contract(mpc_indexer_config.genesis_hash)
                 .await
                 .expect("the node must follow its contract's chain");
 

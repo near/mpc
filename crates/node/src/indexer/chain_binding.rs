@@ -1,26 +1,19 @@
 use anyhow::ensure;
-use near_account_id::AccountId;
 use near_indexer::near_primitives::hash::CryptoHash;
 
-const MAINNET_GENESIS_HASH: &str = "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H";
-const TESTNET_GENESIS_HASH: &str = "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b";
-
-/// The measured launcher compose binds a node to its contract account id but not to a chain, so
-/// a node serving a production contract refuses to follow any other chain.
+/// Fails unless the node follows the chain whose genesis hash the measured launcher compose names.
+/// A node started without the launcher has no expected genesis hash and follows any chain.
 pub fn ensure_chain_matches_contract(
-    contract_id: &AccountId,
+    expected_genesis_hash: Option<CryptoHash>,
     genesis_hash: CryptoHash,
 ) -> anyhow::Result<()> {
-    let expected_genesis_hash = match contract_id.as_str() {
-        "v1.signer" => MAINNET_GENESIS_HASH,
-        "v1.signer-prod.testnet" => TESTNET_GENESIS_HASH,
-        _ => return Ok(()),
-    };
-    ensure!(
-        genesis_hash.to_string() == expected_genesis_hash,
-        "contract {contract_id} lives on the chain with genesis {expected_genesis_hash}, \
-         but this node follows the chain with genesis {genesis_hash}"
-    );
+    if let Some(expected_genesis_hash) = expected_genesis_hash {
+        ensure!(
+            genesis_hash == expected_genesis_hash,
+            "the contract runs on the chain with genesis {expected_genesis_hash}, \
+             but this node follows the chain with genesis {genesis_hash}"
+        );
+    }
     Ok(())
 }
 
@@ -30,27 +23,24 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    const FAKE_GENESIS_HASH: &str = "11111111111111111111111111111111";
+    const MAINNET_GENESIS_HASH: &str = "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H";
+    const TESTNET_GENESIS_HASH: &str = "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b";
 
     #[rstest]
-    #[case::mainnet_contract_on_mainnet("v1.signer", MAINNET_GENESIS_HASH, true)]
-    #[case::testnet_contract_on_testnet("v1.signer-prod.testnet", TESTNET_GENESIS_HASH, true)]
-    #[case::mainnet_contract_on_testnet("v1.signer", TESTNET_GENESIS_HASH, false)]
-    #[case::testnet_contract_on_mainnet("v1.signer-prod.testnet", MAINNET_GENESIS_HASH, false)]
-    #[case::mainnet_contract_on_fake_chain("v1.signer", FAKE_GENESIS_HASH, false)]
-    #[case::testnet_contract_on_fake_chain("v1.signer-prod.testnet", FAKE_GENESIS_HASH, false)]
-    #[case::other_contract_on_any_chain("mpc.sandbox", TESTNET_GENESIS_HASH, true)]
-    fn ensure_chain_matches_contract__should_pin_only_production_contracts_to_their_chain(
-        #[case] contract_id: &str,
+    #[case::same_chain(Some(MAINNET_GENESIS_HASH), MAINNET_GENESIS_HASH, true)]
+    #[case::other_chain(Some(MAINNET_GENESIS_HASH), TESTNET_GENESIS_HASH, false)]
+    #[case::no_expected_chain(None, TESTNET_GENESIS_HASH, true)]
+    fn ensure_chain_matches_contract__should_reject_a_chain_other_than_the_expected_one(
+        #[case] expected_genesis_hash: Option<&str>,
         #[case] genesis_hash: &str,
         #[case] accepted: bool,
     ) {
         // Given
-        let contract_id: AccountId = contract_id.parse().unwrap();
+        let expected_genesis_hash = expected_genesis_hash.map(|hash| hash.parse().unwrap());
         let genesis_hash: CryptoHash = genesis_hash.parse().unwrap();
 
         // When
-        let result = ensure_chain_matches_contract(&contract_id, genesis_hash);
+        let result = ensure_chain_matches_contract(expected_genesis_hash, genesis_hash);
 
         // Then
         assert_eq!(result.is_ok(), accepted);

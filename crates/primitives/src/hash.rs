@@ -1,4 +1,5 @@
 use alloc::{string::String, vec::Vec};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hex::FromHexError;
 use thiserror::Error;
 
@@ -6,6 +7,8 @@ use thiserror::Error;
 pub enum HashParseError {
     #[error("not a valid hex string")]
     HexError(#[from] FromHexError),
+    #[error("not a valid base58 string")]
+    Base58Error(#[from] bs58::decode::Error),
     #[error("expected {expected} bytes, got {got}")]
     InvalidLength { expected: usize, got: usize },
 }
@@ -191,7 +194,8 @@ pub const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 define_hash!(
     /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment.
     /// It is computed from the launcher's Docker Compose template populated with the launcher image
-    /// hash, the MPC node's Docker image hash and the account id of the contract the node serves.
+    /// hash, the MPC node's Docker image hash, the account id of the contract the node serves and
+    /// the genesis hash of that contract's chain.
     LauncherDockerComposeHash,
     32
 );
@@ -241,6 +245,58 @@ define_hash!(
     KeyProviderEventDigest,
     48
 );
+
+/// Hash of the genesis block of a NEAR chain, which identifies the chain. Its text form is base58,
+/// as nearcore prints it.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, derive_more::From, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct GenesisHash(
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        schemars(with = "String")
+    )]
+    [u8; 32],
+);
+
+impl core::fmt::Display for GenesisHash {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&bs58::encode(self.0).into_string())
+    }
+}
+
+impl core::str::FromStr for GenesisHash {
+    type Err = HashParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        bs58::decode(s)
+            .into_vec()?
+            .try_into()
+            .map(Self)
+            .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
+                expected: 32,
+                got: v.len(),
+            })
+    }
+}
+
+impl serde::Serialize for GenesisHash {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for GenesisHash {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        <String as serde::Deserialize>::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
 
 pub const PROPOSAL_HASH_BYTES: usize = 32;
 
@@ -450,6 +506,38 @@ mod tests {
             }
             _ => panic!("unexpected error variant"),
         }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn genesis_hash__should_round_trip_in_nearcore_s_text_form() {
+        // Given
+        let mainnet_genesis_hash = "\"EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H\"";
+
+        // When
+        let genesis_hash: GenesisHash = serde_json::from_str(mainnet_genesis_hash).unwrap();
+
+        // Then
+        assert_eq!(
+            serde_json::to_string(&genesis_hash).unwrap(),
+            mainnet_genesis_hash
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn genesis_hash__should_reject_a_value_that_is_not_32_bytes() {
+        // When
+        let err = "2".parse::<GenesisHash>().unwrap_err();
+
+        // Then
+        assert_matches!(
+            err,
+            HashParseError::InvalidLength {
+                expected: 32,
+                got: 1
+            }
+        );
     }
 
     #[test]

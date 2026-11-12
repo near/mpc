@@ -4,9 +4,9 @@
 #
 # The launcher Docker Compose is rendered at deploy time from
 #   crates/contract/assets/launcher_docker_compose.yaml.template
-# using the LAUNCHER_MANIFEST_DIGEST, MPC_MANIFEST_DIGEST and MPC_CONTRACT_ID
-# env vars. The rendered file's SHA256 must match an entry in the contract's
-# allowed_launcher_compose_hashes for attestation to succeed.
+# using the LAUNCHER_MANIFEST_DIGEST, MPC_MANIFEST_DIGEST, MPC_CONTRACT_ID and
+# NEAR_GENESIS_HASH env vars. The rendered file's SHA256 must match an entry in
+# the contract's allowed_launcher_compose_hashes for attestation to succeed.
 #
 # Loads environment variables from a .env file, generates app-compose.json,
 # and runs deployment.
@@ -146,6 +146,7 @@ required_env_vars=(
   "APP_NAME"
   "OS_IMAGE"
   "MPC_CONTRACT_ID"
+  "NEAR_GENESIS_HASH"
 )
 
 for var in "${required_env_vars[@]}"; do
@@ -229,6 +230,7 @@ if ! sed \
   -e "s|{{LAUNCHER_IMAGE_HASH}}|${launcher_hex}|g" \
   -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${mpc_hex}|g" \
   -e "s|{{MPC_CONTRACT_ID}}|${MPC_CONTRACT_ID}|g" \
+  -e "s|{{NEAR_GENESIS_HASH}}|${NEAR_GENESIS_HASH}|g" \
   "$COMPOSE_TEMPLATE" > "$COMPOSE_TMP"; then
   echo "Error: sed failed rendering compose template from $COMPOSE_TEMPLATE"
   exit 1

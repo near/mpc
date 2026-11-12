@@ -6222,6 +6222,7 @@ name = "mpc-primitives"
 version = "3.18.0"
 dependencies = [
  "borsh",
+ "bs58 0.5.1",
  "derive_more 2.1.1",
  "hex",
  "insta",

@@ -16,7 +16,7 @@ use mpc_contract::{
     errors,
     primitives::{
         participants::Participants,
-        test_utils::bogus_tee_verifier_account_id,
+        test_utils::{bogus_genesis_hash, bogus_tee_verifier_account_id},
         thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
 };
@@ -311,7 +311,12 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let proposed_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
         GovernanceThresholdParameters::new_unvalidated(participants, threshold).into();
     let result = contract
-        .init(proposed_parameters, bogus_tee_verifier_account_id(), None)
+        .init(
+            proposed_parameters,
+            bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
+            None,
+        )
         .await?;
     assert!(
         result.is_failure(),
@@ -326,6 +331,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .init(
             proposed_parameters.clone(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .await?;
@@ -339,6 +345,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .init(
             proposed_parameters.clone(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .await?;

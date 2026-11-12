@@ -197,6 +197,7 @@ render_env_and_conf() {
   export MPC_IMAGE="nearone/mpc-node"
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"
+  export NEAR_GENESIS_HASH="${NEAR_GENESIS_HASH:-$(curl -s localhost:3030/status | jq -r .genesis_hash)}"
   export MPC_SECRET_STORE_KEY="${MPC_SECRET_STORE_KEY:-00000000000000000000000000000000}"
   # The launcher PORTS map is CVM->container. vmm-cli (in deploy-launcher.sh)
   # forwards host:$MIGRATION_PORT -> CVM:$INTERNAL_MIGRATION_PORT, so the
