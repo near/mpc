@@ -1,6 +1,6 @@
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    sync::{Arc, atomic::AtomicBool},
+    sync::Arc,
 };
 
 use aes_gcm::aead::Generate;
@@ -55,7 +55,7 @@ pub async fn setup(ports: TestPorts) -> TestSetup {
         import_keyshares_sender: import_keyshares_sender.clone(),
         keyshare_storage: keyshare_storage.clone(),
         backup_encryption_key: backup_encryption_key.into(),
-        onboarded: AtomicBool::new(true),
+        onboarded: watch::channel(true).1,
     });
     start_web_server(
         web_server_state.clone(),

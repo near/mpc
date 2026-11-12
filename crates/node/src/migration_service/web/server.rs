@@ -1,7 +1,7 @@
 use std::{
     convert::Infallible,
     net::SocketAddr,
-    sync::{Arc, atomic::Ordering},
+    sync::Arc,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
@@ -177,7 +177,7 @@ where
     B::Error: std::fmt::Debug + std::fmt::Display,
 {
     tracing::info!("received get_keyshares request");
-    if !state.onboarded.load(Ordering::Relaxed) {
+    if !*state.onboarded.borrow() {
         tracing::warn!("get_keyshares rejected: node is not onboarded");
         return error_response(StatusCode::FORBIDDEN, "Node is not onboarded");
     }
@@ -309,13 +309,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rstest::rstest;
     use serial_test::serial;
-    use std::{
-        assert_matches,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
-    };
+    use std::{assert_matches, sync::Arc};
     use tokio::sync::{RwLock, watch};
 
     const BACKUP_ENCRYPTION_KEY: [u8; 32] = [7u8; 32];
@@ -337,7 +331,7 @@ mod tests {
                 import_keyshares_sender,
                 keyshare_storage: Arc::new(RwLock::new(keyshare_storage)),
                 backup_encryption_key: BACKUP_ENCRYPTION_KEY,
-                onboarded: AtomicBool::new(false),
+                onboarded: watch::channel(false).1,
             },
             import_keyshares_receiver,
             tempdir,
@@ -424,8 +418,8 @@ mod tests {
         #[case] expected_status: StatusCode,
     ) {
         // Given
-        let (state, _receiver, _tempdir) = web_server_state().await;
-        state.onboarded.store(onboarded, Ordering::Relaxed);
+        let (mut state, _receiver, _tempdir) = web_server_state().await;
+        state.onboarded = watch::channel(onboarded).1;
         let body = serde_json::to_string(&KeysetBuilder::new(1).keyset()).unwrap();
 
         // When
