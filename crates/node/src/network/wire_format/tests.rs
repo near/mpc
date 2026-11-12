@@ -11,7 +11,7 @@ use crate::providers::verify_foreign_tx::node_outcome::{
     NoVerdictReason, NodeOutcome, NodeVerdict,
 };
 use crate::providers::verify_foreign_tx::node_outcome_statement::{
-    self, NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome,
+    NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome,
 };
 use borsh::BorshSerialize;
 use ed25519_dalek::SigningKey;
@@ -52,16 +52,11 @@ fn signed_node_outcome_of(outcome: NodeOutcome) -> SignedNodeOutcome {
     let signing_key = NodeOutcomeSigningKey::from(&PersistentSecrets {
         p2p_private_key: SigningKey::from_bytes(&[8; 32]),
         near_signer_key: SigningKey::from_bytes(&[9; 32]),
+        outcome_signing_key: SigningKey::from_bytes(&[10; 32]),
     });
     signing_key
         .sign(NodeOutcomeStatement {
             yield_id: YieldId([6; 32]),
-            leader: ParticipantId::from_raw(5),
-            attempt: node_outcome_statement::AttemptId(ChannelId(UniqueId::new(
-                ParticipantId::from_raw(5),
-                1,
-                1,
-            ))),
             signer: ParticipantId::from_raw(7),
             outcome,
         })
