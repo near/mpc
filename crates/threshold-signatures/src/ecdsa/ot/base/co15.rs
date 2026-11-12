@@ -8,17 +8,14 @@ use subtle::ConditionallySelectable;
 use crate::{
     crypto::constants::NEAR_BATCH_RANDOM_OT_HASH,
     ecdsa::{
-        CoefficientCommitment, Field, ProjectivePoint, Secp256K1ScalarField,
-        ot_based_ecdsa::triples::bits::SEC_PARAM_64,
+        CoefficientCommitment, Field, ProjectivePoint, Secp256K1ScalarField, ot::bits::SEC_PARAM_64,
     },
     errors::ProtocolError,
     protocol::internal::PrivateChannel,
 };
 
 use crate::crypto::constants::SECURITY_PARAMETER;
-use crate::ecdsa::ot_based_ecdsa::triples::bits::{
-    BitMatrix, BitVector, SEC_PARAM_8, SquareBitMatrix,
-};
+use crate::ecdsa::ot::bits::{BitMatrix, BitVector, SEC_PARAM_8, SquareBitMatrix};
 
 fn hash(
     i: usize,
@@ -226,7 +223,7 @@ pub async fn batch_random_ot_sender_many<const N: usize>(
 pub type BatchRandomOTOutputReceiver = (BitVector, SquareBitMatrix);
 
 /// Generates the random values needed in `batch_random_ot_receiver`
-pub(super) fn batch_random_ot_receiver_random_helper(
+pub fn batch_random_ot_receiver_random_helper(
     rng: &mut impl CryptoRngCore,
 ) -> (BitVector, [Scalar; SEC_PARAM_64 * 64]) {
     let random_delta = BitVector::random(rng);
@@ -239,7 +236,7 @@ pub(super) fn batch_random_ot_receiver_random_helper(
 
 // Fixing this one breaks a test
 #[allow(clippy::large_types_passed_by_value)]
-pub(super) async fn batch_random_ot_receiver(
+pub async fn batch_random_ot_receiver(
     mut chan: PrivateChannel,
     delta: BitVector,
     x: [Scalar; SEC_PARAM_64 * 64],
@@ -408,7 +405,7 @@ mod test {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
+    use crate::ecdsa::ot::test::run_batch_random_ot;
     use crate::participants::Participant;
     use crate::protocol::internal::{Comms, make_protocol};
     use crate::test_utils::{MockCryptoRng, run_two_party_protocol};
