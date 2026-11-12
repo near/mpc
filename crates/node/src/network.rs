@@ -534,6 +534,14 @@ pub(crate) struct AbortedByParticipant {
     pub(crate) reason: String,
 }
 
+/// A participant sent this node a message its computation does not expect.
+#[derive(Debug, thiserror::Error)]
+#[error("unexpected {message} from participant {participant}")]
+pub(crate) struct UnexpectedMessage {
+    pub(crate) participant: ParticipantId,
+    pub(crate) message: String,
+}
+
 /// Reason why the participant set of an [`MpcStartMessage`] was rejected.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum InvalidStartMessage {
@@ -1090,10 +1098,13 @@ impl NetworkTaskChannel {
         loop {
             match self.receive_one().await? {
                 Some(ReceivedMessage::Computation(data)) => return Ok(data),
-                Some(ReceivedMessage::Evidence { from, outcomes }) => anyhow::bail!(
-                    "Unexpected evidence from participant {from} with {} outcomes",
-                    outcomes.len()
-                ),
+                Some(ReceivedMessage::Evidence { from, outcomes }) => {
+                    return Err(UnexpectedMessage {
+                        participant: from,
+                        message: format!("evidence with {} outcomes", outcomes.len()),
+                    }
+                    .into());
+                }
                 None => {}
             }
         }
@@ -1499,7 +1510,8 @@ mod tests {
     use super::{
         InvalidChannelId, InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
         MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
-        broadcast_connected_peers_info, emit_metrics_periodically, run_receive_message,
+        UnexpectedMessage, broadcast_connected_peers_info, emit_metrics_periodically,
+        run_receive_message,
     };
     use crate::metrics::{self, networking_metrics};
     use crate::network::indexer_heights::IndexerHeightTracker;
@@ -1784,6 +1796,34 @@ mod tests {
         };
         assert_eq!(sent_to(first), vec![start.clone(), evidence.clone()]);
         assert_eq!(sent_to(second), vec![start, evidence]);
+    }
+
+    #[tokio::test]
+    async fn receive__should_name_the_participant_that_sent_unexpected_evidence() {
+        // Given
+        let [me, sender, other] = [1, 2, 3].map(ParticipantId::from_raw);
+        let task_id = EcdsaTaskId::ManyTriples {
+            start: UniqueId::new(me, 0, 0),
+            count: 2,
+        };
+        let (mut channel, raw_sender) =
+            new_task_channel_for_test(task_id.into(), me, me, vec![me, sender, other]);
+        raw_sender
+            .send(MpcPeerMessage {
+                from: sender,
+                message: MpcMessage {
+                    channel_id: ChannelId(UniqueId::new(me, 0, 0)),
+                    kind: MpcMessageKind::Evidence(vec![node_outcome()]),
+                },
+            })
+            .unwrap();
+
+        // When
+        let error = channel.receive().await.err().unwrap();
+
+        // Then
+        let unexpected = error.downcast::<UnexpectedMessage>().unwrap();
+        assert_eq!(unexpected.participant, sender);
     }
 
     #[tokio::test]

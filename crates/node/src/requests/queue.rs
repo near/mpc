@@ -423,8 +423,8 @@ fn leader_selection_hash(participant_id: &ParticipantId, request_id: CryptoHash)
 }
 
 /// The position of `participant` among the eligible participants in the leader selection order,
-/// or `None` if it is not eligible. Rank 0 is the current leader, and rank k acts as the k-th
-/// backup.
+/// or `None` if it is not eligible. Rank 0 is the current leader, and rank k acts as backup
+/// number k.
 pub(crate) fn leader_rank(
     leader_selection_order: &[ParticipantId],
     eligible_leaders: &HashSet<ParticipantId>,
@@ -591,7 +591,7 @@ pub(crate) struct EligibleLeadersAndHeights {
 /// the reference height their staleness is measured against, and our own indexer height.
 ///
 /// The reference height is the height that a majority of alive participants has reached. Peers
-/// self-report their heights, and the majority keeps a minority of them from raising the
+/// report their own heights, and the majority keeps a minority of them from raising the
 /// reference height so far that every honest participant looks stale. Our own height is only
 /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
 /// eligible leaders.

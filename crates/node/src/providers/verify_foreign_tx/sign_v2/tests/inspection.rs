@@ -1,31 +1,12 @@
 use super::*;
-use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
-use crate::db::SecretDB;
-use crate::foreign_chain_policy::SupportersByForeignChain;
-use crate::indexer::foreign_chain::ForeignChainWhitelist;
-use crate::providers::EcdsaSignatureProvider;
-use crate::providers::verify_foreign_tx::node_outcome_statement::testing::outcome_signing_key;
-use crate::storage::{SignRequestStorage, VerifyForeignTransactionRequestStorage};
-use ed25519_dalek::SigningKey;
+use crate::providers::verify_foreign_tx::testing::{TestProvider, open_with};
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
-use mpc_node_config::foreign_chains::RpcProviderName;
-use mpc_node_config::{
-    AuthConfig, CKDConfig, ConfigFile, ForeignChainConfig, ForeignChainProviderConfig,
-    ForeignChainsConfig, IndexerConfig, KeygenConfig, SignatureConfig, SyncMode, TripleBatchSize,
-    TripleConfig,
-};
-use near_indexer_primitives::types::Finality;
-use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_time::Clock;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::net::{Ipv4Addr, SocketAddr};
-use std::num::NonZeroU64;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MOCK_BLOCK_HASH: [u8; 32] = [0xaa; 32];
-
-const ETHEREUM_PROVIDER: &str = "public";
 
 /// Serves an Ethereum transaction in block 10. The first finality check reports block 5 as
 /// final, a transient error, and every later one block 100.
@@ -75,138 +56,6 @@ fn start_ethereum_rpc_mock(on_rpc_call: impl Fn() + Send + Sync + 'static) -> Mo
     server
 }
 
-fn config(rpc_url: &str) -> ConfigFile {
-    ConfigFile {
-        my_near_account_id: "test.near".parse().unwrap(),
-        web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0),
-        migration_web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0),
-        pprof_bind_address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0),
-        indexer: IndexerConfig {
-            concurrency: 1.try_into().unwrap(),
-            finality: Finality::Final,
-            mpc_contract_id: "mpc.test.near".parse().unwrap(),
-            port_override: None,
-            wipe_near_data_token: 0,
-            sync_mode: SyncMode::Latest,
-            validate_genesis: false,
-        },
-        triple: TripleConfig {
-            concurrency: 1,
-            desired_triples_to_buffer: 0,
-            parallel_triple_generation_stagger_time_sec: 1,
-            timeout_sec: 120,
-            batch_size: TripleBatchSize::default(),
-        },
-        signature: SignatureConfig { timeout_sec: 60 },
-        ckd: CKDConfig { timeout_sec: 60 },
-        keygen: KeygenConfig { timeout_sec: 60 },
-        foreign_chains: ForeignChainsConfig {
-            ethereum: Some(ForeignChainConfig {
-                timeout_sec: NonZeroU64::new(5).unwrap(),
-                max_retries: NonZeroU64::new(1).unwrap(),
-                expected_network_fingerprint: None,
-                providers: NonEmptyBTreeMap::new(
-                    RpcProviderName::from(ETHEREUM_PROVIDER.to_string()),
-                    ForeignChainProviderConfig {
-                        rpc_url: rpc_url.to_string(),
-                        auth: AuthConfig::None,
-                    },
-                ),
-            }),
-            ..Default::default()
-        },
-        cores: None,
-        separate_asset_generation_runtime: false,
-    }
-}
-
-fn whitelist(rpc_url: &str) -> ForeignChainWhitelist {
-    BTreeMap::from([(
-        dtos::ForeignChain::Ethereum,
-        dtos::ChainEntry {
-            providers: NonEmptyBTreeMap::new(
-                dtos::ProviderId(ETHEREUM_PROVIDER.to_string()),
-                dtos::ProviderConfig {
-                    base_url: rpc_url.to_string(),
-                    auth_scheme: dtos::AuthScheme::None,
-                    chain_routing: dtos::ChainRouting::Embedded,
-                },
-            ),
-            quorum: 1,
-        },
-    )])
-}
-
-/// A provider for `client` with no keyshares, whose chain supporters on Ethereum are
-/// `supporters`.
-struct TestProvider {
-    provider: VerifyForeignTxProvider,
-    _db_dir: tempfile::TempDir,
-}
-
-impl TestProvider {
-    fn new(
-        client: Arc<MeshNetworkClient>,
-        rpc_url: &str,
-        open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
-        supporters: HashSet<ParticipantId>,
-    ) -> Self {
-        let me = client.my_participant_id();
-        let config = Arc::new(config(rpc_url));
-        let db_dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(db_dir.path(), [1; 16]).unwrap();
-        let participants = ParticipantsConfig {
-            threshold: 2,
-            participants: client
-                .all_participant_ids()
-                .into_iter()
-                .map(|id| ParticipantInfo {
-                    id,
-                    address: "127.0.0.1".to_string(),
-                    port: 3000,
-                    p2p_public_key: SigningKey::from_bytes(&[7; 32]).verifying_key(),
-                    near_account_id: format!("p{}.near", id.raw()).parse().unwrap(),
-                })
-                .collect(),
-        };
-        let ecdsa_signature_provider = Arc::new(
-            EcdsaSignatureProvider::new(
-                config.clone(),
-                Arc::new(MpcConfig {
-                    my_participant_id: me,
-                    participants,
-                }),
-                client.clone(),
-                Clock::real(),
-                db.clone(),
-                Arc::new(SignRequestStorage::new(db.clone()).unwrap()),
-                HashMap::new(),
-            )
-            .unwrap(),
-        );
-        let supporters: SupportersByForeignChain =
-            BTreeMap::from([(dtos::ForeignChain::Ethereum, supporters)]);
-        let provider = VerifyForeignTxProvider::new(
-            config,
-            tokio::sync::watch::channel(supporters).1,
-            tokio::sync::watch::channel(whitelist(rpc_url)).1,
-            Some(1),
-            Arc::new(VerifyForeignTransactionRequestStorage::new(db).unwrap()),
-            ecdsa_signature_provider,
-            VerifyForeignTxV2Context {
-                open_requests,
-                signing_key: outcome_signing_key(me),
-                network: client,
-            },
-        )
-        .unwrap();
-        Self {
-            provider,
-            _db_dir: db_dir,
-        }
-    }
-}
-
 fn ethereum_request() -> dtos::ForeignChainRpcRequest {
     dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
         tx_id: dtos::EvmTxId([0xbb; 32]),
@@ -232,14 +81,6 @@ fn ethereum_v2_request() -> VerifyForeignTxRequestV2 {
     }
 }
 
-/// The open requests of a node that indexed `request`.
-fn open_with(request: VerifyForeignTxRequestV2) -> (Arc<OpenVerifyForeignTxRequestsV2>, TestChain) {
-    let open_requests = Arc::new(OpenVerifyForeignTxRequestsV2::default());
-    let mut chain = TestChain::starting_at(BlockHeight::new(999));
-    open_requests.notify_new_block(&chain.extend(vec![request], vec![]));
-    (open_requests, chain)
-}
-
 fn node_outcomes_sent(
     transport: &TestMeshTransportSender,
 ) -> Vec<(ParticipantId, SignedNodeOutcome)> {
@@ -259,12 +100,12 @@ async fn reach_node_outcome__should_retry_a_transient_error_within_the_inspectio
     let rpc_mock = start_ethereum_rpc_mock_final_on_second_check();
     let (client, _transport) =
         new_test_client_with_versions(vec![ME], ME, current_protocol_versions(&[ME]));
-    let (open_requests, _chain) = open_with(ethereum_v2_request());
-    let node = TestProvider::new(
+    let (open_requests, _chain) = open_with(ethereum_v2_request(), Clock::real());
+    let node = TestProvider::with_ethereum_rpc(
         client,
-        &rpc_mock.base_url(),
         open_requests,
         HashSet::from([ME]),
+        &rpc_mock.base_url(),
     );
 
     // When
@@ -297,12 +138,12 @@ async fn inspect_and_send_node_outcome__should_send_its_signed_outcome_to_every_
         .node_outcomes()
         .set_outcome_keys(outcome_public_keys(&[ME]));
     client.node_outcomes().index([request().yield_id]);
-    let (open_requests, mut chain) = open_with(ethereum_v2_request());
-    let node = TestProvider::new(
+    let (open_requests, mut chain) = open_with(ethereum_v2_request(), Clock::real());
+    let node = TestProvider::with_ethereum_rpc(
         client.clone(),
-        &rpc_mock.base_url(),
         open_requests.clone(),
         HashSet::from([ME, PEER]),
+        &rpc_mock.base_url(),
     );
     let settle_once_kept = async {
         loop {
@@ -374,12 +215,12 @@ async fn inspect_and_send_node_outcome__should_stay_silent_on_a_chain_it_does_no
         current_protocol_versions(&participants),
     );
     client.node_outcomes().index([request().yield_id]);
-    let (open_requests, _chain) = open_with(ethereum_v2_request());
-    let node = TestProvider::new(
+    let (open_requests, _chain) = open_with(ethereum_v2_request(), Clock::real());
+    let node = TestProvider::with_ethereum_rpc(
         client.clone(),
-        &rpc_mock.base_url(),
         open_requests,
         HashSet::from([PEER]),
+        &rpc_mock.base_url(),
     );
 
     // When

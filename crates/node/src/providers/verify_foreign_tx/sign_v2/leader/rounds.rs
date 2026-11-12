@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use super::StopLeading;
-use crate::network::AbortedByParticipant;
 use crate::network::computation::ComputationTimeout;
+use crate::network::{AbortedByParticipant, UnexpectedMessage};
 use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::open_requests::MAX_ROUNDS_PER_LEADER;
 
@@ -39,6 +39,9 @@ pub(crate) enum RoundFailure {
     /// A signer refused the round, or failed after it joined.
     #[error(transparent)]
     Refused(AbortedByParticipant),
+    /// A signer sent a message the round does not expect.
+    #[error(transparent)]
+    Unexpected(UnexpectedMessage),
     #[error("the round ran past its deadline, silent signers: {silent:?}")]
     DeadlineExceeded { silent: BTreeSet<ParticipantId> },
     /// A failure that names no signer, for example shares that do not combine to a signature.
@@ -47,14 +50,21 @@ pub(crate) enum RoundFailure {
     /// A failure of this node. Another round would fail the same way.
     #[error("this node cannot run the round: {0:#}")]
     Local(anyhow::Error),
+    /// This node stopped leading before the round started.
+    #[error(transparent)]
+    Stopped(StopLeading),
 }
 
 impl RoundFailure {
     /// Sorts the error that ended a round. `silent` holds the signers that sent this node nothing
     /// in the round.
     pub(crate) fn new(error: anyhow::Error, silent: BTreeSet<ParticipantId>) -> Self {
-        match error.downcast::<AbortedByParticipant>() {
-            Ok(aborted) => Self::Refused(aborted),
+        let error = match error.downcast::<AbortedByParticipant>() {
+            Ok(aborted) => return Self::Refused(aborted),
+            Err(error) => error,
+        };
+        match error.downcast::<UnexpectedMessage>() {
+            Ok(unexpected) => Self::Unexpected(unexpected),
             Err(error) if error.is::<ComputationTimeout>() => Self::DeadlineExceeded { silent },
             Err(error) => Self::Unattributed(error),
         }
@@ -64,8 +74,9 @@ impl RoundFailure {
     fn failed_signers(&self) -> BTreeSet<ParticipantId> {
         match self {
             Self::Refused(aborted) => BTreeSet::from([aborted.participant]),
+            Self::Unexpected(unexpected) => BTreeSet::from([unexpected.participant]),
             Self::DeadlineExceeded { silent } => silent.clone(),
-            Self::Unattributed(_) | Self::Local(_) => BTreeSet::new(),
+            Self::Unattributed(_) | Self::Local(_) | Self::Stopped(_) => BTreeSet::new(),
         }
     }
 }
@@ -85,6 +96,7 @@ pub(crate) async fn lead_rounds<L: LeadSigningRounds>(
         let failure = match leader.run_round(asset).await {
             Ok(signed) => return Ok(signed),
             Err(RoundFailure::Local(error)) => return Err(RoundsEnd::Local(error)),
+            Err(RoundFailure::Stopped(stop)) => return Err(RoundsEnd::Stopped(stop)),
             Err(failure) => failure,
         };
         tracing::info!(%failure, rounds_left, "a V2 signing round failed");

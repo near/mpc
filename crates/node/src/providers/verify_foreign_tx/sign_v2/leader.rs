@@ -13,6 +13,7 @@ use tokio::time::Instant;
 
 use super::{ROUND_DEADLINE, SignedOutcome};
 use crate::metrics;
+use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::wire_format::VerifyForeignTxTaskId;
 use crate::primitives::{ParticipantId, UniqueId};
@@ -87,6 +88,8 @@ pub(crate) enum StopLeading {
         "this node signed two different outcomes for the request, so it takes part in no round"
     )]
     ConflictingOwnOutcome,
+    #[error("this node no longer supports the chain of the request in its own view")]
+    NotASupporter,
     #[error("the V2 request closed before its signing round could start")]
     RequestClosed,
 }
@@ -251,36 +254,29 @@ impl LeadSigningRounds for OutcomeRounds<'_> {
             .get(self.request.id)
             .is_none()
         {
-            return Err(RoundFailure::Local(StopLeading::RequestClosed.into()));
+            return Err(RoundFailure::Stopped(StopLeading::RequestClosed));
         }
         let task_id = VerifyForeignTxTaskId::SignOutcome {
             yield_id: self.request.yield_id,
             outcome: self.evidence.outcome(),
             paired_triple_id: triples.id,
         };
-        let channel = self
-            .provider
-            .v2
-            .network
-            .new_channel_for_task_with_evidence(
-                task_id,
-                participants_from_triples(&triples.asset.0, &triples.asset.1),
-                self.evidence.statements.clone(),
-            )
-            .map_err(RoundFailure::Unattributed)?;
-        let channel_sender = channel.sender();
-        let result = OnlinePresignSignComputation {
-            keygen_out: self.keygen_out.clone(),
-            reconstruction_threshold: self.reconstruction_threshold,
-            triples: triples.asset,
-            msg_hash: self.payload_hash.clone().into(),
-            tweak: Tweak::new([0; 32]),
-        }
-        .perform_leader_centric_computation(channel, ROUND_DEADLINE)
-        .await
-        .map_err(|error| RoundFailure::new(error, channel_sender.silent_participants()));
-        count_led_round(&result);
-        let (signature, public_key) = result?;
+        let channel = self.provider.v2.network.new_channel_for_task_with_evidence(
+            task_id,
+            participants_from_triples(&triples.asset.0, &triples.asset.1),
+            self.evidence.statements.clone(),
+        );
+        let (signature, public_key) = run_led_round(
+            channel,
+            OnlinePresignSignComputation {
+                keygen_out: self.keygen_out.clone(),
+                reconstruction_threshold: self.reconstruction_threshold,
+                triples: triples.asset,
+                msg_hash: self.payload_hash.clone().into(),
+                tweak: Tweak::new([0; 32]),
+            },
+        )
+        .await?;
         Ok(SignedOutcome {
             outcome: self.evidence.outcome(),
             payload_hash: self.payload_hash.clone(),
@@ -316,6 +312,27 @@ fn report_inconclusive(
         ?outcomes,
         "signed an inconclusive for a V2 request"
     );
+}
+
+/// Runs `computation` as a signing round this node leads on `channel`, for at most
+/// [`ROUND_DEADLINE`] after Start, and counts the round. A channel that failed to open counts as
+/// a failed round.
+async fn run_led_round<T>(
+    channel: anyhow::Result<NetworkTaskChannel>,
+    computation: impl MpcLeaderCentricComputation<T>,
+) -> Result<T, RoundFailure> {
+    let result = match channel {
+        Ok(channel) => {
+            let channel_sender = channel.sender();
+            computation
+                .perform_leader_centric_computation(channel, ROUND_DEADLINE)
+                .await
+                .map_err(|error| RoundFailure::new(error, channel_sender.silent_participants()))
+        }
+        Err(error) => Err(RoundFailure::Unattributed(error)),
+    };
+    count_led_round(&result);
+    result
 }
 
 /// Counts a signing round this node led, with the label of its result.
@@ -438,7 +455,7 @@ impl TakeOwnedMatching for TripleStorage {
 }
 
 /// Applies the counting rule to the kept `outcomes`. Returns `None` while the leader waits for
-/// more of them. When two verdicts reach t, it picks the one `me` signed. For an inconclusive it
+/// more of them. A leader outside `supporters` stops. When two verdicts reach t, it picks the one `me` signed. For an inconclusive it
 /// waits for the outcome of `me`, and the evidence holds every statement of a supporter, since
 /// leaving one out only makes the rule harder to meet.
 fn evidence_to_sign(
@@ -447,6 +464,9 @@ fn evidence_to_sign(
     supporters: &BTreeSet<ParticipantId>,
     threshold: usize,
 ) -> Result<Option<RoundEvidence>, StopLeading> {
+    if !supporters.contains(&me) {
+        return Err(StopLeading::NotASupporter);
+    }
     let tally = outcomes
         .iter()
         .map(VerifiedNodeOutcome::statement)

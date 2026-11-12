@@ -124,3 +124,24 @@ async fn round_wait__should_take_an_asset_among_the_heard_supporters_for_an_inco
         Some(&vec![participant(0), participant(1), participant(2)])
     );
 }
+
+#[test]
+fn evidence_to_sign__should_stop_a_leader_that_no_longer_supports_the_chain() {
+    // Given
+    let outcomes = [
+        signed(0, TRANSIENT),
+        signed(1, TRANSIENT),
+        signed(2, TRANSIENT),
+    ];
+
+    // When
+    let to_sign = evidence_to_sign(
+        &verified(&outcomes),
+        participant(0),
+        &participants(&[1, 2, 3]),
+        THRESHOLD,
+    );
+
+    // Then
+    assert_eq!(to_sign, Err(StopLeading::NotASupporter));
+}
