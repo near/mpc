@@ -3,6 +3,7 @@
 pub mod ot_based_ecdsa;
 pub mod robust_ecdsa;
 
+mod ot;
 mod signature;
 
 pub(crate) use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField};

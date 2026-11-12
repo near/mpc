@@ -25,7 +25,6 @@ use crate::{
     config::Config,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
-    pending_verify_foreign_tx_v2::PendingVerifyForeignTxRequestsV2,
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, EpochId, KeyForDomain, Keyset},
@@ -122,7 +121,7 @@ impl From<MpcContract> for crate::MpcContract {
             &old.node_migrations,
         );
 
-        crate::MpcContract {
+        crate::v3_19_0_state::MpcContract {
             protocol_state: ProtocolContractState::Running(running_state.into()),
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
@@ -137,8 +136,8 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: GovernanceThresholdParametersVotes::default(),
-            pending_verify_foreign_tx_v2_requests: PendingVerifyForeignTxRequestsV2::default(),
         }
+        .into()
     }
 }
 
