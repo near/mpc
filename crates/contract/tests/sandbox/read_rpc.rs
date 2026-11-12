@@ -21,9 +21,9 @@ use test_utils::sandbox::SandboxWorker;
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 
 /// The yield a V2 request waits on, as a node's indexer learns it.
-struct AnnouncedYield {
-    yield_id: dtos::YieldId,
-    block_height: dtos::BlockHeight,
+pub(crate) struct AnnouncedYield {
+    pub(crate) yield_id: dtos::YieldId,
+    pub(crate) block_height: dtos::BlockHeight,
 }
 
 fn yield_created_events(logs: &[&str]) -> Vec<VerifyForeignTxV2YieldCreated> {
@@ -34,7 +34,7 @@ fn yield_created_events(logs: &[&str]) -> Vec<VerifyForeignTxV2YieldCreated> {
 
 /// Waits until the receipt of `status` that ran `read_rpc` announced its
 /// yield, and returns the yield id and the height of that receipt's block.
-async fn await_announced_yield(
+pub(crate) async fn await_announced_yield(
     worker: &SandboxWorker,
     status: &TransactionStatus,
 ) -> AnnouncedYield {
