@@ -1,4 +1,4 @@
-//! Benchmarks the Robust ECDSA stub, not a real scheme: its presigning is a single
+//! Benchmarks the Robust ECDSA stub, not a real scheme: its nonce generation is a single
 //! broadcast round, so these numbers are a lower bound on what a replacement scheme
 //! could cost rather than a comparison against OT-based ECDSA.
 
@@ -10,7 +10,7 @@ use rand_core::{CryptoRngCore, SeedableRng};
 use threshold_signatures::{
     ecdsa::{
         self,
-        robust_ecdsa::{PresignArguments, presign_and_sign},
+        robust_ecdsa::{SignArguments, sign},
     },
     participants::Participant,
     protocol::Protocol,
@@ -34,11 +34,11 @@ pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static
     let mut seeds = HashMap::with_capacity(participants.len());
     for (p, keygen_out) in &key_packages {
         let seed = rng.next_u64();
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &participants,
             coordinator,
             *p,
-            PresignArguments {
+            SignArguments {
                 keygen_out: keygen_out.clone(),
                 max_malicious: (*MAX_MALICIOUS).into(),
             },

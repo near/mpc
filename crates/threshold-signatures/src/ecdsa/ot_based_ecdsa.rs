@@ -1,10 +1,10 @@
-pub mod presign_and_sign;
+pub mod sign;
 pub mod triples;
 
-mod presign;
+mod nonce_generation;
 
 #[cfg(test)]
 mod test;
 
-pub use presign::PresignArguments;
-pub use presign_and_sign::presign_and_sign;
+pub use nonce_generation::SignArguments;
+pub use sign::sign;
