@@ -7,9 +7,10 @@ use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeStat
 use crate::providers::verify_foreign_tx::node_outcome_statement::testing::{
     outcome_public_keys, outcome_signing_key, signed_by_its_signer,
 };
-use crate::providers::verify_foreign_tx::testing::{TestProvider, bitcoin_request};
+use crate::providers::verify_foreign_tx::testing::{TestProvider, bitcoin_request, open_with};
 use crate::requests::queue::leader_selection_order;
 use near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict;
+use near_time::Clock;
 use std::assert_matches;
 
 const THRESHOLD: usize = 3;
@@ -198,15 +199,40 @@ fn verdict_check__should_not_count_a_signer_that_does_not_support_the_chain() {
     );
 }
 
+#[test]
+fn verdict_check__should_refuse_more_statements_than_supporters_before_verifying_them() {
+    // Given
+    let mut evidence = not_found_by(&[0, 1, 2, 3]);
+    evidence.push(
+        outcome_signing_key(participant(1))
+            .sign(statement(2, NodeOutcome::Verdict(NOT_FOUND)))
+            .unwrap(),
+    );
+
+    // When
+    let checked = check(evidence, &not_found_by(&[0]));
+
+    // Then
+    assert_matches!(
+        checked,
+        Err(RoundRefusal::TooManyStatements {
+            statements: 5,
+            supporters: 4,
+        })
+    );
+}
+
 #[tokio::test]
 async fn check_round__should_refuse_a_sender_that_is_not_an_acting_leader() {
     // Given
     let participants: Vec<_> = (0..3).map(participant).collect();
     let order = leader_selection_order(&participants, bitcoin_request().id);
     let (backup, me) = (order[1], order[2]);
-    let node = TestProvider::with_open_request(
+    let (open_requests, _chain) = open_with(bitcoin_request(), Clock::real());
+    let node = TestProvider::new(
         new_test_client(order.clone(), me),
-        near_time::Duration::ZERO,
+        open_requests,
+        bitcoin_request().request.chain(),
         order.iter().copied().collect(),
     );
     let round_id = UniqueId::new(backup, 1, 0);

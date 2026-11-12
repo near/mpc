@@ -1,21 +1,27 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use ed25519_dalek::SigningKey;
+use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, SignatureConfig,
-    SyncMode, TripleBatchSize, TripleConfig,
+    AuthConfig, CKDConfig, ConfigFile, ForeignChainConfig, ForeignChainProviderConfig,
+    ForeignChainsConfig, IndexerConfig, KeygenConfig, SignatureConfig, SyncMode, TripleBatchSize,
+    TripleConfig,
 };
 use mpc_primitives::domain::DomainId;
 use near_contract_transport::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Finality;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
-use near_time::{Clock, FakeClock};
+use near_time::Clock;
 
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
 use crate::db::SecretDB;
+use crate::foreign_chain_policy::SupportersByForeignChain;
+use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::network::MeshNetworkClient;
 use crate::primitives::ParticipantId;
 use crate::providers::EcdsaSignatureProvider;
@@ -26,47 +32,58 @@ use crate::providers::verify_foreign_tx::{VerifyForeignTxProvider, VerifyForeign
 use crate::storage::{SignRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::types::VerifyForeignTxRequestV2;
 
-/// A [`VerifyForeignTxProvider`] without keyshares, RPC providers or a whitelist, where the
-/// given supporters support Bitcoin. Its database and indexed blocks live as long as it does.
+const ETHEREUM_PROVIDER: &str = "public";
+
+/// A [`VerifyForeignTxProvider`] without keyshares. Its database lives as long as it does.
 pub(crate) struct TestProvider {
     pub(crate) provider: VerifyForeignTxProvider,
     _db_dir: tempfile::TempDir,
-    _chain: TestChain,
 }
 
 impl TestProvider {
-    /// The provider of the node of `network`, which indexed [`bitcoin_request`] `since_indexed`
-    /// ago.
-    pub(crate) fn with_open_request(
-        network: Arc<MeshNetworkClient>,
-        since_indexed: near_time::Duration,
-        supporters: HashSet<ParticipantId>,
-    ) -> Self {
-        let clock = FakeClock::default();
-        let open_requests = Arc::new(OpenVerifyForeignTxRequestsV2::new(clock.clock()));
-        let mut chain = TestChain::starting_at(BlockHeight::new(999));
-        open_requests.notify_new_block(&chain.extend(vec![bitcoin_request()], vec![]));
-        clock.advance(since_indexed);
-        Self::new(network, open_requests, chain, supporters)
-    }
-
-    /// The provider of the node of `network`, which indexed no request.
-    pub(crate) fn without_requests(
-        network: Arc<MeshNetworkClient>,
-        supporters: HashSet<ParticipantId>,
-    ) -> Self {
-        let chain = TestChain::starting_at(BlockHeight::new(999));
-        Self::new(network, Arc::default(), chain, supporters)
-    }
-
-    fn new(
+    /// The provider of the node of `network`, without RPC providers, where `supporters` support
+    /// `chain`.
+    pub(crate) fn new(
         network: Arc<MeshNetworkClient>,
         open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
-        chain: TestChain,
+        chain: dtos::ForeignChain,
         supporters: HashSet<ParticipantId>,
     ) -> Self {
+        Self::build(
+            network,
+            open_requests,
+            BTreeMap::from([(chain, supporters)]),
+            ForeignChainsConfig::default(),
+            BTreeMap::new(),
+        )
+    }
+
+    /// The provider of the node of `network`, which inspects Ethereum through the one RPC
+    /// provider at `rpc_url`, and where `supporters` support Ethereum.
+    pub(crate) fn with_ethereum_rpc(
+        network: Arc<MeshNetworkClient>,
+        open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
+        supporters: HashSet<ParticipantId>,
+        rpc_url: &str,
+    ) -> Self {
+        Self::build(
+            network,
+            open_requests,
+            BTreeMap::from([(dtos::ForeignChain::Ethereum, supporters)]),
+            ethereum_config(rpc_url),
+            ethereum_whitelist(rpc_url),
+        )
+    }
+
+    fn build(
+        network: Arc<MeshNetworkClient>,
+        open_requests: Arc<OpenVerifyForeignTxRequestsV2>,
+        supporters: SupportersByForeignChain,
+        foreign_chains: ForeignChainsConfig,
+        whitelist: ForeignChainWhitelist,
+    ) -> Self {
         let me = network.my_participant_id();
-        let config = Arc::new(config());
+        let config = Arc::new(config(foreign_chains));
         let db_dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(db_dir.path(), [1; 16]).unwrap();
         let ecdsa_signature_provider = Arc::new(
@@ -86,12 +103,8 @@ impl TestProvider {
         );
         let provider = VerifyForeignTxProvider::new(
             config,
-            tokio::sync::watch::channel(BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                supporters,
-            )]))
-            .1,
-            tokio::sync::watch::channel(BTreeMap::new()).1,
+            tokio::sync::watch::channel(supporters).1,
+            tokio::sync::watch::channel(whitelist).1,
             Some(1),
             Arc::new(VerifyForeignTransactionRequestStorage::new(db).unwrap()),
             ecdsa_signature_provider,
@@ -105,9 +118,19 @@ impl TestProvider {
         Self {
             provider,
             _db_dir: db_dir,
-            _chain: chain,
         }
     }
+}
+
+/// Open requests on `clock` that indexed `request`. The chain keeps the status of their blocks.
+pub(crate) fn open_with(
+    request: VerifyForeignTxRequestV2,
+    clock: Clock,
+) -> (Arc<OpenVerifyForeignTxRequestsV2>, TestChain) {
+    let open_requests = Arc::new(OpenVerifyForeignTxRequestsV2::new(clock));
+    let mut chain = TestChain::starting_at(BlockHeight::new(999));
+    open_requests.notify_new_block(&chain.extend(vec![request], vec![]));
+    (open_requests, chain)
 }
 
 /// A V2 request for a Bitcoin transaction.
@@ -145,7 +168,42 @@ fn participants_config(participants: &[ParticipantId]) -> ParticipantsConfig {
     }
 }
 
-fn config() -> ConfigFile {
+fn ethereum_config(rpc_url: &str) -> ForeignChainsConfig {
+    ForeignChainsConfig {
+        ethereum: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(5).unwrap(),
+            max_retries: NonZeroU64::new(1).unwrap(),
+            expected_network_fingerprint: None,
+            providers: NonEmptyBTreeMap::new(
+                RpcProviderName::from(ETHEREUM_PROVIDER.to_string()),
+                ForeignChainProviderConfig {
+                    rpc_url: rpc_url.to_string(),
+                    auth: AuthConfig::None,
+                },
+            ),
+        }),
+        ..Default::default()
+    }
+}
+
+fn ethereum_whitelist(rpc_url: &str) -> ForeignChainWhitelist {
+    BTreeMap::from([(
+        dtos::ForeignChain::Ethereum,
+        dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                dtos::ProviderId(ETHEREUM_PROVIDER.to_string()),
+                dtos::ProviderConfig {
+                    base_url: rpc_url.to_string(),
+                    auth_scheme: dtos::AuthScheme::None,
+                    chain_routing: dtos::ChainRouting::Embedded,
+                },
+            ),
+            quorum: 1,
+        },
+    )])
+}
+
+fn config(foreign_chains: ForeignChainsConfig) -> ConfigFile {
     ConfigFile {
         my_near_account_id: "test.near".parse().unwrap(),
         web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0),
@@ -170,7 +228,7 @@ fn config() -> ConfigFile {
         signature: SignatureConfig { timeout_sec: 60 },
         ckd: CKDConfig { timeout_sec: 60 },
         keygen: KeygenConfig { timeout_sec: 60 },
-        foreign_chains: ForeignChainsConfig::default(),
+        foreign_chains,
         cores: None,
         separate_asset_generation_runtime: false,
     }

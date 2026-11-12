@@ -167,6 +167,7 @@ impl VerifyForeignTxProvider {
                 channel,
                 paired_triple_id,
                 sign_request,
+                Duration::from_secs(self.config.signature.timeout_sec),
             )
             .await
     }

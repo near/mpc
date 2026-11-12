@@ -1,7 +1,10 @@
 use super::*;
 use crate::network::testing::new_test_client;
-use crate::providers::verify_foreign_tx::testing::{TestProvider, bitcoin_request};
+use crate::providers::verify_foreign_tx::open_requests::test_chain::TestChain;
+use crate::providers::verify_foreign_tx::testing::{TestProvider, bitcoin_request, open_with};
 use crate::requests::queue::{LEADER_FAILOVER_INTERVAL, MAX_LEADER_FAILOVER_DEPTH};
+use near_time::FakeClock;
+use std::sync::Arc;
 
 fn participants() -> Vec<ParticipantId> {
     (0..6).map(ParticipantId::from_raw).collect()
@@ -118,21 +121,34 @@ fn order_for_request() -> Vec<ParticipantId> {
 
 /// The last participant in [`order_for_request`], which indexed [`bitcoin_request`]
 /// `since_indexed` ago and sees `supporters` support its chain.
-fn checking_node(
-    since_indexed: near_time::Duration,
-    supporters: HashSet<ParticipantId>,
-) -> TestProvider {
-    let order = order_for_request();
-    TestProvider::with_open_request(
-        new_test_client(order.clone(), order[2]),
-        since_indexed,
-        supporters,
-    )
+struct CheckingNode {
+    node: TestProvider,
+    _chain: TestChain,
 }
 
-fn check(node: &TestProvider, leader: ParticipantId) -> Result<ActingLeader, LeaderRefusal> {
-    node.provider
-        .ensure_acting_leader(&bitcoin_request(), leader)
+impl CheckingNode {
+    fn new(since_indexed: near_time::Duration, supporters: HashSet<ParticipantId>) -> Self {
+        let order = order_for_request();
+        let clock = FakeClock::default();
+        let (open_requests, chain) = open_with(bitcoin_request(), clock.clock());
+        clock.advance(since_indexed);
+        let node = TestProvider::new(
+            new_test_client(order.clone(), order[2]),
+            open_requests,
+            bitcoin_request().request.chain(),
+            supporters,
+        );
+        Self {
+            node,
+            _chain: chain,
+        }
+    }
+
+    fn check(&self, leader: ParticipantId) -> Result<ActingLeader, LeaderRefusal> {
+        self.node
+            .provider
+            .ensure_acting_leader(&bitcoin_request(), leader)
+    }
 }
 
 fn all_support() -> HashSet<ParticipantId> {
@@ -143,10 +159,10 @@ fn all_support() -> HashSet<ParticipantId> {
 fn ensure_acting_leader__should_accept_the_first_leader_at_once() {
     // Given
     let order = order_for_request();
-    let node = checking_node(near_time::Duration::ZERO, all_support());
+    let node = CheckingNode::new(near_time::Duration::ZERO, all_support());
 
     // When
-    let checked = check(&node, order[0]);
+    let checked = node.check(order[0]);
 
     // Then
     assert_eq!(checked, Ok(ActingLeader(order[0])));
@@ -156,10 +172,10 @@ fn ensure_acting_leader__should_accept_the_first_leader_at_once() {
 fn ensure_acting_leader__should_refuse_a_backup_before_its_turn() {
     // Given
     let order = order_for_request();
-    let node = checking_node(near_time::Duration::ZERO, all_support());
+    let node = CheckingNode::new(near_time::Duration::ZERO, all_support());
 
     // When
-    let checked = check(&node, order[1]);
+    let checked = node.check(order[1]);
 
     // Then
     assert_eq!(checked, Err(LeaderRefusal::NotActing(order[1])));
@@ -170,10 +186,10 @@ fn ensure_acting_leader__should_accept_a_backup_from_the_margin_before_its_turn(
     // Given
     let order = order_for_request();
     let margin = near_time::Duration::try_from(BACKUP_LEADER_EARLY_ACCEPTANCE).unwrap();
-    let node = checking_node(LEADER_FAILOVER_INTERVAL - margin, all_support());
+    let node = CheckingNode::new(LEADER_FAILOVER_INTERVAL - margin, all_support());
 
     // When
-    let checked = check(&node, order[1]);
+    let checked = node.check(order[1]);
 
     // Then
     assert_eq!(checked, Ok(ActingLeader(order[1])));
@@ -184,11 +200,11 @@ fn ensure_acting_leader__should_refuse_a_leader_that_does_not_support_the_chain(
     // Given
     let order = order_for_request();
     let supporters = order[1..].iter().copied().collect();
-    let node = checking_node(near_time::Duration::ZERO, supporters);
+    let node = CheckingNode::new(near_time::Duration::ZERO, supporters);
 
     // When
-    let first_in_order = check(&node, order[0]);
-    let first_supporter = check(&node, order[1]);
+    let first_in_order = node.check(order[0]);
+    let first_supporter = node.check(order[1]);
 
     // Then
     assert_eq!(first_in_order, Err(LeaderRefusal::NotActing(order[0])));
@@ -199,11 +215,17 @@ fn ensure_acting_leader__should_refuse_a_leader_that_does_not_support_the_chain(
 fn ensure_acting_leader__should_refuse_a_request_that_is_not_open() {
     // Given
     let order = order_for_request();
-    let node =
-        TestProvider::without_requests(new_test_client(order.clone(), order[2]), all_support());
+    let node = TestProvider::new(
+        new_test_client(order.clone(), order[2]),
+        Arc::default(),
+        bitcoin_request().request.chain(),
+        all_support(),
+    );
 
     // When
-    let checked = check(&node, order[0]);
+    let checked = node
+        .provider
+        .ensure_acting_leader(&bitcoin_request(), order[0]);
 
     // Then
     assert_eq!(checked, Err(LeaderRefusal::RequestClosed));

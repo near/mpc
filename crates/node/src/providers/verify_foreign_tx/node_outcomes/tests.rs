@@ -190,13 +190,26 @@ async fn node_outcomes_receive__should_cap_the_unindexed_yields_per_sender() {
     }
     let over_the_cap = yield_of(MAX_UNINDEXED_YIELDS_PER_SENDER);
 
+    let forged = outcome_signing_key(OTHER)
+        .sign(NodeOutcomeStatement {
+            yield_id: over_the_cap,
+            signer: SIGNER,
+            outcome: VERIFIED,
+        })
+        .unwrap();
+
     // When
+    let forged_over_the_cap = store.receive(SIGNER, forged);
     let from_the_same_sender = store.receive(SIGNER, signed(over_the_cap, SIGNER, VERIFIED));
     let from_another_sender = store.receive(OTHER, signed(over_the_cap, OTHER, VERIFIED));
     tokio::time::advance(UNINDEXED_OUTCOME_LIFETIME).await;
     let after_the_others_expired = store.receive(SIGNER, signed(over_the_cap, SIGNER, VERIFIED));
 
     // Then
+    assert_matches!(
+        forged_over_the_cap,
+        Err(RejectedNodeOutcome::TooManyUnindexedYields(SIGNER))
+    );
     assert_matches!(
         from_the_same_sender,
         Err(RejectedNodeOutcome::TooManyUnindexedYields(SIGNER))
