@@ -20,7 +20,7 @@ use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ContractUpdateVotes;
-use crate::{MpcContract, MpcContractExt, v3_18_0_state};
+use crate::{MpcContract, MpcContractExt, v3_18_0_state, v3_19_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
@@ -183,6 +183,14 @@ impl MpcContract {
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
                 log!("failed to deserialize state into 3.18.0 state: {:?}", err);
+            }
+        };
+
+        match try_state_read::<v3_19_0_state::MpcContract>() {
+            Ok(Some(state)) => return Ok(state.into()),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => {
+                log!("failed to deserialize state into 3.19.0 state: {:?}", err);
             }
         };
 

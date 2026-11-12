@@ -21,7 +21,7 @@ impl Default for OutcomeKeys {
 }
 
 impl OutcomeKeys {
-    /// Replaces the account's key, if it has one.
+    /// Sets the account's key, replacing the one it had.
     pub(crate) fn set(&mut self, account_id: AccountId, outcome_key: dtos::Ed25519PublicKey) {
         self.keys.insert(account_id, outcome_key);
     }

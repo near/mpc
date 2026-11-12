@@ -1,16 +1,21 @@
 use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
-use crate::ecdsa::ot_based_ecdsa::triples::bits::{BitVector, ChoiceVector, SEC_PARAM_64};
-use crate::ecdsa::ot_based_ecdsa::triples::random_ot_extension::random_ot_extension_sender_helper;
 use crate::{
     crypto::hash::{HashOutput, hash},
     ecdsa::{
         Scalar,
-        ot_based_ecdsa::triples::{
-            batch_random_ot::{
-                batch_random_ot_receiver_random_helper, batch_random_ot_sender_helper,
+        ot::{
+            base::co15::{
+                batch_random_ot_receiver, batch_random_ot_receiver_random_helper,
+                batch_random_ot_sender, batch_random_ot_sender_helper,
             },
-            mta::{mta_receiver_random_helper, mta_sender_random_helper},
+            bits::{BitVector, ChoiceVector, SEC_PARAM_64},
+            extension::kos15_roy22::random::{
+                RandomOtExtensionParams, random_ot_extension_receiver,
+                random_ot_extension_receiver_helper, random_ot_extension_sender,
+                random_ot_extension_sender_helper,
+            },
         },
+        ot_based_ecdsa::triples::mta::{mta_receiver_random_helper, mta_sender_random_helper},
     },
     errors::ProtocolError,
     participants::{Participant, ParticipantList},
@@ -21,14 +26,7 @@ use rand_core::CryptoRngCore;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use super::{
-    batch_random_ot::{batch_random_ot_receiver, batch_random_ot_sender},
-    mta::{mta_receiver, mta_sender},
-    random_ot_extension::{
-        RandomOtExtensionParams, random_ot_extension_receiver, random_ot_extension_receiver_helper,
-        random_ot_extension_sender,
-    },
-};
+use super::mta::{mta_receiver, mta_sender};
 use std::collections::VecDeque;
 
 #[derive(derive_more::Constructor)]
