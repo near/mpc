@@ -1,6 +1,5 @@
 use crate::types::{
-    AccountId, BlockHeight, MpcNode, NodeReport, ReportedData, Timestamp, TlsKey, UserId,
-    WhitelistedAccount,
+    AccountId, BlockHeight, MpcNode, ReportedData, Timestamp, TlsKey, UserId, WhitelistedAccount,
 };
 
 pub trait WhitelistAccounts {
@@ -38,7 +37,7 @@ pub trait StoreReports {
         &self,
         account_id: AccountId,
         tls_key: TlsKey,
-        node_report: NodeReport,
+        node_report: blaire_interface::NodeReport,
         received_at: Timestamp,
     ) -> Result<(), Self::Error>;
     fn latest_report(&self, tls_key: &TlsKey) -> Result<Option<ReportedData>, Self::Error>;

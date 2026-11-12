@@ -1,6 +1,6 @@
 //! Data types stored by Blaire.
 
-pub use blaire_interface::NodeReport;
+use blaire_interface;
 pub use near_account_id::AccountId;
 pub use near_mpc_crypto_types::Ed25519PublicKey as TlsKey;
 
@@ -25,7 +25,7 @@ pub struct MpcNode {
 pub struct ReportedData {
     pub account_id: AccountId,
     pub tls_key: TlsKey,
-    pub node_report: NodeReport,
+    pub node_report: blaire_interface::NodeReport,
     pub received_at: Timestamp,
 }
 
