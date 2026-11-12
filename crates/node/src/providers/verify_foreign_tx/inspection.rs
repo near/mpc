@@ -17,8 +17,9 @@ pub(crate) type Inspection = Result<Verdict<dtos::ExtractedValue>, ForeignChainI
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TransientErrors {
     Fail,
-    /// Retries a transient error after [`RETRY_BACKOFF`] until
-    /// [`FOREIGN_CHAIN_INSPECTION_TIMEOUT`] runs out, then returns the last one.
+    /// Retries a transient error until [`FOREIGN_CHAIN_INSPECTION_TIMEOUT`] runs out, then returns
+    /// the last one. The pause before a retry starts at [`RETRY_BACKOFF`] and doubles each time,
+    /// so a rate limited provider is never asked again at once.
     Retry,
 }
 
@@ -60,6 +61,7 @@ where
     Attempt: Future<Output = Result<Verdict<V>, ForeignChainInspectionError>>,
 {
     let mut last_transient_error = None;
+    let mut backoff = RETRY_BACKOFF;
     let attempts = async {
         loop {
             match inspect_once().await {
@@ -68,7 +70,8 @@ where
                 {
                     tracing::debug!(%error, "retrying a transient foreign chain inspection error");
                     last_transient_error = Some(error);
-                    tokio::time::sleep(RETRY_BACKOFF).await;
+                    tokio::time::sleep(backoff).await;
+                    backoff = backoff.saturating_mul(2);
                 }
                 inspection => return inspection,
             }
@@ -216,6 +219,28 @@ mod tests {
         assert_matches!(inspection, Err(ForeignChainInspectionError::NotFinalized));
         assert_eq!(started.elapsed(), FOREIGN_CHAIN_INSPECTION_TIMEOUT);
         assert!(calls.get() > 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn inspect_within_cap__should_bound_the_fan_outs_within_the_cap_when_rate_limited() {
+        // Given
+        let calls = Cell::new(0);
+        let inspect_once = || {
+            calls.set(calls.get() + 1);
+            async {
+                Err::<Verdict<u8>, _>(ForeignChainInspectionError::RpcRequestFailed(
+                    "HTTP status 429".to_string(),
+                ))
+            }
+        };
+
+        // When
+        inspect_within_cap(TransientErrors::Retry, inspect_once)
+            .await
+            .unwrap_err();
+
+        // Then
+        assert!(calls.get() <= 5, "{} fan outs within the cap", calls.get());
     }
 
     #[tokio::test(start_paused = true)]

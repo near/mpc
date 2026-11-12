@@ -17,7 +17,10 @@ pub struct VerifyForeignTxRequestV2 {
     pub yield_id: dtos::YieldId,
     /// The height of the block the contract stored with the request.
     pub request_block_height: BlockHeight,
-    pub request: dtos::VerifyForeignTransactionRequestV2,
+    pub request: dtos::ForeignChainRpcRequest,
+    pub domain_id: DomainId,
+    /// The hash of the caller's expected values. The node never holds the values.
+    pub expected_values_hash: dtos::Hash256,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
 }
@@ -27,16 +30,14 @@ impl VerifyForeignTxRequestV2 {
     pub fn sign_payload(
         &self,
         outcome: dtos::ForeignTxVerificationOutcome,
-    ) -> std::io::Result<dtos::ForeignTxSignPayload> {
-        Ok(dtos::ForeignTxSignPayload::V2(
-            dtos::ForeignTxSignPayloadV2 {
-                request: self.request.request.clone(),
-                expected_values_hash: self.request.expected_values_hash()?,
-                request_block_height: self.request_block_height,
-                yield_id: self.yield_id,
-                outcome,
-            },
-        ))
+    ) -> dtos::ForeignTxSignPayload {
+        dtos::ForeignTxSignPayload::V2(dtos::ForeignTxSignPayloadV2 {
+            request: self.request.clone(),
+            expected_values_hash: self.expected_values_hash.clone(),
+            request_block_height: self.request_block_height,
+            yield_id: self.yield_id,
+            outcome,
+        })
     }
 }
 
@@ -48,6 +49,8 @@ impl FromChain<VerifyForeignTxRequestV2FromChain> for VerifyForeignTxRequestV2 {
             yield_id,
             request_block_height,
             request,
+            domain_id,
+            expected_values_hash,
         } = chain_value;
         Self {
             id: verify_foreign_tx_id,
@@ -55,6 +58,8 @@ impl FromChain<VerifyForeignTxRequestV2FromChain> for VerifyForeignTxRequestV2 {
             yield_id,
             request_block_height,
             request,
+            domain_id,
+            expected_values_hash,
             entropy: block.entropy.clone().into(),
             timestamp_nanosec: block.timestamp_nanosec,
         }
@@ -79,11 +84,11 @@ impl Request for VerifyForeignTxRequestV2 {
     }
 
     fn get_domain_id(&self) -> DomainId {
-        self.request.domain_id
+        self.domain_id
     }
 
     fn get_foreign_chain(&self) -> Option<dtos::ForeignChain> {
-        Some(self.request.request.chain())
+        Some(self.request.chain())
     }
 
     fn get_type() -> RequestType {

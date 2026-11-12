@@ -66,6 +66,27 @@ impl ForeignChainRpcRequest {
             Self::Fogo(_) => ForeignChain::Fogo,
         }
     }
+
+    /// The number of extractors. A request extracts one value per extractor.
+    pub fn extractor_count(&self) -> usize {
+        match self {
+            Self::Abstract(request)
+            | Self::Ethereum(request)
+            | Self::Bnb(request)
+            | Self::Base(request)
+            | Self::Arbitrum(request)
+            | Self::Polygon(request)
+            | Self::HyperEvm(request)
+            | Self::Avalanche(request)
+            | Self::Adi(request) => request.extractors.len(),
+            Self::Solana(request) | Self::Fogo(request) => request.extractors.len(),
+            Self::Bitcoin(request) => request.extractors.len(),
+            Self::Starknet(request) => request.extractors.len(),
+            Self::Ton(request) => request.extractors.len(),
+            Self::Aptos(request) => request.extractors.len(),
+            Self::Sui(request) => request.extractors.len(),
+        }
+    }
 }
 
 #[derive(
@@ -101,9 +122,9 @@ pub enum ExtractedValue {
 mod tests {
     use super::*;
     use crate::types::{
-        AptosFinality, AptosTxId, BitcoinTxId, BlockConfirmations, EvmFinality, EvmTxId, Hash256,
-        StarknetFelt, StarknetFinality, StarknetTxId, SuiFinality, SuiTxId, SvmFinality, SvmTxId,
-        TonAddress, TonFinality, TonTxId,
+        AptosFinality, AptosTxId, BitcoinTxId, BlockConfirmations, EvmExtractor, EvmFinality,
+        EvmTxId, Hash256, StarknetFelt, StarknetFinality, StarknetTxId, SuiFinality, SuiTxId,
+        SvmFinality, SvmTxId, TonAddress, TonFinality, TonTxId,
     };
 
     use rstest::rstest;
@@ -246,5 +267,26 @@ mod tests {
         #[case] expected_chain: ForeignChain,
     ) {
         assert_eq!(request.chain(), expected_chain);
+    }
+
+    #[rstest]
+    #[case::none(Vec::new(), 0)]
+    #[case::two(vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }], 2)]
+    fn foreign_chain_rpc_request_extractor_count__should_count_the_extractors(
+        #[case] extractors: Vec<EvmExtractor>,
+        #[case] expected: usize,
+    ) {
+        // Given
+        let request = ForeignChainRpcRequest::Base(EvmRpcRequest {
+            tx_id: EvmTxId([0; 32]),
+            extractors: extractors.try_into().unwrap(),
+            finality: EvmFinality::Finalized,
+        });
+
+        // When
+        let count = request.extractor_count();
+
+        // Then
+        assert_eq!(count, expected);
     }
 }

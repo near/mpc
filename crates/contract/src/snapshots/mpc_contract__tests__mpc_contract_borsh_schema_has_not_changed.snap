@@ -623,6 +623,10 @@ BorshSchemaContainer {
                         "pending_verify_foreign_tx_v2_requests",
                         "PendingVerifyForeignTxRequestsV2",
                     ),
+                    (
+                        "outcome_keys",
+                        "OutcomeKeys",
+                    ),
                 ],
             ),
         },
@@ -691,6 +695,16 @@ BorshSchemaContainer {
                     "PublicKeyExtended",
                 ),
             ],
+        },
+        "OutcomeKeys": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "keys",
+                        "IterableMap",
+                    ),
+                ],
+            ),
         },
         "ParticipantId": Struct {
             fields: UnnamedFields(

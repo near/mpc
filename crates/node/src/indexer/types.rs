@@ -1,4 +1,4 @@
-use crate::providers::verify_foreign_tx::SignedOutcome;
+use crate::providers::verify_foreign_tx::SignedVerdict;
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
@@ -6,8 +6,8 @@ use k256::{AffinePoint, Scalar, ecdsa::RecoveryId};
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, RESPOND_VERIFY_FOREIGN_TX_V2, START_KEYGEN_INSTANCE,
+    CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, REGISTER_OUTCOME_KEY, RESPOND,
+    RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX, RESPOND_VERIFY_FOREIGN_TX_V2, START_KEYGEN_INSTANCE,
     START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE,
     VOTE_PK, VOTE_RESHARED,
 };
@@ -49,6 +49,7 @@ pub enum ChainSendTransactionRequest {
     StartKeygen(contract_args::StartKeygenArgs),
     VoteReshared(contract_args::VoteResharedArgs),
     RegisterForeignChainsConfig(contract_args::RegisterForeignChainsConfigArgs),
+    RegisterOutcomeKey(contract_args::RegisterOutcomeKeyArgs),
     StartReshare(contract_args::StartReshareArgs),
     VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs),
     VerifyTee(),
@@ -75,6 +76,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::RegisterForeignChainsConfig(_) => {
                 REGISTER_FOREIGN_CHAINS_CONFIG
             }
+            ChainSendTransactionRequest::RegisterOutcomeKey(_) => REGISTER_OUTCOME_KEY,
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
             ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,
             ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
@@ -99,6 +101,7 @@ impl ChainSendTransactionRequest {
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::RegisterForeignChainsConfig(_)
+            | Self::RegisterOutcomeKey(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
@@ -212,9 +215,9 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
 }
 
 pub trait VerifyForeignTransactionRespondV2ArgsExt {
-    fn from_signed_outcome(
+    fn from_signed_verdict(
         yield_id: dtos::YieldId,
-        signed_outcome: SignedOutcome,
+        signed_verdict: SignedVerdict,
     ) -> anyhow::Result<Self>
     where
         Self: Sized;
@@ -223,22 +226,22 @@ pub trait VerifyForeignTransactionRespondV2ArgsExt {
 impl VerifyForeignTransactionRespondV2ArgsExt
     for contract_args::VerifyForeignTransactionRespondV2Args
 {
-    fn from_signed_outcome(
+    fn from_signed_verdict(
         yield_id: dtos::YieldId,
-        signed_outcome: SignedOutcome,
+        signed_verdict: SignedVerdict,
     ) -> anyhow::Result<Self> {
-        let SignedOutcome {
-            outcome,
+        let SignedVerdict {
+            verdict,
             payload_hash,
             signature,
             public_key,
-        } = signed_outcome;
+        } = signed_verdict;
         let recovery_id = signature
             .recovery_id(&public_key.to_element().to_affine(), payload_hash.as_ref())
             .context(RECOVERY_ID_FAILED)?;
         Ok(contract_args::VerifyForeignTransactionRespondV2Args::new(
             yield_id,
-            outcome,
+            verdict.into(),
             k256_signature_response(signature.big_r, signature.s, recovery_id),
         ))
     }

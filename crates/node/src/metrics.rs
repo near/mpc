@@ -157,6 +157,16 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_INDEXED: LazyLock<prometheus::I
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_SKIPPED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_v2_requests_skipped",
+            "Number of successful read_rpc calls the indexer skipped, because their arguments \
+             are invalid or their receipt does not log exactly one yield created event"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
     prometheus::IntCounter,
 > = LazyLock::new(|| {
@@ -276,20 +286,8 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntC
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
             "mpc_num_verify_foreign_tx_computations_led",
-            "Number of finished verify foreign tx computation attempts that this node led. A V2 attempt the node drops before its result counts as abandoned. Attempts a node restart interrupts are not counted.",
+            "Number of finished verify foreign tx computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
-        )
-        .unwrap()
-    });
-
-pub static MPC_NUM_VERIFY_FOREIGN_TX_INCONCLUSIVES: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter_vec!(
-            "mpc_num_verify_foreign_tx_inconclusives",
-            "Number of V2 verify foreign tx requests this node led to a signed inconclusive, by \
-             cause and chain. For a disagreement, first_node and second_node name the nodes \
-             involved.",
-            &["cause", "chain", "first_node", "second_node"],
         )
         .unwrap()
     });
@@ -589,10 +587,7 @@ impl MpcTaskId {
                 match task {
                     VerifyForeignTxTaskId::VerifyForeignTx { .. }
                     | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. }
-                    | VerifyForeignTxTaskId::Inconclusive { .. }
-                    | VerifyForeignTxTaskId::VerifyForeignTxV2 { .. } => {
-                        VERIFY_FOREIGN_TX_TASK_LABEL
-                    }
+                    | VerifyForeignTxTaskId::SignOutcome { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
                 },
             ),
         };
