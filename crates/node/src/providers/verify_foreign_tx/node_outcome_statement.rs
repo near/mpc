@@ -43,7 +43,7 @@ pub(crate) struct NodeOutcomeStatement {
 }
 
 /// The outcome key of each participant that registered a valid one with the contract.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct OutcomePublicKeys(BTreeMap<ParticipantId, VerifyingKey>);
 
 /// The key a node signs its [`NodeOutcomeStatement`]s with. It is independent of the node's TLS
@@ -63,6 +63,10 @@ pub(crate) enum NodeOutcomeVerificationError {
 impl VerifiedNodeOutcome {
     pub(crate) fn statement(&self) -> &NodeOutcomeStatement {
         &self.0.statement
+    }
+
+    pub(crate) fn signed(&self) -> &SignedNodeOutcome {
+        &self.0
     }
 }
 
@@ -92,9 +96,6 @@ impl SignedNodeOutcome {
 impl OutcomePublicKeys {
     /// Keeps the keys of `participants` only, and drops a key that is not a valid Ed25519
     /// public key, so that its owner's statements do not verify.
-    // TODO(#5123): build once per change of `IndexerAPI::outcome_keys_receiver` in `run_mpc`, and
-    // share the result with every verification.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn new(participants: &ParticipantsConfig, registered: &dtos::OutcomeKeys) -> Self {
         let keys = participants
             .participants
@@ -159,9 +160,40 @@ pub(crate) mod testing {
     use ed25519_dalek::SigningKey;
     use near_mpc_contract_interface::types::YieldId;
 
-    use super::{NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome};
+    use super::{
+        NodeOutcomeSigningKey, NodeOutcomeStatement, OutcomePublicKeys, SignedNodeOutcome,
+    };
     use crate::primitives::ParticipantId;
     use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
+
+    /// The outcome key of `participant`, the same in every test.
+    pub(crate) fn outcome_signing_key(participant: ParticipantId) -> NodeOutcomeSigningKey {
+        let mut seed = [0x55; 32];
+        seed[..4].copy_from_slice(&participant.raw().to_le_bytes());
+        NodeOutcomeSigningKey(SigningKey::from_bytes(&seed))
+    }
+
+    /// The keys of [`outcome_signing_key`] for `participants`.
+    pub(crate) fn outcome_public_keys(participants: &[ParticipantId]) -> OutcomePublicKeys {
+        OutcomePublicKeys(
+            participants
+                .iter()
+                .map(|participant| {
+                    (
+                        *participant,
+                        outcome_signing_key(*participant).0.verifying_key(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// `statement`, signed with the [`outcome_signing_key`] of its signer.
+    pub(crate) fn signed_by_its_signer(statement: NodeOutcomeStatement) -> SignedNodeOutcome {
+        outcome_signing_key(statement.signer)
+            .sign(statement)
+            .unwrap()
+    }
 
     /// A node outcome signed with a fixed key, so its bytes are stable across runs.
     pub(crate) fn signed_node_outcome(outcome: NodeOutcome) -> SignedNodeOutcome {
