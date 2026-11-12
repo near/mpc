@@ -1,4 +1,4 @@
-use super::bits::{BitMatrix, BitVector, SquareBitMatrix};
+use crate::ecdsa::ot::bits::{BitMatrix, BitVector, SquareBitMatrix};
 use crate::errors::ProtocolError;
 use crate::protocol::internal::PrivateChannel;
 
@@ -63,7 +63,7 @@ pub fn correlated_ot_receiver(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
+    use crate::ecdsa::ot::test::run_batch_random_ot;
     use crate::participants::Participant;
     use crate::protocol::internal::{Comms, make_protocol};
     use crate::test_utils::{MockCryptoRng, run_two_party_protocol};

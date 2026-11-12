@@ -126,7 +126,7 @@ The MPC node exposes web endpoints over which the backup service can submit requ
 
 The exposed endpoints are:
 
-- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract.
+- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract for the node's account and the contract has confirmed the node as that account's active node.
 - **PUT /set_keyshares** - Accepts encrypted keyshares from the backup service to restore a recovering node.
 
 ### Operators
