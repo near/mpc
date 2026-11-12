@@ -637,7 +637,7 @@ expression: abi
       },
       {
         "name": "outcome_keys",
-        "doc": " The outcome key of each account that registered one.",
+        "doc": " The outcome key of each account that registered one. A key of an account that is not a\n current participant may remain after a cancelled resharing or keygen, so readers use only\n the keys of current participants.",
         "kind": "view",
         "result": {
           "serialization_type": "json",

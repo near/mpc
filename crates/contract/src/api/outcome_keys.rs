@@ -14,7 +14,9 @@ impl MpcContract {
         self.outcome_keys.set(env::signer_account_id(), outcome_key);
     }
 
-    /// The outcome key of each account that registered one.
+    /// The outcome key of each account that registered one. A key of an account that is not a
+    /// current participant may remain after a cancelled resharing or keygen, so readers use only
+    /// the keys of current participants.
     pub fn outcome_keys(&self) -> dtos::OutcomeKeys {
         self.outcome_keys.snapshot()
     }
