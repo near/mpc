@@ -165,7 +165,10 @@ fn ensure_acting_leader__should_accept_the_first_leader_at_once() {
     let checked = node.check(order[0]);
 
     // Then
-    assert_eq!(checked, Ok(ActingLeader(order[0])));
+    assert_eq!(
+        checked,
+        Ok(ActingLeader::assumed(bitcoin_request().id, order[0]))
+    );
 }
 
 #[test]
@@ -192,7 +195,10 @@ fn ensure_acting_leader__should_accept_a_backup_from_the_margin_before_its_turn(
     let checked = node.check(order[1]);
 
     // Then
-    assert_eq!(checked, Ok(ActingLeader(order[1])));
+    assert_eq!(
+        checked,
+        Ok(ActingLeader::assumed(bitcoin_request().id, order[1]))
+    );
 }
 
 #[test]
@@ -208,7 +214,10 @@ fn ensure_acting_leader__should_refuse_a_leader_that_does_not_support_the_chain(
 
     // Then
     assert_eq!(first_in_order, Err(LeaderRefusal::NotActing(order[0])));
-    assert_eq!(first_supporter, Ok(ActingLeader(order[1])));
+    assert_eq!(
+        first_supporter,
+        Ok(ActingLeader::assumed(bitcoin_request().id, order[1]))
+    );
 }
 
 #[test]

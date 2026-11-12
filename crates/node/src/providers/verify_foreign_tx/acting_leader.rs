@@ -7,25 +7,35 @@ use crate::requests::queue::{
     RefineEligibleLeaders, eligible_leaders_and_heights, leader_rank, leader_selection_order,
     leader_turn_start,
 };
-use crate::types::VerifyForeignTxRequestV2;
+use crate::types::{VerifyForeignTxId, VerifyForeignTxRequestV2};
 
 /// The margin by which a signer accepts a backup leader before its turn. A backup times its
 /// turn from its own index time, and that may come this much before the signer's.
 const BACKUP_LEADER_EARLY_ACCEPTANCE: Duration = Duration::from_secs(3);
 
 /// A participant that [`VerifyForeignTxProvider::ensure_acting_leader`] accepted as an acting
-/// leader of a V2 request.
+/// leader of the V2 request [`Self::request`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ActingLeader(ParticipantId);
+pub(crate) struct ActingLeader {
+    request: VerifyForeignTxId,
+    participant: ParticipantId,
+}
 
 impl ActingLeader {
+    pub(crate) fn request(self) -> VerifyForeignTxId {
+        self.request
+    }
+
     pub(crate) fn participant(self) -> ParticipantId {
-        self.0
+        self.participant
     }
 
     #[cfg(test)]
-    pub(crate) fn assumed(participant: ParticipantId) -> Self {
-        Self(participant)
+    pub(crate) fn assumed(request: VerifyForeignTxId, participant: ParticipantId) -> Self {
+        Self {
+            request,
+            participant,
+        }
     }
 }
 
@@ -64,7 +74,10 @@ impl VerifyForeignTxProvider {
             &eligible_leaders,
             since_indexed,
         ) {
-            Ok(ActingLeader(leader))
+            Ok(ActingLeader {
+                request: request.id,
+                participant: leader,
+            })
         } else {
             Err(LeaderRefusal::NotActing(leader))
         }
