@@ -1,16 +1,29 @@
 use super::*;
+use crate::assets::test_utils::make_triple;
+use crate::db::SecretDB;
+use crate::keyshare::KeyshareData;
+use crate::keyshare::test_utils::generate_dummy_keyshare;
+use crate::network::testing::{
+    current_protocol_versions, new_task_channel_for_test, new_test_client_with_versions,
+};
+use crate::network::wire_format::{MpcMessageKind, Packet};
+use crate::primitives::{ChannelId, MpcMessage, MpcPeerMessage};
 use crate::providers::verify_foreign_tx::node_outcome::{NoVerdictReason, NodeOutcome};
 use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeStatement;
 use crate::providers::verify_foreign_tx::node_outcome_statement::testing::{
     outcome_public_keys, signed_by_its_signer,
 };
 use crate::providers::verify_foreign_tx::open_requests::test_chain::TestChain;
+use crate::providers::verify_foreign_tx::testing::{TestProvider, open_with};
+use crate::tracking::start_root_task;
 use mpc_primitives::domain::DomainId;
 use near_contract_transport::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::types::{
     self as dtos, ForeignTxVerificationNegativeVerdict, YieldId,
 };
+use near_time::{Clock, FakeClock};
+use rand::SeedableRng;
 use std::assert_matches;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -502,4 +515,180 @@ async fn retry_asset_wait__should_take_no_asset_outside_the_candidates_and_stop_
     // Then
     assert_matches!(taken.map(|taken| taken.id), Err(StopLeading::RequestClosed));
     assert_eq!(assets.assets.lock().unwrap().len(), 1);
+}
+
+/// A round that receives until it fails, so it ends only at the round deadline.
+struct ReceiveUntilFailure;
+
+#[async_trait::async_trait]
+impl MpcLeaderCentricComputation<()> for ReceiveUntilFailure {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+        loop {
+            channel.receive().await?;
+        }
+    }
+
+    fn leader_waits_for_success(&self) -> bool {
+        false
+    }
+}
+
+fn led_rounds_with(label: &str) -> u64 {
+    metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+        .with_label_values(&[label])
+        .get()
+}
+
+#[tokio::test(start_paused = true)]
+async fn run_led_round__should_fail_with_the_silent_signers_exactly_at_the_round_deadline() {
+    let (test, _) = start_root_task("round deadline", async {
+        // Given
+        let [me, heard, silent] = [0, 1, 2].map(participant);
+        let task_id = VerifyForeignTxTaskId::SignOutcome {
+            yield_id: YIELD,
+            outcome: RoundOutcome::Verdict(NOT_FOUND),
+            paired_triple_id: asset_id(),
+        };
+        let (channel, raw_sender) =
+            new_task_channel_for_test(task_id.into(), me, me, vec![me, heard, silent]);
+        raw_sender
+            .send(MpcPeerMessage {
+                from: heard,
+                message: MpcMessage {
+                    channel_id: ChannelId(asset_id()),
+                    kind: MpcMessageKind::Computation(vec![vec![1]]),
+                },
+            })
+            .unwrap();
+        let deadline_exceeded_before = led_rounds_with(metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let result = run_led_round(Ok(channel), ReceiveUntilFailure).await;
+
+        // Then
+        assert_eq!(started.elapsed(), ROUND_DEADLINE);
+        assert_matches!(
+            result,
+            Err(RoundFailure::DeadlineExceeded { silent: signers }) if signers == BTreeSet::from([silent])
+        );
+        assert_eq!(
+            led_rounds_with(metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL),
+            deadline_exceeded_before + 1
+        );
+    });
+    test.await;
+}
+
+#[tokio::test]
+async fn run_led_round__should_count_a_channel_that_failed_to_open_as_a_failed_round() {
+    // Given
+    let failed_before = led_rounds_with(metrics::FAILED_OUTCOME_LABEL);
+    let total_before = led_rounds_with(metrics::TOTAL_RESULT_LABEL);
+
+    // When
+    let result = run_led_round(
+        Err(anyhow::anyhow!("no connection to the signer")),
+        ReceiveUntilFailure,
+    )
+    .await;
+
+    // Then
+    assert_matches!(result, Err(RoundFailure::Unattributed(_)));
+    assert_eq!(
+        led_rounds_with(metrics::FAILED_OUTCOME_LABEL),
+        failed_before + 1
+    );
+    assert_eq!(
+        led_rounds_with(metrics::TOTAL_RESULT_LABEL),
+        total_before + 1
+    );
+}
+
+fn keygen_output() -> KeygenOutput {
+    let mut rng = rand::rngs::StdRng::from_seed([1; 32]);
+    match generate_dummy_keyshare(0, 0, 0, &mut rng).data {
+        KeyshareData::Secp256k1(keygen_output) => keygen_output,
+        other => panic!("unexpected keyshare {other:?}"),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn verdict_rounds__should_send_the_same_evidence_in_every_round() {
+    let (test, _) = start_root_task("evidence reuse", async {
+        // Given
+        let signers = vec![participant(0), participant(1), participant(2)];
+        let (network, transport) = new_test_client_with_versions(
+            signers.clone(),
+            participant(0),
+            current_protocol_versions(&signers),
+        );
+        let (open_requests, _chain) = open_with(request(), Clock::real());
+        let provider = TestProvider::new(
+            network.clone(),
+            open_requests,
+            request().request.chain(),
+            signers.iter().copied().collect(),
+        );
+        let db_dir = tempfile::tempdir().unwrap();
+        let triple_store = Arc::new(
+            TripleStorage::new(
+                FakeClock::default().clock(),
+                SecretDB::new(db_dir.path(), [1; 16]).unwrap(),
+                network.clone(),
+                dtos::ReconstructionThreshold::new(3),
+            )
+            .unwrap(),
+        );
+        let statements: Vec<_> = [0, 1, 2]
+            .into_iter()
+            .map(|signer| signed(signer, NodeOutcome::Verdict(NOT_FOUND)))
+            .collect();
+        let rounds = VerdictRounds {
+            provider: &provider.provider,
+            request: request(),
+            evidence: VerdictEvidence {
+                verdict: NOT_FOUND,
+                backers: participants(&[0, 1, 2]),
+                statements: statements.clone(),
+            },
+            payload_hash: dtos::Hash256([5; 32]),
+            triple_store,
+            keygen_out: keygen_output(),
+            reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
+        };
+
+        // When
+        for counter in [1, 2] {
+            let triples = OwnedAsset {
+                id: UniqueId::new(participant(0), 1, counter),
+                asset: make_triple(&signers),
+            };
+            let failure = rounds.run_round(triples).await.err();
+            assert_matches!(failure, Some(RoundFailure::DeadlineExceeded { .. }));
+        }
+
+        // Then
+        let evidence_sent: Vec<_> = transport
+            .take_packets_sent()
+            .into_iter()
+            .filter_map(|(recipient, packet)| match packet {
+                Packet::MpcMessage(MpcMessage {
+                    kind: MpcMessageKind::Evidence(evidence),
+                    ..
+                }) => Some((recipient, evidence)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            evidence_sent,
+            vec![
+                (participant(1), statements.clone()),
+                (participant(2), statements.clone()),
+                (participant(1), statements.clone()),
+                (participant(2), statements),
+            ]
+        );
+    });
+    test.await;
 }
