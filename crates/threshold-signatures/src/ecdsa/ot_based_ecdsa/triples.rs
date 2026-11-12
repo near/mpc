@@ -26,19 +26,11 @@
 //! reused across runs or aborts: a fresh base OT secret per run bounds any leak
 //! through the OT-extension consistency check to that run. There is no reusable
 //! one-time setup.
-mod batch_random_ot;
-mod bits;
-
-mod correlated_ot_extension;
 mod generation;
 mod mta;
 mod multiplication;
-mod random_ot_extension;
 
 pub use generation::{TripleGenerationOutput, generate_triple, generate_triple_many};
-
-#[cfg(test)]
-pub(crate) mod test;
 
 use serde::{Deserialize, Serialize};
 use zeroize::ZeroizeOnDrop;
