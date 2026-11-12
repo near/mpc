@@ -237,3 +237,34 @@ fn round_failure_new__should_name_no_signer_for_shares_that_do_not_combine() {
     assert_matches!(failure, RoundFailure::Unattributed(_));
     assert!(failure.failed_signers().is_empty());
 }
+
+#[test]
+fn round_failure_new__should_name_the_signer_that_sent_an_unexpected_message() {
+    // Given
+    let error = anyhow::Error::new(UnexpectedMessage {
+        participant: REFUSER,
+        message: "evidence with 3 outcomes".to_string(),
+    });
+
+    // When
+    let failure = RoundFailure::new(error, BTreeSet::from([SILENT]));
+
+    // Then
+    assert_eq!(failure.failed_signers(), BTreeSet::from([REFUSER]));
+}
+
+#[tokio::test]
+async fn lead_rounds__should_stop_without_another_asset_when_the_request_closes_before_start() {
+    // Given
+    let leader = ScriptedRounds::ending_with(vec![
+        Err(RoundFailure::Stopped(StopLeading::RequestClosed)),
+        Ok(SIGNATURE),
+    ]);
+
+    // When
+    let signed = lead_rounds(&leader, 0).await;
+
+    // Then
+    assert_matches!(signed, Err(RoundsEnd::Stopped(StopLeading::RequestClosed)));
+    assert!(leader.avoid_sets.lock().unwrap().is_empty());
+}
