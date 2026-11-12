@@ -28,7 +28,7 @@ pub fn permanent_key_link(home_dir: &Path) -> PathBuf {
     home_dir.join("key")
 }
 
-/// Local secrets (`p2p_private_key`, `near_signer_key`).
+/// Local secrets (`p2p_private_key`, `near_signer_key`, `outcome_signing_key`).
 pub fn secrets_file(home_dir: &Path) -> PathBuf {
     home_dir.join("secrets.json")
 }

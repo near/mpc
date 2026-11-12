@@ -90,7 +90,8 @@ impl SignedNodeOutcome {
 impl OutcomePublicKeys {
     /// Keeps the keys of `participants` only, and drops a key that is not a valid Ed25519
     /// public key, so that its owner's statements do not verify.
-    // TODO(#5123): build from the outcome keys the indexer reads.
+    // TODO(#5123): build once per change of `IndexerAPI::outcome_keys_receiver` in `run_mpc`, and
+    // share the result with every verification.
     #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn new(participants: &ParticipantsConfig, registered: &dtos::OutcomeKeys) -> Self {
         let keys = participants
@@ -424,6 +425,33 @@ mod tests {
 
         // When
         let result = signed.verify(&outcome_keys());
+
+        // Then
+        assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));
+    }
+
+    #[test]
+    fn signed_node_outcome__should_reject_a_signature_of_another_signer_with_the_same_outcome_key()
+    {
+        // Given
+        let outcome_key = dtos::Ed25519PublicKey::from(&outcome_key(SIGNER).verifying_key());
+        let registered: dtos::OutcomeKeys = BTreeMap::from([
+            (account(SIGNER), outcome_key.clone()),
+            (account(OTHER_PARTICIPANT), outcome_key),
+        ])
+        .into();
+        let keys = OutcomePublicKeys::new(&participants(), &registered);
+        let signature = signing_key(SIGNER).sign(statement()).unwrap().signature;
+        let signed = SignedNodeOutcome {
+            statement: NodeOutcomeStatement {
+                signer: OTHER_PARTICIPANT,
+                ..statement()
+            },
+            signature,
+        };
+
+        // When
+        let result = signed.verify(&keys);
 
         // Then
         assert_matches!(result, Err(NodeOutcomeVerificationError::BadSignature));

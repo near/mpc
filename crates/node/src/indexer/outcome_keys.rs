@@ -18,14 +18,17 @@ const MAX_RETRY_DELAY: Duration = Duration::from_mins(1);
 pub async fn monitor_outcome_keys<V: ViewContract + Clone + Send + Sync + 'static>(
     contract: MpcContractHandle<V>,
 ) -> watch::Receiver<dtos::OutcomeKeys> {
-    let initial = read_outcome_keys(&contract).await.unwrap_or_default();
-    let (sender, receiver) = watch::channel(initial);
+    let first_read = read_outcome_keys(&contract, false).await;
+    let mut previous_read_failed = first_read.is_none();
+    let (sender, receiver) = watch::channel(first_read.unwrap_or_default());
     tokio::spawn(async move {
         let mut delay = OUTCOME_KEYS_REFRESH_INTERVAL;
         let mut retry_delays = retry_backoff().build();
         loop {
             tokio::time::sleep(delay).await;
-            delay = match read_outcome_keys(&contract).await {
+            let read = read_outcome_keys(&contract, previous_read_failed).await;
+            previous_read_failed = read.is_none();
+            delay = match read {
                 Some(latest) => {
                     send_if_changed(&sender, latest);
                     retry_delays = retry_backoff().build();
@@ -45,17 +48,22 @@ fn retry_backoff() -> ExponentialBuilder {
         .without_max_times()
 }
 
+/// Logs a failure at debug level while the previous read failed too.
 async fn read_outcome_keys<V: ViewContract + Clone + Send + 'static>(
     contract: &MpcContractHandle<V>,
+    previous_read_failed: bool,
 ) -> Option<dtos::OutcomeKeys> {
-    contract
-        .outcome_keys()
-        .await
-        .inspect_err(|error| {
+    match contract.outcome_keys().await {
+        Ok(observed) => Some(observed.value),
+        Err(error) if previous_read_failed => {
+            tracing::debug!(target: "mpc", ?error, "failed to read the outcome keys from the contract again");
+            None
+        }
+        Err(error) => {
             tracing::warn!(target: "mpc", ?error, "failed to read the outcome keys from the contract");
-        })
-        .ok()
-        .map(|observed| observed.value)
+            None
+        }
+    }
 }
 
 #[cfg(test)]
